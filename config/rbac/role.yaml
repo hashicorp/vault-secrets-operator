@@ -1,0 +1,96 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultauths
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultauths/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultauths/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultpkis
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultpkis/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultpkis/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultsecrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultsecrets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultsecrets/status
+  verbs:
+  - get
+  - patch
+  - update

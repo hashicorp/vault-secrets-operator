@@ -1,0 +1,20 @@
+# permissions for end users to view vaultpkis.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vaultpki-viewer-role
+rules:
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultpkis
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultpkis/status
+  verbs:
+  - get
