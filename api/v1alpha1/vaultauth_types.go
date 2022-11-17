@@ -23,19 +23,48 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+type VaultAuthAWS struct {
+}
+
+type VaultAuthKubernetes struct {
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Address to the Vault server -- not sure if we want to support more than one?
+	Address string `json:"address"`
+	// Method to use when authenticating to Vault.
+	Method string `json:"method"`
+	// Mount to use when authenticating to auth method.
+	Mount string `json:"mount"`
+	// Params to use when authenticating to Vault
+	Params map[string]string `json:"params,omitempty"`
+	// Headers to be included in all Vault requests.
+	Headers map[string]string `json:"headers,omitempty"`
+	// TLSServerName to use as the SNI host for TLS connections.
+	TLSServerName string `json:"tlsServerName,omitempty"`
+	// CACertFile containing the trusted PEM encoded CA certificate chain.
+	CACertFile string `json:"caCertFile,omitempty"`
+	// SkipTLSVerify for TLS connections.
+	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
+	// SkipChildToken creation.
+	// TODO: drop this as it probably only pertains to token auth
+	SkipChildToken bool `json:"skipChildToken,omitempty"`
+	// ChildTokenName to used when creating a child token.
+	// TODO: drop this as it probably only pertains to token auth
+	ChildTokenName string `json:"childTokenName"`
+	// AllowedNamespaces, is the list of Kubernetes namespaces that are allowed to be serviced.
+	// If none are provided all resources requesting this Auth will fail.
+	// TODO: support globbing?
+	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 
-	// Foo is an example field of VaultAuth. Edit vaultauth_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	AWSAuth *VaultAuthAWS `json:"awsAuth"`
 }
 
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Valid auth mechanism.
+	Valid bool `json:"valid"`
 }
 
 //+kubebuilder:object:root=true
