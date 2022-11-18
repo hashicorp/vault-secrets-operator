@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.0.1
+VERSION ?= 0.0.0-dev
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -47,7 +47,7 @@ ifeq ($(USE_IMAGE_DIGESTS), true)
 endif
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= hashicorp/vault-secrets-operator:$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.24.1
 
@@ -98,8 +98,12 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
-fmt: ## Run go fmt against code.
-	go fmt ./...
+fmt: ## Run gofumpt against code.
+	gofumpt -l -w .
+
+.PHONY: fmtcheck
+fmtcheck: ## Check formatting
+	@sh -c "'$(CURDIR)/scripts/gofmtcheck.sh'"
 
 .PHONY: vet
 vet: ## Run go vet against code.
@@ -121,11 +125,21 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} .
+	docker build -t ${IMG} . --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	docker push ${IMG}
+
+##@ CI
+
+.PHONY: ci-docker-build
+ci-docker-build: ## Build docker image with the manager (without generating assets)
+	docker build -t ${IMG} . --build-arg GO_VERSION=$(shell cat .go-version)
+
+.PHONY: ci-test
+ci-test: vet envtest ## Run tests in CI (without generating assets)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -v ./... -coverprofile cover.out
 
 ##@ Deployment
 
@@ -152,9 +166,8 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image --name vault-helm ${IMG}
+	kind load docker-image --name ${KIND_CLUSTER_NAME} ${IMG}
 	make deploy
-
 
 ##@ Build Dependencies
 
