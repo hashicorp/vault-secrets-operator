@@ -100,8 +100,8 @@ func (r *VaultSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	//status, _ := c.Sys().SealStatus()
-	//l.Info(fmt.Sprintf("Vault seal status %#v", status))
+	// status, _ := c.Sys().SealStatus()
+	// l.Info(fmt.Sprintf("Vault seal status %#v", status))
 
 	var refAfter time.Duration
 	if spec.RefreshAfter != "" {
@@ -162,7 +162,8 @@ func (r *VaultSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *VaultSecretReconciler) getVaultClient(ctx context.Context, spec secretsv1alpha1.VaultSecretSpec) (*api.Client,
-	error) {
+	error,
+) {
 	l := log.FromContext(ctx)
 	config := api.DefaultConfig()
 	// TODO: get this from config, probably from env var VAULT_ADDR=http://vault.demo.svc.cluster.local:8200
@@ -172,7 +173,7 @@ func (r *VaultSecretReconciler) getVaultClient(ctx context.Context, spec secrets
 		l.Error(err, "error setting up Vault API client")
 		return nil, err
 	}
-	//TODO: get this from the service account, setup k8s-auth
+	// TODO: get this from the service account, setup k8s-auth
 	c.SetToken("root")
 
 	l.Info(fmt.Sprintf("Getting Vault client, ns=%q", spec.Namespace))

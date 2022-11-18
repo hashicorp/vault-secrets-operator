@@ -1,5 +1,7 @@
+ARG GO_VERSION=latest
+
 # Build the manager binary
-FROM golang:1.19.2 as builder
+FROM golang:$GO_VERSION as builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests

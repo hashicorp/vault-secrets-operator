@@ -12,5 +12,5 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
 - name: controller
-  newName: vault-secrets-operator
+  newName: hashicorp/vault-secrets-operator
   newTag: latest
