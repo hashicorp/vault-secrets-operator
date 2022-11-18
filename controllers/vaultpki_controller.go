@@ -64,7 +64,7 @@ func (r *VaultPKIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	s := &secretsv1alpha1.VaultPKI{}
 	if err := r.Client.Get(ctx, req.NamespacedName, s); err != nil {
 		if apierrors.IsNotFound(err) {
-			//logger.Info(fmt.Sprintf("Request not found %#v", req))
+			// logger.Info(fmt.Sprintf("Request not found %#v", req))
 			return ctrl.Result{}, nil
 		}
 
@@ -197,7 +197,7 @@ func (r *VaultPKIReconciler) handleDeletion(ctx context.Context, l logr.Logger, 
 		if err := r.finalizePKI(ctx, l, s); err != nil {
 			l.Error(err, "finalizer failed")
 			// TODO: decide how to handle a failed finalizer
-			//return ctrl.Result{}, nil
+			// return ctrl.Result{}, nil
 		}
 
 		l.Info("Removing finalizer")
@@ -245,7 +245,6 @@ func (r *VaultPKIReconciler) finalizePKI(ctx context.Context, l logr.Logger, s *
 		if err := r.clearSecretData(ctx, l, s); err != nil {
 			return err
 		}
-
 	}
 	return nil
 }
@@ -304,10 +303,10 @@ func (r *VaultPKIReconciler) getVaultClient(l logr.Logger, spec secretsv1alpha1.
 		l.Error(err, "error setting up Vault API client")
 		return nil, err
 	}
-	//TODO: get this from the service account, setup k8s-auth
+	// TODO: get this from the service account, setup k8s-auth
 	c.SetToken("root")
 
-	//l.Info(fmt.Sprintf("Getting Vault client, ns=%q", spec.Namespace))
+	// l.Info(fmt.Sprintf("Getting Vault client, ns=%q", spec.Namespace))
 	if spec.Namespace != "" {
 		c.SetNamespace(spec.Namespace)
 	}
