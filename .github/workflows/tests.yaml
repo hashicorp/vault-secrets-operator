@@ -50,3 +50,58 @@ jobs:
 
       # TODO(tvoran): replace this with CRT build workflow
       - run: make ci-docker-build
+
+  integrationTest:
+    runs-on: ubuntu-latest
+    needs: [fmtcheck, test, get-go-version]
+    env:
+      KIND_CLUSTER_NAME: vault-secrets-operator
+    strategy:
+      fail-fast: false
+      matrix:
+        kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
+        vault-version: [1.10.9, 1.11.6, 1.12.2]
+    name: Integration test ${{ matrix.enterprise }} kind ${{ matrix.kind-k8s-version }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Create K8s Kind Cluster
+        uses: helm/kind-action@v1.4.0
+        with:
+          version: v0.16.0
+          cluster_name: $KIND_CLUSTER_NAME
+          config: integrationtest/kind/config.yaml
+          node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      # Must come _after_ kind-action, because the kind step also sets up a kubectl binary.
+      - uses: azure/setup-kubectl@v2.0
+        with:
+          version: 'v1.25.3'
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Build and deploy operator
+        run: make ci-docker-build ci-deploy-kind
+      - name: OSS tests
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_VERSION: ${{ matrix.vault-version }}
+          VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault
+        run: |
+          make setup-integration-test
+          make integration-test TESTARGS="-v"
+      - name: ENT tests
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
+          VAULT_VERSION: ${{ matrix.vault-version }}-ent
+          VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
+        run: |
+          make setup-integration-test-ent
+          make integration-test
