@@ -17,3 +17,11 @@ variable "k8s_config_path" {
 variable "vault_kv_mount_path" {
   default = "kvv2"
 }
+
+variable "vault_test_namespace" {
+  default = "tenant-1"
+}
+
+variable "vault_enterprise" {
+  default = "false"
+}

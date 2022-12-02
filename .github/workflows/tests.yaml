@@ -61,7 +61,7 @@ jobs:
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
         vault-version: [1.10.9, 1.11.6, 1.12.2]
-    name: Integration test ${{ matrix.enterprise }} kind ${{ matrix.kind-k8s-version }}
+    name: Integration test vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
       - uses: actions/checkout@v3
       - name: Create K8s Kind Cluster
@@ -99,9 +99,10 @@ jobs:
       - name: ENT tests
         env:
           INTEGRATION_TESTS: true
+          LICENSE_TMP: $RUNNER_TEMP
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_VERSION: ${{ matrix.vault-version }}-ent
-          VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
+          VAULT_ENT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
         run: |
           make setup-integration-test-ent
-          make integration-test
+          make integration-test-ent TESTARGS="-v"

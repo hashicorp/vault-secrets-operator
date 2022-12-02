@@ -15,20 +15,28 @@ import (
 )
 
 func TestVaultSecret_kv(t *testing.T) {
-	testNamespace := "test-tenant-1"
+	testK8sNamespace := "k8s-tenant-1"
 	testKvMountPath := "kvv2"
+	testVaultNamespace := ""
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
-	terraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
+	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
-		TerraformDir: "terraform-vaultsecret-kv",
+		TerraformDir: "vaultsecret-kv/terraform",
 		Vars: map[string]interface{}{
-			"k8s_test_namespace":  testNamespace,
+			"k8s_test_namespace":  testK8sNamespace,
 			"k8s_config_context":  "kind-" + os.Getenv("KIND_CLUSTER_NAME"),
 			"vault_kv_mount_path": testKvMountPath,
 		},
-	})
+	}
+	if _, ok := os.LookupEnv("ENT_TESTS"); ok {
+		testVaultNamespace = "vault-tenant-1"
+		t.Logf("setting for ent_tests")
+		terraformOptions.Vars["vault_enterprise"] = "true"
+		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
+	}
+	terraformOptions = terraform.WithDefaultRetryableErrors(t, terraformOptions)
 
 	// Clean up resources with "terraform destroy" at the end of the test.
 	defer terraform.Destroy(t, terraformOptions)
@@ -37,18 +45,18 @@ func TestVaultSecret_kv(t *testing.T) {
 	terraform.InitAndApply(t, terraformOptions)
 
 	// Set the secret in vault to be synced to kubernetes
-	vClient := getVaultClient(t)
+	vClient := getVaultClient(t, testVaultNamespace)
 	putSecret := map[string]interface{}{"password": "applejuice"}
 	_, err := vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", putSecret)
 	require.NoError(t, err)
 
 	// Path to the Kubernetes resource config we will test.
 	// TODO(tvoran): use client-go and the generated CRD types instead of yaml?
-	kubeResourcePath, err := filepath.Abs("vaultsecret_kv.yaml")
+	kubeResourcePath, err := filepath.Abs("vaultsecret-kv/vaultsecret_kv.yaml")
 	require.NoError(t, err)
 
 	// Setup the kubectl config and context.
-	options := k8s.NewKubectlOptions("kind-"+os.Getenv("KIND_CLUSTER_NAME"), "", testNamespace)
+	options := k8s.NewKubectlOptions("kind-"+os.Getenv("KIND_CLUSTER_NAME"), "", testK8sNamespace)
 
 	// At the end of the test, run "kubectl delete" to clean up any resources that were created.
 	defer k8s.KubectlDelete(t, options, kubeResourcePath)
@@ -59,9 +67,9 @@ func TestVaultSecret_kv(t *testing.T) {
 	// TODO(tvoran): poll instead of sleep
 	time.Sleep(10 * time.Second)
 
-	k8s.WaitUntilSecretAvailable(t, &k8s.KubectlOptions{Namespace: testNamespace}, "secret1", 10, 1*time.Second)
+	k8s.WaitUntilSecretAvailable(t, &k8s.KubectlOptions{Namespace: testK8sNamespace}, "secret1", 10, 1*time.Second)
 
-	rawSecret := k8s.GetSecret(t, &k8s.KubectlOptions{Namespace: testNamespace}, "secret1")
+	rawSecret := k8s.GetSecret(t, &k8s.KubectlOptions{Namespace: testK8sNamespace}, "secret1")
 	require.NotNil(t, rawSecret)
 	require.NotEmpty(t, rawSecret.Data)
 
@@ -79,7 +87,7 @@ func TestVaultSecret_kv(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	rawSecret = k8s.GetSecret(t, &k8s.KubectlOptions{Namespace: testNamespace}, "secret1")
+	rawSecret = k8s.GetSecret(t, &k8s.KubectlOptions{Namespace: testK8sNamespace}, "secret1")
 	require.NotNil(t, rawSecret)
 	require.NotEmpty(t, rawSecret.Data)
 	err = json.Unmarshal(rawSecret.Data["data"], &checkSecret)

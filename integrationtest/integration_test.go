@@ -24,11 +24,14 @@ func TestMain(m *testing.M) {
 	}
 }
 
-func getVaultClient(t *testing.T) *api.Client {
+func getVaultClient(t *testing.T, namespace string) *api.Client {
 	t.Helper()
 	client, err := api.NewClient(nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if namespace != "" {
+		client.SetNamespace(namespace)
 	}
 	return client
 }

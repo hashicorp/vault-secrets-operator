@@ -31,9 +31,24 @@ provider "vault" {
   # Configuration options
 }
 
-resource "vault_mount" "kvv2" {
+resource "vault_mount" "kvv2-ent" {
+  count = var.vault_enterprise == "true" ? 1 : 0
+  namespace = vault_namespace.test[count.index].path
   path        = var.vault_kv_mount_path
   type        = "kv"
   options     = { version = "2" }
   description = "KV Version 2 secret engine mount"
+}
+
+resource "vault_mount" "kvv2" {
+  count = var.vault_enterprise == "false" ? 1 : 0
+  path        = var.vault_kv_mount_path
+  type        = "kv"
+  options     = { version = "2" }
+  description = "KV Version 2 secret engine mount"
+}
+
+resource "vault_namespace" "test" {
+  count = var.vault_enterprise == "true" ? 1 : 0
+  path = var.vault_test_namespace
 }

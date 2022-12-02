@@ -7,7 +7,10 @@ VERSION ?= 0.0.0-dev
 
 VAULT_VERSION ?= latest
 VAULT_IMAGE_REPO ?= hashicorp/vault
+VAULT_ENT_IMAGE_REPO ?= hashicorp/vault-enterprise
+K8S_VAULT_NAMESPACE ?= demo
 KIND_K8S_VERSION ?= v1.25.3
+LICENSE_TMP ?= $(TMPDIR)
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -149,6 +152,10 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 integration-test:
 	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... -v -count=1 -timeout=10m
 
+.PHONY: integration-test-ent
+integration-test-ent:
+	make integration-test ENT_TESTS=true
+
 .PHONY: setup-kind
 # create a kind cluster for running the acceptance tests locally
 setup-kind:
@@ -168,16 +175,18 @@ delete-kind:
 .PHONY: setup-integration-test-common
 setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license)
 setup-integration-test-common: teardown-integration-test
+	kubectl create namespace ${K8S_VAULT_NAMESPACE}
+
 	# don't log the license
-	printenv VAULT_LICENSE_CI > $(RUNNER_TEMP)/vault-license.txt || true
-	if [ -s $(RUNNER_TEMP)/vault-license.txt ]; then \
-		kubectl -n test create secret generic vault-license --from-file license=$(RUNNER_TEMP)/vault-license.txt; \
-		rm -rf $(RUNNER_TEMP)/vault-license.txt; \
+	printenv VAULT_LICENSE_CI > ${LICENSE_TMP}/vault-license.txt || true
+	if [ -s ${LICENSE_TMP}/vault-license.txt ]; then \
+		kubectl -n ${K8S_VAULT_NAMESPACE} create secret generic vault-license --from-file license=${LICENSE_TMP}/vault-license.txt; \
+		rm -rf ${LICENSE_TMP}/vault-license.txt; \
 	fi
 
 	helm install vault vault --repo https://helm.releases.hashicorp.com --version=0.23.0 \
 		--wait --timeout=5m \
-		--namespace=demo \
+		--namespace=${K8S_VAULT_NAMESPACE} \
 		--create-namespace \
 		--set server.logLevel=debug \
 		--set server.dev.enabled=true \
@@ -185,16 +194,17 @@ setup-integration-test-common: teardown-integration-test
 		--set server.image.repository=$(VAULT_IMAGE_REPO) \
 		$(SET_LICENSE) \
 		--set injector.enabled=false
-	kubectl patch --namespace=demo statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
+	kubectl patch --namespace=${K8S_VAULT_NAMESPACE} statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
 
-	kubectl delete --namespace=demo pod vault-0
-	kubectl wait --namespace=demo --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
+	kubectl delete --namespace=${K8S_VAULT_NAMESPACE} pod vault-0
+	kubectl wait --namespace=${K8S_VAULT_NAMESPACE} --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
 
 
 .PHONY: setup-integration-test
 setup-integration-test: setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test
 
 .PHONY: setup-integration-test-ent
+setup-integration-test-ent: VAULT_IMAGE_REPO=$(VAULT_ENT_IMAGE_REPO)
 setup-integration-test-ent: check-license setup-integration-test-common ci-docker-build ci-deploy-kind
 
 .PHONY: ci-deploy
@@ -214,8 +224,8 @@ check-license:
 .PHONY: teardown-integration-test
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
-	helm uninstall vault --namespace=demo || true
-	kubectl delete --ignore-not-found namespace demo
+	helm uninstall vault --namespace=${K8S_VAULT_NAMESPACE} || true
+	kubectl delete --ignore-not-found namespace ${K8S_VAULT_NAMESPACE}
 
 ##@ Deployment
 
