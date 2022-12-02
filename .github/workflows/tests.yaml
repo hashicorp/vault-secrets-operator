@@ -61,11 +61,26 @@ jobs:
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
         vault-version: [1.10.9, 1.11.6, 1.12.2]
+        # TODO(tvoran): exclude the combos below since they're not necessary. we
+        # want to test the operator with the different k8s versions, and with
+        # the different vault versions, but we don't care about testing all the
+        # k8s versions against all the vault versions.
+        # exclude:
+        #   kind-k8s-version: [1.22.15, 1.23.13, 1.24.7]
+        #   vault-version: [1.10.9, 1.11.6]
         exclude:
-          kind-k8s-version: [1.22.15, 1.23.13, 1.24.7]
-          vault-version: [1.10.9, 1.11.6]
+          - kind-k8s-version: 1.24.7
+          - kind-k8s-version: 1.23.13
+          - kind-k8s-version: 1.22.15
+        include:
+          - kind-k8s-version: 1.24.7
+            vault-version: 1.12.2
+          - kind-k8s-version: 1.23.13
+            vault-version: 1.12.2
+          - kind-k8s-version: 1.22.15
+            vault-version: 1.12.2
 
-    name: Integration test vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
+    name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
       - uses: actions/checkout@v3
       - name: Create K8s Kind Cluster
