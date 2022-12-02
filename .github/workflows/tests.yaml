@@ -61,6 +61,10 @@ jobs:
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
         vault-version: [1.10.9, 1.11.6, 1.12.2]
+        exclude:
+          kind-k8s-version: [1.22.15, 1.23.13, 1.24.7]
+          vault-version: [1.10.9, 1.11.6]
+
     name: Integration test vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
       - uses: actions/checkout@v3
@@ -71,10 +75,6 @@ jobs:
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: integrationtest/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
-      # Must come _after_ kind-action, because the kind step also sets up a kubectl binary.
-      - uses: azure/setup-kubectl@v2.0
-        with:
-          version: 'v1.25.3'
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
