@@ -61,11 +61,12 @@ jobs:
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
         vault-version: [1.10.9, 1.11.6, 1.12.2]
-        # TODO(tvoran): exclude the combos below since they're not necessary. we
-        # want to test the operator with the different k8s versions, and with
-        # the different vault versions, but we don't care about testing all the
-        # k8s versions against all the vault versions.
-        # exclude:
+        # Note: The below exclude and include's are a bit awkward, but they
+        # allow us to exclude the combos we don't really need. We want to test
+        # the operator with the different k8s versions, and with the different
+        # vault versions, but we don't care about testing all the k8s versions
+        # against all the vault versions.
+        # Combos to exclude:
         #   kind-k8s-version: [1.22.15, 1.23.13, 1.24.7]
         #   vault-version: [1.10.9, 1.11.6]
         exclude:
