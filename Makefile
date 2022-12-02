@@ -132,17 +132,17 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} . --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) . --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+	docker push $(IMG)
 
 ##@ CI
 
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the manager (without generating assets)
-	docker build -t ${IMG} . --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) . --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
@@ -159,34 +159,34 @@ integration-test-ent:
 .PHONY: setup-kind
 # create a kind cluster for running the acceptance tests locally
 setup-kind:
-	kind get clusters | grep --silent "^${KIND_CLUSTER_NAME}$$" || \
+	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
 	kind create cluster \
-		--image kindest/node:${KIND_K8S_VERSION} \
-		--name ${KIND_CLUSTER_NAME}  \
+		--image kindest/node:$(KIND_K8S_VERSION) \
+		--name $(KIND_CLUSTER_NAME)  \
 		--config $(CURDIR)/integrationtest/kind/config.yaml
-	kubectl config use-context kind-${KIND_CLUSTER_NAME}
+	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
 
 .PHONY: delete-kind
 # delete the kind cluster
 delete-kind:
-	kind delete cluster --name ${KIND_CLUSTER_NAME} || true
+	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
 
 # Create Vault inside the cluster with a locally-built version of kubernetes secrets.
 .PHONY: setup-integration-test-common
 setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license)
 setup-integration-test-common: teardown-integration-test
-	kubectl create namespace ${K8S_VAULT_NAMESPACE}
+	kubectl create namespace $(K8S_VAULT_NAMESPACE)
 
 	# don't log the license
-	printenv VAULT_LICENSE_CI > ${LICENSE_TMP}/vault-license.txt || true
-	if [ -s ${LICENSE_TMP}/vault-license.txt ]; then \
-		kubectl -n ${K8S_VAULT_NAMESPACE} create secret generic vault-license --from-file license=${LICENSE_TMP}/vault-license.txt; \
-		rm -rf ${LICENSE_TMP}/vault-license.txt; \
+	printenv VAULT_LICENSE_CI > $(LICENSE_TMP)/vault-license.txt || true
+	if [ -s $(LICENSE_TMP)/vault-license.txt ]; then \
+		kubectl -n $(K8S_VAULT_NAMESPACE) create secret generic vault-license --from-file license=$(LICENSE_TMP)/vault-license.txt; \
+		rm -rf $(LICENSE_TMP)/vault-license.txt; \
 	fi
 
 	helm install vault vault --repo https://helm.releases.hashicorp.com --version=0.23.0 \
 		--wait --timeout=5m \
-		--namespace=${K8S_VAULT_NAMESPACE} \
+		--namespace=$(K8S_VAULT_NAMESPACE) \
 		--create-namespace \
 		--set server.logLevel=debug \
 		--set server.dev.enabled=true \
@@ -194,10 +194,10 @@ setup-integration-test-common: teardown-integration-test
 		--set server.image.repository=$(VAULT_IMAGE_REPO) \
 		$(SET_LICENSE) \
 		--set injector.enabled=false
-	kubectl patch --namespace=${K8S_VAULT_NAMESPACE} statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
+	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
 
-	kubectl delete --namespace=${K8S_VAULT_NAMESPACE} pod vault-0
-	kubectl wait --namespace=${K8S_VAULT_NAMESPACE} --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
+	kubectl delete --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
+	kubectl wait --namespace=$(K8S_VAULT_NAMESPACE) --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
 
 
 .PHONY: setup-integration-test
@@ -209,12 +209,12 @@ setup-integration-test-ent: check-license setup-integration-test-common ci-docke
 
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 .PHONY: ci-deploy-kind
 ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
-	kind load docker-image --name ${KIND_CLUSTER_NAME} ${IMG}
+	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
 	make ci-deploy
 
 .PHONY: check-license
@@ -224,8 +224,8 @@ check-license:
 .PHONY: teardown-integration-test
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
-	helm uninstall vault --namespace=${K8S_VAULT_NAMESPACE} || true
-	kubectl delete --ignore-not-found namespace ${K8S_VAULT_NAMESPACE}
+	helm uninstall vault --namespace=$(K8S_VAULT_NAMESPACE) || true
+	kubectl delete --ignore-not-found namespace $(K8S_VAULT_NAMESPACE)
 
 ##@ Deployment
 
@@ -243,7 +243,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 .PHONY: undeploy
@@ -252,7 +252,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image --name ${KIND_CLUSTER_NAME} ${IMG}
+	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
 	make deploy
 
 ##@ Build Dependencies
