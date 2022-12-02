@@ -99,10 +99,9 @@ jobs:
       - name: ENT tests
         env:
           INTEGRATION_TESTS: true
-          LICENSE_TMP: ${{ env.RUNNER_TEMP }}
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_VERSION: ${{ matrix.vault-version }}-ent
           VAULT_ENT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
         run: |
-          make setup-integration-test-ent
+          make setup-integration-test-ent LICENSE_TMP=$RUNNER_TEMP
           make integration-test-ent TESTARGS="-v"
