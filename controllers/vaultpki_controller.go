@@ -319,23 +319,3 @@ func checkPKICertExpiry(expiration int64, offset time.Duration) bool {
 
 	return now.After(expiry)
 }
-
-/*
-: "VaultPKI", "vaultPKI": {"name":"vaultpki-sample-tenant-1","namespace":"tenant-1"}, "namespace": "tenant-1", "name": "vaultpki-sample-tenant-1", "reconcileID": "f899f51b-766c-410c-9235-0fd1b245099c"}
-1.6601028624699044e+09  ERROR   failed to remove finalizer      {"controller": "vaultpki", "controllerGroup": "secrets.hashicorp.com", "controllerKind": "VaultPKI", "vaultPKI": {"name":"vaultpki-sample-tenant-1","namespace":"tenant-1"}, "namespace": "tenant-1", "name": "vaultpki-sample-tenant-1", "reconcileID": "f899f51b-766c-410c-9235-0fd1b245099c", "error": "client rate limiter Wait returned an error: context canceled"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Reconcile
-        /go/pkg/mod/sigs.k8s.io/controller-runtime@v0.12.3/pkg/internal/controller/controller.go:121
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-        /go/pkg/mod/sigs.k8s.io/controller-runtime@v0.12.3/pkg/internal/controller/controller.go:320
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-        /go/pkg/mod/sigs.k8s.io/controller-runtime@v0.12.3/pkg/internal/controller/controller.go:273
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-        /go/pkg/mod/sigs.k8s.io/controller-runtime@v0.12.3/pkg/internal/controller/controller.go:234
-1.6601028624704008e+09  ERROR   Reconciler error        {"controller": "vaultpki", "controllerGroup": "secrets.hashicorp.com", "controllerKind": "VaultPKI", "vaultPKI": {"name":"vaultpki-sample-tenant-1","namespace":"tenant-1"}, "namespace": "tenant-1", "name": "vaultpki-sample-tenant-1", "reconcileID": "f899f51b-766c-410c-9235-0fd1b245099c", "error": "client rate limiter Wait returned an error: context canceled"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-        /go/pkg/mod/sigs.k8s.io/controller-runtime@v0.12.3/pkg/internal/controller/controller.go:273
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-        /go/pkg/mod/sigs.k8s.io/controller-runtime@v0.12.3/pkg/internal/controller/controller.go:234
-1.660102862470549e+09   INFO    All workers finished    {"controller": "vaultpki", "controllerGroup": "secrets.hashicorp.com", "controllerKind": "VaultPKI"}
-
-*/

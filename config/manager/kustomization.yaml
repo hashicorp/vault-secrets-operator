@@ -13,4 +13,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: hashicorp/vault-secrets-operator
-  newTag: latest
+  newTag: 0.0.0-dev
