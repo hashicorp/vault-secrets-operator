@@ -25,8 +25,8 @@ import (
 
 // VaultPKISpec defines the desired state of VaultPKI
 type VaultPKISpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// AuthName of the VaultAuth resource
+	AuthName string `json:"authName"`
 
 	// Namespace to get the secret from
 	Namespace string `json:"namespace,omitempty"`
