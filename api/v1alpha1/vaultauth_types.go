@@ -29,8 +29,8 @@ type VaultAuthKubernetes struct{}
 
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
-	// Address to the Vault server -- not sure if we want to support more than one?
-	Address string `json:"address"`
+	// ConnectionName of the corresponding VaultConnection CustomResource.
+	ConnectionName string `json:"connectionName"`
 	// Method to use when authenticating to Vault.
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
@@ -39,24 +39,8 @@ type VaultAuthSpec struct {
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.
 	Headers map[string]string `json:"headers,omitempty"`
-	// TLSServerName to use as the SNI host for TLS connections.
-	TLSServerName string `json:"tlsServerName,omitempty"`
-	// CACertFile containing the trusted PEM encoded CA certificate chain.
-	CACertFile string `json:"caCertFile,omitempty"`
-	// SkipTLSVerify for TLS connections.
-	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
-	// SkipChildToken creation.
-	// TODO: drop this as it probably only pertains to token auth
-	SkipChildToken bool `json:"skipChildToken,omitempty"`
-	// ChildTokenName to used when creating a child token.
-	// TODO: drop this as it probably only pertains to token auth
-	ChildTokenName string `json:"childTokenName"`
-	// AllowedNamespaces, is the list of Kubernetes namespaces that are allowed to be serviced.
-	// If none are provided all resources requesting this Auth will fail.
-	// TODO: support globbing?
-	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
-
-	AWSAuth *VaultAuthAWS `json:"awsAuth"`
+	// ServiceAccount to use for authenticating to Vault.
+	ServiceAccount string `json:"serviceAccount"`
 }
 
 // VaultAuthStatus defines the observed state of VaultAuth

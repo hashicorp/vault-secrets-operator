@@ -1,0 +1,31 @@
+# permissions for end users to edit vaultconnections.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: vaultconnection-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: vault-secrets-operator
+    app.kubernetes.io/part-of: vault-secrets-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: vaultconnection-editor-role
+rules:
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultconnections
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultconnections/status
+  verbs:
+  - get
