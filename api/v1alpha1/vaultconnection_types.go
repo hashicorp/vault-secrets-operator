@@ -9,17 +9,24 @@ import (
 
 // VaultConnectionSpec defines the desired state of VaultConnection
 type VaultConnectionSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Address of the Vault server
+	// Address to the Vault server -- not sure if we want to support more than one?
 	Address string `json:"address"`
+	// Headers to be included in all Vault requests.
+	Headers map[string]string `json:"headers,omitempty"`
+	// TLSServerName to use as the SNI host for TLS connections.
+	TLSServerName string `json:"tlsServerName,omitempty"`
+	// CACertSecret containing the trusted PEM encoded CA certificate chain.
+	CACertSecret string `json:"caCertSecret,omitempty"`
+	// SkipTLSVerify for TLS connections.
+	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
+	// AllowedNamespaces for this Connection
+	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 }
 
 // VaultConnectionStatus defines the observed state of VaultConnection
 type VaultConnectionStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Valid auth mechanism.
+	Valid bool `json:"valid"`
 }
 
 //+kubebuilder:object:root=true
