@@ -1,3 +1,6 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
 ## Append samples you want in your CSV to this file as resources ##
 resources:
 - secrets_v1alpha1_vaultsecret.yaml
