@@ -171,7 +171,8 @@ delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
 
 .PHONY: setup-integration-test-common
-setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license) ## Create Vault inside the cluster
+## Create Vault inside the cluster
+setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license)
 setup-integration-test-common: teardown-integration-test
 	kubectl create namespace $(K8S_VAULT_NAMESPACE)
 
@@ -216,7 +217,8 @@ ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without gener
 	make ci-deploy
 
 .PHONY: check-license
-check-license: ## check that VAULT_LICENSE_CI is set
+## check that VAULT_LICENSE_CI is set
+check-license:
 	(printenv VAULT_LICENSE_CI > /dev/null) || (echo "VAULT_LICENSE_CI must be set"; exit 1)
 
 .PHONY: teardown-integration-test
