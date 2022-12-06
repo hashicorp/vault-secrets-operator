@@ -2,16 +2,15 @@ package integrationtest
 
 import (
 	"context"
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/terraform"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
 func TestVaultSecret_kv(t *testing.T) {
@@ -50,34 +49,29 @@ func TestVaultSecret_kv(t *testing.T) {
 	_, err := vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", putSecret)
 	require.NoError(t, err)
 
-	// Path to the Kubernetes resource config we will test.
-	// TODO(tvoran): use client-go and the generated CRD types instead of yaml?
-	kubeResourcePath, err := filepath.Abs("vaultsecret-kv/vaultsecret_kv.yaml")
+	// Create a VaultSecret CR to trigger the sync
+	testVaultSecret := &secretsv1alpha1.VaultSecret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vaultsecret-test-tenant-1",
+			Namespace: testK8sNamespace,
+		},
+		Spec: secretsv1alpha1.VaultSecretSpec{
+			Namespace:    testVaultNamespace,
+			Mount:        testKvMountPath,
+			Type:         "kvv2",
+			Name:         "secret",
+			Dest:         "secret1",
+			RefreshAfter: "5s",
+		},
+	}
+	crdClient := getCRDClient(t)
+
+	defer crdClient.Delete(context.Background(), testVaultSecret)
+	err = crdClient.Create(context.Background(), testVaultSecret)
 	require.NoError(t, err)
 
-	// Setup the kubectl config and context.
-	options := k8s.NewKubectlOptions("kind-"+os.Getenv("KIND_CLUSTER_NAME"), "", testK8sNamespace)
-
-	// At the end of the test, run "kubectl delete" to clean up any resources that were created.
-	defer k8s.KubectlDelete(t, options, kubeResourcePath)
-
-	// Run `kubectl apply` to deploy. Fail the test if there are any errors.
-	k8s.KubectlApply(t, options, kubeResourcePath)
-
-	// TODO(tvoran): poll instead of sleep
-	time.Sleep(10 * time.Second)
-
-	k8s.WaitUntilSecretAvailable(t, &k8s.KubectlOptions{Namespace: testK8sNamespace}, "secret1", 10, 1*time.Second)
-
-	rawSecret := k8s.GetSecret(t, &k8s.KubectlOptions{Namespace: testK8sNamespace}, "secret1")
-	require.NotNil(t, rawSecret)
-	require.NotEmpty(t, rawSecret.Data)
-
-	var checkSecret map[string]interface{}
-	err = json.Unmarshal(rawSecret.Data["data"], &checkSecret)
-	require.NoError(t, err)
-	t.Logf("secret data was %+v", checkSecret["data"])
-	assert.Equal(t, putSecret, checkSecret["data"])
+	// Wait for the operator to sync Vault secret --> k8s Secret
+	waitForSecretData(t, 10, 1*time.Second, testVaultSecret.Spec.Dest, testVaultSecret.ObjectMeta.Namespace, putSecret)
 
 	// Change the secret in vault, wait for the VaultSecret refresh, and check
 	// the result
@@ -85,12 +79,5 @@ func TestVaultSecret_kv(t *testing.T) {
 	_, err = vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", updatedSecret)
 	require.NoError(t, err)
 
-	time.Sleep(10 * time.Second)
-
-	rawSecret = k8s.GetSecret(t, &k8s.KubectlOptions{Namespace: testK8sNamespace}, "secret1")
-	require.NotNil(t, rawSecret)
-	require.NotEmpty(t, rawSecret.Data)
-	err = json.Unmarshal(rawSecret.Data["data"], &checkSecret)
-	require.NoError(t, err)
-	assert.Equal(t, updatedSecret, checkSecret["data"])
+	waitForSecretData(t, 10, 1*time.Second, testVaultSecret.Spec.Dest, testVaultSecret.ObjectMeta.Namespace, updatedSecret)
 }
