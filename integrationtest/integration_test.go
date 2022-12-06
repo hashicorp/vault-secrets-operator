@@ -33,7 +33,6 @@ func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		os.Setenv("VAULT_ADDR", "http://127.0.0.1:38300")
 		os.Setenv("VAULT_TOKEN", "root")
-		// TODO(tvoran): setup terraform here?
 		os.Exit(m.Run())
 	}
 }

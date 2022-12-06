@@ -11,6 +11,7 @@ VAULT_ENT_IMAGE_REPO ?= hashicorp/vault-enterprise
 K8S_VAULT_NAMESPACE ?= demo
 KIND_K8S_VERSION ?= v1.25.3
 LICENSE_TMP ?= $(TMPDIR)
+VAULT_HELM_VERSION ?= 0.23.0
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -149,16 +150,15 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -v ./... -coverprofile cover.out
 
 .PHONY: integration-test
-integration-test:
+integration-test: ## Run integration tests for Vault OSS
 	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... -v -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
-integration-test-ent:
+integration-test-ent: ## Run integration tests for Vault ENT
 	make integration-test ENT_TESTS=true
 
 .PHONY: setup-kind
-# create a kind cluster for running the acceptance tests locally
-setup-kind:
+setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
 	kind create cluster \
 		--image kindest/node:$(KIND_K8S_VERSION) \
@@ -167,13 +167,11 @@ setup-kind:
 	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
 
 .PHONY: delete-kind
-# delete the kind cluster
-delete-kind:
+delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
 
-# Create Vault inside the cluster with a locally-built version of kubernetes secrets.
 .PHONY: setup-integration-test-common
-setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license)
+setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license) ## Create Vault inside the cluster
 setup-integration-test-common: teardown-integration-test
 	kubectl create namespace $(K8S_VAULT_NAMESPACE)
 
@@ -184,7 +182,7 @@ setup-integration-test-common: teardown-integration-test
 		rm -rf $(LICENSE_TMP)/vault-license.txt; \
 	fi
 
-	helm install vault vault --repo https://helm.releases.hashicorp.com --version=0.23.0 \
+	helm install vault vault --repo https://helm.releases.hashicorp.com --version=$(VAULT_HELM_VERSION) \
 		--wait --timeout=5m \
 		--namespace=$(K8S_VAULT_NAMESPACE) \
 		--create-namespace \
@@ -201,11 +199,11 @@ setup-integration-test-common: teardown-integration-test
 
 
 .PHONY: setup-integration-test
-setup-integration-test: setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test
+setup-integration-test: setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test (Vault OSS, build and deploy operator)
 
 .PHONY: setup-integration-test-ent
 setup-integration-test-ent: VAULT_IMAGE_REPO=$(VAULT_ENT_IMAGE_REPO)
-setup-integration-test-ent: check-license setup-integration-test-common ci-docker-build ci-deploy-kind
+setup-integration-test-ent: check-license setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test (Vault ENT, build and deploy operator)
 
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
@@ -218,7 +216,7 @@ ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without gener
 	make ci-deploy
 
 .PHONY: check-license
-check-license:
+check-license: ## check that VAULT_LICENSE_CI is set
 	(printenv VAULT_LICENSE_CI > /dev/null) || (echo "VAULT_LICENSE_CI must be set"; exit 1)
 
 .PHONY: teardown-integration-test
