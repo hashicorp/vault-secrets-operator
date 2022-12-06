@@ -1,3 +1,6 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
 resources:
 - manager.yaml
 
@@ -13,4 +16,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: hashicorp/vault-secrets-operator
-  newTag: latest
+  newTag: 0.0.0-dev
