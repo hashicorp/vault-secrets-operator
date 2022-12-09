@@ -1,0 +1,51 @@
+# Generic Secret rotation
+@startuml
+title Generic secret rotation
+autonumber
+alt#Gold #LightBlue Happy Path: Dynamic Secret Rotation
+    SecretsOperator -> VaultAPI : Secret within expiry window; GET Secret for path
+    VaultAPI -> SecretsOperator : Secret Response
+    SecretsOperator -> KubernetesSecretAPI : Store Secret
+    KubernetesSecretAPI -> SecretsOperator : Update Response
+    SecretsOperator -> SecretsOperator : Execute Post Rotation functions
+    SecretsOperator -> CustomResource : Update Status metadata
+    return Schedule another reconciliation based on TTL
+end
+caption figure 1
+@enduml
+
+# PKI
+@startuml
+title PKI certificate rotation/renewal
+autonumber
+alt#Gold #LightBlue Happy Path: PKICert Rotation
+    SecretsOperator -> VaultAPI : Secret within expiry window; Issue new certificate
+    VaultAPI -> SecretsOperator : Secret response
+    SecretsOperator -> KubernetesSecretAPI : Store Secret
+    KubernetesSecretAPI -> SecretsOperator : Update Response
+    SecretsOperator -> KubernetesAPI : Update PKICert Status metadata
+    KubernetesAPI -> SecretsOperator : Update PKICert Status response
+    SecretsOperator -> VaultAPI : Revoke old certificate
+    VaultAPI -> SecretsOperator : Revocation response
+    SecretsOperator -> SecretsOperator : Execute Post Rotation functions
+    return Schedule another reconciliation based on exipry
+caption figure 1
+end
+@enduml
+
+# Dynamic
+@startuml
+title Dynamic Secret rotation
+autonumber
+alt#Gold #LightBlue Happy Path: DynamicSecret Rotation
+    SecretsOperator -> VaultAPI : Secret within expiry window; GET Secret for path
+    VaultAPI -> SecretsOperator : Secret response
+    SecretsOperator -> KubernetesSecretAPI : Store Secret
+    KubernetesSecretAPI -> SecretsOperator : Update Response
+    SecretsOperator -> KubernetesAPI : Update DynamicSecret Status metadata
+    KubernetesAPI -> SecretsOperator : Update DynamicSecret Status response
+    SecretsOperator -> SecretsOperator : Execute Post Rotation functions
+    return Schedule another reconciliation based on TTL
+end
+caption figure 1
+@enduml
