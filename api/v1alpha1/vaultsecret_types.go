@@ -12,8 +12,9 @@ import (
 
 // VaultSecretSpec defines the desired state of VaultSecret
 type VaultSecretSpec struct {
-	// ConnectionName references a VaultConnection in the same namespace
-	ConnectionName string `json:"connectionName"`
+	// VaultConnectionRef references a VaultConnection in the same namespace
+	// TODO(tvoran): move this to VaultAuth when that's in place
+	VaultConnectionRef string `json:"vaultConnectionRef"`
 	// Namespace to get the secret from
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
