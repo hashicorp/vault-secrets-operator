@@ -47,6 +47,3 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - run: make ci-test
-
-      # TODO(tvoran): replace this with CRT build workflow
-      - run: make ci-docker-build
