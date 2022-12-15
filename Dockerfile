@@ -31,15 +31,15 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o $BIN_NAME main.go
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot as dev
 WORKDIR /
-COPY --from=dev-builder /workspace/$BIN_NAME .
+COPY --from=dev-builder /workspace/$BIN_NAME /
 USER 65532:65532
 
 ENTRYPOINT ["/vault-secrets-operator"]
 
 # default release image
 # -----------------------------------
-# FROM gcr.io/distroless/static:nonroot as release-default
-FROM alpine as release-default
+FROM gcr.io/distroless/static:nonroot as release-default
+# FROM alpine as release-default
 
 ENV BIN_NAME=vault-secrets-operator
 ARG PRODUCT_VERSION
