@@ -6,14 +6,13 @@ package vault
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
 type PKICertResponse struct {
@@ -65,17 +64,42 @@ func MarshalSecretData(resp *api.Secret) (map[string][]byte, error) {
 	return data, nil
 }
 
-// MakeVaultClient creates a Vault API client from the config in the
-// VaultConnection.Spec
-func MakeVaultClient(ctx context.Context, vaultConnection *secretsv1alpha1.VaultConnection, k8sClient client.Client) (*api.Client, error) {
+// VaultClientConfig contains the connection and auth information to construct a
+// Vault client
+type VaultClientConfig struct {
+	// CACertSecretRef is the name of a k8 secret that contains a data key
+	// "ca.crt" that holds a CA cert that can be used to validate the
+	// certificate presented by the Vault server
+	CACertSecretRef string
+	// K8sNamespace the namespace of the CACertSecretRef secret
+	K8sNamespace string
+	// Address is the URL of the Vault server
+	Address string
+	// SkipTLSVerify controls whether the Vault server's TLS certificate is
+	// verified
+	SkipTLSVerify bool
+	// TLSServerName is the name to use as the SNI host when connecting via TLS
+	// to Vault
+	TLSServerName string
+	// VaultNamespace is the namespace in Vault to auth to
+	VaultNamespace string
+	// Token is the Vault token result from successful auth
+	Token string
+}
+
+// MakeVaultClient creates a Vault API client from a VaultClientConfig
+func MakeVaultClient(ctx context.Context, vaultConfig *VaultClientConfig, k8sClient client.Client) (*api.Client, error) {
 	l := log.FromContext(ctx)
+	if vaultConfig == nil {
+		return nil, fmt.Errorf("VaultClientConfig was nil")
+	}
 
 	vaultCAbytes := []byte{}
-	if vaultConnection.Spec.CACertSecretRef != "" {
+	if vaultConfig.CACertSecretRef != "" {
 		vaultCASecret := &corev1.Secret{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{
-			Namespace: vaultConnection.ObjectMeta.Namespace,
-			Name:      vaultConnection.Spec.CACertSecretRef,
+			Namespace: vaultConfig.K8sNamespace,
+			Name:      vaultConfig.CACertSecretRef,
 		}, vaultCASecret); err != nil {
 			return nil, err
 		}
@@ -84,10 +108,10 @@ func MakeVaultClient(ctx context.Context, vaultConnection *secretsv1alpha1.Vault
 
 	config := api.DefaultConfig()
 
-	config.Address = vaultConnection.Spec.Address
+	config.Address = vaultConfig.Address
 	config.ConfigureTLS(&api.TLSConfig{
-		Insecure:      vaultConnection.Spec.SkipTLSVerify,
-		TLSServerName: vaultConnection.Spec.TLSServerName,
+		Insecure:      vaultConfig.SkipTLSVerify,
+		TLSServerName: vaultConfig.TLSServerName,
 		CACertBytes:   vaultCAbytes,
 	})
 

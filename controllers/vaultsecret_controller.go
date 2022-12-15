@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
 // VaultSecretReconciler reconciles a VaultSecret object
@@ -78,12 +76,12 @@ func (r *VaultSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	l.Info(fmt.Sprintf("%#v", sec1))
 
-	vc, err := r.getVaultConnection(ctx, s)
+	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	c, err := r.getVaultClient(ctx, spec, vc)
+	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -153,43 +151,10 @@ func (r *VaultSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *VaultSecretReconciler) getVaultClient(ctx context.Context, vaultSecretSpec secretsv1alpha1.VaultSecretSpec, vaultConnection *secretsv1alpha1.VaultConnection) (*api.Client,
-	error,
-) {
-	l := log.FromContext(ctx)
-
-	c, err := vault.MakeVaultClient(ctx, vaultConnection, r.Client)
-	if err != nil {
-		l.Error(err, "error setting up Vault API client")
-		return nil, err
-	}
-	// TODO: get this from the service account, setup k8s-auth
-	c.SetToken("root")
-
-	l.Info(fmt.Sprintf("Getting Vault client, ns=%q", vaultSecretSpec.Namespace))
-	if vaultSecretSpec.Namespace != "" {
-		c.SetNamespace(vaultSecretSpec.Namespace)
-	}
-	return c, nil
-}
-
 func (r *VaultSecretReconciler) getKVV2Path(mount, name string) string {
 	return joinPath(mount, "data", name)
 }
 
 func joinPath(parts ...string) string {
 	return strings.Join(parts, "/")
-}
-
-func (r *VaultSecretReconciler) getVaultConnection(ctx context.Context, vaultSecret secretsv1alpha1.VaultSecret) (*secretsv1alpha1.VaultConnection, error) {
-	l := log.FromContext(ctx)
-	connObj := &secretsv1alpha1.VaultConnection{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: vaultSecret.ObjectMeta.Namespace,
-		Name:      vaultSecret.Spec.VaultConnectionRef,
-	}, connObj); err != nil {
-		l.Error(err, "error getting resource from k8s", "VaultConnection", connObj)
-		return nil, err
-	}
-	return connObj, nil
 }

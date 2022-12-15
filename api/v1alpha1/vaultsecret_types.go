@@ -12,10 +12,9 @@ import (
 
 // VaultSecretSpec defines the desired state of VaultSecret
 type VaultSecretSpec struct {
-	// VaultConnectionRef references a VaultConnection in the same namespace
-	// TODO(tvoran): move this to VaultAuth when that's in place
-	VaultConnectionRef string `json:"vaultConnectionRef"`
-	// Namespace to get the secret from
+	// VaultAuthRef references a VaultAuth in the same Kubernetes namespace
+	VaultAuthRef string `json:"vaultAuthRef"`
+	// Namespace to get the secret from in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`

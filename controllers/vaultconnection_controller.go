@@ -45,12 +45,21 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	_, err := vault.MakeVaultClient(ctx, &c, r.Client)
+	vaultConfig := &vault.VaultClientConfig{
+		CACertSecretRef: c.Spec.CACertSecretRef,
+		K8sNamespace:    c.ObjectMeta.Namespace,
+		Address:         c.Spec.Address,
+		SkipTLSVerify:   c.Spec.SkipTLSVerify,
+		TLSServerName:   c.Spec.TLSServerName,
+	}
+	_, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
 	if err != nil {
 		l.Error(err, "failed to construct Vault client")
 		// TODO(tvoran): emit event
 		return ctrl.Result{}, err
 	}
+
+	// TODO(tvoran): try seal status here?
 
 	c.Status.Valid = true
 	if err := r.Client.Status().Update(ctx, &c); err != nil {
@@ -59,6 +68,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	l.Info("after update, VaultConnection is ", "vc", c)
 
+	// TODO(tvoran): emit event
 	return ctrl.Result{}, nil
 }
 
