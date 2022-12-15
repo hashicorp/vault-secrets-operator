@@ -122,6 +122,3 @@ jobs:
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.version}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.version}}
-          dev_tags: |
-            docker.io/hashicorppreview/${{ env.repo }}:${{ env.version }}-dev
-            docker.io/hashicorppreview/${{ env.repo }}:${{ env.version }}-${{ github.sha }}
