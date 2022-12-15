@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o $BIN_NAME main.go
 
 # dev image
 # -----------------------------------
-# Use distroless as minimal base image to package the operator binary
+# Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot as dev
 WORKDIR /
@@ -53,12 +53,12 @@ LABEL revision=$PRODUCT_REVISION
 
 WORKDIR /
 
-COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /bin/
+COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /
 COPY LICENSE /licenses/copyright.txt
 
 USER 65532:65532
 
-ENTRYPOINT ["/bin/vault-secrets-operator"]
+ENTRYPOINT ["/vault-secrets-operator"]
 
 # ===================================
 #
