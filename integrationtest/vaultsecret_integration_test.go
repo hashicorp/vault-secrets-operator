@@ -35,7 +35,7 @@ func TestVaultSecret_kv(t *testing.T) {
 	if _, ok := os.LookupEnv("ENT_TESTS"); ok {
 		testVaultNamespace = "vault-tenant-1"
 		t.Logf("setting for ent_tests")
-		terraformOptions.Vars["vault_enterprise"] = "true"
+		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
 	terraformOptions = terraform.WithDefaultRetryableErrors(t, terraformOptions)
