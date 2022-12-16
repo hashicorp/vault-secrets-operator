@@ -54,10 +54,10 @@ ENVTEST_K8S_VERSION = 1.24.1
 # Kind cluster name
 KIND_CLUSTER_NAME ?= kind
 
-BUILD_DIR=dist
-BIN_NAME=vault-secrets-operator
-GOOS?=linux
-GOARCH?=amd64
+BUILD_DIR = dist
+BIN_NAME = vault-secrets-operator
+GOOS ?= linux
+GOARCH ?= amd64
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
