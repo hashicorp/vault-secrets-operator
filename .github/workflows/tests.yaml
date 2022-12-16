@@ -111,7 +111,7 @@ jobs:
           VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault
         run: |
           make setup-integration-test
-          make integration-test TESTARGS="-v"
+          make integration-test
       - name: ENT tests
         env:
           INTEGRATION_TESTS: true
@@ -120,4 +120,4 @@ jobs:
           VAULT_ENT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
         run: |
           make setup-integration-test-ent LICENSE_TMP=$RUNNER_TEMP
-          make integration-test-ent TESTARGS="-v"
+          make integration-test-ent

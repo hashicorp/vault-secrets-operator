@@ -12,6 +12,7 @@ K8S_VAULT_NAMESPACE ?= demo
 KIND_K8S_VERSION ?= v1.25.3
 LICENSE_TMP ?= $(TMPDIR)
 VAULT_HELM_VERSION ?= 0.23.0
+TESTARGS ?= '-test.v'
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -119,7 +120,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
 ##@ Build
 
@@ -147,11 +148,11 @@ ci-docker-build: ## Build docker image with the manager (without generating asse
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -v ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
 .PHONY: integration-test
 integration-test: ## Run integration tests for Vault OSS
-	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... -v -count=1 -timeout=10m
+	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault ENT
