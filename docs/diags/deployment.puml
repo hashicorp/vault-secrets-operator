@@ -8,11 +8,11 @@ cloud "Kubernetes Cluster"#LightBlue {
     }
     operator <-> vault
     node ns1 {
-        file secret as secret1
+        file secret as pki1
         node pod as pod1 {
             component app as app1
         }
-        app1 --> secret1 : read
+        app1 --> pki1 : read
     }
     node ns2 {
         file secret as secret2
@@ -28,7 +28,7 @@ cloud "Kubernetes Cluster"#LightBlue {
         }
         app3 --> secret3 : read
     }
-    operator ---> secret1 : sync
+    operator ---> pki1 : sync
     operator ---> secret2 : sync
     operator ---> secret3 : sync
 
@@ -46,11 +46,11 @@ cloud "Kubernetes Cluster"#LightBlue {
     }
     operator <-> vault
     node ns1 {
-        file "static-secret" as secret1
+        file "static-secret" as pki1
         node pod as pod1 {
             component app as app1
         }
-        app1 --> secret1 : read
+        app1 --> pki1 : read
     }
     node ns2 {
         file "dynamic-secret" as secret2
@@ -66,7 +66,7 @@ cloud "Kubernetes Cluster"#LightBlue {
         }
         app3 --> secret3 : read
     }
-    operator ---> secret1 : sync
+    operator ---> pki1 : sync
     operator ---> secret2 : sync
     operator ---> secret3 : sync
 
@@ -82,29 +82,35 @@ cloud "Kubernetes Cluster"#LightBlue {
     }
     node operator-ns {
         folder CRs as crs1 {
-            file "VaultConnection"
+            file "VaultAuth" as auth
+            file "VaultConnection" as conn
         }
         node SecretsOperator as operator
     }
+
     operator -[dashed]-> crs1 : read
     operator -[dotted]0 vault
 
     node tenant-ns {
+        node "serviceAccount/default" as sa
         folder CRs {
-            file "VaultPKI"
-            file "VaultAuth"
+            file "VaultSecretPKI"
+            file "VaultSecretStatic"
         }
         folder "K8S Secrets" {
-            file "pki1" as secret1
+            file "pki1" as pki1
+            file "secret1" as secret1
         }
         node pod as pod1 {
             component app1
         }
+        app1 --> pki1 : mount /etc/pki
         app1 --> secret1 : mount /etc/secrets
     }
     operator -[dashed]-> CRs : read
+    operator -[dotted]-> pki1 : sync
     operator -[dotted]-> secret1 : sync
-
+    operator -[dotted]-> sa : provides token for vault auth
 }
 caption deployment figure 2
 @enduml
@@ -119,7 +125,6 @@ skinparam {
 
 actor "Alice" as deployer
 participant "CD Agent: ArgoCD/Flux" as cd
-participant application as app
 participant "Kubernetes Scheduler" as k8s
 collections "GitOps Repo" as repo
 
