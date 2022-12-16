@@ -46,7 +46,7 @@ resource "vault_mount" "kvv2-ent" {
 }
 
 resource "vault_mount" "kvv2" {
-  count = var.vault_enterprise == "false" ? 1 : 0
+  count = var.vault_enterprise ? 0 : 1
   path        = var.vault_kv_mount_path
   type        = "kv"
   options     = { version = "2" }
