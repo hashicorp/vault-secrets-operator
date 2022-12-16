@@ -39,7 +39,6 @@ ENTRYPOINT ["/vault-secrets-operator"]
 # default release image
 # -----------------------------------
 FROM gcr.io/distroless/static:nonroot as release-default
-# FROM alpine as release-default
 
 ENV BIN_NAME=vault-secrets-operator
 ARG PRODUCT_VERSION

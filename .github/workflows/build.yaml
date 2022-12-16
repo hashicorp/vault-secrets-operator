@@ -90,7 +90,7 @@ jobs:
           mkdir dist out
           make ci-build
           zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           name: ${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
           path: out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
@@ -104,6 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # The distroless image seems to only support amd64 and arm64
         arch: ["arm64", "amd64"]
     env:
       repo: ${{github.event.repository.name}}
