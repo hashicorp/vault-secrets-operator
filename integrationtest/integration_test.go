@@ -74,7 +74,7 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name s
 		err = json.Unmarshal(destSecret.Data["data"], &secretData)
 		require.NoError(t, err)
 		if !reflect.DeepEqual(expectedData, secretData["data"]) {
-			return "", fmt.Errorf("data in secret not up to date")
+			return "", fmt.Errorf("data in secret not synced: expected %+v, actual %+v", expectedData, secretData["data"])
 		}
 		return "", nil
 	})

@@ -6,6 +6,7 @@ package integrationtest
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,14 +19,13 @@ import (
 )
 
 func TestVaultSecret_kv(t *testing.T) {
-	testK8sNamespace := "k8s-tenant-" + random.UniqueId()
+	testK8sNamespace := "k8s-tenant-" + strings.ToLower(random.UniqueId())
 	testKvMountPath := "kvv2"
 	testVaultNamespace := ""
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	if clusterName == "" {
-		t.Fatal("KIND_CLUSTER_NAME is not set")
-	}
+	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
@@ -38,7 +38,7 @@ func TestVaultSecret_kv(t *testing.T) {
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
-		testVaultNamespace = "vault-tenant-" + random.UniqueId()
+		testVaultNamespace = "vault-tenant-" + strings.ToLower(random.UniqueId())
 		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
