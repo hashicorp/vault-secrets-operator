@@ -47,3 +47,74 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - run: make ci-test
+
+  integrationTest:
+    runs-on: ubuntu-latest
+    needs: [fmtcheck, test, get-go-version]
+    env:
+      KIND_CLUSTER_NAME: vault-secrets-operator
+    strategy:
+      fail-fast: false
+      matrix:
+        kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
+        vault-version: [1.10.9, 1.11.6, 1.12.2]
+        # Note: The below exclude and include's are a bit awkward, but they
+        # allow us to exclude the combos we don't really need. We want to test
+        # the operator with the different k8s versions, and with the different
+        # vault versions, but we don't care about testing all the k8s versions
+        # against all the vault versions.
+        # Combos to exclude:
+        #   kind-k8s-version: [1.22.15, 1.23.13, 1.24.7]
+        #   vault-version: [1.10.9, 1.11.6]
+        exclude:
+          - kind-k8s-version: 1.24.7
+          - kind-k8s-version: 1.23.13
+          - kind-k8s-version: 1.22.15
+        include:
+          - kind-k8s-version: 1.24.7
+            vault-version: 1.12.2
+          - kind-k8s-version: 1.23.13
+            vault-version: 1.12.2
+          - kind-k8s-version: 1.22.15
+            vault-version: 1.12.2
+
+    name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Create K8s Kind Cluster
+        uses: helm/kind-action@v1.4.0
+        with:
+          version: v0.16.0
+          cluster_name: ${{ env.KIND_CLUSTER_NAME }}
+          config: integrationtest/kind/config.yaml
+          node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Build and deploy operator
+        run: make ci-docker-build ci-deploy-kind
+      - name: OSS tests
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_VERSION: ${{ matrix.vault-version }}
+          VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault
+        run: |
+          make setup-integration-test
+          make integration-test
+      - name: ENT tests
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
+          VAULT_VERSION: ${{ matrix.vault-version }}-ent
+          VAULT_ENT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
+        run: |
+          make setup-integration-test-ent LICENSE_TMP=$RUNNER_TEMP
+          make integration-test-ent
