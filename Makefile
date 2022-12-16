@@ -5,6 +5,15 @@
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
 
+VAULT_VERSION ?= latest
+VAULT_IMAGE_REPO ?= hashicorp/vault
+VAULT_ENT_IMAGE_REPO ?= hashicorp/vault-enterprise
+K8S_VAULT_NAMESPACE ?= demo
+KIND_K8S_VERSION ?= v1.25.3
+LICENSE_TMP ?= $(TMPDIR)
+VAULT_HELM_VERSION ?= 0.23.0
+TESTARGS ?= '-test.v'
+
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
@@ -29,7 +38,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # hashicorp.com/vault-secrets-operator-bundle:$VERSION and hashicorp.com/vault-secrets-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= hashicorp.com/vault-secrets-operator
+IMAGE_TAG_BASE ?= hashicorp/vault-secrets-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -47,12 +56,12 @@ ifeq ($(USE_IMAGE_DIGESTS), true)
 endif
 
 # Image URL to use all building/pushing image targets
-IMG ?= hashicorp/vault-secrets-operator:$(VERSION)
+IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.24.1
 
 # Kind cluster name
-KIND_CLUSTER_NAME ?= kind
+KIND_CLUSTER_NAME ?= vault-secrets-operator
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -111,7 +120,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
 ##@ Build
 
@@ -125,21 +134,99 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} . --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) . --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+	docker push $(IMG)
 
 ##@ CI
 
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the manager (without generating assets)
-	docker build -t ${IMG} . --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) . --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -v ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
+
+.PHONY: integration-test
+integration-test: ## Run integration tests for Vault OSS
+	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
+
+.PHONY: integration-test-ent
+integration-test-ent: ## Run integration tests for Vault ENT
+	make integration-test ENT_TESTS=true
+
+.PHONY: setup-kind
+setup-kind: ## create a kind cluster for running the acceptance tests locally
+	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
+	kind create cluster \
+		--image kindest/node:$(KIND_K8S_VERSION) \
+		--name $(KIND_CLUSTER_NAME)  \
+		--config $(CURDIR)/integrationtest/kind/config.yaml
+	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
+
+.PHONY: delete-kind
+delete-kind: ## delete the kind cluster
+	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
+
+.PHONY: setup-integration-test-common
+## Create Vault inside the cluster
+setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license)
+setup-integration-test-common: teardown-integration-test
+	kubectl create namespace $(K8S_VAULT_NAMESPACE)
+
+	# don't log the license
+	printenv VAULT_LICENSE_CI > $(LICENSE_TMP)/vault-license.txt || true
+	if [ -s $(LICENSE_TMP)/vault-license.txt ]; then \
+		kubectl -n $(K8S_VAULT_NAMESPACE) create secret generic vault-license --from-file license=$(LICENSE_TMP)/vault-license.txt; \
+		rm -rf $(LICENSE_TMP)/vault-license.txt; \
+	fi
+
+	helm install vault vault --repo https://helm.releases.hashicorp.com --version=$(VAULT_HELM_VERSION) \
+		--wait --timeout=5m \
+		--namespace=$(K8S_VAULT_NAMESPACE) \
+		--create-namespace \
+		--set server.logLevel=debug \
+		--set server.dev.enabled=true \
+		--set server.image.tag=$(VAULT_VERSION) \
+		--set server.image.repository=$(VAULT_IMAGE_REPO) \
+		$(SET_LICENSE) \
+		--set injector.enabled=false
+	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
+
+	kubectl delete --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
+	kubectl wait --namespace=$(K8S_VAULT_NAMESPACE) --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
+
+
+.PHONY: setup-integration-test
+setup-integration-test: setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test (Vault OSS, build and deploy operator)
+
+.PHONY: setup-integration-test-ent
+setup-integration-test-ent: VAULT_IMAGE_REPO=$(VAULT_ENT_IMAGE_REPO)
+setup-integration-test-ent: check-license setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test (Vault ENT, build and deploy operator)
+
+.PHONY: ci-deploy
+ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build config/default | kubectl apply -f -
+
+.PHONY: ci-deploy-kind
+ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
+	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
+	make ci-deploy
+
+.PHONY: check-license
+## check that VAULT_LICENSE_CI is set
+check-license:
+	(printenv VAULT_LICENSE_CI > /dev/null) || (echo "VAULT_LICENSE_CI must be set"; exit 1)
+
+.PHONY: teardown-integration-test
+teardown-integration-test: ignore-not-found = true
+teardown-integration-test: undeploy ## Teardown the integration test setup
+	helm uninstall vault --namespace=$(K8S_VAULT_NAMESPACE) || true
+	kubectl delete --ignore-not-found namespace $(K8S_VAULT_NAMESPACE)
 
 ##@ Deployment
 
@@ -157,7 +244,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 .PHONY: undeploy
@@ -166,7 +253,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image --name ${KIND_CLUSTER_NAME} ${IMG}
+	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
 	make deploy
 
 ##@ Build Dependencies
