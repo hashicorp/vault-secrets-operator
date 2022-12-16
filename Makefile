@@ -140,7 +140,7 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: ci-build
 ci-build: ## Build operator binary (without generating assets).
-	GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-a \
 		-o $(BUILD_DIR)/$(BIN_NAME) \
 		main.go
