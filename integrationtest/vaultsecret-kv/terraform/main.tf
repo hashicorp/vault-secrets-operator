@@ -37,7 +37,7 @@ provider "vault" {
 }
 
 resource "vault_mount" "kvv2-ent" {
-  count = var.vault_enterprise == "true" ? 1 : 0
+  count = var.vault_enterprise ? 1 : 0
   namespace = vault_namespace.test[count.index].path
   path        = var.vault_kv_mount_path
   type        = "kv"
@@ -54,6 +54,6 @@ resource "vault_mount" "kvv2" {
 }
 
 resource "vault_namespace" "test" {
-  count = var.vault_enterprise == "true" ? 1 : 0
+  count = var.vault_enterprise ? 1 : 0
   path = var.vault_test_namespace
 }

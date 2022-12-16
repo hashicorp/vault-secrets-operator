@@ -26,5 +26,6 @@ variable "vault_test_namespace" {
 }
 
 variable "vault_enterprise" {
-  default = "false"
+  type    = bool
+  default = false
 }
