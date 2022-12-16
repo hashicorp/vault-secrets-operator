@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,10 +18,14 @@ import (
 )
 
 func TestVaultSecret_kv(t *testing.T) {
-	testK8sNamespace := "k8s-tenant-1"
+	testK8sNamespace := "k8s-tenant-" + random.UniqueId()
 	testKvMountPath := "kvv2"
 	testVaultNamespace := ""
 
+	clusterName := os.Getenv("KIND_CLUSTER_NAME")
+	if clusterName == "" {
+		t.Fatal("KIND_CLUSTER_NAME is not set")
+	}
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
@@ -28,13 +33,12 @@ func TestVaultSecret_kv(t *testing.T) {
 		TerraformDir: "vaultsecret-kv/terraform",
 		Vars: map[string]interface{}{
 			"k8s_test_namespace":  testK8sNamespace,
-			"k8s_config_context":  "kind-" + os.Getenv("KIND_CLUSTER_NAME"),
+			"k8s_config_context":  "kind-" + clusterName,
 			"vault_kv_mount_path": testKvMountPath,
 		},
 	}
-	if _, ok := os.LookupEnv("ENT_TESTS"); ok {
-		testVaultNamespace = "vault-tenant-1"
-		t.Logf("setting for ent_tests")
+	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
+		testVaultNamespace = "vault-tenant-" + random.UniqueId()
 		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
