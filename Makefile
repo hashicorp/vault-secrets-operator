@@ -153,10 +153,12 @@ ci-build: ## Build operator binary (without generating assets).
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-a \
 		-o $(BUILD_DIR)/$(BIN_NAME) \
-		main.go
+		.
 
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
+	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
 	docker build -t $(IMG) . --target release-default
 
 .PHONY: ci-test
