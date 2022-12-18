@@ -1,0 +1,84 @@
+@startuml
+autonumber
+title On Secret CR Creation
+skinparam BackgroundColor LightBlue
+SecretCustomResource -> SecretsOperator : SecretCustomResource Event (New)
+SecretsOperator -> VaultAPI : Read Secret for path
+    VaultAPI -> SecretsOperator : Secret Response
+    SecretsOperator -> KubernetesSecretAPI : Create Secret
+    KubernetesSecretAPI -> SecretsOperator : Response
+    SecretsOperator -> SecretCustomResource : Update Status metadata
+    return Creation Complete
+caption figure 2.1
+@enduml
+
+@startuml
+autonumber
+title On Secret CR Update
+skinparam BackgroundColor LightBlue
+    SecretCustomResource -> SecretsOperator : SecretCustomResource Event (Updated)
+    SecretsOperator -> VaultAPI : Read Secret for path
+    VaultAPI -> SecretsOperator : Secret Response
+    SecretsOperator -> KubernetesSecretAPI : Rename/Create Secret
+    KubernetesSecretAPI -> SecretsOperator : Response
+    SecretsOperator -> KubernetesSecretAPI : Write data from Vault Response
+    SecretsOperator -> SecretCustomResource : Update Status metadata
+    SecretsOperator -> SecretsOperator : Execute post sync/update actions
+    return Update Complete
+caption figure 2.2
+@enduml
+
+@startuml
+autonumber
+title On Secret CR Deletion
+skinparam BackgroundColor LightBlue
+    SecretCustomResource -> SecretsOperator : SecretCustomResource Event (Deletion)
+    SecretsOperator -> SecretsOperator : Execute all finalizers
+    SecretsOperator -> SecretsOperator : Execute post sync/update actions
+    return Deletion Complete
+caption figure 2.3
+@enduml
+
+
+@startuml
+autonumber
+title On Auth CR Creation
+skinparam BackgroundColor LightBlue
+AuthCustomResource -> SecretsOperator : AuthCustomResource Event (New)
+SecretsOperator -> KubernetesAPI : Read/Create ServiceAccount Token
+SecretsOperator -> VaultAPI : Attempt Vault authentication
+SecretsOperator -> AuthCustomResource : Update validity
+return Validation Complete
+caption figure 3.1
+@enduml
+
+@startuml
+autonumber
+title On Auth CR Deletion
+skinparam BackgroundColor LightBlue
+    AuthCustomResource -> SecretsOperator : AuthCustomResource Event (Deletion)
+    SecretsOperator -> SecretsOperator : Execute all finalizers
+    return Deletion Complete
+caption figure 3.2
+@enduml
+
+@startuml
+autonumber
+title On Connection CR Creation
+skinparam BackgroundColor LightBlue
+ConnectionCustomResource -> SecretsOperator : ConnectionCustomResource Event (New)
+SecretsOperator -> SecretsOperator : Execute validity checks
+SecretsOperator -> ConnectionCustomResource : Update validity
+return Validation Complete
+caption figure 4.1
+@enduml
+
+@startuml
+autonumber
+title On Connection CR Deletion
+skinparam BackgroundColor LightBlue
+    ConnectionCustomResource -> SecretsOperator : ConnectionCustomResource Event (Deletion)
+    SecretsOperator -> SecretsOperator : Execute all finalizers
+    return Deletion Complete
+caption figure 4.2
+@enduml
