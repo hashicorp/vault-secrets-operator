@@ -2,9 +2,12 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-for y in $(find config/crd/bases config/rbac/role.yaml -name "*.yaml"); do
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+DIR="${SCRIPT_DIR%/*}"
+
+for y in $(find ${DIR}/config/crd/bases ${DIR}/config/rbac/role.yaml -name "*.yaml"); do
     OUTFILE=$(mktemp)
 
-    cat ./hack/boilerplate.yaml.txt <(echo) $y > $OUTFILE
+    cat ${DIR}/hack/boilerplate.yaml.txt <(echo) $y > $OUTFILE
     mv $OUTFILE $y
 done
