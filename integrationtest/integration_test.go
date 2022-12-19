@@ -22,6 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
+// testVaultAddress is the address in k8s of the vault setup by
+// `make setup-integration-test{,-ent}`
+const testVaultAddress = "http://vault.demo.svc.cluster.local:8200"
+
 // Set the environment variable INTEGRATION_TESTS to any non-empty value to run
 // the tests in this package. The test assumes it has available:
 // - kubectl

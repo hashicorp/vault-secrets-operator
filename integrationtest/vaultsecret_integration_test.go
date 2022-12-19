@@ -56,6 +56,39 @@ func TestVaultSecret_kv(t *testing.T) {
 	_, err := vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", putSecret)
 	require.NoError(t, err)
 
+	crdClient := getCRDClient(t)
+
+	// Create a VaultConnection CR
+	testVaultConnection := &secretsv1alpha1.VaultConnection{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vaultconnection-test-tenant-1",
+			Namespace: testK8sNamespace,
+		},
+		Spec: secretsv1alpha1.VaultConnectionSpec{
+			Address: testVaultAddress,
+		},
+	}
+
+	defer crdClient.Delete(context.Background(), testVaultConnection)
+	err = crdClient.Create(context.Background(), testVaultConnection)
+	require.NoError(t, err)
+
+	// Create a VaultAuth CR
+	testVaultAuth := &secretsv1alpha1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vaultauth-test-tenant-1",
+			Namespace: testK8sNamespace,
+		},
+		Spec: secretsv1alpha1.VaultAuthSpec{
+			VaultConnectionRef: "vaultconnection-test-tenant-1",
+			Namespace:          testVaultNamespace,
+		},
+	}
+
+	defer crdClient.Delete(context.Background(), testVaultAuth)
+	err = crdClient.Create(context.Background(), testVaultAuth)
+	require.NoError(t, err)
+
 	// Create a VaultSecret CR to trigger the sync
 	testVaultSecret := &secretsv1alpha1.VaultSecret{
 		ObjectMeta: v1.ObjectMeta{
@@ -63,6 +96,7 @@ func TestVaultSecret_kv(t *testing.T) {
 			Namespace: testK8sNamespace,
 		},
 		Spec: secretsv1alpha1.VaultSecretSpec{
+			VaultAuthRef: "vaultauth-test-tenant-1",
 			Namespace:    testVaultNamespace,
 			Mount:        testKvMountPath,
 			Type:         "kvv2",
@@ -71,7 +105,6 @@ func TestVaultSecret_kv(t *testing.T) {
 			RefreshAfter: "5s",
 		},
 	}
-	crdClient := getCRDClient(t)
 
 	defer crdClient.Delete(context.Background(), testVaultSecret)
 	err = crdClient.Create(context.Background(), testVaultSecret)
