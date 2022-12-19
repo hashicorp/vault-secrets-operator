@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -107,7 +106,12 @@ func (r *VaultPKIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}, err
 	}
 
-	c, err := r.getVaultClient(logger, s.Spec)
+	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -263,7 +267,12 @@ func (r *VaultPKIReconciler) clearSecretData(ctx context.Context, l logr.Logger,
 }
 
 func (r *VaultPKIReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKI) error {
-	c, err := r.getVaultClient(l, s.Spec)
+	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	if err != nil {
+		return err
+	}
+
+	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		return err
 	}
@@ -278,27 +287,6 @@ func (r *VaultPKIReconciler) revokeCertificate(ctx context.Context, l logr.Logge
 	}
 
 	return nil
-}
-
-// TODO: duplicated in VaultSecretReconciler
-func (r *VaultPKIReconciler) getVaultClient(l logr.Logger, spec secretsv1alpha1.VaultPKISpec) (*api.Client, error) {
-	config := api.DefaultConfig()
-	// TODO: get this from config, probably from env var VAULT_ADDR=http://vault.demo.svc.cluster.local:8200
-	config.Address = "http://vault.demo.svc.cluster.local:8200"
-	c, err := api.NewClient(config)
-	if err != nil {
-		l.Error(err, "error setting up Vault API client")
-		return nil, err
-	}
-	// TODO: get this from the service account, setup k8s-auth
-	c.SetToken("root")
-
-	// l.Info(fmt.Sprintf("Getting Vault client, ns=%q", spec.Namespace))
-	if spec.Namespace != "" {
-		c.SetNamespace(spec.Namespace)
-	}
-
-	return c, nil
 }
 
 func (r *VaultPKIReconciler) getPath(spec secretsv1alpha1.VaultPKISpec) string {

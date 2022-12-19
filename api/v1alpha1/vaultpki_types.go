@@ -12,8 +12,8 @@ import (
 
 // VaultPKISpec defines the desired state of VaultPKI
 type VaultPKISpec struct {
-	// AuthName of the VaultAuth resource
-	AuthName string `json:"authName"`
+	// VaultAuthRef of the VaultAuth resource
+	VaultAuthRef string `json:"vaultAuthRef"`
 
 	// Namespace to get the secret from
 	Namespace string `json:"namespace,omitempty"`
