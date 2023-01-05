@@ -63,6 +63,11 @@ ENVTEST_K8S_VERSION = 1.24.1
 # Kind cluster name
 KIND_CLUSTER_NAME ?= vault-secrets-operator
 
+BUILD_DIR = dist
+BIN_NAME = vault-secrets-operator
+GOOS ?= linux
+GOARCH ?= amd64
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -101,6 +106,7 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	@sh -c "'$(CURDIR)/scripts/fix-copyright.sh'"
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -126,7 +132,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: build
 build: generate fmt vet ## Build manager binary.
-	go build -o bin/manager main.go
+	go build -o bin/vault-secrets-operator main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -134,7 +140,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t $(IMG) . --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) . --target=dev --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -142,9 +148,18 @@ docker-push: ## Push docker image with the manager.
 
 ##@ CI
 
+.PHONY: ci-build
+ci-build: ## Build operator binary (without generating assets).
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
+		-a \
+		-o $(BUILD_DIR)/$(BIN_NAME) \
+		.
+
 .PHONY: ci-docker-build
-ci-docker-build: ## Build docker image with the manager (without generating assets)
-	docker build -t $(IMG) . --build-arg GO_VERSION=$(shell cat .go-version)
+ci-docker-build: ## Build docker image with the operator (without generating assets)
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
+	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
+	docker build -t $(IMG) . --target release-default
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
