@@ -38,7 +38,7 @@ spec:
         #   type: RuntimeDefault
       containers:
       - command:
-        - /manager
+        - /vault-secrets-operator
         args:
         - --leader-elect
         image: controller:latest

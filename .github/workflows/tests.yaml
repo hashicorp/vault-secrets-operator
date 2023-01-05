@@ -48,9 +48,6 @@ jobs:
             ${{ runner.os }}-go-
       - run: make ci-test
 
-      # TODO(tvoran): replace this with CRT build workflow
-      - run: make ci-docker-build
-
   integrationTest:
     runs-on: ubuntu-latest
     needs: [fmtcheck, test, get-go-version]
@@ -103,7 +100,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Build and deploy operator
-        run: make ci-docker-build ci-deploy-kind
+        run: make ci-build ci-docker-build ci-deploy-kind
       - name: OSS tests
         env:
           INTEGRATION_TESTS: true
