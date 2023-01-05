@@ -100,8 +100,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Build and deploy operator
-        env:
-          GO_VERSION: ${{ needs.get-go-version.outputs.go-version }}
         run: make ci-build ci-docker-build ci-deploy-kind
       - name: OSS tests
         env:
