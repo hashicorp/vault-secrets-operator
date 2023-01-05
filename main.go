@@ -98,8 +98,9 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultConnectionReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("VaultConnection"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VaultConnection")
 		os.Exit(1)

@@ -34,6 +34,7 @@ type VaultPKIReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkis,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkis/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkis/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

@@ -6,8 +6,10 @@ package controllers
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -19,12 +21,15 @@ import (
 // VaultConnectionReconciler reconciles a VaultConnection object
 type VaultConnectionReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultconnections,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultconnections/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultconnections/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -58,7 +63,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	_, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
 	if err != nil {
 		l.Error(err, "failed to construct Vault client")
-		// TODO(tvoran): emit event
+		r.Recorder.Eventf(&c, corev1.EventTypeWarning, "VaultClientError", "failed to construct Vault client: %w", err)
 		return ctrl.Result{}, err
 	}
 
@@ -71,7 +76,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	l.Info("after update, VaultConnection is ", "vc", c)
 
-	// TODO(tvoran): emit event
+	r.Recorder.Event(&c, corev1.EventTypeNormal, "Accepted", "VaultConnection accepted")
 	return ctrl.Result{}, nil
 }
 
