@@ -159,7 +159,7 @@ ci-build: ## Build operator binary (without generating assets).
 ci-docker-build: ## Build docker image with the operator (without generating assets)
 	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
 	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
-	docker build -t $(IMG) . --target release-default
+	docker build -t $(IMG) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
@@ -285,7 +285,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.6
-CONTROLLER_TOOLS_VERSION ?= v0.9.0
+CONTROLLER_TOOLS_VERSION ?= v0.11.1
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize
