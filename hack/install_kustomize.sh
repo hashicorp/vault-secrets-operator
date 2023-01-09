@@ -147,6 +147,7 @@ if [[ -n "${GITHUB_TOKEN}" ]]; then
     )
 fi
 
+echo "Fetching release info from ${release_url}"
 releases=$(curl -sSf $@headers "$release_url")
 
 if [[ $releases == *"API rate limit exceeded"* ]]; then
