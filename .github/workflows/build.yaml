@@ -49,10 +49,14 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
-      - run: |
+      - name: go mod tidy
+        run: |
           go mod tidy
           test -z "$(git status --porcelain)"
-      - run: |
+      - name: generate manifests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           make generate manifests
           test -z "$(git status --porcelain)"
 
@@ -101,6 +105,7 @@ jobs:
           GOOS: "linux"
           GOARCH: ${{ matrix.arch }}
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir dist out
           make ci-build
