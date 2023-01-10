@@ -100,13 +100,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Build and deploy operator
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make ci-build ci-docker-build ci-deploy-kind
       - name: OSS tests
         env:
           INTEGRATION_TESTS: true
           VAULT_VERSION: ${{ matrix.vault-version }}
           VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make setup-integration-test
           make integration-test
