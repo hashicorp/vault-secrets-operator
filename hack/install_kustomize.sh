@@ -138,17 +138,17 @@ s390x)
 esac
 
 headers=(
-    "--header" "'Accept: application/vnd.github+json'"
-    "--header" "'X-GitHub-Api-Version: 2022-11-28'"
+    '--header' "Accept: application/vnd.github+json"
+    '--header' "X-GitHub-Api-Version: 2022-11-28"
 )
 if [[ -n "${GITHUB_TOKEN}" ]]; then
     headers+=(
-        "--header" "'Authorization: Bearer ${GITHUB_TOKEN}'"
+        '--header' "Authorization: Bearer ${GITHUB_TOKEN}"
     )
 fi
 
 echo "Fetching release info from ${release_url}"
-releases=$(curl -sSf $@headers "$release_url")
+releases=$(curl -sSf "${headers[@]}" "$release_url")
 
 if [[ $releases == *"API rate limit exceeded"* ]]; then
   echo "Github rate-limiter failed the request. Either authenticate by setting GITHUB_TOKEN or wait a couple of minutes."
