@@ -106,6 +106,7 @@ jobs:
           INTEGRATION_TESTS: true
           VAULT_VERSION: ${{ matrix.vault-version }}
           VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make setup-integration-test
           make integration-test
