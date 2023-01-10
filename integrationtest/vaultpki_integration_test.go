@@ -12,16 +12,17 @@ import (
 
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
-func TestVaultSecret_kv(t *testing.T) {
+func TestVaultPKI(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
-	testKvMountPath := "kvv2"
+	testPKIMountPath := "pki"
 	testVaultNamespace := ""
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
@@ -31,11 +32,11 @@ func TestVaultSecret_kv(t *testing.T) {
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
-		TerraformDir: "vaultsecret-kv/terraform",
+		TerraformDir: "vaultpki/terraform",
 		Vars: map[string]interface{}{
-			"k8s_test_namespace":  testK8sNamespace,
-			"k8s_config_context":  "kind-" + clusterName,
-			"vault_kv_mount_path": testKvMountPath,
+			"k8s_test_namespace":   testK8sNamespace,
+			"k8s_config_context":   "kind-" + clusterName,
+			"vault_pki_mount_path": testPKIMountPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
@@ -51,12 +52,6 @@ func TestVaultSecret_kv(t *testing.T) {
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
 	terraform.InitAndApply(t, terraformOptions)
 
-	// Set the secret in vault to be synced to kubernetes
-	vClient := getVaultClient(t, testVaultNamespace)
-	putSecret := map[string]interface{}{"password": "applejuice"}
-	_, err := vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", putSecret)
-	require.NoError(t, err)
-
 	crdClient := getCRDClient(t)
 
 	// Create a VaultConnection CR
@@ -71,7 +66,7 @@ func TestVaultSecret_kv(t *testing.T) {
 	}
 
 	defer crdClient.Delete(context.Background(), testVaultConnection)
-	err = crdClient.Create(context.Background(), testVaultConnection)
+	err := crdClient.Create(context.Background(), testVaultConnection)
 	require.NoError(t, err)
 
 	// Create a VaultAuth CR
@@ -90,35 +85,35 @@ func TestVaultSecret_kv(t *testing.T) {
 	err = crdClient.Create(context.Background(), testVaultAuth)
 	require.NoError(t, err)
 
-	// Create a VaultSecret CR to trigger the sync
-	testVaultSecret := &secretsv1alpha1.VaultSecret{
+	// Create a VaultPKI CR to trigger the sync
+	testVaultPKI := &secretsv1alpha1.VaultPKI{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      "vaultsecret-test-tenant-1",
+			Name:      "vaultpki-test-tenant-1",
 			Namespace: testK8sNamespace,
 		},
-		Spec: secretsv1alpha1.VaultSecretSpec{
+		Spec: secretsv1alpha1.VaultPKISpec{
 			VaultAuthRef: "vaultauth-test-tenant-1",
 			Namespace:    testVaultNamespace,
-			Mount:        testKvMountPath,
-			Type:         "kvv2",
+			Mount:        testPKIMountPath,
 			Name:         "secret",
-			Dest:         "secret1",
-			RefreshAfter: "5s",
+			Dest:         "pki1",
+			CommonName:   "test1.example.com",
+			Format:       "pem",
+			Revoke:       true,
+			Clear:        true,
+			ExpiryOffset: "5s",
+			TTL:          "15s",
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultSecret)
-	err = crdClient.Create(context.Background(), testVaultSecret)
+	defer crdClient.Delete(context.Background(), testVaultPKI)
+	err = crdClient.Create(context.Background(), testVaultPKI)
 	require.NoError(t, err)
 
-	// Wait for the operator to sync Vault secret --> k8s Secret
-	waitForSecretData(t, 10, 1*time.Second, testVaultSecret.Spec.Dest, testVaultSecret.ObjectMeta.Namespace, putSecret)
+	// Wait for the operator to sync Vault PKI --> k8s Secret
+	serialNumber := waitForPKIData(t, 10, 1*time.Second, testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace, "test1.example.com", "")
+	assert.NotEmpty(t, serialNumber)
 
-	// Change the secret in vault, wait for the VaultSecret refresh, and check
-	// the result
-	updatedSecret := map[string]interface{}{"password": "orangejuice"}
-	_, err = vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", updatedSecret)
-	require.NoError(t, err)
-
-	waitForSecretData(t, 10, 1*time.Second, testVaultSecret.Spec.Dest, testVaultSecret.ObjectMeta.Namespace, updatedSecret)
+	newSerialNumber := waitForPKIData(t, 30, 2*time.Second, testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace, "test1.example.com", serialNumber)
+	assert.NotEmpty(t, newSerialNumber)
 }
