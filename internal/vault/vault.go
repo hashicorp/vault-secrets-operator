@@ -120,5 +120,9 @@ func MakeVaultClient(ctx context.Context, vaultConfig *VaultClientConfig, k8sCli
 		l.Error(err, "error setting up Vault API client")
 		return nil, err
 	}
+	if vaultConfig.VaultNamespace != "" {
+		c.SetNamespace(vaultConfig.VaultNamespace)
+	}
+
 	return c, nil
 }

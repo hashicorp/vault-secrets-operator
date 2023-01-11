@@ -110,10 +110,13 @@ func TestVaultPKI(t *testing.T) {
 	err = crdClient.Create(context.Background(), testVaultPKI)
 	require.NoError(t, err)
 
-	// Wait for the operator to sync Vault PKI --> k8s Secret
+	// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
+	// serial number of the generated cert
 	serialNumber := waitForPKIData(t, 10, 1*time.Second, testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace, "test1.example.com", "")
 	assert.NotEmpty(t, serialNumber)
 
+	// Use the serial number of the first generated cert to check that the cert
+	// is updated
 	newSerialNumber := waitForPKIData(t, 30, 2*time.Second, testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace, "test1.example.com", serialNumber)
 	assert.NotEmpty(t, newSerialNumber)
 }
