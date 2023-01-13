@@ -76,11 +76,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.VaultSecretReconciler{
+	if err = (&controllers.VaultStaticSecretReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VaultSecret")
+		setupLog.Error(err, "unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultPKIReconciler{

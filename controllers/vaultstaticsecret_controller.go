@@ -23,30 +23,30 @@ import (
 	"github.com/hashicorp/vault/api"
 )
 
-// VaultSecretReconciler reconciles a VaultSecret object
-type VaultSecretReconciler struct {
+// VaultStaticSecretReconciler reconciles a VaultStaticSecret object
+type VaultStaticSecretReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultsecrets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultsecrets/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultsecrets/finalizers,verbs=update
+//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
-// the VaultSecret object against the actual cluster state, and then
+// the VaultStaticSecret object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
-func (r *VaultSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
-	var s secretsv1alpha1.VaultSecret
+	var s secretsv1alpha1.VaultStaticSecret
 	if err := r.Client.Get(ctx, req.NamespacedName, &s); err != nil {
 		if apierrors.IsNotFound(err) {
 			// TODO: delete the secret?
@@ -142,13 +142,13 @@ func (r *VaultSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *VaultSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultSecret{}).
+		For(&secretsv1alpha1.VaultStaticSecret{}).
 		Complete(r)
 }
 
-func (r *VaultSecretReconciler) getVaultClient(ctx context.Context, spec secretsv1alpha1.VaultSecretSpec) (*api.Client,
+func (r *VaultStaticSecretReconciler) getVaultClient(ctx context.Context, spec secretsv1alpha1.VaultStaticSecretSpec) (*api.Client,
 	error,
 ) {
 	l := log.FromContext(ctx)
@@ -170,7 +170,7 @@ func (r *VaultSecretReconciler) getVaultClient(ctx context.Context, spec secrets
 	return c, nil
 }
 
-func (r *VaultSecretReconciler) getKVV2Path(mount, name string) string {
+func (r *VaultStaticSecretReconciler) getKVV2Path(mount, name string) string {
 	return joinPath(mount, "data", name)
 }
 

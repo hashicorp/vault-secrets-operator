@@ -280,7 +280,7 @@ func (r *VaultPKIReconciler) revokeCertificate(ctx context.Context, l logr.Logge
 	return nil
 }
 
-// TODO: duplicated in VaultSecretReconciler
+// TODO: duplicated in VaultStaticSecretReconciler
 func (r *VaultPKIReconciler) getVaultClient(l logr.Logger, spec secretsv1alpha1.VaultPKISpec) (*api.Client, error) {
 	config := api.DefaultConfig()
 	// TODO: get this from config, probably from env var VAULT_ADDR=http://vault.demo.svc.cluster.local:8200
