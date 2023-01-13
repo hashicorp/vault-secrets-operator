@@ -24,31 +24,31 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
-const vaultPKIFinalizer = "vaultpkis.secrets.hashicorp.com/finalizer"
+const vaultPKIFinalizer = "vaultpkisecrets.secrets.hashicorp.com/finalizer"
 
-// VaultPKIReconciler reconciles a VaultPKI object
-type VaultPKIReconciler struct {
+// VaultPKISecretReconciler reconciles a VaultPKISecret object
+type VaultPKISecretReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkis,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkis/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkis/finalizers,verbs=update
+//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
-// the VaultPKI object against the actual cluster state, and then
+// the VaultPKISecret object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
-func (r *VaultPKIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	s := &secretsv1alpha1.VaultPKI{}
+	s := &secretsv1alpha1.VaultPKISecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, s); err != nil {
 		if apierrors.IsNotFound(err) {
 			// logger.Info(fmt.Sprintf("Request not found %#v", req))
@@ -178,7 +178,7 @@ func (r *VaultPKIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *VaultPKIReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKI) error {
+func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	l.Info("In deletion")
 	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		if err := r.finalizePKI(ctx, l, s); err != nil {
@@ -201,11 +201,11 @@ func (r *VaultPKIReconciler) handleDeletion(ctx context.Context, l logr.Logger, 
 	return nil
 }
 
-func (r *VaultPKIReconciler) addFinalizer(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKI) error {
+func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	if !controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		controllerutil.AddFinalizer(s, vaultPKIFinalizer)
 		if err := r.Client.Update(ctx, s); err != nil {
-			l.Error(err, "error updating VaultPKI resource")
+			l.Error(err, "error updating VaultPKISecret resource")
 			return err
 		}
 	}
@@ -214,14 +214,14 @@ func (r *VaultPKIReconciler) addFinalizer(ctx context.Context, l logr.Logger, s 
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *VaultPKIReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultPKI{}).
+		For(&secretsv1alpha1.VaultPKISecret{}).
 		Complete(r)
 }
 
-func (r *VaultPKIReconciler) finalizePKI(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKI) error {
-	l.Info("Finalizing VaultPKI")
+func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
+	l.Info("Finalizing VaultPKISecret")
 	if s.Spec.Revoke {
 		if err := r.revokeCertificate(ctx, l, s); err != nil {
 			return err
@@ -236,7 +236,7 @@ func (r *VaultPKIReconciler) finalizePKI(ctx context.Context, l logr.Logger, s *
 	return nil
 }
 
-func (r *VaultPKIReconciler) getSecret(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKI) (*corev1.Secret, error) {
+func (r *VaultPKISecretReconciler) getSecret(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) (*corev1.Secret, error) {
 	key := types.NamespacedName{
 		Namespace: s.Namespace,
 		Name:      s.Spec.Dest,
@@ -250,7 +250,7 @@ func (r *VaultPKIReconciler) getSecret(ctx context.Context, l logr.Logger, s *se
 	return sec, nil
 }
 
-func (r *VaultPKIReconciler) clearSecretData(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKI) error {
+func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	l.Info("Clearing the secret's data", "name", s.Spec.Dest)
 	sec, err := r.getSecret(ctx, l, s)
 	if err != nil {
@@ -262,7 +262,7 @@ func (r *VaultPKIReconciler) clearSecretData(ctx context.Context, l logr.Logger,
 	return r.Client.Update(ctx, sec)
 }
 
-func (r *VaultPKIReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKI) error {
+func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	c, err := r.getVaultClient(l, s.Spec)
 	if err != nil {
 		return err
@@ -281,7 +281,7 @@ func (r *VaultPKIReconciler) revokeCertificate(ctx context.Context, l logr.Logge
 }
 
 // TODO: duplicated in VaultStaticSecretReconciler
-func (r *VaultPKIReconciler) getVaultClient(l logr.Logger, spec secretsv1alpha1.VaultPKISpec) (*api.Client, error) {
+func (r *VaultPKISecretReconciler) getVaultClient(l logr.Logger, spec secretsv1alpha1.VaultPKISecretSpec) (*api.Client, error) {
 	config := api.DefaultConfig()
 	// TODO: get this from config, probably from env var VAULT_ADDR=http://vault.demo.svc.cluster.local:8200
 	config.Address = "http://vault.demo.svc.cluster.local:8200"
@@ -301,7 +301,7 @@ func (r *VaultPKIReconciler) getVaultClient(l logr.Logger, spec secretsv1alpha1.
 	return c, nil
 }
 
-func (r *VaultPKIReconciler) getPath(spec secretsv1alpha1.VaultPKISpec) string {
+func (r *VaultPKISecretReconciler) getPath(spec secretsv1alpha1.VaultPKISecretSpec) string {
 	parts := []string{spec.Mount}
 	if spec.IssuerRef != "" {
 		parts = append(parts, "issuer", spec.IssuerRef)

@@ -74,7 +74,7 @@ rules:
 - apiGroups:
   - secrets.hashicorp.com
   resources:
-  - vaultpkis
+  - vaultpkisecrets
   verbs:
   - create
   - delete
@@ -86,13 +86,13 @@ rules:
 - apiGroups:
   - secrets.hashicorp.com
   resources:
-  - vaultpkis/finalizers
+  - vaultpkisecrets/finalizers
   verbs:
   - update
 - apiGroups:
   - secrets.hashicorp.com
   resources:
-  - vaultpkis/status
+  - vaultpkisecrets/status
   verbs:
   - get
   - patch

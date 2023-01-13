@@ -94,7 +94,7 @@ cloud "Kubernetes Cluster"#LightBlue {
     node tenant-ns {
         node "serviceAccount/default" as sa
         folder CRs {
-            file "VaultSecretPKI"
+            file "VaultPKISecret"
             file "VaultStaticSecret"
         }
         folder "K8S Secrets" {

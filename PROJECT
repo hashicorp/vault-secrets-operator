@@ -22,7 +22,7 @@ resources:
   controller: true
   domain: hashicorp.com
   group: secrets
-  kind: VaultPKI
+  kind: VaultPKISecret
   path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
   version: v1alpha1
 - api:
