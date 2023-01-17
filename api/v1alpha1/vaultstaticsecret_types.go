@@ -10,8 +10,8 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// VaultSecretSpec defines the desired state of VaultSecret
-type VaultSecretSpec struct {
+// VaultStaticSecretSpec defines the desired state of VaultStaticSecret
+type VaultStaticSecretSpec struct {
 	// VaultAuthRef references a VaultAuth in the same Kubernetes namespace
 	VaultAuthRef string `json:"vaultAuthRef"`
 	// Namespace to get the secret from in Vault
@@ -28,8 +28,8 @@ type VaultSecretSpec struct {
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 }
 
-// VaultSecretStatus defines the observed state of VaultSecret
-type VaultSecretStatus struct {
+// VaultStaticSecretStatus defines the observed state of VaultStaticSecret
+type VaultStaticSecretStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
@@ -37,24 +37,24 @@ type VaultSecretStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
-// VaultSecret is the Schema for the vaultsecrets API
-type VaultSecret struct {
+// VaultStaticSecret is the Schema for the vaultstaticsecrets API
+type VaultStaticSecret struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   VaultSecretSpec   `json:"spec,omitempty"`
-	Status VaultSecretStatus `json:"status,omitempty"`
+	Spec   VaultStaticSecretSpec   `json:"spec,omitempty"`
+	Status VaultStaticSecretStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// VaultSecretList contains a list of VaultSecret
-type VaultSecretList struct {
+// VaultStaticSecretList contains a list of VaultStaticSecret
+type VaultStaticSecretList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []VaultSecret `json:"items"`
+	Items           []VaultStaticSecret `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&VaultSecret{}, &VaultSecretList{})
+	SchemeBuilder.Register(&VaultStaticSecret{}, &VaultStaticSecretList{})
 }

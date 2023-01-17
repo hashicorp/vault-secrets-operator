@@ -86,12 +86,12 @@ func TestVaultPKI(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a VaultPKI CR to trigger the sync
-	testVaultPKI := &secretsv1alpha1.VaultPKI{
+	testVaultPKI := &secretsv1alpha1.VaultPKISecret{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      "vaultpki-test-tenant-1",
 			Namespace: testK8sNamespace,
 		},
-		Spec: secretsv1alpha1.VaultPKISpec{
+		Spec: secretsv1alpha1.VaultPKISecretSpec{
 			VaultAuthRef: "vaultauth-test-tenant-1",
 			Namespace:    testVaultNamespace,
 			Mount:        testPKIMountPath,

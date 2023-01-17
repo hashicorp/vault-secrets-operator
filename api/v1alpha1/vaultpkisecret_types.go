@@ -10,8 +10,8 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// VaultPKISpec defines the desired state of VaultPKI
-type VaultPKISpec struct {
+// VaultPKISecretSpec defines the desired state of VaultPKISecret
+type VaultPKISecretSpec struct {
 	// VaultAuthRef of the VaultAuth resource
 	VaultAuthRef string `json:"vaultAuthRef"`
 
@@ -96,8 +96,8 @@ type VaultPKISpec struct {
 	ExcludeCNFromSans bool `json:"excludeCNFromSans,omitempty"`
 }
 
-// VaultPKIStatus defines the observed state of VaultPKI
-type VaultPKIStatus struct {
+// VaultPKISecretStatus defines the observed state of VaultPKISecret
+type VaultPKISecretStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 	SerialNumber string `json:"serialNumber"`
@@ -108,16 +108,16 @@ type VaultPKIStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
-// VaultPKI is the Schema for the vaultpkis API
-type VaultPKI struct {
+// VaultPKISecret is the Schema for the vaultpkisecrets API
+type VaultPKISecret struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   VaultPKISpec   `json:"spec,omitempty"`
-	Status VaultPKIStatus `json:"status,omitempty"`
+	Spec   VaultPKISecretSpec   `json:"spec,omitempty"`
+	Status VaultPKISecretStatus `json:"status,omitempty"`
 }
 
-func (v *VaultPKI) GetIssuerAPIData() map[string]interface{} {
+func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 	m := map[string]interface{}{
 		"common_name":          v.Spec.CommonName,
 		"alt_names":            v.Spec.AltNames,
@@ -142,13 +142,13 @@ func (v *VaultPKI) GetIssuerAPIData() map[string]interface{} {
 
 //+kubebuilder:object:root=true
 
-// VaultPKIList contains a list of VaultPKI
-type VaultPKIList struct {
+// VaultPKISecretList contains a list of VaultPKISecret
+type VaultPKISecretList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []VaultPKI `json:"items"`
+	Items           []VaultPKISecret `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&VaultPKI{}, &VaultPKIList{})
+	SchemeBuilder.Register(&VaultPKISecret{}, &VaultPKISecretList{})
 }
