@@ -8,7 +8,7 @@ terraform {
       version = "~> 2.16"
     }
     vault = {
-      source = "hashicorp/vault"
+      source  = "hashicorp/vault"
       version = "~> 3.11"
     }
   }
@@ -26,10 +26,10 @@ resource "kubernetes_namespace" "tenant-1" {
 }
 
 resource "kubernetes_secret" "pki1" {
-    metadata {
-      name = "pki1"
-      namespace = var.k8s_test_namespace
-    }
+  metadata {
+    name      = "pki1"
+    namespace = var.k8s_test_namespace
+  }
 }
 
 provider "vault" {
@@ -38,7 +38,7 @@ provider "vault" {
 
 // Vault OSS setup
 resource "vault_mount" "pki" {
-  count = var.vault_enterprise ? 0 : 1
+  count                     = var.vault_enterprise ? 0 : 1
   path                      = "pki"
   type                      = "pki"
   default_lease_ttl_seconds = 3600
@@ -46,7 +46,7 @@ resource "vault_mount" "pki" {
 }
 
 resource "vault_pki_secret_backend_role" "role" {
-  count = var.vault_enterprise ? 0 : 1
+  count            = var.vault_enterprise ? 0 : 1
   backend          = vault_mount.pki[count.index].path
   name             = "secret"
   ttl              = 3600
@@ -58,30 +58,29 @@ resource "vault_pki_secret_backend_role" "role" {
 }
 
 resource "vault_pki_secret_backend_root_cert" "test" {
-  count = var.vault_enterprise ? 0 : 1
-  depends_on            = [vault_mount.pki]
-  backend               = vault_mount.pki[count.index].path
-  type                  = "internal"
-  common_name           = "Root CA"
-  ttl                   = "315360000"
-  format                = "pem"
-  private_key_format    = "der"
-  key_type              = "rsa"
-  key_bits              = 4096
-  exclude_cn_from_sans  = true
-  ou                    = "My OU"
-  organization          = "My organization"
+  count                = var.vault_enterprise ? 0 : 1
+  backend              = vault_mount.pki[count.index].path
+  type                 = "internal"
+  common_name          = "Root CA"
+  ttl                  = "315360000"
+  format               = "pem"
+  private_key_format   = "der"
+  key_type             = "rsa"
+  key_bits             = 4096
+  exclude_cn_from_sans = true
+  ou                   = "My OU"
+  organization         = "My organization"
 }
 
 // Vault Enterprise setup
 resource "vault_namespace" "test" {
   count = var.vault_enterprise ? 1 : 0
-  path = var.vault_test_namespace
+  path  = var.vault_test_namespace
 }
 
 resource "vault_mount" "pki-ent" {
-  count = var.vault_enterprise ? 1 : 0
-  namespace = vault_namespace.test[count.index].path
+  count                     = var.vault_enterprise ? 1 : 0
+  namespace                 = vault_namespace.test[count.index].path
   path                      = var.vault_pki_mount_path
   type                      = "pki"
   default_lease_ttl_seconds = 3600
@@ -89,8 +88,8 @@ resource "vault_mount" "pki-ent" {
 }
 
 resource "vault_pki_secret_backend_role" "role-ent" {
-  count = var.vault_enterprise ? 1 : 0
-  namespace = vault_namespace.test[count.index].path
+  count            = var.vault_enterprise ? 1 : 0
+  namespace        = vault_namespace.test[count.index].path
   backend          = vault_mount.pki-ent[count.index].path
   name             = "secret"
   ttl              = 3600
@@ -102,18 +101,17 @@ resource "vault_pki_secret_backend_role" "role-ent" {
 }
 
 resource "vault_pki_secret_backend_root_cert" "test-ent" {
-  count = var.vault_enterprise ? 1 : 0
-  namespace = vault_namespace.test[count.index].path
-  depends_on            = [vault_mount.pki-ent]
-  backend               = vault_mount.pki-ent[count.index].path
-  type                  = "internal"
-  common_name           = "Root CA"
-  ttl                   = "315360000"
-  format                = "pem"
-  private_key_format    = "der"
-  key_type              = "rsa"
-  key_bits              = 4096
-  exclude_cn_from_sans  = true
-  ou                    = "My OU"
-  organization          = "My organization"
+  count                = var.vault_enterprise ? 1 : 0
+  namespace            = vault_namespace.test[count.index].path
+  backend              = vault_mount.pki-ent[count.index].path
+  type                 = "internal"
+  common_name          = "Root CA"
+  ttl                  = "315360000"
+  format               = "pem"
+  private_key_format   = "der"
+  key_type             = "rsa"
+  key_bits             = 4096
+  exclude_cn_from_sans = true
+  ou                   = "My OU"
+  organization         = "My organization"
 }
