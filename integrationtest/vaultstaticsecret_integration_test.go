@@ -21,7 +21,7 @@ import (
 func TestVaultStaticSecret_kv(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
-	testKvMountPath := "kvv2"
+	testKvMountPath := "kvv2-" + testID
 	testVaultNamespace := ""
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")

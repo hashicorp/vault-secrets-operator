@@ -19,10 +19,10 @@ import (
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
-func TestVaultPKI(t *testing.T) {
+func TestVaultPKISecret(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
-	testPKIMountPath := "pki"
+	testPKIMountPath := "pki-" + testID
 	testVaultNamespace := ""
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
@@ -32,7 +32,7 @@ func TestVaultPKI(t *testing.T) {
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
-		TerraformDir: "vaultpki/terraform",
+		TerraformDir: "vaultpkisecret/terraform",
 		Vars: map[string]interface{}{
 			"k8s_test_namespace":   testK8sNamespace,
 			"k8s_config_context":   "kind-" + clusterName,

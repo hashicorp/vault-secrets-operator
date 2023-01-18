@@ -39,7 +39,7 @@ provider "vault" {
 // Vault OSS setup
 resource "vault_mount" "pki" {
   count                     = var.vault_enterprise ? 0 : 1
-  path                      = "pki"
+  path                      = var.vault_pki_mount_path
   type                      = "pki"
   default_lease_ttl_seconds = 3600
   max_lease_ttl_seconds     = 86400
