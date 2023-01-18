@@ -102,9 +102,10 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// not support dynamically creating secrets yet.
 	sec, err := r.getSecret(ctx, logger, s)
 	if err != nil {
+		logger.Info("Kubernetes secret does not exist yet", "path", s.Name)
 		return ctrl.Result{
 			RequeueAfter: time.Second * 10,
-		}, err
+		}, nil
 	}
 
 	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
@@ -127,7 +128,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Error(err, "Empty Vault secret", "path", path)
 		return ctrl.Result{
 			RequeueAfter: time.Second * 30,
-		}, err
+		}, nil
 	}
 
 	certResp, err := vault.UnmarshalPKIIssueResponse(resp)
