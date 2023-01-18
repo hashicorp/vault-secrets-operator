@@ -104,7 +104,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		logger.Info("Kubernetes secret does not exist yet", "path", s.Name)
 		return ctrl.Result{
-			Requeue:      true,
 			RequeueAfter: time.Second * 10,
 		}, nil
 	}
@@ -128,7 +127,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if resp == nil {
 		logger.Error(err, "Empty Vault secret", "path", path)
 		return ctrl.Result{
-			Requeue:      true,
 			RequeueAfter: time.Second * 30,
 		}, nil
 	}

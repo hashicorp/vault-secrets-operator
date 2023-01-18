@@ -109,7 +109,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		l.Error(err, "error reading secret %q")
 		return ctrl.Result{
-			Requeue:      true,
 			RequeueAfter: refAfter,
 		}, nil
 	}
@@ -117,7 +116,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if resp == nil {
 		l.Error(err, "empty Vault secret", "path", path)
 		return ctrl.Result{
-			Requeue:      true,
 			RequeueAfter: refAfter,
 		}, nil
 	}
@@ -142,7 +140,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// set ctrl.Result.Requeue to true with RequeueAfter being the credential (expiry TTL - some offset)
 	return ctrl.Result{
-		Requeue:      true,
 		RequeueAfter: refAfter,
 	}, nil
 }
