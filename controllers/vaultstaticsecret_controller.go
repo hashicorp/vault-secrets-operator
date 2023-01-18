@@ -109,15 +109,17 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		l.Error(err, "error reading secret %q")
 		return ctrl.Result{
+			Requeue:      true,
 			RequeueAfter: refAfter,
-		}, err
+		}, nil
 	}
 
 	if resp == nil {
 		l.Error(err, "empty Vault secret", "path", path)
 		return ctrl.Result{
+			Requeue:      true,
 			RequeueAfter: refAfter,
-		}, err
+		}, nil
 	}
 
 	l.Info(fmt.Sprintf("Resp %#v", resp))
@@ -140,8 +142,9 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// set ctrl.Result.Requeue to true with RequeueAfter being the credential (expiry TTL - some offset)
 	return ctrl.Result{
+		Requeue:      true,
 		RequeueAfter: refAfter,
-	}, err
+	}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
