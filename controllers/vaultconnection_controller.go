@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -60,21 +61,24 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		SkipTLSVerify:   c.Spec.SkipTLSVerify,
 		TLSServerName:   c.Spec.TLSServerName,
 	}
-	_, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
+	vaultClient, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
 	if err != nil {
 		l.Error(err, "failed to construct Vault client")
 		r.Recorder.Eventf(&c, corev1.EventTypeWarning, "VaultClientError", "failed to construct Vault client: %w", err)
 		return ctrl.Result{}, err
 	}
 
-	// TODO(tvoran): try seal status here?
+	if _, err := vaultClient.Sys().SealStatusWithContext(ctx); err != nil {
+		l.Error(err, "error checking Vault connection, requeuing")
+		r.Recorder.Event(&c, corev1.EventTypeWarning, "VaultClientError", fmt.Sprintf("error checking Vault connection, requeuing: %s", err))
+		return ctrl.Result{}, err
+	}
 
 	c.Status.Valid = true
 	if err := r.Client.Status().Update(ctx, &c); err != nil {
-		l.Error(err, "error updating VaultConnection status")
+		l.Error(err, "error updating VaultConnection status, requeuing")
 		return ctrl.Result{}, err
 	}
-	l.Info("after update, VaultConnection is ", "vc", c)
 
 	r.Recorder.Event(&c, corev1.EventTypeNormal, "Accepted", "VaultConnection accepted")
 	return ctrl.Result{}, nil

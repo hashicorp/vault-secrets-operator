@@ -23,9 +23,10 @@ func TestMakeVaultClient(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := map[string]struct {
-		vaultConfig   *VaultClientConfig
-		CACert        []byte
-		expectedError error
+		vaultConfig     *VaultClientConfig
+		CACert          []byte
+		makeBlankSecret bool
+		expectedError   error
 	}{
 		"empty everything": {
 			vaultConfig:   nil,
@@ -51,6 +52,17 @@ func TestMakeVaultClient(t *testing.T) {
 			CACert:        testCABytes,
 			expectedError: nil,
 		},
+		"caCert specified but empty": {
+			vaultConfig: &VaultClientConfig{
+				CACertSecretRef: "vault-cert",
+				K8sNamespace:    "vault",
+				Address:         "localhost",
+				TLSServerName:   "vault-server",
+			},
+			CACert:          testCABytes,
+			makeBlankSecret: true,
+			expectedError:   fmt.Errorf(`"ca.crt" was empty in the CA secret vault/vault-cert`),
+		},
 		"vault namespace": {
 			vaultConfig: &VaultClientConfig{
 				VaultNamespace: "vault-test-namespace",
@@ -70,6 +82,9 @@ func TestMakeVaultClient(t *testing.T) {
 						Namespace: tc.vaultConfig.K8sNamespace,
 					},
 					Data: map[string][]byte{"ca.crt": tc.CACert},
+				}
+				if tc.makeBlankSecret {
+					delete(caCertSecret.Data, "ca.crt")
 				}
 				clientBuilder = clientBuilder.WithObjects(&caCertSecret)
 			}

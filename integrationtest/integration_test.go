@@ -17,6 +17,7 @@ import (
 	"github.com/gruntwork-io/terratest/modules/retry"
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault/api"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -102,7 +103,8 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, nam
 			return "", fmt.Errorf("certificate is empty")
 		}
 
-		pem, _ := pem.Decode(destSecret.Data["certificate"])
+		pem, rest := pem.Decode(destSecret.Data["certificate"])
+		assert.Empty(t, rest)
 		cert, err := x509.ParseCertificate(pem.Bytes)
 		require.NoError(t, err)
 		if cert.Subject.CommonName != expectedCommonName {

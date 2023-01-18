@@ -78,11 +78,13 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
 	if err != nil {
+		l.Error(err, "error getting Vault config")
 		return ctrl.Result{}, err
 	}
 
 	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
+		l.Error(err, "error getting Vault client")
 		return ctrl.Result{}, err
 	}
 	if _, err = c.Sys().SealStatus(); err != nil {
