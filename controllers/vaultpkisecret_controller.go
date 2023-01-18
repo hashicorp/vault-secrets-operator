@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +34,7 @@ type VaultPKISecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -107,7 +107,12 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, err
 	}
 
-	c, err := r.getVaultClient(logger, s.Spec)
+	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -263,7 +268,12 @@ func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.L
 }
 
 func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
-	c, err := r.getVaultClient(l, s.Spec)
+	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	if err != nil {
+		return err
+	}
+
+	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		return err
 	}
@@ -278,27 +288,6 @@ func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr
 	}
 
 	return nil
-}
-
-// TODO: duplicated in VaultStaticSecretReconciler
-func (r *VaultPKISecretReconciler) getVaultClient(l logr.Logger, spec secretsv1alpha1.VaultPKISecretSpec) (*api.Client, error) {
-	config := api.DefaultConfig()
-	// TODO: get this from config, probably from env var VAULT_ADDR=http://vault.demo.svc.cluster.local:8200
-	config.Address = "http://vault.demo.svc.cluster.local:8200"
-	c, err := api.NewClient(config)
-	if err != nil {
-		l.Error(err, "error setting up Vault API client")
-		return nil, err
-	}
-	// TODO: get this from the service account, setup k8s-auth
-	c.SetToken("root")
-
-	// l.Info(fmt.Sprintf("Getting Vault client, ns=%q", spec.Namespace))
-	if spec.Namespace != "" {
-		c.SetNamespace(spec.Namespace)
-	}
-
-	return c, nil
 }
 
 func (r *VaultPKISecretReconciler) getPath(spec secretsv1alpha1.VaultPKISecretSpec) string {
