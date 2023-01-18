@@ -19,8 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-
-	"github.com/hashicorp/vault/api"
 )
 
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
@@ -78,7 +76,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	l.Info(fmt.Sprintf("%#v", sec1))
 
-	c, err := r.getVaultClient(ctx, spec)
+	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -146,28 +149,6 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultStaticSecret{}).
 		Complete(r)
-}
-
-func (r *VaultStaticSecretReconciler) getVaultClient(ctx context.Context, spec secretsv1alpha1.VaultStaticSecretSpec) (*api.Client,
-	error,
-) {
-	l := log.FromContext(ctx)
-	config := api.DefaultConfig()
-	// TODO: get this from config, probably from env var VAULT_ADDR=http://vault.demo.svc.cluster.local:8200
-	config.Address = "http://vault.demo.svc.cluster.local:8200"
-	c, err := api.NewClient(config)
-	if err != nil {
-		l.Error(err, "error setting up Vault API client")
-		return nil, err
-	}
-	// TODO: get this from the service account, setup k8s-auth
-	c.SetToken("root")
-
-	l.Info(fmt.Sprintf("Getting Vault client, ns=%q", spec.Namespace))
-	if spec.Namespace != "" {
-		c.SetNamespace(spec.Namespace)
-	}
-	return c, nil
 }
 
 func (r *VaultStaticSecretReconciler) getKVV2Path(mount, name string) string {

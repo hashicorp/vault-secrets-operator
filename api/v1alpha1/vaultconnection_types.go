@@ -12,18 +12,16 @@ import (
 
 // VaultConnectionSpec defines the desired state of VaultConnection
 type VaultConnectionSpec struct {
-	// Address to the Vault server -- not sure if we want to support more than one?
+	// Address of the Vault server
 	Address string `json:"address"`
 	// Headers to be included in all Vault requests.
 	Headers map[string]string `json:"headers,omitempty"`
 	// TLSServerName to use as the SNI host for TLS connections.
 	TLSServerName string `json:"tlsServerName,omitempty"`
-	// CACertSecret containing the trusted PEM encoded CA certificate chain.
-	CACertSecret string `json:"caCertSecret,omitempty"`
+	// CACertSecretRef containing the trusted PEM encoded CA certificate chain.
+	CACertSecretRef string `json:"caCertSecretRef,omitempty"`
 	// SkipTLSVerify for TLS connections.
 	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
-	// AllowedNamespaces for this Connection
-	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 }
 
 // VaultConnectionStatus defines the observed state of VaultConnection

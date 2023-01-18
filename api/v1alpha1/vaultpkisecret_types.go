@@ -10,10 +10,10 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// VaultPKISecretSpec defines the desired state of VaultPKI
+// VaultPKISecretSpec defines the desired state of VaultPKISecret
 type VaultPKISecretSpec struct {
-	// AuthName of the VaultAuth resource
-	AuthName string `json:"authName"`
+	// VaultAuthRef of the VaultAuth resource
+	VaultAuthRef string `json:"vaultAuthRef"`
 
 	// Namespace to get the secret from
 	Namespace string `json:"namespace,omitempty"`

@@ -12,7 +12,9 @@ import (
 
 // VaultStaticSecretSpec defines the desired state of VaultStaticSecret
 type VaultStaticSecretSpec struct {
-	// Namespace to get the secret from
+	// VaultAuthRef references a VaultAuth in the same Kubernetes namespace
+	VaultAuthRef string `json:"vaultAuthRef"`
+	// Namespace to get the secret from in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`

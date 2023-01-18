@@ -16,8 +16,10 @@ type VaultAuthKubernetes struct{}
 
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
-	// ConnectionName of the corresponding VaultConnection CustomResource.
-	ConnectionName string `json:"connectionName"`
+	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
+	VaultConnectionRef string `json:"vaultConnectionRef"`
+	// Namespace to auth to in Vault
+	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.

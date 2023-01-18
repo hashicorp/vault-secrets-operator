@@ -189,7 +189,7 @@ delete-kind: ## delete the kind cluster
 .PHONY: setup-integration-test-common
 ## Create Vault inside the cluster
 setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license)
-setup-integration-test-common: teardown-integration-test
+setup-integration-test-common: kustomize teardown-integration-test
 	kubectl create namespace $(K8S_VAULT_NAMESPACE)
 
 	# don't log the license
@@ -216,11 +216,11 @@ setup-integration-test-common: teardown-integration-test
 
 
 .PHONY: setup-integration-test
-setup-integration-test: setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test (Vault OSS, build and deploy operator)
+setup-integration-test: setup-integration-test-common ## Setup the integration test (Vault OSS)
 
 .PHONY: setup-integration-test-ent
 setup-integration-test-ent: VAULT_IMAGE_REPO=$(VAULT_ENT_IMAGE_REPO)
-setup-integration-test-ent: check-license setup-integration-test-common ci-docker-build ci-deploy-kind ## Setup the integration test (Vault ENT, build and deploy operator)
+setup-integration-test-ent: check-license setup-integration-test-common ## Setup the integration test (Vault ENT)
 
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
@@ -291,7 +291,7 @@ KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
-	$(KUSTOMIZE_INSTALL_SCRIPT) $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN)
+	test -s $(LOCALBIN)/kustomize || $(KUSTOMIZE_INSTALL_SCRIPT) $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN)
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
