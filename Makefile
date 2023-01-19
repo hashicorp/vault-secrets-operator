@@ -129,7 +129,7 @@ fmt: gofumpt ## Run gofumpt against code.
 	$(GOFUMPT) -l -w -extra .
 
 .PHONY: check-fmt
-check-gofmt: gofumpt ## Check formatting
+check-fmt: gofumpt ## Check formatting
 	@GOFUMPT_BIN=$(GOFUMPT) $(CURDIR)/scripts/gofmtcheck.sh $(CURDIR)
 
 .PHONY: tffmt
