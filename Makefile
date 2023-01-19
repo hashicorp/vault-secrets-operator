@@ -128,7 +128,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 fmt: gofumpt ## Run gofumpt against code.
 	$(GOFUMPT) -l -w -extra .
 
-.PHONY: check-gofmt
+.PHONY: check-fmt
 check-gofmt: gofumpt ## Check formatting
 	@GOFUMPT_BIN=$(GOFUMPT) $(CURDIR)/scripts/gofmtcheck.sh $(CURDIR)
 

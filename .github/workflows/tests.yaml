@@ -18,17 +18,16 @@ jobs:
 
   fmtcheck:
     runs-on: ubuntu-latest
-    needs: [get-go-version]
-    env:
-      GOFUMPT_VERSION: 0.4.0
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - run: |
-          go install "mvdan.cc/gofumpt@v${GOFUMPT_VERSION}"
-          make fmtcheck
+          make check-fmt
+  tf-fmtcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          make check-tffmt
 
   test:
     runs-on: ubuntu-latest
