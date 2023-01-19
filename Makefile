@@ -210,7 +210,7 @@ delete-kind: ## delete the kind cluster
 setup-integration-test: terraform kustomize set-vault-license ## Deploy Vault for integration testing
 	@mkdir -p $(TF_INFRA_STATE_DIR)
 ifeq ($(VAULT_ENTERPRISE), true)
-    ## ensure that the license is emitted to the console
+    ## ensure that the license is *not* emitted to the console
 	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_INFRA_STATE_DIR)/license.auto.tfvars
 ifdef VAULT_IMAGE_REPO
 	$(eval EXTRA_VARS=-var vault_image_repo_ent=$(VAULT_IMAGE_REPO))
