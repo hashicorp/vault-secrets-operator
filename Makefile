@@ -227,7 +227,7 @@ endif
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
 		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
-	rm -f $(CURDIR)/integrationtest/infra/state/*.tfvars
+	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
 
 	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
 	kubectl delete --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
