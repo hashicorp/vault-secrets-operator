@@ -4,23 +4,44 @@
 package v1alpha1
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-type VaultAuthAWS struct{}
-
-type VaultAuthKubernetes struct{}
+// VaultAuthConfigKubernetes provides VaultAuth configuration options needed for authenticating to Vault.
+type VaultAuthConfigKubernetes struct {
+	// Role to use for authenticating to Vault.
+	Role string `json:"role"`
+	// ServiceAccount to use when authenticating to Vault's kubernetes
+	// authentication backend.
+	ServiceAccount string `json:"serviceAccount"`
+	// TokenAudiences to include in the ServiceAccount token.
+	TokenAudiences []string `json:"audiences,omitempty"`
+	// TokenExpirationSeconds to set the ServiceAccount token.
+	// +kubebuilder:default=600
+	// +kubebuilder:validation:Minimum=600
+	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
+	// TokenGenerateName is an optional prefix, to be used when generating unique
+	// ServiceAccount tokens.
+	// +kubebuilder:default=vault-secrets-operator
+	TokenGenerateName string `json:"tokenGenerateName,omitempty"`
+}
 
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
+	// If no value is specified the Operator will default to the `default` VaultConnection,
+	// configured in its own Kubernetes namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
+	// +kubebuilder:validation:Enum=kubernetes
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
@@ -28,14 +49,15 @@ type VaultAuthSpec struct {
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.
 	Headers map[string]string `json:"headers,omitempty"`
-	// ServiceAccount to use for authenticating to Vault.
-	ServiceAccount string `json:"serviceAccount"`
+	// Kubernetes specific auth configuration, requires that the Method be set to kubernetes.
+	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
 }
 
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid bool `json:"valid"`
+	Valid bool   `json:"valid"`
+	Error string `json:"error"`
 }
 
 //+kubebuilder:object:root=true
@@ -48,6 +70,23 @@ type VaultAuth struct {
 
 	Spec   VaultAuthSpec   `json:"spec,omitempty"`
 	Status VaultAuthStatus `json:"status,omitempty"`
+}
+
+// GetConnectionNamespacedName returns the NamespacedName for the configured vaultConnectionRef.
+// If no value is specified an error is returned.
+func (v *VaultAuth) GetConnectionNamespacedName() (types.NamespacedName, error) {
+	connRef := v.Spec.VaultConnectionRef
+	if len(connRef) == 0 {
+		return types.NamespacedName{}, fmt.Errorf(
+			"vaultConnectionRef is empty",
+		)
+	}
+
+	// the VaultConnection CR must be in the same namespace as its VaultAuth.
+	return types.NamespacedName{
+		Namespace: v.Namespace,
+		Name:      connRef,
+	}, nil
 }
 
 //+kubebuilder:object:root=true

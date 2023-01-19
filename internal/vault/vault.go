@@ -83,12 +83,16 @@ type VaultClientConfig struct {
 	TLSServerName string
 	// VaultNamespace is the namespace in Vault to auth to
 	VaultNamespace string
-	// Token is the Vault token result from successful auth
-	Token string
+	// AuthLogin for Vault getting a vault token
+	AuthLogin AuthLogin
+}
+
+func (c *VaultClientConfig) SetAuthLogin(a AuthLogin) {
+	c.AuthLogin = a
 }
 
 // MakeVaultClient creates a Vault API client from a VaultClientConfig
-func MakeVaultClient(ctx context.Context, vaultConfig *VaultClientConfig, k8sClient client.Client) (*api.Client, error) {
+func MakeVaultClient(ctx context.Context, vaultConfig *VaultClientConfig, client client.Client) (*api.Client, error) {
 	l := log.FromContext(ctx)
 	if vaultConfig == nil {
 		return nil, fmt.Errorf("VaultClientConfig was nil")
@@ -97,7 +101,7 @@ func MakeVaultClient(ctx context.Context, vaultConfig *VaultClientConfig, k8sCli
 	vaultCAbytes := []byte{}
 	if vaultConfig.CACertSecretRef != "" {
 		vaultCASecret := &corev1.Secret{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{
+		if err := client.Get(ctx, types.NamespacedName{
 			Namespace: vaultConfig.K8sNamespace,
 			Name:      vaultConfig.CACertSecretRef,
 		}, vaultCASecret); err != nil {

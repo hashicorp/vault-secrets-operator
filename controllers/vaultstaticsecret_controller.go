@@ -44,8 +44,8 @@ type VaultStaticSecretReconciler struct {
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
-	var s secretsv1alpha1.VaultStaticSecret
-	if err := r.Client.Get(ctx, req.NamespacedName, &s); err != nil {
+	s := &secretsv1alpha1.VaultStaticSecret{}
+	if err := r.Client.Get(ctx, req.NamespacedName, s); err != nil {
 		if apierrors.IsNotFound(err) {
 			// TODO: delete the secret?
 			return ctrl.Result{}, nil
@@ -76,7 +76,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	l.Info(fmt.Sprintf("%#v", sec1))
 
-	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	vc, err := getVaultConfig(ctx, r.Client, s)
 	if err != nil {
 		l.Error(err, "error getting Vault config")
 		return ctrl.Result{}, err

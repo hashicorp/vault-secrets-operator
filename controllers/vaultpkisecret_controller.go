@@ -108,7 +108,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	vc, err := getVaultConfig(ctx, r.Client, s)
 	if err != nil {
 		logger.Error(err, "error getting Vault config")
 		return ctrl.Result{}, err
@@ -271,7 +271,7 @@ func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.L
 }
 
 func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
-	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	vc, err := getVaultConfig(ctx, r.Client, s)
 	if err != nil {
 		return err
 	}

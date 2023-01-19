@@ -67,6 +67,9 @@ KIND_CLUSTER_NAME ?= vault-secrets-operator
 # Kind cluster context
 KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
+# Operator namespace as configured in config/default/kustomization.yaml
+OPERATOR_NAMESPACE ?= vault-secrets-operator-system
+
 # Run tests against Vault enterprise when true.
 VAULT_ENTERPRISE ?= false
 # The vault license.
@@ -187,7 +190,7 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 
 .PHONY: integration-test
 integration-test:  setup-integration-test ## Run integration tests for Vault OSS
-	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
+	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise

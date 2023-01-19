@@ -17,6 +17,8 @@ variable "k8s_config_path" {
   default = "~/.kube/config"
 }
 
+variable "k8s_host" {}
+
 variable "vault_pki_mount_path" {
   default = "pki"
 }

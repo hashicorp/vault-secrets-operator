@@ -34,6 +34,8 @@ func TestVaultPKISecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultpkisecret/terraform",
 		Vars: map[string]interface{}{
+			// TODO: get this dynamically
+			"k8s_host":             "https://10.96.0.1",
 			"k8s_test_namespace":   testK8sNamespace,
 			"k8s_config_context":   "kind-" + clusterName,
 			"vault_pki_mount_path": testPKIMountPath,
@@ -78,6 +80,13 @@ func TestVaultPKISecret(t *testing.T) {
 		Spec: secretsv1alpha1.VaultAuthSpec{
 			VaultConnectionRef: "vaultconnection-test-tenant-1",
 			Namespace:          testVaultNamespace,
+			Method:             "kubernetes",
+			Mount:              "kubernetes",
+			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				Role:           "role1",
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
 		},
 	}
 
