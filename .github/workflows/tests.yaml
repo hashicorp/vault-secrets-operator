@@ -104,20 +104,16 @@ jobs:
       - name: OSS tests
         env:
           INTEGRATION_TESTS: true
-          VAULT_VERSION: ${{ matrix.vault-version }}
-          VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make setup-integration-test
           make ci-deploy-kind
           make integration-test
       - name: ENT tests
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
-          VAULT_VERSION: ${{ matrix.vault-version }}-ent
-          VAULT_ENT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
-          make setup-integration-test-ent LICENSE_TMP=$RUNNER_TEMP
           make ci-deploy-kind
           make integration-test-ent

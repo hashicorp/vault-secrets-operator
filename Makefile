@@ -5,13 +5,15 @@
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
 
-VAULT_VERSION ?= latest
-VAULT_IMAGE_REPO ?= hashicorp/vault
-VAULT_ENT_IMAGE_REPO ?= hashicorp/vault-enterprise
+VAULT_IMAGE_TAG ?= latest
+VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= demo
 KIND_K8S_VERSION ?= v1.25.3
-LICENSE_TMP ?= $(TMPDIR)
 VAULT_HELM_VERSION ?= 0.23.0
+
+TERRAFORM_VERSION ?= 1.3.7
+GOFUMPT_VERSION ?= v0.4.0
+
 TESTARGS ?= '-test.v'
 
 # CHANNELS define the bundle channels used in the bundle.
@@ -62,6 +64,16 @@ ENVTEST_K8S_VERSION = 1.24.1
 
 # Kind cluster name
 KIND_CLUSTER_NAME ?= vault-secrets-operator
+# Kind cluster context
+KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
+
+# Run tests against Vault enterprise when true.
+VAULT_ENTERPRISE ?= false
+# The vault license.
+_VAULT_LICENSE ?=
+
+TF_INFRA_SRC_DIR ?= ./integrationtest/infra
+TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
@@ -113,12 +125,20 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
-fmt: ## Run gofumpt against code.
-	gofumpt -l -w .
+fmt: gofumpt ## Run gofumpt against code.
+	$(GOFUMPT) -l -w -extra .
 
-.PHONY: fmtcheck
-fmtcheck: ## Check formatting
-	@sh -c "'$(CURDIR)/scripts/gofmtcheck.sh'"
+.PHONY: check-gofmt
+check-gofmt: gofumpt ## Check formatting
+	@GOFUMPT_BIN=$(GOFUMPT) $(CURDIR)/scripts/gofmtcheck.sh $(CURDIR)
+
+.PHONY: tffmt
+fmttf: terraform ## Run gofumpt against code.
+	$(TERRAFORM) fmt -recursive -write=true
+
+.PHONY: check-tffmt
+check-tffmt: terraform ## Check formatting
+	@TERRAFORM_BIN=$(TERRAFORM) $(CURDIR)/scripts/tffmtcheck.sh $(CURDIR)
 
 .PHONY: vet
 vet: ## Run go vet against code.
@@ -166,12 +186,12 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
 .PHONY: integration-test
-integration-test: ## Run integration tests for Vault OSS
+integration-test:  setup-integration-test ## Run integration tests for Vault OSS
 	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
-integration-test-ent: ## Run integration tests for Vault ENT
-	make integration-test ENT_TESTS=true
+integration-test-ent: ## Run integration tests for Vault Enterprise
+	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally
@@ -180,47 +200,61 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
 		--config $(CURDIR)/integrationtest/kind/config.yaml
-	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
+	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
 
-.PHONY: setup-integration-test-common
-## Create Vault inside the cluster
-setup-integration-test-common: SET_LICENSE=$(if $(VAULT_LICENSE_CI),--set server.enterpriseLicense.secretName=vault-license)
-setup-integration-test-common: kustomize teardown-integration-test
-	kubectl create namespace $(K8S_VAULT_NAMESPACE)
+.PHONY: setup-integration-test
+setup-integration-test: terraform kustomize set-vault-license ## Deploy Vault for integration testing
+	@mkdir -p $(TF_INFRA_STATE_DIR)
+ifeq ($(VAULT_ENTERPRISE), true)
+    ## ensure that the license is emitted to the console
+	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_INFRA_STATE_DIR)/license.auto.tfvars
+ifdef VAULT_IMAGE_REPO
+	$(eval EXTRA_VARS=-var vault_image_repo_ent=$(VAULT_IMAGE_REPO))
+endif
+else ifdef VAULT_IMAGE_REPO
+	$(eval EXTRA_VARS=-var vault_image_repo=$(VAULT_IMAGE_REPO))
+endif
+	@rm -f $(TF_INFRA_STATE_DIR)/*.tf
+	cp $(TF_INFRA_SRC_DIR)/*.tf $(TF_INFRA_STATE_DIR)/.
+	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) apply -auto-approve \
+		-var vault_enterprise=$(VAULT_ENTERPRISE) \
+		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
+		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
+		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		$(EXTRA_VARS) || exit 1 \
+	rm -f $(CURDIR)/integrationtest/infra/state/*.tfvars
 
-	# don't log the license
-	printenv VAULT_LICENSE_CI > $(LICENSE_TMP)/vault-license.txt || true
-	if [ -s $(LICENSE_TMP)/vault-license.txt ]; then \
-		kubectl -n $(K8S_VAULT_NAMESPACE) create secret generic vault-license --from-file license=$(LICENSE_TMP)/vault-license.txt; \
-		rm -rf $(LICENSE_TMP)/vault-license.txt; \
-	fi
-
-	helm install vault vault --repo https://helm.releases.hashicorp.com --version=$(VAULT_HELM_VERSION) \
-		--wait --timeout=5m \
-		--namespace=$(K8S_VAULT_NAMESPACE) \
-		--create-namespace \
-		--set server.logLevel=debug \
-		--set server.dev.enabled=true \
-		--set server.image.tag=$(VAULT_VERSION) \
-		--set server.image.repository=$(VAULT_IMAGE_REPO) \
-		$(SET_LICENSE) \
-		--set injector.enabled=false
 	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
-
 	kubectl delete --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
 	kubectl wait --namespace=$(K8S_VAULT_NAMESPACE) --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
 
-
-.PHONY: setup-integration-test
-setup-integration-test: setup-integration-test-common ## Setup the integration test (Vault OSS)
-
 .PHONY: setup-integration-test-ent
-setup-integration-test-ent: VAULT_IMAGE_REPO=$(VAULT_ENT_IMAGE_REPO)
-setup-integration-test-ent: check-license setup-integration-test-common ## Setup the integration test (Vault ENT)
+## Create Vault inside the cluster
+setup-integration-test-ent: ## Deploy Vault Enterprise for integration testing
+	$(MAKE) setup-integration-test VAULT_ENTERPRISE=true
+
+.PHONY: set-vault-license
+set-vault-license:
+ifeq ($(VAULT_ENTERPRISE), true)
+ifdef VAULT_LICENSE_CI
+	@echo Getting license from VAULT_LICENSE_CI
+	$(eval _VAULT_LICENSE=$(shell printenv VAULT_LICENSE_CI))
+else ifdef VAULT_LICENSE
+	@echo Getting license from VAULT_LICENSE
+	$(eval _VAULT_LICENSE=$(shell printenv VAULT_LICENSE))
+else ifdef VAULT_LICENSE_PATH
+	@echo Getting license from VAULT_LICENSE_PATH
+	$(eval _VAULT_LICENSE=$(shell cat $(VAULT_LICENSE_PATH)))
+	@test -n "$(_VAULT_LICENSE)" || ( echo vault license is empty; exit 1)
+else
+	$(error no valid vault license source provided, choices are VAULT_LICENSE_CI, VAULT_LICENSE, VAULT_LICENSE_PATH)
+endif
+endif
 
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
@@ -230,18 +264,16 @@ ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating
 .PHONY: ci-deploy-kind
 ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
-	make ci-deploy
-
-.PHONY: check-license
-## check that VAULT_LICENSE_CI is set
-check-license:
-	(printenv VAULT_LICENSE_CI > /dev/null) || (echo "VAULT_LICENSE_CI must be set"; exit 1)
+	$(MAKE) ci-deploy
 
 .PHONY: teardown-integration-test
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
-	helm uninstall vault --namespace=$(K8S_VAULT_NAMESPACE) || true
-	kubectl delete --ignore-not-found namespace $(K8S_VAULT_NAMESPACE)
+	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) destroy -auto-approve \
+		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var vault_enterprise=$(VAULT_ENTERPRISE) \
+		-var vault_license=ignored && \
+	rm -rf $(TF_INFRA_STATE_DIR)
 
 ##@ Deployment
 
@@ -269,7 +301,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
-	make deploy
+	$(MAKE) deploy
 
 ##@ Build Dependencies
 
@@ -332,6 +364,41 @@ ifeq (,$(shell which opm 2>/dev/null))
 	}
 else
 OPM = $(shell which opm)
+endif
+endif
+
+.PHONY: terraform
+TERRAFORM = ./bin/terraform
+terraform: ## Download terraform locally if necessary.
+ifeq (,$(wildcard $(TERRAFORM)))
+ifeq (,$(shell which $(notdir $(TERRAFORM)) 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(TERRAFORM)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sfSLo $(TERRAFORM).zip https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_$${OS}_$${ARCH}.zip ; \
+	unzip $(TERRAFORM).zip -d $(dir $(TERRAFORM)) $(notdir $(TERRAFORM)) ;\
+	rm -f $(TERRAFORM).zip ; \
+	}
+else
+TERRAFORM = $(shell which terraform)
+endif
+endif
+
+.PHONY: gofumpt
+GOFUMPT = ./bin/gofumpt
+gofumpt: ## Download terraform locally if necessary.
+ifeq (,$(wildcard $(GOFUMPT)))
+ifeq (,$(shell which $(notdir $(GOFUMPT)) 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(GOFUMPT)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sfSLo $(GOFUMPT) https://github.com/mvdan/gofumpt/releases/download/$(GOFUMPT_VERSION)/gofumpt_$(GOFUMPT_VERSION)_$${OS}_$${ARCH} ; \
+	chmod +x $(GOFUMPT) ; \
+	}
+else
+GOFUMPT = $(shell which gofumpt)
 endif
 endif
 

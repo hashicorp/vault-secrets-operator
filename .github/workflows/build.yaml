@@ -40,7 +40,7 @@ jobs:
           echo "Using version ${VERSION}"
           echo "product-version=${VERSION}" >> $GITHUB_OUTPUT
 
-  check-generated-and-go-mod:
+  build-pre-checks:
     runs-on: ubuntu-latest
     needs: get-go-version
     steps:
@@ -49,6 +49,12 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
+      - name: go fmt
+        run: |
+          make check-fmt
+      - name: tf fmt
+        run: |
+          make check-tffmt
       - name: go mod tidy
         run: |
           go mod tidy
