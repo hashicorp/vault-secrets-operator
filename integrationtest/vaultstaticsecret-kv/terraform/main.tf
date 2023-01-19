@@ -28,7 +28,7 @@ resource "kubernetes_namespace" "tenant-1" {
 resource "kubernetes_secret" "secret1" {
   metadata {
     name      = "secret1"
-    namespace = var.k8s_test_namespace
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
   }
 }
 
