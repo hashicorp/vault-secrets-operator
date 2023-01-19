@@ -387,7 +387,7 @@ endif
 
 .PHONY: gofumpt
 GOFUMPT = ./bin/gofumpt
-gofumpt: ## Download terraform locally if necessary.
+gofumpt: ## Download gofumpt locally if necessary.
 ifeq (,$(wildcard $(GOFUMPT)))
 ifeq (,$(shell which $(notdir $(GOFUMPT)) 2>/dev/null))
 	@{ \
