@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/hashicorp/go-multierror"
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
@@ -40,7 +41,7 @@ type VaultConnectionReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
-func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	l := log.FromContext(ctx)
 
 	var c secretsv1alpha1.VaultConnection
@@ -52,6 +53,13 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		l.Error(err, "Failed to retrieve resource from k8s", "connection", c)
 		return ctrl.Result{}, err
 	}
+	defer func() {
+		if updateErr := r.Client.Status().Update(ctx, &c); updateErr != nil {
+			l.Error(updateErr, "Failed to update VaultConnection status", "new status", c.Status)
+			// add the update error to the returned err from Reconcile
+			err = multierror.Append(err, updateErr)
+		}
+	}()
 
 	vaultConfig := &vault.VaultClientConfig{
 		CACertSecretRef: c.Spec.CACertSecretRef,
@@ -62,22 +70,20 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	vaultClient, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
 	if err != nil {
+		c.Status.Valid = false
 		l.Error(err, "Failed to construct Vault client")
 		r.Recorder.Eventf(&c, corev1.EventTypeWarning, "VaultClientError", "Failed to construct Vault client: %s", err)
 		return ctrl.Result{}, err
 	}
 
 	if _, err := vaultClient.Sys().SealStatusWithContext(ctx); err != nil {
+		c.Status.Valid = false
 		l.Error(err, "Failed to check Vault seal status, requeuing")
 		r.Recorder.Eventf(&c, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
 		return ctrl.Result{}, err
 	}
 
 	c.Status.Valid = true
-	if err := r.Client.Status().Update(ctx, &c); err != nil {
-		l.Error(err, "Failed to update VaultConnection status, requeuing")
-		return ctrl.Result{}, err
-	}
 
 	r.Recorder.Event(&c, corev1.EventTypeNormal, "Accepted", "VaultConnection accepted")
 	return ctrl.Result{}, nil
