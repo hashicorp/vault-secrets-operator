@@ -5,11 +5,11 @@ terraform {
   required_providers {
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.16"
+      version = "2.16.1"
     }
     vault = {
-      source = "hashicorp/vault"
-      version = "~> 3.11"
+      source  = "hashicorp/vault"
+      version = "3.12.0"
     }
   }
 }
@@ -26,10 +26,10 @@ resource "kubernetes_namespace" "tenant-1" {
 }
 
 resource "kubernetes_secret" "secret1" {
-    metadata {
-      name = "secret1"
-      namespace = var.k8s_test_namespace
-    }
+  metadata {
+    name      = "secret1"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
 }
 
 provider "vault" {
@@ -37,8 +37,8 @@ provider "vault" {
 }
 
 resource "vault_mount" "kvv2-ent" {
-  count = var.vault_enterprise ? 1 : 0
-  namespace = vault_namespace.test[count.index].path
+  count       = var.vault_enterprise ? 1 : 0
+  namespace   = vault_namespace.test[count.index].path
   path        = var.vault_kv_mount_path
   type        = "kv"
   options     = { version = "2" }
@@ -46,7 +46,7 @@ resource "vault_mount" "kvv2-ent" {
 }
 
 resource "vault_mount" "kvv2" {
-  count = var.vault_enterprise ? 0 : 1
+  count       = var.vault_enterprise ? 0 : 1
   path        = var.vault_kv_mount_path
   type        = "kv"
   options     = { version = "2" }
@@ -55,5 +55,5 @@ resource "vault_mount" "kvv2" {
 
 resource "vault_namespace" "test" {
   count = var.vault_enterprise ? 1 : 0
-  path = var.vault_test_namespace
+  path  = var.vault_test_namespace
 }

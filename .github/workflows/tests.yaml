@@ -18,17 +18,16 @@ jobs:
 
   fmtcheck:
     runs-on: ubuntu-latest
-    needs: [get-go-version]
-    env:
-      GOFUMPT_VERSION: 0.4.0
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - run: |
-          go install "mvdan.cc/gofumpt@v${GOFUMPT_VERSION}"
-          make fmtcheck
+          make check-fmt
+  tf-fmtcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          make check-tffmt
 
   test:
     runs-on: ubuntu-latest
@@ -104,20 +103,16 @@ jobs:
       - name: OSS tests
         env:
           INTEGRATION_TESTS: true
-          VAULT_VERSION: ${{ matrix.vault-version }}
-          VAULT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make setup-integration-test
           make ci-deploy-kind
           make integration-test
       - name: ENT tests
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
-          VAULT_VERSION: ${{ matrix.vault-version }}-ent
-          VAULT_ENT_IMAGE_REPO: docker.mirror.hashicorp.services/hashicorp/vault-enterprise
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
-          make setup-integration-test-ent LICENSE_TMP=$RUNNER_TEMP
           make ci-deploy-kind
           make integration-test-ent
