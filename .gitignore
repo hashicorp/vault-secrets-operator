@@ -6,6 +6,18 @@
 *.tfstate
 *.tfstate.*
 
+# all .tfvars files
+*tfvars*
+
+# ignore anything under a scratch directory
+**/scratch
+
+# ignore anything under a Terraform state directory
+**/state
+
+# ignore the dist dir
+/dist
+
 # Binaries for programs and plugins
 *.exe
 *.exe~

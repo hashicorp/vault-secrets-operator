@@ -5,11 +5,11 @@ terraform {
   required_providers {
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.16"
+      version = "2.16.1"
     }
     vault = {
       source  = "hashicorp/vault"
-      version = "~> 3.11"
+      version = "3.12.0"
     }
   }
 }
@@ -28,7 +28,7 @@ resource "kubernetes_namespace" "tenant-1" {
 resource "kubernetes_secret" "pki1" {
   metadata {
     name      = "pki1"
-    namespace = var.k8s_test_namespace
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
   }
 }
 

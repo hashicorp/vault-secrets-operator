@@ -65,7 +65,7 @@ func getCRDClient(t *testing.T) client.Client {
 	return k8sClient
 }
 
-func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name string, namespace string, expectedData map[string]interface{}) {
+func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expectedData map[string]interface{}) {
 	destSecret := &corev1.Secret{}
 	var err error
 	retry.DoWithRetry(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
