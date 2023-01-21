@@ -110,11 +110,13 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
 	if err != nil {
+		logger.Error(err, "error getting Vault config")
 		return ctrl.Result{}, err
 	}
 
 	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
+		logger.Error(err, "error getting Vault client")
 		return ctrl.Result{}, err
 	}
 
