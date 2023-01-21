@@ -90,7 +90,7 @@ jobs:
     needs:
       - get-product-version
       - get-go-version
-      - check-generated-and-go-mod
+      - build-pre-checks
     runs-on: ubuntu-latest
     strategy:
       matrix:
