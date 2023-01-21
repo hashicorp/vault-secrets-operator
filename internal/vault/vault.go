@@ -103,7 +103,10 @@ func MakeVaultClient(ctx context.Context, vaultConfig *VaultClientConfig, k8sCli
 		}, vaultCASecret); err != nil {
 			return nil, err
 		}
-		vaultCAbytes = vaultCASecret.Data["ca.crt"]
+		var ok bool
+		if vaultCAbytes, ok = vaultCASecret.Data["ca.crt"]; !ok {
+			return nil, fmt.Errorf(`"ca.crt" was empty in the CA secret %s/%s`, vaultConfig.K8sNamespace, vaultConfig.CACertSecretRef)
+		}
 	}
 
 	config := api.DefaultConfig()
