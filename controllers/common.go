@@ -6,11 +6,18 @@ package controllers
 import (
 	"context"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault/api"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+)
+
+var (
+	reasonAccepted          = "Accepted"
+	reasonVaultClientError  = "VaultClientError"
+	reasonVaultStaticSecret = "VaultStaticSecretError"
 )
 
 func getVaultConfig(ctx context.Context, client client.Client, nameAndNamespace types.NamespacedName) (*vault.VaultClientConfig, error) {

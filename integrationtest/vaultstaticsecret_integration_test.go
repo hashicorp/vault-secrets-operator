@@ -21,7 +21,8 @@ import (
 func TestVaultStaticSecret_kv(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
-	testKvMountPath := "kvv2-" + testID
+	testKvMountPath := "kv-" + testID
+	testKvv2MountPath := "kvv2-" + testID
 	testVaultNamespace := ""
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
@@ -31,11 +32,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
-		TerraformDir: "vaultstaticsecret-kv/terraform",
+		TerraformDir: "vaultstaticsecret/terraform",
 		Vars: map[string]interface{}{
-			"k8s_test_namespace":  testK8sNamespace,
-			"k8s_config_context":  "kind-" + clusterName,
-			"vault_kv_mount_path": testKvMountPath,
+			"k8s_test_namespace":    testK8sNamespace,
+			"k8s_config_context":    "kind-" + clusterName,
+			"vault_kv_mount_path":   testKvMountPath,
+			"vault_kvv2_mount_path": testKvv2MountPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
@@ -51,10 +53,13 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
 	terraform.InitAndApply(t, terraformOptions)
 
-	// Set the secret in vault to be synced to kubernetes
+	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
-	putSecret := map[string]interface{}{"password": "applejuice"}
-	_, err := vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", putSecret)
+	putSecretV1 := map[string]interface{}{"password": "grapejuice"}
+	err := vClient.KVv1(testKvMountPath).Put(context.Background(), "secret", putSecretV1)
+	require.NoError(t, err)
+	putSecretV2 := map[string]interface{}{"password": "applejuice"}
+	_, err = vClient.KVv2(testKvv2MountPath).Put(context.Background(), "secret", putSecretV2)
 	require.NoError(t, err)
 
 	crdClient := getCRDClient(t)
@@ -90,19 +95,19 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	err = crdClient.Create(context.Background(), testVaultAuth)
 	require.NoError(t, err)
 
-	// Create a VaultStaticSecret CR to trigger the sync
+	// Create a VaultStaticSecret CR to trigger the sync for kv
 	testVaultStaticSecret := &secretsv1alpha1.VaultStaticSecret{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      "vaultstaticsecret-test-tenant-1",
+			Name:      "vaultstaticsecret-test-kv",
 			Namespace: testK8sNamespace,
 		},
 		Spec: secretsv1alpha1.VaultStaticSecretSpec{
-			VaultAuthRef: "vaultauth-test-tenant-1",
+			VaultAuthRef: testVaultAuth.ObjectMeta.Name,
 			Namespace:    testVaultNamespace,
 			Mount:        testKvMountPath,
-			Type:         "kvv2",
+			Type:         "kv",
 			Name:         "secret",
-			Dest:         "secret1",
+			Dest:         "secretkv",
 			RefreshAfter: "5s",
 		},
 	}
@@ -111,14 +116,40 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	err = crdClient.Create(context.Background(), testVaultStaticSecret)
 	require.NoError(t, err)
 
-	// Wait for the operator to sync Vault secret --> k8s Secret
-	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecret.Spec.Dest, testVaultStaticSecret.ObjectMeta.Namespace, putSecret)
+	// Create a VaultStaticSecret CR to trigger the sync for kvv2
+	testVaultStaticSecretV2 := &secretsv1alpha1.VaultStaticSecret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vaultstaticsecret-test-kvv2",
+			Namespace: testK8sNamespace,
+		},
+		Spec: secretsv1alpha1.VaultStaticSecretSpec{
+			VaultAuthRef: testVaultAuth.ObjectMeta.Name,
+			Namespace:    testVaultNamespace,
+			Mount:        testKvv2MountPath,
+			Type:         "kvv2",
+			Name:         "secret",
+			Dest:         "secretkvv2",
+			RefreshAfter: "5s",
+		},
+	}
 
-	// Change the secret in vault, wait for the VaultStaticSecret refresh, and check
-	// the result
-	updatedSecret := map[string]interface{}{"password": "orangejuice"}
-	_, err = vClient.KVv2(testKvMountPath).Put(context.Background(), "secret", updatedSecret)
+	defer crdClient.Delete(context.Background(), testVaultStaticSecretV2)
+	err = crdClient.Create(context.Background(), testVaultStaticSecretV2)
 	require.NoError(t, err)
 
-	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecret.Spec.Dest, testVaultStaticSecret.ObjectMeta.Namespace, updatedSecret)
+	// Wait for the operator to sync Vault secrets --> k8s Secrets
+	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecret.Spec.Dest, testVaultStaticSecret.ObjectMeta.Namespace, putSecretV1)
+	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecretV2.Spec.Dest, testVaultStaticSecretV2.ObjectMeta.Namespace, putSecretV2)
+
+	// Change the secrets in vault, wait for the VaultStaticSecrets to refresh,
+	// and check the result
+	updatedSecretV1 := map[string]interface{}{"password": "orangejuice"}
+	err = vClient.KVv1(testKvMountPath).Put(context.Background(), "secret", updatedSecretV1)
+	require.NoError(t, err)
+	updatedSecretV2 := map[string]interface{}{"password": "cranberryjuice"}
+	_, err = vClient.KVv2(testKvv2MountPath).Put(context.Background(), "secret", updatedSecretV2)
+	require.NoError(t, err)
+
+	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecret.Spec.Dest, testVaultStaticSecret.ObjectMeta.Namespace, updatedSecretV1)
+	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecretV2.Spec.Dest, testVaultStaticSecretV2.ObjectMeta.Namespace, updatedSecretV2)
 }

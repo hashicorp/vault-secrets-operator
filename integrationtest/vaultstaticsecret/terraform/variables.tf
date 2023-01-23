@@ -18,6 +18,10 @@ variable "k8s_config_path" {
 }
 
 variable "vault_kv_mount_path" {
+  default = "kv"
+}
+
+variable "vault_kvv2_mount_path" {
   default = "kvv2"
 }
 

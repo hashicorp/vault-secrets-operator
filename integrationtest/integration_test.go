@@ -73,16 +73,27 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, 
 		if err != nil {
 			return "", err
 		}
-		if len(destSecret.Data["data"]) == 0 {
-			return "", fmt.Errorf("data in secret is empty")
+		if _, ok := destSecret.Data["_raw"]; !ok {
+			return "", fmt.Errorf("secret hasn't been synced yet")
+		}
+		var rawSecret map[string]interface{}
+		err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
+		require.NoError(t, err)
+		if _, ok := rawSecret["data"]; ok {
+			rawSecret = rawSecret["data"].(map[string]interface{})
+		}
+		for k, v := range expectedData {
+			if !reflect.DeepEqual(v, rawSecret[k]) {
+				return "", fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret)
+			}
 		}
 
-		var secretData map[string]interface{}
-		err = json.Unmarshal(destSecret.Data["data"], &secretData)
-		require.NoError(t, err)
-		if !reflect.DeepEqual(expectedData, secretData["data"]) {
-			return "", fmt.Errorf("data in secret not synced: expected %+v, actual %+v", expectedData, secretData["data"])
+		for k, v := range expectedData {
+			if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
+				return "", fmt.Errorf("data in secret not synced: expected '%s:%s', actual '%s:%s'", k, v, k, string(destSecret.Data[k]))
+			}
 		}
+
 		return "", nil
 	})
 }
