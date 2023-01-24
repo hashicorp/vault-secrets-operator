@@ -18,6 +18,7 @@ var (
 	reasonAccepted          = "Accepted"
 	reasonVaultClientError  = "VaultClientError"
 	reasonVaultStaticSecret = "VaultStaticSecretError"
+	reasonK8sClientError    = "K8sClientError"
 )
 
 func getVaultConfig(ctx context.Context, client client.Client, nameAndNamespace types.NamespacedName) (*vault.VaultClientConfig, error) {
