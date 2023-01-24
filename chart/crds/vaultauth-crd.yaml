@@ -1,0 +1,82 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: vaultauths.secrets.hashicorp.com
+spec:
+  group: secrets.hashicorp.com
+  names:
+    kind: VaultAuth
+    listKind: VaultAuthList
+    plural: vaultauths
+    singular: vaultauth
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: VaultAuth is the Schema for the vaultauths API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: VaultAuthSpec defines the desired state of VaultAuth
+            properties:
+              headers:
+                additionalProperties:
+                  type: string
+                description: Headers to be included in all Vault requests.
+                type: object
+              method:
+                description: Method to use when authenticating to Vault.
+                type: string
+              mount:
+                description: Mount to use when authenticating to auth method.
+                type: string
+              namespace:
+                description: Namespace to auth to in Vault
+                type: string
+              params:
+                additionalProperties:
+                  type: string
+                description: Params to use when authenticating to Vault
+                type: object
+              serviceAccount:
+                description: ServiceAccount to use for authenticating to Vault.
+                type: string
+              vaultConnectionRef:
+                description: VaultConnectionRef of the corresponding VaultConnection
+                  CustomResource.
+                type: string
+            required:
+            - method
+            - mount
+            - serviceAccount
+            - vaultConnectionRef
+            type: object
+          status:
+            description: VaultAuthStatus defines the observed state of VaultAuth
+            properties:
+              valid:
+                description: Valid auth mechanism.
+                type: boolean
+            required:
+            - valid
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

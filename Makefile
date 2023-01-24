@@ -275,6 +275,15 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 		-var vault_license=ignored && \
 	rm -rf $(TF_INFRA_STATE_DIR)
 
+##@ Generate Helm Chart
+HELMIFY=/usr/local/bin/helmify
+.PHONY: helmify
+helmify:
+    $(call go-get-tool,$(HELMIFY),github.com/arttor/helmify/cmd/helmify@v0.3.7)
+
+helm: manifests kustomize helmify
+	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
+
 ##@ Deployment
 
 ifndef ignore-not-found
