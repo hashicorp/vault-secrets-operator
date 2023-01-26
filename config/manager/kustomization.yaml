@@ -14,6 +14,6 @@ configMapGenerator:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: controller-manager
+- name: controller
   newName: hashicorp/vault-secrets-operator
   newTag: 0.0.0-dev
