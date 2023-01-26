@@ -13,6 +13,7 @@ VAULT_HELM_VERSION ?= 0.23.0
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
+HELMIFY_VERSION ?= 0.3.22
 
 TESTARGS ?= '-test.v'
 
@@ -276,12 +277,8 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 	rm -rf $(TF_INFRA_STATE_DIR)
 
 ##@ Generate Helm Chart
-HELMIFY=/usr/local/bin/helmify
-.PHONY: helmify
-helmify:
-    $(call go-get-tool,$(HELMIFY),github.com/arttor/helmify/cmd/helmify@v0.3.7)
-
-helm: manifests kustomize helmify
+.PHONY: helm-chart
+helm-chart: manifests kustomize helmify
 	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
 
 ##@ Deployment
@@ -410,6 +407,21 @@ else
 GOFUMPT = $(shell which gofumpt)
 endif
 endif
+
+.PHONY: helmify
+HELMIFY = ./bin/helmify
+helmify: ## Download helmify locally if necessary.
+ifeq (,$(wildcard $(HELMIFY)))
+ifeq (,$(shell which $(notdir $(HELMIFY)) 2>/dev/null))
+	@{ \
+	GOBIN=${LOCAL_BIN} go install github.com/arttor/helmify/cmd/helmify@v0.3.7 ;\
+	}
+
+else
+HELMIFY = $(shell which helmify)
+endif
+endif
+
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
