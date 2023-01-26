@@ -1,27 +1,27 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "chart.fullname" . }}-controller
+  name: {{ include "chart.fullname" . }}-controller-manager
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "chart.fullname" . }}-controller
+  name: {{ include "chart.fullname" . }}-controller-manager
   labels:
-    control-plane: controller
+    control-plane: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.controller.replicas }}
+  replicas: {{ .Values.controllerManager.replicas }}
   selector:
     matchLabels:
-      control-plane: controller
+      control-plane: controller-manager
     {{- include "chart.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        control-plane: controller
+        control-plane: controller-manager
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
@@ -35,14 +35,15 @@ spec:
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controller.kubeRbacProxy.image.repository }}:{{ .Values.controller.kubeRbacProxy.image.tag
+        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag
           | default .Chart.AppVersion }}
         name: kube-rbac-proxy
         ports:
         - containerPort: 8443
           name: https
           protocol: TCP
-        resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
+        resources: {{- toYaml .Values.controllerManager.kubeRbacProxy.resources | nindent
+          10 }}
         securityContext:
           allowPrivilegeEscalation: false
       - args:
@@ -54,7 +55,7 @@ spec:
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag
+        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag
           | default .Chart.AppVersion }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -70,10 +71,11 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
+        resources: {{- toYaml .Values.controllerManager.manager.resources | nindent 10
+          }}
         securityContext:
           allowPrivilegeEscalation: false
       securityContext:
         runAsNonRoot: true
-      serviceAccountName: {{ include "chart.fullname" . }}-controller
+      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10

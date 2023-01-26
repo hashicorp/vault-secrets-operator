@@ -1,4 +1,4 @@
-controller:
+controllerManager:
   kubeRbacProxy:
     image:
       repository: gcr.io/kubebuilder/kube-rbac-proxy
@@ -12,8 +12,8 @@ controller:
         memory: 64Mi
   manager:
     image:
-      repository: kyleschochenmaier/vault-secrets-operator
-      tag: 0.0.0-dev
+      repository: controller
+      tag: latest
     resources:
       limits:
         cpu: 500m
@@ -22,13 +22,6 @@ controller:
         cpu: 10m
         memory: 64Mi
   replicas: 1
-controllerMetricsService:
-  ports:
-  - name: https
-    port: 8443
-    protocol: TCP
-    targetPort: https
-  type: ClusterIP
 kubernetesClusterDomain: cluster.local
 managerConfig:
   controllerManagerConfigYaml:
@@ -41,3 +34,10 @@ managerConfig:
       bindAddress: 127.0.0.1:8080
     webhook:
       port: 9443
+metricsService:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  type: ClusterIP

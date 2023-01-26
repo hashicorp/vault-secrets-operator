@@ -30,5 +30,5 @@ roleRef:
   name: '{{ include "chart.fullname" . }}-proxy-role'
 subjects:
 - kind: ServiceAccount
-  name: '{{ include "chart.fullname" . }}-controller'
+  name: '{{ include "chart.fullname" . }}-controller-manager'
   namespace: '{{ .Release.Namespace }}'
