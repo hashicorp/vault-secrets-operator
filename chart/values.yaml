@@ -12,7 +12,7 @@ controllerManager:
         memory: 64Mi
   manager:
     image:
-      repository: hashicorp/vault-secrets-operator
+      repository: kyleschochenmaier/vault-secrets-operator
       tag: 0.0.0-dev
     resources:
       limits:
