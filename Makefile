@@ -415,7 +415,6 @@ ifeq (,$(shell which $(notdir $(HELMIFY)) 2>/dev/null))
 	@{ \
 	GOBIN=${LOCALBIN} go install github.com/arttor/helmify/cmd/helmify@${HELMIFY_VERSION} ;\
 	}
-
 else
 HELMIFY = $(shell which helmify)
 endif
