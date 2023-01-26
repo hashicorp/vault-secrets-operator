@@ -13,7 +13,7 @@ VAULT_HELM_VERSION ?= 0.23.0
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
-HELMIFY_VERSION ?= 0.3.22
+HELMIFY_VERSION ?= v0.3.22
 
 TESTARGS ?= '-test.v'
 
@@ -408,13 +408,12 @@ GOFUMPT = $(shell which gofumpt)
 endif
 endif
 
-.PHONY: helmify
 HELMIFY = ./bin/helmify
 helmify: ## Download helmify locally if necessary.
 ifeq (,$(wildcard $(HELMIFY)))
 ifeq (,$(shell which $(notdir $(HELMIFY)) 2>/dev/null))
 	@{ \
-	GOBIN=${LOCAL_BIN} go install github.com/arttor/helmify/cmd/helmify@v0.3.7 ;\
+	GOBIN=${LOCALBIN} go install github.com/arttor/helmify/cmd/helmify@${HELMIFY_VERSION} ;\
 	}
 
 else
