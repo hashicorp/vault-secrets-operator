@@ -17,7 +17,7 @@ resources:
 #    group: apps
 #    version: v1
 #    kind: Deployment
-#    name: controller-manager
+#    name: controller
 #    namespace: system
 #  patch: |-
 #    # Remove the manager container's "cert" volumeMount, since OLM will create and mount a set of certs.

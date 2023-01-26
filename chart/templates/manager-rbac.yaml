@@ -140,5 +140,5 @@ roleRef:
   name: '{{ include "chart.fullname" . }}-manager-role'
 subjects:
 - kind: ServiceAccount
-  name: '{{ include "chart.fullname" . }}-controller-manager'
+  name: '{{ include "chart.fullname" . }}-controller'
   namespace: '{{ .Release.Namespace }}'
