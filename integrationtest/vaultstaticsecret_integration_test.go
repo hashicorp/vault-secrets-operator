@@ -55,10 +55,10 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
-	putSecretV1 := map[string]interface{}{"password": "grapejuice"}
+	putSecretV1 := map[string]interface{}{"password": "grapejuice", "username": "breakfast", "time": "now"}
 	err := vClient.KVv1(testKvMountPath).Put(context.Background(), "secret", putSecretV1)
 	require.NoError(t, err)
-	putSecretV2 := map[string]interface{}{"password": "applejuice"}
+	putSecretV2 := map[string]interface{}{"password": "applejuice", "username": "lunch", "time": "later"}
 	_, err = vClient.KVv2(testKvv2MountPath).Put(context.Background(), "secret", putSecretV2)
 	require.NoError(t, err)
 
@@ -141,12 +141,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecret.Spec.Dest, testVaultStaticSecret.ObjectMeta.Namespace, putSecretV1)
 	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecretV2.Spec.Dest, testVaultStaticSecretV2.ObjectMeta.Namespace, putSecretV2)
 
-	// Change the secrets in vault, wait for the VaultStaticSecrets to refresh,
+	// Change the secrets in Vault, wait for the VaultStaticSecret's to refresh,
 	// and check the result
-	updatedSecretV1 := map[string]interface{}{"password": "orangejuice"}
+	updatedSecretV1 := map[string]interface{}{"password": "orangejuice", "time": "morning"}
 	err = vClient.KVv1(testKvMountPath).Put(context.Background(), "secret", updatedSecretV1)
 	require.NoError(t, err)
-	updatedSecretV2 := map[string]interface{}{"password": "cranberryjuice"}
+	updatedSecretV2 := map[string]interface{}{"password": "cranberryjuice", "time": "evening"}
 	_, err = vClient.KVv2(testKvv2MountPath).Put(context.Background(), "secret", updatedSecretV2)
 	require.NoError(t, err)
 
