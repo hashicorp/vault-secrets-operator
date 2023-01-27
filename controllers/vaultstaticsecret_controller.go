@@ -104,7 +104,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	case "kv", "kvv1", "kv-v1":
 		resp, err = c.KVv1(spec.Mount).Get(ctx, spec.Name)
 	default:
-		err := fmt.Errorf("unsupported secret type %q", spec.Type)
+		err = fmt.Errorf("unsupported secret type %q", spec.Type)
 		l.Error(err, "")
 		r.Recorder.Event(&s, corev1.EventTypeWarning, reasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
