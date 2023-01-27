@@ -66,19 +66,22 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
 	if err != nil {
 		l.Error(err, "Failed to retrieve Vault config")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError, "Failed to retrieve Vault config: %s", err)
+		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to retrieve Vault config: %s", err)
 		return ctrl.Result{}, err
 	}
 
 	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		l.Error(err, "Failed to get Vault client")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError, "Failed to get Vault client: %s", err)
+		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to get Vault client: %s", err)
 		return ctrl.Result{}, err
 	}
 	if _, err = c.Sys().SealStatusWithContext(ctx); err != nil {
 		l.Error(err, "Failed to check Vault seal status")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError, "Failed to check Vault seal status: %s", err)
+		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to check Vault seal status: %s", err)
 		return ctrl.Result{}, err
 	}
 
@@ -87,7 +90,8 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		d, err := time.ParseDuration(spec.RefreshAfter)
 		if err != nil {
 			l.Error(err, "Failed to parse spec.RefreshAfter")
-			r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultStaticSecret, "Failed to parse spec.RefreshAfter %s", spec.RefreshAfter)
+			r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultStaticSecret,
+				"Failed to parse spec.RefreshAfter %s", spec.RefreshAfter)
 			return ctrl.Result{}, err
 		}
 		refAfter = d
@@ -107,7 +111,8 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	if err != nil {
 		l.Error(err, "Failed to read Vault secret")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError, "Failed to read Vault secret: %s", err)
+		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to read Vault secret: %s", err)
 		return ctrl.Result{
 			RequeueAfter: refAfter,
 		}, nil
@@ -115,7 +120,8 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if resp == nil {
 		l.Error(nil, "empty Vault secret", "mount", spec.Mount, "name", spec.Name)
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError, "Vault secret was empty, mount %s, name %s", spec.Mount, spec.Name)
+		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Vault secret was empty, mount %s, name %s", spec.Mount, spec.Name)
 		return ctrl.Result{
 			RequeueAfter: refAfter,
 		}, nil
@@ -123,13 +129,16 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if sec1.Data, err = makeK8sSecret(l, resp); err != nil {
 		l.Error(err, "Failed to construct k8s secret")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError, "Failed to construct k8s secret: %s", err)
+		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to construct k8s secret: %s", err)
 		return ctrl.Result{}, err
 	}
 
 	if err := r.Client.Update(ctx, sec1); err != nil {
 		l.Error(err, "Failed to update k8s secret")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonK8sClientError, "Failed to update k8s secret %s/%s: %s", sec1.ObjectMeta.Namespace, sec1.ObjectMeta.Name, err)
+		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonK8sClientError,
+			"Failed to update k8s secret %s/%s: %s", sec1.ObjectMeta.Namespace,
+			sec1.ObjectMeta.Name, err)
 		return ctrl.Result{}, err
 	}
 
@@ -153,12 +162,15 @@ func makeK8sSecret(logger logr.Logger, vaultSecret *api.KVSecret) (map[string][]
 
 	b, err := json.Marshal(vaultSecret.Raw.Data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal raw Vault secret: %s", err)
 	}
 	k8sSecretData := map[string][]byte{
 		"_raw": b,
 	}
 	for k, v := range vaultSecret.Data {
+		if k == "_raw" {
+			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
+		}
 		var m []byte
 		switch vTyped := v.(type) {
 		case string:
@@ -166,8 +178,7 @@ func makeK8sSecret(logger logr.Logger, vaultSecret *api.KVSecret) (map[string][]
 		default:
 			m, err = json.Marshal(vTyped)
 			if err != nil {
-				logger.Error(err, "Failed to marshal a key/value in the Vault secret", "key", k)
-				continue
+				return nil, fmt.Errorf("failed to marshal key %q from Vault secret: %s", k, err)
 			}
 		}
 		k8sSecretData[k] = m

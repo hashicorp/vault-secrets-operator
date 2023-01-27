@@ -41,7 +41,7 @@ kubectl delete -k config/samples
 ### Unit Tests
 
 ```shell
-    make test
+make test
 ```
 
 ### Integration Tests

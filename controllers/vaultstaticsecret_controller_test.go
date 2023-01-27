@@ -68,6 +68,46 @@ func Test_makeK8sSecret(t *testing.T) {
 			},
 			expectedError: nil,
 		},
+		"_raw in secret": {
+			vaultSecret: &api.KVSecret{
+				Data: map[string]interface{}{
+					"password": "applejuice",
+					"_raw":     "not allowed",
+				},
+				Raw: &api.Secret{
+					Data: map[string]interface{}{
+						"password": "applejuice",
+					},
+				},
+			},
+			expectedK8sSecret: nil,
+			expectedError:     fmt.Errorf("key '_raw' not permitted in Vault secret"),
+		},
+		"fail to marshal secret data": {
+			vaultSecret: &api.KVSecret{
+				Data: map[string]interface{}{
+					"password": make(chan int),
+				},
+				Raw: &api.Secret{
+					Data: map[string]interface{}{
+						"password": true,
+					},
+				},
+			},
+			expectedK8sSecret: nil,
+			expectedError:     fmt.Errorf("failed to marshal key \"password\" from Vault secret: json: unsupported type: chan int"),
+		},
+		"fail to marshal secret raw": {
+			vaultSecret: &api.KVSecret{
+				Raw: &api.Secret{
+					Data: map[string]interface{}{
+						"password": make(chan int),
+					},
+				},
+			},
+			expectedK8sSecret: nil,
+			expectedError:     fmt.Errorf("failed to marshal raw Vault secret: json: unsupported type: chan int"),
+		},
 	}
 
 	for name, tc := range tests {
