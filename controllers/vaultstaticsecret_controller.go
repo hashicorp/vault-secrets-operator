@@ -78,12 +78,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"Failed to get Vault client: %s", err)
 		return ctrl.Result{}, err
 	}
-	if _, err = c.Sys().SealStatusWithContext(ctx); err != nil {
-		l.Error(err, "Failed to check Vault seal status")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
-			"Failed to check Vault seal status: %s", err)
-		return ctrl.Result{}, err
-	}
 
 	var refAfter time.Duration
 	if spec.RefreshAfter != "" {
