@@ -10,6 +10,8 @@ import (
 	"github.com/hashicorp/vault/api"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -78,16 +80,16 @@ func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*v
 		return nil, err
 	}
 
-	// TODO: fix weirdness here
+	config, err := newVaultConfig(target.Namespace, va, vc)
+	if err != nil {
+		return nil, err
+	}
+
 	authLogin, err := vault.NewAuthLogin(c, va, target.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
-	config, err := newVaultConfig(target.Namespace, va, vc)
-	if err != nil {
-		return nil, err
-	}
 	config.SetAuthLogin(authLogin)
 
 	return config, nil
@@ -142,4 +144,13 @@ func getVaultClient(ctx context.Context, vaultConfig *vault.VaultClientConfig, c
 	c.SetToken(resp.Auth.ClientToken)
 
 	return c, nil
+}
+
+func ignoreUpdatePredicate() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// Ignore updates to CR status in which case metadata.Generation does not change
+			return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
+		},
+	}
 }

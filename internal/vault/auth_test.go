@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -95,7 +96,7 @@ func TestNewAuthLogin(t *testing.T) {
 				},
 				sans: "baz",
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
 				valid := err == nil
 				if !valid {
 					t.Errorf("%s unexpected err: %s", err)
@@ -123,8 +124,12 @@ func TestNewAuthLogin(t *testing.T) {
 			},
 		},
 		{
-			name: "unsupported method",
+			name: "unsupported-method",
 			va: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "baz",
+					Name:      "foo",
+				},
 				Spec: secretsv1alpha1.VaultAuthSpec{
 					VaultConnectionRef: "foo",
 					Namespace:          "baz",
@@ -136,7 +141,7 @@ func TestNewAuthLogin(t *testing.T) {
 			want:         nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				assert.EqualError(t, err,
-					`unsupported login method "unknown" for AuthLogin`,
+					`unsupported login method "unknown" for AuthLogin "baz/foo"`,
 					i...,
 				)
 				return err == nil

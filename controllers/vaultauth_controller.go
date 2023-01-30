@@ -41,7 +41,6 @@ type VaultAuthReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	// TODO: validate the authentication method
 	// TODO: add telemetry support
 
 	a, err := getVaultAuth(ctx, r.Client, req.NamespacedName)
@@ -56,28 +55,60 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	n, err := a.GetConnectionNamespacedName()
 	if err != nil {
-		logger.Error(err, "Invalid resource")
+		a.Status.Valid = false
+		a.Status.Error = "Invalid resource"
+		logger.Error(err, a.Status.Error)
+		if err := r.updateStatus(ctx, a); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	}
 
 	if _, err := getVaultConnection(ctx, r.Client, n); err != nil {
-		logger.Error(err, "No VaultConnection configured")
 		a.Status.Valid = false
 		a.Status.Error = "No VaultConnection configured"
+		logger.Error(err, a.Status.Error)
+		if err := r.updateStatus(ctx, a); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	}
 
 	if _, err := vault.NewAuthLogin(r.Client, a, a.Namespace); err != nil {
-		logger.Error(err, "Invalid auth configuration")
+		a.Status.Valid = false
+		a.Status.Error = "Invalid auth configuration"
+		logger.Error(err, a.Status.Error)
+		if err := r.updateStatus(ctx, a); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	}
 
+	a.Status.Valid = true
+	a.Status.Error = ""
+	if err := r.updateStatus(ctx, a); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Validated request")
+
 	return ctrl.Result{}, nil
+}
+
+func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alpha1.VaultAuth) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Updating status", "status", a.Status)
+	if err := r.Status().Update(ctx, a); err != nil {
+		logger.Error(err, "Failed to update the status")
+		return err
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultAuth{}).
+		WithEventFilter(ignoreUpdatePredicate()).
 		Complete(r)
 }
