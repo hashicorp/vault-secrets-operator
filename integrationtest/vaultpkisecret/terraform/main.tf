@@ -87,9 +87,10 @@ resource "vault_auth_backend" "default" {
 }
 
 resource "vault_kubernetes_auth_backend_config" "default" {
-  namespace       = vault_auth_backend.default.namespace
-  backend         = vault_auth_backend.default.path
-  kubernetes_host = var.k8s_host
+  namespace              = vault_auth_backend.default.namespace
+  backend                = vault_auth_backend.default.path
+  kubernetes_host        = var.k8s_host
+  disable_iss_validation = true
 }
 
 resource "vault_kubernetes_auth_backend_role" "default" {
