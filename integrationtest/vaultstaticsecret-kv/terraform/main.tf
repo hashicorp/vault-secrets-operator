@@ -37,7 +37,7 @@ provider "vault" {
 }
 
 locals {
-  namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : ""
+  namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
 }
 
 resource "vault_mount" "kvv2" {
