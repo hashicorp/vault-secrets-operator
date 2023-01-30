@@ -1,28 +1,68 @@
 package vault
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
-func TestNewAuthLogin(t *testing.T) {
-	err := secretsv1alpha1.AddToScheme(scheme.Scheme)
-	require.NoError(t, err)
-	c, err := client.New(
-		config.GetConfigOrDie(),
-		client.Options{
-			Scheme: scheme.Scheme,
-		})
-	require.NoError(t, err)
+// fakeCRClient only satisfies the client.Client interface. No methods are implemented,
+//so it should be used for tests that need them.
+type fakeCRClient struct{}
 
+func (fakeCRClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	panic("not implemented")
+}
+
+func (fakeCRClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	panic("not implemented")
+}
+
+func (fakeCRClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	panic("not implemented")
+}
+
+func (fakeCRClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	panic("not implemented")
+}
+
+func (fakeCRClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	panic("not implemented")
+}
+
+func (fakeCRClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+	panic("not implemented")
+}
+
+func (fakeCRClient) DeleteAllOf(ctx context.Context, obj client.Object, opts ...client.DeleteAllOfOption) error {
+	panic("not implemented")
+}
+
+func (fakeCRClient) Status() client.SubResourceWriter {
+	panic("not implemented")
+}
+
+func (fakeCRClient) SubResource(subResource string) client.SubResourceClient {
+	panic("not implemented")
+}
+
+func (fakeCRClient) Scheme() *runtime.Scheme {
+	panic("not implemented")
+}
+
+func (fakeCRClient) RESTMapper() meta.RESTMapper {
+	panic("not implemented")
+}
+
+func TestNewAuthLogin(t *testing.T) {
+	c := fakeCRClient{}
 	tests := []struct {
 		name         string
 		c            client.Client
