@@ -277,6 +277,10 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 	rm -rf $(TF_INFRA_STATE_DIR)
 
 ##@ Generate Helm Chart
+### Helmify regenerates the CRDs and copies them into the chart dir.
+### NOTE: It will overwrite the existing templates dir so we have a TODO to figure out if there
+### is a way to track diffs, or just do not commit the changes to the templates directory when
+### regenerating the CRDs from the config directory.
 .PHONY: helm-chart
 helm-chart: manifests kustomize helmify
 	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
