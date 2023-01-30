@@ -14,7 +14,7 @@ import (
 )
 
 // fakeCRClient only satisfies the client.Client interface. No methods are implemented,
-//so it should be used for tests that need them.
+// so it should be used for tests that need them.
 type fakeCRClient struct{}
 
 func (fakeCRClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
