@@ -1,0 +1,12 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+apiVersion: v2
+name: vault-secrets-operator
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.21.0-0"
+description: Official Vault Secrets Operator Chart
+type: application
+sources:
+  - https://github.com/hashicorp/vault-secrets-operator
