@@ -1,0 +1,83 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+terraform {
+  required_providers {
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.16.1"
+    }
+    vault = {
+      source  = "hashicorp/vault"
+      version = "3.12.0"
+    }
+  }
+}
+
+provider "kubernetes" {
+  config_context = var.k8s_config_context
+  config_path    = var.k8s_config_path
+}
+
+resource "kubernetes_namespace" "tenant-1" {
+  metadata {
+    name = var.k8s_test_namespace
+  }
+}
+
+resource "kubernetes_secret" "secretkv" {
+  metadata {
+    name      = "secretkv"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+}
+
+resource "kubernetes_secret" "secretkvv2" {
+  metadata {
+    name      = "secretkvv2"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+}
+
+provider "vault" {
+  # Configuration options
+}
+
+resource "vault_mount" "kv" {
+  count       = var.vault_enterprise ? 0 : 1
+  path        = var.vault_kv_mount_path
+  type        = "kv"
+  options     = { version = "1" }
+  description = "KV Version 1 secret engine mount"
+}
+
+resource "vault_mount" "kv-ent" {
+  count       = var.vault_enterprise ? 1 : 0
+  namespace   = vault_namespace.test[count.index].path
+  path        = var.vault_kv_mount_path
+  type        = "kv"
+  options     = { version = "1" }
+  description = "KV Version 1 secret engine mount"
+}
+
+resource "vault_mount" "kvv2" {
+  count       = var.vault_enterprise ? 0 : 1
+  path        = var.vault_kvv2_mount_path
+  type        = "kv"
+  options     = { version = "2" }
+  description = "KV Version 2 secret engine mount"
+}
+
+resource "vault_mount" "kvv2-ent" {
+  count       = var.vault_enterprise ? 1 : 0
+  namespace   = vault_namespace.test[count.index].path
+  path        = var.vault_kvv2_mount_path
+  type        = "kv"
+  options     = { version = "2" }
+  description = "KV Version 2 secret engine mount"
+}
+
+resource "vault_namespace" "test" {
+  count = var.vault_enterprise ? 1 : 0
+  path  = var.vault_test_namespace
+}

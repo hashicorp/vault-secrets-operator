@@ -73,7 +73,7 @@ VAULT_ENTERPRISE ?= false
 # The vault license.
 _VAULT_LICENSE ?=
 
-TF_INFRA_SRC_DIR ?= ./integrationtest/infra
+TF_INFRA_SRC_DIR ?= ./test/integrationtest/infra
 TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
 BUILD_DIR = dist
@@ -188,7 +188,7 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 
 .PHONY: integration-test
 integration-test:  setup-integration-test ## Run integration tests for Vault OSS
-	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
+	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/test/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
@@ -200,7 +200,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind create cluster \
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
-		--config $(CURDIR)/integrationtest/kind/config.yaml
+		--config $(CURDIR)/test/integrationtest/kind/config.yaml
 	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
@@ -230,7 +230,7 @@ endif
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
 
-	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
+	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file test/integrationtest/vault/hostPortPatch.yaml
 	kubectl delete --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
 	kubectl wait --namespace=$(K8S_VAULT_NAMESPACE) --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
 
