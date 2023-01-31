@@ -15,6 +15,7 @@ import (
 
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/retry"
+	"github.com/hashicorp/go-multierror"
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
@@ -73,17 +74,34 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, 
 		if err != nil {
 			return "", err
 		}
-		if len(destSecret.Data["data"]) == 0 {
-			return "", fmt.Errorf("data in secret is empty")
+		if _, ok := destSecret.Data["_raw"]; !ok {
+			return "", fmt.Errorf("secret hasn't been synced yet, missing '_raw' field")
+		}
+		var rawSecret map[string]interface{}
+		err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
+		require.NoError(t, err)
+		if _, ok := rawSecret["data"]; ok {
+			rawSecret = rawSecret["data"].(map[string]interface{})
+		}
+		for k, v := range expectedData {
+			// compare expected secret data to _raw in the k8s secret
+			if !reflect.DeepEqual(v, rawSecret[k]) {
+				err = multierror.Append(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
+			}
+			// compare expected secret k/v to the top level items in the k8s secret
+			if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
+				err = multierror.Append(err, fmt.Errorf("expected '%s:%s', actual '%s:%s'", k, v, k, string(destSecret.Data[k])))
+			}
+		}
+		if len(expectedData) != len(rawSecret) {
+			err = multierror.Append(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
+		}
+		// the k8s secret has an extra key because of the "_raw" item
+		if len(expectedData) != len(destSecret.Data)-1 {
+			err = multierror.Append(err, fmt.Errorf("expected data length %d does not match k8s secret data length %d", len(expectedData), len(destSecret.Data)-1))
 		}
 
-		var secretData map[string]interface{}
-		err = json.Unmarshal(destSecret.Data["data"], &secretData)
-		require.NoError(t, err)
-		if !reflect.DeepEqual(expectedData, secretData["data"]) {
-			return "", fmt.Errorf("data in secret not synced: expected %+v, actual %+v", expectedData, secretData["data"])
-		}
-		return "", nil
+		return "", err
 	})
 }
 
