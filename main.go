@@ -75,8 +75,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	controllers.InitCommonMetrics()
-
 	if err = (&controllers.VaultStaticSecretReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

@@ -12,9 +12,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
@@ -98,7 +98,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alpha1.VaultAuth) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Updating status", "status", a.Status)
-	g := resourceStatus.WithLabelValues("vaultauth", a.Name, a.Namespace)
+	g := metrics.ResourceStatus.WithLabelValues("vaultauth", a.Name, a.Namespace)
 	if !a.Status.Valid {
 		g.Set(float64(1))
 	} else {
@@ -117,10 +117,4 @@ func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&secretsv1alpha1.VaultAuth{}).
 		WithEventFilter(ignoreUpdatePredicate()).
 		Complete(r)
-}
-
-func (r *VaultAuthReconciler) InitMetrics() {
-	metrics.Registry.MustRegister(
-		resourceStatus,
-	)
 }
