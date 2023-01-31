@@ -197,6 +197,11 @@ integration-test:  setup-integration-test ## Run integration tests for Vault OSS
 integration-test-ent: ## Run integration tests for Vault Enterprise
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 
+.PHONY: integration-test-both
+integration-test-both: ## Run integration tests against Vault Enterprise and Vault OSS
+	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
+	$(MAKE) integration-test
+
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
