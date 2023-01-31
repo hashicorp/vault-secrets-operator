@@ -1,69 +1,19 @@
 package vault
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
-// fakeCRClient only satisfies the client.Client interface. No methods are implemented,
-// so it shouldn't be used for tests that need them.
-type fakeCRClient struct{}
-
-func (fakeCRClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	panic("not implemented")
-}
-
-func (fakeCRClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	panic("not implemented")
-}
-
-func (fakeCRClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	panic("not implemented")
-}
-
-func (fakeCRClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
-	panic("not implemented")
-}
-
-func (fakeCRClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
-	panic("not implemented")
-}
-
-func (fakeCRClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-	panic("not implemented")
-}
-
-func (fakeCRClient) DeleteAllOf(ctx context.Context, obj client.Object, opts ...client.DeleteAllOfOption) error {
-	panic("not implemented")
-}
-
-func (fakeCRClient) Status() client.SubResourceWriter {
-	panic("not implemented")
-}
-
-func (fakeCRClient) SubResource(subResource string) client.SubResourceClient {
-	panic("not implemented")
-}
-
-func (fakeCRClient) Scheme() *runtime.Scheme {
-	panic("not implemented")
-}
-
-func (fakeCRClient) RESTMapper() meta.RESTMapper {
-	panic("not implemented")
-}
-
 func TestNewAuthLogin(t *testing.T) {
-	c := fakeCRClient{}
+	c := fake.NewClientBuilder().Build()
 	tests := []struct {
 		name         string
 		c            client.Client

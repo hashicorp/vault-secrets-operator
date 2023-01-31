@@ -39,9 +39,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultstaticsecret-kv/terraform",
 		Vars: map[string]interface{}{
-			// TODO: get this dynamically
-			// KUBERNETES_SERVICE_HOST=10.96.0.1
-			"k8s_host":            "https://10.96.0.1",
+			"k8s_host":            "https://kubernetes.default.svc",
 			"k8s_test_namespace":  testK8sNamespace,
 			"k8s_config_context":  "kind-" + clusterName,
 			"vault_kv_mount_path": testKvMountPath,
@@ -77,7 +75,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a VaultConnection CR
-	connections := []*secretsv1alpha1.VaultConnection{
+	conns := []*secretsv1alpha1.VaultConnection{
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultconnection-test-tenant-1",
@@ -136,7 +134,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 	}
 
-	for _, c := range connections {
+	for _, c := range conns {
 		ctx := context.Background()
 		require.Nil(t, crdClient.Create(ctx, c))
 		created = append(created, c)
