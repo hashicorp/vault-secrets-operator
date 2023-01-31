@@ -6,12 +6,12 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/vault/api"
-	v12 "k8s.io/api/authentication/v1"
+	authv1 "k8s.io/api/authentication/v1"
 	"k8s.io/api/core/v1"
-	v13 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
-	client2 "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
@@ -19,7 +19,7 @@ import (
 
 // KubernetesAuth implements the AuthLogin interface to log in to Vault.
 type KubernetesAuth struct {
-	client client2.Client
+	client ctrlclient.Client
 	va     *v1alpha1.VaultAuth
 	vc     *v1alpha1.VaultConnection
 	sans   string
@@ -62,21 +62,21 @@ func (l *KubernetesAuth) Login(ctx context.Context, client *api.Client) (*api.Se
 	return resp, nil
 }
 
-func (l *KubernetesAuth) getSATokenRequest() (*v12.TokenRequest, error) {
-	return &v12.TokenRequest{
-		ObjectMeta: v13.ObjectMeta{
+func (l *KubernetesAuth) getSATokenRequest() (*authv1.TokenRequest, error) {
+	return &authv1.TokenRequest{
+		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: l.va.Spec.Kubernetes.TokenGenerateName,
 		},
-		Spec: v12.TokenRequestSpec{
+		Spec: authv1.TokenRequestSpec{
 			ExpirationSeconds: pointer.Int64(l.va.Spec.Kubernetes.TokenExpirationSeconds),
 			Audiences:         l.va.Spec.Kubernetes.TokenAudiences,
 		},
-		Status: v12.TokenRequestStatus{},
+		Status: authv1.TokenRequestStatus{},
 	}, nil
 }
 
 // requestSAToken for the provided ServiceAccount.
-func (l *KubernetesAuth) requestSAToken(ctx context.Context, sa *v1.ServiceAccount) (*v12.TokenRequest, error) {
+func (l *KubernetesAuth) requestSAToken(ctx context.Context, sa *v1.ServiceAccount) (*authv1.TokenRequest, error) {
 	// TODO: add unit tests, currently being covered by integration tests.
 	logger := log.FromContext(ctx)
 	tr, err := l.getSATokenRequest()

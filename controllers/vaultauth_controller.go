@@ -12,6 +12,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
@@ -89,7 +90,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Validated request")
+	logger.Info("Valid request")
 
 	return ctrl.Result{}, nil
 }
@@ -97,6 +98,12 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alpha1.VaultAuth) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Updating status", "status", a.Status)
+	g := resourceStatus.WithLabelValues("vaultauth", a.Name, a.Namespace)
+	if !a.Status.Valid {
+		g.Set(float64(1))
+	} else {
+		g.Set(float64(0))
+	}
 	if err := r.Status().Update(ctx, a); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return err
@@ -110,4 +117,10 @@ func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&secretsv1alpha1.VaultAuth{}).
 		WithEventFilter(ignoreUpdatePredicate()).
 		Complete(r)
+}
+
+func (r *VaultAuthReconciler) InitMetrics() {
+	metrics.Registry.MustRegister(
+		resourceStatus,
+	)
 }

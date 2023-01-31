@@ -233,7 +233,7 @@ endif
 	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
 
 	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
-	kubectl delete --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
+	kubectl delete --wait --timeout=30s --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
 	kubectl wait --namespace=$(K8S_VAULT_NAMESPACE) --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
 
 .PHONY: setup-integration-test-ent
