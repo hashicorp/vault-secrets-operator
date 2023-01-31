@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
-var (
+const (
 	reasonAccepted          = "Accepted"
 	reasonVaultClientError  = "VaultClientError"
 	reasonVaultStaticSecret = "VaultStaticSecretError"
