@@ -57,7 +57,7 @@ resource "vault_mount" "kv" {
 
 resource "vault_mount" "kvv2" {
   namespace   = local.namespace
-  path        = var.vault_kv_mount_path
+  path        = var.vault_kvv2_mount_path
   type        = "kv"
   options     = { version = "2" }
   description = "KV Version 2 secret engine mount"

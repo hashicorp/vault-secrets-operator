@@ -40,7 +40,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultstaticsecret/terraform",
 		Vars: map[string]interface{}{
-			"k8s_host":            "https://kubernetes.default.svc",
+			"k8s_host":              "https://kubernetes.default.svc",
 			"k8s_test_namespace":    testK8sNamespace,
 			"k8s_config_context":    "kind-" + clusterName,
 			"vault_kv_mount_path":   testKvMountPath,
@@ -101,8 +101,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 	}
 
-	// Create a VaultAuth CR
 	auths := []*secretsv1alpha1.VaultAuth{
+		// Create a non-default VaultAuth CR
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultauth-test-tenant-1",
@@ -120,6 +120,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				},
 			},
 		},
+		// Create the default VaultAuth CR in the Operator's namespace
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      consts.DefaultNameVaultConnection,
@@ -151,51 +152,54 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		created = append(created, a)
 	}
 
-	// Create a VaultStaticSecret CR to trigger the sync for kv
-	testVaultStaticSecret := &secretsv1alpha1.VaultStaticSecret{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      "vaultstaticsecret-test-kv",
-			Namespace: testK8sNamespace,
+	// the order of the test VaultStaticSecret's should match slice of expected secrets.
+	secrets := []*secretsv1alpha1.VaultStaticSecret{
+		// Create a VaultStaticSecret CR to trigger the sync for kv
+		{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "vaultstaticsecret-test-kv",
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultStaticSecretSpec{
+				VaultAuthRef: auths[0].ObjectMeta.Name,
+				Namespace:    testVaultNamespace,
+				Mount:        testKvMountPath,
+				Type:         "kv",
+				Name:         "secret",
+				Dest:         "secretkv",
+				RefreshAfter: "5s",
+			},
 		},
-		Spec: secretsv1alpha1.VaultStaticSecretSpec{
-			VaultAuthRef: auths[0].ObjectMeta.Name,
-			Namespace:    testVaultNamespace,
-			Mount:        testKvMountPath,
-			Type:         "kv",
-			Name:         "secret",
-			Dest:         "secretkv",
-			RefreshAfter: "5s",
-		},
-	}
-
-	created = append(created, testVaultStaticSecret)
-	err = crdClient.Create(context.Background(), testVaultStaticSecret)
-	require.NoError(t, err)
-
-	// Create a VaultStaticSecret CR to trigger the sync for kvv2
-	testVaultStaticSecretV2 := &secretsv1alpha1.VaultStaticSecret{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      "vaultstaticsecret-test-kvv2",
-			Namespace: testK8sNamespace,
-		},
-		Spec: secretsv1alpha1.VaultStaticSecretSpec{
-			VaultAuthRef: auths[0].ObjectMeta.Name,
-			Namespace:    testVaultNamespace,
-			Mount:        testKvv2MountPath,
-			Type:         "kvv2",
-			Name:         "secret",
-			Dest:         "secretkvv2",
-			RefreshAfter: "5s",
+		// Create a VaultStaticSecret CR to trigger the sync for kvv2
+		{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "vaultstaticsecret-test-kvv2",
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultStaticSecretSpec{
+				VaultAuthRef: auths[0].ObjectMeta.Name,
+				Namespace:    testVaultNamespace,
+				Mount:        testKvv2MountPath,
+				Type:         "kvv2",
+				Name:         "secret",
+				Dest:         "secretkvv2",
+				RefreshAfter: "5s",
+			},
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultStaticSecretV2)
-	err = crdClient.Create(context.Background(), testVaultStaticSecretV2)
-	require.NoError(t, err)
+	for _, a := range secrets {
+		ctx := context.Background()
+		require.Nil(t, crdClient.Create(ctx, a))
+		created = append(created, a)
+	}
 
-	// Wait for the operator to sync Vault secrets --> k8s Secrets
-	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecret.Spec.Dest, testVaultStaticSecret.ObjectMeta.Namespace, putSecretV1)
-	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecretV2.Spec.Dest, testVaultStaticSecretV2.ObjectMeta.Namespace, putSecretV2)
+	expected := []map[string]interface{}{putSecretV1, putSecretV2}
+	assert.Equal(t, len(expected), len(secrets))
+	for i, s := range secrets {
+		// Wait for the operator to sync Vault secrets --> k8s Secrets
+		waitForSecretData(t, 10, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
+	}
 
 	// Change the secrets in Vault, wait for the VaultStaticSecret's to refresh,
 	// and check the result
@@ -206,6 +210,10 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	_, err = vClient.KVv2(testKvv2MountPath).Put(context.Background(), "secret", updatedSecretV2)
 	require.NoError(t, err)
 
-	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecret.Spec.Dest, testVaultStaticSecret.ObjectMeta.Namespace, updatedSecretV1)
-	waitForSecretData(t, 10, 1*time.Second, testVaultStaticSecretV2.Spec.Dest, testVaultStaticSecretV2.ObjectMeta.Namespace, updatedSecretV2)
+	expected = []map[string]interface{}{updatedSecretV1, updatedSecretV2}
+	assert.Equal(t, len(expected), len(secrets))
+	for i, s := range secrets {
+		// Wait for the operator to sync Vault secrets --> k8s Secrets
+		waitForSecretData(t, 10, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
+	}
 }
