@@ -13,6 +13,7 @@ VAULT_HELM_VERSION ?= 0.23.0
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
+HELMIFY_VERSION ?= v0.3.22
 
 TESTARGS ?= '-test.v'
 
@@ -275,6 +276,15 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 		-var vault_license=ignored && \
 	rm -rf $(TF_INFRA_STATE_DIR)
 
+##@ Generate Helm Chart
+### Helmify regenerates the CRDs and copies them into the chart dir.
+### NOTE: It will overwrite the existing templates dir so we have a TODO to figure out if there
+### is a way to track diffs, or just do not commit the changes to the templates directory when
+### regenerating the CRDs from the config directory.
+.PHONY: helm-chart
+helm-chart: manifests kustomize helmify
+	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -401,6 +411,19 @@ else
 GOFUMPT = $(shell which gofumpt)
 endif
 endif
+
+HELMIFY = ./bin/helmify
+helmify: ## Download helmify locally if necessary.
+ifeq (,$(wildcard $(HELMIFY)))
+ifeq (,$(shell which $(notdir $(HELMIFY)) 2>/dev/null))
+	@{ \
+	GOBIN=${LOCALBIN} go install github.com/arttor/helmify/cmd/helmify@${HELMIFY_VERSION} ;\
+	}
+else
+HELMIFY = $(shell which helmify)
+endif
+endif
+
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
