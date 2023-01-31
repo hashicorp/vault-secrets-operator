@@ -16,6 +16,9 @@ make setup-integration-test
 # Configure Vault
 ./config/samples/setup.sh
 
+# Build and deploy the operator
+make build deploy-kind
+
 # Deploy the sample K8s resources
 kubectl apply -k config/samples
 ```
