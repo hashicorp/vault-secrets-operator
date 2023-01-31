@@ -285,6 +285,10 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 helm-chart: manifests kustomize helmify
 	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
 
+.PHONY: unit-test
+unit-test: ## Run unit tests for the helm chart
+	bats test/unit/*
+
 ##@ Deployment
 
 ifndef ignore-not-found
