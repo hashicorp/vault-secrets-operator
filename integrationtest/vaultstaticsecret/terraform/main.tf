@@ -25,9 +25,16 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
-resource "kubernetes_secret" "secret1" {
+resource "kubernetes_secret" "secretkv" {
   metadata {
-    name      = "secret1"
+    name      = "secretkv"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+}
+
+resource "kubernetes_secret" "secretkvv2" {
+  metadata {
+    name      = "secretkvv2"
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
   }
 }
@@ -38,6 +45,14 @@ provider "vault" {
 
 locals {
   namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+}
+
+resource "vault_mount" "kv" {
+  namespace   = local.namespace
+  path        = var.vault_kv_mount_path
+  type        = "kv"
+  options     = { version = "1" }
+  description = "KV Version 1 secret engine mount"
 }
 
 resource "vault_mount" "kvv2" {
@@ -81,6 +96,10 @@ resource "vault_policy" "default" {
   namespace = local.namespace
   policy    = <<EOT
 path "${vault_mount.kvv2.path}/*" {
+  capabilities = ["read"]
+}
+
+path "${vault_mount.kv.path}/*" {
   capabilities = ["read"]
 }
 EOT

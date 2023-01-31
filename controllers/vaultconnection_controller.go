@@ -72,7 +72,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		c.Status.Valid = false
 		l.Error(err, "Failed to construct Vault client")
-		r.Recorder.Eventf(&c, corev1.EventTypeWarning, "VaultClientError", "Failed to construct Vault client: %s", err)
+		r.Recorder.Eventf(&c, corev1.EventTypeWarning, reasonVaultClientError, "Failed to construct Vault client: %s", err)
 		return ctrl.Result{}, err
 	}
 
@@ -85,7 +85,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	c.Status.Valid = true
 
-	r.Recorder.Event(&c, corev1.EventTypeNormal, "Accepted", "VaultConnection accepted")
+	r.Recorder.Event(&c, corev1.EventTypeNormal, reasonAccepted, "VaultConnection accepted")
 	return ctrl.Result{}, nil
 }
 

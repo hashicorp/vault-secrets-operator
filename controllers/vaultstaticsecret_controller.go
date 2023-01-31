@@ -6,14 +6,16 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -24,30 +26,23 @@ import (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the VaultStaticSecret object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
 	s := &secretsv1alpha1.VaultStaticSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, s); err != nil {
 		if apierrors.IsNotFound(err) {
-			// TODO: delete the secret?
 			return ctrl.Result{}, nil
 		}
 
@@ -56,12 +51,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	spec := s.Spec
-
-	if spec.Type != "kvv2" {
-		err := fmt.Errorf("unsupported secret type %q", spec.Type)
-		l.Error(err, "")
-		return ctrl.Result{}, err
-	}
 
 	sec1 := &corev1.Secret{}
 	if err := r.Client.Get(ctx,
@@ -74,73 +63,80 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	l.Info(fmt.Sprintf("%#v", sec1))
-
 	vc, err := getVaultConfig(ctx, r.Client, s)
 	if err != nil {
-		l.Error(err, "error getting Vault config")
+		l.Error(err, "Failed to retrieve Vault config")
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to retrieve Vault config: %s", err)
 		return ctrl.Result{}, err
 	}
 
 	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
-		l.Error(err, "error getting Vault client")
+		l.Error(err, "Failed to get Vault client")
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to get Vault client: %s", err)
 		return ctrl.Result{}, err
 	}
-	if _, err = c.Sys().SealStatus(); err != nil {
-		l.Error(err, "error getting Vault status")
-		return ctrl.Result{}, err
-	}
-
-	// status, _ := c.Sys().SealStatus()
-	// l.Info(fmt.Sprintf("Vault seal status %#v", status))
 
 	var refAfter time.Duration
 	if spec.RefreshAfter != "" {
 		d, err := time.ParseDuration(spec.RefreshAfter)
 		if err != nil {
-			l.Error(err, "failed to parse spec.RefreshAfter")
+			l.Error(err, "Failed to parse spec.RefreshAfter")
+			r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultStaticSecret,
+				"Failed to parse spec.RefreshAfter %s", spec.RefreshAfter)
 			return ctrl.Result{}, err
 		}
 		refAfter = d
 	}
 
-	path := r.getKVV2Path(spec.Mount, spec.Name)
-	l.Info(fmt.Sprintf("Read it :) %q", path), "secret", s)
-	resp, err := c.Logical().Read(path)
+	var resp *api.KVSecret
+	switch spec.Type {
+	case "kvv2", "kv-v2":
+		resp, err = c.KVv2(spec.Mount).Get(ctx, spec.Name)
+	case "kv", "kvv1", "kv-v1":
+		resp, err = c.KVv1(spec.Mount).Get(ctx, spec.Name)
+	default:
+		err = fmt.Errorf("unsupported secret type %q", spec.Type)
+		l.Error(err, "")
+		r.Recorder.Event(s, corev1.EventTypeWarning, reasonVaultStaticSecret, err.Error())
+		return ctrl.Result{}, err
+	}
 	if err != nil {
-		l.Error(err, "error reading secret %q")
+		l.Error(err, "Failed to read Vault secret")
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to read Vault secret: %s", err)
 		return ctrl.Result{
 			RequeueAfter: refAfter,
 		}, nil
 	}
 
 	if resp == nil {
-		l.Error(err, "empty Vault secret", "path", path)
+		l.Error(nil, "empty Vault secret", "mount", spec.Mount, "name", spec.Name)
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Vault secret was empty, mount %s, name %s", spec.Mount, spec.Name)
 		return ctrl.Result{
 			RequeueAfter: refAfter,
 		}, nil
 	}
 
-	l.Info(fmt.Sprintf("Resp %#v", resp))
-
-	b, err := json.Marshal(resp.Data)
-	sec1.Data = map[string][]byte{
-		"data": b,
-	}
-	if err := r.Client.Update(ctx, sec1); err != nil {
-		l.Error(err, "error reading secret %q")
+	if sec1.Data, err = makeK8sSecret(l, resp); err != nil {
+		l.Error(err, "Failed to construct k8s secret")
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
+			"Failed to construct k8s secret: %s", err)
 		return ctrl.Result{}, err
 	}
 
-	// TODO:
-	// - store KV in a k8s secret
-	// - support deletion
-	// - support app webhook registration for rotation signalling
-	// - add support for db creds, to demo dynamic credential rotation
-	// - prepare single slide for Weds.
+	if err := r.Client.Update(ctx, sec1); err != nil {
+		l.Error(err, "Failed to update k8s secret")
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonK8sClientError,
+			"Failed to update k8s secret %s/%s: %s", sec1.ObjectMeta.Namespace,
+			sec1.ObjectMeta.Name, err)
+		return ctrl.Result{}, err
+	}
 
-	// set ctrl.Result.Requeue to true with RequeueAfter being the credential (expiry TTL - some offset)
+	r.Recorder.Event(s, corev1.EventTypeNormal, reasonAccepted, "Secret synced")
 	return ctrl.Result{
 		RequeueAfter: refAfter,
 	}, nil
@@ -153,10 +149,33 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *VaultStaticSecretReconciler) getKVV2Path(mount, name string) string {
-	return joinPath(mount, "data", name)
-}
+func makeK8sSecret(logger logr.Logger, vaultSecret *api.KVSecret) (map[string][]byte, error) {
+	if vaultSecret.Raw == nil {
+		return nil, fmt.Errorf("raw portion of vault secret was nil")
+	}
 
-func joinPath(parts ...string) string {
-	return strings.Join(parts, "/")
+	b, err := json.Marshal(vaultSecret.Raw.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal raw Vault secret: %s", err)
+	}
+	k8sSecretData := map[string][]byte{
+		"_raw": b,
+	}
+	for k, v := range vaultSecret.Data {
+		if k == "_raw" {
+			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
+		}
+		var m []byte
+		switch vTyped := v.(type) {
+		case string:
+			m = []byte(vTyped)
+		default:
+			m, err = json.Marshal(vTyped)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal key %q from Vault secret: %s", k, err)
+			}
+		}
+		k8sSecretData[k] = m
+	}
+	return k8sSecretData, nil
 }

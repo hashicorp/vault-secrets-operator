@@ -19,6 +19,13 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
+const (
+	reasonAccepted          = "Accepted"
+	reasonVaultClientError  = "VaultClientError"
+	reasonVaultStaticSecret = "VaultStaticSecretError"
+	reasonK8sClientError    = "K8sClientError"
+)
+
 // OperatorNamespace of the current operator instance, set in init()
 // TODO: reconsider using a global here.
 var OperatorNamespace string

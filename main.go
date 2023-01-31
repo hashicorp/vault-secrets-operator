@@ -76,8 +76,9 @@ func main() {
 	}
 
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("VaultStaticSecret"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
