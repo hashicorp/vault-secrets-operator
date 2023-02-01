@@ -36,9 +36,6 @@ type VaultAuthReconciler struct {
 // the VaultAuth object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	// TODO: add telemetry support
@@ -98,12 +95,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alpha1.VaultAuth) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Updating status", "status", a.Status)
-	g := metrics.ResourceStatus.WithLabelValues("vaultauth", a.Name, a.Namespace)
-	if !a.Status.Valid {
-		g.Set(float64(1))
-	} else {
-		g.Set(float64(0))
-	}
+	metrics.SetResourceStatus("vaultauth", a, a.Status.Valid)
 	if err := r.Status().Update(ctx, a); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return err
