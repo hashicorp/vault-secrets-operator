@@ -131,7 +131,7 @@ func (l *KubernetesAuth) Validate() error {
 		err = multierror.Append(err, fmt.Errorf("controller-runtime Client is not set"))
 	}
 
-	if len(l.GetK8SNamespace()) == 0 {
+	if l.GetK8SNamespace() == "" {
 		err = multierror.Append(err, fmt.Errorf("kubernetes namespace is not set"))
 	}
 

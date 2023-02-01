@@ -134,7 +134,7 @@ func getVaultClient(ctx context.Context, vaultConfig *vault.VaultClientConfig, c
 		return nil, err
 	}
 
-	if len(vaultConfig.VaultNamespace) > 0 {
+	if vaultConfig.VaultNamespace != "" {
 		c.SetNamespace(vaultConfig.VaultNamespace)
 	}
 
