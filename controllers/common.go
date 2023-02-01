@@ -26,16 +26,15 @@ const (
 	reasonK8sClientError    = "K8sClientError"
 )
 
-// OperatorNamespace of the current operator instance, set in init()
-// TODO: reconsider using a global here.
-var OperatorNamespace string
+// operatorNamespace of the current operator instance, set in init()
+var operatorNamespace string
 
 func init() {
-	operatorNamespace, err := utils.GetCurrentNamespace()
+	var err error
+	operatorNamespace, err = utils.GetCurrentNamespace()
 	if err != nil {
 		operatorNamespace = "default"
 	}
-	OperatorNamespace = operatorNamespace
 }
 
 func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*vault.VaultClientConfig, error) {
@@ -64,7 +63,7 @@ func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*v
 		// if no authRef configured we try and grab the 'default' from the
 		// Operator's namespace.
 		va, err = getVaultAuth(ctx, c, types.NamespacedName{
-			Namespace: OperatorNamespace,
+			Namespace: operatorNamespace,
 			Name:      consts.DefaultNameVaultAuth,
 		})
 	} else {
