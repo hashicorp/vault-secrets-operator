@@ -27,8 +27,8 @@ func NewAuthLogin(c crclient.Client, va *v1alpha1.VaultAuth, k8sNamespace string
 	switch method {
 	case "kubernetes":
 		a := &KubernetesAuth{
-			client: c,
-			va:     va,
+			client:    c,
+			vaultAuth: va,
 		}
 		a.SetK8SNamespace(k8sNamespace)
 		if err := a.Validate(); err != nil {

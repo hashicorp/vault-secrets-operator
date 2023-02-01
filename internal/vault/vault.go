@@ -87,10 +87,6 @@ type VaultClientConfig struct {
 	AuthLogin AuthLogin
 }
 
-func (c *VaultClientConfig) SetAuthLogin(a AuthLogin) {
-	c.AuthLogin = a
-}
-
 // MakeVaultClient creates a Vault API client from a VaultClientConfig
 func MakeVaultClient(ctx context.Context, vaultConfig *VaultClientConfig, k8sClient client.Client) (*api.Client, error) {
 	l := log.FromContext(ctx)

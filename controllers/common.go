@@ -60,7 +60,7 @@ func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*v
 
 	var err error
 	var va *secretsv1alpha1.VaultAuth
-	if len(authRef) == 0 {
+	if authRef == "" {
 		// if no authRef configured we try and grab the 'default' from the
 		// Operator's namespace.
 		va, err = getVaultAuth(ctx, c, types.NamespacedName{
@@ -97,7 +97,7 @@ func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*v
 		return nil, err
 	}
 
-	config.SetAuthLogin(authLogin)
+	config.AuthLogin = authLogin
 
 	return config, nil
 }

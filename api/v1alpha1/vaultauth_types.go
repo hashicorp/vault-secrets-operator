@@ -76,7 +76,7 @@ type VaultAuth struct {
 // If no value is specified an error is returned.
 func (v *VaultAuth) GetConnectionNamespacedName() (types.NamespacedName, error) {
 	connRef := v.Spec.VaultConnectionRef
-	if len(connRef) == 0 {
+	if connRef == "" {
 		return types.NamespacedName{}, fmt.Errorf(
 			"vaultConnectionRef is empty",
 		)

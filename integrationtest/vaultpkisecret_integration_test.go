@@ -34,8 +34,6 @@ func TestVaultPKISecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultpkisecret/terraform",
 		Vars: map[string]interface{}{
-			// TODO: get this dynamically
-			"k8s_host":             "https://10.96.0.1",
 			"k8s_test_namespace":   testK8sNamespace,
 			"k8s_config_context":   "kind-" + clusterName,
 			"vault_pki_mount_path": testPKIMountPath,
@@ -67,8 +65,9 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultConnection)
-	err := crdClient.Create(context.Background(), testVaultConnection)
+	ctx := context.Background()
+	defer crdClient.Delete(ctx, testVaultConnection)
+	err := crdClient.Create(ctx, testVaultConnection)
 	require.NoError(t, err)
 
 	// Create a VaultAuth CR
@@ -90,8 +89,8 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultAuth)
-	err = crdClient.Create(context.Background(), testVaultAuth)
+	defer crdClient.Delete(ctx, testVaultAuth)
+	err = crdClient.Create(ctx, testVaultAuth)
 	require.NoError(t, err)
 
 	// Create a VaultPKI CR to trigger the sync
@@ -115,8 +114,8 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultPKI)
-	err = crdClient.Create(context.Background(), testVaultPKI)
+	defer crdClient.Delete(ctx, testVaultPKI)
+	err = crdClient.Create(ctx, testVaultPKI)
 	require.NoError(t, err)
 
 	// Wait for the operator to sync Vault PKI --> k8s Secret, and return the

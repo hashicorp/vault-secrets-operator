@@ -19,10 +19,11 @@ import (
 
 // KubernetesAuth implements the AuthLogin interface to log in to Vault.
 type KubernetesAuth struct {
-	client ctrlclient.Client
-	va     *v1alpha1.VaultAuth
-	vc     *v1alpha1.VaultConnection
-	sans   string
+	client    ctrlclient.Client
+	vaultAuth *v1alpha1.VaultAuth
+	vaultConn *v1alpha1.VaultConnection
+	// serviceAccountNamespace to use when creating k8s tokens.
+	serviceAccountNamespace string
 }
 
 // Login to Vault with the related VaultAuth and VaultConnection.
@@ -31,7 +32,7 @@ func (l *KubernetesAuth) Login(ctx context.Context, client *api.Client) (*api.Se
 	logger := log.FromContext(ctx)
 	n := types.NamespacedName{
 		Namespace: l.GetK8SNamespace(),
-		Name:      l.va.Spec.Kubernetes.ServiceAccount,
+		Name:      l.vaultAuth.Spec.Kubernetes.ServiceAccount,
 	}
 
 	sa := &v1.ServiceAccount{}
@@ -50,7 +51,7 @@ func (l *KubernetesAuth) Login(ctx context.Context, client *api.Client) (*api.Se
 		ctx,
 		l.LoginPath(),
 		map[string]interface{}{
-			"role": l.va.Spec.Kubernetes.Role,
+			"role": l.vaultAuth.Spec.Kubernetes.Role,
 			"jwt":  tr.Status.Token,
 		})
 	if err != nil {
@@ -65,11 +66,11 @@ func (l *KubernetesAuth) Login(ctx context.Context, client *api.Client) (*api.Se
 func (l *KubernetesAuth) getSATokenRequest() (*authv1.TokenRequest, error) {
 	return &authv1.TokenRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: l.va.Spec.Kubernetes.TokenGenerateName,
+			GenerateName: l.vaultAuth.Spec.Kubernetes.TokenGenerateName,
 		},
 		Spec: authv1.TokenRequestSpec{
-			ExpirationSeconds: pointer.Int64(l.va.Spec.Kubernetes.TokenExpirationSeconds),
-			Audiences:         l.va.Spec.Kubernetes.TokenAudiences,
+			ExpirationSeconds: pointer.Int64(l.vaultAuth.Spec.Kubernetes.TokenExpirationSeconds),
+			Audiences:         l.vaultAuth.Spec.Kubernetes.TokenAudiences,
 		},
 		Status: authv1.TokenRequestStatus{},
 	}, nil
@@ -95,31 +96,31 @@ func (l *KubernetesAuth) requestSAToken(ctx context.Context, sa *v1.ServiceAccou
 
 // MountPath to the Vault authentication backend.
 func (l *KubernetesAuth) MountPath() string {
-	return l.va.Spec.Mount
+	return l.vaultAuth.Spec.Mount
 }
 
-// LoginPath for authenticating to Vault
+// LoginPath for authenticating to Vault.
 func (l *KubernetesAuth) LoginPath() string {
 	return fmt.Sprintf("auth/%s/login", l.MountPath())
 }
 
 // SetK8SNamespace to use for the login request.
 func (l *KubernetesAuth) SetK8SNamespace(ns string) {
-	l.sans = ns
+	l.serviceAccountNamespace = ns
 }
 
-// GetK8SNamespace for the login request
+// GetK8SNamespace for the login request.
 func (l *KubernetesAuth) GetK8SNamespace() string {
-	return l.sans
+	return l.serviceAccountNamespace
 }
 
 // Validate that the AuthLogin was properly initialized.
 func (l *KubernetesAuth) Validate() error {
 	var err error
-	if l.va == nil {
+	if l.vaultAuth == nil {
 		err = multierror.Append(err, fmt.Errorf("VaultAuth is not set"))
 	} else {
-		if l.va.Spec.Kubernetes == nil {
+		if l.vaultAuth.Spec.Kubernetes == nil {
 			err = multierror.Append(err, fmt.Errorf("VaultAuth.Spec.Kubernetes is not set"))
 		}
 	}

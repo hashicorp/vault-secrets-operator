@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	v12 "k8s.io/api/authentication/v1"
+	authv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
@@ -27,7 +27,7 @@ func TestKubernetesAuth_SetK8SNamespace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &KubernetesAuth{}
 			l.SetK8SNamespace(tt.want)
-			assert.Equalf(t, tt.want, l.sans, "SetK8SNamespace(%q)", tt.want)
+			assert.Equalf(t, tt.want, l.serviceAccountNamespace, "SetK8SNamespace(%q)", tt.want)
 		})
 	}
 }
@@ -56,7 +56,7 @@ func TestKubernetesAuth_getSATokenRequest(t *testing.T) {
 		name    string
 		va      *v1alpha1.VaultAuth
 		sans    string
-		want    *v12.TokenRequest
+		want    *authv1.TokenRequest
 		wantErr assert.ErrorAssertionFunc
 	}{
 		{
@@ -76,15 +76,15 @@ func TestKubernetesAuth_getSATokenRequest(t *testing.T) {
 					},
 				},
 			},
-			want: &v12.TokenRequest{
+			want: &authv1.TokenRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "baz",
 				},
-				Spec: v12.TokenRequestSpec{
+				Spec: authv1.TokenRequestSpec{
 					ExpirationSeconds: pointer.Int64(1200),
 					Audiences:         []string{"buz", "qux"},
 				},
-				Status: v12.TokenRequestStatus{},
+				Status: authv1.TokenRequestStatus{},
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				valid := err == nil
@@ -98,8 +98,8 @@ func TestKubernetesAuth_getSATokenRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &KubernetesAuth{
-				va:   tt.va,
-				sans: tt.sans,
+				vaultAuth:               tt.va,
+				serviceAccountNamespace: tt.sans,
 			}
 			got, err := l.getSATokenRequest()
 			if !tt.wantErr(t, err, fmt.Sprintf("getSATokenRequest()")) {

@@ -36,7 +36,7 @@ func TestNewAuthLogin(t *testing.T) {
 			k8sNamespace: "baz",
 			want: &KubernetesAuth{
 				client: c,
-				va: &secretsv1alpha1.VaultAuth{
+				vaultAuth: &secretsv1alpha1.VaultAuth{
 					Spec: secretsv1alpha1.VaultAuthSpec{
 						VaultConnectionRef: "foo",
 						Namespace:          "baz",
@@ -44,7 +44,7 @@ func TestNewAuthLogin(t *testing.T) {
 						Kubernetes:         &secretsv1alpha1.VaultAuthConfigKubernetes{},
 					},
 				},
-				sans: "baz",
+				serviceAccountNamespace: "baz",
 			},
 			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
 				valid := err == nil

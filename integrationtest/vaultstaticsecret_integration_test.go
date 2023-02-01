@@ -56,8 +56,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 	crdClient := getCRDClient(t)
 	var created []client.Object
+	ctx := context.Background()
 	t.Cleanup(func() {
-		ctx := context.Background()
 		for _, c := range created {
 			// test that the custom resources can be deleted before tf destroy
 			// removes the k8s namespace
@@ -73,10 +73,10 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
 	putSecretV1 := map[string]interface{}{"password": "grapejuice", "username": "breakfast", "time": "now"}
-	err := vClient.KVv1(testKvMountPath).Put(context.Background(), "secret", putSecretV1)
+	err := vClient.KVv1(testKvMountPath).Put(ctx, "secret", putSecretV1)
 	require.NoError(t, err)
 	putSecretV2 := map[string]interface{}{"password": "applejuice", "username": "lunch", "time": "later"}
-	_, err = vClient.KVv2(testKvv2MountPath).Put(context.Background(), "secret", putSecretV2)
+	_, err = vClient.KVv2(testKvv2MountPath).Put(ctx, "secret", putSecretV2)
 	require.NoError(t, err)
 
 	// Create a VaultConnection CR
@@ -141,13 +141,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 
 	for _, c := range conns {
-		ctx := context.Background()
 		require.Nil(t, crdClient.Create(ctx, c))
 		created = append(created, c)
 	}
 
 	for _, a := range auths {
-		ctx := context.Background()
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)
 	}
@@ -189,7 +187,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 
 	for _, a := range secrets {
-		ctx := context.Background()
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)
 	}
@@ -204,10 +201,10 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	// Change the secrets in Vault, wait for the VaultStaticSecret's to refresh,
 	// and check the result
 	updatedSecretV1 := map[string]interface{}{"password": "orangejuice", "time": "morning"}
-	err = vClient.KVv1(testKvMountPath).Put(context.Background(), "secret", updatedSecretV1)
+	err = vClient.KVv1(testKvMountPath).Put(ctx, "secret", updatedSecretV1)
 	require.NoError(t, err)
 	updatedSecretV2 := map[string]interface{}{"password": "cranberryjuice", "time": "evening"}
-	_, err = vClient.KVv2(testKvv2MountPath).Put(context.Background(), "secret", updatedSecretV2)
+	_, err = vClient.KVv2(testKvv2MountPath).Put(ctx, "secret", updatedSecretV2)
 	require.NoError(t, err)
 
 	expected = []map[string]interface{}{updatedSecretV1, updatedSecretV2}

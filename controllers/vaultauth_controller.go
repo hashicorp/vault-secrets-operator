@@ -30,6 +30,7 @@ type VaultAuthReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=serviceaccounts/token,verbs=get;list;create;watch
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
