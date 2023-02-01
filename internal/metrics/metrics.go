@@ -15,6 +15,12 @@ var ResourceStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	"namespace",
 })
 
+func init() {
+	metrics.Registry.MustRegister(
+		ResourceStatus,
+	)
+}
+
 // SetResourceStatus for the given client.Object. If valid is true, then the
 // ResourceStatus gauge will be set 1, else 0.
 func SetResourceStatus(controller string, o client.Object, valid bool) {
@@ -24,10 +30,4 @@ func SetResourceStatus(controller string, o client.Object, valid bool) {
 	} else {
 		g.Set(float64(0))
 	}
-}
-
-func init() {
-	metrics.Registry.MustRegister(
-		ResourceStatus,
-	)
 }
