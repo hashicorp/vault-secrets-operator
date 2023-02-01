@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+K8S_VAULT_NAMESPACE="${K8S_VAULT_NAMESPACE:-demo}"
+
 root="${0%/*}"
 pushd ${root}/patches > /dev/null
 for f in *.yaml
