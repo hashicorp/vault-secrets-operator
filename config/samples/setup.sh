@@ -51,6 +51,7 @@ vault write auth/kubernetes/role/demo \
     ttl=1h
 EOF
 
-# create the k8s namespaces for the samples
-kubectl create namespace tenant-1 || :
-kubectl create namespace tenant-2 || :
+for ns in tenant-{1,2} ; do
+    kubectl delete namespace --wait --timeout=30s "${ns}" || true
+    kubectl create namespace "${ns}"
+done
