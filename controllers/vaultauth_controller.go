@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -16,6 +17,13 @@ import (
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+)
+
+const (
+	reasonInvalidAuthConfiguration = "InvalidAuthConfiguration"
+	reasonConnectionNotFound       = "ConnectionNotFound"
+	reasonInvalidConnection        = "InvalidVaultConnection"
+	reasonStatusUpdateError        = "StatusUpdateError"
 )
 
 // VaultAuthReconciler reconciles a VaultAuth object
@@ -39,22 +47,20 @@ type VaultAuthReconciler struct {
 // the user.
 func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	// TODO: add telemetry support
-
 	a, err := getVaultAuth(ctx, r.Client, req.NamespacedName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 
-		logger.Error(err, "Failed getting resource from k8s", "resource", req.NamespacedName)
+		logger.Error(err, "Failed to get VaultAuth resource", "resource", req.NamespacedName)
 		return ctrl.Result{}, err
 	}
 
 	n, err := a.GetConnectionNamespacedName()
 	if err != nil {
 		a.Status.Valid = false
-		a.Status.Error = "Invalid resource"
+		a.Status.Error = "InvalidResource"
 		logger.Error(err, a.Status.Error)
 		if err := r.updateStatus(ctx, a); err != nil {
 			return ctrl.Result{}, err
@@ -64,8 +70,15 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if _, err := getVaultConnection(ctx, r.Client, n); err != nil {
 		a.Status.Valid = false
-		a.Status.Error = "No VaultConnection configured"
-		logger.Error(err, a.Status.Error)
+		if apierrors.IsNotFound(err) {
+			a.Status.Error = reasonConnectionNotFound
+		} else {
+			a.Status.Error = reasonInvalidConnection
+		}
+
+		msg := "Failed getting the VaultConnection resource"
+		logger.Error(err, msg)
+		r.recordEvent(a, a.Status.Error, msg+": %s", err)
 		if err := r.updateStatus(ctx, a); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -74,8 +87,10 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if _, err := vault.NewAuthLogin(r.Client, a, a.Namespace); err != nil {
 		a.Status.Valid = false
-		a.Status.Error = "Invalid auth configuration"
-		logger.Error(err, a.Status.Error)
+		a.Status.Error = reasonInvalidAuthConfiguration
+		msg := "Failed to get a valid AuthLogin, this is most likely a bug in the operator!"
+		logger.Error(err, msg)
+		r.recordEvent(a, a.Status.Error, msg+": %s", err)
 		if err := r.updateStatus(ctx, a); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -88,9 +103,20 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Valid request")
+	msg := "Successfully handle VaultAuth resource request"
+	logger.Info(msg)
+	r.recordEvent(a, reasonAccepted, msg)
 
 	return ctrl.Result{}, nil
+}
+
+func (r *VaultAuthReconciler) recordEvent(a *secretsv1alpha1.VaultAuth, reason, msg string, i ...interface{}) {
+	eventType := corev1.EventTypeNormal
+	if !a.Status.Valid {
+		eventType = corev1.EventTypeWarning
+	}
+
+	r.Recorder.Eventf(a, eventType, reason, msg, i...)
 }
 
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alpha1.VaultAuth) error {
@@ -98,7 +124,9 @@ func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alph
 	logger.Info("Updating status", "status", a.Status)
 	metrics.SetResourceStatus("vaultauth", a, a.Status.Valid)
 	if err := r.Status().Update(ctx, a); err != nil {
-		logger.Error(err, "Failed to update the status")
+		msg := "Failed to update the resource's status"
+		r.recordEvent(a, reasonStatusUpdateError, "%s: %s", msg, err)
+		logger.Error(err, msg)
 		return err
 	}
 	return nil
