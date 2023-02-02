@@ -13,11 +13,12 @@ import (
 // VaultPKISecretSpec defines the desired state of VaultPKISecret
 type VaultPKISecretSpec struct {
 	// VaultAuthRef of the VaultAuth resource
-	VaultAuthRef string `json:"vaultAuthRef"`
+	// If no value is specified the Operator will default to the `default` VaultAuth,
+	// configured in its own Kubernetes namespace.
+	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
 	// Namespace to get the secret from
 	Namespace string `json:"namespace,omitempty"`
-
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
 

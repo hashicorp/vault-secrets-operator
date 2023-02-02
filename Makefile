@@ -68,6 +68,9 @@ KIND_CLUSTER_NAME ?= vault-secrets-operator
 # Kind cluster context
 KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
+# Operator namespace as configured in config/default/kustomization.yaml
+OPERATOR_NAMESPACE ?= vault-secrets-operator-system
+
 # Run tests against Vault enterprise when true.
 VAULT_ENTERPRISE ?= false
 # The vault license.
@@ -188,11 +191,16 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 
 .PHONY: integration-test
 integration-test:  setup-integration-test ## Run integration tests for Vault OSS
-	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
+	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
+
+.PHONY: integration-test-both
+integration-test-both: ## Run integration tests against Vault Enterprise and Vault OSS
+	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
+	$(MAKE) integration-test
 
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally
@@ -230,9 +238,7 @@ endif
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
 
-	kubectl patch --namespace=$(K8S_VAULT_NAMESPACE) statefulset vault --patch-file integrationtest/vault/hostPortPatch.yaml
-	kubectl delete --namespace=$(K8S_VAULT_NAMESPACE) pod vault-0
-	kubectl wait --namespace=$(K8S_VAULT_NAMESPACE) --for=condition=Ready --timeout=5m pod -l app.kubernetes.io/name=vault
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) ./integrationtest/vault/patch-vault.sh
 
 .PHONY: setup-integration-test-ent
 ## Create Vault inside the cluster

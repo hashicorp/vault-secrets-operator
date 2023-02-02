@@ -40,8 +40,8 @@ type VaultStaticSecretReconciler struct {
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
-	var s secretsv1alpha1.VaultStaticSecret
-	if err := r.Client.Get(ctx, req.NamespacedName, &s); err != nil {
+	s := &secretsv1alpha1.VaultStaticSecret{}
+	if err := r.Client.Get(ctx, req.NamespacedName, s); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -63,10 +63,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	vc, err := getVaultConfig(ctx, r.Client, types.NamespacedName{Namespace: s.Namespace, Name: s.Spec.VaultAuthRef})
+	vc, err := getVaultConfig(ctx, r.Client, s)
 	if err != nil {
 		l.Error(err, "Failed to retrieve Vault config")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
 			"Failed to retrieve Vault config: %s", err)
 		return ctrl.Result{}, err
 	}
@@ -74,7 +74,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
 		l.Error(err, "Failed to get Vault client")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
 			"Failed to get Vault client: %s", err)
 		return ctrl.Result{}, err
 	}
@@ -84,7 +84,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		d, err := time.ParseDuration(spec.RefreshAfter)
 		if err != nil {
 			l.Error(err, "Failed to parse spec.RefreshAfter")
-			r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultStaticSecret,
+			r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultStaticSecret,
 				"Failed to parse spec.RefreshAfter %s", spec.RefreshAfter)
 			return ctrl.Result{}, err
 		}
@@ -100,12 +100,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	default:
 		err = fmt.Errorf("unsupported secret type %q", spec.Type)
 		l.Error(err, "")
-		r.Recorder.Event(&s, corev1.EventTypeWarning, reasonVaultStaticSecret, err.Error())
+		r.Recorder.Event(s, corev1.EventTypeWarning, reasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
 	}
 	if err != nil {
 		l.Error(err, "Failed to read Vault secret")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
 		return ctrl.Result{
 			RequeueAfter: refAfter,
@@ -114,7 +114,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if resp == nil {
 		l.Error(nil, "empty Vault secret", "mount", spec.Mount, "name", spec.Name)
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
 			"Vault secret was empty, mount %s, name %s", spec.Mount, spec.Name)
 		return ctrl.Result{
 			RequeueAfter: refAfter,
@@ -123,20 +123,20 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if sec1.Data, err = makeK8sSecret(l, resp); err != nil {
 		l.Error(err, "Failed to construct k8s secret")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonVaultClientError,
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonVaultClientError,
 			"Failed to construct k8s secret: %s", err)
 		return ctrl.Result{}, err
 	}
 
 	if err := r.Client.Update(ctx, sec1); err != nil {
 		l.Error(err, "Failed to update k8s secret")
-		r.Recorder.Eventf(&s, corev1.EventTypeWarning, reasonK8sClientError,
+		r.Recorder.Eventf(s, corev1.EventTypeWarning, reasonK8sClientError,
 			"Failed to update k8s secret %s/%s: %s", sec1.ObjectMeta.Namespace,
 			sec1.ObjectMeta.Name, err)
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(&s, corev1.EventTypeNormal, reasonAccepted, "Secret synced")
+	r.Recorder.Event(s, corev1.EventTypeNormal, reasonAccepted, "Secret synced")
 	return ctrl.Result{
 		RequeueAfter: refAfter,
 	}, nil
