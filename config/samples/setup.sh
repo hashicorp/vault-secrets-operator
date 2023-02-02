@@ -4,7 +4,7 @@
 
 set -e
 
-cat <<EOF  |  kubectl -n demo exec -i vault-0 -- sh -e
+cat <<EOF | kubectl -n demo exec -i vault-0 -- sh -e
 vault secrets disable kvv2/
 vault secrets enable -path=kvv2 kv-v2
 vault kv put kvv2/secret username="db-readonly-username" password="db-secret-password"
