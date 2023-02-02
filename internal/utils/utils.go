@@ -34,7 +34,7 @@ func GetCurrentNamespace() (string, error) {
 	return string(bytes.Trim(b, " ")), nil
 }
 
-// GetNamespacedName for client.Oject.
+// GetNamespacedName for client.Object.
 func GetNamespacedName(obj client.Object) types.NamespacedName {
 	n := types.NamespacedName{
 		Namespace: obj.GetNamespace(),

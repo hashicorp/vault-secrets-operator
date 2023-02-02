@@ -54,7 +54,7 @@ func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*v
 			Name:      o.Name,
 		}
 	default:
-		return nil, fmt.Errorf("unsupport type %T", o)
+		return nil, fmt.Errorf("unsupported type %T", o)
 	}
 
 	var err error
