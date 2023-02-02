@@ -65,8 +65,9 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultConnection)
-	err := crdClient.Create(context.Background(), testVaultConnection)
+	ctx := context.Background()
+	defer crdClient.Delete(ctx, testVaultConnection)
+	err := crdClient.Create(ctx, testVaultConnection)
 	require.NoError(t, err)
 
 	// Create a VaultAuth CR
@@ -78,11 +79,18 @@ func TestVaultPKISecret(t *testing.T) {
 		Spec: secretsv1alpha1.VaultAuthSpec{
 			VaultConnectionRef: "vaultconnection-test-tenant-1",
 			Namespace:          testVaultNamespace,
+			Method:             "kubernetes",
+			Mount:              "kubernetes",
+			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				Role:           "role1",
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultAuth)
-	err = crdClient.Create(context.Background(), testVaultAuth)
+	defer crdClient.Delete(ctx, testVaultAuth)
+	err = crdClient.Create(ctx, testVaultAuth)
 	require.NoError(t, err)
 
 	// Create a VaultPKI CR to trigger the sync
@@ -106,17 +114,23 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 	}
 
-	defer crdClient.Delete(context.Background(), testVaultPKI)
-	err = crdClient.Create(context.Background(), testVaultPKI)
+	defer crdClient.Delete(ctx, testVaultPKI)
+	err = crdClient.Create(ctx, testVaultPKI)
 	require.NoError(t, err)
 
 	// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
 	// serial number of the generated cert
-	serialNumber := waitForPKIData(t, 10, 1*time.Second, testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace, "test1.example.com", "")
+	serialNumber := waitForPKIData(t, 30, 1*time.Second,
+		testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace,
+		"test1.example.com", "",
+	)
 	assert.NotEmpty(t, serialNumber)
 
 	// Use the serial number of the first generated cert to check that the cert
 	// is updated
-	newSerialNumber := waitForPKIData(t, 30, 2*time.Second, testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace, "test1.example.com", serialNumber)
+	newSerialNumber := waitForPKIData(t, 30, 2*time.Second,
+		testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace,
+		"test1.example.com", serialNumber,
+	)
 	assert.NotEmpty(t, newSerialNumber)
 }
