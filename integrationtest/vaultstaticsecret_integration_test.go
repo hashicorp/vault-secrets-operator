@@ -40,7 +40,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultstaticsecret/terraform",
 		Vars: map[string]interface{}{
-			"k8s_host":              "https://kubernetes.default.svc",
 			"k8s_test_namespace":    testK8sNamespace,
 			"k8s_config_context":    "kind-" + clusterName,
 			"vault_kv_mount_path":   testKvMountPath,
