@@ -52,7 +52,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// ensure that the vaultConnectionRef is set for any VaultResource in the operator namespace.
+	// ensure that the vaultConnectionRef is set for any VaultAuth resource in the operator namespace.
 	if a.Namespace == operatorNamespace && a.Spec.VaultConnectionRef == "" {
 		err := fmt.Errorf("vaultConnectionRef must be set on resources in the %q namespace", operatorNamespace)
 		logger.Error(err, "Invalid VaultAuth resource")
