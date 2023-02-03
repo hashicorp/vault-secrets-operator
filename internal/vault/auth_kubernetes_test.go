@@ -75,13 +75,12 @@ func TestKubernetesAuth_getSATokenRequest(t *testing.T) {
 					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
 						TokenAudiences:         []string{"buz", "qux"},
 						TokenExpirationSeconds: 1200,
-						TokenGenerateName:      "baz",
 					},
 				},
 			},
 			want: &authv1.TokenRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: "baz",
+					GenerateName: tokenGenerateName,
 				},
 				Spec: authv1.TokenRequestSpec{
 					ExpirationSeconds: pointer.Int64(1200),
