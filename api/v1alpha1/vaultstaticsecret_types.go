@@ -25,6 +25,7 @@ type VaultStaticSecretSpec struct {
 	// Dest could be some sort of k8s secret or something like that ....
 	Dest string `json:"dest"`
 	// Secret type
+	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
 	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation
 	RefreshAfter string `json:"refreshAfter,omitempty"`
