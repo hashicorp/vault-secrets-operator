@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/vault/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -38,7 +39,7 @@ func init() {
 	var err error
 	operatorNamespace, err = utils.GetCurrentNamespace()
 	if err != nil {
-		operatorNamespace = "default"
+		operatorNamespace = metav1.NamespaceDefault
 	}
 }
 
