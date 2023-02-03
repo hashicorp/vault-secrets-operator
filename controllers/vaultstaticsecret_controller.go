@@ -93,10 +93,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var resp *api.KVSecret
 	switch spec.Type {
-	case "kvv2", "kv-v2":
-		resp, err = c.KVv2(spec.Mount).Get(ctx, spec.Name)
-	case "kv", "kvv1", "kv-v1":
+	case "kv-v1":
 		resp, err = c.KVv1(spec.Mount).Get(ctx, spec.Name)
+	case "kv-v2":
+		resp, err = c.KVv2(spec.Mount).Get(ctx, spec.Name)
 	default:
 		err = fmt.Errorf("unsupported secret type %q", spec.Type)
 		l.Error(err, "")
