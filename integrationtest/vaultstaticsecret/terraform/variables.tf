@@ -1,4 +1,4 @@
-# Copyright (c) HashiCorp, Inc.
+# Copyright (c) 2022 HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
 variable "k8s_test_namespace" {

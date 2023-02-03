@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright (c) 2022 HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
 // Package v1alpha1 contains API Schema definitions for the secrets v1alpha1 API group
