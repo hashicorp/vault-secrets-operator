@@ -20,6 +20,8 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
+const tokenGenerateName = "vault-secrets-operator"
+
 var _ AuthLogin = (*KubernetesAuth)(nil)
 
 // KubernetesAuth implements the AuthLogin interface to log in to Vault.
@@ -71,7 +73,7 @@ func (l *KubernetesAuth) Login(ctx context.Context, client *api.Client) (*api.Se
 func (l *KubernetesAuth) getSATokenRequest() (*authv1.TokenRequest, error) {
 	return &authv1.TokenRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: l.vaultAuth.Spec.Kubernetes.TokenGenerateName,
+			GenerateName: tokenGenerateName,
 		},
 		Spec: authv1.TokenRequestSpec{
 			ExpirationSeconds: pointer.Int64(l.vaultAuth.Spec.Kubernetes.TokenExpirationSeconds),
