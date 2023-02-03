@@ -23,10 +23,6 @@ type VaultAuthConfigKubernetes struct {
 	// +kubebuilder:default=600
 	// +kubebuilder:validation:Minimum=600
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
-	// TokenGenerateName is an optional prefix, to be used when generating unique
-	// ServiceAccount tokens.
-	// +kubebuilder:default=vault-secrets-operator
-	TokenGenerateName string `json:"tokenGenerateName,omitempty"`
 }
 
 // VaultAuthSpec defines the desired state of VaultAuth
