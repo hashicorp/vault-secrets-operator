@@ -19,14 +19,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
-const (
-	reasonInvalidAuthConfiguration = "InvalidAuthConfiguration"
-	reasonConnectionNotFound       = "ConnectionNotFound"
-	reasonInvalidConnection        = "InvalidVaultConnection"
-	reasonStatusUpdateError        = "StatusUpdateError"
-	reasonInvalidResourceRef       = "InvalidResourceRef"
-)
-
 // VaultAuthReconciler reconciles a VaultAuth object
 type VaultAuthReconciler struct {
 	client.Client
