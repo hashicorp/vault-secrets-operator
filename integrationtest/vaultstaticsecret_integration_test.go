@@ -91,7 +91,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 		{
 			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.DefaultNameVaultConnection,
+				Name:      consts.NameDefault,
 				Namespace: operatorNS,
 			},
 			Spec: secretsv1alpha1.VaultConnectionSpec{
@@ -122,11 +122,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// Create the default VaultAuth CR in the Operator's namespace
 		{
 			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.DefaultNameVaultConnection,
+				Name:      consts.NameDefault,
 				Namespace: operatorNS,
 			},
 			Spec: secretsv1alpha1.VaultAuthSpec{
-				VaultConnectionRef: consts.DefaultNameVaultConnection,
+				VaultConnectionRef: consts.NameDefault,
 				Namespace:          testVaultNamespace,
 				Method:             "kubernetes",
 				Mount:              "kubernetes",

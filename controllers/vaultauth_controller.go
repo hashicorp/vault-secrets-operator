@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,7 +52,14 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	n, err := a.GetConnectionNamespacedName()
+	// ensure that the vaultConnectionRef is set for any VaultResource in the operator namespace.
+	if a.Namespace == operatorNamespace && a.Spec.VaultConnectionRef == "" {
+		err := fmt.Errorf("vaultConnectionRef must be set on resources in the %q namespace", operatorNamespace)
+		logger.Error(err, "Invalid VaultAuth resource")
+		return ctrl.Result{}, err
+	}
+
+	connNN, err := getConnectionNamespacedName(a)
 	if err != nil {
 		a.Status.Valid = false
 		a.Status.Error = "Invalid resource"
@@ -62,7 +70,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	if _, err := getVaultConnection(ctx, r.Client, n); err != nil {
+	if _, err := getVaultConnection(ctx, r.Client, connNN); err != nil {
 		a.Status.Valid = false
 		a.Status.Error = "No VaultConnection configured"
 		logger.Error(err, a.Status.Error)

@@ -57,31 +57,31 @@ func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*v
 		return nil, fmt.Errorf("unsupported type %T", o)
 	}
 
-	var err error
-	var va *secretsv1alpha1.VaultAuth
+	var vaNN types.NamespacedName
 	if authRef == "" {
 		// if no authRef configured we try and grab the 'default' from the
-		// Operator's namespace.
-		va, err = getVaultAuth(ctx, c, types.NamespacedName{
+		// Operator's current namespace.
+		vaNN = types.NamespacedName{
 			Namespace: operatorNamespace,
-			Name:      consts.DefaultNameVaultAuth,
-		})
+			Name:      consts.NameDefault,
+		}
 	} else {
-		va, err = getVaultAuth(ctx, c, types.NamespacedName{
+		vaNN = types.NamespacedName{
 			Namespace: target.Namespace,
 			Name:      authRef,
-		})
+		}
 	}
+	va, err := getVaultAuth(ctx, c, vaNN)
 	if err != nil {
 		return nil, err
 	}
 
-	connNsn, err := va.GetConnectionNamespacedName()
+	connNN, err := getConnectionNamespacedName(va)
 	if err != nil {
 		return nil, err
 	}
 
-	vc, err := getVaultConnection(ctx, c, connNsn)
+	vc, err := getVaultConnection(ctx, c, connNN)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +125,9 @@ func getVaultAuth(ctx context.Context, c client.Client, nameAndNamespace types.N
 	if err := c.Get(ctx, nameAndNamespace, authObj); err != nil {
 		return nil, err
 	}
+	if authObj.Namespace == operatorNamespace && authObj.Name == consts.NameDefault && authObj.Spec.VaultConnectionRef == "" {
+		authObj.Spec.VaultConnectionRef = consts.NameDefault
+	}
 	return authObj, nil
 }
 
@@ -159,4 +162,25 @@ func ignoreUpdatePredicate() predicate.Predicate {
 			return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
 		},
 	}
+}
+
+// getConnectionNamespacedName returns the NamespacedName for the VaultAuth's configured
+// vaultConnectionRef.
+// If the vaultConnectionRef is empty then defaults Namespace and Name will be returned.
+func getConnectionNamespacedName(a *secretsv1alpha1.VaultAuth) (types.NamespacedName, error) {
+	if a.Spec.VaultConnectionRef == "" {
+		if operatorNamespace == "" {
+			return types.NamespacedName{}, fmt.Errorf("operator's default namespace is not set, this is a bug")
+		}
+		return types.NamespacedName{
+			Namespace: operatorNamespace,
+			Name:      consts.NameDefault,
+		}, nil
+	}
+
+	// the VaultConnection CR must be in the same namespace as its VaultAuth.
+	return types.NamespacedName{
+		Namespace: a.Namespace,
+		Name:      a.Spec.VaultConnectionRef,
+	}, nil
 }

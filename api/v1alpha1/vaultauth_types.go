@@ -4,10 +4,7 @@
 package v1alpha1
 
 import (
-	"fmt"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -37,7 +34,7 @@ type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
 	// If no value is specified the Operator will default to the `default` VaultConnection,
 	// configured in its own Kubernetes namespace.
-	VaultConnectionRef string `json:"vaultConnectionRef"`
+	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
@@ -70,23 +67,6 @@ type VaultAuth struct {
 
 	Spec   VaultAuthSpec   `json:"spec,omitempty"`
 	Status VaultAuthStatus `json:"status,omitempty"`
-}
-
-// GetConnectionNamespacedName returns the NamespacedName for the configured vaultConnectionRef.
-// If no value is specified an error is returned.
-func (v *VaultAuth) GetConnectionNamespacedName() (types.NamespacedName, error) {
-	connRef := v.Spec.VaultConnectionRef
-	if connRef == "" {
-		return types.NamespacedName{}, fmt.Errorf(
-			"vaultConnectionRef is empty",
-		)
-	}
-
-	// the VaultConnection CR must be in the same namespace as its VaultAuth.
-	return types.NamespacedName{
-		Namespace: v.Namespace,
-		Name:      connRef,
-	}, nil
 }
 
 //+kubebuilder:object:root=true
