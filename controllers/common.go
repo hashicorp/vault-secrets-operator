@@ -57,72 +57,62 @@ func getVaultConfig(ctx context.Context, c client.Client, obj client.Object) (*v
 		return nil, fmt.Errorf("unsupported type %T", o)
 	}
 
-	var vaNN types.NamespacedName
+	var authName types.NamespacedName
 	if authRef == "" {
 		// if no authRef configured we try and grab the 'default' from the
 		// Operator's current namespace.
-		vaNN = types.NamespacedName{
+		authName = types.NamespacedName{
 			Namespace: operatorNamespace,
 			Name:      consts.NameDefault,
 		}
 	} else {
-		vaNN = types.NamespacedName{
+		authName = types.NamespacedName{
 			Namespace: target.Namespace,
 			Name:      authRef,
 		}
 	}
-	va, err := getVaultAuth(ctx, c, vaNN)
+	auth, err := getVaultAuth(ctx, c, authName)
 	if err != nil {
 		return nil, err
 	}
 
-	connNN, err := getConnectionNamespacedName(va)
+	connName, err := getConnectionNamespacedName(auth)
 	if err != nil {
 		return nil, err
 	}
 
-	vc, err := getVaultConnection(ctx, c, connNN)
+	conn, err := getVaultConnection(ctx, c, connName)
 	if err != nil {
 		return nil, err
 	}
 
-	config, err := newVaultConfig(target.Namespace, va, vc)
+	authLogin, err := vault.NewAuthLogin(c, auth, target.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
-	authLogin, err := vault.NewAuthLogin(c, va, target.Namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	config.AuthLogin = authLogin
-
-	return config, nil
-}
-
-func newVaultConfig(ns string, a *secretsv1alpha1.VaultAuth, c *secretsv1alpha1.VaultConnection) (*vault.VaultClientConfig, error) {
 	return &vault.VaultClientConfig{
-		CACertSecretRef: c.Spec.CACertSecretRef,
-		K8sNamespace:    ns,
-		Address:         c.Spec.Address,
-		SkipTLSVerify:   c.Spec.SkipTLSVerify,
-		TLSServerName:   c.Spec.TLSServerName,
-		VaultNamespace:  a.Spec.Namespace,
+		Address:         conn.Spec.Address,
+		SkipTLSVerify:   conn.Spec.SkipTLSVerify,
+		TLSServerName:   conn.Spec.TLSServerName,
+		VaultNamespace:  auth.Spec.Namespace,
+		CACertSecretRef: conn.Spec.CACertSecretRef,
+		K8sNamespace:    target.Namespace,
+		AuthLogin:       authLogin,
 	}, nil
 }
 
-func getVaultConnection(ctx context.Context, c client.Client, nameAndNamespace types.NamespacedName) (*secretsv1alpha1.VaultConnection, error) {
+func getVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultConnection, error) {
 	connObj := &secretsv1alpha1.VaultConnection{}
-	if err := c.Get(ctx, nameAndNamespace, connObj); err != nil {
+	if err := c.Get(ctx, key, connObj); err != nil {
 		return nil, err
 	}
 	return connObj, nil
 }
 
-func getVaultAuth(ctx context.Context, c client.Client, nameAndNamespace types.NamespacedName) (*secretsv1alpha1.VaultAuth, error) {
+func getVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultAuth, error) {
 	authObj := &secretsv1alpha1.VaultAuth{}
-	if err := c.Get(ctx, nameAndNamespace, authObj); err != nil {
+	if err := c.Get(ctx, key, authObj); err != nil {
 		return nil, err
 	}
 	if authObj.Namespace == operatorNamespace && authObj.Name == consts.NameDefault && authObj.Spec.VaultConnectionRef == "" {

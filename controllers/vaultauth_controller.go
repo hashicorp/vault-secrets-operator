@@ -59,7 +59,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	connNN, err := getConnectionNamespacedName(a)
+	connName, err := getConnectionNamespacedName(a)
 	if err != nil {
 		a.Status.Valid = false
 		a.Status.Error = "Invalid resource"
@@ -70,7 +70,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	if _, err := getVaultConnection(ctx, r.Client, connNN); err != nil {
+	if _, err := getVaultConnection(ctx, r.Client, connName); err != nil {
 		a.Status.Valid = false
 		a.Status.Error = "No VaultConnection configured"
 		logger.Error(err, a.Status.Error)
