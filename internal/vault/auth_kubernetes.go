@@ -20,6 +20,8 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
+var _ AuthLogin = (*KubernetesAuth)(nil)
+
 // KubernetesAuth implements the AuthLogin interface to log in to Vault.
 type KubernetesAuth struct {
 	client    ctrlclient.Client
