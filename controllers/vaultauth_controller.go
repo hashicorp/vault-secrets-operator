@@ -98,7 +98,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	msg := "Successfully handle VaultAuth resource request"
+	msg := "Successfully handled VaultAuth resource request"
 	logger.Info(msg)
 	r.recordEvent(a, reasonAccepted, msg)
 
