@@ -24,6 +24,7 @@ const (
 	reasonConnectionNotFound       = "ConnectionNotFound"
 	reasonInvalidConnection        = "InvalidVaultConnection"
 	reasonStatusUpdateError        = "StatusUpdateError"
+	reasonInvalidResourceRef       = "InvalidResourceRef"
 )
 
 // VaultAuthReconciler reconciles a VaultAuth object
@@ -60,8 +61,10 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	n, err := a.GetConnectionNamespacedName()
 	if err != nil {
 		a.Status.Valid = false
-		a.Status.Error = "InvalidResource"
-		logger.Error(err, a.Status.Error)
+		a.Status.Error = reasonInvalidResourceRef
+		msg := "Invalid vaultConnectionRef"
+		logger.Error(err, msg)
+		r.recordEvent(a, a.Status.Error, msg+": %s", err)
 		if err := r.updateStatus(ctx, a); err != nil {
 			return ctrl.Result{}, err
 		}
