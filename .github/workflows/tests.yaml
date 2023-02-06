@@ -49,10 +49,17 @@ jobs:
 
   unitTest:
     runs-on: ubuntu-latest
-    needs: []
     steps:
-      - uses: actions/checkout@v3
-      - run: make unit-test
+      - name: checkout code and install deps
+        uses: actions/checkout@v3
+        run: |
+          sudo add-apt-repository ppa:rmescandon/yq
+          sudo apt update
+          sudo apt install yq -y
+          sudo apt install bats 
+
+      - name: run unit test
+        run: make unit-test
 
   integrationTest:
     runs-on: ubuntu-latest
