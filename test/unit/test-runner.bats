@@ -13,8 +13,10 @@ load _helpers
 
 @test "testRunner/Pod: disabled when tests.enabled=false" {
   cd `chart_dir`
-  assert_empty helm template \
+  local actual=$(helm template \
       -s templates/tests/test-runner.yaml  \
       --set 'tests.enabled=false' \
-      .
+      . | tee /dev/stderr |
+      yq 'length > 0' | tee /dev/stderr)
+  [ "${actual}" = "false" ]
 }
