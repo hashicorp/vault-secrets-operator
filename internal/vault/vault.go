@@ -83,8 +83,8 @@ type VaultClientConfig struct {
 	TLSServerName string
 	// VaultNamespace is the namespace in Vault to auth to
 	VaultNamespace string
-	// Token is the Vault token result from successful auth
-	Token string
+	// AuthLogin for Vault getting a vault token
+	AuthLogin AuthLogin
 }
 
 // MakeVaultClient creates a Vault API client from a VaultClientConfig

@@ -27,6 +27,23 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
   - secrets.hashicorp.com
   resources:
   - vaultauths
