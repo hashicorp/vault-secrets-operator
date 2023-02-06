@@ -49,14 +49,12 @@ jobs:
 
   unitTest:
     runs-on: ubuntu-latest
+    container:
+      image: kyleschochenmaier/vault-unit-test:0.0.1
     steps:
       - uses: actions/checkout@v3
-      - run: |
-          sudo add-apt-repository ppa:rmescandon/yq
-          sudo apt update
-          sudo apt install yq -y
-          sudo apt install bats 
-          make unit-test
+      - name: unit tests
+        run:  bats ./test/unit
 
   integrationTest:
     runs-on: ubuntu-latest
