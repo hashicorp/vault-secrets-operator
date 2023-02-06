@@ -6,6 +6,7 @@ kind: ClusterRole
 metadata:
   name: {{ include "chart.fullname" . }}-manager-role
   labels:
+    component: manager-rbac 
   {{- include "chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
@@ -136,6 +137,7 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ include "chart.fullname" . }}-manager-rolebinding
   labels:
+    component: manager-rbac 
   {{- include "chart.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io

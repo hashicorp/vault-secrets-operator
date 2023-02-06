@@ -8,6 +8,7 @@ metadata:
   namespace: '{{ .Release.Namespace }}'
   labels:
     control-plane: controller-manager
+    component: controller-manager-metrics-service 
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.metricsService.type }}

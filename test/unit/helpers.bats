@@ -69,10 +69,10 @@ load _helpers
 #
 # If this test fails, you're likely missing setting that label somewhere.
 #
-#@test "helper/component-label: used everywhere" {
-#  cd `chart_dir`
+@test "helper/component-label: used everywhere" {
+  cd `chart_dir`
   # Grep for files that don't have 'component: ' in them
-#  local actual=$(grep -L 'component: ' templates/*.yaml | tee /dev/stderr )
-#  [ "${actual}" = '' ]
-#}
+  local actual=$(grep -L 'component: ' templates/*.yaml | tee /dev/stderr )
+  [ "${actual}" = '' ]
+}
 

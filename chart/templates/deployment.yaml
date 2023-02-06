@@ -16,6 +16,7 @@ metadata:
   namespace: '{{ .Release.Namespace }}'
   labels:
     control-plane: controller-manager
+    component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.controllerManager.replicas }}
