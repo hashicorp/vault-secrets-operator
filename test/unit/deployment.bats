@@ -34,17 +34,13 @@ load _helpers
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[0].resources | select(documentIndex == 1)' | tee /dev/stderr)
 
-   local actual=$(echo "$object" |
-        yq '.requests.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "5m" ]
-   local actual=$(echo "$object" |
-        yq '.requests.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "64Mi" ]
-   local actual=$(echo "$object" |
-        yq '.limits.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "500m" ]
-   local actual=$(echo "$object" |
-        yq '.limits.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "128Mi" ]
 }
 
@@ -59,17 +55,13 @@ load _helpers
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[0].resources | select(documentIndex == 1)' | tee /dev/stderr)
 
-   local actual=$(echo "$object" |
-        yq '.requests.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "100m" ]
-   local actual=$(echo "$object" |
-        yq '.requests.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "100Mi" ]
-   local actual=$(echo "$object" |
-        yq '.limits.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "200m" ]
-   local actual=$(echo "$object" |
-        yq '.limits.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "200Mi" ]
 }
 
@@ -80,17 +72,13 @@ load _helpers
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
 
-   local actual=$(echo "$object" |
-        yq '.requests.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "10m" ]
-   local actual=$(echo "$object" |
-        yq '.requests.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "64Mi" ]
-   local actual=$(echo "$object" |
-        yq '.limits.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "500m" ]
-   local actual=$(echo "$object" |
-        yq '.limits.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "128Mi" ]
 }
 
@@ -105,17 +93,13 @@ load _helpers
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
 
-   local actual=$(echo "$object" |
-        yq '.requests.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "100m" ]
-   local actual=$(echo "$object" |
-        yq '.requests.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "100Mi" ]
-   local actual=$(echo "$object" |
-        yq '.limits.cpu' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "200m" ]
-   local actual=$(echo "$object" |
-        yq '.limits.memory' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "200Mi" ]
 }
 
