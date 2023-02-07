@@ -22,14 +22,15 @@ import (
 
 const (
 	reasonAccepted                 = "Accepted"
+	reasonConnectionNotFound       = "ConnectionNotFound"
+	reasonInvalidAuthConfiguration = "InvalidAuthConfiguration"
+	reasonInvalidConfiguration     = "InvalidConfiguration"
+	reasonInvalidConnection        = "InvalidVaultConnection"
+	reasonInvalidResourceRef       = "InvalidResourceRef"
+	reasonK8sClientError           = "K8sClientError"
+	reasonStatusUpdateError        = "StatusUpdateError"
 	reasonVaultClientError         = "VaultClientError"
 	reasonVaultStaticSecret        = "VaultStaticSecretError"
-	reasonK8sClientError           = "K8sClientError"
-	reasonInvalidAuthConfiguration = "InvalidAuthConfiguration"
-	reasonConnectionNotFound       = "ConnectionNotFound"
-	reasonInvalidConnection        = "InvalidVaultConnection"
-	reasonStatusUpdateError        = "StatusUpdateError"
-	reasonInvalidResourceRef       = "InvalidResourceRef"
 )
 
 // operatorNamespace of the current operator instance, set in init()
