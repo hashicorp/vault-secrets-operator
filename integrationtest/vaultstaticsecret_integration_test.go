@@ -6,10 +6,12 @@ package integrationtest
 import (
 	"context"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -34,11 +36,20 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.Nil(t, err)
+
+	tfDir, err := files.CopyTerraformFolderToDest(
+		path.Join(testRoot, "vaultstaticsecret/terraform"),
+		tempDir,
+		"terraform",
+	)
+	require.Nil(t, err)
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
-		TerraformDir: "vaultstaticsecret/terraform",
+		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
 			"k8s_test_namespace":    testK8sNamespace,
 			"k8s_config_context":    "kind-" + clusterName,
@@ -51,7 +62,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
-	terraformOptions = terraform.WithDefaultRetryableErrors(t, terraformOptions)
+	terraformOptions = setCommonTFOptions(t, terraformOptions)
 
 	crdClient := getCRDClient(t)
 	var created []client.Object
@@ -64,6 +75,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		}
 		// Clean up resources with "terraform destroy" at the end of the test.
 		terraform.Destroy(t, terraformOptions)
+		os.RemoveAll(tempDir)
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
@@ -72,7 +84,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
 	putSecretV1 := map[string]interface{}{"password": "grapejuice", "username": "breakfast", "time": "now"}
-	err := vClient.KVv1(testKvMountPath).Put(ctx, "secret", putSecretV1)
+	err = vClient.KVv1(testKvMountPath).Put(ctx, "secret", putSecretV1)
 	require.NoError(t, err)
 	putSecretV2 := map[string]interface{}{"password": "applejuice", "username": "lunch", "time": "later"}
 	_, err = vClient.KVv2(testKvv2MountPath).Put(ctx, "secret", putSecretV2)

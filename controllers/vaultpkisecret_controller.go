@@ -28,7 +28,8 @@ const vaultPKIFinalizer = "vaultpkisecrets.secrets.hashicorp.com/finalizer"
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme             *runtime.Scheme
+	ClientCacheManager vault.ClientCacheManager
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -108,19 +109,12 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	vc, err := getVaultConfig(ctx, r.Client, s)
+	c, err := r.ClientCacheManager.GetClient(ctx, r.Client, s)
 	if err != nil {
-		logger.Error(err, "error getting Vault config")
 		return ctrl.Result{}, err
 	}
 
-	c, err := getVaultClient(ctx, vc, r.Client)
-	if err != nil {
-		logger.Error(err, "error getting Vault client")
-		return ctrl.Result{}, err
-	}
-
-	resp, err := c.Logical().WriteWithContext(ctx, path, s.GetIssuerAPIData())
+	resp, err := c.Write(ctx, path, s.GetIssuerAPIData())
 	if err != nil {
 		logger.Error(err, "Error issuing certificate from Vault")
 		return ctrl.Result{}, err
@@ -159,11 +153,11 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	logger.Info("Successfully updated the secret")
 
 	// revoke the certificate on renewal
-	if s.Spec.Revoke && s.Status.Renew && s.Status.SerialNumber != "" {
-		if err := r.revokeCertificate(ctx, logger, s); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	//if s.Spec.Revoke && s.Status.Renew && s.Status.SerialNumber != "" {
+	//	if err := r.revokeCertificate(ctx, logger, s); err != nil {
+	//		return ctrl.Result{}, err
+	//	}
+	//}
 
 	s.Status.SerialNumber = certResp.SerialNumber
 	s.Status.Expiration = certResp.Expiration
@@ -189,6 +183,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	l.Info("In deletion")
 	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
+		r.ClientCacheManager.RemoveObject(s)
 		if err := r.finalizePKI(ctx, l, s); err != nil {
 			l.Error(err, "finalizer failed")
 			// TODO: decide how to handle a failed finalizer
@@ -230,11 +225,11 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	l.Info("Finalizing VaultPKISecret")
-	if s.Spec.Revoke {
-		if err := r.revokeCertificate(ctx, l, s); err != nil {
-			return err
-		}
-	}
+	//if s.Spec.Revoke {
+	//	if err := r.revokeCertificate(ctx, l, s); err != nil {
+	//		return err
+	//	}
+	//}
 
 	if s.Spec.Clear {
 		if err := r.clearSecretData(ctx, l, s); err != nil {
@@ -270,28 +265,28 @@ func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.L
 	return r.Client.Update(ctx, sec)
 }
 
-func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
-	vc, err := getVaultConfig(ctx, r.Client, s)
-	if err != nil {
-		return err
-	}
-
-	c, err := getVaultClient(ctx, vc, r.Client)
-	if err != nil {
-		return err
-	}
-
-	l.Info(fmt.Sprintf("Revoking certificate %q", s.Status.SerialNumber))
-
-	if _, err := c.Logical().WriteWithContext(ctx, fmt.Sprintf("%s/revoke", s.Spec.Mount), map[string]interface{}{
-		"serial_number": s.Status.SerialNumber,
-	}); err != nil {
-		l.Error(err, "Failed to revoke certificate", "serial_number", s.Status.SerialNumber)
-		return err
-	}
-
-	return nil
-}
+//func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
+//	vc, err := config.GetVaultConfig(ctx, r.Client, s)
+//	if err != nil {
+//		return err
+//	}
+//
+//	c, _, err := vault.GetVaultClient(ctx, vc, r.Client)
+//	if err != nil {
+//		return err
+//	}
+//
+//	l.Info(fmt.Sprintf("Revoking certificate %q", s.Status.SerialNumber))
+//
+//	if _, err := c.Logical().WriteWithContext(ctx, fmt.Sprintf("%s/revoke", s.Spec.Mount), map[string]interface{}{
+//		"serial_number": s.Status.SerialNumber,
+//	}); err != nil {
+//		l.Error(err, "Failed to revoke certificate", "serial_number", s.Status.SerialNumber)
+//		return err
+//	}
+//
+//	return nil
+//}
 
 func (r *VaultPKISecretReconciler) getPath(spec secretsv1alpha1.VaultPKISecretSpec) string {
 	parts := []string{spec.Mount}

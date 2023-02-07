@@ -56,7 +56,7 @@ jobs:
       fail-fast: false
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
-        vault-version: [1.10.9, 1.11.6, 1.12.2]
+        vault-version: [1.10.10, 1.11.7, 1.12.3]
         # Note: The below exclude and include's are a bit awkward, but they
         # allow us to exclude the combos we don't really need. We want to test
         # the operator with the different k8s versions, and with the different
@@ -71,11 +71,11 @@ jobs:
           - kind-k8s-version: 1.22.15
         include:
           - kind-k8s-version: 1.24.7
-            vault-version: 1.12.2
+            vault-version: 1.12.3
           - kind-k8s-version: 1.23.13
-            vault-version: 1.12.2
+            vault-version: 1.12.3
           - kind-k8s-version: 1.22.15
-            vault-version: 1.12.2
+            vault-version: 1.12.3
 
     name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
@@ -107,7 +107,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make ci-deploy-kind
-          make integration-test
+          make integration-test SUPPRESS_TF_OUTPUT=true
       - name: ENT tests
         env:
           INTEGRATION_TESTS: true
@@ -115,4 +115,4 @@ jobs:
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
           make ci-deploy-kind
-          make integration-test-ent
+          make integration-test-ent SUPPRESS_TF_OUTPUT=true

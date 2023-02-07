@@ -5,6 +5,8 @@
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
 
+GO_VERSION = $(shell cat .go-version)
+
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= demo
@@ -16,6 +18,14 @@ GOFUMPT_VERSION ?= v0.4.0
 HELMIFY_VERSION ?= v0.3.22
 
 TESTARGS ?= '-test.v'
+
+# Suppress the output from terraform when running the integration tests.
+SUPPRESS_TF_OUTPUT ?=
+# Skip the integration test cleanup.
+SKIP_CLEANUP ?=
+# The number of k8s secrets to create in the VaultDynamicSecret's integration tests.
+K8S_DB_SECRET_COUNT ?=
+
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -68,6 +78,11 @@ KIND_CLUSTER_NAME ?= vault-secrets-operator
 # Kind cluster context
 KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
+# Kind cluster name (demo)
+KIND_CLUSTER_DEMO_NAME ?= vso-demo
+# Kind cluster context (demo)
+KIND_CLUSTER_DEMO_CONTEXT ?= kind-$(KIND_CLUSTER_DEMO_NAME)
+
 # Operator namespace as configured in config/default/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
 
@@ -78,6 +93,11 @@ _VAULT_LICENSE ?=
 
 TF_INFRA_SRC_DIR ?= ./integrationtest/infra
 TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
+
+TF_INFRA_DEMO_ROOT ?= ./demo/infra
+TF_INFRA_DEMO_DIR_VAULT ?= ./demo/infra/vault
+TF_INFRA_DEMO_STATE_VAULT_DIR ?= $(TF_INFRA_DEMO_DIR_VAULT)/state
+TF_INFRA_DEMO_STATE_APP_DIR ?= $(TF_INFRA_DEMO_ROOT)/app/state
 
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
@@ -125,7 +145,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	@sh -c "'$(CURDIR)/scripts/fix-copyright.sh'"
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen go-version-check ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
@@ -133,8 +153,13 @@ fmt: gofumpt ## Run gofumpt against code.
 	$(GOFUMPT) -l -w -extra .
 
 .PHONY: check-fmt
-check-fmt: gofumpt ## Check formatting
+check-fmt: gofumpt go-version-check ## Check formatting
+	@sh -c $(CURDIR)/scripts/goversioncheck.sh
 	@GOFUMPT_BIN=$(GOFUMPT) $(CURDIR)/scripts/gofmtcheck.sh $(CURDIR)
+
+.PHONY: go-version-check
+go-version-check: ## Check formatting
+	@sh -c $(CURDIR)/scripts/goversioncheck.sh
 
 .PHONY: tffmt
 fmttf: terraform ## Run gofumpt against code.
@@ -191,7 +216,9 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 
 .PHONY: integration-test
 integration-test:  setup-integration-test ## Run integration tests for Vault OSS
-	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
+	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
+    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 \
+	go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
@@ -206,6 +233,7 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
 	kind create cluster \
+		--wait=5m \
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
 		--config $(CURDIR)/integrationtest/kind/config.yaml
@@ -214,6 +242,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
+	find ./integrationtest/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
 
 .PHONY: setup-integration-test
 setup-integration-test: terraform kustomize set-vault-license ## Deploy Vault for integration testing
@@ -237,7 +266,6 @@ endif
 		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
-
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) ./integrationtest/vault/patch-vault.sh
 
 .PHONY: setup-integration-test-ent
@@ -262,6 +290,62 @@ else
 	$(error no valid vault license source provided, choices are VAULT_LICENSE_CI, VAULT_LICENSE, VAULT_LICENSE_PATH)
 endif
 endif
+
+.PHONY: demo-setup-kind
+demo-setup-kind: ## create a kind cluster for running the acceptance tests locally
+	kind get clusters | grep --silent "^$(KIND_CLUSTER_DEMO_NAME)$$" || \
+	kind create cluster \
+		--wait=5m \
+		--image kindest/node:$(KIND_K8S_VERSION) \
+		--name $(KIND_CLUSTER_DEMO_NAME)  \
+		--config $(CURDIR)/demo/kind/config.yaml
+	kubectl config use-context $(KIND_CLUSTER_DEMO_CONTEXT)
+
+.PHONY: demo-delete-kind
+demo-delete-kind: ## delete the kind cluster
+	kind delete cluster --name $(KIND_CLUSTER_DEMO_NAME) || true
+	find ./demo -type f -name '*tfstate*' | xargs rm &> /dev/null || true
+
+.PHONY: demo-infra-vault
+demo-infra-vault:  demo-setup-kind terraform kustomize set-vault-license ## Deploy Vault for the demo
+	@mkdir -p $(TF_INFRA_DEMO_STATE_VAULT_DIR)
+ifeq ($(VAULT_ENTERPRISE), true)
+    ## ensure that the license is *not* emitted to the console
+	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_INFRA_DEMO_STATE_VAULT_DIR)/license.auto.tfvars
+ifdef VAULT_IMAGE_REPO
+	$(eval EXTRA_VARS=-var vault_image_repo_ent=$(VAULT_IMAGE_REPO))
+endif
+else ifdef VAULT_IMAGE_REPO
+	$(eval EXTRA_VARS=-var vault_image_repo=$(VAULT_IMAGE_REPO))
+endif
+	@rm -f $(TF_INFRA_DEMO_DIR_VAULT)/*.tf
+	cp $(TF_INFRA_SRC_DIR)/*.tf $(TF_INFRA_DEMO_STATE_VAULT_DIR)/.
+	 $(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_VAULT_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_VAULT_DIR) apply -auto-approve \
+		-var vault_enterprise=$(VAULT_ENTERPRISE) \
+		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
+		-var k8s_namespace=vault \
+		-var k8s_config_context=$(KIND_CLUSTER_DEMO_CONTEXT) \
+		$(EXTRA_VARS) || exit 1
+
+	K8S_VAULT_NAMESPACE=vault ./integrationtest/vault/patch-vault.sh
+
+.PHONY: demo-infra-app
+demo-infra-app: demo-deploy-kind terraform ## Deploy Postgres for the demo
+	@mkdir -p $(TF_INFRA_DEMO_STATE_APP_DIR)
+	rm -f $(TF_INFRA_DEMO_STATE_APP_DIR)/*.tf
+	cp ./demo/infra/app/*.tf $(TF_INFRA_DEMO_STATE_APP_DIR)/.
+	 $(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_APP_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_APP_DIR) apply -auto-approve \
+		-var vault_enterprise=$(VAULT_ENTERPRISE) \
+		-var vault_address=http://127.0.0.1:38302 \
+		-var vault_token=root \
+		-var k8s_config_context=$(KIND_CLUSTER_DEMO_CONTEXT) \
+		$(EXTRA_VARS) || exit 1 \
+
+.PHONY: demo
+demo: ## Deploy the demo
+	KIND_CLUSTER_NAME=$(KIND_CLUSTER_DEMO_NAME) $(MAKE) demo-infra-vault demo-infra-app
 
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
@@ -318,6 +402,22 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
 	$(MAKE) deploy
+
+.PHONY: deploy-kind
+demo-deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+	$(MAKE) deploy-kind KIND_CLUSTER_NAME=$(KIND_CLUSTER_DEMO_NAME)
+
+.PHONY: delete-operator-pod
+delete-operator-pod:
+	kubectl -n $(OPERATOR_NAMESPACE) delete pod  -l control-plane=controller-manager
+
+.PHONY: rollout-restart-operator
+rollout-restart-operator:
+	kubectl -n $(OPERATOR_NAMESPACE) rollout restart -l control-plane=controller-manager
+
+.PHONY: build-deploy-kind
+build-deploy-kind:
+	$(MAKE) generate manifests docker-build deploy-kind delete-operator-pod
 
 ##@ Build Dependencies
 

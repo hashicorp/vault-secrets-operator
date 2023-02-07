@@ -6,10 +6,12 @@ package integrationtest
 import (
 	"context"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -28,11 +30,20 @@ func TestVaultPKISecret(t *testing.T) {
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.Nil(t, err)
+
+	tfDir, err := files.CopyTerraformFolderToDest(
+		path.Join(testRoot, "vaultpkisecret/terraform"),
+		tempDir,
+		"terraform",
+	)
+	require.Nil(t, err)
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
-		TerraformDir: "vaultpkisecret/terraform",
+		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
 			"k8s_test_namespace":   testK8sNamespace,
 			"k8s_config_context":   "kind-" + clusterName,
@@ -44,10 +55,13 @@ func TestVaultPKISecret(t *testing.T) {
 		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
-	terraformOptions = terraform.WithDefaultRetryableErrors(t, terraformOptions)
+	terraformOptions = setCommonTFOptions(t, terraformOptions)
 
 	// Clean up resources with "terraform destroy" at the end of the test.
-	defer terraform.Destroy(t, terraformOptions)
+	t.Cleanup(func() {
+		terraform.Destroy(t, terraformOptions)
+		os.RemoveAll(tempDir)
+	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
 	terraform.InitAndApply(t, terraformOptions)
@@ -67,7 +81,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 	ctx := context.Background()
 	defer crdClient.Delete(ctx, testVaultConnection)
-	err := crdClient.Create(ctx, testVaultConnection)
+	err = crdClient.Create(ctx, testVaultConnection)
 	require.NoError(t, err)
 
 	// Create a VaultAuth CR

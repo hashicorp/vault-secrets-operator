@@ -7,16 +7,19 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
+	"path"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/gruntwork-io/terratest/modules/k8s"
+	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
-	"github.com/hashicorp/go-multierror"
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +27,16 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
+
+var testRoot string
+
+func init() {
+	_, curFilePath, _, _ := runtime.Caller(0)
+	testRoot = path.Dir(curFilePath)
+}
 
 // testVaultAddress is the address in k8s of the vault setup by
 // `make setup-integration-test{,-ent}`
@@ -43,6 +55,14 @@ func TestMain(m *testing.M) {
 		os.Setenv("VAULT_TOKEN", "root")
 		os.Exit(m.Run())
 	}
+}
+
+func setCommonTFOptions(t *testing.T, opts *terraform.Options) *terraform.Options {
+	t.Helper()
+	if os.Getenv("SUPPRESS_TF_OUTPUT") != "" {
+		opts.Logger = logger.Discard
+	}
+	return terraform.WithDefaultRetryableErrors(t, opts)
 }
 
 func getVaultClient(t *testing.T, namespace string) *api.Client {
@@ -67,6 +87,7 @@ func getCRDClient(t *testing.T) client.Client {
 }
 
 func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expectedData map[string]interface{}) {
+	t.Helper()
 	destSecret := &corev1.Secret{}
 	var err error
 	retry.DoWithRetry(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
@@ -86,19 +107,19 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, 
 		for k, v := range expectedData {
 			// compare expected secret data to _raw in the k8s secret
 			if !reflect.DeepEqual(v, rawSecret[k]) {
-				err = multierror.Append(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
+				err = errors.Join(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
 			}
 			// compare expected secret k/v to the top level items in the k8s secret
 			if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
-				err = multierror.Append(err, fmt.Errorf("expected '%s:%s', actual '%s:%s'", k, v, k, string(destSecret.Data[k])))
+				err = errors.Join(err, fmt.Errorf("expected '%s:%s', actual '%s:%s'", k, v, k, string(destSecret.Data[k])))
 			}
 		}
 		if len(expectedData) != len(rawSecret) {
-			err = multierror.Append(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
+			err = errors.Join(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
 		}
 		// the k8s secret has an extra key because of the "_raw" item
 		if len(expectedData) != len(destSecret.Data)-1 {
-			err = multierror.Append(err, fmt.Errorf("expected data length %d does not match k8s secret data length %d", len(expectedData), len(destSecret.Data)-1))
+			err = errors.Join(err, fmt.Errorf("expected data length %d does not match k8s secret data length %d", len(expectedData), len(destSecret.Data)-1))
 		}
 
 		return "", err
@@ -106,6 +127,7 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, 
 }
 
 func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, namespace, expectedCommonName, previousSerialNumber string) (serialNumber string) {
+	t.Helper()
 	destSecret := &corev1.Secret{}
 	newSerialNumber := ""
 	var err error
@@ -136,4 +158,27 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, nam
 	})
 
 	return newSerialNumber
+}
+
+func waitForDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expected map[string]int) {
+	t.Helper()
+	retry.DoWithRetry(t,
+		"wait for dynamic secret sync", maxRetries, delay,
+		func() (string, error) {
+			sec, err := k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
+			if err != nil {
+				return "", err
+			}
+			if len(sec.Data) == 0 {
+				return "", fmt.Errorf("empty data for secret %s: %#v", sec, sec)
+			}
+
+			actual := make(map[string]int)
+			for f, b := range sec.Data {
+				actual[f] = len(b)
+			}
+			require.Equal(t, expected, actual)
+
+			return "", nil
+		})
 }

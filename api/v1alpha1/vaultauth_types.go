@@ -44,6 +44,9 @@ type VaultAuthSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// Kubernetes specific auth configuration, requires that the Method be set to kubernetes.
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
+	// VaultTransitRef is the name of a VaultTransit custom resource that will be used for
+	// encryption/decryption of the cached client.
+	VaultTransitRef string `json:"vaultTransitRef,omitempty"`
 }
 
 // VaultAuthStatus defines the observed state of VaultAuth

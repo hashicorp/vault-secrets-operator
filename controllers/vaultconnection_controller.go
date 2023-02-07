@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -12,13 +13,15 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/hashicorp/go-multierror"
-
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	client2 "github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
+
+const vaultConnectionFinalizer = "vaultconnection.secrets.hashicorp.com/finalizer"
 
 // VaultConnectionReconciler reconciles a VaultConnection object
 type VaultConnectionReconciler struct {
@@ -43,50 +46,112 @@ type VaultConnectionReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	l := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	var c secretsv1alpha1.VaultConnection
-	if err := r.Client.Get(ctx, req.NamespacedName, &c); err != nil {
+	o := &secretsv1alpha1.VaultConnection{}
+	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 
-		l.Error(err, "Failed to retrieve resource from k8s", "connection", c)
+		logger.Error(err, "Failed to retrieve resource from k8s", "connection", o)
 		return ctrl.Result{}, err
 	}
+
+	logger.Info("Handling request", "req", req, "object", o, "deletionTS", o.DeletionTimestamp)
+	if o.GetDeletionTimestamp() == nil {
+		if err := r.addFinalizer(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		logger.Info("Got deletion timestamp", "obj", o)
+		return r.handleFinalizer(ctx, o)
+	}
+
 	defer func() {
-		if updateErr := r.Client.Status().Update(ctx, &c); updateErr != nil {
-			l.Error(updateErr, "Failed to update VaultConnection status", "new status", c.Status)
+		if updateErr := r.Client.Status().Update(ctx, o); updateErr != nil {
+			logger.Error(updateErr, "Failed to update VaultConnection status", "new status", o.Status)
 			// add the update error to the returned err from Reconcile
-			err = multierror.Append(err, updateErr)
+			err = errors.Join(err, updateErr)
 		}
 	}()
 
-	vaultConfig := &vault.VaultClientConfig{
-		CACertSecretRef: c.Spec.CACertSecretRef,
-		K8sNamespace:    c.ObjectMeta.Namespace,
-		Address:         c.Spec.Address,
-		SkipTLSVerify:   c.Spec.SkipTLSVerify,
-		TLSServerName:   c.Spec.TLSServerName,
+	vaultConfig := &client2.ClientConfig{
+		CACertSecretRef: o.Spec.CACertSecretRef,
+		K8sNamespace:    o.ObjectMeta.Namespace,
+		Address:         o.Spec.Address,
+		SkipTLSVerify:   o.Spec.SkipTLSVerify,
+		TLSServerName:   o.Spec.TLSServerName,
 	}
-	vaultClient, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
+	vaultClient, err := client2.MakeVaultClient(ctx, vaultConfig, r.Client)
 	if err != nil {
-		c.Status.Valid = false
-		l.Error(err, "Failed to construct Vault client")
-		r.Recorder.Eventf(&c, corev1.EventTypeWarning, reasonVaultClientError, "Failed to construct Vault client: %s", err)
+		o.Status.Valid = false
+		logger.Error(err, "Failed to construct Vault client")
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError, "Failed to construct Vault client: %s", err)
 		return ctrl.Result{}, err
 	}
 
 	if _, err := vaultClient.Sys().SealStatusWithContext(ctx); err != nil {
-		c.Status.Valid = false
-		l.Error(err, "Failed to check Vault seal status, requeuing")
-		r.Recorder.Eventf(&c, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
+		o.Status.Valid = false
+		logger.Error(err, "Failed to check Vault seal status, requeuing")
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
 		return ctrl.Result{}, err
 	}
 
-	c.Status.Valid = true
+	o.Status.Valid = true
 
-	r.Recorder.Event(&c, corev1.EventTypeNormal, reasonAccepted, "VaultConnection accepted")
+	// evict old referent VaultClientCaches for all older generations of self.
+	// this is a bit of a sledgehammer, not all updated attributes of VaultConnection
+	// warrant eviction of a client cache entry, but this is a good start.
+	opts := cacheEvictionOption{
+		filterFunc: filterOldCacheRefsForConn,
+		matchingLabels: client.MatchingLabels{
+			"vaultConnectionRef":          o.GetName(),
+			"vaultConnectionRefNamespace": o.GetNamespace(),
+		},
+	}
+	if _, err := evictClientCacheRefs(ctx, r.Client, o, r.Recorder, opts); err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
+			"Failed to evict referent VaultCacheClient resources: %s", err)
+	}
+
+	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonAccepted, "VaultConnection accepted")
+	return ctrl.Result{}, nil
+}
+
+func (r *VaultConnectionReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultConnection) error {
+	if !controllerutil.ContainsFinalizer(o, vaultConnectionFinalizer) {
+		controllerutil.AddFinalizer(o, vaultConnectionFinalizer)
+		if err := r.Client.Update(ctx, o); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *VaultConnectionReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultConnection) (ctrl.Result, error) {
+	if controllerutil.ContainsFinalizer(o, vaultConnectionFinalizer) {
+		opts := cacheEvictionOption{
+			filterFunc: filterAllCacheRefs,
+			matchingLabels: client.MatchingLabels{
+				"vaultConnectionRef":          o.GetName(),
+				"vaultConnectionRefNamespace": o.GetNamespace(),
+			},
+		}
+		_, err := evictClientCacheRefs(ctx, r.Client, o, r.Recorder, opts)
+		if err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
+				"Failed to evict referent VaultCacheClient resources: %s", err)
+			return ctrl.Result{}, err
+		}
+
+		controllerutil.RemoveFinalizer(o, vaultConnectionFinalizer)
+		if err := r.Update(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -94,5 +159,6 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 func (r *VaultConnectionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultConnection{}).
+		WithEventFilter(ignoreUpdatePredicate()).
 		Complete(r)
 }

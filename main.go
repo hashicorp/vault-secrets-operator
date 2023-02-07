@@ -4,12 +4,15 @@
 package main
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -19,6 +22,7 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
+	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -38,11 +42,24 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var lruClientCacheSize int
+	var lruObjectKeyCacheSize int
+	flag.IntVar(&lruClientCacheSize, "client-lru-cache-size", 10000, "Size of the in-memory LRU client cache.")
+	flag.IntVar(&lruObjectKeyCacheSize, "object-key-lru-cache-size", 10000, "Size of the in-memory LRU object-key cache.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+
+	persistenceModelDirect := "direct"
+	persistenceModelEncrypted := "direct-encrypted"
+	persistenceModelNone := "none"
+	var clientCachePersistenceType string
+	flag.StringVar(&clientCachePersistenceType, "client-cache-persistence-type", "direct",
+		fmt.Sprintf(
+			"The type of client cache persistence model that should be employed."+
+				"default=%s, choices=%v", persistenceModelDirect, []string{persistenceModelDirect, persistenceModelEncrypted, persistenceModelNone}))
 	opts := zap.Options{
 		Development: true,
 	}
@@ -50,6 +67,39 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	vaultClientCacheOptions := &controllers.VaultClientCacheOptions{}
+	switch clientCachePersistenceType {
+	case persistenceModelDirect:
+		vaultClientCacheOptions.Persist = false
+	case persistenceModelEncrypted:
+		vaultClientCacheOptions.Persist = true
+		vaultClientCacheOptions.RequireEncryption = true
+	case persistenceModelNone:
+		vaultClientCacheOptions.Persist = false
+	default:
+		setupLog.Error(errors.New("unsupported type"),
+			fmt.Sprintf("%q is not a valid cache pesistence configuration type", clientCachePersistenceType))
+		os.Exit(1)
+	}
+
+	clientCache, err := vclient.NewClientCache(lruClientCacheSize)
+	if err != nil {
+		setupLog.Error(err, "Unable to create Vault ClientCache")
+		os.Exit(1)
+	}
+
+	objectKeyCache, err := vclient.NewObjectKeyCache(lruObjectKeyCacheSize)
+	if err != nil {
+		setupLog.Error(err, "Unable to create Vault ObjectKeyCache")
+		os.Exit(1)
+	}
+
+	clientCacheManager, err := vclient.NewClientCacheManager(clientCache, objectKeyCache)
+	if err != nil {
+		setupLog.Error(err, "Unable to create Vault ClientCacheManager")
+		os.Exit(1)
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -68,10 +118,10 @@ func main() {
 		// the manager stops, so would be fine to enable this option. However,
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
 
@@ -80,14 +130,14 @@ func main() {
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("VaultStaticSecret"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VaultStaticSecret")
+		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultPKISecretReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VaultPKISecret")
+		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultAuthReconciler{
@@ -95,7 +145,7 @@ func main() {
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("VaultAuth"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VaultAuth")
+		setupLog.Error(err, "Unable to create controller", "controller", "VaultAuth")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultConnectionReconciler{
@@ -103,22 +153,54 @@ func main() {
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("VaultConnection"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VaultConnection")
+		setupLog.Error(err, "Unable to create controller", "controller", "VaultConnection")
+		os.Exit(1)
+	}
+	if err = (&controllers.VaultDynamicSecretReconciler{
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		Recorder:           mgr.GetEventRecorderFor("VaultDynamicSecret"),
+		ClientCacheManager: clientCacheManager,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
+		os.Exit(1)
+	}
+	if err = (&controllers.VaultClientCacheReconciler{
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		Recorder:    mgr.GetEventRecorderFor("VaultClientCache"),
+		Options:     vaultClientCacheOptions,
+		ClientCache: clientCache,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "VaultClientCache")
+		os.Exit(1)
+	}
+	if err = (&controllers.VaultTransitReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("VaultTransit"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "VaultTransit")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		setupLog.Error(err, "Unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		setupLog.Error(err, "Unable to set up ready check")
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	ctx := ctrl.SetupSignalHandler()
+	setupLog.Info("Starting manager",
+		"clientCachePersistenceModel", clientCachePersistenceType,
+		"clientCacheSize", lruClientCacheSize,
+		"objectKeyCacheSize", lruObjectKeyCacheSize,
+	)
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

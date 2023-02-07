@@ -9,9 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -32,13 +29,4 @@ func GetCurrentNamespace() (string, error) {
 	}
 
 	return string(bytes.Trim(b, " ")), nil
-}
-
-// GetNamespacedName for client.Object.
-func GetNamespacedName(obj client.Object) types.NamespacedName {
-	n := types.NamespacedName{
-		Namespace: obj.GetNamespace(),
-		Name:      obj.GetName(),
-	}
-	return n
 }
