@@ -50,7 +50,8 @@ jobs:
   unitTest:
     runs-on: ubuntu-latest
     container:
-      image: kyleschochenmaier/vault-unit-test:0.0.1
+      image: docker.io/kyleschochenmaier/vault-unit-test:0.0.1
+      options: --user root
     steps:
       - uses: actions/checkout@v3
       - name: unit tests
