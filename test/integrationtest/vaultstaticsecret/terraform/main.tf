@@ -43,17 +43,12 @@ provider "vault" {
   # Configuration options
 }
 
-resource "vault_mount" "kv" {
-  count       = var.vault_enterprise ? 0 : 1
-  path        = var.vault_kv_mount_path
-  type        = "kv"
-  options     = { version = "1" }
-  description = "KV Version 1 secret engine mount"
+locals {
+  namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
 }
 
-resource "vault_mount" "kv-ent" {
-  count       = var.vault_enterprise ? 1 : 0
-  namespace   = vault_namespace.test[count.index].path
+resource "vault_mount" "kv" {
+  namespace   = local.namespace
   path        = var.vault_kv_mount_path
   type        = "kv"
   options     = { version = "1" }
@@ -61,16 +56,7 @@ resource "vault_mount" "kv-ent" {
 }
 
 resource "vault_mount" "kvv2" {
-  count       = var.vault_enterprise ? 0 : 1
-  path        = var.vault_kvv2_mount_path
-  type        = "kv"
-  options     = { version = "2" }
-  description = "KV Version 2 secret engine mount"
-}
-
-resource "vault_mount" "kvv2-ent" {
-  count       = var.vault_enterprise ? 1 : 0
-  namespace   = vault_namespace.test[count.index].path
+  namespace   = local.namespace
   path        = var.vault_kvv2_mount_path
   type        = "kv"
   options     = { version = "2" }
@@ -80,4 +66,41 @@ resource "vault_mount" "kvv2-ent" {
 resource "vault_namespace" "test" {
   count = var.vault_enterprise ? 1 : 0
   path  = var.vault_test_namespace
+}
+
+resource "vault_auth_backend" "default" {
+  namespace = local.namespace
+  type      = "kubernetes"
+}
+
+resource "vault_kubernetes_auth_backend_config" "default" {
+  namespace              = vault_auth_backend.default.namespace
+  backend                = vault_auth_backend.default.path
+  kubernetes_host        = var.k8s_host
+  disable_iss_validation = true
+}
+
+resource "vault_kubernetes_auth_backend_role" "default" {
+  namespace                        = vault_auth_backend.default.namespace
+  backend                          = vault_kubernetes_auth_backend_config.default.backend
+  role_name                        = "role1"
+  bound_service_account_names      = ["default"]
+  bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
+  token_ttl                        = 3600
+  token_policies                   = [vault_policy.default.name]
+  audience                         = "vault"
+}
+
+resource "vault_policy" "default" {
+  name      = "dev"
+  namespace = local.namespace
+  policy    = <<EOT
+path "${vault_mount.kvv2.path}/*" {
+  capabilities = ["read"]
+}
+
+path "${vault_mount.kv.path}/*" {
+  capabilities = ["read"]
+}
+EOT
 }
