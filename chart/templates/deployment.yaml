@@ -5,7 +5,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ include "chart.fullname" . }}-controller-manager
-  namespace: '{{ .Release.Namespace }}'
+  namespace: {{ .Release.Namespace }}
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 ---
@@ -13,7 +13,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "chart.fullname" . }}-controller-manager
-  namespace: '{{ .Release.Namespace }}'
+  namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
     component: controller-manager
