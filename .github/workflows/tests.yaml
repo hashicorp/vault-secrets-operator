@@ -47,15 +47,27 @@ jobs:
             ${{ runner.os }}-go-
       - run: make ci-test
 
-  unitTest:
+#  unitTest:
+#    runs-on: ubuntu-latest
+#    container:
+#      image: docker.io/kyleschochenmaier/vault-unit-test:0.0.1
+#      options: --user root
+#    steps:
+#      - uses: actions/checkout@v3
+#      - name: unit tests
+#        run:  bats ./test/unit
+
+  unitTestTwo:
     runs-on: ubuntu-latest
-    container:
-      image: docker.io/kyleschochenmaier/vault-unit-test:0.0.1
-      options: --user root
     steps:
       - uses: actions/checkout@v3
-      - name: unit tests
-        run:  bats ./test/unit
+      - uses: chrisdickinson/setup-yq@latest
+        with:
+          yq-version: 4.30.8
+      - uses: mig4/setup-bats@latest
+        with:
+          bats-version: 1.8.2
+      - run: make unit-test
 
   integrationTest:
     runs-on: ubuntu-latest
