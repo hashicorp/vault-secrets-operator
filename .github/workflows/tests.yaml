@@ -47,17 +47,7 @@ jobs:
             ${{ runner.os }}-go-
       - run: make ci-test
 
-#  unitTest:
-#    runs-on: ubuntu-latest
-#    container:
-#      image: docker.io/kyleschochenmaier/vault-unit-test:0.0.1
-#      options: --user root
-#    steps:
-#      - uses: actions/checkout@v3
-#      - name: unit tests
-#        run:  bats ./test/unit
-
-  unitTestTwo:
+  unitTest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

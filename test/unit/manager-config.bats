@@ -28,11 +28,11 @@ load _helpers
   cd `chart_dir`
   local object=$(helm template \
       -s templates/manager-config.yaml  \
-      --set 'managerConfig.controllerManagerConfigYaml.health.healthProbeBindAddress=:9091' \
-      --set 'managerConfig.controllerManagerConfigYaml.leaderElection.leaderElect=false' \
-      --set 'managerConfig.controllerManagerConfigYaml.leaderElection.resourceName=foo.bar' \
-      --set 'managerConfig.controllerManagerConfigYaml.metrics.bindAddress=127.0.0.1:10091' \
-      --set 'managerConfig.controllerManagerConfigYaml.webhook.port=9091' \
+      --set 'controller.controllerConfigMapYaml.health.healthProbeBindAddress=:9091' \
+      --set 'controller.controllerConfigMapYaml.leaderElection.leaderElect=false' \
+      --set 'controller.controllerConfigMapYaml.leaderElection.resourceName=foo.bar' \
+      --set 'controller.controllerConfigMapYaml.metrics.bindAddress=127.0.0.1:10091' \
+      --set 'controller.controllerConfigMapYaml.webhook.port=9091' \
       . | tee /dev/stderr |
       yq '.data["controller_manager_config.yaml"]' | tee /dev/stderr)
 

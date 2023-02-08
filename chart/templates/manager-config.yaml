@@ -13,12 +13,12 @@ data:
   controller_manager_config.yaml: |
     apiVersion: controller-runtime.sigs.k8s.io/v1alpha1
     health:
-      healthProbeBindAddress: {{ .Values.managerConfig.controllerManagerConfigYaml.health.healthProbeBindAddress | quote }}
-    kind: ControllerManagerConfig
+      healthProbeBindAddress: {{ .Values.controller.controllerConfigMapYaml.health.healthProbeBindAddress | quote }}
+    kind: controllerConfig
     leaderElection:
-      leaderElect: {{ .Values.managerConfig.controllerManagerConfigYaml.leaderElection.leaderElect }}
-      resourceName: {{ .Values.managerConfig.controllerManagerConfigYaml.leaderElection.resourceName | quote }}
+      leaderElect: {{ .Values.controller.controllerConfigMapYaml.leaderElection.leaderElect }}
+      resourceName: {{ .Values.controller.controllerConfigMapYaml.leaderElection.resourceName | quote }}
     metrics:
-      bindAddress: {{ .Values.managerConfig.controllerManagerConfigYaml.metrics.bindAddress | quote }}
+      bindAddress: {{ .Values.controller.controllerConfigMapYaml.metrics.bindAddress | quote }}
     webhook:
-      port: {{ .Values.managerConfig.controllerManagerConfigYaml.webhook.port }}
+      port: {{ .Values.controller.controllerConfigMapYaml.webhook.port }}

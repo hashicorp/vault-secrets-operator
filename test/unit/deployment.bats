@@ -18,7 +18,7 @@ load _helpers
   cd `chart_dir`
   local actual=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controllerManager.replicas=2' \
+      --set 'controller.replicas=2' \
       . | tee /dev/stderr |
       yq '.spec.replicas | select(documentIndex == 1)' | tee /dev/stderr)
   [ "${actual}" = "2" ]
@@ -48,10 +48,10 @@ load _helpers
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controllerManager.kubeRbacProxy.resources.requests.memory=100Mi' \
-      --set 'controllerManager.kubeRbacProxy.resources.requests.cpu=100m' \
-      --set 'controllerManager.kubeRbacProxy.resources.limits.memory=200Mi' \
-      --set 'controllerManager.kubeRbacProxy.resources.limits.cpu=200m' \
+      --set 'controller.kubeRbacProxy.resources.requests.memory=100Mi' \
+      --set 'controller.kubeRbacProxy.resources.requests.cpu=100m' \
+      --set 'controller.kubeRbacProxy.resources.limits.memory=200Mi' \
+      --set 'controller.kubeRbacProxy.resources.limits.cpu=200m' \
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[0].resources | select(documentIndex == 1)' | tee /dev/stderr)
 
@@ -86,10 +86,10 @@ load _helpers
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controllerManager.manager.resources.requests.memory=100Mi' \
-      --set 'controllerManager.manager.resources.requests.cpu=100m' \
-      --set 'controllerManager.manager.resources.limits.memory=200Mi' \
-      --set 'controllerManager.manager.resources.limits.cpu=200m' \
+      --set 'controller.manager.resources.requests.memory=100Mi' \
+      --set 'controller.manager.resources.requests.cpu=100m' \
+      --set 'controller.manager.resources.limits.memory=200Mi' \
+      --set 'controller.manager.resources.limits.cpu=200m' \
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
 
