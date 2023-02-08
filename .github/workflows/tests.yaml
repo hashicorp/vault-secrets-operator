@@ -64,7 +64,7 @@ jobs:
       - uses: chrisdickinson/setup-yq@latest
         with:
           yq-version: 4.30.8
-      - uses: mig4/setup-bats@latest
+      - uses: mig4/setup-bats@v1
         with:
           bats-version: 1.8.2
       - run: make unit-test
