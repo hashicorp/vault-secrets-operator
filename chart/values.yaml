@@ -6,7 +6,7 @@ controller:
   # Set the number of replicas for the operator.
   replicas: 1
 
-  # Settings related to the kubeRbacProxy container. This container is a HTTP proxy for the
+  # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
 
@@ -74,6 +74,65 @@ metricsService:
     protocol: TCP
     targetPort: https
   type: ClusterIP
+
+# Configures and deploys the default VaultAuthMethod CR which will be used by resources
+# if they do not specify a VaultAuthMethod reference.
+defaultAuthMethod:
+  # toggles the deployment of the VaultAuthMethod CR
+  enabled: false
+
+  # VaultConnectionRef of the corresponding VaultConnection CustomResource.
+  # If no value is specified the Operator will default to the `default` VaultConnection,
+  # configured in its own Kubernetes namespace.
+  vaultConnectionRef: default
+
+  # Vault namespace for the VaultAuthMethod CR
+  namespace: default
+  # Vault Auth method to be used with the VaultAuthMethod CR
+  method: kubernetes
+
+  # Mount path for the Vault Auth Method.
+  mount: kubernetes
+
+  # Vault Kubernetes auth method specific configuration
+  kubernetes:
+    # Vault Auth Role to use
+    role: demo
+    # Kubernetes ServiceAccount associated with the Vault Auth Role
+    serviceAccount: default
+
+  # Params to use when authenticating to Vault
+  params:
+  # Headers to be included in all Vault requests.
+  headers:
+
+
+# Configures the default VaultConnection CR which will be used by resources
+# if they do not specify a VaultConnection reference.
+defaultVaultConnection:
+  # toggles the deployment of the VaultAuthMethod CR
+  enabled: false
+
+  # Address of the Vault Server
+  address: http://vault.demo.svc.cluster.local:8200
+
+  # CACertSecret containing the trusted PEM encoded CA certificate chain.
+  # Note: This secret must exist prior to deploying the CR.
+  caCertSecret: ""
+
+  # TLSServerName to use as the SNI host for TLS connections.
+  tlsServerName: ""
+
+  # SkipTLSVerify for TLS connections.
+  skipTLSVerify: false
+
+  # Headers to be included in all Vault requests.
+  # @type: string, eg:
+  # headers: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  headers: ""
 
 ## Used by unit tests, can be safely ignored. 
 tests:

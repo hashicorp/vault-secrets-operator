@@ -1,0 +1,30 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+{{- if .Values.defaultAuthMethod.enabled }}
+apiVersion: secrets.hashicorp.com/v1alpha1
+kind: VaultAuth
+metadata:
+  name: {{ include "chart.fullname" . }}-default-vault-auth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    control-plane: controller-manager
+    component: controller-manager
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  vaultConnectionRef: {{ .Values.defaultAuthMethod.vaultConnectionRef }}
+  namespace: {{ .Values.defaultAuthMethod.namespace }}
+  method: {{ .Values.defaultAuthMethod.method }}
+  mount: {{ .Values.defaultAuthMethod.mount }}
+  kubernetes:
+    role: {{ .Values.defaultAuthMethod.kubernetes.role }}
+    serviceAccount: {{ .Values.defaultAuthMethod.kubernetes.serviceAccount }}
+  {{- if .Values.defaultAuthMethod.headers }}
+  headers:
+    {{ tpl .Values.defaultAuthMethod.headers . | trim }}
+  {{- end }}
+  {{- if .Values.defaultAuthMethod.params }}
+  params:
+    {{ tpl .Values.defaultAuthMethod.params . | trim }}
+  {{- end }}
+{{- end }}

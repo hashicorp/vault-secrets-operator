@@ -1,0 +1,28 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+{{- if .Values.defaultVaultConnection.enabled }}
+apiVersion: secrets.hashicorp.com/v1alpha1
+kind: VaultConnection
+metadata:
+  name: {{ include "chart.fullname" . }}-default-vault-connection
+  namespace: {{ .Release.Namespace }}
+  labels:
+    control-plane: controller-manager
+    component: controller-manager
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  address: {{ .Values.defaultVaultConnection.address }}
+  skipTLSVerify: {{ .Values.defaultVaultConnection.skipTLSVerify }}
+
+  {{- if .Values.defaultVaultConnection.caCertSecret }}
+  caCertSecretRef: {{ .Values.defaultVaultConnection.caCertSecret }}
+  {{- end }}
+  {{- if .Values.defaultVaultConnection.tlsServerName }}
+  tlsServerName: {{ .Values.defaultVaultConnection.tlsServerName }}
+  {{- end }}
+  {{- if .Values.defaultVaultConnection.headers }}
+  headers:
+    {{ tpl .Values.defaultVaultConnection.headers . | trim }}
+  {{- end }}
+{{- end }}
