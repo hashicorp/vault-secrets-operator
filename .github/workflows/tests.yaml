@@ -97,7 +97,7 @@ jobs:
         with:
           version: v0.16.0
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
-          config: test/integrationtest/kind/config.yaml
+          config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
       - uses: actions/setup-go@v3
         with:

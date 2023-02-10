@@ -17,6 +17,7 @@ metadata:
   labels:
     control-plane: controller-manager
     component: controller-manager
+    app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.controller.replicas }}
