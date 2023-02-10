@@ -36,7 +36,7 @@ load _helpers
     yq '.spec' | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.address' | tee /dev/stderr)
-     [ "${actual}" = "http://vault.demo.svc.cluster.local:8200" ]
+     [ "${actual}" = "http://vault.default.svc.cluster.local:8200" ]
     local actual=$(echo "$object" | yq '.skipTLSVerify' | tee /dev/stderr)
      [ "${actual}" = "false" ]
 }
