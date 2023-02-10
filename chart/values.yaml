@@ -114,7 +114,7 @@ defaultVaultConnection:
   enabled: false
 
   # Address of the Vault Server
-  address: http://vault.demo.svc.cluster.local:8200
+  address: http://vault.default.svc.cluster.local:8200
 
   # CACertSecret containing the trusted PEM encoded CA certificate chain.
   # Note: This secret must exist prior to deploying the CR.
