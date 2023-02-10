@@ -6,7 +6,8 @@ kind: ClusterRole
 metadata:
   name: {{ include "chart.fullname" . }}-proxy-role
   labels:
-    component: proxy-rbac 
+    component: controller-manager
+    app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
@@ -27,7 +28,8 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ include "chart.fullname" . }}-proxy-rolebinding
   labels:
-    component: proxy-rbac 
+    component: controller-manager
+    app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io

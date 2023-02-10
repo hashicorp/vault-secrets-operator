@@ -65,8 +65,7 @@ load _helpers
 #--------------------------------------------------------------------
 # component label
 #
-# This test ensures that we set a "component: <blah>" in every file.
-#
+# This test ensures that we set "component" labels in every file.
 # If this test fails, you're likely missing setting that label somewhere.
 #
 @test "helper/component-label: used everywhere" {
@@ -76,3 +75,9 @@ load _helpers
   [ "${actual}" = '' ]
 }
 
+@test "helper/app.kubernetes.io/component label: used everywhere" {
+  cd `chart_dir`
+  # Grep for files that don't have 'component: ' in them
+  local actual=$(grep -L 'app.kubernetes.io/component: ' templates/*.yaml | tee /dev/stderr )
+  [ "${actual}" = '' ]
+}
