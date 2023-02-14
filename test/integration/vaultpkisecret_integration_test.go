@@ -27,6 +27,8 @@ func TestVaultPKISecret(t *testing.T) {
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	// Check to seee if we are attemmpting to deploy the controller with Helm.
+	_, deployOperatorWithHelm := os.LookupEnv("DEPLOY_OPERATOR_WITH_HELM")
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -34,9 +36,10 @@ func TestVaultPKISecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultpkisecret/terraform",
 		Vars: map[string]interface{}{
-			"k8s_test_namespace":   testK8sNamespace,
-			"k8s_config_context":   "kind-" + clusterName,
-			"vault_pki_mount_path": testPKIMountPath,
+			"deploy_operator_via_helm": deployOperatorWithHelm,
+			"k8s_test_namespace":       testK8sNamespace,
+			"k8s_config_context":       "kind-" + clusterName,
+			"vault_pki_mount_path":     testPKIMountPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
@@ -44,6 +47,7 @@ func TestVaultPKISecret(t *testing.T) {
 		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
+
 	terraformOptions = terraform.WithDefaultRetryableErrors(t, terraformOptions)
 
 	// Clean up resources with "terraform destroy" at the end of the test.

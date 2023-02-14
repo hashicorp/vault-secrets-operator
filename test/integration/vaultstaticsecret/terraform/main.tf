@@ -11,12 +11,23 @@ terraform {
       source  = "hashicorp/vault"
       version = "3.12.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "2.8.0"
+    }
   }
 }
 
 provider "kubernetes" {
   config_context = var.k8s_config_context
   config_path    = var.k8s_config_path
+}
+
+provider "helm" {
+  kubernetes {
+    config_context = var.k8s_config_context
+    config_path    = var.k8s_config_path
+  }
 }
 
 resource "kubernetes_namespace" "tenant-1" {
@@ -44,7 +55,9 @@ provider "vault" {
 }
 
 locals {
-  namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+  namespace                 = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+  operator_image_repository = var.operator_image_repository
+  operator_namespace        = "vault-secrets-operator-system"
 }
 
 resource "vault_mount" "kv" {
@@ -104,3 +117,27 @@ path "${vault_mount.kv.path}/*" {
 }
 EOT
 }
+
+resource "helm_release" "vault-secrets-operator" {
+  count            = var.deploy_operator_via_helm ? 1 : 0
+  name             = "test"
+  namespace        = local.operator_namespace
+  create_namespace = true
+  wait             = true
+  chart            = var.operator_helm_chart_path
+
+  set {
+    name  = "controller.manager.image.repository"
+    value = local.operator_image_repository
+  }
+  #TODO: Enable both of these when we figure out how to run them in CI + skip creation of them in the test.
+  set {
+    name  = "defaultVaultConnection.enabled"
+    value = "false"
+  }
+  set {
+    name  = "defaultAuthMethod.enabled"
+    value = "false"
+  }
+}
+

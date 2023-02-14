@@ -34,16 +34,20 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	// Check to seee if we are attemmpting to deploy the controller with Helm.
+	_, deployOperatorWithHelm := os.LookupEnv("DEPLOY_OPERATOR_WITH_HELM")
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultstaticsecret/terraform",
 		Vars: map[string]interface{}{
-			"k8s_test_namespace":    testK8sNamespace,
-			"k8s_config_context":    "kind-" + clusterName,
-			"vault_kv_mount_path":   testKvMountPath,
-			"vault_kvv2_mount_path": testKvv2MountPath,
+			"deploy_operator_via_helm": deployOperatorWithHelm,
+			"k8s_test_namespace":       testK8sNamespace,
+			"k8s_config_context":       "kind-" + clusterName,
+			"vault_kv_mount_path":      testKvMountPath,
+			"vault_kvv2_mount_path":    testKvv2MountPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
