@@ -40,7 +40,7 @@ variable "vault_enterprise" {
 
 # The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
 variable "operator_helm_chart_path" {
-  default = "/Users/kyle/go/src/github.com/hashicorp/vault-secrets-operator/chart"
+  default = "../../../../chart"
 }
 
 variable "operator_image_repository" {
