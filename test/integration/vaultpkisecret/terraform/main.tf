@@ -147,7 +147,7 @@ resource "helm_release" "vault-secrets-operator" {
   }
   set {
     name  = "defaultVaultConnection.name"
-    value =  var.vault_connection_name
+    value = var.vault_connection_name
   }
   set {
     name  = "defaultVaultConnection.namespace"
