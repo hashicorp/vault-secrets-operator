@@ -118,6 +118,7 @@ jobs:
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          make ci-deploy-kind
           make integration-test-helm
       - name: OSS tests
         env:
@@ -126,6 +127,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make ci-deploy-kind
+          make ci-deploy
           make integration-test
       - name: ENT tests
         env:
@@ -134,5 +136,5 @@ jobs:
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
           make ci-deploy-kind
+          make ci-deploy
           make integration-test-ent
-## TODO: Integration test should use Helm

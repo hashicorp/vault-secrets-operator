@@ -5,8 +5,8 @@
 apiVersion: secrets.hashicorp.com/v1alpha1
 kind: VaultAuth
 metadata:
-  name: {{ include "chart.fullname" . }}-default-vault-auth
-  namespace: {{ .Release.Namespace }}
+  name: {{ .Values.defaultAuthMethod.name | default (printf "%s-default-auth" (include "chart.fullname" .)) }}
+  namespace: {{ .Values.defaultAuthMethod.namespace | default .Release.Namespace }}
   labels:
     control-plane: controller-manager
     component: controller-manager
@@ -14,12 +14,15 @@ metadata:
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   vaultConnectionRef: {{ .Values.defaultAuthMethod.vaultConnectionRef }}
-  namespace: {{ .Values.defaultAuthMethod.namespace }}
+  namespace: {{ .Values.defaultAuthMethod.vaultNamespace }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
   kubernetes:
     role: {{ .Values.defaultAuthMethod.kubernetes.role }}
     serviceAccount: {{ .Values.defaultAuthMethod.kubernetes.serviceAccount }}
+    {{- if .Values.defaultAuthMethod.kubernetes.tokenAudiences }}
+    audiences: {{ .Values.defaultAuthMethod.kubernetes.tokenAudiences | toJson }}
+    {{- end }}
   {{- if .Values.defaultAuthMethod.headers }}
   headers:
     {{ tpl .Values.defaultAuthMethod.headers . | trim }}

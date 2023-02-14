@@ -275,7 +275,6 @@ ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating
 .PHONY: ci-deploy-kind
 ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
-	$(MAKE) ci-deploy
 
 .PHONY: teardown-integration-test
 teardown-integration-test: ignore-not-found = true

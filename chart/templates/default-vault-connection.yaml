@@ -5,8 +5,8 @@
 apiVersion: secrets.hashicorp.com/v1alpha1
 kind: VaultConnection
 metadata:
-  name: {{ include "chart.fullname" . }}-default-vault-connection
-  namespace: {{ .Release.Namespace }}
+  name: {{ .Values.defaultVaultConnection.name | default (printf "%s-default-connection" (include "chart.fullname" .)) }}
+  namespace: {{ .Values.defaultVaultConnection.namespace | default .Release.Namespace }}
   labels:
     control-plane: controller-manager
     component: controller-manager

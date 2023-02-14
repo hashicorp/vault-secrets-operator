@@ -44,7 +44,7 @@ variable "operator_helm_chart_path" {
 }
 
 variable "operator_image_repository" {
-  default = "kyleschochenmaier/vault-secrets-operator"
+  default = "hashicorp/vault-secrets-operator"
 }
 
 variable "deploy_operator_via_helm" {

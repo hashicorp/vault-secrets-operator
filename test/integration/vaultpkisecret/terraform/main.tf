@@ -51,6 +51,7 @@ locals {
   namespace                 = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
   operator_image_repository = var.operator_image_repository
   operator_namespace        = "vault-secrets-operator-system"
+  vault_connection_address  = "http://vault.${var.k8s_vault_namespace}.svc.cluster.local:8200"
 }
 
 // Vault Enterprise setup
@@ -139,13 +140,50 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "controller.manager.image.repository"
     value = local.operator_image_repository
   }
-  #TODO: Enable both of these when we figure out how to run them in CI + skip creation of them in the test.
+  # Connection Configuration
   set {
     name  = "defaultVaultConnection.enabled"
-    value = "false"
+    value = "true"
   }
   set {
+    name  = "defaultVaultConnection.name"
+    value =  var.vault_connection_name
+  }
+  set {
+    name  = "defaultVaultConnection.namespace"
+    value = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+  set {
+    name  = "defaultVaultConnection.address"
+    value = local.vault_connection_address
+  }
+  # Auth Method Configuration
+  set {
     name  = "defaultAuthMethod.enabled"
-    value = "false"
+    value = "true"
+  }
+  set {
+    name  = "defaultAuthMethod.vaultConnectionRef"
+    value = var.vault_connection_name
+  }
+  set {
+    name  = "defaultAuthMethod.namespace"
+    value = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+  set {
+    name  = "defaultAuthMethod.vaultNamespace"
+    value = var.vault_test_namespace
+  }
+  set {
+    name  = "defaultAuthMethod.name"
+    value = var.vault_authmethod_name
+  }
+  set {
+    name  = "defaultAuthMethod.kubernetes.role"
+    value = var.vault_authmethod_role
+  }
+  set {
+    name  = "defaultAuthMethod.kubernetes.tokenAudiences"
+    value = "{vault}"
   }
 }
