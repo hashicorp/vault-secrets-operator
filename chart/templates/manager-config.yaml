@@ -7,7 +7,6 @@ metadata:
   name: {{ include "chart.fullname" . }}-manager-config
   namespace: {{ .Release.Namespace }}
   labels:
-    component: controller-manager
     app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 data:

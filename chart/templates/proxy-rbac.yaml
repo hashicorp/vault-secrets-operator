@@ -6,7 +6,6 @@ kind: ClusterRole
 metadata:
   name: {{ include "chart.fullname" . }}-proxy-role
   labels:
-    component: controller-manager
     app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 rules:
@@ -28,7 +27,6 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ include "chart.fullname" . }}-proxy-rolebinding
   labels:
-    component: controller-manager
     app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 roleRef:
