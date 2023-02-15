@@ -6,6 +6,7 @@ kind: Role
 metadata:
   name: {{ include "chart.fullname" . }}-leader-election-role
   labels:
+    app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
@@ -45,6 +46,7 @@ kind: RoleBinding
 metadata:
   name: {{ include "chart.fullname" . }}-leader-election-rolebinding
   labels:
+    app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -53,4 +55,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: '{{ include "chart.fullname" . }}-controller-manager'
-  namespace: '{{ .Release.Namespace }}'
+  namespace: {{ .Release.Namespace }}

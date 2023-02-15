@@ -47,6 +47,18 @@ jobs:
             ${{ runner.os }}-go-
       - run: make ci-test
 
+  unitTest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: chrisdickinson/setup-yq@latest
+        with:
+          yq-version: v4.30.8
+      - uses: mig4/setup-bats@v1
+        with:
+          bats-version: 1.8.2
+      - run: make unit-test
+
   integrationTest:
     runs-on: ubuntu-latest
     needs: [fmtcheck, test, get-go-version]
@@ -85,7 +97,7 @@ jobs:
         with:
           version: v0.16.0
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
-          config: integrationtest/kind/config.yaml
+          config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
       - uses: actions/setup-go@v3
         with:
