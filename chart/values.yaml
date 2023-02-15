@@ -75,69 +75,16 @@ metricsService:
     targetPort: https
   type: ClusterIP
 
-# Configures and deploys the default VaultAuthMethod CR which will be used by resources
-# if they do not specify a VaultAuthMethod reference.
-defaultAuthMethod:
-  # toggles the deployment of the VaultAuthMethod CR
-  enabled: false
-
-  # VaultConnectionRef of the corresponding VaultConnection CustomResource.
-  # If no value is specified the Operator will default to the `default` VaultConnection,
-  # configured in its own Kubernetes namespace.
-  vaultConnectionRef: default
-
-  # Kubernetes Namespace for the VaultAuthMethod CR
-  namespace: default
-
-  # Vault namespace for the VaultAuthMethod CR
-  vaultNamespace: default
-
-  # Vault Auth method to be used with the VaultAuthMethod CR
-  method: kubernetes
-
-  # Mount path for the Vault Auth Method.
-  mount: kubernetes
-
-  # Vault Kubernetes auth method specific configuration
-  kubernetes:
-    # Vault Auth Role to use
-    role: demo
-    # Kubernetes ServiceAccount associated with the Vault Auth Role
-    serviceAccount: default
-    # Token Audience
-    # @type: array<string>
-    tokenAudiences: []
-
-  # Params to use when authenticating to Vault
-  # @type: string, eg:
-  # params: |
-  #   "vault-something1": "foo"
-  #   "vault-something2": "bar"
-  #   "vault-something3": "baz"
-  params:
-
-  # Headers to be included in all Vault requests.
-  # @type: string, eg:
-  # headers: |
-  #   "vault-something1": "foo"
-  #   "vault-something2": "bar"
-  #   "vault-something3": "baz"
-  headers:
-
-
 # Configures the default VaultConnection CR which will be used by resources
-# if they do not specify a VaultConnection reference.
+# if they do not specify a VaultConnection reference. The name is 'default' and will
+# always be installed in the same namespace as the operator.
 defaultVaultConnection:
   # toggles the deployment of the VaultAuthMethod CR
   enabled: false
 
-  # name of the vault connection object
-  name:
-
   # Address of the Vault Server
   address: http://vault.default.svc.cluster.local:8200
 
-  namespace: default
   # CACertSecret containing the trusted PEM encoded CA certificate chain.
   # Note: This secret must exist prior to deploying the CR.
   caCertSecret: ""
@@ -155,6 +102,56 @@ defaultVaultConnection:
   #   "vault-something2": "bar"
   #   "vault-something3": "baz"
   headers: ""
+
+
+# Configures and deploys the default VaultAuthMethod CR which will be used by resources
+# if they do not specify a VaultAuthMethod reference. The name is 'default' and will
+# always be installed in the same namespace as the operator.
+defaultAuthMethod:
+  # toggles the deployment of the VaultAuthMethod CR
+  enabled: false
+
+  # Vault namespace for the VaultAuthMethod CR
+  namespace: default
+
+  # Vault Auth method to be used with the VaultAuthMethod CR
+  method: kubernetes
+
+  # Mount path for the Vault Auth Method.
+  mount: kubernetes
+
+  # Vault Kubernetes auth method specific configuration
+  kubernetes:
+    # Vault Auth Role to use
+    # This is a required field and must be setup in Vault prior to deploying the helm chart
+    # if `defaultAuthMethod.enabled=true`
+    # TODO: mark required in the charts.
+    role: demo
+
+    # Kubernetes ServiceAccount associated with the default Vault Auth Role
+    serviceAccount: default
+
+    # Token Audience is required and should match whatever the audience
+    # of the vault kubernetes auth role has set.
+    # @type: array<string>
+    tokenAudiences: []
+
+  # Params to use when authenticating to Vault
+  # @type: string, eg:
+  # params: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  params: ""
+
+  # Headers to be included in all Vault requests.
+  # @type: string, eg:
+  # headers: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  headers: ""
+
 
 ## Used by unit tests, can be safely ignored. 
 tests:

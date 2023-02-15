@@ -49,8 +49,6 @@ provider "vault" {
 
 locals {
   namespace                 = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
-  operator_image_repository = var.operator_image_repository
-  operator_namespace        = "vault-secrets-operator-system"
   vault_connection_address  = "http://vault.${var.k8s_vault_namespace}.svc.cluster.local:8200"
 }
 
@@ -131,27 +129,15 @@ EOT
 resource "helm_release" "vault-secrets-operator" {
   count            = var.deploy_operator_via_helm ? 1 : 0
   name             = "test"
-  namespace        = local.operator_namespace
+  namespace        = var.operator_namespace
   create_namespace = true
   wait             = true
   chart            = var.operator_helm_chart_path
 
-  set {
-    name  = "controller.manager.image.repository"
-    value = local.operator_image_repository
-  }
   # Connection Configuration
   set {
     name  = "defaultVaultConnection.enabled"
     value = "true"
-  }
-  set {
-    name  = "defaultVaultConnection.name"
-    value = var.vault_connection_name
-  }
-  set {
-    name  = "defaultVaultConnection.namespace"
-    value = kubernetes_namespace.tenant-1.metadata[0].name
   }
   set {
     name  = "defaultVaultConnection.address"
@@ -163,20 +149,8 @@ resource "helm_release" "vault-secrets-operator" {
     value = "true"
   }
   set {
-    name  = "defaultAuthMethod.vaultConnectionRef"
-    value = var.vault_connection_name
-  }
-  set {
     name  = "defaultAuthMethod.namespace"
-    value = kubernetes_namespace.tenant-1.metadata[0].name
-  }
-  set {
-    name  = "defaultAuthMethod.vaultNamespace"
     value = var.vault_test_namespace
-  }
-  set {
-    name  = "defaultAuthMethod.name"
-    value = var.vault_authmethod_name
   }
   set {
     name  = "defaultAuthMethod.kubernetes.role"

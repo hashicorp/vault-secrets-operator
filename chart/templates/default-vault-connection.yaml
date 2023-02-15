@@ -5,8 +5,8 @@
 apiVersion: secrets.hashicorp.com/v1alpha1
 kind: VaultConnection
 metadata:
-  name: {{ .Values.defaultVaultConnection.name | default (printf "%s-default-connection" (include "chart.fullname" .)) }}
-  namespace: {{ .Values.defaultVaultConnection.namespace | default .Release.Namespace }}
+  name: default
+  namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
     component: controller-manager
@@ -15,7 +15,6 @@ metadata:
 spec:
   address: {{ .Values.defaultVaultConnection.address }}
   skipTLSVerify: {{ .Values.defaultVaultConnection.skipTLSVerify }}
-
   {{- if .Values.defaultVaultConnection.caCertSecret }}
   caCertSecretRef: {{ .Values.defaultVaultConnection.caCertSecret }}
   {{- end }}

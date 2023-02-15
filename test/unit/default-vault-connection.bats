@@ -36,7 +36,7 @@ load _helpers
     yq '.' | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-     [ "${actual}" = "release-name-vault-secrets-operator-default-connection" ]
+     [ "${actual}" = "default" ]
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 
@@ -51,8 +51,6 @@ load _helpers
      local object=$(helm template \
         -s templates/default-vault-connection.yaml  \
         --set 'defaultVaultConnection.enabled=true' \
-        --set 'defaultVaultConnection.name=name-1' \
-        --set 'defaultVaultConnection.namespace=tenant-1' \
         --set 'defaultVaultConnection.address=https://foo.com:8200' \
         --set 'defaultVaultConnection.skipTLSVerify=true' \
         --set 'defaultVaultConnection.caCertSecret=foo' \
@@ -62,9 +60,9 @@ load _helpers
      yq '.' | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-     [ "${actual}" = "name-1" ]
+     [ "${actual}" = "default" ]
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "tenant-1" ]
+     [ "${actual}" = "default" ]
     local actual=$(echo "$object" | yq '.spec.address' | tee /dev/stderr)
      [ "${actual}" = "https://foo.com:8200" ]
     local actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)

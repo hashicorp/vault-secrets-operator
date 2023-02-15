@@ -36,12 +36,10 @@ load _helpers
     yq '.' | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-     [ "${actual}" = "release-name-vault-secrets-operator-default-auth" ]
+     [ "${actual}" = "default" ]
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 
-    local actual=$(echo "$object" | yq '.spec.vaultConnectionRef' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
     local actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
     local actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
@@ -59,10 +57,7 @@ load _helpers
     local object=$(helm template \
         -s templates/default-vault-auth-method.yaml  \
         --set 'defaultAuthMethod.enabled=true' \
-        --set 'defaultAuthMethod.vaultConnectionRef=foo' \
-        --set 'defaultAuthMethod.name=name-1' \
-        --set 'defaultAuthMethod.namespace=tenant-1' \
-        --set 'defaultAuthMethod.vaultNamespace=tenant-2' \
+        --set 'defaultAuthMethod.namespace=tenant-2' \
         --set 'defaultAuthMethod.method=JWT' \
         --set 'defaultAuthMethod.mount=foo' \
         --set 'defaultAuthMethod.kubernetes.role=role-1' \
@@ -73,15 +68,11 @@ load _helpers
         . | tee /dev/stderr |
     yq '.' | tee /dev/stderr)
 
-    local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-     [ "${actual}" = "name-1" ]
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "tenant-1" ]
+     [ "${actual}" = "default" ]
     local actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
      [ "${actual}" = "tenant-2" ]
 
-    local actual=$(echo "$object" | yq '.spec.vaultConnectionRef' | tee /dev/stderr)
-     [ "${actual}" = "foo" ]
     local actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
      [ "${actual}" = "JWT" ]
     local actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)

@@ -31,7 +31,7 @@ func TestVaultPKISecret(t *testing.T) {
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	// Check to seee if we are attemmpting to deploy the controller with Helm.
-	_, deployOperatorWithHelm := os.LookupEnv("DEPLOY_OPERATOR_WITH_HELM")
+	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -43,8 +43,6 @@ func TestVaultPKISecret(t *testing.T) {
 			"k8s_test_namespace":       testK8sNamespace,
 			"k8s_config_context":       "kind-" + clusterName,
 			"vault_pki_mount_path":     testPKIMountPath,
-			"vault_connection_name":    testVaultConnectionName,
-			"vault_authmethod_name":    testVaultAuthMethodName,
 			"vault_authmethod_role":    testVaultAuthMethodRole,
 		},
 	}
@@ -124,6 +122,11 @@ func TestVaultPKISecret(t *testing.T) {
 			ExpiryOffset: "5s",
 			TTL:          "15s",
 		},
+	}
+	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
+	// so in order to get the controller to use the deployed default VaultAuthMethod we need set this to "".
+	if deployOperatorWithHelm {
+		testVaultPKI.Spec.VaultAuthRef = ""
 	}
 
 	defer crdClient.Delete(ctx, testVaultPKI)
