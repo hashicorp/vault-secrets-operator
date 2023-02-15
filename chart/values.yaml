@@ -1,11 +1,23 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-controllerManager:
+controller:
+
+  # Set the number of replicas for the operator.
+  replicas: 1
+
+  # Settings related to the kubeRbacProxy container. This container is a HTTP proxy for the
+  # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
+
+    # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
     image:
       repository: gcr.io/kubebuilder/kube-rbac-proxy
       tag: v0.11.0
+
+    # Configures the default resources for the kube rbac proxy container.
+    # For more information on configuring resources, see the K8s documentation:
+    # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
     resources:
       limits:
         cpu: 500m
@@ -13,10 +25,18 @@ controllerManager:
       requests:
         cpu: 5m
         memory: 64Mi
+
+  # Settings related to the vault-secrets-operator container.
   manager:
+
+    # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       repository: hashicorp/vault-secrets-operator
       tag: 0.0.0-dev
+
+    # Configures the default resources for the vault-secrets-operator container.
+    # For more information on configuring resources, see the K8s documentation:
+    # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
     resources:
       limits:
         cpu: 500m
@@ -24,10 +44,12 @@ controllerManager:
       requests:
         cpu: 10m
         memory: 64Mi
-  replicas: 1
-kubernetesClusterDomain: cluster.local
-managerConfig:
-  controllerManagerConfigYaml:
+
+  # Sets the configuration settings used by the controller. Any custom changes will be reflected in the
+  # data field of the configmap.
+  # For more information on configuring resources, see the K8s documentation:
+  # https://kubernetes.io/docs/concepts/configuration/configmap/ 
+  controllerConfigMapYaml:
     health:
       healthProbeBindAddress: :8081
     leaderElection:
@@ -37,10 +59,22 @@ managerConfig:
       bindAddress: 127.0.0.1:8080
     webhook:
       port: 9443
+
+  # Configures the environment variable KUBERNETES_CLUSTER_DOMAIN used by KubeDNS.
+  # TODO: I do not think this is used by the controller?
+  kubernetesClusterDomain: cluster.local
+
+
+# Configure the metrics service ports used by the metrics service.
 metricsService:
+## TODO: Look into the default https
   ports:
   - name: https
     port: 8443
     protocol: TCP
     targetPort: https
   type: ClusterIP
+
+## Used by unit tests, can be safely ignored. 
+tests:
+  enabled: true
