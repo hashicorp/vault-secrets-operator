@@ -6,7 +6,6 @@ kind: Role
 metadata:
   name: {{ include "chart.fullname" . }}-leader-election-role
   labels:
-    component: controller-manager
     app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 rules:
@@ -47,7 +46,6 @@ kind: RoleBinding
 metadata:
   name: {{ include "chart.fullname" . }}-leader-election-rolebinding
   labels:
-    component: controller-manager
     app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 roleRef:

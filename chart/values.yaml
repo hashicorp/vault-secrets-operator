@@ -152,7 +152,6 @@ defaultAuthMethod:
   #   "vault-something3": "baz"
   headers: ""
 
-
 ## Used by unit tests, can be safely ignored. 
 tests:
   enabled: true
