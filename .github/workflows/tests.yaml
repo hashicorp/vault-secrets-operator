@@ -120,7 +120,7 @@ jobs:
         run: |
           make ci-deploy-kind
           make integration-test-helm
-      - name: OSS tests
+      - name: OSS tests using Kustomize
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
@@ -129,7 +129,7 @@ jobs:
           make ci-deploy-kind
           make ci-deploy
           make integration-test
-      - name: ENT tests
+      - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
