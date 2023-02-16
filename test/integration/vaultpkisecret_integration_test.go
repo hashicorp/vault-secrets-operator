@@ -62,8 +62,11 @@ func TestVaultPKISecret(t *testing.T) {
 	crdClient := getCRDClient(t)
 	ctx := context.Background()
 
-	// Create a VaultConnection CR
+	// When we deploy the operator with Helm it will also deploy default VaultConnection/AuthMethod
+	// resources, so these are not needed. In this case, we will also clear the VaultAuthRef field of
+	// the target secret so that the controller uses the default AuthMethod.
 	if !deployOperatorWithHelm {
+		// Create a VaultConnection CR
 		testVaultConnection := &secretsv1alpha1.VaultConnection{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      testVaultConnectionName,
@@ -123,7 +126,7 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 	}
 	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
-	// so in order to get the controller to use the deployed default VaultAuthMethod we need set this to "".
+	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
 	if deployOperatorWithHelm {
 		testVaultPKI.Spec.VaultAuthRef = ""
 	}
