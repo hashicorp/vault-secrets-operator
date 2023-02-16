@@ -55,7 +55,7 @@ provider "vault" {
 }
 
 locals {
-  namespace                 = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+  namespace                = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
   vault_connection_address = "http://vault.${var.k8s_vault_namespace}.svc.cluster.local:8200"
 }
 
