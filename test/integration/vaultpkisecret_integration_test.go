@@ -43,7 +43,6 @@ func TestVaultPKISecret(t *testing.T) {
 			"k8s_test_namespace":       testK8sNamespace,
 			"k8s_config_context":       "kind-" + clusterName,
 			"vault_pki_mount_path":     testPKIMountPath,
-			"vault_authmethod_role":    testVaultAuthMethodRole,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {

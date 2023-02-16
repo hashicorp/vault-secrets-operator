@@ -43,18 +43,6 @@ variable "deploy_operator_via_helm" {
   default = "false"
 }
 
-variable "vault_connection_name" {
-  default = "test"
-}
-
-variable "vault_authmethod_name" {
-  default = "test"
-}
-
-variable "vault_authmethod_role" {
-  default = "test"
-}
-
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }

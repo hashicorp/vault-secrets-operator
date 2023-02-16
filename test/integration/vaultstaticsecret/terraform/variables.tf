@@ -43,10 +43,11 @@ variable "operator_helm_chart_path" {
   default = "../../../../chart"
 }
 
-variable "operator_image_repository" {
-  default = "hashicorp/vault-secrets-operator"
-}
-
 variable "deploy_operator_via_helm" {
   default = "false"
 }
+
+variable "operator_namespace" {
+  default = "vault-secrets-operator-system"
+}
+

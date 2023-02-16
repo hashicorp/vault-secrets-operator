@@ -56,8 +56,7 @@ provider "vault" {
 
 locals {
   namespace                 = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
-  operator_image_repository = var.operator_image_repository
-  operator_namespace        = "vault-secrets-operator-system"
+  vault_connection_address = "http://vault.${var.k8s_vault_namespace}.svc.cluster.local:8200"
 }
 
 resource "vault_mount" "kv" {
@@ -121,23 +120,35 @@ EOT
 resource "helm_release" "vault-secrets-operator" {
   count            = var.deploy_operator_via_helm ? 1 : 0
   name             = "test"
-  namespace        = local.operator_namespace
+  namespace        = var.operator_namespace
   create_namespace = true
   wait             = true
   chart            = var.operator_helm_chart_path
 
-  set {
-    name  = "controller.manager.image.repository"
-    value = local.operator_image_repository
-  }
-  #TODO: Enable both of these when we figure out how to run them in CI + skip creation of them in the test.
+  # Connection Configuration
   set {
     name  = "defaultVaultConnection.enabled"
-    value = "false"
+    value = "true"
   }
   set {
+    name  = "defaultVaultConnection.address"
+    value = local.vault_connection_address
+  }
+  # Auth Method Configuration
+  set {
     name  = "defaultAuthMethod.enabled"
-    value = "false"
+    value = "true"
+  }
+  set {
+    name  = "defaultAuthMethod.namespace"
+    value = var.vault_test_namespace
+  }
+  set {
+    name  = "defaultAuthMethod.kubernetes.role"
+    value = vault_kubernetes_auth_backend_role.default.role_name
+  }
+  set {
+    name  = "defaultAuthMethod.kubernetes.tokenAudiences"
+    value = "{${vault_kubernetes_auth_backend_role.default.audience}}"
   }
 }
-

@@ -154,10 +154,10 @@ resource "helm_release" "vault-secrets-operator" {
   }
   set {
     name  = "defaultAuthMethod.kubernetes.role"
-    value = var.vault_authmethod_role
+    value = vault_kubernetes_auth_backend_role.default.role_name
   }
   set {
     name  = "defaultAuthMethod.kubernetes.tokenAudiences"
-    value = "{vault}"
+    value = "{${vault_kubernetes_auth_backend_role.default.audience}}"
   }
 }
