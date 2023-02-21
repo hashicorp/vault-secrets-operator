@@ -469,3 +469,8 @@ build-diags:
 .PHONY: clean
 clean:
 	rm -rf build
+
+
+## Generate Helm reference docs from values.yaml and update Vault website. Usage: make gen-helm-docs vault=<path-to-vault-repo>.
+gen-helm-docs:
+	@cd hack/helm-reference-gen; go run ./... $(vault)
