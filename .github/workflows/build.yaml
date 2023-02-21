@@ -1,14 +1,8 @@
 name: build
-
 on:
-  push:
-    branches: ["*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to build, e.g. 0.1.0"
-        type: string
-        required: false
+  push:
+    branches: ["main"]
 
 env:
   PKG_NAME: "vault-secrets-operator"
@@ -36,9 +30,28 @@ jobs:
       - name: get product version
         id: get-product-version
         run: |
-          VERSION="${{ github.event.inputs.version || '0.0.0-dev' }}"
-          echo "Using version ${VERSION}"
-          echo "product-version=${VERSION}" >> $GITHUB_OUTPUT
+          make version
+          echo "::set-output name=product-version::$(make version)"
+
+  generate-metadata-file:
+    needs: get-product-version
+    runs-on: ubuntu-latest
+    outputs:
+      filepath: ${{ steps.generate-metadata-file.outputs.filepath }}
+    steps:
+      - name: "Checkout directory"
+        uses: actions/checkout@v3
+      - name: Generate metadata file
+        id: generate-metadata-file
+        uses: hashicorp/actions-generate-metadata@v1
+        with:
+          version: ${{ needs.get-product-version.outputs.product-version }}
+          product: ${{ env.PKG_NAME }}
+          repositoryOwner: "hashicorp"
+      - uses: actions/upload-artifact@v3
+        with:
+          name: metadata.json
+          path: ${{ steps.generate-metadata-file.outputs.filepath }}
 
   build-pre-checks:
     runs-on: ubuntu-latest
@@ -66,38 +79,17 @@ jobs:
           make generate manifests
           test -z "$(git status --porcelain)"
 
-  generate-metadata-file:
-    needs: get-product-version
-    runs-on: ubuntu-latest
-    outputs:
-      filepath: ${{ steps.generate-metadata-file.outputs.filepath }}
-    steps:
-      - name: 'Checkout directory'
-        uses: actions/checkout@v3
-      - name: Generate metadata file
-        id: generate-metadata-file
-        uses: hashicorp/actions-generate-metadata@v1
-        with:
-          version: ${{ needs.get-product-version.outputs.product-version }}
-          product: ${{ env.PKG_NAME }}
-
-      - uses: actions/upload-artifact@v2
-        with:
-          name: metadata.json
-          path: ${{ steps.generate-metadata-file.outputs.filepath }}
-
   build:
-    needs:
-      - get-product-version
-      - get-go-version
-      - build-pre-checks
+    name: Go ${{ needs.get-go-version.outputs.go-version }} linux ${{ matrix.arch }} build
+    needs: [get-product-version, get-go-version, build-pre-checks]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm", "arm64", "386", "amd64"]
+        # * Linux dropped 386 support in 2012.
+        # * Distroless docker container only supports amd64+arm64.
+        # arch: ["arm", "arm64", "386", "amd64"]
+        arch: ["arm64", "amd64"]
       fail-fast: true
-
-    name: Go ${{ needs.get-go-version.outputs.go-version }} linux ${{ matrix.arch }} build
 
     steps:
       - uses: actions/checkout@v3
@@ -116,17 +108,15 @@ jobs:
           mkdir dist out
           make ci-build
           zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/
-      - uses: actions/upload-artifact@v3
+      - name: Upload binaries
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
           path: out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
 
   build-docker:
     name: Docker ${{ matrix.arch }} build
-    needs:
-      - get-product-version
-      - build
-      - get-go-version
+    needs: [get-product-version, get-go-version, build-pre-checks]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -138,6 +128,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v1
         env:
