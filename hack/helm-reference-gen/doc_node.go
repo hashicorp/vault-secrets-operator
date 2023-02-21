@@ -65,7 +65,6 @@ func (n DocNode) HTMLAnchor() string {
 
 // FormattedDefault returns the default value for this node formatted properly.
 func (n DocNode) FormattedDefault() string {
-
 	// Check for the annotation first.
 	if match := defaultAnnotation.FindAllStringSubmatch(n.Comment, -1); len(match) > 0 {
 		// Handle it being set > 1 time. Use the last match.
@@ -141,7 +140,6 @@ func (n DocNode) FormattedDocumentation() string {
 
 // FormattedKind returns the kind of this node, e.g. string, boolean, etc.
 func (n DocNode) FormattedKind() string {
-
 	// Check for the annotation first.
 	if match := typeAnnotation.FindAllStringSubmatch(n.Comment, -1); len(match) > 0 {
 		// Handle it being set > 1 time. Use the last match.

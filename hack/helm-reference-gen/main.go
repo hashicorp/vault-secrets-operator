@@ -142,7 +142,7 @@ func main() {
 	}
 
 	newMdx := helmReferenceContents[0:start+len(startStr)] + out + helmReferenceContents[end:]
-	err = os.WriteFile(helmReferenceFile, []byte(newMdx), 0644)
+	err = os.WriteFile(helmReferenceFile, []byte(newMdx), 0o644)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

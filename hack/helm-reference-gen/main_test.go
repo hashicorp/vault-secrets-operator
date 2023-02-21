@@ -184,7 +184,7 @@ func TestFullValues(t *testing.T) {
 	actual, err := GenerateDocs(string(inputBytes))
 	require.NoError(t, err)
 	if actual != string(expBytes) {
-		require.NoError(t, os.WriteFile(filepath.Join("fixtures", "full-values.actual"), []byte(actual), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join("fixtures", "full-values.actual"), []byte(actual), 0o644))
 		require.FailNow(t, "output not equal, actual output to full-values.actual")
 	}
 }
