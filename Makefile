@@ -471,6 +471,8 @@ clean:
 	rm -rf build
 
 
-## Generate Helm reference docs from values.yaml and update Vault website. Usage: make gen-helm-docs vault=<path-to-vault-repo>.
+# Generate Helm reference docs from values.yaml and update Vault website.
+# Usage: make gen-helm-docs vault=<path-to-vault-repo>.
+# Adapted from https://github.com/hashicorp/consul-k8s/tree/main/hack/helm-reference-gen
 gen-helm-docs:
 	@cd hack/helm-reference-gen; go run ./... $(vault)
