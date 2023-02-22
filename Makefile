@@ -7,6 +7,9 @@ VERSION ?= 0.0.0-dev
 
 GO_VERSION = $(shell cat .go-version)
 
+CONFIG_MANAGER_DIR ?= config/manager
+KUSTOMIZE_BUILD_DIR ?= config/default
+
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
@@ -83,7 +86,7 @@ KIND_CLUSTER_DEMO_NAME ?= vso-demo
 # Kind cluster context (demo)
 KIND_CLUSTER_DEMO_CONTEXT ?= kind-$(KIND_CLUSTER_DEMO_NAME)
 
-# Operator namespace as configured in config/default/kustomization.yaml
+# Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
 
 # Run tests against Vault enterprise when true.
@@ -351,8 +354,8 @@ demo: ## Deploy the demo
 
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: ci-deploy-kind
 ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
@@ -375,7 +378,7 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 ### regenerating the CRDs from the config directory.
 .PHONY: helm-chart
 helm-chart: manifests kustomize helmify
-	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | $(HELMIFY) -crd-dir
 
 .PHONY: unit-test
 unit-test: ## Run unit tests for the helm chart
@@ -397,12 +400,12 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
@@ -460,7 +463,7 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: bundle
 bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	operator-sdk bundle validate ./bundle
 

@@ -56,7 +56,6 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Handling request", "req", req, "object", o, "deletionTS", o.DeletionTimestamp)
 	if o.GetDeletionTimestamp() == nil {
 		if err := r.addFinalizer(ctx, o); err != nil {
 			return ctrl.Result{}, err

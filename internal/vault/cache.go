@@ -10,7 +10,7 @@ import (
 
 type ClientCache interface {
 	Get(string) (Client, bool)
-	Add(string, Client) bool
+	Add(Client) (bool, error)
 	Remove(string) bool
 }
 
@@ -59,8 +59,12 @@ func (c *clientCache) Get(key string) (Client, bool) {
 	return cacheEntry, ok
 }
 
-func (c *clientCache) Add(cacheKey string, client Client) bool {
-	return c.cache.Add(cacheKey, client)
+func (c *clientCache) Add(client Client) (bool, error) {
+	cacheKey, err := client.GetCacheKey()
+	if err != nil {
+		return false, err
+	}
+	return c.cache.Add(cacheKey, client), nil
 }
 
 func (c *clientCache) Remove(key string) bool {

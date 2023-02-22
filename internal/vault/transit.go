@@ -43,12 +43,8 @@ func doWithTransitFromObjKey(ctx context.Context, ctrlClient ctrlclient.Client, 
 }
 
 func doWithTransitFromObj(ctx context.Context, client ctrlclient.Client, transitObj *v1alpha1.VaultTransit, data []byte, f transitEncDecFunc) ([]byte, error) {
-	c, err := NewClient(ctx, client, transitObj)
+	c, err := NewClientWithLogin(ctx, client, transitObj)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := c.Login(ctx, client); err != nil {
 		return nil, err
 	}
 

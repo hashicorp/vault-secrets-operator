@@ -58,7 +58,6 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Handling request", "req", req, "object", o, "deletionTS", o.DeletionTimestamp)
 	if o.GetDeletionTimestamp() == nil {
 		if err := r.addFinalizer(ctx, o); err != nil {
 			return ctrl.Result{}, err

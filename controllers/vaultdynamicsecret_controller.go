@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -36,9 +37,9 @@ var notSecretOwnerError = fmt.Errorf("not the secret's owner")
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	Recorder           record.EventRecorder
-	ClientCacheManager vault.ClientCacheManager
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.ClientFactory
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -75,8 +76,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.handleFinalizer(ctx, o)
 	}
 
-	logger.Info("Handling request", "req", req)
-	vClient, err := r.ClientCacheManager.GetClient(ctx, r.Client, o)
+	vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault client: %s", err)
@@ -278,7 +278,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(ctx context.Context, c vault.C
 func (r *VaultDynamicSecretReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer)
-		r.ClientCacheManager.RemoveObject(o)
+		r.ClientFactory.RemoveObject(o)
 		if err := r.Update(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -300,8 +300,12 @@ func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secr
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ctrlOptions := controller.Options{
+		MaxConcurrentReconciles: 1, // 1 is the default
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultDynamicSecret{}).
 		WithEventFilter(ignoreUpdatePredicate()).
+		WithOptions(ctrlOptions).
 		Complete(r)
 }

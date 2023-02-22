@@ -32,9 +32,9 @@ const (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	Recorder           record.EventRecorder
-	ClientCacheManager vault.ClientCacheManager
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.ClientFactory
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -79,7 +79,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	c, err := r.ClientCacheManager.GetClient(ctx, r.Client, o)
+	c, err := r.ClientFactory.GetClient(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault auth login: %s", err)
@@ -160,7 +160,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *VaultStaticSecretReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
 		controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer)
-		r.ClientCacheManager.RemoveObject(o)
+		r.ClientFactory.RemoveObject(o)
 		if err := r.Update(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}

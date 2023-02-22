@@ -26,10 +26,22 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 	return c, nil
 }
 
+func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
+	c, err := NewClient(ctx, client, obj)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Login(ctx, client); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
 type Client interface {
 	Init(context.Context, ctrlclient.Client, ctrlclient.Object) error
 	Read(context.Context, string) (*api.Secret, error)
-	Restore(context.Context, *api.Secret, types.UID) error
+	Restore(context.Context, *api.Secret) error
 	Renew(context.Context) error
 	Write(context.Context, string, map[string]any) (*api.Secret, error)
 	GetLastResponse() (*api.Secret, error)
@@ -96,11 +108,15 @@ func (c *defaultClient) GetCacheKey() (string, error) {
 
 // Restore self from the provided api.Secret (should have an Auth configured).
 // The provided Client Token will be renewed as well.
-func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret, providerUID types.UID) error {
+func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.initialized {
 		return fmt.Errorf("not initialized")
+	}
+
+	if secret == nil {
+		return fmt.Errorf("api.Secret is nil")
 	}
 
 	if secret.Auth == nil {
@@ -108,7 +124,6 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret, provide
 	}
 
 	c.lastResp = secret
-	c.providerUID = providerUID
 	c.client.SetToken(secret.Auth.ClientToken)
 
 	return c.renew(ctx)
@@ -145,17 +160,23 @@ func (c *defaultClient) CheckExpiry(offset int64) (bool, error) {
 		return false, fmt.Errorf("not initialized")
 	}
 
-	if c.lastResp == nil {
+	if c.lastResp == nil || c.lastRenewal == 0 {
 		return false, fmt.Errorf("cannot check client token expiry, never logged in")
 	}
 
-	ttl := int64(c.lastResp.LeaseDuration)
-	horizon := (c.lastRenewal + ttl) - offset
-	if horizon <= 0 {
+	ttl, err := c.GetTokenTTL()
+	if err != nil {
+		return false, err
+	}
+
+	horizon := ttl - time.Second*time.Duration(offset)
+	if horizon < 1 {
+		// will always result in expiry
 		return true, nil
 	}
 
-	return time.Now().After(time.Unix(horizon, 0)), nil
+	ts := time.Unix(c.lastRenewal, 0).Add(horizon)
+	return time.Now().After(ts), nil
 }
 
 func (c *defaultClient) GetLastResponse() (*api.Secret, error) {
@@ -208,6 +229,7 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	c.client.SetToken(resp.Auth.ClientToken)
 
 	c.lastResp = resp
+	c.lastRenewal = time.Now().Unix()
 
 	return nil
 }

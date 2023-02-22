@@ -28,8 +28,8 @@ const vaultPKIFinalizer = "vaultpkisecrets.secrets.hashicorp.com/finalizer"
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	ClientCacheManager vault.ClientCacheManager
+	Scheme        *runtime.Scheme
+	ClientFactory vault.ClientFactory
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -109,7 +109,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	c, err := r.ClientCacheManager.GetClient(ctx, r.Client, s)
+	c, err := r.ClientFactory.GetClient(ctx, r.Client, s)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -183,7 +183,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	l.Info("In deletion")
 	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
-		r.ClientCacheManager.RemoveObject(s)
+		r.ClientFactory.RemoveObject(s)
 		if err := r.finalizePKI(ctx, l, s); err != nil {
 			l.Error(err, "finalizer failed")
 			// TODO: decide how to handle a failed finalizer
@@ -266,7 +266,7 @@ func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.L
 }
 
 func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
-	c, err := r.ClientCacheManager.GetClient(ctx, r.Client, s)
+	c, err := r.ClientFactory.GetClient(ctx, r.Client, s)
 	if err != nil {
 		return err
 	}

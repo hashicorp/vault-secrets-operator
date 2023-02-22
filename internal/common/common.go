@@ -6,8 +6,9 @@ package common
 import (
 	"context"
 	"fmt"
+	"os"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -23,7 +24,11 @@ func init() {
 	var err error
 	OperatorNamespace, err = utils.GetCurrentNamespace()
 	if err != nil {
-		OperatorNamespace = v1.NamespaceDefault
+		if ns := os.Getenv("VSO_NAMESPACE"); ns != "" {
+			OperatorNamespace = ns
+		} else {
+			OperatorNamespace = v1.NamespaceDefault
+		}
 	}
 }
 

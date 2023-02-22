@@ -38,13 +38,7 @@ func Test_GetConnectionNamespacedName(t *testing.T) {
 				Namespace: OperatorNamespace,
 				Name:      consts.NameDefault,
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				valid := err == nil
-				if !valid {
-					t.Errorf("%s unexpected err: %s", err)
-				}
-				return valid
-			},
+			wantErr: assert.NoError,
 		},
 		{
 			name: "empty-connection-ref-expect-error",
@@ -79,13 +73,7 @@ func Test_GetConnectionNamespacedName(t *testing.T) {
 				Namespace: "baz",
 				Name:      "foo",
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				valid := err == nil
-				if !valid {
-					t.Errorf("%s unexpected err: %s", err)
-				}
-				return valid
-			},
+			wantErr: assert.NoError,
 		},
 	}
 	for _, tt := range tests {

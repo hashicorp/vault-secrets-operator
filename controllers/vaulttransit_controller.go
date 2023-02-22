@@ -46,8 +46,7 @@ type VaultTransitReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *VaultTransitReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	l := log.FromContext(ctx)
-	l.Info("Handling request", "req", req)
+	logger := log.FromContext(ctx)
 
 	s := &secretsv1alpha1.VaultTransit{}
 	if err := r.Client.Get(ctx, req.NamespacedName, s); err != nil {
@@ -55,7 +54,7 @@ func (r *VaultTransitReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, nil
 		}
 
-		l.Error(err, "error getting resource from k8s", "secret", s)
+		logger.Error(err, "error getting resource from k8s", "secret", s)
 		return ctrl.Result{}, err
 	}
 
