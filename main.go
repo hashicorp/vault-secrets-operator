@@ -71,7 +71,7 @@ func main() {
 	vaultClientCacheOptions := &controllers.VaultClientCacheOptions{}
 	switch clientCachePersistenceType {
 	case persistenceModelDirect:
-		vaultClientCacheOptions.Persist = false
+		vaultClientCacheOptions.Persist = true
 	case persistenceModelEncrypted:
 		vaultClientCacheOptions.Persist = true
 		vaultClientCacheOptions.RequireEncryption = true
