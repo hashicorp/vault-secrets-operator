@@ -126,16 +126,18 @@ func main() {
 	}
 
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("VaultStaticSecret"),
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		Recorder:           mgr.GetEventRecorderFor("VaultStaticSecret"),
+		ClientCacheManager: clientCacheManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultPKISecretReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		ClientCacheManager: clientCacheManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
