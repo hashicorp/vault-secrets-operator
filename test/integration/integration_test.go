@@ -31,16 +31,25 @@ import (
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
-var testRoot string
+var (
+	testRoot          string
+	testVaultAddress  string
+	k8sVaultNamespace string
+)
 
 func init() {
 	_, curFilePath, _, _ := runtime.Caller(0)
 	testRoot = path.Dir(curFilePath)
+
+	k8sVaultNamespace = os.Getenv("K8S_VAULT_NAMESPACE")
+	if k8sVaultNamespace == "" {
+		k8sVaultNamespace = "vault"
+	}
+	testVaultAddress = fmt.Sprintf("http://vault.%s.svc.cluster.local:8200", k8sVaultNamespace)
 }
 
 // testVaultAddress is the address in k8s of the vault setup by
 // `make setup-integration-test{,-ent}`
-const testVaultAddress = "http://vault.demo.svc.cluster.local:8200"
 
 // Set the environment variable INTEGRATION_TESTS to any non-empty value to run
 // the tests in this package. The test assumes it has available:

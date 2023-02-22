@@ -9,7 +9,7 @@ GO_VERSION = $(shell cat .go-version)
 
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
-K8S_VAULT_NAMESPACE ?= demo
+K8S_VAULT_NAMESPACE ?= vault
 KIND_K8S_VERSION ?= v1.25.3
 VAULT_HELM_VERSION ?= 0.23.0
 
@@ -330,7 +330,7 @@ endif
 		-var k8s_config_context=$(KIND_CLUSTER_DEMO_CONTEXT) \
 		$(EXTRA_VARS) || exit 1
 
-	K8S_VAULT_NAMESPACE=vault $(INTEGRATION_TEST_ROOT)/vault/patch-vault.sh
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(INTEGRATION_TEST_ROOT)/vault/patch-vault.sh
 
 .PHONY: demo-infra-app
 demo-infra-app: demo-deploy-kind terraform ## Deploy Postgres for the demo

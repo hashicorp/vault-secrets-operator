@@ -203,7 +203,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			}
 
 			t.Run(fmt.Sprintf("%s-%d", tt.name, idx), func(t *testing.T) {
-				t.Parallel()
+				// t.Parallel()
 				assert.Nil(t, crdClient.Create(ctx, s))
 				created = append(created, s)
 				assert.Nil(t, crdClient.Create(ctx, a))
