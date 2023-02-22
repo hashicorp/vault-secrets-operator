@@ -195,7 +195,7 @@ integration-test:  setup-integration-test ## Run integration tests for Vault OSS
 
 .PHONY: integration-test-helm
 integration-test-helm:  setup-integration-test ## Run integration tests for Vault OSS
-	DEPLOY_OPERATOR_WITH_HELM=true OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -count=1 -timeout=10m
+	$(MAKE) integration-test DEPLOY_OPERATOR_WITH_HELM=true
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise

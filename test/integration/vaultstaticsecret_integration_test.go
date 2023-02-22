@@ -35,7 +35,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
 	// Check to seee if we are attemmpting to deploy the controller with Helm.
-	_, deployOperatorWithHelm := os.LookupEnv("DEPLOY_OPERATOR_WITH_HELM")
+	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -186,8 +186,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultStaticSecretSpec{
-				// Force this secret to use the Default Auth Method.
-				VaultAuthRef: "",
 				Namespace:    testVaultNamespace,
 				Mount:        testKvv2MountPath,
 				Type:         "kv-v2",
