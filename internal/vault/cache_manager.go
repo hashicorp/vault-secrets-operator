@@ -47,44 +47,54 @@ func (m *clientCacheManager) GetClient(ctx context.Context, client ctrlclient.Cl
 	// Lock on cache key
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithName("CacheManager")
 
-	// TODO(cache): replace with LRU cache
 	objKey := ctrlclient.ObjectKeyFromObject(obj)
-	cacheKey, err := GetClientCacheKeyFromObj(ctx, client, obj)
-	if err != nil {
-		logger.Error(err, "Failed to get cacheKey from obj", "obj", obj)
+	cacheKey, ok := m.objKeyCache.Get(objKey)
+	if !ok {
+		// obj has never been cached
+		logger.Info("ObjKey not in cache, getting the cacheKey", "objKey", objKey)
+		if ck, err := GetClientCacheKeyFromObj(ctx, client, obj); err != nil {
+			logger.Error(err, "Failed to get cacheKey from obj", "obj", obj)
+		} else {
+			cacheKey = ck
+		}
 	}
-	logger.Info("Got cacheKey from obj", "obj", objKey, "cacheKey", cacheKey)
+
 	if cacheKey == "" {
 		return nil, fmt.Errorf("client cache key cannot be empty")
 	}
 
-	if oldCacheKey, ok := m.objKeyCache.Get(objKey); ok {
-		if oldCacheKey != cacheKey {
-			m.clientCache.Remove(oldCacheKey)
-		}
-	}
-
-	m.objKeyCache.Add(objKey, cacheKey)
-
+	// m.objKeyCache.Add(objKey, cacheKey)
 	vClient, ok := m.clientCache.Get(cacheKey)
 	if ok {
 		ok, err := vClient.CheckExpiry(5)
 		if err == nil && ok {
 			if err := vClient.Renew(ctx); err == nil {
 				logger.Info("Returning cached client from memory")
+				m.objKeyCache.Add(objKey, cacheKey)
 				return vClient, nil
 			}
 		}
 		// fall through to NewClient()
 	} else {
+		// not in cache, so we need compute a new cache key from the obj.
+		if ck, err := GetClientCacheKeyFromObj(ctx, client, obj); err != nil {
+			logger.Error(err, "Failed to get cacheKey from obj", "obj", obj)
+		} else {
+			cacheKey = ck
+		}
+
 		objKey := clientCacheObjectKey(cacheKey)
 		ccObj := &secretsv1alpha1.VaultClientCache{}
 		if err := client.Get(ctx, objKey, ccObj); err == nil {
-			if c, err := m.restoreClient(ctx, client, ccObj); err == nil {
-				logger.Info("Restored cached client from storage", "objKey", objKey)
-				return c, nil
+			// attempt to restore the client from durable storage cache
+			if ccObj.Status.CacheSecretRef != "" {
+				if c, err := m.restoreClient(ctx, client, ccObj); err == nil {
+					logger.Info("Restored cached client from storage", "objKey", objKey)
+					m.objKeyCache.Add(objKey, cacheKey)
+					return c, nil
+				}
 			}
 		}
 		// fall through to NewClient()
@@ -98,9 +108,15 @@ func (m *clientCacheManager) GetClient(ctx context.Context, client ctrlclient.Cl
 		return nil, err
 	}
 
+	cacheKey, err = c.GetCacheKey()
+	if err != nil {
+		return nil, err
+	}
+
 	if _, err := m.cacheClient(ctx, client, c); err != nil {
 		return nil, err
 	}
+	m.objKeyCache.Add(objKey, cacheKey)
 
 	return c, nil
 }

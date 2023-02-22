@@ -140,7 +140,7 @@ func (r *VaultClientCacheReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		o.Status.CacheSecretRef = s.Name
 	}
 
-	if err := r.purgeOrphanSecrets(ctx, o); err != nil {
+	if err := r.purgeStorage(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -195,7 +195,7 @@ func (r *VaultClientCacheReconciler) addFinalizer(ctx context.Context, o *secret
 	return nil
 }
 
-func (r *VaultClientCacheReconciler) purgeOrphanSecrets(ctx context.Context, o *secretsv1alpha1.VaultClientCache) error {
+func (r *VaultClientCacheReconciler) purgeStorage(ctx context.Context, o *secretsv1alpha1.VaultClientCache) error {
 	secrets := &corev1.SecretList{}
 	labels := client.MatchingLabels{
 		"cacheKey": o.Spec.CacheKey,
@@ -206,7 +206,7 @@ func (r *VaultClientCacheReconciler) purgeOrphanSecrets(ctx context.Context, o *
 	var purged []string
 	var err error
 	for _, item := range secrets.Items {
-		if item.Name == o.Status.CacheSecretRef {
+		if item.Name == o.Status.CacheSecretRef && r.Options.Persist {
 			continue
 		}
 		dcObj := item.DeepCopy()
@@ -225,7 +225,8 @@ func (r *VaultClientCacheReconciler) purgeOrphanSecrets(ctx context.Context, o *
 
 	// it's normal to purge the last created secret, so we can conditionally
 	// record an event for a larger batch of secrets.
-	if len(purged) > 1 {
+	numPurged := len(purged)
+	if r.Options.Persist && numPurged > 1 || !r.Options.Persist && numPurged > 0 {
 		r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonPersistentCacheCleanup,
 			"Purged %d of %d referent Secret resources: %v", len(purged), len(secrets.Items), purged)
 	}

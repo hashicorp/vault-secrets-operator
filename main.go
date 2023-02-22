@@ -52,14 +52,15 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 
+	persistenceModelNone := "none"
 	persistenceModelDirect := "direct"
 	persistenceModelEncrypted := "direct-encrypted"
-	persistenceModelNone := "none"
-	var clientCachePersistenceType string
-	flag.StringVar(&clientCachePersistenceType, "client-cache-persistence-type", "direct",
+	defaultPersistenceModel := persistenceModelNone
+	var clientCachePersistenceModel string
+	flag.StringVar(&clientCachePersistenceModel, "client-cache-persistence-model", defaultPersistenceModel,
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed."+
-				"default=%s, choices=%v", persistenceModelDirect, []string{persistenceModelDirect, persistenceModelEncrypted, persistenceModelNone}))
+				"choices=%v", []string{persistenceModelDirect, persistenceModelEncrypted, persistenceModelNone}))
 	opts := zap.Options{
 		Development: true,
 	}
@@ -69,7 +70,7 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	vaultClientCacheOptions := &controllers.VaultClientCacheOptions{}
-	switch clientCachePersistenceType {
+	switch clientCachePersistenceModel {
 	case persistenceModelDirect:
 		vaultClientCacheOptions.Persist = true
 	case persistenceModelEncrypted:
@@ -77,11 +78,14 @@ func main() {
 		vaultClientCacheOptions.RequireEncryption = true
 	case persistenceModelNone:
 		vaultClientCacheOptions.Persist = false
+		vaultClientCacheOptions.RequireEncryption = false
 	default:
-		setupLog.Error(errors.New("unsupported type"),
-			fmt.Sprintf("%q is not a valid cache pesistence configuration type", clientCachePersistenceType))
+		setupLog.Error(errors.New("unsupported persistence model"),
+			fmt.Sprintf("%q is not a valid cache pesistence configuration model", clientCachePersistenceModel))
 		os.Exit(1)
 	}
+
+	setupLog.Info("Client cache persistence", "model", clientCachePersistenceModel)
 
 	clientCache, err := vclient.NewClientCache(lruClientCacheSize)
 	if err != nil {
@@ -198,7 +202,7 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 	setupLog.Info("Starting manager",
-		"clientCachePersistenceModel", clientCachePersistenceType,
+		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", lruClientCacheSize,
 		"objectKeyCacheSize", lruObjectKeyCacheSize,
 	)
