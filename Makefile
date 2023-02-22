@@ -91,7 +91,7 @@ VAULT_ENTERPRISE ?= false
 # The vault license.
 _VAULT_LICENSE ?=
 
-TF_INFRA_SRC_DIR ?= ./integrationtest/infra
+TF_INFRA_SRC_DIR ?= ./test/integration/infra
 TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
 TF_INFRA_DEMO_ROOT ?= ./demo/infra
@@ -236,7 +236,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 		--wait=5m \
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
-		--config $(CURDIR)/integrationtest/kind/config.yaml
+		--config $(CURDIR)/test/integration/kind/config.yaml
 	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
@@ -374,6 +374,10 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 .PHONY: helm-chart
 helm-chart: manifests kustomize helmify
 	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
+
+.PHONY: unit-test
+unit-test: ## Run unit tests for the helm chart
+	bats test/unit/
 
 ##@ Deployment
 

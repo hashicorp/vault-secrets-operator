@@ -6,6 +6,7 @@ kind: ClusterRole
 metadata:
   name: {{ include "chart.fullname" . }}-metrics-reader
   labels:
+    app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 rules:
 - nonResourceURLs:
