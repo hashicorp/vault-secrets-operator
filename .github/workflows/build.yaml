@@ -2,7 +2,7 @@ name: build
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: ["*"]
 
 env:
   PKG_NAME: "vault-secrets-operator"
