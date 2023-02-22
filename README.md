@@ -17,7 +17,7 @@ make setup-integration-test
 ./config/samples/setup.sh
 
 # Build and deploy the operator
-make build deploy-kind
+make build docker-build deploy-kind
 
 # Deploy the sample K8s resources
 kubectl apply -k config/samples
