@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
@@ -27,29 +27,29 @@ func init() {
 	}
 }
 
-func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*v1alpha1.VaultAuth, types.NamespacedName, error) {
+func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1alpha1.VaultAuth, types.NamespacedName, error) {
 	var authRef string
 	var target types.NamespacedName
 	switch o := obj.(type) {
-	case *v1alpha1.VaultPKISecret:
+	case *secretsv1alpha1.VaultPKISecret:
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
-	case *v1alpha1.VaultStaticSecret:
+	case *secretsv1alpha1.VaultStaticSecret:
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
-	case *v1alpha1.VaultDynamicSecret:
+	case *secretsv1alpha1.VaultDynamicSecret:
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
-	case *v1alpha1.VaultTransit:
+	case *secretsv1alpha1.VaultTransit:
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
@@ -80,16 +80,16 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 	return auth, target, nil
 }
 
-func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*v1alpha1.VaultConnection, error) {
-	connObj := &v1alpha1.VaultConnection{}
+func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultConnection, error) {
+	connObj := &secretsv1alpha1.VaultConnection{}
 	if err := c.Get(ctx, key, connObj); err != nil {
 		return nil, err
 	}
 	return connObj, nil
 }
 
-func GetVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName) (*v1alpha1.VaultAuth, error) {
-	authObj := &v1alpha1.VaultAuth{}
+func GetVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultAuth, error) {
+	authObj := &secretsv1alpha1.VaultAuth{}
 	if err := c.Get(ctx, key, authObj); err != nil {
 		return nil, err
 	}
@@ -99,10 +99,18 @@ func GetVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName
 	return authObj, nil
 }
 
+func GetVaultTransit(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultTransit, error) {
+	o := &secretsv1alpha1.VaultTransit{}
+	if err := c.Get(ctx, key, o); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
 // GetConnectionNamespacedName returns the NamespacedName for the VaultAuth's configured
 // vaultConnectionRef.
 // If the vaultConnectionRef is empty then defaults Namespace and Name will be returned.
-func GetConnectionNamespacedName(a *v1alpha1.VaultAuth) (types.NamespacedName, error) {
+func GetConnectionNamespacedName(a *secretsv1alpha1.VaultAuth) (types.NamespacedName, error) {
 	if a.Spec.VaultConnectionRef == "" {
 		if OperatorNamespace == "" {
 			return types.NamespacedName{}, fmt.Errorf("operator's default namespace is not set, this is a bug")
