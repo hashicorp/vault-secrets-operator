@@ -4,7 +4,7 @@
 package vault
 
 import (
-	lru "github.com/hashicorp/golang-lru"
+	"github.com/hashicorp/golang-lru"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -50,21 +50,21 @@ type clientCache struct {
 	cache *lru.Cache
 }
 
-func (x *clientCache) Get(key string) (Client, bool) {
+func (c *clientCache) Get(key string) (Client, bool) {
 	var cacheEntry Client
-	raw, ok := x.cache.Get(key)
+	raw, ok := c.cache.Get(key)
 	if ok {
 		cacheEntry = raw.(Client)
 	}
 	return cacheEntry, ok
 }
 
-func (x *clientCache) Add(cacheKey string, client Client) bool {
-	return x.cache.Add(cacheKey, client)
+func (c *clientCache) Add(cacheKey string, client Client) bool {
+	return c.cache.Add(cacheKey, client)
 }
 
-func (x *clientCache) Remove(key string) bool {
-	return x.cache.Remove(key)
+func (c *clientCache) Remove(key string) bool {
+	return c.cache.Remove(key)
 }
 
 func NewClientCache(size int) (ClientCache, error) {

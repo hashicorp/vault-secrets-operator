@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
@@ -31,20 +32,21 @@ var _ ClientCacheManager = (*clientCacheManager)(nil)
 type clientCacheManager struct {
 	clientCache ClientCache
 	objKeyCache ObjectKeyCache
+	mu          sync.Mutex
 }
 
-func (x *clientCacheManager) RemoveObject(obj ctrlclient.Object) bool {
-	return x.objKeyCache.Remove(ctrlclient.ObjectKeyFromObject(obj))
+func (m *clientCacheManager) RemoveObject(obj ctrlclient.Object) bool {
+	return m.objKeyCache.Remove(ctrlclient.ObjectKeyFromObject(obj))
 }
 
 // GetClient is meant to be called for all resources that require access to Vault.
 // It will attempt to fetch a Client from the in-memory cache for the provided object. On a cache miss
 // a new Client will be instantiated, and an attempt to login into Vault will be made.
 // Upon successful instantiation/login the Client will be cached for future access.
-func (x *clientCacheManager) GetClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
+func (m *clientCacheManager) GetClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
 	// Lock on cache key
-	mu.Lock()
-	defer mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	logger := log.FromContext(ctx)
 
 	// TODO(cache): replace with LRU cache
@@ -58,15 +60,15 @@ func (x *clientCacheManager) GetClient(ctx context.Context, client ctrlclient.Cl
 		return nil, fmt.Errorf("client cache key cannot be empty")
 	}
 
-	if oldCacheKey, ok := x.objKeyCache.Get(objKey); ok {
+	if oldCacheKey, ok := m.objKeyCache.Get(objKey); ok {
 		if oldCacheKey != cacheKey {
-			x.clientCache.Remove(oldCacheKey)
+			m.clientCache.Remove(oldCacheKey)
 		}
 	}
 
-	x.objKeyCache.Add(objKey, cacheKey)
+	m.objKeyCache.Add(objKey, cacheKey)
 
-	vClient, ok := x.clientCache.Get(cacheKey)
+	vClient, ok := m.clientCache.Get(cacheKey)
 	if ok {
 		ok, err := vClient.CheckExpiry(5)
 		if err == nil && ok {
@@ -80,7 +82,7 @@ func (x *clientCacheManager) GetClient(ctx context.Context, client ctrlclient.Cl
 		objKey := clientCacheObjectKey(cacheKey)
 		ccObj := &secretsv1alpha1.VaultClientCache{}
 		if err := client.Get(ctx, objKey, ccObj); err == nil {
-			if c, err := x.restoreClient(ctx, client, ccObj); err == nil {
+			if c, err := m.restoreClient(ctx, client, ccObj); err == nil {
 				logger.Info("Restored cached client from storage", "objKey", objKey)
 				return c, nil
 			}
@@ -96,14 +98,14 @@ func (x *clientCacheManager) GetClient(ctx context.Context, client ctrlclient.Cl
 		return nil, err
 	}
 
-	if _, err := x.cacheClient(ctx, client, c); err != nil {
+	if _, err := m.cacheClient(ctx, client, c); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
-func (x *clientCacheManager) restoreClient(ctx context.Context, client ctrlclient.Client, obj *secretsv1alpha1.VaultClientCache) (Client, error) {
+func (m *clientCacheManager) restoreClient(ctx context.Context, client ctrlclient.Client, obj *secretsv1alpha1.VaultClientCache) (Client, error) {
 	logger := log.FromContext(ctx)
 
 	s := &corev1.Secret{}
@@ -153,7 +155,7 @@ func (x *clientCacheManager) restoreClient(ctx context.Context, client ctrlclien
 		return nil, err
 	}
 
-	if _, err := x.cacheClient(ctx, client, c); err != nil {
+	if _, err := m.cacheClient(ctx, client, c); err != nil {
 		return nil, err
 	}
 
@@ -162,7 +164,7 @@ func (x *clientCacheManager) restoreClient(ctx context.Context, client ctrlclien
 
 // CacheClient in the global in-memory cache, and create a corresponding
 // VaultClientCache resource to handle Client Token renewal, and in-memory cache management.
-func (x *clientCacheManager) cacheClient(ctx context.Context, client ctrlclient.Client, c Client) (string, error) {
+func (m *clientCacheManager) cacheClient(ctx context.Context, client ctrlclient.Client, c Client) (string, error) {
 	logger := log.FromContext(ctx)
 
 	cacheKey, err := c.GetCacheKey()
@@ -239,7 +241,7 @@ func (x *clientCacheManager) cacheClient(ctx context.Context, client ctrlclient.
 	clientSize := reflect.TypeOf(c).Size()
 	logger.Info("Handled VaultClientCache",
 		"action", action, "objKey", objKey, "cacheKey", cacheKey, "clientSize", clientSize)
-	x.clientCache.Add(cacheKey, c)
+	m.clientCache.Add(cacheKey, c)
 	return cacheKey, nil
 }
 

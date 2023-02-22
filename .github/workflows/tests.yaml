@@ -18,13 +18,21 @@ jobs:
 
   fmtcheck:
     runs-on: ubuntu-latest
+    needs: [get-go-version]
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - run: |
           make check-fmt
   tf-fmtcheck:
     runs-on: ubuntu-latest
+    needs: [get-go-version]
     steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: actions/checkout@v3
       - run: |
           make check-tffmt
@@ -49,11 +57,15 @@ jobs:
 
   unitTest:
     runs-on: ubuntu-latest
+    needs: [get-go-version]
     steps:
       - uses: actions/checkout@v3
       - uses: chrisdickinson/setup-yq@latest
         with:
           yq-version: v4.30.8
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: mig4/setup-bats@v1
         with:
           bats-version: 1.8.2
@@ -69,7 +81,7 @@ jobs:
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
         vault-version: [1.10.10, 1.11.7, 1.12.3]
-        # Note: The below exclude and include's are a bit awkward, but they
+        # Note: The below exclude and includes are a bit awkward, but they
         # allow us to exclude the combos we don't really need. We want to test
         # the operator with the different k8s versions, and with the different
         # vault versions, but we don't care about testing all the k8s versions

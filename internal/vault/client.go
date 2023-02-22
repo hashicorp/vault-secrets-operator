@@ -17,8 +17,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
-var mu sync.Mutex
-
 func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
 	// TODO add logic for restoration from cache
 	c := &defaultClient{}

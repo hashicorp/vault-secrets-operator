@@ -243,12 +243,7 @@ func (r *VaultDynamicSecretReconciler) writeCreds(ctx context.Context, vClient v
 		return nil, err
 	}
 
-	return &secretsv1alpha1.VaultSecretLease{
-		ID:            resp.LeaseID,
-		LeaseDuration: resp.LeaseDuration,
-		Renewable:     resp.Renewable,
-		RequestID:     resp.RequestID,
-	}, nil
+	return r.getVaultSecretLease(resp), nil
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
