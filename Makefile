@@ -91,7 +91,9 @@ VAULT_ENTERPRISE ?= false
 # The vault license.
 _VAULT_LICENSE ?=
 
-TF_INFRA_SRC_DIR ?= ./test/integration/infra
+INTEGRATION_TEST_ROOT = ./test/integration
+
+TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
 TF_INFRA_DEMO_ROOT ?= ./demo/infra
@@ -218,7 +220,7 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 integration-test:  setup-integration-test ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 \
-	go test github.com/hashicorp/vault-secrets-operator/integrationtest/... $(TESTARGS) -count=1 -timeout=10m
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -count=1 -timeout=10m
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
@@ -242,7 +244,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
-	find ./integrationtest/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
+	find $(INTEGRATION_TEST_ROOT)/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
 
 .PHONY: setup-integration-test
 setup-integration-test: terraform kustomize set-vault-license ## Deploy Vault for integration testing
@@ -266,7 +268,7 @@ endif
 		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
-	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) ./integrationtest/vault/patch-vault.sh
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(INTEGRATION_TEST_ROOT)/vault/patch-vault.sh
 
 .PHONY: setup-integration-test-ent
 ## Create Vault inside the cluster
@@ -328,7 +330,7 @@ endif
 		-var k8s_config_context=$(KIND_CLUSTER_DEMO_CONTEXT) \
 		$(EXTRA_VARS) || exit 1
 
-	K8S_VAULT_NAMESPACE=vault ./integrationtest/vault/patch-vault.sh
+	K8S_VAULT_NAMESPACE=vault $(INTEGRATION_TEST_ROOT)/vault/patch-vault.sh
 
 .PHONY: demo-infra-app
 demo-infra-app: demo-deploy-kind terraform ## Deploy Postgres for the demo
