@@ -2,9 +2,6 @@
 
 Kubernetes operator for Vault secrets synchronization
 
-## TEST
-Ignore this
-
 ## Samples
 
 Setup kubernetes and deploy the samples:
