@@ -1,6 +1,6 @@
 name: build
 on:
-  #workflow_dispatch:
+  workflow_dispatch:
   push:
     branches: ["*"]
 
@@ -10,8 +10,7 @@ env:
 jobs:
   get-go-version:
     name: "Determine Go toolchain version"
-    runs-on: [self-hosted, linux]
-    # runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     outputs:
       go-version: ${{ steps.get-go-version.outputs.go-version }}
     steps:
@@ -23,8 +22,7 @@ jobs:
           echo "go-version=$(cat .go-version)" >> $GITHUB_OUTPUT
 
   get-product-version:
-    runs-on: [self-hosted, linux]
-    # runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     outputs:
       product-version: ${{ steps.get-product-version.outputs.product-version }}
     steps:
@@ -37,8 +35,7 @@ jobs:
 
   generate-metadata-file:
     needs: get-product-version
-    runs-on: [self-hosted, linux]
-    # runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     outputs:
       filepath: ${{ steps.generate-metadata-file.outputs.filepath }}
     steps:
@@ -57,8 +54,7 @@ jobs:
           path: ${{ steps.generate-metadata-file.outputs.filepath }}
 
   build-pre-checks:
-    runs-on: [self-hosted, linux]
-    # runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     needs: get-go-version
     steps:
       - uses: actions/checkout@v3
@@ -86,8 +82,7 @@ jobs:
   build:
     name: Go ${{ needs.get-go-version.outputs.go-version }} linux ${{ matrix.arch }} build
     needs: [get-product-version, get-go-version, build-pre-checks]
-    runs-on: [self-hosted, linux]
-    # runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         # * Linux dropped 386 support in 2012.
@@ -122,8 +117,7 @@ jobs:
   build-docker:
     name: Docker ${{ matrix.arch }} build
     needs: [get-product-version, get-go-version, build-pre-checks]
-    runs-on: [self-hosted, linux]
-    # runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         # The distroless image seems to only support amd64 and arm64
