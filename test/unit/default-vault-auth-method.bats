@@ -32,16 +32,13 @@ load _helpers
     local object=$(helm template \
         -s templates/default-vault-auth-method.yaml  \
         --set 'defaultAuthMethod.enabled=true' \
-        . | tee /dev/stderr |
-    yq '.' | tee /dev/stderr)
+        . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
      [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 
-    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
      [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
@@ -63,8 +60,7 @@ load _helpers
         --set 'defaultAuthMethod.kubernetes.tokenAudiences={vault,foo}' \
         --set 'defaultAuthMethod.headers=foo: bar' \
         --set 'defaultAuthMethod.params=foo: baz' \
-        . | tee /dev/stderr |
-    yq '.' | tee /dev/stderr)
+        . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]

@@ -30,7 +30,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
-	// Check to seee if we are attemmpting to deploy the controller with Helm.
+	// Check to see if we are attempting to deploy the controller with Helm.
 	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
 
 	// Construct the terraform options with default retryable errors to handle the most common

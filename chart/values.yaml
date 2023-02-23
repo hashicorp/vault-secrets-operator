@@ -121,7 +121,7 @@ defaultAuthMethod:
   enabled: false
 
   # Vault namespace for the VaultAuthMethod CR
-  namespace: default
+  namespace: ""
 
   # Vault Auth method to be used with the VaultAuthMethod CR
   method: kubernetes
