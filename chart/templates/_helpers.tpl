@@ -1,5 +1,7 @@
+{{/*
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
+*/}}
 
 {{/*
 Expand the name of the chart.
