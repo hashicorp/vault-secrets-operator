@@ -93,15 +93,6 @@ func validateKeyLength(key []byte) error {
 	return nil
 }
 
-func HMACDataFromHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey, data []byte) ([]byte, error) {
-	key, err := GetHKDFKeyFromSecret(ctx, client, objKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return macMessage(key, data)
-}
-
 func validateMAC(message, messageMAC, key []byte) (bool, error) {
 	expectedMAC, err := macMessage(key, message)
 	if err != nil {
@@ -119,24 +110,6 @@ func macMessage(key, data []byte) ([]byte, error) {
 	err = errors.Join(validateKeyLength(key))
 	if err != nil {
 		return nil, err
-	}
-
-	mac := hmac.New(sha256.New, key)
-	if _, err := mac.Write(data); err != nil {
-		return nil, err
-	}
-	return mac.Sum(nil), nil
-}
-
-func VerifyHMACDataFromHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey, data []byte) ([]byte, error) {
-	o := &corev1.Secret{}
-	if err := client.Get(ctx, objKey, o); err != nil {
-		return nil, err
-	}
-
-	key, ok := o.Data[hkdfKeyName]
-	if !ok {
-		return nil, fmt.Errorf("invalid HKDF Secret %s, missing data field %q", objKey, hkdfKeyName)
 	}
 
 	mac := hmac.New(sha256.New, key)
