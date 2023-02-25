@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/operator-framework/operator-lib/handler"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,6 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
@@ -93,7 +96,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if !s.Status.Renew && s.Status.SerialNumber != "" {
-		// logger.Info("Certificate already issued", "serial_number", s.Status.SerialNumber)
 		// check if within the certificate renewal window
 		if expiryOffset > 0 {
 			if checkPKICertExpiry(s.Status.Expiration, expiryOffset) {
@@ -227,6 +229,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	logger.Info("Successfully updated the secret")
+	// TODO(tvoran): add event for success, probably with some of the status info?
 
 	// revoke the certificate on renewal
 	if s.Spec.Revoke && s.Status.Renew && s.Status.SerialNumber != "" {
@@ -297,6 +300,10 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, l logr.Logg
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultPKISecret{}).
+		// Add metrics for create/update/delete of the resource
+		Watches(&source.Kind{Type: &secretsv1alpha1.VaultPKISecret{}},
+			&handler.InstrumentedEnqueueRequestForObject{}).
+		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(r)
 }
 
@@ -389,13 +396,24 @@ func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1alpha1.VaultPKISecret
 func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, p *secretsv1alpha1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Updating status", "status", p.Status)
-	metrics.SetResourceStatus("vaultpkisecret", p, p.Status.Valid)
-	if err := r.Status().Update(ctx, p); err != nil {
+	// Get the latest object before updating the status
+	pUpdated := &secretsv1alpha1.VaultPKISecret{}
+	key := types.NamespacedName{
+		Name:      p.Name,
+		Namespace: p.Namespace,
+	}
+	if err := r.Client.Get(ctx, key, pUpdated); err != nil {
+		return err
+	}
+	pUpdated.Status = p.Status
+	metrics.SetResourceStatus("vaultpkisecret", pUpdated, pUpdated.Status.Valid)
+	if err := r.Status().Update(ctx, pUpdated); err != nil {
 		msg := "Failed to update the resource's status"
-		r.recordEvent(p, reasonStatusUpdateError, "%s: %s", msg, err)
+		r.recordEvent(pUpdated, reasonStatusUpdateError, "%s: %s", msg, err)
 		logger.Error(err, msg)
 		return err
 	}
+	pUpdated.DeepCopyInto(p)
 	return nil
 }
 
