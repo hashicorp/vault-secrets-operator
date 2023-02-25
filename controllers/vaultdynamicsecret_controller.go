@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/hashicorp/vault/api"
@@ -37,9 +38,10 @@ var notSecretOwnerError = fmt.Errorf("not the secret's owner")
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.ClientFactory
+	Scheme         *runtime.Scheme
+	Recorder       record.EventRecorder
+	ClientFactory  vault.ClientFactory
+	runtimePodName string
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -55,6 +57,10 @@ type VaultDynamicSecretReconciler struct {
 
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	if r.runtimePodName == "" {
+		r.runtimePodName = os.Getenv("OPERATOR_POD_NAME")
+	}
 
 	o := &secretsv1alpha1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
@@ -76,16 +82,40 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.handleFinalizer(ctx, o)
 	}
 
-	vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-			"Failed to get Vault client: %s", err)
-		return ctrl.Result{}, err
-	}
-
+	var doRolloutRestart bool
 	leaseID := o.Status.SecretLease.ID
-	inRenew := leaseID != ""
-	if inRenew {
+	// logger.Info("Last secret lease", "secretLease", o.Status.SecretLease, "epoch", r.epoch)
+	if leaseID != "" {
+		if r.runtimePodName != "" && r.runtimePodName != o.Status.LastRuntimePodName {
+			// don't take part in the thundering herd on start up,
+			// and the lease is still within the renewal window.
+			leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
+			ts := time.Unix(o.Status.LastRenewalTime, 0).Add(leaseDuration).Unix()
+			now := time.Now().Unix()
+			diff := ts - now
+			if diff > 0 {
+				horizon, err := computeHorizonWithJitter(time.Duration(diff) * time.Second)
+				if err != nil {
+					logger.Error(err, "Failed to compute the new horizon")
+				} else {
+					o.Status.LastRuntimePodName = r.runtimePodName
+					if err := r.updateStatus(ctx, o); err != nil {
+						return ctrl.Result{}, err
+					}
+					r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
+						"Not in renewal window after leader transition, lease_id=%s, horizon=%s", leaseID, horizon)
+					return ctrl.Result{RequeueAfter: horizon}, nil
+				}
+			}
+		}
+
+		vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
+		if err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+				"Failed to get Vault client: %s", err)
+			return ctrl.Result{}, err
+		}
+
 		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
 			if !r.checkRenewableLease(secretLease, o) {
 				return ctrl.Result{}, nil
@@ -99,27 +129,37 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 
 			o.Status.SecretLease = *secretLease
+			o.Status.LastRenewalTime = time.Now().Unix()
+			o.Status.LastRuntimePodName = r.runtimePodName
 			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
 			}
 
 			leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-			horizon := computeHorizonWithJitter(leaseDuration)
+			horizon, _ := computeHorizonWithJitter(leaseDuration)
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"Renewed lease, lease_id=%s, horizon=%s", leaseID, horizon)
 
 			return ctrl.Result{RequeueAfter: horizon}, nil
 		} else {
+			doRolloutRestart = true
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 				"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 		}
+	}
+
+	vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+			"Failed to get Vault client: %s", err)
+		return ctrl.Result{}, err
 	}
 
 	s, err := r.getDestinationSecret(ctx, o)
 	if err != nil {
 		if errors.Is(err, notSecretOwnerError) {
 			// requeue the sync until the problem has been resolved.
-			horizon := computeHorizonWithJitter(time.Second * 10)
+			horizon, _ := computeHorizonWithJitter(time.Second * 10)
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Not the destination secret's owner, horizon=%s, err=%s", horizon, err)
 			return ctrl.Result{RequeueAfter: horizon}, nil
@@ -133,12 +173,14 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	o.Status.SecretLease = *secretLease
+	o.Status.LastRenewalTime = time.Now().Unix()
+	o.Status.LastRuntimePodName = r.runtimePodName
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	reason := consts.ReasonSecretSynced
-	if inRenew {
+	if doRolloutRestart {
 		reason = consts.ReasonSecretRotated
 		for _, target := range o.Spec.RolloutRestartTargets {
 			if err := helpers.RolloutRestart(ctx, s, target, r.Client); err != nil {
@@ -156,9 +198,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon := computeHorizonWithJitter(leaseDuration)
+	horizon, _ := computeHorizonWithJitter(leaseDuration)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Synced secret: horizon=%s", horizon)
+		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
 
 	return ctrl.Result{RequeueAfter: horizon}, nil
 }

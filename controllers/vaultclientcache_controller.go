@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -34,17 +35,17 @@ type VaultClientCacheConfig struct {
 	// RequireEncryption for persisting Clients i.e. the controller must have VaultTransitRef
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
 	RequireEncryption bool
+	// MaxConcurrentReconciles
+	MaxConcurrentReconciles int
 }
 
 // VaultClientCacheReconciler reconciles a VaultClientCache object
 type VaultClientCacheReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	Recorder           record.EventRecorder
-	PersistCache       bool
-	Options            *VaultClientCacheConfig
-	ClientCache        vault.ClientCache
-	ClientCacheStorage vault.ClientCacheStorage
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	Config        *VaultClientCacheConfig
+	ClientFactory vault.CacheingClientFactory
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultclientcaches,verbs=get;list;watch;create;update;patch;delete
@@ -95,24 +96,37 @@ func (r *VaultClientCacheReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.evictSelf(ctx, o)
 	}
 
-	vClient, ok := r.ClientCache.Get(cacheKey)
+	vClient, ok := r.ClientFactory.Cache().Get(cacheKey)
 	if !ok {
 		// client recovery from storage is handled by the vault.ClientFactory,
 		// as is the creation of VaultClientCache resources.
-		o.Status.CacheMisses++
-		if o.Status.CacheMisses > o.Spec.MaxCacheMisses {
+		var restored bool
+		if r.Config.Persist && o.Status.CacheSecretRef != "" {
+			if _, err := r.ClientFactory.Restore(ctx, r.Client, o); err == nil {
+				o.Status.CacheMisses = 0
+				restored = true
+			}
+		}
+
+		if !restored {
+			o.Status.CacheMisses++
+		}
+
+		if o.Status.CacheMisses >= o.Spec.MaxCacheMisses {
 			// evict ourselves
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonMaxCacheMisses,
 				"Self eviction cacheMisses=%d, maxCacheMisses=%d, cacheKey=%s",
 				o.Status.CacheMisses, o.Spec.MaxCacheMisses, cacheKey)
 			return r.evictSelf(ctx, o)
 		}
+
 		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 
+		horizon, _ := computeHorizonWithJitter(time.Duration(o.Spec.CacheFetchInterval))
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(time.Duration(o.Spec.CacheFetchInterval)),
+			RequeueAfter: horizon,
 		}, nil
 	}
 
@@ -121,17 +135,16 @@ func (r *VaultClientCacheReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			"Failed renewing client token: %s", err)
 		return r.evictSelf(ctx, o)
 	}
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonClientTokenRenewal,
-		"Successfully renewed the client token")
 
-	if r.Options.Persist {
+	if r.Config.Persist {
 		s, err := r.persistClient(ctx, o, vClient)
 		if err != nil {
 			if errors.Is(err, vault.EncryptionRequiredError) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonPersistenceForbidden,
 					"A VaultTransitRef must be configured, encryption is required")
+				jitter, _ := computeHorizonWithJitter(time.Duration(o.Spec.CacheFetchInterval))
 				return ctrl.Result{
-					RequeueAfter: computeHorizonWithJitter(time.Duration(o.Spec.CacheFetchInterval)),
+					RequeueAfter: jitter,
 				}, nil
 			}
 
@@ -163,8 +176,9 @@ func (r *VaultClientCacheReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	horizon := computeHorizonWithJitter(ttl)
-	logger.Info("Requeue", "horizon", horizon)
+	horizon, _ := computeHorizonWithJitter(ttl)
+	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonClientTokenRenewal,
+		"Renewed client token, horizon=%s", horizon)
 	return ctrl.Result{RequeueAfter: horizon}, nil
 }
 
@@ -179,8 +193,8 @@ func (r *VaultClientCacheReconciler) evictSelf(ctx context.Context, o *secretsv1
 func (r *VaultClientCacheReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultClientCache) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultClientCacheFinalizer) {
 		controllerutil.RemoveFinalizer(o, vaultClientCacheFinalizer)
-		r.ClientCache.Remove(o.Spec.CacheKey)
-		r.Options.Persist = false
+		r.ClientFactory.Cache().Remove(o.Spec.CacheKey)
+		r.Config.Persist = false
 		if err := r.pruneStorage(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -210,7 +224,7 @@ func (r *VaultClientCacheReconciler) pruneStorage(ctx context.Context, o *secret
 			"cacheKey": o.Spec.CacheKey,
 		},
 		Filter: func(s corev1.Secret) bool {
-			if !r.Options.Persist {
+			if !r.Config.Persist {
 				// prune all referent Secrets, this is here to handle the case where
 				// persistence was previously enabled.
 				return false
@@ -219,8 +233,8 @@ func (r *VaultClientCacheReconciler) pruneStorage(ctx context.Context, o *secret
 		},
 	}
 
-	count, err := r.ClientCacheStorage.Prune(ctx, r.Client, req)
-	if r.Options.Persist && count > 1 || !r.Options.Persist && count > 0 {
+	count, err := r.ClientFactory.Storage().Prune(ctx, r.Client, req)
+	if r.Config.Persist && count > 1 || !r.Config.Persist && count > 0 {
 		r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonPersistentCacheCleanup,
 			"Purged %d referent Secret resources", count)
 	}
@@ -229,7 +243,7 @@ func (r *VaultClientCacheReconciler) pruneStorage(ctx context.Context, o *secret
 }
 
 func (r *VaultClientCacheReconciler) persistClient(ctx context.Context, o *secretsv1alpha1.VaultClientCache, vClient vault.Client) (*corev1.Secret, error) {
-	requireEncryption := r.Options.RequireEncryption
+	requireEncryption := r.Config.RequireEncryption
 	transitObjKey := client.ObjectKey{}
 
 	if o.Spec.VaultTransitRef != "" {
@@ -253,7 +267,7 @@ func (r *VaultClientCacheReconciler) persistClient(ctx context.Context, o *secre
 		},
 	}
 
-	return r.ClientCacheStorage.Store(ctx, r.Client, req)
+	return r.ClientFactory.Storage().Store(ctx, r.Client, req)
 }
 
 func (r *VaultClientCacheReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultClientCache) error {
@@ -269,8 +283,14 @@ func (r *VaultClientCacheReconciler) updateStatus(ctx context.Context, o *secret
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultClientCacheReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ctrlOptions := controller.Options{
+		// This configurable affects the timeliness when recovering
+		// from the storage cache.
+		MaxConcurrentReconciles: r.Config.MaxConcurrentReconciles,
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultClientCache{}).
+		WithOptions(ctrlOptions).
 		WithEventFilter(ignoreUpdatePredicate()).
 		WithEventFilter(filterNamespacePredicate([]string{common.OperatorNamespace})).
 		Complete(r)

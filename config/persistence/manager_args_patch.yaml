@@ -12,12 +12,4 @@ spec:
       containers:
       - name: manager
         args:
-        - "--client-cache-persistence-model=direct"
-        volumeMounts:
-        - name: manager-config
-          mountPath: /controller_manager_config.yaml
-          subPath: controller_manager_config.yaml
-      volumes:
-      - name: manager-config
-        configMap:
-          name: manager-config
+        - "--client-cache-persistence-model=direct-unencrypted"

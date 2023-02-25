@@ -14,8 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -25,7 +23,6 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	//+kubebuilder:scaffold:imports
 )
@@ -43,28 +40,31 @@ func init() {
 }
 
 func main() {
+	persistenceModelNone := "none"
+	persistenceModelDirectUnencrypted := "direct-unencrypted"
+	persistenceModelEncrypted := "direct-encrypted"
+	defaultPersistenceModel := persistenceModelNone
+
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
-	var lruClientCacheSize int
-	var lruObjectKeyCacheSize int
-	flag.IntVar(&lruClientCacheSize, "client-lru-cache-size", 10000, "Size of the in-memory LRU client cache.")
-	flag.IntVar(&lruObjectKeyCacheSize, "object-key-lru-cache-size", 10000, "Size of the in-memory LRU object-key cache.")
+	var clientCacheSize int
+	var objectKeyCacheSize int
+	var clientCachePersistenceModel string
+	var vccMaxConcurrentReconciles int
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-
-	persistenceModelNone := "none"
-	persistenceModelDirect := "direct"
-	persistenceModelEncrypted := "direct-encrypted"
-	defaultPersistenceModel := persistenceModelNone
-	var clientCachePersistenceModel string
+	flag.IntVar(&vccMaxConcurrentReconciles, "vcc-max-concurrent-reconciles", 30, "Maximum number of concurrent reconciles "+
+		"by the VaultClientCache controller.")
+	flag.IntVar(&clientCacheSize, "client-cache-size", 10000, "Size of the in-memory LRU client cache.")
+	flag.IntVar(&objectKeyCacheSize, "object-key-cache-size", 10000, "Size of the in-memory LRU object-key cache.")
 	flag.StringVar(&clientCachePersistenceModel, "client-cache-persistence-model", defaultPersistenceModel,
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed."+
-				"choices=%v", []string{persistenceModelDirect, persistenceModelEncrypted, persistenceModelNone}))
+				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelEncrypted, persistenceModelNone}))
 	opts := zap.Options{
 		Development: true,
 	}
@@ -72,21 +72,6 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	vaultClientCacheOptions := &controllers.VaultClientCacheConfig{}
-	switch clientCachePersistenceModel {
-	case persistenceModelDirect:
-		vaultClientCacheOptions.Persist = true
-	case persistenceModelEncrypted:
-		vaultClientCacheOptions.Persist = true
-		vaultClientCacheOptions.RequireEncryption = true
-	case persistenceModelNone:
-		vaultClientCacheOptions.Persist = false
-	default:
-		setupLog.Error(errors.New("unsupported persistence model"),
-			fmt.Sprintf("%q is not a valid cache pesistence configuration model", clientCachePersistenceModel))
-		os.Exit(1)
-	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -105,56 +90,52 @@ func main() {
 		// the manager stops, so would be fine to enable this option. However,
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
-		LeaderElectionReleaseOnCancel: true,
+		//LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
 
-	setupLog.Info("Client cache persistence", "model", clientCachePersistenceModel)
-
-	clientCache, err := vclient.NewClientCache(lruClientCacheSize)
-	if err != nil {
-		setupLog.Error(err, "Unable to create Vault ClientCache")
-		os.Exit(1)
+	// set up the client cache and client factory
+	vccOptions := &controllers.VaultClientCacheConfig{
+		MaxConcurrentReconciles: vccMaxConcurrentReconciles,
 	}
+	var clientFactory vclient.CacheingClientFactory
+	{
+		switch clientCachePersistenceModel {
+		case persistenceModelDirectUnencrypted:
+			vccOptions.Persist = true
+		case persistenceModelEncrypted:
+			vccOptions.Persist = true
+			vccOptions.RequireEncryption = true
+		case persistenceModelNone:
+			vccOptions.Persist = false
+		default:
+			setupLog.Error(errors.New("unsupported persistence model"),
+				fmt.Sprintf("%q is not a valid cache pesistence configuration model", clientCachePersistenceModel))
+			os.Exit(1)
+		}
 
-	objectKeyCache, err := vclient.NewObjectKeyCache(lruObjectKeyCacheSize)
-	if err != nil {
-		setupLog.Error(err, "Unable to create Vault ObjectKeyCache")
-		os.Exit(1)
-	}
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*10))
+		defer cancel()
 
-	clientCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*30))
-	defer cancel()
-	storageConfig := &vclient.ClientCacheStorageConfig{
-		EnforceEncryption: vaultClientCacheOptions.RequireEncryption,
-		HKDFObjectKey: client.ObjectKey{
-			Name:      "vso-cache-storage-hkdf-key",
-			Namespace: common.OperatorNamespace,
-		},
-	}
-	clientCacheStorage, err := vclient.NewDefaultClientCacheStorage(clientCtx, mgr.GetClient(), storageConfig)
-	if err != nil {
-		setupLog.Error(err, "Failed to setup the ClientCacheStorage")
-		os.Exit(1)
-	}
-	cancel()
+		storageConfig := vclient.DefaultClientCacheStorage()
+		storageConfig.EnforceEncryption = vccOptions.RequireEncryption
+		clientFactory, err = vclient.SetupCacheingClientFactory(ctx, mgr.GetClient(), storageConfig, clientCacheSize, objectKeyCacheSize)
+		if err != nil {
+			setupLog.Error(err, "Failed to setup the Vault ClientFactory")
+			os.Exit(1)
+		}
 
-	clientCacheFactory, err := vclient.NewCachingClientFactory(
-		clientCache, objectKeyCache, clientCacheStorage, mgr.GetEventRecorderFor("ClientFactory"),
-	)
-	if err != nil {
-		setupLog.Error(err, "Unable to create Vault ClientFactory")
-		os.Exit(1)
+		clientFactory.SetRecorder(mgr.GetEventRecorderFor("vaultClientFactory"))
 	}
 
 	if err = (&controllers.VaultStaticSecretReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		Recorder:      mgr.GetEventRecorderFor("VaultStaticSecret"),
-		ClientFactory: clientCacheFactory,
+		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
@@ -162,7 +143,7 @@ func main() {
 	if err = (&controllers.VaultPKISecretReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		ClientFactory: clientCacheFactory,
+		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
@@ -187,18 +168,17 @@ func main() {
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		Recorder:      mgr.GetEventRecorderFor("VaultDynamicSecret"),
-		ClientFactory: clientCacheFactory,
+		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultClientCacheReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		Recorder:           mgr.GetEventRecorderFor("VaultClientCache"),
-		Options:            vaultClientCacheOptions,
-		ClientCache:        clientCache,
-		ClientCacheStorage: clientCacheStorage,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Recorder:      mgr.GetEventRecorderFor("VaultClientCache"),
+		Config:        vccOptions,
+		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultClientCache")
 		os.Exit(1)
@@ -225,8 +205,8 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 	setupLog.Info("Starting manager",
 		"clientCachePersistenceModel", clientCachePersistenceModel,
-		"clientCacheSize", lruClientCacheSize,
-		"objectKeyCacheSize", lruObjectKeyCacheSize,
+		"clientCacheSize", clientCacheSize,
+		"objectKeyCacheSize", objectKeyCacheSize,
 	)
 
 	mgr.GetCache()

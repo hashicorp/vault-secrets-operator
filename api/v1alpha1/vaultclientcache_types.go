@@ -20,8 +20,8 @@ type VaultClientCacheSpec struct {
 	// for the token renewal.
 	// TODO: consider making this seconds instead
 	RenewalOffset time.Duration `json:"renewalOffset,omitempty"`
-	// VaultAuthName to be used during cache restoration.
-	VaultAuthName string `json:"vaultAuthName"`
+	// VaultAuthRef to be used during cache restoration.
+	VaultAuthRef string `json:"vaultAuthRef"`
 	// VaultAuthNamespace to be used during cache restoration.
 	VaultAuthNamespace string `json:"vaultAuthNamespace"`
 	// VaultAuthMethod to be used during cache restoration.
@@ -34,6 +34,8 @@ type VaultClientCacheSpec struct {
 	VaultConnectionUID types.UID `json:"vaultConnectionUID"`
 	// VaultConnectionGeneration to validate against.
 	VaultConnectionGeneration int64 `json:"vaultConnectionGeneration"`
+	// TargetNamespace to be used during cache restoration.
+	TargetNamespace string `json:"targetNamespace"`
 	// CredentialProviderUID to validate against.
 	CredentialProviderUID types.UID `json:"credentialProviderUID,omitempty"`
 	// MaxCacheMisses

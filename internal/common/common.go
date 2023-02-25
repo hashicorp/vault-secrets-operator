@@ -60,6 +60,23 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
+	case *secretsv1alpha1.VaultClientCache:
+		if o.Spec.TargetNamespace == "" {
+			return nil, client.ObjectKey{}, fmt.Errorf("the TargetNamespace is required for %T", o)
+		}
+		authObj, err := FindVaultAuthByUID(ctx, c, o.Spec.VaultAuthUID, o.Spec.VaultAuthGeneration)
+		if err != nil {
+			return nil, client.ObjectKey{}, err
+		}
+
+		if authObj == nil {
+			return nil, client.ObjectKey{}, fmt.Errorf("referent VaultAuth not found for %s", client.ObjectKeyFromObject(o))
+		}
+
+		return authObj, client.ObjectKey{
+			Namespace: o.Spec.TargetNamespace,
+			Name:      o.Name,
+		}, nil
 	default:
 		return nil, types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
 	}
@@ -78,11 +95,11 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 			Name:      authRef,
 		}
 	}
-	auth, err := GetVaultAuth(ctx, c, authName)
+	authObj, err := GetVaultAuth(ctx, c, authName)
 	if err != nil {
 		return nil, types.NamespacedName{}, err
 	}
-	return auth, target, nil
+	return authObj, target, nil
 }
 
 func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultConnection, error) {
@@ -131,4 +148,19 @@ func GetConnectionNamespacedName(a *secretsv1alpha1.VaultAuth) (types.Namespaced
 		Namespace: a.Namespace,
 		Name:      a.Spec.VaultConnectionRef,
 	}, nil
+}
+
+func FindVaultAuthByUID(ctx context.Context, client client.Client, uid types.UID, generation int64) (*secretsv1alpha1.VaultAuth, error) {
+	auths := &secretsv1alpha1.VaultAuthList{}
+	if err := client.List(ctx, auths); err != nil {
+		return nil, err
+	}
+
+	for _, item := range auths.Items {
+		if item.GetUID() == uid && item.GetGeneration() == generation {
+			return item.DeepCopy(), nil
+		}
+	}
+
+	return nil, nil
 }

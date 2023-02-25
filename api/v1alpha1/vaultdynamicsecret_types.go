@@ -38,8 +38,12 @@ type VaultDynamicSecretSpec struct {
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret
 type VaultDynamicSecretStatus struct {
+	// LastRenewalTime of the last, successful, secret lease renewal,
+	LastRenewalTime int64 `json:"lastRenewalTime"`
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
+	// LastRuntimePodName
+	LastRuntimePodName string `json:"LastRuntimePodName,omitempty"`
 }
 
 // VaultTokenMeta describes the Vault token used to sync the secret

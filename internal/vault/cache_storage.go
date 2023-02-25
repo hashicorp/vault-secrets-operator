@@ -16,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 const (
@@ -318,6 +320,16 @@ type ClientCacheStorageConfig struct {
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
 	EnforceEncryption bool
 	HKDFObjectKey     ctrlclient.ObjectKey
+}
+
+func DefaultClientCacheStorage() *ClientCacheStorageConfig {
+	return &ClientCacheStorageConfig{
+		EnforceEncryption: false,
+		HKDFObjectKey: ctrlclient.ObjectKey{
+			Name:      "vso-cache-storage-hkdf-key",
+			Namespace: common.OperatorNamespace,
+		},
+	}
 }
 
 func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client, config *ClientCacheStorageConfig) (ClientCacheStorage, error) {

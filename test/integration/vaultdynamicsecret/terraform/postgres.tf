@@ -50,7 +50,7 @@ resource "kubernetes_secret" "db" {
 resource "vault_database_secrets_mount" "db" {
   namespace                 = local.namespace
   path                      = "${local.name_prefix}-db"
-  default_lease_ttl_seconds = 60
+  default_lease_ttl_seconds = var.vault_db_default_lease_ttl
 
   postgresql {
     name              = "postgres"
@@ -82,8 +82,5 @@ resource "vault_policy" "db" {
 path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_backend_role.postgres.name}" {
   capabilities = ["read"]
 }
-#path "auth/token/renew-self" {
-#  capabilities = ["create", "update"]
-#}
 EOT
 }

@@ -71,8 +71,9 @@ func (r *VaultTransitReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if !s.Status.Valid {
+		horizon, _ := computeHorizonWithJitter(time.Second * 5)
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(time.Second * 5),
+			RequeueAfter: horizon,
 		}, nil
 	}
 

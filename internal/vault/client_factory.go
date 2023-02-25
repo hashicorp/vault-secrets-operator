@@ -5,12 +5,13 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"sync"
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,16 +24,71 @@ import (
 type ClientFactory interface {
 	GetClient(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	RemoveObject(ctrlclient.Object) bool
+	SetRecorder(record.EventRecorder)
 }
 
-var _ ClientFactory = (*cachingClientFactory)(nil)
+type CacheingClientFactory interface {
+	ClientFactory
+	Cache() ClientCache
+	Storage() ClientCacheStorage
+	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
+}
+
+var _ CacheingClientFactory = (*cachingClientFactory)(nil)
 
 type cachingClientFactory struct {
-	clientCache        ClientCache
-	objKeyCache        ObjectKeyCache
-	clientCacheStorage ClientCacheStorage
-	recorder           record.EventRecorder
-	mu                 sync.Mutex
+	cache       ClientCache
+	objKeyCache ObjectKeyCache
+	storage     ClientCacheStorage
+	recorder    record.EventRecorder
+}
+
+func (m *cachingClientFactory) Storage() ClientCacheStorage {
+	return m.storage
+}
+
+func (m *cachingClientFactory) Cache() ClientCache {
+	return m.cache
+}
+
+func (m *cachingClientFactory) SetRecorder(recorder record.EventRecorder) {
+	m.recorder = recorder
+}
+
+func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
+	var err error
+	var ccObj *secretsv1alpha1.VaultClientCache
+	var cacheKey string
+	switch o := obj.(type) {
+	case *secretsv1alpha1.VaultClientCache:
+		ccObj = o
+	default:
+		cacheKey, err = GetClientCacheKeyFromObj(ctx, client, obj)
+		if err != nil {
+			m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
+				"Failed to get cacheKey from obj, err=%s", err)
+			return nil, err
+		}
+		if err := client.Get(ctx, clientCacheObjectKey(cacheKey), ccObj); err != nil {
+			return nil, err
+		}
+	}
+
+	vc, err := m.restoreClient(ctx, client, obj, ccObj)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.renewIfNeeded(ctx, obj, vc, 3); err != nil {
+		_, err := m.cacheClient(ctx, client, vc)
+		if err != nil {
+			return nil, err
+		}
+
+		if cacheKey != "" {
+			m.objKeyCache.Add(ctrlclient.ObjectKeyFromObject(obj), cacheKey)
+		}
+	}
+	return vc, nil
 }
 
 func (m *cachingClientFactory) RemoveObject(obj ctrlclient.Object) bool {
@@ -45,10 +101,6 @@ func (m *cachingClientFactory) RemoveObject(obj ctrlclient.Object) bool {
 // a new Client will be instantiated, and an attempt to login into Vault will be made.
 // Upon successful restoration/instantiation/login, the Client will be cached for calls.
 func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
-	// TODO: consider locking on cacheKey
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	objKey := ctrlclient.ObjectKeyFromObject(obj)
 	cacheKey, inObjKeyCache := m.objKeyCache.Get(objKey)
 	if !inObjKeyCache {
@@ -61,7 +113,7 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 		cacheKey = ck
 	}
 
-	vc, ok := m.clientCache.Get(cacheKey)
+	vc, ok := m.cache.Get(cacheKey)
 	if !ok {
 		// try and restore from storage cache
 		ccObj := &secretsv1alpha1.VaultClientCache{}
@@ -128,7 +180,7 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 		CacheKey: vccObj.Spec.CacheKey,
 	}
 
-	apiSecret, err := m.clientCacheStorage.Restore(ctx, client, req)
+	apiSecret, err := m.storage.Restore(ctx, client, req)
 	if err != nil {
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonCacheRestorationFailed,
 			"Cache restoration failed, err=%s", err)
@@ -163,29 +215,38 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 // CacheClient in the global in-memory cache, and create a corresponding
 // VaultClientCache resource to handle Client Token renewal, and in-memory cache management.
 func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclient.Client, c Client) (string, error) {
-	var err error
+	var errs error
 	cacheKey, err := c.GetCacheKey()
 	if err != nil {
-		return "", err
+		errs = errors.Join(err)
 	}
 
 	authObj, err := c.GetVaultAuthObj()
 	if err != nil {
-		return "", err
+		errs = errors.Join(err)
 	}
 
 	connObj, err := c.GetVaultConnectionObj()
 	if err != nil {
-		return "", err
+		errs = errors.Join(err)
 	}
 
 	providerUID, err := c.GetProviderID()
 	if err != nil {
-		return "", err
+		errs = errors.Join(err)
 	}
 
-	if _, err := m.clientCache.Add(c); err != nil {
-		return "", err
+	target, err := c.GetTarget()
+	if err != nil {
+		errs = errors.Join(err)
+	}
+
+	if _, err := m.cache.Add(c); err != nil {
+		errs = errors.Join(err)
+	}
+
+	if errs != nil {
+		return "", errs
 	}
 
 	objKey := clientCacheObjectKey(cacheKey)
@@ -206,7 +267,7 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclien
 		},
 		Spec: secretsv1alpha1.VaultClientCacheSpec{
 			CacheKey:                  cacheKey,
-			VaultAuthName:             authObj.Name,
+			VaultAuthRef:              authObj.Name,
 			VaultAuthNamespace:        authObj.Namespace,
 			VaultAuthMethod:           authObj.Spec.Method,
 			VaultAuthUID:              authObj.UID,
@@ -215,13 +276,12 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclien
 			VaultConnectionGeneration: connObj.Generation,
 			CredentialProviderUID:     providerUID,
 			VaultTransitRef:           authObj.Spec.VaultTransitRef,
+			TargetNamespace:           target.Namespace,
 		},
 	}
 
-	action := "created"
 	if err := client.Create(ctx, obj); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			action = "patched"
 			cur := &secretsv1alpha1.VaultClientCache{}
 			if err := client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), cur); err != nil {
 				return "", err
@@ -243,20 +303,25 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclien
 		}
 	}
 
-	m.recorder.Eventf(obj, v1.EventTypeNormal, consts.ReasonVaultClientCacheCreation,
-		"Successfully %s", action)
 	// clientSize := reflect.TypeOf(c).Size()
 
 	return cacheKey, nil
 }
 
-func NewCachingClientFactory(clientCache ClientCache, objKeyCache ObjectKeyCache, cacheStorage ClientCacheStorage, recorder record.EventRecorder) (ClientFactory, error) {
-	return &cachingClientFactory{
-		clientCache:        clientCache,
-		objKeyCache:        objKeyCache,
-		clientCacheStorage: cacheStorage,
-		recorder:           recorder,
-	}, nil
+func NewCachingClientFactory(clientCache ClientCache, cacheStorage ClientCacheStorage, objKeyCacheSize int) (CacheingClientFactory, error) {
+	objKeyCache, err := NewObjectKeyCache(objKeyCacheSize)
+	if err != nil {
+		err = errors.Join(err)
+	}
+
+	factory := &cachingClientFactory{
+		cache:       clientCache,
+		objKeyCache: objKeyCache,
+		storage:     cacheStorage,
+		recorder:    silentEventRecorder{},
+	}
+
+	return factory, nil
 }
 
 func clientCacheObjectKey(cacheKey string) ctrlclient.ObjectKey {
@@ -264,4 +329,33 @@ func clientCacheObjectKey(cacheKey string) ctrlclient.ObjectKey {
 		Namespace: common.OperatorNamespace,
 		Name:      "vso-client-cache-" + cacheKey,
 	}
+}
+
+func SetupCacheingClientFactory(ctx context.Context, client ctrlclient.Client, storageConfig *ClientCacheStorageConfig, clientCacheSize, objKeyCacheSize int) (CacheingClientFactory, error) {
+	clientCacheStorage, err := NewDefaultClientCacheStorage(ctx, client, storageConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	cache, err := NewClientCache(clientCacheSize)
+	if err != nil {
+		return nil, err
+	}
+
+	clientCacheFactory, err := NewCachingClientFactory(cache, clientCacheStorage, objKeyCacheSize)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientCacheFactory, nil
+}
+
+type silentEventRecorder struct{}
+
+func (silentEventRecorder) Event(object runtime.Object, eventtype, reason, message string) {}
+
+func (silentEventRecorder) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}) {
+}
+
+func (silentEventRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
 }

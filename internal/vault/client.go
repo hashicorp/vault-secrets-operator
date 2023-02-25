@@ -51,6 +51,7 @@ type Client interface {
 	GetVaultAuthObj() (*secretsv1alpha1.VaultAuth, error)
 	GetVaultConnectionObj() (*secretsv1alpha1.VaultConnection, error)
 	GetProviderID() (types.UID, error)
+	GetTarget() (ctrlclient.ObjectKey, error)
 	GetCacheKey() (string, error)
 	KVv1(string) (*api.KVv1, error)
 	KVv2(string) (*api.KVv2, error)
@@ -67,6 +68,7 @@ type defaultClient struct {
 	lastResp           *api.Secret
 	lastRenewal        int64
 	providerUID        types.UID
+	targetNamespace    string
 	credentialProvider CredentialProvider
 	once               sync.Once
 	mu                 sync.RWMutex
@@ -78,6 +80,14 @@ func (c *defaultClient) GetProviderID() (types.UID, error) {
 	}
 
 	return c.providerUID, nil
+}
+
+func (c *defaultClient) GetTarget() (ctrlclient.ObjectKey, error) {
+	if err := c.checkInitialized(); err != nil {
+		return ctrlclient.ObjectKey{}, err
+	}
+
+	return c.target, nil
 }
 
 func (c *defaultClient) KVv1(mount string) (*api.KVv1, error) {
