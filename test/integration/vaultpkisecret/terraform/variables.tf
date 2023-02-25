@@ -33,3 +33,17 @@ variable "vault_enterprise" {
   type    = bool
   default = false
 }
+
+# The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
+variable "operator_helm_chart_path" {
+  default = "../../../../chart"
+}
+
+variable "deploy_operator_via_helm" {
+  type    = bool
+  default = false
+}
+
+variable "operator_namespace" {
+  default = "vault-secrets-operator-system"
+}
