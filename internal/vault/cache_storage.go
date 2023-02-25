@@ -322,7 +322,7 @@ type ClientCacheStorageConfig struct {
 	HKDFObjectKey     ctrlclient.ObjectKey
 }
 
-func DefaultClientCacheStorage() *ClientCacheStorageConfig {
+func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
 	return &ClientCacheStorageConfig{
 		EnforceEncryption: false,
 		HKDFObjectKey: ctrlclient.ObjectKey{

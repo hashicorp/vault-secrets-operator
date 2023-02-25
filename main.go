@@ -120,7 +120,7 @@ func main() {
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*10))
 		defer cancel()
 
-		storageConfig := vclient.DefaultClientCacheStorage()
+		storageConfig := vclient.DefaultClientCacheStorageConfig()
 		storageConfig.EnforceEncryption = vccOptions.RequireEncryption
 		clientFactory, err = vclient.SetupCacheingClientFactory(ctx, mgr.GetClient(), storageConfig, clientCacheSize, objectKeyCacheSize)
 		if err != nil {
