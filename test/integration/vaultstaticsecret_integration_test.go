@@ -34,16 +34,20 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	// Check to seee if we are attemmpting to deploy the controller with Helm.
+	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: "vaultstaticsecret/terraform",
 		Vars: map[string]interface{}{
-			"k8s_test_namespace":    testK8sNamespace,
-			"k8s_config_context":    "kind-" + clusterName,
-			"vault_kv_mount_path":   testKvMountPath,
-			"vault_kvv2_mount_path": testKvv2MountPath,
+			"deploy_operator_via_helm": deployOperatorWithHelm,
+			"k8s_test_namespace":       testK8sNamespace,
+			"k8s_config_context":       "kind-" + clusterName,
+			"vault_kv_mount_path":      testKvMountPath,
+			"vault_kvv2_mount_path":    testKvv2MountPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
@@ -89,14 +93,16 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Address: testVaultAddress,
 			},
 		},
-		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.NameDefault,
-				Namespace: operatorNS,
-			},
-			Spec: secretsv1alpha1.VaultConnectionSpec{
-				Address: testVaultAddress,
-			},
+	}
+
+	// Creates a default VaultConnection CR
+	defaultConnection := &secretsv1alpha1.VaultConnection{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: operatorNS,
+		},
+		Spec: secretsv1alpha1.VaultConnectionSpec{
+			Address: testVaultAddress,
 		},
 	}
 
@@ -119,24 +125,30 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				},
 			},
 		},
-		// Create the default VaultAuth CR in the Operator's namespace
-		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.NameDefault,
-				Namespace: operatorNS,
-			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
-				VaultConnectionRef: consts.NameDefault,
-				Namespace:          testVaultNamespace,
-				Method:             "kubernetes",
-				Mount:              "kubernetes",
-				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-					Role:           "role1",
-					ServiceAccount: "default",
-					TokenAudiences: []string{"vault"},
-				},
+	}
+	// Create the default VaultAuth CR in the Operator's namespace
+	defaultAuthMethod := &secretsv1alpha1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: operatorNS,
+		},
+		Spec: secretsv1alpha1.VaultAuthSpec{
+			VaultConnectionRef: consts.NameDefault,
+			Namespace:          testVaultNamespace,
+			Method:             "kubernetes",
+			Mount:              "kubernetes",
+			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				Role:           "role1",
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
 			},
 		},
+	}
+
+	// The Helm chart will deploy the defaultAuthMethod/Connection
+	if !deployOperatorWithHelm {
+		conns = append(conns, defaultConnection)
+		auths = append(auths, defaultAuthMethod)
 	}
 
 	for _, c := range conns {
@@ -174,7 +186,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultStaticSecretSpec{
-				VaultAuthRef: auths[0].ObjectMeta.Name,
 				Namespace:    testVaultNamespace,
 				Mount:        testKvv2MountPath,
 				Type:         "kv-v2",

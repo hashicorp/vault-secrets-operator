@@ -54,7 +54,7 @@ make test
 make setup-kind
 
 # Build the operator binary, image, and deploy to the KinD cluster
-make ci-build ci-docker-build ci-deploy-kind
+make ci-build ci-docker-build ci-deploy-kind ci-deploy
 
 # Run the integration tests (includes Vault deployment)
 make integration-test
