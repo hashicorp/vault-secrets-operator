@@ -119,7 +119,7 @@ func main() {
 	}
 
 	// Otherwise we'll go on to write the changes to the helm docs.
-	helmReferenceFile := filepath.Join(chartDocsPath, "chart/docs/helm.mdx")
+	helmReferenceFile := filepath.Join(chartDocsPath, "docs/helm.mdx")
 	helmReferenceBytes, err := os.ReadFile(helmReferenceFile)
 	if err != nil {
 		fmt.Println(err.Error())

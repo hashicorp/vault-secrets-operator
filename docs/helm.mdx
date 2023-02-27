@@ -130,10 +130,12 @@ Use these links to navigate to a particular top-level stanza.
 - `defaultVaultConnection` ((#v-defaultvaultconnection)) - Configures the default VaultConnection CR which will be used by resources
   if they do not specify a VaultConnection reference. The name is 'default' and will
   always be installed in the same namespace as the operator.
+  NOTE:
+  * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
+    which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
 
-  - `enabled` ((#v-defaultvaultconnection-enabled)) (`boolean: false`) - toggles the deployment of the VaultAuthMethod CR
-
-  - `address` ((#v-defaultvaultconnection-address)) (`string: http://vault.default.svc.cluster.local:8200`) - Address of the Vault Server
+  - `address` ((#v-defaultvaultconnection-address)) (`string: ""`) - Address of the Vault Server
+    Example: http://vault.default.svc.cluster.local:8200
 
   - `caCertSecret` ((#v-defaultvaultconnection-cacertsecret)) (`string: ""`) - CACertSecret containing the trusted PEM encoded CA certificate chain.
     Note: This secret must exist prior to deploying the CR.
@@ -153,10 +155,13 @@ Use these links to navigate to a particular top-level stanza.
 - `defaultAuthMethod` ((#v-defaultauthmethod)) - Configures and deploys the default VaultAuthMethod CR which will be used by resources
   if they do not specify a VaultAuthMethod reference. The name is 'default' and will
   always be installed in the same namespace as the operator.
+  NOTE:
+  * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
+    which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
 
   - `enabled` ((#v-defaultauthmethod-enabled)) (`boolean: false`) - toggles the deployment of the VaultAuthMethod CR
 
-  - `namespace` ((#v-defaultauthmethod-namespace)) (`string: default`) - Vault namespace for the VaultAuthMethod CR
+  - `namespace` ((#v-defaultauthmethod-namespace)) (`string: ""`) - Vault namespace for the VaultAuthMethod CR
 
   - `method` ((#v-defaultauthmethod-method)) (`string: kubernetes`) - Vault Auth method to be used with the VaultAuthMethod CR
 
@@ -164,10 +169,9 @@ Use these links to navigate to a particular top-level stanza.
 
   - `kubernetes` ((#v-defaultauthmethod-kubernetes)) - Vault Kubernetes auth method specific configuration
 
-    - `role` ((#v-defaultauthmethod-kubernetes-role)) (`string: demo`) - Vault Auth Role to use
+    - `role` ((#v-defaultauthmethod-kubernetes-role)) (`string: ""`) - Vault Auth Role to use
       This is a required field and must be setup in Vault prior to deploying the helm chart
       if `defaultAuthMethod.enabled=true`
-      TODO: mark required in the charts.
 
     - `serviceAccount` ((#v-defaultauthmethod-kubernetes-serviceaccount)) (`string: default`) - Kubernetes ServiceAccount associated with the default Vault Auth Role
 
