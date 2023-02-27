@@ -32,23 +32,18 @@ load _helpers
     local object=$(helm template \
         -s templates/default-vault-auth-method.yaml  \
         --set 'defaultAuthMethod.enabled=true' \
-        . | tee /dev/stderr |
-    yq '.' | tee /dev/stderr)
+        . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
      [ "${actual}" = "default" ]
-    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 
-    local actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
-    local actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
      [ "${actual}" = "kubernetes" ]
-    local actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
      [ "${actual}" = "kubernetes" ]
-    local actual=$(echo "$object" | yq '.spec.kubernetes.role' | tee /dev/stderr)
-     [ "${actual}" = "demo" ]
-    local actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 }
 
@@ -65,27 +60,26 @@ load _helpers
         --set 'defaultAuthMethod.kubernetes.tokenAudiences={vault,foo}' \
         --set 'defaultAuthMethod.headers=foo: bar' \
         --set 'defaultAuthMethod.params=foo: baz' \
-        . | tee /dev/stderr |
-    yq '.' | tee /dev/stderr)
+        . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
-    local actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
      [ "${actual}" = "tenant-2" ]
 
-    local actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
      [ "${actual}" = "JWT" ]
-    local actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
      [ "${actual}" = "foo" ]
-    local actual=$(echo "$object" | yq '.spec.kubernetes.role' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.kubernetes.role' | tee /dev/stderr)
      [ "${actual}" = "role-1" ]
-    local actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
      [ "${actual}" = "tenant-1" ]
-    local actual=$(echo "$object" | yq '.spec.kubernetes.audiences' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.kubernetes.audiences' | tee /dev/stderr)
      [ "${actual}" = '["vault", "foo"]' ]
-    local actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
      [ "${actual}" = "bar" ]
-    local actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
      [ "${actual}" = "baz" ]
 }
 

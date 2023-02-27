@@ -44,7 +44,8 @@ variable "operator_helm_chart_path" {
 }
 
 variable "deploy_operator_via_helm" {
-  default = "false"
+  type    = bool
+  default = false
 }
 
 variable "operator_namespace" {

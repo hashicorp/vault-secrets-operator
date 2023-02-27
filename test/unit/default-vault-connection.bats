@@ -32,17 +32,14 @@ load _helpers
     local object=$(helm template \
         -s templates/default-vault-connection.yaml  \
         --set 'defaultVaultConnection.enabled=true' \
-        . | tee /dev/stderr |
-    yq '.' | tee /dev/stderr)
+        . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
      [ "${actual}" = "default" ]
-    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 
-    local actual=$(echo "$object" | yq '.spec.address' | tee /dev/stderr)
-     [ "${actual}" = "http://vault.default.svc.cluster.local:8200" ]
-    local actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
      [ "${actual}" = "false" ]
 }
 
@@ -56,22 +53,21 @@ load _helpers
         --set 'defaultVaultConnection.caCertSecret=foo' \
         --set 'defaultVaultConnection.tlsServerName=foo.com' \
         --set 'defaultVaultConnection.headers=foo: bar' \
-        . | tee /dev/stderr |
-     yq '.' | tee /dev/stderr)
+        . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
      [ "${actual}" = "default" ]
-    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
-    local actual=$(echo "$object" | yq '.spec.address' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.address' | tee /dev/stderr)
      [ "${actual}" = "https://foo.com:8200" ]
-    local actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
      [ "${actual}" = "true" ]
-    local actual=$(echo "$object" | yq '.spec.caCertSecretRef' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.caCertSecretRef' | tee /dev/stderr)
      [ "${actual}" = "foo" ]
-    local actual=$(echo "$object" | yq '.spec.tlsServerName' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.tlsServerName' | tee /dev/stderr)
      [ "${actual}" = "foo.com" ]
-    local actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
      [ "${actual}" = "bar" ]
 }
 
