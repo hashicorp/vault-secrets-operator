@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/operator-framework/operator-lib/handler"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -229,7 +230,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	logger.Info("Successfully updated the secret")
-	// TODO(tvoran): add event for success, probably with some of the status info?
+	r.recordEvent(s, reasonAccepted, "Secret synced")
 
 	// revoke the certificate on renewal
 	if s.Spec.Revoke && s.Status.Renew && s.Status.SerialNumber != "" {
@@ -303,7 +304,7 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Add metrics for create/update/delete of the resource
 		Watches(&source.Kind{Type: &secretsv1alpha1.VaultPKISecret{}},
 			&handler.InstrumentedEnqueueRequestForObject{}).
-		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
 
@@ -405,6 +406,13 @@ func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, p *secretsv
 	if err := r.Client.Get(ctx, key, pUpdated); err != nil {
 		return err
 	}
+	if p.ResourceVersion != pUpdated.ResourceVersion {
+		if !equality.Semantic.DeepEqual(p.Spec, pUpdated.Spec) {
+			logger.Info("resource changed, requeuing")
+			return fmt.Errorf("failed to update status, resource changed")
+		}
+	}
+
 	pUpdated.Status = p.Status
 	metrics.SetResourceStatus("vaultpkisecret", pUpdated, pUpdated.Status.Valid)
 	if err := r.Status().Update(ctx, pUpdated); err != nil {

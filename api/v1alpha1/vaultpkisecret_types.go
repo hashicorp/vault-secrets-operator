@@ -102,7 +102,7 @@ type VaultPKISecretSpec struct {
 type VaultPKISecretStatus struct {
 	SerialNumber string `json:"serialNumber,omitempty"`
 	Expiration   int64  `json:"expiration,omitempty"`
-	Renew        bool   `json:"renew,omitempty"`
+	Renew        bool   `json:"renew"`
 	Valid        bool   `json:"valid"`
 	Error        string `json:"error"`
 }
