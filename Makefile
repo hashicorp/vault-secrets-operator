@@ -23,6 +23,9 @@ HELMIFY_VERSION ?= v0.3.22
 TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
 
+# Run integration tests against a Helm installed Operator
+DEPLOY_OPERATOR_WITH_HELM ?=
+
 # Suppress the output from terraform when running the integration tests.
 SUPPRESS_TF_OUTPUT ?=
 # Skip the integration test cleanup.
