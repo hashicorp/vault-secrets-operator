@@ -54,6 +54,7 @@ func TestVaultPKISecret(t *testing.T) {
 			"k8s_test_namespace":       testK8sNamespace,
 			"k8s_config_context":       "kind-" + clusterName,
 			"vault_pki_mount_path":     testPKIMountPath,
+			"operator_helm_chart_path": chartPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {

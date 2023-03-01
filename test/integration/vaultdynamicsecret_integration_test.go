@@ -25,6 +25,9 @@ import (
 )
 
 func TestVaultDynamicSecret(t *testing.T) {
+	if os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != "" {
+		t.Skipf("Test is not compatiable with Helm")
+	}
 	testID := fmt.Sprintf("vds")
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")

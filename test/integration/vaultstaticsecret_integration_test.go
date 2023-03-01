@@ -59,6 +59,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			"k8s_config_context":       "kind-" + clusterName,
 			"vault_kv_mount_path":      testKvMountPath,
 			"vault_kvv2_mount_path":    testKvv2MountPath,
+			"operator_helm_chart_path": chartPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {

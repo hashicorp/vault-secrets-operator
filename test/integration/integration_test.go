@@ -35,6 +35,7 @@ import (
 var (
 	testRoot          string
 	binDir            string
+	chartPath         string
 	testVaultAddress  string
 	k8sVaultNamespace string
 )
@@ -44,6 +45,11 @@ func init() {
 	testRoot = path.Dir(curFilePath)
 	var err error
 	binDir, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "bin"))
+	if err != nil {
+		panic(err)
+	}
+
+	chartPath, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "chart"))
 	if err != nil {
 		panic(err)
 	}
