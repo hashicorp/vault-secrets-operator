@@ -3,6 +3,7 @@ module github.com/hashicorp/vault-secrets-operator
 go 1.19
 
 require (
+	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/go-logr/logr v1.2.3
 	github.com/gruntwork-io/terratest v0.41.3
 	github.com/hashicorp/go-rootcerts v1.0.2

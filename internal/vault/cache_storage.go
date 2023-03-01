@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"sync"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,7 +39,7 @@ type ClientCacheStorageRequest struct {
 	OwnerReferences   []metav1.OwnerReference
 	TransitObjKey     ctrlclient.ObjectKey
 	Client            Client
-	RequireEncryption bool
+	EnforceEncryption bool
 }
 
 type ClientCacheStoragePruneRequest struct {
@@ -61,7 +63,7 @@ func (c ClientCacheStorageRequest) Validate() error {
 		err = errors.Join(err, fmt.Errorf("a Requestor must be set: %w", e))
 	}
 
-	if c.RequireEncryption && !c.encryptionConfigured() {
+	if c.EnforceEncryption && !c.encryptionConfigured() {
 		err = errors.Join(err, fmt.Errorf("a TransitObjKey must be set: %w", EncryptionRequiredError))
 	}
 
@@ -81,13 +83,18 @@ type ClientCacheStorage interface {
 	Store(context.Context, ctrlclient.Client, ClientCacheStorageRequest) (*corev1.Secret, error)
 	Restore(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*api.Secret, error)
 	Prune(context.Context, ctrlclient.Client, ClientCacheStoragePruneRequest) (int, error)
+	EnforceEncryption() bool
 }
 
 type defaultClientCacheStorage struct {
 	hkdfObjKey        ctrlclient.ObjectKey
 	hkdfKey           []byte
-	requireEncryption bool
+	enforceEncryption bool
 	mu                sync.RWMutex
+}
+
+func (c *defaultClientCacheStorage) EnforceEncryption() bool {
+	return c.enforceEncryption
 }
 
 func (c *defaultClientCacheStorage) Get(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
@@ -107,12 +114,16 @@ func (c *defaultClientCacheStorage) Get(ctx context.Context, client ctrlclient.C
 }
 
 func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRequest) (*corev1.Secret, error) {
+	logger := log.FromContext(ctx)
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 
 	// global encryption policy checks, all requests must require encryption
-	if c.requireEncryption && !req.encryptionConfigured() {
+	logger.Info("ClientCacheStorage.Store()",
+		"enforceEncryption", c.EnforceEncryption(),
+		"encryptionConfigured", req.encryptionConfigured())
+	if c.EnforceEncryption() && !req.encryptionConfigured() {
 		return nil, fmt.Errorf("request does not support encryption and enforcing enabled: %w", EncryptionRequiredError)
 	}
 
@@ -141,11 +152,14 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	secretLabels := map[string]string{
 		"cacheKey": cacheKey,
 	}
-	if req.TransitObjKey.Name != "" && req.TransitObjKey.Namespace != "" {
+	if c.EnforceEncryption() {
 		// needed for restoration
 		secretLabels[labelEncrypted] = "true"
 		secretLabels[labelVaultTransitRef] = req.TransitObjKey.Name
 
+		logger.Info("ClientCacheStorage.Store(), calling EncryptWithTransitFromObjKey",
+			"enforceEncryption", c.EnforceEncryption(),
+			"encryptionConfigured", req.encryptionConfigured(), "transitObjKey", req.TransitObjKey)
 		if encBytes, err := EncryptWithTransitFromObjKey(ctx, client, req.TransitObjKey, b); err != nil {
 			return nil, err
 		} else {
@@ -326,7 +340,7 @@ func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
 	return &ClientCacheStorageConfig{
 		EnforceEncryption: false,
 		HKDFObjectKey: ctrlclient.ObjectKey{
-			Name:      "vso-cache-storage-hkdf-key",
+			Name:      NamePrefixVCC + "storage-hkdf-key",
 			Namespace: common.OperatorNamespace,
 		},
 	}
@@ -355,7 +369,8 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 
 	// TODO: register a watcher for changes to the HKDF Secret, so we can detect key rotations.
 	return &defaultClientCacheStorage{
-		hkdfObjKey: config.HKDFObjectKey,
+		hkdfObjKey:        config.HKDFObjectKey,
+		enforceEncryption: config.EnforceEncryption,
 	}, nil
 }
 

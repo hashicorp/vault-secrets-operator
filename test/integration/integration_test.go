@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"testing"
@@ -33,6 +34,7 @@ import (
 
 var (
 	testRoot          string
+	binDir            string
 	testVaultAddress  string
 	k8sVaultNamespace string
 )
@@ -40,6 +42,11 @@ var (
 func init() {
 	_, curFilePath, _, _ := runtime.Caller(0)
 	testRoot = path.Dir(curFilePath)
+	var err error
+	binDir, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "bin"))
+	if err != nil {
+		panic(err)
+	}
 
 	k8sVaultNamespace = os.Getenv("K8S_VAULT_NAMESPACE")
 	if k8sVaultNamespace == "" {
@@ -62,6 +69,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		os.Setenv("VAULT_ADDR", "http://127.0.0.1:38300")
 		os.Setenv("VAULT_TOKEN", "root")
+		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
 		os.Exit(m.Run())
 	}
 }
@@ -167,6 +175,22 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, nam
 	})
 
 	return newSerialNumber
+}
+
+type dynamicK8SOutputs struct {
+	NamePrefix       string   `json:"name_prefix"`
+	Namespace        string   `json:"namespace"`
+	K8sNamespace     string   `json:"k8s_namespace"`
+	K8sConfigContext string   `json:"k8s_config_context"`
+	AuthMount        string   `json:"auth_mount"`
+	AuthPolicy       string   `json:"auth_policy"`
+	AuthRole         string   `json:"auth_role"`
+	DBRole           string   `json:"db_role"`
+	DBPath           string   `json:"db_path"`
+	TransitPath      string   `json:"transit_path"`
+	TransitKeyName   string   `json:"transit_key_name"`
+	TransitRef       string   `json:"transit_ref"`
+	K8sDBSecrets     []string `json:"k8s_db_secret"`
 }
 
 func waitForDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expected map[string]int) {

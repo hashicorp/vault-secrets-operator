@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -16,18 +18,14 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
+var cacheKeyRe = regexp.MustCompile(fmt.Sprintf(
+	`((?:%s)-[a-f0-9]{7})`, strings.Join(providerMethodsSupported, "|")),
+)
+
 func GenCacheClientKeyFromObjs(authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerUID types.UID) (string, error) {
 	return genCacheClientKey(authObj.Spec.Method,
 		authObj.GetUID(), authObj.GetGeneration(),
 		connObj.GetUID(), connObj.GetGeneration(), providerUID,
-	)
-}
-
-func GenCacheClientKeyFromClientCacheObj(obj *secretsv1alpha1.VaultClientCache) (string, error) {
-	spec := obj.Spec
-	return genCacheClientKey(
-		spec.VaultAuthMethod, spec.VaultAuthUID, spec.VaultAuthGeneration,
-		spec.VaultConnectionUID, spec.VaultConnectionGeneration, spec.CredentialProviderUID,
 	)
 }
 
@@ -79,4 +77,12 @@ func GetClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj
 	}
 
 	return GenCacheClientKeyFromObjs(authObj, connObj, provider.GetUID())
+}
+
+func GetCacheKeyFromObjName(obj ctrlclient.Object) (string, error) {
+	match := vccNameRe.FindStringSubmatch(obj.GetName())
+	if len(match) != 2 {
+		return "", fmt.Errorf("object's name %q is invalid", obj.GetName())
+	}
+	return match[1], nil
 }

@@ -84,9 +84,7 @@ func (r *VaultTransitReconciler) updateStatus(ctx context.Context, o *secretsv1a
 	logger := log.FromContext(ctx)
 	metrics.SetResourceStatus("vaulttransit", o, o.Status.Valid)
 	if err := r.Status().Update(ctx, o); err != nil {
-		msg := "Failed to update the resource's status, err=%s"
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError, msg, err)
-		logger.Error(err, msg)
+		logger.Error(err, "Failed to update the resource's status")
 		return err
 	}
 	return nil

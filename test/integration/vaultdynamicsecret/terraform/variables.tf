@@ -1,6 +1,10 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
+variable "operator_namespace" {
+  default = "vault-secrets-operator-system"
+}
+
 variable "name_prefix" {
   type = string
 }

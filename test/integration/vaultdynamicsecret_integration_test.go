@@ -24,18 +24,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
-type dynamicK8SOutputs struct {
-	NamePrefix   string   `json:"name_prefix"`
-	Namespace    string   `json:"namespace"`
-	K8sNamespace string   `json:"k8s_namespace"`
-	AuthMount    string   `json:"auth_mount"`
-	AuthPolicy   string   `json:"auth_policy"`
-	AuthRole     string   `json:"auth_role"`
-	DBRole       string   `json:"db_role"`
-	DBPath       string   `json:"db_path"`
-	K8sDBSecrets []string `json:"k8s_db_secret"`
-}
-
 func TestVaultDynamicSecret(t *testing.T) {
 	testID := fmt.Sprintf("vds")
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
@@ -86,7 +74,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"k8s_db_secret_count":        k8sDBSecretsCountFromTF,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         120,
+			"vault_token_period":         30,
 			"vault_db_default_lease_ttl": 60,
 		},
 	}
@@ -211,7 +199,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 			}
 
 			t.Run(fmt.Sprintf("%s-%d", tt.name, idx), func(t *testing.T) {
-				t.Parallel()
 				assert.Nil(t, crdClient.Create(ctx, s))
 				created = append(created, s)
 				assert.Nil(t, crdClient.Create(ctx, a))

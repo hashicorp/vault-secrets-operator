@@ -19,7 +19,12 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
-const tokenGenerateName = "vault-secrets-operator"
+const (
+	tokenGenerateName               = "vso-"
+	providerMethodKubernetes string = "kubernetes"
+)
+
+var providerMethodsSupported = []string{providerMethodKubernetes}
 
 type CredentialProvider interface {
 	Init(ctx context.Context, client ctrlclient.Client, object ctrlclient.Object) error
@@ -113,7 +118,7 @@ func (l *kubernetesCredentialProvider) requestSAToken(ctx context.Context, clien
 
 func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, method string) (CredentialProvider, error) {
 	switch method {
-	case "kubernetes":
+	case providerMethodKubernetes:
 		provider := &kubernetesCredentialProvider{}
 		if err := provider.Init(ctx, client, obj); err != nil {
 			return nil, err

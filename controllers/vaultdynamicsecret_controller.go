@@ -72,6 +72,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	logger.Info("Handling request")
 	if o.GetDeletionTimestamp() == nil {
 		if err := r.addFinalizer(ctx, o); err != nil {
 			return ctrl.Result{}, err
@@ -103,7 +104,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 						return ctrl.Result{}, err
 					}
 					r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-						"Not in renewal window after leader transition, lease_id=%s, horizon=%s", leaseID, horizon)
+						"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s", leaseID, horizon)
 					return ctrl.Result{RequeueAfter: horizon}, nil
 				}
 			}
@@ -112,7 +113,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
 		if err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-				"Failed to get Vault client: %s", err)
+				"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
 			return ctrl.Result{}, err
 		}
 
@@ -151,7 +152,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-			"Failed to get Vault client: %s", err)
+			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
 		return ctrl.Result{}, err
 	}
 
@@ -171,6 +172,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	logger.Info("Wrote credentials", "dest", client.ObjectKeyFromObject(s))
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
@@ -341,13 +343,10 @@ func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secr
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	ctrlOptions := controller.Options{
-		MaxConcurrentReconciles: 1, // 1 is the default
-	}
+func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultDynamicSecret{}).
+		WithOptions(opts).
 		WithEventFilter(ignoreUpdatePredicate()).
-		WithOptions(ctrlOptions).
 		Complete(r)
 }

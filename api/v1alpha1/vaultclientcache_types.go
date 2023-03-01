@@ -13,8 +13,6 @@ import (
 // VaultClientCacheSpec defines the desired state of VaultClientCache.
 // It is reserved for internal tracking of Vault client/token instances.
 type VaultClientCacheSpec struct {
-	// CacheKey points to a record in the operator's internal clientCache.
-	CacheKey string `json:"cacheKey"`
 	// RenewalOffset relative to the TokenTTL. Should never be set to a value greater than TokenTTL.
 	// If the value is 0, or unset, the controller will apply its own offset when computing the horizon
 	// for the token renewal.
@@ -39,15 +37,14 @@ type VaultClientCacheSpec struct {
 	// CredentialProviderUID to validate against.
 	CredentialProviderUID types.UID `json:"credentialProviderUID,omitempty"`
 	// MaxCacheMisses
-	// +kubebuilder:default=5
-	// +kubebuilder:validation:Maximum=30
+	// +kubebuilder:default=30
+	// +kubebuilder:validation:Maximum=300
 	// MaxCacheMisses before this custom resource is no longer considered valid.
 	// All invalid VaultClientCache resources will be deleted by the controller.
 	MaxCacheMisses int `json:"maxCacheMisses,omitempty"` // CacheFetchInterval
-	// TODO: consider making this seconds instead
-	// +kubebuilder:default=5000000000
-	// +kubebuilder:validation:Maximum=10000000000
-	CacheFetchInterval int64 `json:"cacheFetchInterval,omitempty"`
+	// +kubebuilder:default=5
+	// +kubebuilder:validation:Maximum=30
+	CacheFetchInterval int `json:"cacheFetchInterval,omitempty"`
 	// VaultTransitRef is the name of a VaultTransit custom resource that will be used for
 	// encryption/decryption of the cached client.
 	VaultTransitRef string `json:"vaultTransitRef,omitempty"`

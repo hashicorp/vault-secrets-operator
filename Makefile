@@ -20,7 +20,8 @@ TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
 HELMIFY_VERSION ?= v0.3.22
 
-TESTARGS ?= '-test.v'
+TESTCOUNT ?= 1
+TESTARGS ?= -test.v -count=$(TESTCOUNT)
 
 # Suppress the output from terraform when running the integration tests.
 SUPPRESS_TF_OUTPUT ?=
@@ -220,10 +221,10 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
 .PHONY: integration-test
-integration-test:  setup-integration-test ## Run integration tests for Vault OSS
+integration-test:  #setup-integration-test ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 \
-	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -count=1 -timeout=20m
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=20m
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
@@ -262,7 +263,7 @@ else ifdef VAULT_IMAGE_REPO
 	$(eval EXTRA_VARS=-var vault_image_repo=$(VAULT_IMAGE_REPO))
 endif
 	@rm -f $(TF_INFRA_STATE_DIR)/*.tf
-	cp $(TF_INFRA_SRC_DIR)/*.tf $(TF_INFRA_STATE_DIR)/.
+	cp -v $(TF_INFRA_SRC_DIR)/*.tf $(TF_INFRA_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) init -upgrade
 	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) apply -auto-approve \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \

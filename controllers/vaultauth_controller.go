@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,7 +85,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		o.Status.Valid = false
 		o.Status.Error = consts.ReasonInvalidResourceRef
-		msg := "Invalid vaultConnectionRef"
+		msg := "Invalid VaultConnectionRef"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
 		if err := r.updateStatus(ctx, o); err != nil {
@@ -93,29 +94,18 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	if _, err = common.GetVaultConnection(ctx, r.Client, connName); err != nil {
-		o.Status.Valid = false
-		if apierrors.IsNotFound(err) {
-			o.Status.Error = consts.ReasonConnectionNotFound
-		} else {
-			o.Status.Error = consts.ReasonInvalidConnection
-		}
-
-		msg := "Failed getting the VaultConnection resource"
-		logger.Error(err, msg)
-		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
+	_, err = common.GetVaultConnectionWithRetry(ctx, r.Client, connName, time.Millisecond*500, 60)
+	if err != nil {
+		o.Status.Error = err.Error()
+	} else {
+		logger.Error(err, "Failed to find VaultConnectionRef")
+		o.Status.Error = ""
+		o.Status.Valid = true
 	}
 
-	o.Status.Valid = true
-	o.Status.Error = ""
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	// evict old referent VaultClientCaches for all older generations of self.
 	// this is a bit of a sledgehammer, not all updated attributes of VaultAuth
 	// warrant eviction of a client cache entry, but this is a good start.
@@ -131,9 +121,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			"Failed to evict referent VaultCacheClient resources: %s", err)
 	}
 
-	msg := "Successfully handled VaultAuth resource request"
-	logger.Info(msg)
-	r.recordEvent(o, consts.ReasonAccepted, msg)
+	r.recordEvent(o, consts.ReasonAccepted, "Successfully handled VaultAuth resource request")
 
 	return ctrl.Result{}, nil
 }
@@ -188,12 +176,9 @@ func (r *VaultAuthReconciler) recordEvent(a *secretsv1alpha1.VaultAuth, reason, 
 
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alpha1.VaultAuth) error {
 	logger := log.FromContext(ctx)
-	// logger.Info("Updating status", "status", a.Status)
 	metrics.SetResourceStatus("vaultauth", a, a.Status.Valid)
 	if err := r.Status().Update(ctx, a); err != nil {
-		msg := "Failed to update the resource's status"
-		r.recordEvent(a, consts.ReasonStatusUpdateError, "%s: %s", msg, err)
-		logger.Error(err, msg)
+		logger.Error(err, "Failed to update the resource's status")
 		return err
 	}
 	return nil
@@ -239,5 +224,6 @@ func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1a
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultAuth{}).
+		WithEventFilter(ignoreUpdatePredicate()).
 		Complete(r)
 }

@@ -7,7 +7,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,7 +28,7 @@ func init() {
 	var err error
 	OperatorNamespace, err = utils.GetCurrentNamespace()
 	if err != nil {
-		if ns := os.Getenv("VSO_NAMESPACE"); ns != "" {
+		if ns := os.Getenv("OPERATOR_NAMESPACE"); ns != "" {
 			OperatorNamespace = ns
 		} else {
 			OperatorNamespace = v1.NamespaceDefault
@@ -95,7 +99,7 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 			Name:      authRef,
 		}
 	}
-	authObj, err := GetVaultAuth(ctx, c, authName)
+	authObj, err := GetVaultAuthWithRetry(ctx, c, authName, time.Millisecond*500, 60)
 	if err != nil {
 		return nil, types.NamespacedName{}, err
 	}
@@ -103,22 +107,61 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 }
 
 func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultConnection, error) {
-	connObj := &secretsv1alpha1.VaultConnection{}
-	if err := c.Get(ctx, key, connObj); err != nil {
+	var obj secretsv1alpha1.VaultConnection
+	if err := c.Get(ctx, key, &obj); err != nil {
 		return nil, err
 	}
-	return connObj, nil
+	return &obj, nil
+}
+
+func GetVaultConnectionWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1alpha1.VaultConnection, error) {
+	var obj secretsv1alpha1.VaultConnection
+	if err := getWithRetry(ctx, c, key, &obj, delay, max); err != nil {
+		return nil, err
+	}
+
+	return &obj, nil
 }
 
 func GetVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultAuth, error) {
-	authObj := &secretsv1alpha1.VaultAuth{}
-	if err := c.Get(ctx, key, authObj); err != nil {
+	var obj secretsv1alpha1.VaultAuth
+	if err := c.Get(ctx, key, &obj); err != nil {
 		return nil, err
 	}
-	if authObj.Namespace == OperatorNamespace && authObj.Name == consts.NameDefault && authObj.Spec.VaultConnectionRef == "" {
-		authObj.Spec.VaultConnectionRef = consts.NameDefault
+
+	setVaultConnectionRef(&obj)
+	return &obj, nil
+}
+
+func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1alpha1.VaultAuth, error) {
+	var obj secretsv1alpha1.VaultAuth
+	if err := getWithRetry(ctx, c, key, &obj, delay, max); err != nil {
+		return nil, err
 	}
-	return authObj, nil
+
+	setVaultConnectionRef(&obj)
+	return &obj, nil
+}
+
+func setVaultConnectionRef(obj *secretsv1alpha1.VaultAuth) {
+	if obj.Namespace == OperatorNamespace && obj.Name == consts.NameDefault && obj.Spec.VaultConnectionRef == "" {
+		obj.Spec.VaultConnectionRef = consts.NameDefault
+	}
+}
+
+func getWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, obj client.Object, delay time.Duration, max uint64) error {
+	bo := backoff.WithMaxRetries(backoff.NewConstantBackOff(delay), max)
+	return backoff.Retry(func() error {
+		err := c.Get(ctx, key, obj)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return err
+			} else {
+				return backoff.Permanent(err)
+			}
+		}
+		return nil
+	}, bo)
 }
 
 func GetVaultTransit(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultTransit, error) {
