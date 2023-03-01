@@ -14,13 +14,13 @@ load _helpers
 
    local actual=$(echo "$object" | yq  '.health.healthProbeBindAddress' | tee /dev/stderr)
     [ "${actual}" = ":8081" ]
-   local actual=$(echo "$object" | yq  '.leaderElection.leaderElect' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.leaderElection.leaderElect' | tee /dev/stderr)
     [ "${actual}" = "true" ]
-   local actual=$(echo "$object" | yq  '.leaderElection.resourceName' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.leaderElection.resourceName' | tee /dev/stderr)
     [ "${actual}" = "b0d477c0.hashicorp.com" ]
-   local actual=$(echo "$object" | yq  '.metrics.bindAddress' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.metrics.bindAddress' | tee /dev/stderr)
     [ "${actual}" = "127.0.0.1:8080" ]
-   local actual=$(echo "$object" | yq  '.webhook.port' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.webhook.port' | tee /dev/stderr)
     [ "${actual}" = "9443" ]
 }
 
@@ -38,13 +38,12 @@ load _helpers
 
    local actual=$(echo "$object" | yq  '.health.healthProbeBindAddress' | tee /dev/stderr)
     [ "${actual}" = ":9091" ]
-   local actual=$(echo "$object" | yq  '.leaderElection.leaderElect' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.leaderElection.leaderElect' | tee /dev/stderr)
     [ "${actual}" = "false" ]
-   local actual=$(echo "$object" | yq  '.leaderElection.resourceName' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.leaderElection.resourceName' | tee /dev/stderr)
     [ "${actual}" = "foo.bar" ]
-   local actual=$(echo "$object" | yq  '.metrics.bindAddress' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.metrics.bindAddress' | tee /dev/stderr)
     [ "${actual}" = "127.0.0.1:10091" ]
-   local actual=$(echo "$object" | yq  '.webhook.port' | tee /dev/stderr)
+   actual=$(echo "$object" | yq  '.webhook.port' | tee /dev/stderr)
     [ "${actual}" = "9091" ]
 }
-

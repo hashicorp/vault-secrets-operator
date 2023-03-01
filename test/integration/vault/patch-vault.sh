@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
 set -e
 
 K8S_VAULT_NAMESPACE="${K8S_VAULT_NAMESPACE:-demo}"

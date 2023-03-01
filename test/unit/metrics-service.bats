@@ -36,11 +36,11 @@ load _helpers
 
    local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
     [ "${actual}" = "https" ]
-   local actual=$(echo "$object" | yq '.port' | tee /dev/stderr)
+   actual=$(echo "$object" | yq '.port' | tee /dev/stderr)
     [ "${actual}" = "8443" ]
-   local actual=$(echo "$object" | yq '.protocol' | tee /dev/stderr)
+   actual=$(echo "$object" | yq '.protocol' | tee /dev/stderr)
     [ "${actual}" = "TCP" ]
-   local actual=$(echo "$object" | yq '.targetPort' | tee /dev/stderr)
+   actual=$(echo "$object" | yq '.targetPort' | tee /dev/stderr)
     [ "${actual}" = "https" ]
 }
 
@@ -57,11 +57,11 @@ load _helpers
 
    local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
     [ "${actual}" = "foo" ]
-   local actual=$(echo "$object" | yq '.port' | tee /dev/stderr)
+   actual=$(echo "$object" | yq '.port' | tee /dev/stderr)
     [ "${actual}" = "8080" ]
-   local actual=$(echo "$object" | yq '.protocol' | tee /dev/stderr)
+   actual=$(echo "$object" | yq '.protocol' | tee /dev/stderr)
     [ "${actual}" = "UDP" ]
-   local actual=$(echo "$object" | yq '.targetPort' | tee /dev/stderr)
+   actual=$(echo "$object" | yq '.targetPort' | tee /dev/stderr)
     [ "${actual}" = "http" ]
 }
 

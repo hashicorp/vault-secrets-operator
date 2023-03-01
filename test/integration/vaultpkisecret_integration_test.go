@@ -26,9 +26,14 @@ func TestVaultPKISecret(t *testing.T) {
 	testK8sNamespace := "k8s-tenant-" + testID
 	testPKIMountPath := "pki-" + testID
 	testVaultNamespace := ""
+	testVaultConnectionName := "vaultconnection-test-tenant-1"
+	testVaultAuthMethodName := "vaultauth-test-tenant-1"
+	testVaultAuthMethodRole := "role1"
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	// Check to see if we are attempting to deploy the controller with Helm.
+	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
@@ -45,9 +50,10 @@ func TestVaultPKISecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"k8s_test_namespace":   testK8sNamespace,
-			"k8s_config_context":   "kind-" + clusterName,
-			"vault_pki_mount_path": testPKIMountPath,
+			"deploy_operator_via_helm": deployOperatorWithHelm,
+			"k8s_test_namespace":       testK8sNamespace,
+			"k8s_config_context":       "kind-" + clusterName,
+			"vault_pki_mount_path":     testPKIMountPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
@@ -67,45 +73,50 @@ func TestVaultPKISecret(t *testing.T) {
 	terraform.InitAndApply(t, terraformOptions)
 
 	crdClient := getCRDClient(t)
-
-	// Create a VaultConnection CR
-	testVaultConnection := &secretsv1alpha1.VaultConnection{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      "vaultconnection-test-tenant-1",
-			Namespace: testK8sNamespace,
-		},
-		Spec: secretsv1alpha1.VaultConnectionSpec{
-			Address: testVaultAddress,
-		},
-	}
-
 	ctx := context.Background()
-	defer crdClient.Delete(ctx, testVaultConnection)
-	err = crdClient.Create(ctx, testVaultConnection)
-	require.NoError(t, err)
 
-	// Create a VaultAuth CR
-	testVaultAuth := &secretsv1alpha1.VaultAuth{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      "vaultauth-test-tenant-1",
-			Namespace: testK8sNamespace,
-		},
-		Spec: secretsv1alpha1.VaultAuthSpec{
-			VaultConnectionRef: "vaultconnection-test-tenant-1",
-			Namespace:          testVaultNamespace,
-			Method:             "kubernetes",
-			Mount:              "kubernetes",
-			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-				Role:           "role1",
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
+	// When we deploy the operator with Helm it will also deploy default VaultConnection/AuthMethod
+	// resources, so these are not needed. In this case, we will also clear the VaultAuthRef field of
+	// the target secret so that the controller uses the default AuthMethod.
+	if !deployOperatorWithHelm {
+		// Create a VaultConnection CR
+		testVaultConnection := &secretsv1alpha1.VaultConnection{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      testVaultConnectionName,
+				Namespace: testK8sNamespace,
 			},
-		},
-	}
+			Spec: secretsv1alpha1.VaultConnectionSpec{
+				Address: testVaultAddress,
+			},
+		}
 
-	defer crdClient.Delete(ctx, testVaultAuth)
-	err = crdClient.Create(ctx, testVaultAuth)
-	require.NoError(t, err)
+		defer crdClient.Delete(ctx, testVaultConnection)
+		err := crdClient.Create(ctx, testVaultConnection)
+		require.NoError(t, err)
+
+		// Create a VaultAuth CR
+		testVaultAuth := &secretsv1alpha1.VaultAuth{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      testVaultAuthMethodName,
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultAuthSpec{
+				VaultConnectionRef: testVaultConnectionName,
+				Namespace:          testVaultNamespace,
+				Method:             "kubernetes",
+				Mount:              "kubernetes",
+				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+					Role:           testVaultAuthMethodRole,
+					ServiceAccount: "default",
+					TokenAudiences: []string{"vault"},
+				},
+			},
+		}
+
+		defer crdClient.Delete(ctx, testVaultAuth)
+		err = crdClient.Create(ctx, testVaultAuth)
+		require.NoError(t, err)
+	}
 
 	// Create a VaultPKI CR to trigger the sync
 	testVaultPKI := &secretsv1alpha1.VaultPKISecret{
@@ -114,7 +125,7 @@ func TestVaultPKISecret(t *testing.T) {
 			Namespace: testK8sNamespace,
 		},
 		Spec: secretsv1alpha1.VaultPKISecretSpec{
-			VaultAuthRef: "vaultauth-test-tenant-1",
+			VaultAuthRef: testVaultAuthMethodName,
 			Namespace:    testVaultNamespace,
 			Mount:        testPKIMountPath,
 			Name:         "secret",
@@ -126,6 +137,11 @@ func TestVaultPKISecret(t *testing.T) {
 			ExpiryOffset: "5s",
 			TTL:          "15s",
 		},
+	}
+	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
+	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
+	if deployOperatorWithHelm {
+		testVaultPKI.Spec.VaultAuthRef = ""
 	}
 
 	defer crdClient.Delete(ctx, testVaultPKI)

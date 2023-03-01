@@ -1,5 +1,7 @@
+{{/*
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
+*/}}
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -26,6 +28,23 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
+  - get
+  - list
   - watch
 - apiGroups:
   - secrets.hashicorp.com
