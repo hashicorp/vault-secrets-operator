@@ -57,15 +57,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		}
 		k8sDBSecretsCountFromTF = count
 	}
-
-	k8sDBSecretsToCreate := 5
-	if v := os.Getenv("K8S_DB_SECRET_COUNT_CREATE"); v != "" {
-		count, err := strconv.Atoi(v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		k8sDBSecretsToCreate = count
-	}
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	tfOptions := &terraform.Options{
@@ -202,55 +193,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 			}
 
 			t.Run(fmt.Sprintf("%s-%d", tt.name, idx), func(t *testing.T) {
-				assert.Nil(t, crdClient.Create(ctx, s))
-				created = append(created, s)
-				assert.Nil(t, crdClient.Create(ctx, a))
-				created = append(created, a)
-				waitForDynamicSecret(t,
-					tfOptions.MaxRetries,
-					tfOptions.TimeBetweenRetries,
-					s.Spec.Dest,
-					s.Namespace,
-					tt.expected,
-				)
-			})
-		}
-
-		for idx := 0; idx < k8sDBSecretsToCreate; idx++ {
-			dest := fmt.Sprintf("%s-db-create-%d", outputs.NamePrefix, idx)
-			a := &secretsv1alpha1.VaultAuth{
-				ObjectMeta: v1.ObjectMeta{
-					Namespace: outputs.K8sNamespace,
-					Name:      dest + "-auth",
-				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
-					Namespace: outputs.Namespace,
-					Method:    "kubernetes",
-					Mount:     outputs.AuthMount,
-					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-						Role:           outputs.AuthRole,
-						ServiceAccount: "default",
-						TokenAudiences: []string{"vault"},
-					},
-				},
-			}
-			s := &secretsv1alpha1.VaultDynamicSecret{
-				ObjectMeta: v1.ObjectMeta{
-					Namespace: outputs.K8sNamespace,
-					Name:      dest,
-				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-					VaultAuthRef: a.ObjectMeta.Name,
-					Namespace:    outputs.Namespace,
-					Mount:        outputs.DBPath,
-					Role:         outputs.DBRole,
-					Dest:         dest,
-					Create:       true,
-				},
-			}
-
-			t.Run(fmt.Sprintf("%s-%d", tt.name, idx), func(t *testing.T) {
-				t.Parallel()
 				assert.Nil(t, crdClient.Create(ctx, s))
 				created = append(created, s)
 				assert.Nil(t, crdClient.Create(ctx, a))

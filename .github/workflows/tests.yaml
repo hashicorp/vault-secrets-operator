@@ -131,7 +131,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make ci-deploy-kind
-          make integration-test-helm SUPPRESS_TF_OUTPUT=true
+          make integration-test-helm SUPPRESS_TF_OUTPUT=
       - name: OSS tests using Kustomize
         env:
           INTEGRATION_TESTS: true
@@ -140,7 +140,7 @@ jobs:
         run: |
           make ci-deploy-kind
           make ci-deploy
-          make integration-test SUPPRESS_TF_OUTPUT=true
+          make integration-test SUPPRESS_TF_OUTPUT=
       - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
@@ -149,4 +149,4 @@ jobs:
         run: |
           make ci-deploy-kind
           make ci-deploy
-          make integration-test-ent SUPPRESS_TF_OUTPUT=true
+          make integration-test-ent SUPPRESS_TF_OUTPUT=

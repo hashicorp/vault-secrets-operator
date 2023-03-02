@@ -13,7 +13,6 @@ import (
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -230,43 +229,12 @@ func (r *VaultDynamicSecretReconciler) getDestinationSecret(ctx context.Context,
 
 	s := &corev1.Secret{}
 	if err := r.Client.Get(ctx, secretObjKey, s); err != nil {
-		if apierrors.IsNotFound(err) && !o.Spec.Create {
+		if apierrors.IsNotFound(err) {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Cannot sync secret, destination %s does not exist and secret creation is disabled.", secretObjKey)
-			return nil, err
 		}
-
-		if !o.Spec.Create {
-			return nil, err
-		}
-	}
-
-	exists := s.Name != ""
-	if exists && !o.Spec.Create {
-		return s, nil
-	}
-
-	ownerRefs := []metav1.OwnerReference{
-		{
-			APIVersion: o.APIVersion,
-			Kind:       o.Kind,
-			Name:       o.Name,
-			UID:        o.UID,
-		},
-	}
-	if exists {
-		if !helpers.ObjectIsOwnedBy(s, o) {
-			return nil, fmt.Errorf("secret %s exists: %w", secretObjKey, notSecretOwnerError)
-		}
-		s.OwnerReferences = ownerRefs
-		return s, nil
-	}
-
-	s = helpers.NewSecretWithOwnerRefs(secretObjKey, ownerRefs...)
-	if err := r.Client.Create(ctx, s); err != nil {
 		return nil, err
 	}
-
 	return s, nil
 }
 

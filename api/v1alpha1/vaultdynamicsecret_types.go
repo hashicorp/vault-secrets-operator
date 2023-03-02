@@ -27,11 +27,6 @@ type VaultDynamicSecretSpec struct {
 	Role string `json:"role"`
 	// Dest could be some sort of k8s secret or something like that ....
 	Dest string `json:"dest"`
-	// Create the destination secret (Dest) if it does not already exist.
-	// The operator will own the secret, which means that the
-	// secret will be tied to the lifecycle of this resource.
-	// TODO: add secret creation support to the other Vault*Secret types.
-	Create bool `json:"create,omitempty"`
 	// RolloutRestartTargets
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 }

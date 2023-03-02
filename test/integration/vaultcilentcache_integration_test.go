@@ -64,22 +64,13 @@ func TestVaultClientCache(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	k8sDBSecretsCountFromTF := 0
+	k8sDBSecretsCountFromTF := 5
 	if v := os.Getenv("K8S_DB_SECRET_COUNT"); v != "" {
 		count, err := strconv.Atoi(v)
 		if err != nil {
 			t.Fatal(err)
 		}
 		k8sDBSecretsCountFromTF = count
-	}
-
-	k8sDBSecretsToCreate := 1
-	if v := os.Getenv("K8S_DB_SECRET_COUNT_CREATE"); v != "" {
-		count, err := strconv.Atoi(v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		k8sDBSecretsToCreate = count
 	}
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -284,8 +275,7 @@ func TestVaultClientCache(t *testing.T) {
 
 			assert.Nil(t, crdClient.Create(ctx, tt.auth))
 
-			for idx := 0; idx < k8sDBSecretsToCreate; idx++ {
-				dest := fmt.Sprintf("%s-%s-%d", outputs.NamePrefix, tt.name, idx)
+			for idx, dest := range outputs.K8sDBSecrets {
 				s := &secretsv1alpha1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
@@ -297,15 +287,11 @@ func TestVaultClientCache(t *testing.T) {
 						Mount:     outputs.DBPath,
 						Role:      outputs.DBRole,
 						Dest:      dest,
-						Create:    true,
 					},
 				}
 
 				t.Run(fmt.Sprintf("vds-%d", idx), func(t *testing.T) {
 					assert.Nil(t, crdClient.Create(ctx, s))
-					// created = append(created, s)
-					// assert.Nil(t, crdClient.Create(ctx, a))
-					// created = append(created, a)
 					waitForDynamicSecret(t,
 						tfOptions.MaxRetries,
 						tfOptions.TimeBetweenRetries,
