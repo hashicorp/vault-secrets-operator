@@ -85,11 +85,6 @@ KIND_CLUSTER_NAME ?= vault-secrets-operator
 # Kind cluster context
 KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
-# Kind cluster name (demo)
-KIND_CLUSTER_DEMO_NAME ?= vso-demo
-# Kind cluster context (demo)
-KIND_CLUSTER_DEMO_CONTEXT ?= kind-$(KIND_CLUSTER_DEMO_NAME)
-
 # Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
 
@@ -102,11 +97,6 @@ INTEGRATION_TEST_ROOT = ./test/integration
 
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
-
-TF_INFRA_DEMO_ROOT ?= ./demo/infra
-TF_INFRA_DEMO_DIR_VAULT ?= ./demo/infra/vault
-TF_INFRA_DEMO_STATE_VAULT_DIR ?= $(TF_INFRA_DEMO_DIR_VAULT)/state
-TF_INFRA_DEMO_STATE_APP_DIR ?= $(TF_INFRA_DEMO_ROOT)/app/state
 
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
@@ -304,62 +294,6 @@ else
 endif
 endif
 
-.PHONY: demo-setup-kind
-demo-setup-kind: ## create a kind cluster for running the acceptance tests locally
-	kind get clusters | grep --silent "^$(KIND_CLUSTER_DEMO_NAME)$$" || \
-	kind create cluster \
-		--wait=5m \
-		--image kindest/node:$(KIND_K8S_VERSION) \
-		--name $(KIND_CLUSTER_DEMO_NAME)  \
-		--config $(CURDIR)/demo/kind/config.yaml
-	kubectl config use-context $(KIND_CLUSTER_DEMO_CONTEXT)
-
-.PHONY: demo-delete-kind
-demo-delete-kind: ## delete the kind cluster
-	kind delete cluster --name $(KIND_CLUSTER_DEMO_NAME) || true
-	find ./demo -type f -name '*tfstate*' | xargs rm &> /dev/null || true
-
-.PHONY: demo-infra-vault
-demo-infra-vault:  demo-setup-kind terraform kustomize set-vault-license ## Deploy Vault for the demo
-	@mkdir -p $(TF_INFRA_DEMO_STATE_VAULT_DIR)
-ifeq ($(VAULT_ENTERPRISE), true)
-    ## ensure that the license is *not* emitted to the console
-	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_INFRA_DEMO_STATE_VAULT_DIR)/license.auto.tfvars
-ifdef VAULT_IMAGE_REPO
-	$(eval EXTRA_VARS=-var vault_image_repo_ent=$(VAULT_IMAGE_REPO))
-endif
-else ifdef VAULT_IMAGE_REPO
-	$(eval EXTRA_VARS=-var vault_image_repo=$(VAULT_IMAGE_REPO))
-endif
-	@rm -f $(TF_INFRA_DEMO_DIR_VAULT)/*.tf
-	cp $(TF_INFRA_SRC_DIR)/*.tf $(TF_INFRA_DEMO_STATE_VAULT_DIR)/.
-	 $(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_VAULT_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_VAULT_DIR) apply -auto-approve \
-		-var vault_enterprise=$(VAULT_ENTERPRISE) \
-		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
-		-var k8s_namespace=vault \
-		-var k8s_config_context=$(KIND_CLUSTER_DEMO_CONTEXT) \
-		$(EXTRA_VARS) || exit 1
-
-	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(INTEGRATION_TEST_ROOT)/vault/patch-vault.sh
-
-.PHONY: demo-infra-app
-demo-infra-app: demo-deploy-kind terraform ## Deploy Postgres for the demo
-	@mkdir -p $(TF_INFRA_DEMO_STATE_APP_DIR)
-	rm -f $(TF_INFRA_DEMO_STATE_APP_DIR)/*.tf
-	cp ./demo/infra/app/*.tf $(TF_INFRA_DEMO_STATE_APP_DIR)/.
-	 $(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_APP_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_INFRA_DEMO_STATE_APP_DIR) apply -auto-approve \
-		-var vault_enterprise=$(VAULT_ENTERPRISE) \
-		-var vault_address=http://127.0.0.1:38302 \
-		-var vault_token=root \
-		-var k8s_config_context=$(KIND_CLUSTER_DEMO_CONTEXT) \
-		$(EXTRA_VARS) || exit 1 \
-
-.PHONY: demo
-demo: ## Deploy the demo
-	KIND_CLUSTER_NAME=$(KIND_CLUSTER_DEMO_NAME) $(MAKE) demo-infra-vault demo-infra-app
-
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
@@ -418,10 +352,6 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
 	$(MAKE) deploy
-
-.PHONY: deploy-kind
-demo-deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	$(MAKE) deploy-kind KIND_CLUSTER_NAME=$(KIND_CLUSTER_DEMO_NAME)
 
 .PHONY: delete-operator-pod
 delete-operator-pod:
