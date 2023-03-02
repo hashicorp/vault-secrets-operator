@@ -21,9 +21,21 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - namespaces
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create
+  - delete
   - get
   - list
   - patch
@@ -45,6 +57,36 @@ rules:
   - create
   - get
   - list
+  - watch
+- apiGroups:
+  - apps
+  - extensions
+  resources:
+  - daemonsets
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - apps
+  - extensions
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - apps
+  - extensions
+  resources:
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - patch
   - watch
 - apiGroups:
   - secrets.hashicorp.com
@@ -75,6 +117,32 @@ rules:
 - apiGroups:
   - secrets.hashicorp.com
   resources:
+  - vaultclientcaches
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultclientcaches/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultclientcaches/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
   - vaultconnections
   verbs:
   - create
@@ -94,6 +162,32 @@ rules:
   - secrets.hashicorp.com
   resources:
   - vaultconnections/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultdynamicsecrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultdynamicsecrets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultdynamicsecrets/status
   verbs:
   - get
   - patch
@@ -146,6 +240,32 @@ rules:
   - secrets.hashicorp.com
   resources:
   - vaultstaticsecrets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaulttransits
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaulttransits/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaulttransits/status
   verbs:
   - get
   - patch

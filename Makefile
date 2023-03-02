@@ -300,7 +300,10 @@ ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating
 	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: ci-deploy-kind
-ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
+ci-deploy-kind: load-docker-image ## Deploy controller to the K8s cluster (without generating assets)
+
+.PHONY: load-docker-image
+load-docker-image: kustomize ## Deploy controller to the K8s cluster (without generating assets)
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
 
 .PHONY: teardown-integration-test
@@ -349,9 +352,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy-kind
-deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
-	$(MAKE) deploy
+deploy-kind: manifests kustomize load-docker-image deploy ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 
 .PHONY: delete-operator-pod
 delete-operator-pod:

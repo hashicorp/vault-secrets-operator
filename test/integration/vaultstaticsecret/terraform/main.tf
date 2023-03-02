@@ -55,8 +55,7 @@ provider "vault" {
 }
 
 locals {
-  namespace                = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
-  vault_connection_address = "http://vault.${var.k8s_vault_namespace}.svc.cluster.local:8200"
+  namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
 }
 
 resource "vault_mount" "kv" {
@@ -117,11 +116,19 @@ path "${vault_mount.kv.path}/*" {
 EOT
 }
 
+resource "kubernetes_namespace" "operator" {
+  count = var.deploy_operator_via_helm ? 0 : 0
+  metadata {
+    name = var.operator_namespace
+  }
+}
+
 resource "helm_release" "vault-secrets-operator" {
-  count            = var.deploy_operator_via_helm ? 1 : 0
-  name             = "test"
+  count = var.deploy_operator_via_helm ? 1 : 0
+  name  = "test"
+  #namespace        = kubernetes_namespace.operator[0].metadata[0].name
   namespace        = var.operator_namespace
-  create_namespace = true
+  create_namespace = false
   wait             = true
   chart            = var.operator_helm_chart_path
 
@@ -132,7 +139,7 @@ resource "helm_release" "vault-secrets-operator" {
   }
   set {
     name  = "defaultVaultConnection.address"
-    value = local.vault_connection_address
+    value = var.k8s_vault_connection_address
   }
   # Auth Method Configuration
   set {

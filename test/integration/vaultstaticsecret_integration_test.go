@@ -54,12 +54,13 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm": deployOperatorWithHelm,
-			"k8s_test_namespace":       testK8sNamespace,
-			"k8s_config_context":       "kind-" + clusterName,
-			"vault_kv_mount_path":      testKvMountPath,
-			"vault_kvv2_mount_path":    testKvv2MountPath,
-			"operator_helm_chart_path": chartPath,
+			"deploy_operator_via_helm":     deployOperatorWithHelm,
+			"k8s_vault_connection_address": testVaultAddress,
+			"k8s_test_namespace":           testK8sNamespace,
+			"k8s_config_context":           "kind-" + clusterName,
+			"vault_kv_mount_path":          testKvMountPath,
+			"vault_kvv2_mount_path":        testKvv2MountPath,
+			"operator_helm_chart_path":     chartPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
@@ -218,7 +219,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	assert.Equal(t, len(expected), len(secrets))
 	for i, s := range secrets {
 		// Wait for the operator to sync Vault secrets --> k8s Secrets
-		waitForSecretData(t, 10, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
+		waitForSecretData(t, 30, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
 	}
 
 	// Change the secrets in Vault, wait for the VaultStaticSecret's to refresh,

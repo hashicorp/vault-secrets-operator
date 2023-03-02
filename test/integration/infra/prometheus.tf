@@ -1,4 +1,5 @@
 resource "helm_release" "kube-prometheus" {
+  count            = var.install_kube_prometheus ? 1 : 0
   namespace        = "kube-prometheus"
   name             = "kube-prometheus"
   create_namespace = true

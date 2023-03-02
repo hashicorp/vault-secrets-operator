@@ -50,11 +50,12 @@ func TestVaultPKISecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm": deployOperatorWithHelm,
-			"k8s_test_namespace":       testK8sNamespace,
-			"k8s_config_context":       "kind-" + clusterName,
-			"vault_pki_mount_path":     testPKIMountPath,
-			"operator_helm_chart_path": chartPath,
+			"deploy_operator_via_helm":     deployOperatorWithHelm,
+			"k8s_vault_connection_address": testVaultAddress,
+			"k8s_test_namespace":           testK8sNamespace,
+			"k8s_config_context":           "kind-" + clusterName,
+			"vault_pki_mount_path":         testPKIMountPath,
+			"operator_helm_chart_path":     chartPath,
 		},
 	}
 	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {

@@ -289,20 +289,6 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclien
 				"vaultConnectionRefNamespace": connObj.Namespace,
 				"cacheKey":                    cacheKey,
 			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: authObj.APIVersion,
-					Kind:       authObj.Kind,
-					Name:       authObj.Name,
-					UID:        authObj.UID,
-				},
-				{
-					APIVersion: connObj.APIVersion,
-					Kind:       connObj.Kind,
-					Name:       connObj.Name,
-					UID:        connObj.UID,
-				},
-			},
 		},
 		Spec: secretsv1alpha1.VaultClientCacheSpec{
 			VaultAuthRef:              authObj.Name,
