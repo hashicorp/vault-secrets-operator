@@ -22,6 +22,9 @@ import (
 )
 
 func TestVaultPKISecret(t *testing.T) {
+	if os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != "" {
+		t.Skipf("Test is not compatiable with Helm")
+	}
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testPKIMountPath := "pki-" + testID
