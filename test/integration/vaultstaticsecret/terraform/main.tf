@@ -116,19 +116,11 @@ path "${vault_mount.kv.path}/*" {
 EOT
 }
 
-resource "kubernetes_namespace" "operator" {
-  count = var.deploy_operator_via_helm ? 0 : 0
-  metadata {
-    name = var.operator_namespace
-  }
-}
-
 resource "helm_release" "vault-secrets-operator" {
-  count = var.deploy_operator_via_helm ? 1 : 0
-  name  = "test"
-  #namespace        = kubernetes_namespace.operator[0].metadata[0].name
+  count            = var.deploy_operator_via_helm ? 1 : 0
+  name             = "test"
   namespace        = var.operator_namespace
-  create_namespace = false
+  create_namespace = true
   wait             = true
   chart            = var.operator_helm_chart_path
 
