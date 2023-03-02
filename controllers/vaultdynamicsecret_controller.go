@@ -55,6 +55,12 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups={"extensions","apps"},resources=statefulsets,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups={"extensions","apps"},resources=daemonsets,verbs=get;list;watch;patch
 
+// Reconcile ensures that the VaultDynamicSecret Custom Resource is synced from Vault to its
+// configured Kubernetes secret. The resource will periodically be reconciled to renew the
+// dynamic secrets lease in Vault. If the renewal fails for any reason then the secret
+// will be re-synced from Vault aka. rotated. If a secret rotation occurs and the resource has
+// RolloutRestartTargets configured, then a request to "rollout restart"
+// the configured Deployment, StatefulSet, ReplicaSet will be made to Kubernetes.
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -118,7 +124,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 
 		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
-			if !r.checkRenewableLease(secretLease, o) {
+			if !r.isRenewableLease(secretLease, o) {
 				return ctrl.Result{}, nil
 			}
 
@@ -168,7 +174,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	secretLease, err := r.writeCreds(ctx, vClient, o, s)
+	secretLease, err := r.syncSecret(ctx, vClient, o, s)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -195,7 +201,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	if !r.checkRenewableLease(secretLease, o) {
+	if !r.isRenewableLease(secretLease, o) {
 		return ctrl.Result{}, nil
 	}
 
@@ -207,7 +213,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{RequeueAfter: horizon}, nil
 }
 
-func (r *VaultDynamicSecretReconciler) checkRenewableLease(resp *secretsv1alpha1.VaultSecretLease, o *secretsv1alpha1.VaultDynamicSecret) bool {
+func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.VaultSecretLease, o *secretsv1alpha1.VaultDynamicSecret) bool {
 	if !resp.Renewable {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal,
 			"Lease is not renewable, info=%#v", resp)
@@ -264,9 +270,7 @@ func (r *VaultDynamicSecretReconciler) getDestinationSecret(ctx context.Context,
 	return s, nil
 }
 
-func (r *VaultDynamicSecretReconciler) writeCreds(ctx context.Context, vClient vault.Client,
-	o *secretsv1alpha1.VaultDynamicSecret, s *corev1.Secret,
-) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret, s *corev1.Secret) (*secretsv1alpha1.VaultSecretLease, error) {
 	path := fmt.Sprintf("%s/creds/%s", o.Spec.Mount, o.Spec.Role)
 	resp, err := vClient.Read(ctx, path)
 	if err != nil {

@@ -72,7 +72,7 @@ func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Cl
 	case *secretsv1alpha1.VaultClientCache:
 		ccObj = o
 	default:
-		cacheKey, err = GetClientCacheKeyFromObj(ctx, client, obj)
+		cacheKey, err = GenClientCacheKeyFromObj(ctx, client, obj)
 		if err != nil {
 			m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 				"Failed to get cacheKey from obj, err=%s", err)
@@ -113,7 +113,7 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 	objKey := ctrlclient.ObjectKeyFromObject(obj)
 	cacheKey, inObjKeyCache := m.objKeyCache.Get(objKey)
 	if !inObjKeyCache {
-		ck, err := GetClientCacheKeyFromObj(ctx, client, obj)
+		ck, err := GenClientCacheKeyFromObj(ctx, client, obj)
 		if err != nil {
 			m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 				"Failed to get cacheKey from obj, err=%s", err)
@@ -180,7 +180,7 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 		return nil, fmt.Errorf("cannot restore, CacheSecretRef not set")
 	}
 
-	cacheKey, err := GetCacheKeyFromObjName(vccObj)
+	cacheKey, err := GenCacheKeyFromObjName(vccObj)
 	if err != nil {
 		return nil, err
 	}

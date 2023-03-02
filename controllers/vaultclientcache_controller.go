@@ -49,14 +49,21 @@ type VaultClientCacheReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// the VaultClientCache object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
+// Reconcile ensures that the vault.Client is periodically renewed within valid renewal window.
+// The renewal window is always calculated from the Vault client token's TTL.
 //
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
+// If a vault.Client renewal fails for any reason the in-memory vault.ClientCache will be cleared
+// of the invalid vault.Client, and the CustomResource being reconciled will be deleted.
+//
+// If the renewal succeeds, then another reconcile will be queued for the vault.Client.
+// The reconciliation is always scheduled to occur before the vault.Client token has expired.
+//
+// In the case where VaultClientCacheConfig.Persist is enabled, the successfully renewed vault.Client
+// will be stored in the vault.ClientCacheStorage.
+//
+// In VaultClientCacheConfig.Persist is enabled and the vault.Client is not found in the vault.ClientCache,
+// an attempt will be made to restore the vault.Client from the vault.ClientCacheStorage. If the attempt
+// fails the CustomResource being reconciled will be deleted.
 func (r *VaultClientCacheReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	o := &secretsv1alpha1.VaultClientCache{}
@@ -81,7 +88,7 @@ func (r *VaultClientCacheReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.handleFinalizer(ctx, o)
 	}
 
-	cacheKey, err := r.getCacheKey(o)
+	cacheKey, err := r.genCacheKey(o)
 	if err != nil {
 		return r.evictSelf(ctx, o)
 	}
@@ -145,6 +152,7 @@ func (r *VaultClientCacheReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	o.Status.CacheMisses = 0
 	if !r.Config.Persist {
+		// ensure that CacheSecretRef is empty in the case where we are not configured for persistence.
 		logger.Info("Persistence not configured")
 		o.Status.CacheSecretRef = ""
 	} else {
@@ -199,7 +207,7 @@ func (r *VaultClientCacheReconciler) evictSelf(ctx context.Context, o *secretsv1
 func (r *VaultClientCacheReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultClientCache) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultClientCacheFinalizer) {
 		controllerutil.RemoveFinalizer(o, vaultClientCacheFinalizer)
-		cacheKey, err := r.getCacheKey(o)
+		cacheKey, err := r.genCacheKey(o)
 		if err != nil {
 			// this should never happen.
 		}
@@ -230,8 +238,8 @@ func (r *VaultClientCacheReconciler) addFinalizer(ctx context.Context, o *secret
 	return nil
 }
 
-func (r *VaultClientCacheReconciler) getCacheKey(o *secretsv1alpha1.VaultClientCache) (string, error) {
-	cacheKey, err := vault.GetCacheKeyFromObjName(o)
+func (r *VaultClientCacheReconciler) genCacheKey(o *secretsv1alpha1.VaultClientCache) (string, error) {
+	cacheKey, err := vault.GenCacheKeyFromObjName(o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonInvalidCacheKey,
 			"Failed to get cacheKey from name, err=%s", err)
@@ -242,7 +250,7 @@ func (r *VaultClientCacheReconciler) getCacheKey(o *secretsv1alpha1.VaultClientC
 }
 
 func (r *VaultClientCacheReconciler) pruneStorage(ctx context.Context, o *secretsv1alpha1.VaultClientCache, all bool) error {
-	cacheKey, err := r.getCacheKey(o)
+	cacheKey, err := r.genCacheKey(o)
 	if err != nil {
 		return err
 	}

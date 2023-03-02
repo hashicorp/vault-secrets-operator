@@ -326,7 +326,7 @@ func assertVCC(t *testing.T, outputs dynamicK8SOutputs, persistenceModel string,
 ) {
 	t.Helper()
 
-	cacheKey, err := vault.GetClientCacheKeyFromObj(ctx, client, s)
+	cacheKey, err := vault.GenClientCacheKeyFromObj(ctx, client, s)
 	require.NoError(t, err, "could not get the cacheKey for %#v", s)
 
 	var result secretsv1alpha1.VaultClientCacheList
