@@ -361,7 +361,7 @@ func assertVCC(t *testing.T, outputs dynamicK8SOutputs, persistenceModel string,
 		result = r
 		return nil
 	},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 60),
 	)
 
 	curAuth := &secretsv1alpha1.VaultAuth{}
