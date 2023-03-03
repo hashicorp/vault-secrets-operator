@@ -5,7 +5,6 @@ package controllers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -31,8 +30,6 @@ import (
 const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
 )
-
-var notSecretOwnerError = fmt.Errorf("not the secret's owner")
 
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
@@ -163,13 +160,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	s, err := r.getDestinationSecret(ctx, o)
 	if err != nil {
-		if errors.Is(err, notSecretOwnerError) {
-			// requeue the sync until the problem has been resolved.
-			horizon, _ := computeHorizonWithJitter(time.Second * 10)
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
-				"Not the destination secret's owner, horizon=%s, err=%s", horizon, err)
-			return ctrl.Result{RequeueAfter: horizon}, nil
-		}
 		return ctrl.Result{}, err
 	}
 
@@ -229,10 +219,6 @@ func (r *VaultDynamicSecretReconciler) getDestinationSecret(ctx context.Context,
 
 	s := &corev1.Secret{}
 	if err := r.Client.Get(ctx, secretObjKey, s); err != nil {
-		if apierrors.IsNotFound(err) {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
-				"Cannot sync secret, destination %s does not exist and secret creation is disabled.", secretObjKey)
-		}
 		return nil, err
 	}
 	return s, nil

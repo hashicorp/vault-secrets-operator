@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	corev1 "k8s.io/api/core/v1"
@@ -50,6 +52,25 @@ func TestVaultClientCache(t *testing.T) {
 
 	common.OperatorNamespace = operatorNS
 
+	kustomizeConfigRoot := filepath.Join(testRoot, "..", "..", "config")
+	st, err := os.Stat(kustomizeConfigRoot)
+	require.NoError(t, err, "failed to stat %s", kustomizeConfigRoot)
+	require.True(t, st.IsDir(), "%s is not a directory", kustomizeConfigRoot)
+
+	k8sOpts := &k8s.KubectlOptions{
+		ContextName: "kind-" + clusterName,
+	}
+
+	configPath := filepath.Join(kustomizeConfigRoot, "default")
+	k8s.KubectlApplyFromKustomize(t, k8sOpts, configPath)
+	k8sOpts.Namespace = operatorNS
+	retry.DoWithRetry(t, "waitOperatorPodReady", 30, time.Millisecond*500, func() (string, error) {
+		return "", k8s.RunKubectlE(t, k8sOpts,
+			"wait", "--for=condition=Ready",
+			"--timeout=2m", "pod", "-l", "control-plane=controller-manager")
+	},
+	)
+
 	crdClient := getCRDClient(t)
 	var created []ctrlclient.Object
 	ctx := context.Background()
@@ -64,13 +85,13 @@ func TestVaultClientCache(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	k8sDBSecretsCountFromTF := 5
+	k8sDBSecretsCount := 5
 	if v := os.Getenv("K8S_DB_SECRET_COUNT"); v != "" {
 		count, err := strconv.Atoi(v)
 		if err != nil {
 			t.Fatal(err)
 		}
-		k8sDBSecretsCountFromTF = count
+		k8sDBSecretsCount = count
 	}
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -80,7 +101,7 @@ func TestVaultClientCache(t *testing.T) {
 		Vars: map[string]interface{}{
 			"k8s_config_context":         "kind-" + clusterName,
 			"name_prefix":                testID,
-			"k8s_db_secret_count":        k8sDBSecretsCountFromTF,
+			"k8s_db_secret_count":        0,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         300, // shouldn't really be set for less than 60 for this test.
@@ -156,11 +177,6 @@ func TestVaultClientCache(t *testing.T) {
 		require.Nil(t, crdClient.Create(ctx, c))
 		created = append(created, c)
 	}
-
-	kustomizeConfigRoot := filepath.Join(testRoot, "..", "..", "config")
-	st, err := os.Stat(kustomizeConfigRoot)
-	require.NoError(t, err, "failed to stat %s", kustomizeConfigRoot)
-	require.True(t, st.IsDir(), "%s is not a directory", kustomizeConfigRoot)
 
 	tests := []struct {
 		name             string
@@ -269,14 +285,19 @@ func TestVaultClientCache(t *testing.T) {
 			},
 			)
 
+			var vdsCreated []ctrlclient.Object
 			t.Cleanup(func() {
+				for _, obj := range vdsCreated {
+					assert.NoError(t, crdClient.Delete(ctx, obj))
+				}
 				assert.NoError(t, crdClient.Delete(ctx, tt.auth))
 			})
 
 			assert.Nil(t, crdClient.Create(ctx, tt.auth))
 
-			for idx, dest := range outputs.K8sDBSecrets {
-				s := &secretsv1alpha1.VaultDynamicSecret{
+			for i := 0; i < k8sDBSecretsCount; i++ {
+				dest := fmt.Sprintf("vds-%d", i)
+				o := &secretsv1alpha1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
 						Name:      dest,
@@ -290,25 +311,36 @@ func TestVaultClientCache(t *testing.T) {
 					},
 				}
 
-				t.Run(fmt.Sprintf("vds-%d", idx), func(t *testing.T) {
-					assert.Nil(t, crdClient.Create(ctx, s))
+				s := &corev1.Secret{
+					ObjectMeta: v1.ObjectMeta{
+						Name:      dest,
+						Namespace: outputs.K8sNamespace,
+					},
+				}
+				require.NoError(t, crdClient.Create(ctx, s))
+				vdsCreated = append(vdsCreated, s)
+
+				require.NoError(t, crdClient.Create(ctx, o))
+				vdsCreated = append(vdsCreated, o)
+
+				t.Run(dest, func(t *testing.T) {
 					waitForDynamicSecret(t,
 						tfOptions.MaxRetries,
 						tfOptions.TimeBetweenRetries,
-						s.Spec.Dest,
-						s.Namespace,
+						o.Spec.Dest,
+						o.Namespace,
 						tt.expected,
 					)
 
-					assertVCC(t, outputs, tt.persistenceModel, ctx, crdClient, tt.auth, conns[0], s)
+					assertVCC(t, outputs, tt.persistenceModel, ctx, crdClient, tt.auth, conns[0], o)
 				})
 			}
 		})
 	}
 }
 
-func assertVCC(t *testing.T, outputs dynamicK8SOutputs, persistenceModel string, ctx context.Context, client ctrlclient.Client, a *secretsv1alpha1.VaultAuth, c *secretsv1alpha1.VaultConnection,
-	s *secretsv1alpha1.VaultDynamicSecret,
+func assertVCC(t *testing.T, outputs dynamicK8SOutputs, persistenceModel string, ctx context.Context, client ctrlclient.Client,
+	a *secretsv1alpha1.VaultAuth, c *secretsv1alpha1.VaultConnection, s *secretsv1alpha1.VaultDynamicSecret,
 ) {
 	t.Helper()
 
@@ -316,24 +348,27 @@ func assertVCC(t *testing.T, outputs dynamicK8SOutputs, persistenceModel string,
 	require.NoError(t, err, "could not get the cacheKey for %#v", s)
 
 	var result secretsv1alpha1.VaultClientCacheList
-	retry.DoWithRetry(t, "awaitVaultClientCache", 30, time.Second*1, func() (string, error) {
+	err = backoff.Retry(func() error {
 		var r secretsv1alpha1.VaultClientCacheList
 		if err := client.List(ctx, &r, ctrlclient.MatchingLabels{
 			"cacheKey": cacheKey,
 		}); err != nil {
-			return "", err
+			return err
 		}
 		if len(r.Items) == 0 {
-			return "", fmt.Errorf("none found")
+			return fmt.Errorf("none found")
 		}
 		result = r
-		return "", nil
-	})
+		return nil
+	},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+	)
 
 	curAuth := &secretsv1alpha1.VaultAuth{}
 	require.NoError(t, client.Get(ctx, ctrlclient.ObjectKeyFromObject(a), curAuth))
 
-	require.Equal(t, 1, len(result.Items))
+	require.Equal(t, 1, len(result.Items),
+		"expected only 1 VaultClientCache, found %#v", result.Items)
 	vccFound := result.Items[0]
 	assert.Equal(t, vccFound.GetName(), vault.NamePrefixVCC+cacheKey)
 	assert.Equal(t, vccFound.GetNamespace(), common.OperatorNamespace)
@@ -352,38 +387,39 @@ func assertVCC(t *testing.T, outputs dynamicK8SOutputs, persistenceModel string,
 	}
 	var vccSecret corev1.Secret
 	if persistenceModel == "persistence-unencrypted" || persistenceModel == "persistence-encrypted" {
-		retry.DoWithRetry(t, "awaitCachedSecret", 30, time.Second*1,
-			func() (string, error) {
-				secKey := ctrlclient.ObjectKey{
-					Namespace: vccFound.Namespace,
-					Name:      vccFound.Status.CacheSecretRef,
-				}
+		err = backoff.Retry(func() error {
+			secKey := ctrlclient.ObjectKey{
+				Namespace: vccFound.Namespace,
+				Name:      vccFound.Status.CacheSecretRef,
+			}
 
-				if vccFound.Status.CacheSecretRef == "" {
-					return "", fmt.Errorf("CacheSecretRef is empty, status=%#v", vccFound.Status)
-				}
+			if vccFound.Status.CacheSecretRef == "" {
+				return fmt.Errorf("CacheSecretRef is empty, status=%#v", vccFound.Status)
+			}
 
-				if vccFound.Status.CacheSecretRef != "" {
-					if err := client.Get(ctx, secKey, &vccSecret); err != nil {
-						if !apierrors.IsNotFound(err) {
-							return "", fmt.Errorf("failed to get %s, err=%w", secKey, err)
-						}
-					} else {
-						return "", nil
+			if vccFound.Status.CacheSecretRef != "" {
+				if err := client.Get(ctx, secKey, &vccSecret); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return fmt.Errorf("failed to get %s, err=%w", secKey, err)
 					}
+				} else {
+					return nil
 				}
+			}
 
-				var vccObj secretsv1alpha1.VaultClientCache
-				if err := client.Get(ctx, vccKey, &vccObj); err != nil {
-					return "", err
-				}
+			var vccObj secretsv1alpha1.VaultClientCache
+			if err := client.Get(ctx, vccKey, &vccObj); err != nil {
+				return err
+			}
 
-				vccFound = vccObj
+			vccFound = vccObj
 
-				return "", fmt.Errorf("secret %q, not found", secKey)
-			},
+			return fmt.Errorf("secret %q, not found", secKey)
+		},
+			backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
 		)
 	}
+	require.NoError(t, err)
 
 	if persistenceModel == "persistence-unencrypted" {
 		expectedLabels := map[string]string{
@@ -394,7 +430,6 @@ func assertVCC(t *testing.T, outputs dynamicK8SOutputs, persistenceModel string,
 
 	if persistenceModel == "persistence-encrypted" {
 		expectedLabels := map[string]string{
-			//"canary":          "yellow",
 			"cacheKey":        cacheKey,
 			"encrypted":       "true",
 			"vaultTransitRef": outputs.TransitRef,

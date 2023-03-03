@@ -30,7 +30,7 @@ patchesStrategicMerge:
 # If you want your controller-manager to expose the /metrics
 # endpoint w/o any authn/z, please comment the following line.
 - manager_args_patch.yaml
-- prometheus_patch.yaml
+#- prometheus_patch.yaml
 
 # Mount the controller config file for loading manager configurations
 # through a ComponentConfig type

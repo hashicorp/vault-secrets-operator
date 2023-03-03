@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sync"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -50,6 +51,7 @@ type cachingClientFactory struct {
 	objKeyCache ObjectKeyCache
 	storage     ClientCacheStorage
 	recorder    record.EventRecorder
+	mu          sync.RWMutex
 }
 
 func (m *cachingClientFactory) Storage() ClientCacheStorage {
@@ -123,6 +125,15 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 	}
 
 	vc, ok := m.cache.Get(cacheKey)
+	if ok {
+		// return the Client from the cache if it is not expired.
+		if expired, err := vc.CheckExpiry(0); !expired && err == nil {
+			return vc, nil
+		}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if !ok {
 		// try and restore from storage cache
 		ccObj := &secretsv1alpha1.VaultClientCache{}
