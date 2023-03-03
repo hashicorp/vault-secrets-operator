@@ -7,11 +7,13 @@ import (
 	"context"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gruntwork-io/terratest/modules/files"
+	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -51,6 +53,17 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	// Check to seee if we are attemmpting to deploy the controller with Helm.
 	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
 
+	k8sConfigContext := "kind-" + clusterName
+	k8sOpts := &k8s.KubectlOptions{
+		ContextName: k8sConfigContext,
+		Namespace:   operatorNS,
+	}
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
+	if !deployOperatorWithHelm {
+		// deploy the Operator with Kustomize
+		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	}
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
@@ -85,6 +98,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// Clean up resources with "terraform destroy" at the end of the test.
 		terraform.Destroy(t, terraformOptions)
 		os.RemoveAll(tempDir)
+
+		// Undeploy Kustomize
+		if !deployOperatorWithHelm {
+			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+		}
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.

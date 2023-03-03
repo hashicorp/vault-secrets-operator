@@ -7,11 +7,13 @@ import (
 	"context"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gruntwork-io/terratest/modules/files"
+	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -34,10 +36,23 @@ func TestVaultPKISecret(t *testing.T) {
 	testVaultAuthMethodName := "vaultauth-test-tenant-1"
 	testVaultAuthMethodRole := "role1"
 
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	// Check to see if we are attempting to deploy the controller with Helm.
 	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
+
+	k8sConfigContext := "kind-" + clusterName
+	k8sOpts := &k8s.KubectlOptions{
+		ContextName: k8sConfigContext,
+		Namespace:   operatorNS,
+	}
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
+	if !deployOperatorWithHelm {
+		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	}
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
@@ -73,6 +88,11 @@ func TestVaultPKISecret(t *testing.T) {
 	t.Cleanup(func() {
 		terraform.Destroy(t, terraformOptions)
 		os.RemoveAll(tempDir)
+
+		// Undeploy Kustomize
+		if !deployOperatorWithHelm {
+			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+		}
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.

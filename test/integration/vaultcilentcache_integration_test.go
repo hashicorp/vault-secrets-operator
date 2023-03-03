@@ -52,11 +52,6 @@ func TestVaultClientCache(t *testing.T) {
 
 	common.OperatorNamespace = operatorNS
 
-	kustomizeConfigRoot := filepath.Join(testRoot, "..", "..", "config")
-	st, err := os.Stat(kustomizeConfigRoot)
-	require.NoError(t, err, "failed to stat %s", kustomizeConfigRoot)
-	require.True(t, st.IsDir(), "%s is not a directory", kustomizeConfigRoot)
-
 	k8sOpts := &k8s.KubectlOptions{
 		ContextName: "kind-" + clusterName,
 	}
@@ -128,6 +123,7 @@ func TestVaultClientCache(t *testing.T) {
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
 			os.RemoveAll(tempDir)
+			// Undeploy Kustomize
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
@@ -178,6 +174,31 @@ func TestVaultClientCache(t *testing.T) {
 		created = append(created, c)
 	}
 
+	vaultAuthDefault := &secretsv1alpha1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: operatorNS,
+			Labels:    labels,
+		},
+		Spec: secretsv1alpha1.VaultAuthSpec{
+			Namespace: outputs.Namespace,
+			Method:    "kubernetes",
+			Mount:     outputs.AuthMount,
+			// VaultTransitRef: outputs.TransitRef,
+			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+		},
+	}
+
+	vaultAuthTransit := &secretsv1alpha1.VaultAuth{
+		ObjectMeta: vaultAuthDefault.ObjectMeta,
+		Spec:       vaultAuthDefault.Spec,
+	}
+	vaultAuthTransit.Spec.VaultTransitRef = outputs.TransitRef
+
 	tests := []struct {
 		name             string
 		expected         map[string]int
@@ -194,24 +215,7 @@ func TestVaultClientCache(t *testing.T) {
 				"username": 51,
 				"password": 20,
 			},
-			auth: &secretsv1alpha1.VaultAuth{
-				ObjectMeta: v1.ObjectMeta{
-					Name:      consts.NameDefault,
-					Namespace: operatorNS,
-					Labels:    labels,
-				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
-					Namespace: outputs.Namespace,
-					Method:    "kubernetes",
-					Mount:     outputs.AuthMount,
-					// VaultTransitRef: outputs.TransitRef,
-					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-						Role:           outputs.AuthRole,
-						ServiceAccount: "default",
-						TokenAudiences: []string{"vault"},
-					},
-				},
-			},
+			auth: vaultAuthDefault,
 		},
 		{
 			name:             "persistence-unencrypted",
@@ -221,24 +225,7 @@ func TestVaultClientCache(t *testing.T) {
 				"username": 51,
 				"password": 20,
 			},
-			auth: &secretsv1alpha1.VaultAuth{
-				ObjectMeta: v1.ObjectMeta{
-					Name:      consts.NameDefault,
-					Namespace: operatorNS,
-					Labels:    labels,
-				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
-					Namespace: outputs.Namespace,
-					Method:    "kubernetes",
-					Mount:     outputs.AuthMount,
-					// VaultTransitRef: outputs.TransitRef,
-					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-						Role:           outputs.AuthRole,
-						ServiceAccount: "default",
-						TokenAudiences: []string{"vault"},
-					},
-				},
-			},
+			auth: vaultAuthDefault,
 		},
 		{
 			name:             "persistence-encrypted",
@@ -248,24 +235,7 @@ func TestVaultClientCache(t *testing.T) {
 				"username": 51,
 				"password": 20,
 			},
-			auth: &secretsv1alpha1.VaultAuth{
-				ObjectMeta: v1.ObjectMeta{
-					Name:      consts.NameDefault,
-					Namespace: operatorNS,
-					Labels:    labels,
-				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
-					Namespace:       outputs.Namespace,
-					Method:          "kubernetes",
-					Mount:           outputs.AuthMount,
-					VaultTransitRef: outputs.TransitRef,
-					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-						Role:           outputs.AuthRole,
-						ServiceAccount: "default",
-						TokenAudiences: []string{"vault"},
-					},
-				},
-			},
+			auth: vaultAuthTransit,
 		},
 	}
 
@@ -273,17 +243,15 @@ func TestVaultClientCache(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			k8sOpts := &k8s.KubectlOptions{
 				ContextName: outputs.K8sConfigContext,
+				Namespace:   operatorNS,
 			}
+			kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, tt.persistenceModel)
+			deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
 
-			configPath := filepath.Join(kustomizeConfigRoot, tt.persistenceModel)
-			k8s.KubectlApplyFromKustomize(t, k8sOpts, configPath)
-			k8sOpts.Namespace = operatorNS
-			retry.DoWithRetry(t, "waitOperatorPodReady", 30, time.Millisecond*500, func() (string, error) {
-				return "", k8s.RunKubectlE(t, k8sOpts,
-					"wait", "--for=condition=Ready",
-					"--timeout=2m", "pod", "-l", "control-plane=controller-manager")
-			},
-			)
+			for _, c := range conns {
+				require.Nil(t, crdClient.Create(ctx, c))
+				created = append(created, c)
+			}
 
 			var vdsCreated []ctrlclient.Object
 			t.Cleanup(func() {
@@ -291,6 +259,7 @@ func TestVaultClientCache(t *testing.T) {
 					assert.NoError(t, crdClient.Delete(ctx, obj))
 				}
 				assert.NoError(t, crdClient.Delete(ctx, tt.auth))
+				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
 			})
 
 			assert.Nil(t, crdClient.Create(ctx, tt.auth))

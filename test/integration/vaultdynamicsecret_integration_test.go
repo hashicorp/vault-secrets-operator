@@ -12,12 +12,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gruntwork-io/terratest/modules/files"
+	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
@@ -49,6 +52,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 	)
 	require.Nil(t, err)
 
+	k8sConfigContext := "kind-" + clusterName
+	k8sOpts := &k8s.KubectlOptions{
+		ContextName: k8sConfigContext,
+		Namespace:   operatorNS,
+	}
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
+	deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+
 	k8sDBSecretsCountFromTF := 5
 	if v := os.Getenv("K8S_DB_SECRET_COUNT"); v != "" {
 		count, err := strconv.Atoi(v)
@@ -63,7 +74,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"k8s_config_context":         "kind-" + clusterName,
+			"k8s_config_context":         k8sConfigContext,
 			"name_prefix":                testID,
 			"k8s_db_secret_count":        k8sDBSecretsCountFromTF,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
@@ -88,6 +99,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
 			os.RemoveAll(tempDir)
+
+			// Undeploy Kustomize
+			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
@@ -133,6 +147,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		require.Nil(t, crdClient.Create(ctx, c))
 		created = append(created, c)
 	}
+	time.Sleep(time.Second * 1)
 
 	tests := []struct {
 		name     string
@@ -193,10 +208,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 			}
 
 			t.Run(fmt.Sprintf("%s-%d", tt.name, idx), func(t *testing.T) {
-				assert.Nil(t, crdClient.Create(ctx, s))
-				created = append(created, s)
 				assert.Nil(t, crdClient.Create(ctx, a))
 				created = append(created, a)
+				assert.Nil(t, crdClient.Create(ctx, s))
+				created = append(created, s)
 				waitForDynamicSecret(t,
 					tfOptions.MaxRetries,
 					tfOptions.TimeBetweenRetries,

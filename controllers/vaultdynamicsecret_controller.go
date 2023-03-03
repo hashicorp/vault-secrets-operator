@@ -45,11 +45,10 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
-//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;patch
 // required for rollout-restart
-//+kubebuilder:rbac:groups={"extensions","apps"},resources=deployments,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups={"extensions","apps"},resources=statefulsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups={"extensions","apps"},resources=daemonsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
 
 // Reconcile ensures that the VaultDynamicSecret Custom Resource is synced from Vault to its
 // configured Kubernetes secret. The resource will periodically be reconciled to renew the

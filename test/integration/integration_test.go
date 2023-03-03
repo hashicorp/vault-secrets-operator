@@ -33,11 +33,12 @@ import (
 )
 
 var (
-	testRoot          string
-	binDir            string
-	chartPath         string
-	testVaultAddress  string
-	k8sVaultNamespace string
+	testRoot            string
+	binDir              string
+	chartPath           string
+	testVaultAddress    string
+	k8sVaultNamespace   string
+	kustomizeConfigRoot string
 )
 
 func init() {
@@ -50,6 +51,11 @@ func init() {
 	}
 
 	chartPath, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "chart"))
+	if err != nil {
+		panic(err)
+	}
+
+	kustomizeConfigRoot, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "config"))
 	if err != nil {
 		panic(err)
 	}
@@ -220,4 +226,16 @@ func waitForDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, nam
 
 			return "", nil
 		})
+}
+
+func deployOperatorWithKustomize(t *testing.T, k8sOpts *k8s.KubectlOptions, kustomizeConfigPath string) {
+	// deploy the Operator with Kustomize
+	t.Helper()
+	k8s.KubectlApplyFromKustomize(t, k8sOpts, kustomizeConfigPath)
+	retry.DoWithRetry(t, "waitOperatorPodReady", 30, time.Millisecond*500, func() (string, error) {
+		return "", k8s.RunKubectlE(t, k8sOpts,
+			"wait", "--for=condition=Ready",
+			"--timeout=2m", "pod", "-l", "control-plane=controller-manager")
+	},
+	)
 }
