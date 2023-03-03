@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/hashicorp/vault/api"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,7 +44,6 @@ type Client interface {
 	Init(context.Context, ctrlclient.Client, ctrlclient.Object) error
 	Read(context.Context, string) (*api.Secret, error)
 	Restore(context.Context, *api.Secret) error
-	Renew(context.Context) error
 	Write(context.Context, string, map[string]any) (*api.Secret, error)
 	GetLastResponse() (*api.Secret, error)
 	CheckExpiry(int64) (bool, error)
@@ -55,6 +56,7 @@ type Client interface {
 	GetCacheKey() (string, error)
 	KVv1(string) (*api.KVv1, error)
 	KVv2(string) (*api.KVv2, error)
+	Close() error
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -70,6 +72,8 @@ type defaultClient struct {
 	providerUID        types.UID
 	targetNamespace    string
 	credentialProvider CredentialProvider
+	watcher            *api.LifetimeWatcher
+	lastWatcherErr     error
 	once               sync.Once
 	mu                 sync.RWMutex
 }
@@ -125,6 +129,10 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 		return fmt.Errorf("not initialized")
 	}
 
+	if c.watcher != nil {
+		c.watcher.Stop()
+	}
+
 	if secret == nil {
 		return fmt.Errorf("api.Secret is nil")
 	}
@@ -136,7 +144,13 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	c.lastResp = secret
 	c.client.SetToken(secret.Auth.ClientToken)
 
-	return c.renew(ctx)
+	if secret.Auth.Renewable {
+		if err := c.startLifetimeWatcher(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) error {
@@ -199,21 +213,91 @@ func (c *defaultClient) GetLastResponse() (*api.Secret, error) {
 	return c.lastResp, nil
 }
 
-func (c *defaultClient) Renew(ctx context.Context) error {
+func (c *defaultClient) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.initialized {
+		return nil
+	}
+
+	if c.watcher != nil {
+		c.watcher.Stop()
+	}
+	c.client = nil
+	c.initialized = false
+
+	return nil
+}
+
+// startLifetimeWatcher starts a api.LifetimeWatcher in a Go routine for this Client.
+// This will ensure that the auth token is periodically renewed.
+// If the Client's token is not renewable an error will be returned.
+func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 	if err := c.checkInitialized(); err != nil {
 		return err
 	}
 
-	return c.renew(ctx)
+	if !c.lastResp.Auth.Renewable {
+		return fmt.Errorf("auth token is not renewable, cannot start the LifetimeWatcher")
+	}
+
+	if c.watcher != nil {
+		return fmt.Errorf("lifetimeWatcher already started")
+	}
+
+	watcher, err := c.client.NewLifetimeWatcher(&api.LifetimeWatcherInput{
+		Secret: c.lastResp,
+	})
+	if err != nil {
+		return err
+	}
+
+	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
+		logger := log.FromContext(ctx).WithName("LifetimeWatcher").WithValues(
+			"entityID", c.lastResp.Auth.EntityID)
+		logger.Info("Starting")
+		defer func() {
+			logger.Info("Stopping")
+			watcher.Stop()
+			c.watcher = nil
+		}()
+
+		go watcher.Start()
+		logger.Info("Started")
+		c.watcher = watcher
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-watcher.DoneCh():
+				if err != nil {
+					logger.Error(err, "LifetimeWatcher completed with an error")
+					c.lastWatcherErr = err
+				}
+				return
+			case renewal := <-watcher.RenewCh():
+				logger.Info("Successfully renewed the client")
+				c.lastResp = renewal.Secret
+				c.lastRenewal = renewal.RenewedAt.Unix()
+			}
+		}
+	}(ctx, c, watcher)
+
+	return nil
 }
 
+// Login the Client to Vault. Upon success, if the auth token is renewable,
+// an api.LifetimeWatcher will be started to ensure that the token is periodically renewed.
 func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.checkInitialized(); err != nil {
 		return err
+	}
+	// TODO: add logging, preferably with a Logger that supports more levels than just INFO and ERROR.
+
+	if c.watcher != nil {
+		c.watcher.Stop()
 	}
 
 	creds, err := c.credentialProvider.GetCreds(ctx, client)
@@ -240,6 +324,12 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 
 	c.lastResp = resp
 	c.lastRenewal = time.Now().Unix()
+
+	if resp.Auth.Renewable {
+		if err := c.startLifetimeWatcher(ctx); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

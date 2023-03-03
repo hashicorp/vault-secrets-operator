@@ -102,18 +102,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// set up the client cache and client factory and storage
-	vccConfig := controllers.VaultClientCacheConfig{}
 	var clientFactory vclient.CachingClientFactory
 	{
 		switch clientCachePersistenceModel {
 		case persistenceModelDirectUnencrypted:
-			vccConfig.Persist = true
+			cfc.Persist = true
 		case persistenceModelDirectEncrypted:
-			vccConfig.Persist = true
+			cfc.Persist = true
 			cfc.StorageConfig.EnforceEncryption = true
 		case persistenceModelNone:
-			vccConfig.Persist = false
+			cfc.Persist = false
 		default:
 			setupLog.Error(errors.New("invalid option"),
 				fmt.Sprintf("Invalid cache pesistence model %q", clientCachePersistenceModel))
@@ -129,8 +127,6 @@ func main() {
 			os.Exit(1)
 		}
 	}
-
-	setupLog.Info("Cache config", "vccConfig", vccConfig, "cfc", cfc)
 
 	if err = (&controllers.VaultStaticSecretReconciler{
 		Client:        mgr.GetClient(),
@@ -150,17 +146,19 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultAuthReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("VaultAuth"),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Recorder:      mgr.GetEventRecorderFor("VaultAuth"),
+		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultAuth")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultConnectionReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("VaultConnection"),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Recorder:      mgr.GetEventRecorderFor("VaultConnection"),
+		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultConnection")
 		os.Exit(1)
@@ -172,16 +170,6 @@ func main() {
 		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr, vdsOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
-		os.Exit(1)
-	}
-	if err = (&controllers.VaultClientCacheReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultClientCache"),
-		Config:        vccConfig,
-		ClientFactory: clientFactory,
-	}).SetupWithManager(mgr, vccOptions); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "VaultClientCache")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultTransitReconciler{

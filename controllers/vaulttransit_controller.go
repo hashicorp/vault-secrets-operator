@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,24 +57,24 @@ func (r *VaultTransitReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	if err := r.validate(ctx, s); err != nil {
-		s.Status.Valid = false
-		s.Status.Error = err.Error()
-	} else {
-		s.Status.Valid = true
-		s.Status.Error = ""
-	}
+	//if err := r.validate(ctx, s); err != nil {
+	//	s.Status.Valid = false
+	//	s.Status.Error = err.Error()
+	//} else {
+	//	s.Status.Valid = true
+	//	s.Status.Error = ""
+	//}
 
-	if err := r.updateStatus(ctx, s); err != nil {
-		return ctrl.Result{}, err
-	}
+	//if err := r.updateStatus(ctx, s); err != nil {
+	//	return ctrl.Result{}, err
+	//}
 
-	if !s.Status.Valid {
-		horizon, _ := computeHorizonWithJitter(time.Second * 5)
-		return ctrl.Result{
-			RequeueAfter: horizon,
-		}, nil
-	}
+	//if !s.Status.Valid {
+	//	horizon, _ := computeHorizonWithJitter(time.Second * 5)
+	//	return ctrl.Result{
+	//		RequeueAfter: horizon,
+	//	}, nil
+	//}
 
 	return ctrl.Result{}, nil
 }

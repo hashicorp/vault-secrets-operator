@@ -35,7 +35,6 @@ var (
 )
 
 type ClientCacheStorageRequest struct {
-	Requestor         ctrlclient.ObjectKey
 	OwnerReferences   []metav1.OwnerReference
 	TransitObjKey     ctrlclient.ObjectKey
 	Client            Client
@@ -48,7 +47,6 @@ type ClientCacheStoragePruneRequest struct {
 }
 
 type ClientCacheStorageRestoreRequest struct {
-	Requestor    ctrlclient.ObjectKey
 	SecretObjKey ctrlclient.ObjectKey
 	CacheKey     string
 }
@@ -57,10 +55,6 @@ func (c ClientCacheStorageRequest) Validate() error {
 	var err error
 	if c.Client == nil {
 		err = errors.Join(err, fmt.Errorf("a Client must be set"))
-	}
-
-	if e := validateObjectKey(c.Requestor); e != nil {
-		err = errors.Join(err, fmt.Errorf("a Requestor must be set: %w", e))
 	}
 
 	if c.EnforceEncryption && !c.encryptionConfigured() {
@@ -134,9 +128,38 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	authObj, err := req.Client.GetVaultAuthObj()
+	if err != nil {
+		return nil, err
+	}
+
+	connObj, err := req.Client.GetVaultConnectionObj()
+	if err != nil {
+		return nil, err
+	}
+
 	cacheKey, err := req.Client.GetCacheKey()
 	if err != nil {
 		return nil, err
+	}
+
+	s := &corev1.Secret{
+		// we always store Clients in an Immutable secret as an anti-tampering mitigation.
+		Immutable: pointer.Bool(true),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            fmt.Sprintf(NamePrefixVCC + cacheKey),
+			Namespace:       common.OperatorNamespace,
+			OwnerReferences: req.OwnerReferences,
+			Labels: map[string]string{
+				"cacheKey": cacheKey,
+				// required for storage cache cleanup performed by the Client's VaultAuth
+				// this is done by controllers.VaultAuthReconciler
+				"vaultAuthRefUIDGen": fmt.Sprintf("%s_%d", authObj.UID, authObj.Generation),
+				// required for storage cache cleanup performed by the Client's VaultConnect
+				// this is done by controllers.VaultConnectionReconciler
+				"vaultConnectionRefUIDGen": fmt.Sprintf("%s_%d", connObj.UID, connObj.Generation),
+			},
+		},
 	}
 
 	sec, err := req.Client.GetLastResponse()
@@ -144,18 +167,11 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
-	b, err := json.Marshal(sec)
-	if err != nil {
-		return nil, err
-	}
-
-	secretLabels := map[string]string{
-		"cacheKey": cacheKey,
-	}
+	var b []byte
 	if c.EnforceEncryption() {
 		// needed for restoration
-		secretLabels[labelEncrypted] = "true"
-		secretLabels[labelVaultTransitRef] = req.TransitObjKey.Name
+		s.ObjectMeta.Labels[labelEncrypted] = "true"
+		s.ObjectMeta.Labels[labelVaultTransitRef] = req.TransitObjKey.Name
 
 		logger.Info("ClientCacheStorage.Store(), calling EncryptWithTransitFromObjKey",
 			"enforceEncryption", c.EnforceEncryption(),
@@ -165,22 +181,18 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		} else {
 			b = encBytes
 		}
+	} else {
+		b, err = json.Marshal(sec)
+		if err != nil {
+			return nil, err
+		}
+
 	}
 
-	s := &corev1.Secret{
-		Immutable: pointer.Bool(true),
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName:    req.Requestor.Name + "-",
-			Namespace:       req.Requestor.Namespace,
-			OwnerReferences: req.OwnerReferences,
-			Labels:          secretLabels,
-		},
-		Data: map[string][]byte{
-			fieldCachedSecret: b,
-		},
+	s.Data = map[string][]byte{
+		fieldCachedSecret: b,
 	}
-
-	message, err := c.message(req.Requestor.Name, cacheKey, b)
+	message, err := c.message(s.Name, cacheKey, b)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +204,17 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 
 	s.Data[fieldMACMessage] = messageMAC
 	if err := client.Create(ctx, s); err != nil {
-		return nil, err
+		if apierrors.IsAlreadyExists(err) {
+			// since the Secret is immutable we need to always recreate it.
+			if err := client.Delete(ctx, s); err != nil {
+				return nil, err
+			}
+			if err := client.Create(ctx, s); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
 	return s, nil
@@ -217,7 +239,7 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 		transitRef := s.Labels["vaultTransitRef"]
 		if transitRef != "" {
 			objKey := ctrlclient.ObjectKey{
-				Namespace: req.Requestor.Namespace,
+				Namespace: common.OperatorNamespace,
 				Name:      transitRef,
 			}
 
@@ -262,7 +284,7 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 			if apierrors.IsNotFound(err) {
 				continue
 			}
-			// requires go1.20+
+
 			err = errors.Join(err)
 			continue
 		}
@@ -288,7 +310,7 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 		return err
 	}
 
-	message, err := c.message(req.Requestor.Name, req.CacheKey, b)
+	message, err := c.message(s.Name, req.CacheKey, b)
 	if err != nil {
 		return err
 	}

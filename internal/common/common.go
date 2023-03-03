@@ -64,23 +64,6 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
-	case *secretsv1alpha1.VaultClientCache:
-		if o.Spec.TargetNamespace == "" {
-			return nil, client.ObjectKey{}, fmt.Errorf("the TargetNamespace is required for %T", o)
-		}
-		authObj, err := FindVaultAuthByUID(ctx, c, o.Spec.VaultAuthUID, o.Spec.VaultAuthGeneration)
-		if err != nil {
-			return nil, client.ObjectKey{}, err
-		}
-
-		if authObj == nil {
-			return nil, client.ObjectKey{}, fmt.Errorf("referent VaultAuth not found for %s", client.ObjectKeyFromObject(o))
-		}
-
-		return authObj, client.ObjectKey{
-			Namespace: o.Spec.TargetNamespace,
-			Name:      o.Name,
-		}, nil
 	default:
 		return nil, types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
 	}

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,7 +20,7 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	client2 "github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
 const vaultConnectionFinalizer = "vaultconnection.secrets.hashicorp.com/finalizer"
@@ -26,8 +28,9 @@ const vaultConnectionFinalizer = "vaultconnection.secrets.hashicorp.com/finalize
 // VaultConnectionReconciler reconciles a VaultConnection object
 type VaultConnectionReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.CachingClientFactory
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultconnections,verbs=get;list;watch;create;update;patch;delete
@@ -35,16 +38,13 @@ type VaultConnectionReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultconnections/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get
+// needed for managing cached Clients, duplicated in vaultauth_controller.go
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the VaultConnection object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
+// Reconcile reconciles the secretsv1alpha1.VaultConnection resource.
+// Upon a reconciliation it will test the configured Vault connection is valid.
 //
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
+// Upon deletion of the resource, it will prune all referent Vault Client(s).
 func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	logger := log.FromContext(ctx)
 
@@ -67,51 +67,56 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return r.handleFinalizer(ctx, o)
 	}
 
-	defer func() {
-		if updateErr := r.Client.Status().Update(ctx, o); updateErr != nil {
-			logger.Error(updateErr, "Failed to update VaultConnection status", "new status", o.Status)
-			// add the update error to the returned err from Reconcile
-			err = errors.Join(err, updateErr)
-		}
-	}()
+	// assume that status is always invalid
+	o.Status.Valid = false
 
-	vaultConfig := &client2.ClientConfig{
+	vaultConfig := &vault.ClientConfig{
 		CACertSecretRef: o.Spec.CACertSecretRef,
 		K8sNamespace:    o.ObjectMeta.Namespace,
 		Address:         o.Spec.Address,
 		SkipTLSVerify:   o.Spec.SkipTLSVerify,
 		TLSServerName:   o.Spec.TLSServerName,
 	}
-	vaultClient, err := client2.MakeVaultClient(ctx, vaultConfig, r.Client)
+
+	var errs error
+	vaultClient, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
 	if err != nil {
-		o.Status.Valid = false
 		logger.Error(err, "Failed to construct Vault client")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError, "Failed to construct Vault client: %s", err)
-		return ctrl.Result{}, err
+
+		errs = errors.Join(err)
 	}
 
-	if _, err := vaultClient.Sys().SealStatusWithContext(ctx); err != nil {
-		o.Status.Valid = false
-		logger.Error(err, "Failed to check Vault seal status, requeuing")
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
-		return ctrl.Result{}, err
+	if vaultClient != nil {
+		if _, err := vaultClient.Sys().SealStatusWithContext(ctx); err != nil {
+			logger.Error(err, "Failed to check Vault seal status, requeuing")
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
+			errs = errors.Join(err)
+		} else {
+			o.Status.Valid = true
+		}
 	}
 
-	o.Status.Valid = true
-
-	// evict old referent VaultClientCaches for all older generations of self.
+	// prune old referent Client from the ClientFactory's cache for all older generations of self.
 	// this is a bit of a sledgehammer, not all updated attributes of VaultConnection
 	// warrant eviction of a client cache entry, but this is a good start.
-	opts := cacheEvictionOption{
-		filterFunc: filterOldCacheRefsForConn,
-		matchingLabels: client.MatchingLabels{
-			"vaultConnectionRef":          o.GetName(),
-			"vaultConnectionRefNamespace": o.GetNamespace(),
-		},
+	//
+	// Note: this is also done in controllers.VaultAuthReconciler
+	// TODO: consider adding a Predicate to the EventFilter, to filter events that do not result in a change to the Spec.
+	if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
+		FilterFunc:   filterOldCacheRefs,
+		PruneStorage: true,
+	}); err != nil {
+		logger.Error(err, "Failed prune Client cache of older generations")
+		errs = errors.Join(err)
 	}
-	if _, err := evictClientCacheRefs(ctx, r.Client, o, r.Recorder, opts); err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-			"Failed to evict referent VaultCacheClient resources: %s", err)
+
+	if err := r.updateStatus(ctx, o); err != nil {
+		errs = errors.Join(err)
+	}
+
+	if errs != nil {
+		return ctrl.Result{}, errs
 	}
 
 	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonAccepted, "VaultConnection accepted")
@@ -129,19 +134,22 @@ func (r *VaultConnectionReconciler) addFinalizer(ctx context.Context, o *secrets
 	return nil
 }
 
+func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultConnection) error {
+	logger := log.FromContext(ctx)
+	metrics.SetResourceStatus("vaultconnection", o, o.Status.Valid)
+	if err := r.Status().Update(ctx, o); err != nil {
+		logger.Error(err, "Failed to update the resource's status")
+		return err
+	}
+	return nil
+}
+
 func (r *VaultConnectionReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultConnection) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultConnectionFinalizer) {
-		opts := cacheEvictionOption{
-			filterFunc: filterAllCacheRefs,
-			matchingLabels: client.MatchingLabels{
-				"vaultConnectionRef":          o.GetName(),
-				"vaultConnectionRefNamespace": o.GetNamespace(),
-			},
-		}
-		_, err := evictClientCacheRefs(ctx, r.Client, o, r.Recorder, opts)
-		if err != nil {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-				"Failed to evict referent VaultCacheClient resources: %s", err)
+		if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
+			FilterFunc:   filterAllCacheRefs,
+			PruneStorage: true,
+		}); err != nil {
 			return ctrl.Result{}, err
 		}
 

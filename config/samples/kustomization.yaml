@@ -8,6 +8,5 @@ resources:
 - secrets_v1alpha1_vaultauth.yaml
 - secrets_v1alpha1_vaultconnection.yaml
 - secrets_v1alpha1_vaultdynamicsecret.yaml
-- secrets_v1alpha1_vaultclientcache.yaml
 - secrets_v1alpha1_vaulttransit.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples
