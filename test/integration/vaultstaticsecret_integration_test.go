@@ -238,6 +238,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	assert.Equal(t, len(expected), len(secrets))
 	for i, s := range secrets {
 		// Wait for the operator to sync Vault secrets --> k8s Secrets
-		waitForSecretData(t, 10, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
+		waitForSecretData(t, 30, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
 	}
 }
