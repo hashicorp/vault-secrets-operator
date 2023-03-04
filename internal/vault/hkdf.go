@@ -34,6 +34,11 @@ func CreateHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrl
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objKey.Name,
 			Namespace: objKey.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       "vault-secrets-operator",
+				"app.kubernetes.io/managed-by": "vso",
+				"app.kubernetes.io/component":  "client-cache-storage-verification",
+			},
 		},
 		Immutable: pointer.Bool(true),
 		Data: map[string][]byte{
@@ -64,14 +69,6 @@ func GetHKDFSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient
 	}
 
 	return s, nil
-}
-
-func GetHKDFKeyFromSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) ([]byte, error) {
-	s, err := GetHKDFSecret(ctx, client, objKey)
-	if err != nil {
-		return nil, err
-	}
-	return s.Data[hkdfKeyName], nil
 }
 
 func validateHKDFSecret(s *corev1.Secret) ([]byte, error) {

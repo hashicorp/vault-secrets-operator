@@ -8,28 +8,60 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"regexp"
-	"strings"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
-var cacheKeyRe = regexp.MustCompile(fmt.Sprintf(
-	`((?:%s)-[a-f0-9]{7})`, strings.Join(providerMethodsSupported, "|")),
+var (
+	errorKeyLengthExceeded = errors.New("cache-key length exceeded")
+	errorDuplicateUID      = errors.New("duplicate UID")
+	errorInvalidUIDLength  = errors.New("invalid UID length")
 )
 
-func GenCacheClientKeyFromObjs(authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerUID types.UID) (string, error) {
-	return genCacheClientKey(authObj.Spec.Method,
-		authObj.GetUID(), authObj.GetGeneration(),
-		connObj.GetUID(), connObj.GetGeneration(), providerUID,
-	)
+// ClientCacheKey is a type that holds the unique value of an entity in a ClientCache.
+// Being a type captures intent, even if only being an alias to string.
+type ClientCacheKey string
+
+func (k ClientCacheKey) String() string {
+	return string(k)
 }
 
-func GenClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (string, error) {
+// ComputeClientCacheKeyFromClient for use in a ClientCache. It is derived from the configuration the Client.
+// If the Client is not properly initialized, an error will be returned.
+//
+// See computeClientCacheKey for more details on how the client cache is derived
+func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
+	var errs error
+	authObj, err := c.GetVaultAuthObj()
+	if err != nil {
+		errs = errors.Join(err)
+	}
+	connObj, err := c.GetVaultConnectionObj()
+	if err != nil {
+		errs = errors.Join(err)
+	}
+	providerUID, err := c.GetProviderUID()
+	if err != nil {
+		errs = errors.Join(err)
+	}
+	if errs != nil {
+		return "", errs
+	}
+
+	return computeClientCacheKey(authObj, connObj, providerUID)
+}
+
+// ComputeClientCacheKeyFromObj for use in a ClientCache. It is derived from the configuration of obj.
+// If the obj is not of a supported type or is not properly configured, an error will be returned.
+// This operation calls out to the Kubernetes API multiple times.
+//
+// See computeClientCacheKey for more details on how the client cache is derived.
+func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (ClientCacheKey, error) {
 	authObj, _, err := common.GetVaultAuthAndTarget(ctx, client, obj)
 	if err != nil {
 		return "", err
@@ -50,39 +82,62 @@ func GenClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj
 		return "", err
 	}
 
-	return GenCacheClientKeyFromObjs(authObj, connObj, provider.GetUID())
+	return computeClientCacheKey(authObj, connObj, provider.GetUID())
 }
 
-func GenCacheKeyFromObjName(obj ctrlclient.Object) (string, error) {
-	match := vccNameRe.FindStringSubmatch(obj.GetName())
-	if len(match) != 2 {
-		return "", fmt.Errorf("object's name %q is invalid", obj.GetName())
-	}
-	return match[1], nil
-}
-
-func genCacheClientKey(method string, authUID types.UID, authGen int64, connUID types.UID, connGen int64, providerUID types.UID) (string, error) {
-	var err error
+// computeClientCacheKey for use in a ClientCache. It is derived by combining instances of
+// VaultAuth, VaultConnection, and a CredentialProvider UID.
+// All of these elements are summed together into a SHA256 checksum,
+// and prefixed with the VaultAuth method. The chances of a collision are extremely remote,
+// since the inputs into the hash should always be unique. For example, we use the UUID
+// from three different sources as inputs.
+//
+// The resulting key will resemble something like: kubernetes-2a8108711ae49ac0faa724, where the prefix
+// is the VaultAuth.Spec.Method, and the remainder is the concatenation of the
+// first 7 and last 4 bytes of the computed SHA256 check-sum in hex.
+//
+// The key is included in the name of the corev1.Secrets created by the ClientCacheStorage,
+// so its important that any name that includes the cache-key does not exceed the max length
+// allowed for Kubernetes resources, which is 63 characters.
+//
+// If the computed cache-key exceeds 63 characters, the limit imposed for Kubernetes resource names,
+// or if any of the inputs do not coform in any way, and error will be returned.
+func computeClientCacheKey(authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerUID types.UID) (ClientCacheKey, error) {
+	var errs error
+	method := authObj.Spec.Method
 	if method == "" {
-		err = errors.Join(err, fmt.Errorf("auth method is empty"))
+		errs = errors.Join(fmt.Errorf("auth method is empty"))
 	}
 
-	checkLen := func(name string, uid types.UID) {
-		if len(uid) != 36 {
-			err = errors.Join(err, fmt.Errorf("invalid length for %s, must be 36", name))
+	// only used for duplicate UID detection, all values are ignored
+	seen := make(map[types.UID]int)
+	requireUIDLen := 36
+	validateUID := func(name string, uid types.UID) {
+		if len(uid) != requireUIDLen {
+			errs = errors.Join(fmt.Errorf("%w %d, must be %d", errorInvalidUIDLength, len(uid), requireUIDLen))
 		}
+		if _, ok := seen[uid]; ok {
+			errs = errors.Join(fmt.Errorf("%w %s", errorDuplicateUID, uid))
+		}
+		seen[uid] = 1
 	}
 
-	checkLen("authUID", authUID)
-	checkLen("connUID", connUID)
-	checkLen("providerUID", providerUID)
+	validateUID("authUID", authObj.GetUID())
+	validateUID("connUID", connObj.GetUID())
+	validateUID("providerUID", providerUID)
 
-	if err != nil {
-		return "", err
+	if errs != nil {
+		return "", errs
 	}
 
-	key := fmt.Sprintf("%s-%d.%s-%d.%s", authUID, authGen, connUID, connGen, providerUID)
+	input := fmt.Sprintf("%s-%d.%s-%d.%s",
+		authObj.GetUID(), authObj.GetGeneration(),
+		connObj.GetUID(), connObj.GetGeneration(), providerUID)
 
-	s := sha256.Sum256([]byte(key))
-	return method + "-" + fmt.Sprintf("%x", s)[0:7], nil
+	sum := sha256.Sum256([]byte(input))
+	key := method + "-" + fmt.Sprintf("%x%x", sum[0:7], sum[len(sum)-4:])
+	if len(key) > 63 {
+		return "", errorKeyLengthExceeded
+	}
+	return ClientCacheKey(key), nil
 }

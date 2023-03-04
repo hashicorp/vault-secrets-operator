@@ -25,6 +25,7 @@ import (
 const (
 	labelEncrypted       = "encrypted"
 	labelVaultTransitRef = "vaultTransitRef"
+	labelCacheKey        = "cacheKey"
 	fieldMACMessage      = "messageMAC"
 	fieldCachedSecret    = "secret"
 )
@@ -48,7 +49,7 @@ type ClientCacheStoragePruneRequest struct {
 
 type ClientCacheStorageRestoreRequest struct {
 	SecretObjKey ctrlclient.ObjectKey
-	CacheKey     string
+	CacheKey     ClientCacheKey
 }
 
 func (c ClientCacheStorageRequest) Validate() error {
@@ -73,11 +74,9 @@ type PruneFilterFunc func(secret corev1.Secret) bool
 var _ ClientCacheStorage = (*defaultClientCacheStorage)(nil)
 
 type ClientCacheStorage interface {
-	Get(context.Context, ctrlclient.Client, ctrlclient.ObjectKey) (*corev1.Secret, error)
 	Store(context.Context, ctrlclient.Client, ClientCacheStorageRequest) (*corev1.Secret, error)
 	Restore(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*api.Secret, error)
 	Prune(context.Context, ctrlclient.Client, ClientCacheStoragePruneRequest) (int, error)
-	EnforceEncryption() bool
 }
 
 type defaultClientCacheStorage struct {
@@ -87,18 +86,7 @@ type defaultClientCacheStorage struct {
 	mu                sync.RWMutex
 }
 
-func (c *defaultClientCacheStorage) EnforceEncryption() bool {
-	return c.enforceEncryption
-}
-
-func (c *defaultClientCacheStorage) Get(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
-	if err := c.jitInit(ctx, client); err != nil {
-		return nil, err
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
+func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	s := &corev1.Secret{}
 	if err := client.Get(ctx, key, s); err != nil {
 		return nil, err
@@ -108,6 +96,9 @@ func (c *defaultClientCacheStorage) Get(ctx context.Context, client ctrlclient.C
 }
 
 func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRequest) (*corev1.Secret, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	logger := log.FromContext(ctx)
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -115,14 +106,10 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 
 	// global encryption policy checks, all requests must require encryption
 	logger.Info("ClientCacheStorage.Store()",
-		"enforceEncryption", c.EnforceEncryption(),
+		"enforceEncryption", c.enforceEncryption,
 		"encryptionConfigured", req.encryptionConfigured())
-	if c.EnforceEncryption() && !req.encryptionConfigured() {
+	if c.enforceEncryption && !req.encryptionConfigured() {
 		return nil, fmt.Errorf("request does not support encryption and enforcing enabled: %w", EncryptionRequiredError)
-	}
-
-	if err := c.jitInit(ctx, client); err != nil {
-		return nil, err
 	}
 
 	c.mu.Lock()
@@ -147,11 +134,15 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		// we always store Clients in an Immutable secret as an anti-tampering mitigation.
 		Immutable: pointer.Bool(true),
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            fmt.Sprintf(NamePrefixVCC + cacheKey),
+			Name:            fmt.Sprintf(NamePrefixVCC + cacheKey.String()),
 			Namespace:       common.OperatorNamespace,
 			OwnerReferences: req.OwnerReferences,
 			Labels: map[string]string{
-				"cacheKey": cacheKey,
+				"app.kubernetes.io/name":       "vault-secrets-operator",
+				"app.kubernetes.io/managed-by": "vso",
+				"app.kubernetes.io/component":  "client-cache-storage",
+				// cacheKey is the key used to access a Client from the ClientCache
+				labelCacheKey: cacheKey.String(),
 				// required for storage cache cleanup performed by the Client's VaultAuth
 				// this is done by controllers.VaultAuthReconciler
 				"vaultAuthRefUIDGen": fmt.Sprintf("%s_%d", authObj.UID, authObj.Generation),
@@ -168,14 +159,14 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	}
 
 	var b []byte
-	if c.EnforceEncryption() {
+	if c.enforceEncryption {
 		// needed for restoration
 		s.ObjectMeta.Labels[labelEncrypted] = "true"
 		s.ObjectMeta.Labels[labelVaultTransitRef] = req.TransitObjKey.Name
 
 		logger.Info("ClientCacheStorage.Store(), calling EncryptWithTransitFromObjKey",
-			"enforceEncryption", c.EnforceEncryption(),
-			"encryptionConfigured", req.encryptionConfigured(), "transitObjKey", req.TransitObjKey)
+			"enforceEncryption", c.enforceEncryption,
+			"encryptionConfigured", req.encryptionConfigured, "transitObjKey", req.TransitObjKey)
 		if encBytes, err := EncryptWithTransitFromObjKey(ctx, client, req.TransitObjKey, b); err != nil {
 			return nil, err
 		} else {
@@ -192,7 +183,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	s.Data = map[string][]byte{
 		fieldCachedSecret: b,
 	}
-	message, err := c.message(s.Name, cacheKey, b)
+	message, err := c.message(s.Name, cacheKey.String(), b)
 	if err != nil {
 		return nil, err
 	}
@@ -221,11 +212,10 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 }
 
 func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest) (*api.Secret, error) {
-	if err := c.jitInit(ctx, client); err != nil {
-		return nil, err
-	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	s, err := c.Get(ctx, client, req.SecretObjKey)
+	s, err := c.getSecret(ctx, client, req.SecretObjKey)
 	if err != nil {
 		return nil, err
 	}
@@ -260,13 +250,12 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 }
 
 func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient.Client, req ClientCacheStoragePruneRequest) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	secrets := &corev1.SecretList{}
 	if err := client.List(ctx, secrets, req.MatchingLabels); err != nil {
 		return 0, nil
-	}
-
-	if err := c.jitInit(ctx, client); err != nil {
-		return 0, err
 	}
 
 	c.mu.Lock()
@@ -310,7 +299,7 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 		return err
 	}
 
-	message, err := c.message(s.Name, req.CacheKey, b)
+	message, err := c.message(s.Name, req.CacheKey.String(), b)
 	if err != nil {
 		return err
 	}
@@ -335,22 +324,6 @@ func (c *defaultClientCacheStorage) message(name, cacheKey string, secretData []
 	return append([]byte(name+cacheKey), secretData...), nil
 }
 
-// TODO: remove this once we figure out to initialize from main(),
-// currently there is no way to Get() objects before the controller-runtime cache has been started,
-// and we need to do that.
-func (c *defaultClientCacheStorage) jitInit(ctx context.Context, client ctrlclient.Client) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.hkdfKey == nil {
-		key, err := GetHKDFKeyFromSecret(ctx, client, c.hkdfObjKey)
-		if err != nil {
-			return err // TODO: maybe panic instead? Pretty brittle until we can init from main()
-		}
-		c.hkdfKey = key
-	}
-	return nil
-}
-
 type ClientCacheStorageConfig struct {
 	// EnforceEncryption for persisting Clients i.e. the controller must have VaultTransitRef
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
@@ -373,25 +346,23 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	_, err := CreateHKDFSecret(ctx, client, config.HKDFObjectKey)
+	s, err := CreateHKDFSecret(ctx, client, config.HKDFObjectKey)
 	if err != nil {
 		if !apierrors.IsAlreadyExists(err) {
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 
-	// TODO: update to take a ctx and Client to validate the Secret before setting up the cache.
-	// Currently there is no way to do this from main()
-	//b, err := validateHKDFSecret(hkdfSecret)
-	//if err != nil {
-	//	return nil, err
-	//}
+	if s == nil {
+		s, err = GetHKDFSecret(ctx, client, config.HKDFObjectKey)
+		if err != nil {
+			return nil, err
+		}
+	}
 
-	// TODO: register a watcher for changes to the HKDF Secret, so we can detect key rotations.
 	return &defaultClientCacheStorage{
 		hkdfObjKey:        config.HKDFObjectKey,
+		hkdfKey:           s.Data[hkdfKeyName],
 		enforceEncryption: config.EnforceEncryption,
 	}, nil
 }

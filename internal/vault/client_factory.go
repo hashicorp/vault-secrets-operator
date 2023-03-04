@@ -7,8 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"sync"
+
+	"github.com/go-logr/logr"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 
@@ -27,8 +32,6 @@ import (
 const (
 	NamePrefixVCC = "vso-client-cache-"
 )
-
-var vccNameRe = regexp.MustCompile(fmt.Sprintf(`^%s%s$`, NamePrefixVCC, cacheKeyRe.String()))
 
 type ClientFactory interface {
 	GetClient(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
@@ -57,9 +60,15 @@ type cachingClientFactory struct {
 	storage     ClientCacheStorage
 	recorder    record.EventRecorder
 	persist     bool
+	logger      logr.Logger
 	mu          sync.RWMutex
 }
 
+// Prune the storage for the requesting object and CachingClientFactoryPruneRequest.
+// Supported, requesting client.Object(s), are: v1alpha1.VaultAuth, v1alpha1.VaultConnection.
+// Then number of pruned storage Secrets will be returned, along with any errors encountered.
+// Pruning continues on error, so there is a possibility that only a subset of the requested Secrets will be removed
+// from the ClientCacheStorage.
 func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, req CachingClientFactoryPruneRequest) (int, error) {
 	var filter ClientCachePruneFilterFunc
 	switch cur := obj.(type) {
@@ -93,11 +102,7 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 	// for all cache entries pruned, remove the corresponding storage entries.
 	if req.PruneStorage && m.persist && m.storage != nil {
 		for _, key := range pruned {
-			if _, err := m.storage.Prune(ctx, client, ClientCacheStoragePruneRequest{
-				MatchingLabels: map[string]string{
-					"cacheKey": key,
-				},
-			}); err != nil {
+			if _, err := m.pruneStorage(ctx, client, key); err != nil {
 				err = errors.Join(err)
 			}
 		}
@@ -106,14 +111,41 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 	return len(pruned), err
 }
 
+// pruneStorage of all stored Secrets matching the cacheKey.
+func (m *cachingClientFactory) pruneStorage(ctx context.Context, client ctrlclient.Client, cacheKey ClientCacheKey) (int, error) {
+	return m.storage.Prune(ctx, client, ClientCacheStoragePruneRequest{
+		MatchingLabels: map[string]string{
+			labelCacheKey: cacheKey.String(),
+		},
+		Filter: func(_ v1.Secret) bool {
+			return false
+		},
+	})
+}
+
+// onClientEvict should be called whenever an eviction from the ClientCache occurs.
+// It should always call Client.Close() to prevent leaking Go routines.
+func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlclient.Client, cacheKey ClientCacheKey, c Client) {
+	logger := m.logger.WithValues("cacheKey", cacheKey)
+	logger.Info("Handling client cache eviction")
+	c.Close()
+	if m.persist && m.storage != nil {
+		if count, err := m.pruneStorage(ctx, client, cacheKey); err != nil {
+			logger.Error(err, "Failed to remove Client from storage")
+		} else {
+			logger.Info("Pruned storage", "count", count)
+		}
+	}
+}
+
 func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
 	var err error
-	var cacheKey string
+	var cacheKey ClientCacheKey
 	if m.storage == nil {
 		return nil, fmt.Errorf("restoration not possible, storage is not enabled")
 	}
 
-	cacheKey, err = GenClientCacheKeyFromObj(ctx, client, obj)
+	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 			"Failed to get cacheKey from obj, err=%s", err)
@@ -143,7 +175,7 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 	objKey := ctrlclient.ObjectKeyFromObject(obj)
 	////cacheKey, inObjKeyCache := m.objKeyCache.Get(objKey)
 	//if !inObjKeyCache {
-	ck, err := GenClientCacheKeyFromObj(ctx, client, obj)
+	ck, err := ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 			"Failed to get cacheKey from obj, err=%s", err)
@@ -165,13 +197,19 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 	defer m.mu.Unlock()
 	if !ok && (m.persist && m.storage != nil) {
 		// try and restore from Client storage cache, if properly configured to do so.
-		if restored, err := m.restoreClient(ctx, client, obj, cacheKey); err == nil {
+		if restored, err := m.restoreClient(ctx, client, obj, cacheKey); err != nil {
+			if !apierrors.IsNotFound(err) {
+				if _, err := m.pruneStorage(ctx, client, cacheKey); err != nil {
+					// remove storage entry, assuming it is invalid
+				}
+			}
+		} else {
 			c = restored
 		}
 	}
 
 	if c != nil {
-		// got the Client from the cache, now let's check that is is not expired
+		// got the Client from the cache, now let's check that is not expired
 		if expired, err := c.CheckExpiry(0); !expired && err == nil {
 			// good to go, now cache it
 			cacheKey, err := m.cacheClient(ctx, client, c)
@@ -186,9 +224,7 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 			return c, nil
 		}
 
-		if err := c.Close(); err != nil {
-			return nil, err
-		}
+		m.cache.Remove(cacheKey)
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
@@ -216,7 +252,8 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 		})
 		if err != nil {
 			// this should not be fatal, so we can rely on the event recorder to provide the necessary warning
-			m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonPersistenceForbidden, "Failed to store the Client to the cache, err=%s", err)
+			m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonPersistenceFailed,
+				"Failed to store the Client to the cache, err=%s", err)
 		}
 	}
 
@@ -225,7 +262,7 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 
 func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, c Client) error {
 	if !m.persist || m.storage == nil {
-		return fmt.Errorf("restoration impossible, storage is not enabled")
+		return fmt.Errorf("storing impossible, storage is not enabled")
 	}
 
 	// TODO: move transit config to VaultAuth
@@ -242,7 +279,7 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 	return nil
 }
 
-func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, cacheKey string) (Client, error) {
+func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, cacheKey ClientCacheKey) (Client, error) {
 	if !m.persist || m.storage == nil {
 		return nil, fmt.Errorf("restoration impossible, storage is not enabled")
 	}
@@ -295,7 +332,7 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 }
 
 // cacheClient to the global in-memory cache.
-func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclient.Client, c Client) (string, error) {
+func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclient.Client, c Client) (ClientCacheKey, error) {
 	logger := log.FromContext(ctx).WithName("CachingClientFactory")
 	var errs error
 	cacheKey, err := c.GetCacheKey()
@@ -312,23 +349,40 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclien
 	return cacheKey, nil
 }
 
-func NewCachingClientFactory(clientCache ClientCache, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
+// NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
+// The ClientCache's onEvictCallback is registered with the factory's onClientEvict(),
+// to ensure any evictions are handled by the factory (this is very important).
+func NewCachingClientFactory(ctx context.Context,
+	client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig,
+) (CachingClientFactory, error) {
 	objKeyCache, err := NewObjectKeyCache(config.ObjectKeyCacheSize)
 	if err != nil {
 		err = errors.Join(err)
 	}
 
 	factory := &cachingClientFactory{
-		cache:       clientCache,
 		objKeyCache: objKeyCache,
 		storage:     cacheStorage,
 		recorder:    config.Recorder,
 		persist:     config.Persist,
+		logger: zap.New().WithName("clientCacheFactory").WithValues(
+			"persist", config.Persist,
+			"enforceEncryption", config.StorageConfig.EnforceEncryption,
+		),
 	}
+
+	// adds an onEvictCallbackFunc to the ClientCache
+	// the function must always call Client.Close() to avoid leaking Go routines
+	cache, err := NewClientCache(config.ClientCacheSize, func(key, value interface{}) {
+		factory.onClientEvict(ctx, client, key.(ClientCacheKey), value.(Client))
+	})
+
+	factory.cache = cache
 
 	return factory, nil
 }
 
+// CachingClientFactoryConfig provides the configuration for a CachingClientFactory instance.
 type CachingClientFactoryConfig struct {
 	Persist            bool
 	StorageConfig      *ClientCacheStorageConfig
@@ -337,6 +391,7 @@ type CachingClientFactoryConfig struct {
 	Recorder           record.EventRecorder
 }
 
+// DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
 func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 	return &CachingClientFactoryConfig{
 		StorageConfig:      DefaultClientCacheStorageConfig(),
@@ -346,7 +401,11 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 	}
 }
 
+// SetupCachingClientFactory initializes a CachingClientFactory along with its ClientCacheStorage.
+// It is meant to be called from main.
 func SetupCachingClientFactory(ctx context.Context, client ctrlclient.Client, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
+	// TODO: add support for bulk restoration and or bulk pruning of the storage, in the case where we have transitioned from storage to no storage
+	// TODO: pass in a valid Context and ctrlclient.Client + factory.Prune as an OnEvictFunc()
 	var err error
 	var clientCacheStorage ClientCacheStorage
 	if config.Persist {
@@ -357,12 +416,7 @@ func SetupCachingClientFactory(ctx context.Context, client ctrlclient.Client, co
 
 	}
 
-	cache, err := NewClientCache(config.ClientCacheSize)
-	if err != nil {
-		return nil, err
-	}
-
-	clientCacheFactory, err := NewCachingClientFactory(cache, clientCacheStorage, config)
+	clientCacheFactory, err := NewCachingClientFactory(ctx, client, clientCacheStorage, config)
 	if err != nil {
 		return nil, err
 	}
@@ -376,4 +430,4 @@ type nullEventRecorder struct {
 	record.EventRecorder
 }
 
-func (n *nullEventRecorder) Event(object runtime.Object, eventtype, reason, message string) {}
+func (n *nullEventRecorder) Event(_ runtime.Object, _, _, _ string) {}

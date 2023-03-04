@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
@@ -57,7 +56,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-unencrypted")
 	deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
 
 	k8sDBSecretsCountFromTF := 5
@@ -79,7 +78,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"k8s_db_secret_count":        k8sDBSecretsCountFromTF,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         30,
+			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 60,
 		},
 	}
@@ -147,7 +146,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		require.Nil(t, crdClient.Create(ctx, c))
 		created = append(created, c)
 	}
-	time.Sleep(time.Second * 1)
 
 	tests := []struct {
 		name     string

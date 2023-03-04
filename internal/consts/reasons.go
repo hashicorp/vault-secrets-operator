@@ -39,6 +39,7 @@ const (
 	ReasonInvalidLeaseError         = "InvalidLeaseError"
 	ReasonSecretSyncError           = "SecretSyncError"
 	ReasonPersistenceForbidden      = "PersistenceForbidden"
+	ReasonPersistenceFailed         = "PersistenceFailed"
 	ReasonCacheRestorationFailed    = "CacheRestorationFailed"
 	ReasonCacheRestorationSucceeded = "CacheRestorationSucceeded"
 )

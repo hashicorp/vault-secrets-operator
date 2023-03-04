@@ -51,12 +51,12 @@ type Client interface {
 	Login(context.Context, ctrlclient.Client) error
 	GetVaultAuthObj() (*secretsv1alpha1.VaultAuth, error)
 	GetVaultConnectionObj() (*secretsv1alpha1.VaultConnection, error)
-	GetProviderID() (types.UID, error)
+	GetProviderUID() (types.UID, error)
 	GetTarget() (ctrlclient.ObjectKey, error)
-	GetCacheKey() (string, error)
+	GetCacheKey() (ClientCacheKey, error)
 	KVv1(string) (*api.KVv1, error)
 	KVv2(string) (*api.KVv2, error)
-	Close() error
+	Close()
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -78,7 +78,7 @@ type defaultClient struct {
 	mu                 sync.RWMutex
 }
 
-func (c *defaultClient) GetProviderID() (types.UID, error) {
+func (c *defaultClient) GetProviderUID() (types.UID, error) {
 	if err := c.checkInitialized(); err != nil {
 		return "", err
 	}
@@ -110,14 +110,14 @@ func (c *defaultClient) KVv2(mount string) (*api.KVv2, error) {
 	return c.client.KVv2(mount), nil
 }
 
-func (c *defaultClient) GetCacheKey() (string, error) {
+func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if err := c.checkInitialized(); err != nil {
 		return "", err
 	}
 
-	return GenCacheClientKeyFromObjs(c.authObj, c.connObj, c.providerUID)
+	return ComputeClientCacheKeyFromClient(c)
 }
 
 // Restore self from the provided api.Secret (should have an Auth configured).
@@ -213,23 +213,24 @@ func (c *defaultClient) GetLastResponse() (*api.Secret, error) {
 	return c.lastResp, nil
 }
 
-func (c *defaultClient) Close() error {
+// Close un-initializes this Client, stopping its LifetimeWatcher in the process.
+// It is safe to be called multiple times.
+func (c *defaultClient) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.initialized {
-		return nil
+		return
 	}
 
+	log.FromContext(nil).Info("Calling Client.Close()")
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
 	c.client = nil
 	c.initialized = false
-
-	return nil
 }
 
-// startLifetimeWatcher starts a api.LifetimeWatcher in a Go routine for this Client.
+// startLifetimeWatcher starts an api.LifetimeWatcher in a Go routine for this Client.
 // This will ensure that the auth token is periodically renewed.
 // If the Client's token is not renewable an error will be returned.
 func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
