@@ -76,5 +76,15 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        volumeMounts:
+          - name: podinfo
+            mountPath: /var/run/podinfo
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+      volumes:
+        - name: podinfo
+          downwardAPI:
+            items:
+              - path: "name"
+                fieldRef:
+                  fieldPath: metadata.name

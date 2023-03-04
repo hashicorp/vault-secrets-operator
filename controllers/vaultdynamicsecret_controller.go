@@ -64,6 +64,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if r.runtimePodName == "" {
 		r.runtimePodName = os.Getenv("OPERATOR_POD_NAME")
 	}
+	if r.runtimePodName == "" {
+		if b, err := os.ReadFile("/var/run/podinfo/name"); err == nil {
+			r.runtimePodName = string(b)
+		}
+	}
 
 	o := &secretsv1alpha1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
