@@ -77,6 +77,7 @@ type ClientCacheStorage interface {
 	Store(context.Context, ctrlclient.Client, ClientCacheStorageRequest) (*corev1.Secret, error)
 	Restore(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*api.Secret, error)
 	Prune(context.Context, ctrlclient.Client, ClientCacheStoragePruneRequest) (int, error)
+	Purge(context.Context, ctrlclient.Client) error
 }
 
 type defaultClientCacheStorage struct {
@@ -96,9 +97,6 @@ func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlcl
 }
 
 func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRequest) (*corev1.Secret, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	logger := log.FromContext(ctx)
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -254,12 +252,9 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 	defer c.mu.Unlock()
 
 	secrets := &corev1.SecretList{}
-	if err := client.List(ctx, secrets, req.MatchingLabels); err != nil {
+	if err := client.List(ctx, secrets, req.MatchingLabels, ctrlclient.InNamespace(common.OperatorNamespace)); err != nil {
 		return 0, nil
 	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	var err error
 	var count int
@@ -281,6 +276,23 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 	}
 
 	return count, err
+}
+
+// Purge all cached client Secrets. This should only be called when running transitioning from persistence to non-persistence modes.
+func (c *defaultClientCacheStorage) Purge(ctx context.Context, client ctrlclient.Client) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return client.DeleteAllOf(ctx, &corev1.Secret{},
+		ctrlclient.MatchingLabels{
+			"app.kubernetes.io/name":       "vault-secrets-operator",
+			"app.kubernetes.io/managed-by": "vso",
+			"app.kubernetes.io/component":  "client-cache-storage",
+		},
+		// We may want to reconsider constraining the purge to the OperatorNamespace,
+		// for example if the Operator is moved from one Namespace to another.
+		ctrlclient.InNamespace(common.OperatorNamespace),
+	)
 }
 
 func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRestoreRequest, s *corev1.Secret) error {

@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	NamePrefixVCC = "vso-client-cache-"
+	NamePrefixVCC = "vso-cc-"
 )
 
 type ClientFactory interface {
@@ -344,7 +344,7 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, client ctrlclien
 		logger.Error(err, "Failed to added to the cache", "client", c)
 		return "", errs
 	}
-	logger.Info("Cached the client", "cacheKey", cacheKey)
+	logger.V(consts.LogLevelDebug).Info("Cached the client", "cacheKey", cacheKey)
 
 	return cacheKey, nil
 }
@@ -401,19 +401,25 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 	}
 }
 
-// SetupCachingClientFactory initializes a CachingClientFactory along with its ClientCacheStorage.
+// InitCachingClientFactory initializes a CachingClientFactory along with its ClientCacheStorage.
 // It is meant to be called from main.
-func SetupCachingClientFactory(ctx context.Context, client ctrlclient.Client, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
-	// TODO: add support for bulk restoration and or bulk pruning of the storage, in the case where we have transitioned from storage to no storage
+func InitCachingClientFactory(ctx context.Context, client ctrlclient.Client, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
+	// TODO: add support for bulk restoration
+	// TODO add support bulk pruning of the storage, in the case where we have transitioned from storage to no storage
 	// TODO: pass in a valid Context and ctrlclient.Client + factory.Prune as an OnEvictFunc()
-	var err error
-	var clientCacheStorage ClientCacheStorage
-	if config.Persist {
-		clientCacheStorage, err = NewDefaultClientCacheStorage(ctx, client, config.StorageConfig)
-		if err != nil {
+	clientCacheStorage, err := NewDefaultClientCacheStorage(ctx, client, config.StorageConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if !config.Persist {
+		// perform the purge to handle a transition from persistence to no persistence.
+		// this ensures no leakage of cached Client Secrets.
+		if err := clientCacheStorage.Purge(ctx, client); err != nil {
 			return nil, err
 		}
-
+		clientCacheStorage = nil
+	} else {
 	}
 
 	clientCacheFactory, err := NewCachingClientFactory(ctx, client, clientCacheStorage, config)
@@ -421,6 +427,9 @@ func SetupCachingClientFactory(ctx context.Context, client ctrlclient.Client, co
 		return nil, err
 	}
 
+	if config.Persist {
+		// TODO: bulk restore
+	}
 	return clientCacheFactory, nil
 }
 

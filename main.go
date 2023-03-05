@@ -126,7 +126,7 @@ func main() {
 		}
 
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
-		clientFactory, err = vclient.SetupCachingClientFactory(ctx, defaultClient, cfc)
+		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
 		if err != nil {
 			setupLog.Error(err, "Failed to setup the Vault ClientFactory")
 			os.Exit(1)

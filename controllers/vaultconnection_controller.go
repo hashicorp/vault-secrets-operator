@@ -39,10 +39,10 @@ type VaultConnectionReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // needed for managing cached Clients, duplicated in vaultauth_controller.go
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch;deletecollection
 
 // Reconcile reconciles the secretsv1alpha1.VaultConnection resource.
-// Upon a reconciliation it will test the configured Vault connection is valid.
+// Upon a reconciliation it will verify that the configured Vault connection is valid.
 //
 // Upon deletion of the resource, it will prune all referent Vault Client(s).
 func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {

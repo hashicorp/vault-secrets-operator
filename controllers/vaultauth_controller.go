@@ -42,6 +42,8 @@ type VaultAuthReconciler struct {
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=serviceaccounts/token,verbs=get;list;create;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// needed for managing cached Clients, duplicated in vaultconnection_controller.go
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch;deletecollection
 
 // Reconcile reconciles the secretsv1alpha1.VaultAuth resource.
 // Each reconciliation will validate the resource's configuration
