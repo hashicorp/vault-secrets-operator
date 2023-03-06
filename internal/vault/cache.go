@@ -5,7 +5,6 @@ package vault
 
 import (
 	"github.com/hashicorp/golang-lru"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ClientCachePruneFilterFunc allows for selective pruning of the ClientCache.
@@ -19,40 +18,7 @@ type ClientCache interface {
 	Remove(ClientCacheKey) bool
 	Len() int
 	Prune(filterFunc ClientCachePruneFilterFunc) []ClientCacheKey
-}
-
-type ObjectKeyCache interface {
-	Add(ctrlclient.ObjectKey, ClientCacheKey) bool
-	Get(ctrlclient.ObjectKey) (string, bool)
-	Remove(ctrlclient.ObjectKey) bool
-}
-
-var _ ObjectKeyCache = (*objectKeyCache)(nil)
-
-// objectKeyCache implements ObjectKeyCache with an underlying LRU cache. The cache size is fixed.
-type objectKeyCache struct {
-	// ObjectKey cache mapping a client.ObjectKey to Client cache key.
-	// Used for detecting cache key changes between calls to GetClient
-	cache *lru.Cache
-}
-
-func (o objectKeyCache) Add(key ctrlclient.ObjectKey, cacheKey ClientCacheKey) bool {
-	return o.cache.Add(key, cacheKey)
-}
-
-func (o objectKeyCache) Get(key ctrlclient.ObjectKey) (string, bool) {
-	if v, ok := o.cache.Get(key); ok {
-		return v.(string), ok
-	}
-
-	return "", false
-}
-
-func (o objectKeyCache) Remove(key ctrlclient.ObjectKey) bool {
-	if v, ok := o.cache.Peek(key); ok {
-		v.(Client).Close()
-	}
-	return o.cache.Remove(key)
+	Contains(key ClientCacheKey) bool
 }
 
 var _ ClientCache = (*clientCache)(nil)
@@ -60,6 +26,10 @@ var _ ClientCache = (*clientCache)(nil)
 // clientCache implements ClientCache with an underlying LRU cache. The cache size is fixed.
 type clientCache struct {
 	cache *lru.Cache
+}
+
+func (c *clientCache) Contains(key ClientCacheKey) bool {
+	return c.cache.Contains(key)
 }
 
 // Len returns the length/size of the cache.
@@ -90,6 +60,10 @@ func (c *clientCache) Add(client Client) (bool, error) {
 
 // Remove a Client from the cache. The key can be had by calling Client.GetCacheKey(). Or computing it from computeClientCacheKey()
 func (c *clientCache) Remove(key ClientCacheKey) bool {
+	if v, ok := c.cache.Peek(key); ok {
+		v.(Client).Close()
+	}
+
 	return c.cache.Remove(key)
 }
 
@@ -121,13 +95,4 @@ func NewClientCache(size int, callbackFunc onEvictCallbackFunc) (ClientCache, er
 	}
 
 	return &clientCache{cache: lruCache}, nil
-}
-
-func NewObjectKeyCache(size int) (ObjectKeyCache, error) {
-	lruCache, err := lru.New(size)
-	if err != nil {
-		return nil, err
-	}
-
-	return &objectKeyCache{cache: lruCache}, nil
 }

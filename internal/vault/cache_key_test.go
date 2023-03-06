@@ -208,14 +208,18 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &defaultClient{
-				initialized: true,
-				authObj:     tt.authObj,
-				connObj:     tt.connObj,
-				providerUID: providerUID,
-			}
+			var c Client
 			if tt.authObj == nil || tt.connObj == nil || tt.providerUID == "" {
 				c = &defaultClient{}
+			} else {
+				c = &defaultClient{
+					initialized: true,
+					authObj:     tt.authObj,
+					connObj:     tt.connObj,
+					credentialProvider: &kubernetesCredentialProvider{
+						uid: tt.providerUID,
+					},
+				}
 			}
 
 			got, err := ComputeClientCacheKeyFromClient(c)

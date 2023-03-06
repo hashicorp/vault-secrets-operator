@@ -183,7 +183,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
 	l.Info("In deletion")
 	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
-		r.ClientFactory.RemoveObject(s)
 		if err := r.finalizePKI(ctx, l, s); err != nil {
 			l.Error(err, "finalizer failed")
 			// TODO: decide how to handle a failed finalizer

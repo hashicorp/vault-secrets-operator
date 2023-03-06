@@ -80,17 +80,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Handling request")
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		logger.Info("Got deletion timestamp", "obj", o)
-		// status update will be taken care of in the call to handleFinalizer()
-		return r.handleFinalizer(ctx, o)
-	}
-
 	var doRolloutRestart bool
 	leaseID := o.Status.SecretLease.ID
 	// logger.Info("Last secret lease", "secretLease", o.Status.SecretLease, "epoch", r.epoch)
@@ -281,18 +270,6 @@ func (r *VaultDynamicSecretReconciler) renewLease(ctx context.Context, c vault.C
 	}
 
 	return r.getVaultSecretLease(resp), nil
-}
-
-func (r *VaultDynamicSecretReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) (ctrl.Result, error) {
-	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
-		controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer)
-		r.ClientFactory.RemoveObject(o)
-		if err := r.Update(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
 }
 
 func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {

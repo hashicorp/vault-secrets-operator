@@ -45,7 +45,8 @@ func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
 	if err != nil {
 		errs = errors.Join(err)
 	}
-	providerUID, err := c.GetProviderUID()
+
+	credentialProvider, err := c.GetCredentialProvider()
 	if err != nil {
 		errs = errors.Join(err)
 	}
@@ -53,7 +54,7 @@ func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
 		return "", errs
 	}
 
-	return computeClientCacheKey(authObj, connObj, providerUID)
+	return computeClientCacheKey(authObj, connObj, credentialProvider.GetUID())
 }
 
 // ComputeClientCacheKeyFromObj for use in a ClientCache. It is derived from the configuration of obj.
@@ -62,7 +63,7 @@ func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
 //
 // See computeClientCacheKey for more details on how the client cache is derived.
 func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (ClientCacheKey, error) {
-	authObj, _, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+	authObj, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
 	if err != nil {
 		return "", err
 	}
@@ -77,7 +78,7 @@ func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client,
 		return "", err
 	}
 
-	provider, err := NewCredentialProvider(ctx, client, obj, authObj.Spec.Method)
+	provider, err := NewCredentialProvider(ctx, client, authObj, target.Namespace)
 	if err != nil {
 		return "", err
 	}
@@ -139,5 +140,6 @@ func computeClientCacheKey(authObj *secretsv1alpha1.VaultAuth, connObj *secretsv
 	if len(key) > 63 {
 		return "", errorKeyLengthExceeded
 	}
+
 	return ClientCacheKey(key), nil
 }

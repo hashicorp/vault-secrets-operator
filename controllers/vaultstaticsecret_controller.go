@@ -17,16 +17,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
-)
-
-const (
-	vaultStaticSecretFinalizer = "vaultstaticsecret.secrets.hashicorp.com/finalizer"
 )
 
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
@@ -54,16 +49,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 		logger.Error(err, "error getting resource from k8s", "secret", o)
 		return ctrl.Result{}, err
-	}
-
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		logger.Info("Got deletion timestamp", "obj", o)
-		// status update will be taken care of in the call to handleFinalizer()
-		return r.handleFinalizer(ctx, o)
 	}
 
 	spec := o.Spec
@@ -155,29 +140,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{
 		RequeueAfter: refAfter,
 	}, nil
-}
-
-func (r *VaultStaticSecretReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret) (ctrl.Result, error) {
-	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
-		controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer)
-		r.ClientFactory.RemoveObject(o)
-		if err := r.Update(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
-}
-
-func (r *VaultStaticSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret) error {
-	if !controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
-		controllerutil.AddFinalizer(o, vaultStaticSecretFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

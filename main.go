@@ -60,8 +60,6 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.IntVar(&cfc.ClientCacheSize, "client-cache-size", cfc.ClientCacheSize,
 		"Size of the in-memory LRU client cache.")
-	flag.IntVar(&cfc.ObjectKeyCacheSize, "object-key-cache-size", cfc.ObjectKeyCacheSize,
-		"Size of the in-memory LRU object-key cache.")
 	flag.StringVar(&clientCachePersistenceModel, "client-cache-persistence-model", defaultPersistenceModel,
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed."+
@@ -119,7 +117,9 @@ func main() {
 			os.Exit(1)
 		}
 
-		defaultClient, err := client.New(config, client.Options{})
+		defaultClient, err := client.New(config, client.Options{
+			Scheme: mgr.GetScheme(),
+		})
 		if err != nil {
 			setupLog.Error(err, "Failed to instantiating a default Client")
 			os.Exit(1)
@@ -191,7 +191,6 @@ func main() {
 	setupLog.Info("Starting manager",
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
-		"objectKeyCacheSize", cfc.ObjectKeyCacheSize,
 	)
 
 	mgr.GetCache()

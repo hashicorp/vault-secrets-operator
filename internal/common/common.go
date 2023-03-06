@@ -176,17 +176,41 @@ func GetConnectionNamespacedName(a *secretsv1alpha1.VaultAuth) (types.Namespaced
 	}, nil
 }
 
-func FindVaultAuthByUID(ctx context.Context, client client.Client, uid types.UID, generation int64) (*secretsv1alpha1.VaultAuth, error) {
-	auths := &secretsv1alpha1.VaultAuthList{}
-	if err := client.List(ctx, auths); err != nil {
+func FindVaultAuthByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1alpha1.VaultAuth, error) {
+	var auths secretsv1alpha1.VaultAuthList
+	var opts []client.ListOption
+	if namespace != "" {
+		opts = append(opts, client.InNamespace(namespace))
+	}
+	if err := c.List(ctx, &auths, opts...); err != nil {
 		return nil, err
 	}
 
 	for _, item := range auths.Items {
 		if item.GetUID() == uid && item.GetGeneration() == generation {
-			return item.DeepCopy(), nil
+			setVaultConnectionRef(&item)
+			return &item, nil
 		}
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("object not found")
+}
+
+func FindVaultConnectionByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1alpha1.VaultConnection, error) {
+	var auths secretsv1alpha1.VaultConnectionList
+	var opts []client.ListOption
+	if namespace != "" {
+		opts = append(opts, client.InNamespace(namespace))
+	}
+	if err := c.List(ctx, &auths, opts...); err != nil {
+		return nil, err
+	}
+
+	for _, item := range auths.Items {
+		if item.GetUID() == uid && item.GetGeneration() == generation {
+			return &item, nil
+		}
+	}
+
+	return nil, fmt.Errorf("object not found")
 }
