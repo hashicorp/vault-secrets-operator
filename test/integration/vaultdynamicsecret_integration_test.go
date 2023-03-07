@@ -141,83 +141,149 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 	}
-
-	for _, c := range conns {
-		require.Nil(t, crdClient.Create(ctx, c))
-		created = append(created, c)
-	}
-
-	tests := []struct {
-		name     string
-		expected map[string]int
-		s        *secretsv1alpha1.VaultDynamicSecret
-		ss       []*secretsv1alpha1.VaultDynamicSecret
-	}{
+	auths := []*secretsv1alpha1.VaultAuth{
 		{
-			name: "db",
-			expected: map[string]int{
-				"_raw":     100,
-				"username": 51,
-				"password": 20,
+			ObjectMeta: v1.ObjectMeta{
+				Name:      consts.NameDefault,
+				Namespace: operatorNS,
 			},
-			s: &secretsv1alpha1.VaultDynamicSecret{
-				ObjectMeta: v1.ObjectMeta{
-					Namespace: outputs.K8sNamespace,
-				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-					Namespace: outputs.Namespace,
-					Mount:     outputs.DBPath,
-					Role:      outputs.DBRole,
+			Spec: secretsv1alpha1.VaultAuthSpec{
+				Namespace: outputs.Namespace,
+				Method:    "kubernetes",
+				Mount:     outputs.AuthMount,
+				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+					Role:           outputs.AuthRole,
+					ServiceAccount: "default",
+					TokenAudiences: []string{"vault"},
 				},
 			},
 		},
 	}
 
+	create := func(o client.Object) {
+		require.Nil(t, crdClient.Create(ctx, o))
+		created = append(created, o)
+	}
+
+	for _, o := range conns {
+		create(o)
+	}
+	for _, o := range auths {
+		create(o)
+	}
+
+	tests := []struct {
+		name     string
+		authObj  *secretsv1alpha1.VaultAuth
+		expected map[string]int
+		create   int
+		existing []string
+	}{
+		{
+			name:     "existing-only",
+			existing: outputs.K8sDBSecrets,
+			authObj:  auths[0],
+			expected: map[string]int{
+				"_raw":     100,
+				"username": 51,
+				"password": 20,
+			},
+		},
+		{
+			name:    "create-only",
+			create:  5,
+			authObj: auths[0],
+			expected: map[string]int{
+				"_raw":     100,
+				"username": 51,
+				"password": 20,
+			},
+		},
+		{
+			name:     "mixed",
+			create:   5,
+			existing: outputs.K8sDBSecrets,
+			authObj:  auths[0],
+			expected: map[string]int{
+				"_raw":     100,
+				"username": 51,
+				"password": 20,
+			},
+		},
+	}
+
 	for _, tt := range tests {
-		for idx, dest := range outputs.K8sDBSecrets {
-			a := &secretsv1alpha1.VaultAuth{
-				ObjectMeta: v1.ObjectMeta{
-					Namespace: outputs.K8sNamespace,
-					Name:      fmt.Sprintf("%s-db-%d", outputs.NamePrefix, idx),
-				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
-					Namespace: outputs.Namespace,
-					Method:    "kubernetes",
-					Mount:     outputs.AuthMount,
-					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-						Role:           outputs.AuthRole,
-						ServiceAccount: "default",
-						TokenAudiences: []string{"vault"},
+		t.Run(tt.name, func(t *testing.T) {
+			var objsCreated []*secretsv1alpha1.VaultDynamicSecret
+			var count int
+
+			t.Cleanup(func() {
+				if !skipCleanup {
+					for _, obj := range objsCreated {
+						assert.NoError(t, crdClient.Delete(ctx, obj))
+					}
+				}
+			})
+			// pre-created secrets test
+			for _, dest := range tt.existing {
+				count++
+				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
 					},
-				},
-			}
-			s := &secretsv1alpha1.VaultDynamicSecret{
-				ObjectMeta: v1.ObjectMeta{
-					Namespace: outputs.K8sNamespace,
-					Name:      fmt.Sprintf("%s-db-%d", outputs.NamePrefix, idx),
-				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-					VaultAuthRef: a.ObjectMeta.Name,
-					Namespace:    outputs.Namespace,
-					Mount:        outputs.DBPath,
-					Role:         outputs.DBRole,
-					Dest:         dest,
-				},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Namespace: outputs.Namespace,
+						Mount:     outputs.DBPath,
+						Role:      outputs.DBRole,
+						Destination: secretsv1alpha1.Destination{
+							Name:   dest,
+							Create: false,
+						},
+					},
+				}
+				assert.NoError(t, crdClient.Create(ctx, vdsObj))
+				objsCreated = append(objsCreated, vdsObj)
 			}
 
-			t.Run(fmt.Sprintf("%s-%d", tt.name, idx), func(t *testing.T) {
-				assert.Nil(t, crdClient.Create(ctx, a))
-				created = append(created, a)
-				assert.Nil(t, crdClient.Create(ctx, s))
-				created = append(created, s)
-				waitForDynamicSecret(t,
-					tfOptions.MaxRetries,
-					tfOptions.TimeBetweenRetries,
-					s.Spec.Dest,
-					s.Namespace,
-					tt.expected,
-				)
-			})
-		}
+			// create secrets tests
+			for idx := 0; idx < tt.create; idx++ {
+				count++
+				dest := fmt.Sprintf("%s-create-%d", tt.name, idx)
+				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Namespace: outputs.Namespace,
+						Mount:     outputs.DBPath,
+						Role:      outputs.DBRole,
+						Destination: secretsv1alpha1.Destination{
+							Name:   dest,
+							Create: true,
+						},
+					},
+				}
+
+				assert.NoError(t, crdClient.Create(ctx, vdsObj))
+				objsCreated = append(objsCreated, vdsObj)
+			}
+			for idx, obj := range objsCreated {
+				nameFmt := "existing-dest-%d"
+				if obj.Spec.Destination.Create {
+					nameFmt = "create-dest-%d"
+				}
+				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
+					assertDynamicSecret(t,
+						tfOptions.MaxRetries,
+						tfOptions.TimeBetweenRetries,
+						obj,
+						tt.expected,
+					)
+				})
+			}
+			require.True(t, count > 0, "no secrets were tested")
+		})
 	}
 }

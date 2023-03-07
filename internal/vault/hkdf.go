@@ -36,7 +36,7 @@ func CreateHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrl
 			Namespace: objKey.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":       "vault-secrets-operator",
-				"app.kubernetes.io/managed-by": "vso",
+				"app.kubernetes.io/managed-by": "hashicorp-vso",
 				"app.kubernetes.io/component":  "client-cache-storage-verification",
 			},
 		},

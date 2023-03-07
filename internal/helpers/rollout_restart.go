@@ -17,28 +17,24 @@ import (
 )
 
 func RolloutRestart(ctx context.Context, s v1.Object, target v1alpha1.RolloutRestartTarget, ctrlClient client.Client) error {
+	objectMeta := v1.ObjectMeta{
+		Namespace: s.GetNamespace(),
+		Name:      target.Name,
+	}
+
 	var obj client.Object
 	switch target.Kind {
 	case "DaemonSet":
 		obj = &appsv1.DaemonSet{
-			ObjectMeta: v1.ObjectMeta{
-				Namespace: s.GetNamespace(),
-				Name:      s.GetName(),
-			},
+			ObjectMeta: objectMeta,
 		}
 	case "Deployment":
 		obj = &appsv1.Deployment{
-			ObjectMeta: v1.ObjectMeta{
-				Namespace: s.GetNamespace(),
-				Name:      s.GetName(),
-			},
+			ObjectMeta: objectMeta,
 		}
 	case "StatefulSet":
 		obj = &appsv1.StatefulSet{
-			ObjectMeta: v1.ObjectMeta{
-				Namespace: s.GetNamespace(),
-				Name:      s.GetName(),
-			},
+			ObjectMeta: objectMeta,
 		}
 	default:
 		return fmt.Errorf("unsupported Kind %s for %T", target.Kind, target)

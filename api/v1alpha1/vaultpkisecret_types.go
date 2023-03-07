@@ -43,9 +43,12 @@ type VaultPKISecretSpec struct {
 	// This parameter is part of the request URL.
 	IssuerRef string `json:"issuerRef,omitempty"`
 
-	// Dest is the name of the secret. The secret must exist and be
-	// writable by the operator.
+	// Dest is the name of the target Kubernetes Secret
+	// Deprecated use Destination instead.
 	Dest string `json:"dest"`
+
+	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
+	Destination Destination `json:"destination"`
 
 	// CommonName to include in the request.
 	CommonName string `json:"commonName"`

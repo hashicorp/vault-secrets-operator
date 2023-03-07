@@ -205,12 +205,18 @@ type dynamicK8SOutputs struct {
 	K8sDBSecrets     []string `json:"k8s_db_secret"`
 }
 
-func waitForDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expected map[string]int) {
+func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int) {
 	t.Helper()
+
+	namespace := vdsObj.GetNamespace()
+	name := vdsObj.Spec.Destination.Name
+	opts := &k8s.KubectlOptions{
+		Namespace: namespace,
+	}
 	retry.DoWithRetry(t,
 		"wait for dynamic secret sync", maxRetries, delay,
 		func() (string, error) {
-			sec, err := k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
+			sec, err := k8s.GetSecretE(t, opts, name)
 			if err != nil {
 				return "", err
 			}
