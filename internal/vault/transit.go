@@ -9,58 +9,21 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/util/json"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	v1alpha12 "github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
-type transitEncDecFunc func(context.Context, Client, string, string, []byte) ([]byte, error)
-
-func EncryptWithTransitFromObjKey(ctx context.Context, ctrlClient ctrlclient.Client, key ctrlclient.ObjectKey, data []byte) ([]byte, error) {
-	return doWithTransitFromObjKey(ctx, ctrlClient, key, data, EncryptWithTransit)
-}
-
-func DecryptWithTransitFromObjKey(ctx context.Context, ctrlClient ctrlclient.Client, key ctrlclient.ObjectKey, data []byte) ([]byte, error) {
-	return doWithTransitFromObjKey(ctx, ctrlClient, key, data, DecryptWithTransit)
-}
-
-func EncryptWithTransitFromObj(ctx context.Context, ctrlClient ctrlclient.Client, transitObj *v1alpha1.VaultTransit, data []byte) ([]byte, error) {
-	return doWithTransitFromObj(ctx, ctrlClient, transitObj, data, EncryptWithTransit)
-}
-
-func DecryptWithTransitFromObj(ctx context.Context, ctrlClient ctrlclient.Client, transitObj *v1alpha1.VaultTransit, data []byte) ([]byte, error) {
-	return doWithTransitFromObj(ctx, ctrlClient, transitObj, data, DecryptWithTransit)
-}
-
-func doWithTransitFromObjKey(ctx context.Context, ctrlClient ctrlclient.Client, key ctrlclient.ObjectKey, data []byte, f transitEncDecFunc) ([]byte, error) {
-	transitObj, err := v1alpha12.GetVaultTransit(ctx, ctrlClient, key)
-	if err != nil {
-		return nil, err
-	}
-
-	return doWithTransitFromObj(ctx, ctrlClient, transitObj, data, f)
-}
-
-func doWithTransitFromObj(ctx context.Context, client ctrlclient.Client, transitObj *v1alpha1.VaultTransit, data []byte, f transitEncDecFunc) ([]byte, error) {
-	c, err := NewClientWithLogin(ctx, client, transitObj)
-	if err != nil {
-		return nil, err
-	}
-
-	return f(ctx, c, transitObj.Spec.Mount, transitObj.Spec.Key, data)
-}
-
 type (
-	EncryptResponse struct {
+	// only here to make encrypting/decrypting a bit simpler, by leveraging json.Marshal
+	encryptResponse struct {
 		Context    string `json:"context"`
 		Ciphertext string `json:"ciphertext"`
 	}
-	DecryptResponse struct {
+	// only here to make encrypting/decrypting a bit simpler, by leveraging json.Marshal
+	decryptResponse struct {
 		Plaintext string `json:"plaintext"`
 	}
 )
 
+// EncryptWithTransit encrypts data using Vault Transit.
 func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte) ([]byte, error) {
 	path := fmt.Sprintf("%s/encrypt/%s", mount, key)
 	resp, err := vaultClient.Write(ctx, path,
@@ -79,8 +42,9 @@ func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 	return json.Marshal(resp.Data)
 }
 
+// DecryptWithTransit decrypts data using Vault Transit.
 func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte) ([]byte, error) {
-	var v EncryptResponse
+	var v encryptResponse
 	err := json.Unmarshal(data, &v)
 	if err != nil {
 		return nil, err
@@ -105,7 +69,7 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 		return nil, err
 	}
 
-	var d DecryptResponse
+	var d decryptResponse
 	err = json.Unmarshal(b, &d)
 	if err != nil {
 		return nil, err

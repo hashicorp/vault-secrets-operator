@@ -53,12 +53,15 @@ type CachingClientFactory interface {
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
 
 type cachingClientFactory struct {
-	cache    ClientCache
-	storage  ClientCacheStorage
-	recorder record.EventRecorder
-	persist  bool
-	logger   logr.Logger
-	mu       sync.RWMutex
+	cache              ClientCache
+	storage            ClientCacheStorage
+	recorder           record.EventRecorder
+	persist            bool
+	encryptionRequired bool
+	// clientCacheKeyEncrypt is a member of the ClientCache, it is instantiated whenever the ClientCacheStorage has enforceEncryption enabled.
+	clientCacheKeyEncrypt ClientCacheKey
+	logger                logr.Logger
+	mu                    sync.RWMutex
 }
 
 // Prune the storage for the requesting object and CachingClientFactoryPruneRequest.
@@ -169,10 +172,18 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 		return nil
 	}
 
+	req, err := m.restoreAllRequest(ctx, client)
+	if err != nil {
+		return err
+	}
+
 	var errs error
-	entries, err := m.storage.GetAll(ctx, client)
+	entries, err := m.storage.RestoreAll(ctx, client, req)
 	if err != nil {
 		m.logger.Error(err, "Restore() failed")
+	}
+	if entries == nil {
+		return nil
 	}
 
 	pruneIt := func(entry *clientCacheStorageEntry) {
@@ -233,7 +244,7 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
-	c, err = NewClientWithLogin(ctx, client, obj)
+	c, err = NewClientWithLogin(ctx, client, obj, nil)
 	if err != nil {
 		logger.Error(err, "Failed to get NewClientWithLogin")
 		return nil, err
@@ -246,33 +257,32 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 	}
 
 	if m.persist && m.storage != nil {
-		_, err := m.storage.Store(ctx, client, ClientCacheStorageRequest{
-			OwnerReferences: nil,
-			// TODO: wire up Transit encryption
-			// TransitObjKey:        ctrlclient.ObjectKey{},
-			Client:            c,
-			EnforceEncryption: false,
-		})
-		if err != nil {
-			// this should not be fatal, so we can rely on the event recorder to provide the necessary warning
-			m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonPersistenceFailed,
-				"Failed to store the Client to the cache, err=%s", err)
+		if err := m.storeClient(ctx, client, c); err != nil {
+			logger.Error(err, "Failed to store the client")
 		}
 	}
 
 	return c, nil
 }
 
-func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, c Client) error {
+func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclient.Client, c Client) error {
 	if !m.persist || m.storage == nil {
 		return fmt.Errorf("storing impossible, storage is not enabled")
 	}
 
 	// TODO: move transit config to VaultAuth
-	req := ClientCacheStorageRequest{
-		// TransitObjKey:     transitObjKey,
-		// EnforceEncryption: enforceEncryption,
+	req := ClientCacheStorageStoreRequest{
 		Client: c,
+	}
+
+	if m.encryptionRequired {
+		c, err := m.storageEncryptionClient(ctx, client)
+		if err != nil {
+			return err
+		}
+		authObj, err := c.GetVaultAuthObj()
+		req.EncryptionClient = c
+		req.EncryptionVaultAuth = authObj
 	}
 
 	if _, err := m.storage.Store(ctx, client, req); err != nil {
@@ -291,7 +301,17 @@ func (m *cachingClientFactory) getClientCacheStorageEntry(ctx context.Context, c
 		CacheKey: cacheKey,
 	}
 
-	return m.storage.Get(ctx, client, req)
+	if m.encryptionRequired {
+		c, err := m.storageEncryptionClient(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+		authObj, err := c.GetVaultAuthObj()
+		req.DecryptionClient = c
+		req.DecryptionVaultAuth = authObj
+	}
+
+	return m.storage.Restore(ctx, client, req)
 }
 
 func (m *cachingClientFactory) restoreClientFromCacheKey(ctx context.Context, client ctrlclient.Client, cacheKey ClientCacheKey) (Client, error) {
@@ -308,7 +328,7 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 		return nil, fmt.Errorf("restoration impossible, storage is not enabled")
 	}
 
-	c, err := NewClientFromStorageEntry(ctx, client, entry)
+	c, err := NewClientFromStorageEntry(ctx, client, entry, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -337,14 +357,63 @@ func (m *cachingClientFactory) cacheClient(c Client) (ClientCacheKey, error) {
 	return cacheKey, nil
 }
 
+// storageEncryptionClient sets up a Client from a VaultAuth object that supports Transit encryption.
+// The result is cached in the ClientCache for future needs. This should only ever be need if the ClientCacheStorage
+// has enforceEncryption enabled.
+func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
+	if m.clientCacheKeyEncrypt == "" {
+		encryptionVaultAuth, err := common.FindVaultAuthForStorageEncryption(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+
+		// if we couldn't produce a valid Client, create a new one, log it in, and cache it
+		vc, err := NewClientWithLogin(ctx, client, encryptionVaultAuth, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// cache the new Client for future requests.
+		cacheKey, err := m.cacheClient(vc)
+		if err != nil {
+			return nil, err
+		}
+
+		m.clientCacheKeyEncrypt = cacheKey
+	}
+
+	c, _ := m.cache.Get(m.clientCacheKeyEncrypt)
+
+	return c, nil
+}
+
+func (m *cachingClientFactory) restoreAllRequest(ctx context.Context, client ctrlclient.Client) (ClientCacheStorageRestoreAllRequest, error) {
+	req := ClientCacheStorageRestoreAllRequest{}
+	if m.encryptionRequired {
+		c, err := m.storageEncryptionClient(ctx, client)
+		if err != nil {
+			return req, err
+		}
+		authObj, err := c.GetVaultAuthObj()
+		if err != nil {
+			return req, err
+		}
+		req.DecryptionVaultAuth = authObj
+		req.DecryptionClient = c
+	}
+
+	return req, nil
+}
+
 // NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
 // The ClientCache's onEvictCallback is registered with the factory's onClientEvict(),
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
 	factory := &cachingClientFactory{
-		storage:  cacheStorage,
-		recorder: config.Recorder,
-		persist:  config.Persist,
+		storage:            cacheStorage,
+		recorder:           config.Recorder,
+		persist:            config.Persist,
+		encryptionRequired: config.StorageConfig.EnforceEncryption,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,

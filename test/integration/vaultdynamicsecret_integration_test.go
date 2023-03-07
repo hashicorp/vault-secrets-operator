@@ -56,7 +56,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-unencrypted")
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted")
 	deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
 
 	k8sDBSecretsCountFromTF := 5

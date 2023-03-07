@@ -17,13 +17,43 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type ClientOptions struct {
+	SkipRenewal bool
+}
+
+func defaultClientOptions() *ClientOptions {
+	return &ClientOptions{
+		SkipRenewal: false,
+	}
+}
+
 // NewClient returns a Client specific to obj.
 // Supported objects can be found in common.GetVaultAuthAndTarget.
 // An error will be returned if obj is deemed to be invalid.
-func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
-	authObj, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
-	if err != nil {
-		return nil, err
+func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error) {
+	var authObj *secretsv1alpha1.VaultAuth
+	var providerNamespace string
+	switch t := obj.(type) {
+	case *secretsv1alpha1.VaultAuth:
+		// setting up a new Client is allowed in the case where the VaultAuth has StorageEncryption enabled.
+		// The object must also be in the Operator's Namespace.
+		authObj = t
+		providerNamespace = authObj.Namespace
+		if providerNamespace != common.OperatorNamespace {
+			return nil, fmt.Errorf("invalid object %T, only allowed in the %s namespace", authObj, common.OperatorNamespace)
+		}
+		if authObj.Spec.StorageEncryption == nil {
+			return nil, fmt.Errorf("invalid object %T, StorageEncryption not configured", t)
+		}
+	default:
+		// otherwise we fall back to the common.GetVaultAuthAndTarget() to decide whether, or not obj is supported.
+		a, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+		if err != nil {
+			return nil, err
+		}
+
+		providerNamespace = target.Namespace
+		authObj = a
 	}
 
 	connName, err := common.GetConnectionNamespacedName(authObj)
@@ -36,7 +66,7 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 		return nil, err
 	}
 	c := &defaultClient{}
-	if err := c.Init(ctx, client, authObj, connObj, target.Namespace); err != nil {
+	if err := c.Init(ctx, client, authObj, connObj, providerNamespace, opts); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -45,8 +75,8 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 // NewClientWithLogin returns a logged-in Client specific to obj.
 // Supported objects can be found in common.GetVaultAuthAndTarget.
 // An error will be returned if obj is deemed to be invalid.
-func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
-	c, err := NewClient(ctx, client, obj)
+func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error) {
+	c, err := NewClient(ctx, client, obj, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +89,7 @@ func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlc
 
 // NewClientFromStorageEntry restores a Client from provided clientCacheStorageEntry.
 // If the restoration fails an error will be returned.
-func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, entry *clientCacheStorageEntry) (Client, error) {
+func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, entry *clientCacheStorageEntry, opts *ClientOptions) (Client, error) {
 	authObj, err := common.FindVaultAuthByUID(ctx, client, entry.VaultAuthNamespace,
 		entry.VaultAuthUID, entry.VaultAuthGeneration)
 	if err != nil {
@@ -73,7 +103,7 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 	}
 
 	c := &defaultClient{}
-	if err := c.Init(ctx, client, authObj, connObj, entry.ProviderNamespace); err != nil {
+	if err := c.Init(ctx, client, authObj, connObj, entry.ProviderNamespace, opts); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +127,7 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 }
 
 type Client interface {
-	Init(context.Context, ctrlclient.Client, *secretsv1alpha1.VaultAuth, *secretsv1alpha1.VaultConnection, string) error
+	Init(context.Context, ctrlclient.Client, *secretsv1alpha1.VaultAuth, *secretsv1alpha1.VaultConnection, string, *ClientOptions) error
 	Login(context.Context, ctrlclient.Client) error
 	Read(context.Context, string) (*api.Secret, error)
 	Restore(context.Context, *api.Secret) error
@@ -121,6 +151,7 @@ type defaultClient struct {
 	authObj            *secretsv1alpha1.VaultAuth
 	connObj            *secretsv1alpha1.VaultConnection
 	lastResp           *api.Secret
+	skipRenewal        bool
 	lastRenewal        int64
 	targetNamespace    string
 	credentialProvider CredentialProvider
@@ -197,14 +228,20 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	return nil
 }
 
-func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerNamespace string) error {
+func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth,
+	connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions,
+) error {
 	if c.initialized {
 		return fmt.Errorf("aleady initialized")
 	}
 
+	if opts == nil {
+		opts = defaultClientOptions()
+	}
+
 	var err error
 	c.once.Do(func() {
-		err = c.init(ctx, client, authObj, connObj, providerNamespace)
+		err = c.init(ctx, client, authObj, connObj, providerNamespace, opts)
 		if err == nil {
 			c.initialized = true
 		}
@@ -280,6 +317,10 @@ func (c *defaultClient) Close() {
 func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 	if err := c.checkInitialized(); err != nil {
 		return err
+	}
+
+	if c.skipRenewal {
+		return nil
 	}
 
 	if !c.lastResp.Auth.Renewable {
@@ -442,7 +483,7 @@ func (c *defaultClient) renew(ctx context.Context) error {
 	return nil
 }
 
-func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerNamespace string) error {
+func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions) error {
 	cfg := &ClientConfig{
 		Address:         connObj.Spec.Address,
 		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
@@ -462,6 +503,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, auth
 		return err
 	}
 
+	c.skipRenewal = opts.SkipRenewal
 	c.credentialProvider = credentialProvider
 	c.client = vc
 	c.authObj = authObj

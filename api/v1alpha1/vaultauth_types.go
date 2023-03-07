@@ -44,9 +44,12 @@ type VaultAuthSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// Kubernetes specific auth configuration, requires that the Method be set to kubernetes.
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
-	// VaultTransitRef is the name of a VaultTransit custom resource that will be used for
-	// encryption/decryption of the cached client.
-	VaultTransitRef string `json:"vaultTransitRef,omitempty"`
+	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
+	// This should only be configured when client cache persistence with encryption is enabled.
+	// This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted
+	// Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the
+	// the label: cacheStorageEncryption=true
+	StorageEncryption *StorageEncryption `json:"storageEncryption,omitempty"`
 }
 
 // VaultAuthStatus defines the observed state of VaultAuth
@@ -66,6 +69,15 @@ type VaultAuth struct {
 
 	Spec   VaultAuthSpec   `json:"spec,omitempty"`
 	Status VaultAuthStatus `json:"status,omitempty"`
+}
+
+// StorageEncryption provides the necessary configuration need to encrypt the storage cache
+// entries using Vault's Transit engine. It only supports Kubernetes Auth for now.
+type StorageEncryption struct {
+	// Mount path of the secret's engine in Vault.
+	Mount string `json:"mount"`
+	// KeyName to use for encrypt/decrypt operations via Vault Transit.
+	KeyName string `json:"keyName"`
 }
 
 //+kubebuilder:object:root=true

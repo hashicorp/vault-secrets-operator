@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -44,11 +46,11 @@ var (
 	EncryptionRequiredError = fmt.Errorf("encryption required")
 )
 
-type ClientCacheStorageRequest struct {
-	OwnerReferences   []metav1.OwnerReference
-	TransitObjKey     ctrlclient.ObjectKey
-	Client            Client
-	EnforceEncryption bool
+type ClientCacheStorageStoreRequest struct {
+	OwnerReferences     []metav1.OwnerReference
+	Client              Client
+	EncryptionClient    Client
+	EncryptionVaultAuth *secretsv1alpha1.VaultAuth
 }
 
 type ClientCacheStoragePruneRequest struct {
@@ -57,8 +59,15 @@ type ClientCacheStoragePruneRequest struct {
 }
 
 type ClientCacheStorageRestoreRequest struct {
-	SecretObjKey ctrlclient.ObjectKey
-	CacheKey     ClientCacheKey
+	SecretObjKey        ctrlclient.ObjectKey
+	CacheKey            ClientCacheKey
+	DecryptionClient    Client
+	DecryptionVaultAuth *secretsv1alpha1.VaultAuth
+}
+
+type ClientCacheStorageRestoreAllRequest struct {
+	DecryptionClient    Client
+	DecryptionVaultAuth *secretsv1alpha1.VaultAuth
 }
 
 type clientCacheStorageEntry struct {
@@ -75,21 +84,13 @@ type clientCacheStorageEntry struct {
 	ProviderNamespace         string
 }
 
-func (c ClientCacheStorageRequest) Validate() error {
+func (c ClientCacheStorageStoreRequest) Validate() error {
 	var err error
 	if c.Client == nil {
 		err = errors.Join(err, fmt.Errorf("a Client must be set"))
 	}
 
-	if c.EnforceEncryption && !c.encryptionConfigured() {
-		err = errors.Join(err, fmt.Errorf("a TransitObjKey must be set: %w", EncryptionRequiredError))
-	}
-
 	return err
-}
-
-func (c ClientCacheStorageRequest) encryptionConfigured() bool {
-	return validateObjectKey(c.TransitObjKey) == nil
 }
 
 type PruneFilterFunc func(secret corev1.Secret) bool
@@ -97,9 +98,9 @@ type PruneFilterFunc func(secret corev1.Secret) bool
 var _ ClientCacheStorage = (*defaultClientCacheStorage)(nil)
 
 type ClientCacheStorage interface {
-	Store(context.Context, ctrlclient.Client, ClientCacheStorageRequest) (*corev1.Secret, error)
-	Get(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error)
-	GetAll(context.Context, ctrlclient.Client) ([]*clientCacheStorageEntry, error)
+	Store(context.Context, ctrlclient.Client, ClientCacheStorageStoreRequest) (*corev1.Secret, error)
+	Restore(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error)
+	RestoreAll(context.Context, ctrlclient.Client, ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error)
 	Prune(context.Context, ctrlclient.Client, ClientCacheStoragePruneRequest) (int, error)
 	Purge(context.Context, ctrlclient.Client) error
 }
@@ -121,22 +122,11 @@ func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlcl
 	return s, nil
 }
 
-func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRequest) (*corev1.Secret, error) {
+func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageStoreRequest) (*corev1.Secret, error) {
 	logger := log.FromContext(ctx)
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
-
-	// global encryption policy checks, all requests must require encryption
-	logger.Info("ClientCacheStorage.Store()",
-		"enforceEncryption", c.enforceEncryption,
-		"encryptionConfigured", req.encryptionConfigured())
-	if c.enforceEncryption && !req.encryptionConfigured() {
-		return nil, fmt.Errorf("request does not support encryption and enforcing enabled: %w", EncryptionRequiredError)
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	authObj, err := req.Client.GetVaultAuthObj()
 	if err != nil {
@@ -157,6 +147,16 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	if err != nil {
 		return nil, err
 	}
+
+	if c.enforceEncryption && (req.EncryptionClient == nil || req.EncryptionVaultAuth == nil) {
+		return nil, fmt.Errorf("request is invalid for when enforcing encryption")
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// global encryption policy checks, all requests must require encryption
+	logger.Info("ClientCacheStorage.Store()",
+		"enforceEncryption", c.enforceEncryption)
 
 	labels := ctrlclient.MatchingLabels{
 		// cacheKey is the key used to access a Client from the ClientCache
@@ -190,26 +190,23 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
-	var b []byte
+	b, err := json.Marshal(sec)
+	if err != nil {
+		return nil, err
+	}
+
 	if c.enforceEncryption {
 		// needed for restoration
 		s.ObjectMeta.Labels[labelEncrypted] = "true"
-		s.ObjectMeta.Labels[labelVaultTransitRef] = req.TransitObjKey.Name
+		s.ObjectMeta.Labels[labelVaultTransitRef] = req.EncryptionVaultAuth.Name
 
-		logger.V(consts.LogLevelDebug).Info("ClientCacheStorage.Store(), calling EncryptWithTransitFromObjKey",
-			"enforceEncryption", c.enforceEncryption,
-			"encryptionConfigured", req.encryptionConfigured, "transitObjKey", req.TransitObjKey)
-		if encBytes, err := EncryptWithTransitFromObjKey(ctx, client, req.TransitObjKey, b); err != nil {
-			return nil, err
-		} else {
-			b = encBytes
-		}
-	} else {
-		b, err = json.Marshal(sec)
+		mount := req.EncryptionVaultAuth.Spec.StorageEncryption.Mount
+		keyName := req.EncryptionVaultAuth.Spec.StorageEncryption.KeyName
+		encBytes, err := EncryptWithTransit(ctx, req.EncryptionClient, mount, keyName, b)
 		if err != nil {
 			return nil, err
 		}
-
+		b = encBytes
 	}
 
 	s.Data = map[string][]byte{
@@ -243,7 +240,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	return s, nil
 }
 
-func (c *defaultClientCacheStorage) Get(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error) {
+func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -268,12 +265,17 @@ func (c *defaultClientCacheStorage) restore(ctx context.Context, client ctrlclie
 	if b, ok := s.Data[fieldCachedSecret]; ok {
 		transitRef := s.Labels["vaultTransitRef"]
 		if transitRef != "" {
-			objKey := ctrlclient.ObjectKey{
-				Namespace: common.OperatorNamespace,
-				Name:      transitRef,
+			if req.DecryptionClient == nil || req.DecryptionVaultAuth == nil {
+				return nil, fmt.Errorf("request is invalid for decryption")
 			}
 
-			decBytes, err := DecryptWithTransitFromObjKey(ctx, client, objKey, b)
+			if req.DecryptionVaultAuth.Name != transitRef {
+				return nil, fmt.Errorf("invalid vaultTransitRef, need %s, have %s", transitRef, req.DecryptionVaultAuth.Name)
+			}
+
+			mount := req.DecryptionVaultAuth.Spec.StorageEncryption.Mount
+			keyName := req.DecryptionVaultAuth.Spec.StorageEncryption.KeyName
+			decBytes, err := DecryptWithTransit(ctx, req.DecryptionClient, mount, keyName, b)
 			if err != nil {
 				return nil, err
 			}
@@ -357,7 +359,7 @@ func (c *defaultClientCacheStorage) Purge(ctx context.Context, client ctrlclient
 	return client.DeleteAllOf(ctx, &corev1.Secret{}, c.deleteAllOfOptions()...)
 }
 
-func (c *defaultClientCacheStorage) GetAll(ctx context.Context, client ctrlclient.Client) ([]*clientCacheStorageEntry, error) {
+func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -372,8 +374,10 @@ func (c *defaultClientCacheStorage) GetAll(ctx context.Context, client ctrlclien
 	for _, s := range found.Items {
 		cacheKey := ClientCacheKey(s.Labels[labelCacheKey])
 		req := ClientCacheStorageRestoreRequest{
-			SecretObjKey: ctrlclient.ObjectKeyFromObject(&s),
-			CacheKey:     cacheKey,
+			SecretObjKey:        ctrlclient.ObjectKeyFromObject(&s),
+			CacheKey:            cacheKey,
+			DecryptionClient:    req.DecryptionClient,
+			DecryptionVaultAuth: req.DecryptionVaultAuth,
 		}
 
 		entry, err := c.restore(ctx, client, req, &s)
