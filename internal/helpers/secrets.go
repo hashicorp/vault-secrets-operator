@@ -9,13 +9,14 @@ import (
 	"fmt"
 	"reflect"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 // OwnerLabels will be applied to any k8s secret we create. They are used in Secret ownership checks.
@@ -83,7 +84,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		// what we set previously. It is possible to keep the previous labels/annotations in the
 		// syncable-secret's Status, but...
 		dest.Data = data
-		logger.Info("Updating secret")
+		logger.V(consts.LogLevelDebug).Info("Updating secret")
 		return client.Update(ctx, &dest)
 	}
 
@@ -104,7 +105,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		},
 	}
 	if exists {
-		logger.Info("Found pre-existing secret",
+		logger.V(consts.LogLevelDebug).Info("Found pre-existing secret",
 			"secret", ctrlclient.ObjectKeyFromObject(&dest))
 		if err := checkSecretIsOwnedByObj(&dest, references); err != nil {
 			return err
