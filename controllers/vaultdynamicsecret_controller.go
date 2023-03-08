@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
@@ -34,10 +35,16 @@ const (
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Recorder       record.EventRecorder
-	ClientFactory  vault.ClientFactory
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.ClientFactory
+	// runtimePodName is used to cache the lookup of the current Pod's name.
+	// This is done via the downwardAPI. We get the current Pod's name from either the
+	// OPERATOR_POD_NAME environment variable, or the /var/run/podinfo/name file; in that order.
 	runtimePodName string
+	// runtimePodUID should always be set when updating resource's Status.
+	// It should be cached from the lookup of the current Pod (runtimePodName).
+	runtimePodUID types.UID
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -45,10 +52,16 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+//
+// required for last-pod checks that are used to mitigate the "lease renewal" storm
+// whenever a new manager pod is created.
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list
+//
 // required for rollout-restart
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//
 // needed for managing cached Clients, duplicated in vaultconnection_controller.go
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
 
@@ -70,6 +83,17 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	if r.runtimePodName != "" && r.runtimePodUID == "" {
+		// since we can't be guaranteed that a Pod name will be unique for all time, we need its UID.
+		// this results in an extra call to the kube API.
+		var pod corev1.Pod
+		key := client.ObjectKey{Namespace: common.OperatorNamespace, Name: r.runtimePodName}
+		if err := r.Client.Get(ctx, key, &pod); err != nil {
+			logger.V(consts.LogLevelWarning).Info("Failed to get current Pod info", "err", err)
+		}
+		r.runtimePodUID = pod.UID
+	}
+
 	o := &secretsv1alpha1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -84,7 +108,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	leaseID := o.Status.SecretLease.ID
 	// logger.Info("Last secret lease", "secretLease", o.Status.SecretLease, "epoch", r.epoch)
 	if leaseID != "" {
-		if r.runtimePodName != "" && r.runtimePodName != o.Status.LastRuntimePodName {
+		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
 			leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
@@ -96,7 +120,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				if err != nil {
 					logger.Error(err, "Failed to compute the new horizon")
 				} else {
-					o.Status.LastRuntimePodName = r.runtimePodName
 					if err := r.updateStatus(ctx, o); err != nil {
 						return ctrl.Result{}, err
 					}
@@ -128,7 +151,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = time.Now().Unix()
-			o.Status.LastRuntimePodName = r.runtimePodName
 			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -166,7 +188,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
-	o.Status.LastRuntimePodName = r.runtimePodName
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -244,6 +265,9 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient v
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+	if r.runtimePodUID != "" {
+		o.Status.LastRuntimePodUID = r.runtimePodUID
+	}
 	if err := r.Status().Update(ctx, o); err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)

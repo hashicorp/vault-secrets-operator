@@ -18,6 +18,7 @@ import (
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -217,6 +218,21 @@ func TestVaultDynamicSecret(t *testing.T) {
 					s.Namespace,
 					tt.expected,
 				)
+
+				var vdsObjFinal secretsv1alpha1.VaultDynamicSecret
+				assert.NoError(t, crdClient.Get(ctx, client.ObjectKeyFromObject(s), &vdsObjFinal))
+				assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
+				assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
+				assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+
+				var pods corev1.PodList
+				assert.NoError(t, crdClient.List(ctx, &pods, client.InNamespace(operatorNS),
+					client.MatchingLabels{
+						"control-plane": "controller-manager",
+					},
+				))
+				require.Equal(t, 1, len(pods.Items))
+				assert.Equal(t, pods.Items[0].UID, vdsObjFinal.Status.LastRuntimePodUID)
 			})
 		}
 	}
