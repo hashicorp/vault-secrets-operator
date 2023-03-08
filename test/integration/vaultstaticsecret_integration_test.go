@@ -197,7 +197,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 
 	// the order of the test VaultStaticSecret's should match slice of expected secrets.
-	secrets := []*secretsv1alpha1.VaultStaticSecret{
+	vssObjs := []*secretsv1alpha1.VaultStaticSecret{
 		// Create a VaultStaticSecret CR to trigger the sync for kv
 		{
 			ObjectMeta: v1.ObjectMeta{
@@ -237,16 +237,20 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 	}
 
-	for _, a := range secrets {
-		require.Nil(t, crdClient.Create(ctx, a))
-		created = append(created, a)
+	for _, obj := range vssObjs {
+		require.NoError(t, crdClient.Create(ctx, obj))
+		created = append(created, obj)
 	}
 
 	expected := []map[string]interface{}{putSecretV1, putSecretV2}
-	assert.Equal(t, len(expected), len(secrets))
-	for i, s := range secrets {
+	assert.Equal(t, len(expected), len(vssObjs))
+	for i, vssObj := range vssObjs {
 		// Wait for the operator to sync Vault secrets --> k8s Secrets
-		waitForSecretData(t, 30, 1*time.Second, s.Spec.Destination.Name, s.ObjectMeta.Namespace, expected[i])
+		secret, err := waitForSecretData(t, 30, 1*time.Second, vssObj.Spec.Destination.Name, vssObj.ObjectMeta.Namespace, expected[i])
+		require.NoError(t, err)
+		assertSyncableSecret(t, vssObj,
+			"secrets.hashicorp.com/v1alpha1",
+			"VaultStaticSecret", secret)
 	}
 
 	// Change the secrets in Vault, wait for the VaultStaticSecret's to refresh,
@@ -259,9 +263,13 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	require.NoError(t, err)
 
 	expected = []map[string]interface{}{updatedSecretV1, updatedSecretV2}
-	assert.Equal(t, len(expected), len(secrets))
-	for i, s := range secrets {
+	assert.Equal(t, len(expected), len(vssObjs))
+	for i, vssObj := range vssObjs {
 		// Wait for the operator to sync Vault secrets --> k8s Secrets
-		waitForSecretData(t, 30, 1*time.Second, s.Spec.Destination.Name, s.ObjectMeta.Namespace, expected[i])
+		secret, err := waitForSecretData(t, 30, 1*time.Second, vssObj.Spec.Destination.Name, vssObj.ObjectMeta.Namespace, expected[i])
+		require.NoError(t, err)
+		assertSyncableSecret(t, vssObj,
+			"secrets.hashicorp.com/v1alpha1",
+			"VaultStaticSecret", secret)
 	}
 }

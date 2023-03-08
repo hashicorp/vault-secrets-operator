@@ -179,17 +179,27 @@ func TestVaultPKISecret(t *testing.T) {
 
 	// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
 	// serial number of the generated cert
-	serialNumber := waitForPKIData(t, 30, 1*time.Second,
+	serialNumber, secret, err := waitForPKIData(t, 30, 1*time.Second,
 		testVaultPKI.Spec.Destination.Name, testVaultPKI.ObjectMeta.Namespace,
 		"test1.example.com", "",
 	)
 	assert.NotEmpty(t, serialNumber)
+	require.NoError(t, err)
+
+	assertSyncableSecret(t, testVaultPKI,
+		"secrets.hashicorp.com/v1alpha1",
+		"VaultPKISecret", secret)
 
 	// Use the serial number of the first generated cert to check that the cert
 	// is updated
-	newSerialNumber := waitForPKIData(t, 30, 2*time.Second,
+	newSerialNumber, secret, err := waitForPKIData(t, 30, 2*time.Second,
 		testVaultPKI.Spec.Destination.Name, testVaultPKI.ObjectMeta.Namespace,
 		"test1.example.com", serialNumber,
 	)
 	assert.NotEmpty(t, newSerialNumber)
+	require.NoError(t, err)
+
+	assertSyncableSecret(t, testVaultPKI,
+		"secrets.hashicorp.com/v1alpha1",
+		"VaultPKISecret", secret)
 }
