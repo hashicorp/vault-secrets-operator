@@ -121,7 +121,7 @@ func main() {
 			Scheme: mgr.GetScheme(),
 		})
 		if err != nil {
-			setupLog.Error(err, "Failed to instantiating a default Client")
+			setupLog.Error(err, "Failed to instantiate a default Client")
 			os.Exit(1)
 		}
 
