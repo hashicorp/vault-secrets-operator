@@ -257,8 +257,11 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 						// For some reason TypeMeta is empty when using the client.Client
 						// from within the tests. So we have to hard code APIVersion and Kind.
 						// There are numerous related GH issues for this:
+						// Normally it should be:
+						// APIVersion: vdsObj.APIVersion,
+						// Kind:       vdsObj.Kind,
 						// e.g. https://github.com/kubernetes/client-go/issues/541
-						APIVersion: "v1alpha1",
+						APIVersion: "secrets.hashicorp.com/v1alpha1",
 						Kind:       "VaultDynamicSecret",
 						Name:       vdsObj.GetName(),
 						UID:        vdsObj.GetUID(),
@@ -266,6 +269,13 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 				}
 				assert.Equal(t, expectedOwnerRefs, sec.OwnerReferences,
 					"expected owner references not set on %s",
+					client.ObjectKeyFromObject(sec))
+			} else {
+				assert.Nil(t, sec.Labels,
+					"expected no labels set on %s",
+					client.ObjectKeyFromObject(sec))
+				assert.Nil(t, sec.OwnerReferences,
+					"expected no OwnerReferences set on %s",
 					client.ObjectKeyFromObject(sec))
 			}
 
