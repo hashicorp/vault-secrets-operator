@@ -133,7 +133,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	for k, v := range OwnerLabels {
 		labels[k] = v
 	}
-	// add any annotations configured configure in destConfig.Labels
+	// add any annotations configured in destConfig.Labels
 	dest.Data = data
 	dest.Type = secretType
 	dest.SetAnnotations(destConfig.Annotations)
