@@ -92,7 +92,7 @@ type clientCacheStorageEntry struct {
 	// VaultConnectionUID is the unique identifier of the VaultConnection custom resource
 	// that was used to create the cached Client.
 	VaultConnectionUID types.UID
-	// VaultAuthNamespace is the k8s namespace of the VaultConnection custom resource
+	// VaultConnectionNamespace is the k8s namespace of the VaultConnection custom resource
 	// that was used to create the cached Client.
 	VaultConnectionNamespace string
 	// VaultConnectionGeneration is the generation of the VaultConnection custom resource
