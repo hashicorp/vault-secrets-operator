@@ -7,9 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -164,7 +164,7 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 		}
 	}
 	// check that obj is the Secret's true Owner
-	if len(dest.OwnerReferences) > 0 && !reflect.DeepEqual(dest.OwnerReferences, references) {
+	if len(dest.OwnerReferences) > 0 && !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {
 		// we are not the owner, perhaps another syncable-secret resource owns this secret?
 		errs = errors.Join(errs, fmt.Errorf("invalid ownerReferences, refs=%#v", dest.OwnerReferences))
 	}
