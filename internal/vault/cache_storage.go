@@ -356,7 +356,7 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 	return count, errs
 }
 
-// Purge all cached client Secrets. This should only be called when running transitioning from persistence to non-persistence modes.
+// Purge all cached client Secrets. This should only be called when transitioning from persistence to non-persistence modes.
 func (c *defaultClientCacheStorage) Purge(ctx context.Context, client ctrlclient.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
