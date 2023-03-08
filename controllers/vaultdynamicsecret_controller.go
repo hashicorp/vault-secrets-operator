@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
@@ -38,12 +37,9 @@ type VaultDynamicSecretReconciler struct {
 	Scheme        *runtime.Scheme
 	Recorder      record.EventRecorder
 	ClientFactory vault.ClientFactory
-	// runtimePodName is used to cache the lookup of the current Pod's name.
-	// This is done via the downwardAPI. We get the current Pod's name from either the
-	// OPERATOR_POD_NAME environment variable, or the /var/run/podinfo/name file; in that order.
-	runtimePodName string
 	// runtimePodUID should always be set when updating resource's Status.
-	// It should be cached from the lookup of the current Pod (runtimePodName).
+	// This is done via the downwardAPI. We get the current Pod's UID from either the
+	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
 	runtimePodUID types.UID
 }
 
@@ -52,10 +48,6 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
-//
-// required for last-pod checks that are used to mitigate the "lease renewal" storm
-// whenever a new manager pod is created.
-//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list
 //
 // required for rollout-restart
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
@@ -74,24 +66,15 @@ type VaultDynamicSecretReconciler struct {
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if r.runtimePodName == "" {
-		r.runtimePodName = os.Getenv("OPERATOR_POD_NAME")
-	}
-	if r.runtimePodName == "" {
-		if b, err := os.ReadFile("/var/run/podinfo/name"); err == nil {
-			r.runtimePodName = string(b)
+	if r.runtimePodUID == "" {
+		if val := os.Getenv("OPERATOR_POD_UID"); val != "" {
+			r.runtimePodUID = types.UID(val)
 		}
 	}
-
-	if r.runtimePodName != "" && r.runtimePodUID == "" {
-		// since we can't be guaranteed that a Pod name will be unique for all time, we need its UID.
-		// this results in an extra call to the kube API.
-		var pod corev1.Pod
-		key := client.ObjectKey{Namespace: common.OperatorNamespace, Name: r.runtimePodName}
-		if err := r.Client.Get(ctx, key, &pod); err != nil {
-			logger.V(consts.LogLevelWarning).Info("Failed to get current Pod info", "err", err)
+	if r.runtimePodUID == "" {
+		if b, err := os.ReadFile("/var/run/podinfo/uid"); err == nil {
+			r.runtimePodUID = types.UID(b)
 		}
-		r.runtimePodUID = pod.UID
 	}
 
 	o := &secretsv1alpha1.VaultDynamicSecret{}
