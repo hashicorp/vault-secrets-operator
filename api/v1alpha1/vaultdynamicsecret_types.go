@@ -25,9 +25,6 @@ type VaultDynamicSecretSpec struct {
 	Mount string `json:"mount"`
 	// Role in Vault to get the credentials for.
 	Role string `json:"role"`
-	// Dest is the name of the target Kubernetes Secret
-	// Deprecated use Destination instead.
-	Dest string `json:"dest"`
 	// RolloutRestartTargets
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.

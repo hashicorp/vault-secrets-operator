@@ -30,36 +30,60 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/component":  "secret-sync",
 }
 
+// syncableSecretMetaData provides common data structure that extracts the bits pertinent handling
+// any of the sync-able secret custom resource types.
+//
+// See newSyncableSecretMetaData for the supported object types.
+type syncableSecretMetaData struct {
+	apiVersion string
+	kind       string
+	destConfig *secretsv1alpha1.Destination
+}
+
+// newSyncableSecretMetaData returns syncableSecretMetaData if obj is a supported type.
+// An error will be returned of obj is not a supported type.
+//
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
+func newSyncableSecretMetaData(obj ctrlclient.Object) (*syncableSecretMetaData, error) {
+	switch t := obj.(type) {
+	case *secretsv1alpha1.VaultDynamicSecret:
+		return &syncableSecretMetaData{
+			destConfig: &t.Spec.Destination,
+			apiVersion: t.APIVersion,
+			kind:       t.Kind,
+		}, nil
+	case *secretsv1alpha1.VaultStaticSecret:
+		return &syncableSecretMetaData{
+			destConfig: &t.Spec.Destination,
+			apiVersion: t.APIVersion,
+			kind:       t.Kind,
+		}, nil
+	case *secretsv1alpha1.VaultPKISecret:
+		return &syncableSecretMetaData{
+			destConfig: &t.Spec.Destination,
+			apiVersion: t.APIVersion,
+			kind:       t.Kind,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported type %T", t)
+	}
+}
+
 // SyncSecret writes data to a Kubernetes Secret for obj. All configuring is derived from the object's
 // Spec.Destination configuration.
 //
-// Supported objects are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
+// See newSyncableSecretMetaData for the supported types for obj.
 func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, data map[string][]byte) error {
-	var destConfig secretsv1alpha1.Destination
-	var apiVersion string
-	var kind string
-	switch t := obj.(type) {
-	case *secretsv1alpha1.VaultDynamicSecret:
-		destConfig = t.Spec.Destination
-		apiVersion = t.APIVersion
-		kind = t.Kind
-	case *secretsv1alpha1.VaultStaticSecret:
-		destConfig = t.Spec.Destination
-		apiVersion = t.APIVersion
-		kind = t.Kind
-	case *secretsv1alpha1.VaultPKISecret:
-		destConfig = t.Spec.Destination
-		apiVersion = t.APIVersion
-		kind = t.Kind
-	default:
-		return fmt.Errorf("unsupported type %T", t)
+	meta, err := newSyncableSecretMetaData(obj)
+	if err != nil {
+		return err
 	}
 
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
-		"secretName", destConfig.Name, "create", destConfig.Create)
+		"secretName", meta.destConfig.Name, "create", meta.destConfig.Create)
 	key := ctrlclient.ObjectKey{
 		Namespace: obj.GetNamespace(),
-		Name:      destConfig.Name,
+		Name:      meta.destConfig.Name,
 	}
 
 	var dest corev1.Secret
@@ -73,10 +97,10 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	}
 
 	// not configured to create the destination Secret
-	if !destConfig.Create {
+	if !meta.destConfig.Create {
 		if !exists {
 			return fmt.Errorf("destination secret %s does not exist, and create=%t",
-				key, destConfig.Create)
+				key, meta.destConfig.Create)
 		}
 
 		// it's probably best that we don't add labels nor annotations when we are not the Secret's owner.
@@ -90,16 +114,16 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 
 	// we are responsible for the Secret's complete lifecycle
 	secretType := corev1.SecretTypeOpaque
-	if destConfig.Type != "" {
-		secretType = destConfig.Type
+	if meta.destConfig.Type != "" {
+		secretType = meta.destConfig.Type
 	}
 
 	// these are the OwnerReferences that should be included in any Secret that is created/owned by
 	// the syncable-secret
 	references := []metav1.OwnerReference{
 		{
-			APIVersion: apiVersion,
-			Kind:       kind,
+			APIVersion: meta.apiVersion,
+			Kind:       meta.kind,
 			Name:       obj.GetName(),
 			UID:        obj.GetUID(),
 		},
@@ -115,7 +139,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		// secret does not exist, so we are going to create it.
 		dest = corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      destConfig.Name,
+				Name:      meta.destConfig.Name,
 				Namespace: obj.GetNamespace(),
 			},
 		}
@@ -126,7 +150,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	// common setup/updates
 	// set any labels configured in destConfig.Labels
 	labels := make(map[string]string)
-	for k, v := range destConfig.Labels {
+	for k, v := range meta.destConfig.Labels {
 		labels[k] = v
 	}
 	// always add the "owner" labels last to guard against intersections with destConfig.Labels
@@ -136,7 +160,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	// add any annotations configured in destConfig.Labels
 	dest.Data = data
 	dest.Type = secretType
-	dest.SetAnnotations(destConfig.Annotations)
+	dest.SetAnnotations(meta.destConfig.Annotations)
 	dest.SetLabels(labels)
 	dest.SetOwnerReferences(references)
 
@@ -147,6 +171,35 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 
 	logger.V(consts.LogLevelDebug).Info("Creating secret")
 	return client.Create(ctx, &dest)
+}
+
+// CheckSecretExists checks if the Secret configured on obj exists.
+// Returns true if the secret exists, false if the secret was not found.
+// If any error, other than apierrors.IsNotFound, is encountered,
+// then that error will be returned along with the existence value of false.
+//
+// See newSyncableSecretMetaData for the supported types for obj.
+func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (bool, error) {
+	meta, err := newSyncableSecretMetaData(obj)
+	if err != nil {
+		return false, err
+	}
+
+	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
+		"secretName", meta.destConfig.Name, "create", meta.destConfig.Create)
+	key := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.destConfig.Name}
+	var s corev1.Secret
+	if err := client.Get(ctx, key, &s); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
+			return false, nil
+		}
+		// let the caller log the error
+		return false, err
+	}
+
+	logger.V(consts.LogLevelDebug).Info("Secret exists")
+	return true, nil
 }
 
 // checkSecretIsOwnedByObj validates the Secret is owned by obj by checking its Labels and OwnerReferences.

@@ -22,10 +22,7 @@ type VaultStaticSecretSpec struct {
 	Mount string `json:"mount"`
 	// Name of the secret in Vault
 	Name string `json:"name"`
-	// Dest is the name of the target Kubernetes Secret
-	// Deprecated use Destination instead.
-	Dest string `json:"dest"`
-	// Secret type
+	// Type of the Vault static secret
 	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
 	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation

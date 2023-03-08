@@ -155,13 +155,16 @@ func TestVaultPKISecret(t *testing.T) {
 			Namespace:    testVaultNamespace,
 			Mount:        testPKIMountPath,
 			Name:         "secret",
-			Dest:         "pki1",
 			CommonName:   "test1.example.com",
 			Format:       "pem",
 			Revoke:       true,
 			Clear:        true,
 			ExpiryOffset: "5s",
 			TTL:          "15s",
+			Destination: secretsv1alpha1.Destination{
+				Name:   "pki1",
+				Create: false,
+			},
 		},
 	}
 	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
@@ -177,7 +180,7 @@ func TestVaultPKISecret(t *testing.T) {
 	// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
 	// serial number of the generated cert
 	serialNumber := waitForPKIData(t, 30, 1*time.Second,
-		testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace,
+		testVaultPKI.Spec.Destination.Name, testVaultPKI.ObjectMeta.Namespace,
 		"test1.example.com", "",
 	)
 	assert.NotEmpty(t, serialNumber)
@@ -185,7 +188,7 @@ func TestVaultPKISecret(t *testing.T) {
 	// Use the serial number of the first generated cert to check that the cert
 	// is updated
 	newSerialNumber := waitForPKIData(t, 30, 2*time.Second,
-		testVaultPKI.Spec.Dest, testVaultPKI.ObjectMeta.Namespace,
+		testVaultPKI.Spec.Destination.Name, testVaultPKI.ObjectMeta.Namespace,
 		"test1.example.com", serialNumber,
 	)
 	assert.NotEmpty(t, newSerialNumber)

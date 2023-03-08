@@ -10,16 +10,15 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
@@ -61,8 +60,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	path := r.getPath(s.Spec)
-	logger = logger.WithValues("vault_path", path, "dest", s.Spec.Dest)
-
 	if s.GetDeletionTimestamp() != nil {
 		if err := r.handleDeletion(ctx, logger, s); err != nil {
 			return ctrl.Result{}, err
@@ -101,12 +98,20 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// the secret should already be provisioned, the operator does
 	// not support dynamically creating secrets yet.
-	sec, err := r.getSecret(ctx, logger, s)
-	if err != nil {
-		logger.Info("Kubernetes secret does not exist yet", "path", s.Name)
-		return ctrl.Result{
-			RequeueAfter: time.Second * 10,
-		}, nil
+	if !s.Spec.Destination.Create {
+		exists, err := helpers.CheckSecretExists(ctx, r.Client, s)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if !exists {
+			horizon, _ := computeHorizonWithJitter(time.Second * 10)
+			logger.Info("Kubernetes secret does not exist yet",
+				"name", s.Spec.Destination.Name, "retry_horizon", horizon)
+			return ctrl.Result{
+				RequeueAfter: horizon,
+			}, nil
+		}
 	}
 
 	c, err := r.ClientFactory.GetClient(ctx, r.Client, s)
@@ -144,9 +149,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Error(err, "Error marshalling Vault secret data")
 		return ctrl.Result{}, err
 	}
-	sec.Data = data
-	if err := r.Client.Update(ctx, sec); err != nil {
-		logger.Error(err, "Error updating the secret")
+	if err := helpers.SyncSecret(ctx, r.Client, s, data); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -230,7 +233,7 @@ func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logge
 		}
 	}
 
-	if s.Spec.Clear {
+	if !s.Spec.Destination.Create && s.Spec.Clear {
 		if err := r.clearSecretData(ctx, l, s); err != nil {
 			return err
 		}
@@ -238,30 +241,8 @@ func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logge
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) getSecret(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) (*corev1.Secret, error) {
-	key := types.NamespacedName{
-		Namespace: s.Namespace,
-		Name:      s.Spec.Dest,
-	}
-
-	sec := &corev1.Secret{}
-	if err := r.Client.Get(ctx, key, sec); err != nil {
-		return nil, err
-	}
-
-	return sec, nil
-}
-
 func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
-	l.Info("Clearing the secret's data", "name", s.Spec.Dest)
-	sec, err := r.getSecret(ctx, l, s)
-	if err != nil {
-		return err
-	}
-
-	sec.Data = nil
-
-	return r.Client.Update(ctx, sec)
+	return helpers.SyncSecret(ctx, r.Client, s, nil)
 }
 
 func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {

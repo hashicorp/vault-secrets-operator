@@ -210,7 +210,10 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Mount:        testKvMountPath,
 				Type:         "kv-v1",
 				Name:         "secret",
-				Dest:         "secretkv",
+				Destination: secretsv1alpha1.Destination{
+					Name:   "secretkv",
+					Create: false,
+				},
 				RefreshAfter: "5s",
 			},
 		},
@@ -221,11 +224,14 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultStaticSecretSpec{
-				Namespace:    testVaultNamespace,
-				Mount:        testKvv2MountPath,
-				Type:         "kv-v2",
-				Name:         "secret",
-				Dest:         "secretkvv2",
+				Namespace: testVaultNamespace,
+				Mount:     testKvv2MountPath,
+				Type:      "kv-v2",
+				Name:      "secret",
+				Destination: secretsv1alpha1.Destination{
+					Name:   "secretkvv2",
+					Create: false,
+				},
 				RefreshAfter: "5s",
 			},
 		},
@@ -240,7 +246,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	assert.Equal(t, len(expected), len(secrets))
 	for i, s := range secrets {
 		// Wait for the operator to sync Vault secrets --> k8s Secrets
-		waitForSecretData(t, 30, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
+		waitForSecretData(t, 30, 1*time.Second, s.Spec.Destination.Name, s.ObjectMeta.Namespace, expected[i])
 	}
 
 	// Change the secrets in Vault, wait for the VaultStaticSecret's to refresh,
@@ -256,6 +262,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	assert.Equal(t, len(expected), len(secrets))
 	for i, s := range secrets {
 		// Wait for the operator to sync Vault secrets --> k8s Secrets
-		waitForSecretData(t, 30, 1*time.Second, s.Spec.Dest, s.ObjectMeta.Namespace, expected[i])
+		waitForSecretData(t, 30, 1*time.Second, s.Spec.Destination.Name, s.ObjectMeta.Namespace, expected[i])
 	}
 }
