@@ -36,25 +36,7 @@ func (k ClientCacheKey) String() string {
 //
 // See computeClientCacheKey for more details on how the client cache is derived
 func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
-	var errs error
-	authObj, err := c.GetVaultAuthObj()
-	if err != nil {
-		errs = errors.Join(err)
-	}
-	connObj, err := c.GetVaultConnectionObj()
-	if err != nil {
-		errs = errors.Join(err)
-	}
-
-	credentialProvider, err := c.GetCredentialProvider()
-	if err != nil {
-		errs = errors.Join(err)
-	}
-	if errs != nil {
-		return "", errs
-	}
-
-	return computeClientCacheKey(authObj, connObj, credentialProvider.GetUID())
+	return computeClientCacheKey(c.GetVaultAuthObj(), c.GetVaultConnectionObj(), c.GetCredentialProvider().GetUID())
 }
 
 // ComputeClientCacheKeyFromObj for use in a ClientCache. It is derived from the configuration of obj.
@@ -107,7 +89,7 @@ func computeClientCacheKey(authObj *secretsv1alpha1.VaultAuth, connObj *secretsv
 	var errs error
 	method := authObj.Spec.Method
 	if method == "" {
-		errs = errors.Join(fmt.Errorf("auth method is empty"))
+		errs = errors.Join(errs, fmt.Errorf("auth method is empty"))
 	}
 
 	// only used for duplicate UID detection, all values are ignored
@@ -115,10 +97,10 @@ func computeClientCacheKey(authObj *secretsv1alpha1.VaultAuth, connObj *secretsv
 	requireUIDLen := 36
 	validateUID := func(name string, uid types.UID) {
 		if len(uid) != requireUIDLen {
-			errs = errors.Join(fmt.Errorf("%w %d, must be %d", errorInvalidUIDLength, len(uid), requireUIDLen))
+			errs = errors.Join(errs, fmt.Errorf("%w %d, must be %d", errorInvalidUIDLength, len(uid), requireUIDLen))
 		}
 		if _, ok := seen[uid]; ok {
-			errs = errors.Join(fmt.Errorf("%w %s", errorDuplicateUID, uid))
+			errs = errors.Join(errs, fmt.Errorf("%w %s", errorDuplicateUID, uid))
 		}
 		seen[uid] = 1
 	}

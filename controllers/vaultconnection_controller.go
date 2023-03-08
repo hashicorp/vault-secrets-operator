@@ -84,14 +84,14 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		logger.Error(err, "Failed to construct Vault client")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError, "Failed to construct Vault client: %s", err)
 
-		errs = errors.Join(err)
+		errs = errors.Join(errs, err)
 	}
 
 	if vaultClient != nil {
 		if _, err := vaultClient.Sys().SealStatusWithContext(ctx); err != nil {
 			logger.Error(err, "Failed to check Vault seal status, requeuing")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
-			errs = errors.Join(err)
+			errs = errors.Join(errs, err)
 		} else {
 			o.Status.Valid = true
 		}
@@ -108,11 +108,11 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		PruneStorage: true,
 	}); err != nil {
 		logger.Error(err, "Failed prune Client cache of older generations")
-		errs = errors.Join(err)
+		errs = errors.Join(errs, err)
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
-		errs = errors.Join(err)
+		errs = errors.Join(errs, err)
 	}
 
 	if errs != nil {

@@ -78,7 +78,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if o.Namespace == common.OperatorNamespace && o.Spec.VaultConnectionRef == "" {
 		err = fmt.Errorf("vaultConnectionRef must be set on resources in the %q namespace", common.OperatorNamespace)
 		logger.Error(err, "Invalid resource")
-		errs = errors.Join(errs)
+		errs = errors.Join(errs, err)
 	}
 
 	connName, err := common.GetConnectionNamespacedName(o)
@@ -86,11 +86,11 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		msg := "Invalid VaultConnectionRef"
 		logger.Error(err, msg)
 		r.recordEvent(o, consts.ReasonInvalidResourceRef, msg+": %s", err)
-		errs = errors.Join(err)
+		errs = errors.Join(errs, err)
 	}
 
 	if _, err = common.GetVaultConnectionWithRetry(ctx, r.Client, connName, time.Millisecond*500, 60); err != nil {
-		errs = errors.Join(err)
+		errs = errors.Join(errs, err)
 		logger.Error(err, "Failed to find VaultConnectionRef")
 	}
 
@@ -104,7 +104,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		FilterFunc:   filterOldCacheRefs,
 		PruneStorage: true,
 	}); err != nil {
-		errs = errors.Join(err)
+		errs = errors.Join(errs, err)
 	}
 
 	if errs == nil {

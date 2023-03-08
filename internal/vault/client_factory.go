@@ -74,18 +74,12 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 	switch cur := obj.(type) {
 	case *secretsv1alpha1.VaultAuth:
 		filter = func(c Client) bool {
-			other, err := c.GetVaultAuthObj()
-			if err != nil {
-				return false
-			}
+			other := c.GetVaultAuthObj()
 			return req.FilterFunc(cur, other)
 		}
 	case *secretsv1alpha1.VaultConnection:
 		filter = func(c Client) bool {
-			other, err := c.GetVaultConnectionObj()
-			if err != nil {
-				return false
-			}
+			other := c.GetVaultConnectionObj()
 			return req.FilterFunc(cur, other)
 		}
 	default:
@@ -97,18 +91,17 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 
 	// prune the client cache for filter, pruned is a slice of cache keys
 	pruned := m.cache.Prune(filter)
-	var err error
-
+	var errs error
 	// for all cache entries pruned, remove the corresponding storage entries.
 	if req.PruneStorage && m.persist && m.storage != nil {
 		for _, key := range pruned {
 			if _, err := m.pruneStorage(ctx, client, key); err != nil {
-				err = errors.Join(err)
+				errs = errors.Join(errs, err)
 			}
 		}
 	}
 
-	return len(pruned), err
+	return len(pruned), errs
 }
 
 // pruneStorage of all stored Secrets matching the cacheKey.
@@ -177,19 +170,20 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 		return err
 	}
 
-	var errs error
 	entries, err := m.storage.RestoreAll(ctx, client, req)
 	if err != nil {
-		m.logger.Error(err, "Restore() failed")
+		m.logger.Error(err, "RestoreAll failed from storage")
+		return err
 	}
 	if entries == nil {
 		return nil
 	}
 
+	var errs error
 	pruneIt := func(entry *clientCacheStorageEntry) {
 		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {
 			m.logger.Error(err, "Failed to prune invalid storage entry", "cacheKey", entry.CacheKey)
-			errs = errors.Join(err)
+			errs = errors.Join(errs, err)
 		}
 	}
 	// this is a bit challenging, since we really only want to restore Clients that are actually needed by any of the Vault*Secret types.
@@ -199,7 +193,7 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 		_, err := m.restoreClient(ctx, client, entry)
 		if err != nil {
 			m.logger.Error(err, "Restore failed", "cacheKey", entry.CacheKey)
-			errs = errors.Join(err)
+			errs = errors.Join(errs, err)
 			pruneIt(entry)
 			continue
 		}
@@ -280,7 +274,7 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 		if err != nil {
 			return err
 		}
-		authObj, err := c.GetVaultAuthObj()
+		authObj := c.GetVaultAuthObj()
 		req.EncryptionClient = c
 		req.EncryptionVaultAuth = authObj
 	}
@@ -306,7 +300,7 @@ func (m *cachingClientFactory) getClientCacheStorageEntry(ctx context.Context, c
 		if err != nil {
 			return nil, err
 		}
-		authObj, err := c.GetVaultAuthObj()
+		authObj := c.GetVaultAuthObj()
 		req.DecryptionClient = c
 		req.DecryptionVaultAuth = authObj
 	}
@@ -382,7 +376,11 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 		m.clientCacheKeyEncrypt = cacheKey
 	}
 
-	c, _ := m.cache.Get(m.clientCacheKeyEncrypt)
+	c, ok := m.cache.Get(m.clientCacheKeyEncrypt)
+	if !ok {
+		return nil, fmt.Errorf("expected Client for storage encryption not found in the cache, "+
+			"cacheKey=%s", m.clientCacheKeyEncrypt)
+	}
 
 	return c, nil
 }
@@ -394,11 +392,7 @@ func (m *cachingClientFactory) restoreAllRequest(ctx context.Context, client ctr
 		if err != nil {
 			return req, err
 		}
-		authObj, err := c.GetVaultAuthObj()
-		if err != nil {
-			return req, err
-		}
-		req.DecryptionVaultAuth = authObj
+		req.DecryptionVaultAuth = c.GetVaultAuthObj()
 		req.DecryptionClient = c
 	}
 

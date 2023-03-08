@@ -10,27 +10,21 @@ import (
 	"strconv"
 	"sync"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-
 	"github.com/go-logr/logr"
-
-	"k8s.io/apimachinery/pkg/types"
-
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 const (
@@ -39,6 +33,15 @@ const (
 	labelCacheKey        = "cacheKey"
 	fieldMACMessage      = "messageMAC"
 	fieldCachedSecret    = "secret"
+
+	labelAuthNamespace        = "auth/namespace"
+	labelAuthUID              = "auth/UID"
+	labelAuthGeneration       = "auth/generation"
+	labelConnectionNamespace  = "connection/namespace"
+	labelConnectionUID        = "connection/UID"
+	labelConnectionGeneration = "connection/generation"
+	labelProviderUID          = "provider/UID"
+	labelProviderNamespace    = "provider/namespace"
 )
 
 var (
@@ -70,18 +73,37 @@ type ClientCacheStorageRestoreAllRequest struct {
 	DecryptionVaultAuth *secretsv1alpha1.VaultAuth
 }
 
+// clientCacheStorageEntry represents a single Vault Client.
+// It contains the context needed to restore a Client to its original state.
 type clientCacheStorageEntry struct {
-	CacheKey                  ClientCacheKey
-	Secret                    *corev1.Secret
-	VaultSecret               *api.Secret
-	VaultAuthUID              types.UID
-	VaultAuthNamespace        string
-	VaultAuthGeneration       int64
-	VaultConnectionUID        types.UID
-	VaultConnectionNamespace  string
+	// CacheKey for the Storage entry
+	CacheKey ClientCacheKey
+	// VaultSecret contains the Vault authentication token
+	VaultSecret *api.Secret
+	// VaultAuthUID is the unique identifier of the VaultAuth custom resource
+	// that was used to create the cached Client.
+	VaultAuthUID types.UID
+	// VaultAuthNamespace is the k8s namespace of the VaultAuth custom resource
+	// that was used to create the cached Client.
+	VaultAuthNamespace string
+	// VaultAuthGeneration is the generation of the VaultAuth custom resource
+	// that was used to create the cached Client.
+	VaultAuthGeneration int64
+	// VaultConnectionUID is the unique identifier of the VaultConnection custom resource
+	// that was used to create the cached Client.
+	VaultConnectionUID types.UID
+	// VaultAuthNamespace is the k8s namespace of the VaultConnection custom resource
+	// that was used to create the cached Client.
+	VaultConnectionNamespace string
+	// VaultConnectionGeneration is the generation of the VaultConnection custom resource
+	// that was used to create the cached Client.
 	VaultConnectionGeneration int64
-	ProviderUID               types.UID
-	ProviderNamespace         string
+	// ProviderUID is the unique identifier of the CredentialProvider that
+	// was used to create the cached Client.
+	ProviderUID types.UID
+	// ProviderNamespace is the k8s namespace of the CredentialProvider that
+	// was used to create the cached Client.
+	ProviderNamespace string
 }
 
 func (c ClientCacheStorageStoreRequest) Validate() error {
@@ -128,22 +150,10 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
-	authObj, err := req.Client.GetVaultAuthObj()
-	if err != nil {
-		return nil, err
-	}
-
-	connObj, err := req.Client.GetVaultConnectionObj()
-	if err != nil {
-		return nil, err
-	}
-
+	authObj := req.Client.GetVaultAuthObj()
+	connObj := req.Client.GetVaultConnectionObj()
+	credentialProvider := req.Client.GetCredentialProvider()
 	cacheKey, err := req.Client.GetCacheKey()
-	if err != nil {
-		return nil, err
-	}
-
-	credentialProvider, err := req.Client.GetCredentialProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -163,16 +173,16 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		labelCacheKey: cacheKey.String(),
 		// required for storage cache cleanup performed by the Client's VaultAuth
 		// this is done by controllers.VaultAuthReconciler
-		"auth/namespace":  authObj.Namespace,
-		"auth/UID":        string(authObj.UID),
-		"auth/generation": strconv.FormatInt(authObj.Generation, 10),
+		labelAuthNamespace:  authObj.Namespace,
+		labelAuthUID:        string(authObj.UID),
+		labelAuthGeneration: strconv.FormatInt(authObj.Generation, 10),
 		// required for storage cache cleanup performed by the Client's VaultConnect
 		// this is done by controllers.VaultConnectionReconciler
-		"connection/namespace":  connObj.Namespace,
-		"connection/UID":        string(connObj.UID),
-		"connection/generation": strconv.FormatInt(connObj.Generation, 10),
-		"provider/UID":          string(credentialProvider.GetUID()),
-		"provider/namespace":    credentialProvider.GetNamespace(),
+		labelConnectionNamespace:  connObj.Namespace,
+		labelConnectionUID:        string(connObj.UID),
+		labelConnectionGeneration: strconv.FormatInt(connObj.Generation, 10),
+		labelProviderUID:          string(credentialProvider.GetUID()),
+		labelProviderNamespace:    credentialProvider.GetNamespace(),
 	}
 	s := &corev1.Secret{
 		// we always store Clients in an Immutable secret as an anti-tampering mitigation.
@@ -185,7 +195,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		},
 	}
 
-	sec, err := req.Client.GetTokenSecret()
+	sec := req.Client.GetTokenSecret()
 	if err != nil {
 		return nil, err
 	}
@@ -249,10 +259,6 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 		return nil, err
 	}
 
-	if err := c.validateSecretMAC(req, s); err != nil {
-		return nil, err
-	}
-
 	return c.restore(ctx, client, req, s)
 }
 
@@ -290,17 +296,16 @@ func (c *defaultClientCacheStorage) restore(ctx context.Context, client ctrlclie
 
 	entry := &clientCacheStorageEntry{
 		CacheKey:                 req.CacheKey,
-		Secret:                   s,
 		VaultSecret:              secret,
-		VaultAuthUID:             types.UID(s.Labels["auth/UID"]),
-		VaultAuthNamespace:       s.Labels["auth/namespace"],
-		VaultConnectionUID:       types.UID(s.Labels["connection/UID"]),
-		VaultConnectionNamespace: s.Labels["connection/namespace"],
-		ProviderUID:              types.UID(s.Labels["provider/UID"]),
-		ProviderNamespace:        s.Labels["provider/namespace"],
+		VaultAuthUID:             types.UID(s.Labels[labelAuthUID]),
+		VaultAuthNamespace:       s.Labels[labelAuthNamespace],
+		VaultConnectionUID:       types.UID(s.Labels[labelConnectionUID]),
+		VaultConnectionNamespace: s.Labels[labelConnectionNamespace],
+		ProviderUID:              types.UID(s.Labels[labelProviderUID]),
+		ProviderNamespace:        s.Labels[labelProviderNamespace],
 	}
 
-	if v, ok := s.Labels["auth/generation"]; ok && v != "" {
+	if v, ok := s.Labels[labelAuthGeneration]; ok && v != "" {
 		generation, err := strconv.Atoi(v)
 		if err != nil {
 			return nil, err
@@ -308,7 +313,7 @@ func (c *defaultClientCacheStorage) restore(ctx context.Context, client ctrlclie
 		entry.VaultAuthGeneration = int64(generation)
 	}
 
-	if v, ok := s.Labels["connection/generation"]; ok && v != "" {
+	if v, ok := s.Labels[labelConnectionGeneration]; ok && v != "" {
 		generation, err := strconv.Atoi(v)
 		if err != nil {
 			return nil, err
@@ -328,19 +333,19 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 		return 0, nil
 	}
 
-	var err error
+	var errs error
 	var count int
 	for _, item := range secrets.Items {
 		if req.Filter != nil && req.Filter(item) {
 			continue
 		}
 
-		if err = client.Delete(ctx, &item); err != nil {
+		if err := client.Delete(ctx, &item); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
 
-			err = errors.Join(err)
+			errs = errors.Join(errs, err)
 			continue
 		}
 		count++
@@ -348,7 +353,7 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 
 	c.logger.V(consts.LogLevelDebug).Info("Pruned storage cache", "count", count, "total", len(secrets.Items))
 
-	return count, err
+	return count, errs
 }
 
 // Purge all cached client Secrets. This should only be called when running transitioning from persistence to non-persistence modes.
@@ -382,7 +387,7 @@ func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlc
 
 		entry, err := c.restore(ctx, client, req, &s)
 		if err != nil {
-			errs = errors.Join(err)
+			errs = errors.Join(errs, err)
 		}
 
 		result = append(result, entry)

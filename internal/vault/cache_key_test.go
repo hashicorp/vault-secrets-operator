@@ -201,10 +201,6 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 			want:        ClientCacheKey("ical-" + computedHash),
 			wantErr:     assert.NoError,
 		},
-		{
-			name:    "valid-not-initialized",
-			wantErr: assert.Error,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,9 +209,8 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 				c = &defaultClient{}
 			} else {
 				c = &defaultClient{
-					initialized: true,
-					authObj:     tt.authObj,
-					connObj:     tt.connObj,
+					authObj: tt.authObj,
+					connObj: tt.connObj,
 					credentialProvider: &kubernetesCredentialProvider{
 						uid: tt.providerUID,
 					},
