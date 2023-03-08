@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
@@ -239,7 +241,13 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 			if err := client.Delete(ctx, s); err != nil {
 				return nil, err
 			}
-			if err := client.Create(ctx, s); err != nil {
+
+			// we want to retry create since the previous Delete() call is eventually consistent.
+			bo := backoff.NewExponentialBackOff()
+			bo.MaxInterval = 2 * time.Second
+			if err := backoff.Retry(func() error {
+				return client.Create(ctx, s)
+			}, backoff.WithMaxRetries(bo, 5)); err != nil {
 				return nil, err
 			}
 		} else {
