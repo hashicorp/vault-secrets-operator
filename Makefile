@@ -463,10 +463,6 @@ catalog-push: ## Push a catalog image.
 build-diags:
 	./scripts/build-diags.sh
 
-.PHONY: version
-version:
-	@echo `cat version/VERSION`
-
 .PHONY: clean
 clean:
 	rm -rf build
