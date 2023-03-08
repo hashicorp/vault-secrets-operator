@@ -25,11 +25,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes/scheme"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var (
@@ -39,6 +44,11 @@ var (
 	testVaultAddress    string
 	k8sVaultNamespace   string
 	kustomizeConfigRoot string
+
+	// extended in TestMain
+	scheme = ctrlruntime.NewScheme()
+	// set in TestMain
+	restConfig = rest.Config{}
 )
 
 func init() {
@@ -79,6 +89,10 @@ func init() {
 // See `make setup-integration-test` for manual testing.
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
+		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
+		restConfig = *ctrl.GetConfigOrDie()
+
 		os.Setenv("VAULT_ADDR", "http://127.0.0.1:38300")
 		os.Setenv("VAULT_TOKEN", "root")
 		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
@@ -107,11 +121,12 @@ func getVaultClient(t *testing.T, namespace string) *api.Client {
 }
 
 func getCRDClient(t *testing.T) client.Client {
+	// restConfig is set in TestMain for when running integration tests.
 	t.Helper()
-	err := secretsv1alpha1.AddToScheme(scheme.Scheme)
+
+	k8sClient, err := client.New(&restConfig, client.Options{Scheme: scheme})
 	require.NoError(t, err)
-	k8sClient, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
-	require.NoError(t, err)
+
 	return k8sClient
 }
 
@@ -228,7 +243,31 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 			for f, b := range sec.Data {
 				actual[f] = len(b)
 			}
-			require.Equal(t, expected, actual)
+			assert.Equal(t, expected, actual)
+
+			if vdsObj.Spec.Destination.Create {
+				// check the labels
+				assert.Equal(t, helpers.OwnerLabels, sec.Labels,
+					"expected owner labels not set on %s",
+					client.ObjectKeyFromObject(sec))
+
+				// check the OwnerReferences
+				expectedOwnerRefs := []v1.OwnerReference{
+					{
+						// For some reason TypeMeta is empty when using the client.Client
+						// from within the tests. So we have to hard code APIVersion and Kind.
+						// There are numerous related GH issues for this:
+						// e.g. https://github.com/kubernetes/client-go/issues/541
+						APIVersion: "v1alpha1",
+						Kind:       "VaultDynamicSecret",
+						Name:       vdsObj.GetName(),
+						UID:        vdsObj.GetUID(),
+					},
+				}
+				assert.Equal(t, expectedOwnerRefs, sec.OwnerReferences,
+					"expected owner references not set on %s",
+					client.ObjectKeyFromObject(sec))
+			}
 
 			return "", nil
 		})
