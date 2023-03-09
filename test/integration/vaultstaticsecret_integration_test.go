@@ -389,7 +389,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					})
 				}
 			}
-			assert.Greater(t, count, 0, "no secrets were tested")
+
+			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
 }

@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -145,61 +146,137 @@ func TestVaultPKISecret(t *testing.T) {
 	}
 
 	// Create a VaultPKI CR to trigger the sync
-	testVaultPKI := &secretsv1alpha1.VaultPKISecret{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      "vaultpki-test-tenant-1",
-			Namespace: testK8sNamespace,
-		},
-		Spec: secretsv1alpha1.VaultPKISecretSpec{
-			VaultAuthRef: testVaultAuthMethodName,
-			Namespace:    testVaultNamespace,
-			Mount:        testPKIMountPath,
-			Name:         "secret",
-			CommonName:   "test1.example.com",
-			Format:       "pem",
-			Revoke:       true,
-			Clear:        true,
-			ExpiryOffset: "5s",
-			TTL:          "15s",
-			Destination: secretsv1alpha1.Destination{
-				Name:   "pki1",
-				Create: false,
+	getExisting := func() []*secretsv1alpha1.VaultPKISecret {
+		return []*secretsv1alpha1.VaultPKISecret{
+			{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultpki-test-tenant-1",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultPKISecretSpec{
+					VaultAuthRef: testVaultAuthMethodName,
+					Namespace:    testVaultNamespace,
+					Mount:        testPKIMountPath,
+					Name:         "secret",
+					CommonName:   "test1.example.com",
+					Format:       "pem",
+					Revoke:       true,
+					Clear:        true,
+					ExpiryOffset: "5s",
+					TTL:          "15s",
+					Destination: secretsv1alpha1.Destination{
+						Name:   "pki1",
+						Create: false,
+					},
+				},
 			},
-		},
+		}
 	}
 	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
 	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
-	if deployOperatorWithHelm {
-		testVaultPKI.Spec.VaultAuthRef = ""
+	//if deployOperatorWithHelm {
+	//	testVaultPKI.Spec.VaultAuthRef = ""
+	//}
+
+	tests := []struct {
+		name     string
+		existing []*secretsv1alpha1.VaultPKISecret
+		create   int
+	}{
+		{
+			name:     "existing-only",
+			existing: getExisting(),
+		},
+		{
+			name:   "create-only",
+			create: 10,
+		},
+		{
+			name:     "mixed",
+			existing: getExisting(),
+			create:   5,
+		},
 	}
 
-	defer crdClient.Delete(ctx, testVaultPKI)
-	err = crdClient.Create(ctx, testVaultPKI)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var toTest []*secretsv1alpha1.VaultPKISecret
+			for idx, obj := range tt.existing {
+				name := fmt.Sprintf("%s-existing-%d", tt.name, idx)
+				obj.Name = name
+				toTest = append(toTest, obj)
+			}
 
-	// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
-	// serial number of the generated cert
-	serialNumber, secret, err := waitForPKIData(t, 30, 1*time.Second,
-		testVaultPKI.Spec.Destination.Name, testVaultPKI.ObjectMeta.Namespace,
-		"test1.example.com", "",
-	)
-	assert.NotEmpty(t, serialNumber)
-	require.NoError(t, err)
+			for idx := 0; idx < tt.create; idx++ {
+				dest := fmt.Sprintf("%s-create-%d", tt.name, idx)
+				toTest = append(toTest, &secretsv1alpha1.VaultPKISecret{
+					ObjectMeta: v1.ObjectMeta{
+						Name:      dest,
+						Namespace: testK8sNamespace,
+					},
+					Spec: secretsv1alpha1.VaultPKISecretSpec{
+						Name:         "secret",
+						Namespace:    testVaultNamespace,
+						Mount:        testPKIMountPath,
+						CommonName:   fmt.Sprintf("%s.example.com", dest),
+						Format:       "pem",
+						Revoke:       true,
+						ExpiryOffset: "5s",
+						TTL:          "15s",
+						VaultAuthRef: testVaultAuthMethodName,
+						Destination: secretsv1alpha1.Destination{
+							Name:   dest,
+							Create: true,
+						},
+					},
+				})
+			}
 
-	assertSyncableSecret(t, testVaultPKI,
-		"secrets.hashicorp.com/v1alpha1",
-		"VaultPKISecret", secret)
+			require.Equal(t, len(toTest), tt.create+len(tt.existing))
 
-	// Use the serial number of the first generated cert to check that the cert
-	// is updated
-	newSerialNumber, secret, err := waitForPKIData(t, 30, 2*time.Second,
-		testVaultPKI.Spec.Destination.Name, testVaultPKI.ObjectMeta.Namespace,
-		"test1.example.com", serialNumber,
-	)
-	assert.NotEmpty(t, newSerialNumber)
-	require.NoError(t, err)
+			var count int
+			for _, vpsObj := range toTest {
+				count++
+				name := fmt.Sprintf("%s", vpsObj.Name)
+				t.Run(name, func(t *testing.T) {
+					// capture vpsObj for parallel test
+					vpsObj := vpsObj
+					t.Parallel()
 
-	assertSyncableSecret(t, testVaultPKI,
-		"secrets.hashicorp.com/v1alpha1",
-		"VaultPKISecret", secret)
+					t.Cleanup(func() {
+						assert.NoError(t, crdClient.Delete(ctx, vpsObj))
+					})
+					require.NoError(t, crdClient.Create(ctx, vpsObj))
+
+					// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
+					// serial number of the generated cert
+					serialNumber, secret, err := waitForPKIData(t, 30, 1*time.Second,
+						vpsObj.Spec.Destination.Name, vpsObj.ObjectMeta.Namespace,
+						vpsObj.Spec.CommonName, "",
+					)
+					require.NoError(t, err)
+					assert.NotEmpty(t, serialNumber)
+
+					assertSyncableSecret(t, vpsObj,
+						"secrets.hashicorp.com/v1alpha1",
+						"VaultPKISecret", secret)
+
+					// Use the serial number of the first generated cert to check that the cert
+					// is updated
+					newSerialNumber, secret, err := waitForPKIData(t, 30, 2*time.Second,
+						vpsObj.Spec.Destination.Name, vpsObj.ObjectMeta.Namespace,
+						vpsObj.Spec.CommonName, serialNumber,
+					)
+					require.NoError(t, err)
+					assert.NotEmpty(t, newSerialNumber)
+
+					assertSyncableSecret(t, vpsObj,
+						"secrets.hashicorp.com/v1alpha1",
+						"VaultPKISecret", secret)
+				})
+			}
+
+			assert.Greater(t, count, 0, "no tests were run")
+		})
+	}
 }

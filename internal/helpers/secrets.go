@@ -30,8 +30,8 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/component":  "secret-sync",
 }
 
-// syncableSecretMetaData provides common data structure that extracts the bits pertinent handling
-// any of the sync-able secret custom resource types.
+// syncableSecretMetaData provides common data structure that extracts the bits pertinent
+// when handling any of the sync-able secret custom resource types.
 //
 // See NewSyncableSecretMetaData for the supported object types.
 type syncableSecretMetaData struct {

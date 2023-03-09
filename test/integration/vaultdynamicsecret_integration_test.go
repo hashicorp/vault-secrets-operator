@@ -216,7 +216,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var objsCreated []*secretsv1alpha1.VaultDynamicSecret
-			var count int
 
 			t.Cleanup(func() {
 				if !skipCleanup {
@@ -268,6 +267,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
 				objsCreated = append(objsCreated, vdsObj)
 			}
+
+			var count int
 			for idx, obj := range objsCreated {
 				nameFmt := "existing-dest-%d"
 				if obj.Spec.Destination.Create {
@@ -275,6 +276,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 				}
 				count++
 				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
+					// capture obj for parallel test
+					obj := obj
+					t.Parallel()
 					assertDynamicSecret(t,
 						tfOptions.MaxRetries,
 						tfOptions.TimeBetweenRetries,
@@ -283,7 +287,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 					)
 				})
 			}
-			assert.Greater(t, count, 0, "no secrets were tested")
+
+			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
 }
