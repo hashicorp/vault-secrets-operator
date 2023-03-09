@@ -227,7 +227,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 			})
 			// pre-created secrets test
 			for _, dest := range tt.existing {
-				count++
 				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
@@ -249,7 +248,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			// create secrets tests
 			for idx := 0; idx < tt.create; idx++ {
-				count++
 				dest := fmt.Sprintf("%s-create-%d", tt.name, idx)
 				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
@@ -275,6 +273,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 				if obj.Spec.Destination.Create {
 					nameFmt = "create-dest-%d"
 				}
+				count++
 				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
 					assertDynamicSecret(t,
 						tfOptions.MaxRetries,
@@ -284,7 +283,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					)
 				})
 			}
-			require.True(t, count > 0, "no secrets were tested")
+			assert.Greater(t, count, 0, "no secrets were tested")
 		})
 	}
 }

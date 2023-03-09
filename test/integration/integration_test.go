@@ -134,7 +134,8 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, 
 	t.Helper()
 	destSecret := &corev1.Secret{}
 	_, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
-		destSecret, err := k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
+		var err error
+		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
 		if err != nil {
 			return "", err
 		}
@@ -175,7 +176,8 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, nam
 	t.Helper()
 	destSecret := &corev1.Secret{}
 	newSerialNumber, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
-		destSecret, err := k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
+		var err error
+		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
 		if err != nil {
 			return "", err
 		}
