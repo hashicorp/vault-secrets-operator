@@ -112,19 +112,29 @@ jobs:
             ${{ runner.os }}-go-
       - name: Build operator binary and image
         run: make ci-build ci-docker-build
-      - name: OSS tests
+      - name: OSS tests using Helm
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make ci-deploy-kind
+          make integration-test-helm
+      - name: OSS tests using Kustomize
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          make ci-deploy-kind
+          make ci-deploy
           make integration-test
-      - name: ENT tests
+      - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
           make ci-deploy-kind
+          make ci-deploy
           make integration-test-ent

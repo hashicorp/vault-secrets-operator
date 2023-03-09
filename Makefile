@@ -193,6 +193,10 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 integration-test:  setup-integration-test ## Run integration tests for Vault OSS
 	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -count=1 -timeout=10m
 
+.PHONY: integration-test-helm
+integration-test-helm:  setup-integration-test ## Run integration tests for Vault OSS
+	$(MAKE) integration-test DEPLOY_OPERATOR_WITH_HELM=true
+
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
@@ -271,7 +275,6 @@ ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating
 .PHONY: ci-deploy-kind
 ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
-	$(MAKE) ci-deploy
 
 .PHONY: teardown-integration-test
 teardown-integration-test: ignore-not-found = true

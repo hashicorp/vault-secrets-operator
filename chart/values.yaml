@@ -6,7 +6,7 @@ controller:
   # Set the number of replicas for the operator.
   replicas: 1
 
-  # Settings related to the kubeRbacProxy container. This container is a HTTP proxy for the
+  # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
 
@@ -74,6 +74,91 @@ metricsService:
     protocol: TCP
     targetPort: https
   type: ClusterIP
+
+# Configures the default VaultConnection CR which will be used by resources
+# if they do not specify a VaultConnection reference. The name is 'default' and will
+# always be installed in the same namespace as the operator.
+# NOTE:
+# * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
+#   which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
+defaultVaultConnection:
+  # toggles the deployment of the VaultAuthMethod CR
+  enabled: false
+
+  # Address of the Vault Server
+  # @type: string
+  # Example: http://vault.default.svc.cluster.local:8200
+  address: ""
+
+  # CACertSecret containing the trusted PEM encoded CA certificate chain.
+  # Note:
+  # * This secret must exist prior to deploying the CR.
+  caCertSecret: ""
+
+  # TLSServerName to use as the SNI host for TLS connections.
+  tlsServerName: ""
+
+  # SkipTLSVerify for TLS connections.
+  skipTLSVerify: false
+
+  # Headers to be included in all Vault requests.
+  # @type: string, eg:
+  # headers: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  headers: ""
+
+
+# Configures and deploys the default VaultAuthMethod CR which will be used by resources
+# if they do not specify a VaultAuthMethod reference. The name is 'default' and will
+# always be installed in the same namespace as the operator.
+# NOTE:
+# * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
+#   which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
+defaultAuthMethod:
+  # toggles the deployment of the VaultAuthMethod CR
+  enabled: false
+
+  # Vault namespace for the VaultAuthMethod CR
+  namespace: ""
+
+  # Vault Auth method to be used with the VaultAuthMethod CR
+  method: kubernetes
+
+  # Mount path for the Vault Auth Method.
+  mount: kubernetes
+
+  # Vault Kubernetes auth method specific configuration
+  kubernetes:
+    # Vault Auth Role to use
+    # This is a required field and must be setup in Vault prior to deploying the helm chart
+    # if `defaultAuthMethod.enabled=true`
+    role: ""
+
+    # Kubernetes ServiceAccount associated with the default Vault Auth Role
+    serviceAccount: default
+
+    # Token Audience is required and should match whatever the audience
+    # of the vault kubernetes auth role has set.
+    # @type: array<string>
+    tokenAudiences: []
+
+  # Params to use when authenticating to Vault
+  # @type: string, eg:
+  # params: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  params: ""
+
+  # Headers to be included in all Vault requests.
+  # @type: string, eg:
+  # headers: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  headers: ""
 
 ## Used by unit tests, can be safely ignored. 
 tests:
