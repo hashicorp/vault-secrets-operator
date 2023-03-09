@@ -17,7 +17,7 @@ make setup-integration-test
 ./config/samples/setup.sh
 
 # Build and deploy the operator
-make build deploy-kind
+make build docker-build deploy-kind
 
 # Deploy the sample K8s resources
 kubectl apply -k config/samples
@@ -54,7 +54,7 @@ make test
 make setup-kind
 
 # Build the operator binary, image, and deploy to the KinD cluster
-make ci-build ci-docker-build ci-deploy-kind
+make ci-build ci-docker-build ci-deploy-kind ci-deploy
 
 # Run the integration tests (includes Vault deployment)
 make integration-test
