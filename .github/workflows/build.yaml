@@ -32,7 +32,7 @@ jobs:
       - name: get product version
         id: get-product-version
         run: |
-          VERSION="${{ github.event.inputs.version || '0.0.0-dev' }}"
+          VERSION="${{ github.event.inputs.version || '0.0.0-prototype' }}"
           echo "Using version ${VERSION}"
           echo "product-version=${VERSION}" >> $GITHUB_OUTPUT
 
