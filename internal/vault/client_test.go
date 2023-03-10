@@ -14,7 +14,6 @@ import (
 
 func Test_defaultClient_CheckExpiry(t *testing.T) {
 	type fields struct {
-		initialized bool
 		lastResp    *api.Secret
 		lastRenewal int64
 	}
@@ -31,7 +30,6 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 		{
 			name: "valid-with-offset",
 			fields: fields{
-				initialized: true,
 				lastResp: &api.Secret{
 					Renewable: true,
 					Auth: &api.SecretAuth{
@@ -50,7 +48,6 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 		{
 			name: "valid-with-1s-lease-zero-offset",
 			fields: fields{
-				initialized: true,
 				lastResp: &api.Secret{
 					Renewable: true,
 					Auth: &api.SecretAuth{
@@ -69,7 +66,6 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 		{
 			name: "expired-with-offset",
 			fields: fields{
-				initialized: true,
 				lastResp: &api.Secret{
 					Renewable: true,
 					Auth: &api.SecretAuth{
@@ -88,7 +84,6 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 		{
 			name: "expired-without-offset",
 			fields: fields{
-				initialized: true,
 				lastResp: &api.Secret{
 					Renewable: true,
 					Auth: &api.SecretAuth{
@@ -105,20 +100,15 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "error-not-initialized",
-			fields: fields{
-				initialized: false,
-			},
-			want: false,
+			fields: fields{},
+			want:   false,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				assert.EqualError(t, err, "not initialized", i...)
 				return err != nil
 			},
 		},
 		{
-			name: "error-lastResp-nil",
+			name: "error-authSecret-nil",
 			fields: fields{
-				initialized: true,
 				lastRenewal: time.Now().Unix(),
 			},
 			want: false,
@@ -130,7 +120,6 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 		{
 			name: "error-lastRenewal-zero",
 			fields: fields{
-				initialized: true,
 				lastRenewal: 0,
 				lastResp:    &api.Secret{},
 			},
@@ -143,7 +132,6 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 		{
 			name: "error-lastRenewal-zero-and-lasResp-nil",
 			fields: fields{
-				initialized: true,
 				lastRenewal: 0,
 				lastResp:    nil,
 			},
@@ -157,8 +145,7 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &defaultClient{
-				initialized: tt.fields.initialized,
-				lastResp:    tt.fields.lastResp,
+				authSecret:  tt.fields.lastResp,
 				lastRenewal: tt.fields.lastRenewal,
 			}
 			got, err := c.CheckExpiry(tt.args.offset)

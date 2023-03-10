@@ -105,7 +105,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		if !exists {
-			horizon, _ := computeHorizonWithJitter(time.Second * 10)
+			horizon := computeHorizonWithJitter(time.Second * 10)
 			logger.Info("Kubernetes secret does not exist yet",
 				"name", s.Spec.Destination.Name, "retry_horizon", horizon)
 			return ctrl.Result{

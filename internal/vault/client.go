@@ -11,10 +11,12 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault/api"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 type ClientOptions struct {
@@ -132,11 +134,11 @@ type Client interface {
 	Read(context.Context, string) (*api.Secret, error)
 	Restore(context.Context, *api.Secret) error
 	Write(context.Context, string, map[string]any) (*api.Secret, error)
-	GetTokenSecret() (*api.Secret, error)
+	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
-	GetVaultAuthObj() (*secretsv1alpha1.VaultAuth, error)
-	GetVaultConnectionObj() (*secretsv1alpha1.VaultConnection, error)
-	GetCredentialProvider() (CredentialProvider, error)
+	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
+	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
+	GetCredentialProvider() CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
 	KVv1(string) (*api.KVv1, error)
 	KVv2(string) (*api.KVv2, error)
@@ -146,11 +148,10 @@ type Client interface {
 var _ Client = (*defaultClient)(nil)
 
 type defaultClient struct {
-	initialized        bool
 	client             *api.Client
 	authObj            *secretsv1alpha1.VaultAuth
 	connObj            *secretsv1alpha1.VaultConnection
-	lastResp           *api.Secret
+	authSecret         *api.Secret
 	skipRenewal        bool
 	lastRenewal        int64
 	targetNamespace    string
@@ -161,36 +162,21 @@ type defaultClient struct {
 	mu                 sync.RWMutex
 }
 
-func (c *defaultClient) GetCredentialProvider() (CredentialProvider, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
-	return c.credentialProvider, nil
+func (c *defaultClient) GetCredentialProvider() CredentialProvider {
+	return c.credentialProvider
 }
 
 func (c *defaultClient) KVv1(mount string) (*api.KVv1, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	return c.client.KVv1(mount), nil
 }
 
 func (c *defaultClient) KVv2(mount string) (*api.KVv2, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	return c.client.KVv2(mount), nil
 }
 
 func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if err := c.checkInitialized(); err != nil {
-		return "", err
-	}
 
 	return ComputeClientCacheKeyFromClient(c)
 }
@@ -200,9 +186,6 @@ func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.initialized {
-		return fmt.Errorf("not initialized")
-	}
 
 	if c.watcher != nil {
 		c.watcher.Stop()
@@ -216,7 +199,7 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 		return fmt.Errorf("not an auth secret")
 	}
 
-	c.lastResp = secret
+	c.authSecret = secret
 	c.client.SetToken(secret.Auth.ClientToken)
 
 	if secret.Auth.Renewable {
@@ -231,37 +214,27 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth,
 	connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions,
 ) error {
-	if c.initialized {
-		return fmt.Errorf("aleady initialized")
-	}
-
-	if opts == nil {
-		opts = defaultClientOptions()
-	}
-
 	var err error
 	c.once.Do(func() {
-		err = c.init(ctx, client, authObj, connObj, providerNamespace, opts)
-		if err == nil {
-			c.initialized = true
+		if opts == nil {
+			opts = defaultClientOptions()
 		}
+
+		err = c.init(ctx, client, authObj, connObj, providerNamespace, opts)
 	})
 
 	return err
 }
 
 func (c *defaultClient) getTokenTTL() (time.Duration, error) {
-	return c.lastResp.TokenTTL()
+	return c.authSecret.TokenTTL()
 }
 
 func (c *defaultClient) CheckExpiry(offset int64) (bool, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if !c.initialized {
-		return false, fmt.Errorf("not initialized")
-	}
 
-	if c.lastResp == nil || c.lastRenewal == 0 {
+	if c.authSecret == nil || c.lastRenewal == 0 {
 		return false, fmt.Errorf("cannot check client token expiry, never logged in")
 	}
 
@@ -284,14 +257,11 @@ func (c *defaultClient) checkExpiry(offset int64) (bool, error) {
 	return time.Now().After(ts), nil
 }
 
-func (c *defaultClient) GetTokenSecret() (*api.Secret, error) {
+func (c *defaultClient) GetTokenSecret() *api.Secret {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if !c.initialized {
-		return nil, fmt.Errorf("not initialized")
-	}
 
-	return c.lastResp, nil
+	return c.authSecret
 }
 
 // Close un-initializes this Client, stopping its LifetimeWatcher in the process.
@@ -299,31 +269,23 @@ func (c *defaultClient) GetTokenSecret() (*api.Secret, error) {
 func (c *defaultClient) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.initialized {
-		return
-	}
 
 	log.FromContext(nil).Info("Calling Client.Close()")
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
 	c.client = nil
-	c.initialized = false
 }
 
 // startLifetimeWatcher starts an api.LifetimeWatcher in a Go routine for this Client.
 // This will ensure that the auth token is periodically renewed.
 // If the Client's token is not renewable an error will be returned.
 func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
-	if err := c.checkInitialized(); err != nil {
-		return err
-	}
-
 	if c.skipRenewal {
 		return nil
 	}
 
-	if !c.lastResp.Auth.Renewable {
+	if !c.authSecret.Auth.Renewable {
 		return fmt.Errorf("auth token is not renewable, cannot start the LifetimeWatcher")
 	}
 
@@ -332,15 +294,15 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 	}
 
 	watcher, err := c.client.NewLifetimeWatcher(&api.LifetimeWatcherInput{
-		Secret: c.lastResp,
+		Secret: c.authSecret,
 	})
 	if err != nil {
 		return err
 	}
 
 	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
-		logger := log.FromContext(ctx).WithName("LifetimeWatcher").WithValues(
-			"entityID", c.lastResp.Auth.EntityID)
+		logger := log.FromContext(nil).V(consts.LogLevelDebug).WithName("lifetimeWatcher").WithValues(
+			"entityID", c.authSecret.Auth.EntityID)
 		logger.Info("Starting")
 		defer func() {
 			logger.Info("Stopping")
@@ -363,7 +325,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 				return
 			case renewal := <-watcher.RenewCh():
 				logger.Info("Successfully renewed the client")
-				c.lastResp = renewal.Secret
+				c.authSecret = renewal.Secret
 				c.lastRenewal = renewal.RenewedAt.Unix()
 			}
 		}
@@ -377,10 +339,6 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.checkInitialized(); err != nil {
-		return err
-	}
-	// TODO: add logging, preferably with a Logger that supports more levels than just INFO and ERROR.
 
 	if c.watcher != nil {
 		c.watcher.Stop()
@@ -408,7 +366,7 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 
 	c.client.SetToken(resp.Auth.ClientToken)
 
-	c.lastResp = resp
+	c.authSecret = resp
 	c.lastRenewal = time.Now().Unix()
 
 	if resp.Auth.Renewable {
@@ -420,64 +378,41 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	return nil
 }
 
-func (c *defaultClient) GetVaultAuthObj() (*secretsv1alpha1.VaultAuth, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
-	return c.authObj, nil
+func (c *defaultClient) GetVaultAuthObj() *secretsv1alpha1.VaultAuth {
+	return c.authObj
 }
 
-func (c *defaultClient) GetVaultConnectionObj() (*secretsv1alpha1.VaultConnection, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
-	return c.connObj, nil
+func (c *defaultClient) GetVaultConnectionObj() *secretsv1alpha1.VaultConnection {
+	return c.connObj
 }
 
 func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	// TODO: add metrics
 	return c.client.Logical().ReadWithContext(ctx, path)
 }
 
 func (c *defaultClient) Write(ctx context.Context, path string, m map[string]any) (*api.Secret, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	// TODO: add metrics
 	return c.client.Logical().WriteWithContext(ctx, path, m)
 }
 
-func (c *defaultClient) checkInitialized() error {
-	if !c.initialized {
-		return fmt.Errorf("not initialized")
-	}
-	return nil
-}
-
 func (c *defaultClient) renew(ctx context.Context) error {
 	// should be called from a write locked method only
-	if c.lastResp == nil {
+	if c.authSecret == nil {
 		return fmt.Errorf("cannot renew client token, never logged in")
 	}
 
-	if !c.lastResp.Auth.Renewable {
+	if !c.authSecret.Auth.Renewable {
 		return fmt.Errorf("cannot renew client token, non-renewable")
 	}
 
 	resp, err := c.Write(ctx, "/auth/token/renew-self", nil)
 	if err != nil {
-		c.lastResp = nil
+		c.authSecret = nil
 		c.lastRenewal = 0
 		return err
 	} else {
-		c.lastResp = resp
+		c.authSecret = resp
 		c.lastRenewal = time.Now().UTC().Unix()
 	}
 	return nil
