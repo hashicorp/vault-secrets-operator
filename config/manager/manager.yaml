@@ -44,6 +44,15 @@ spec:
       containers:
       - command:
         - /vault-secrets-operator
+        env:
+          - name: OPERATOR_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: OPERATOR_POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
         args:
         - --leader-elect
         image: controller:latest
@@ -88,3 +97,6 @@ spec:
               - path: "name"
                 fieldRef:
                   fieldPath: metadata.name
+              - path: "uid"
+                fieldRef:
+                  fieldPath: metadata.uid

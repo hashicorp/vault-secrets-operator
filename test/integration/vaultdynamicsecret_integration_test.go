@@ -12,12 +12,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -285,6 +288,38 @@ func TestVaultDynamicSecret(t *testing.T) {
 						obj,
 						tt.expected,
 					)
+
+					if t.Failed() {
+						return
+					}
+
+					objKey := client.ObjectKeyFromObject(obj)
+					var vdsObjFinal secretsv1alpha1.VaultDynamicSecret
+					require.NoError(t, backoff.Retry(
+						func() error {
+							var vdsObj secretsv1alpha1.VaultDynamicSecret
+							require.NoError(t, crdClient.Get(ctx, objKey, &vdsObj))
+							if vdsObj.Status.SecretLease.ID == "" {
+								return fmt.Errorf("expected lease ID to be set on %s", objKey)
+							}
+							vdsObjFinal = vdsObj
+							return nil
+						},
+						backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10),
+					))
+
+					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
+					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
+					assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+
+					var pods corev1.PodList
+					assert.NoError(t, crdClient.List(ctx, &pods, client.InNamespace(operatorNS),
+						client.MatchingLabels{
+							"control-plane": "controller-manager",
+						},
+					))
+					require.Equal(t, 1, len(pods.Items))
+					assert.Equal(t, pods.Items[0].UID, vdsObjFinal.Status.LastRuntimePodUID)
 				})
 			}
 
