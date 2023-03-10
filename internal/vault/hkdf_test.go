@@ -47,14 +47,14 @@ func Test_generateHKDFKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// used for duplicate key lookups, value is ignored.
-			seen := make(map[string]int, tt.count)
 			if tt.ioReadFullFunc != nil {
 				t.Cleanup(func() {
 					ioReadFull = io.ReadFull
 				})
 				ioReadFull = tt.ioReadFullFunc
 			}
+
+			var last []byte
 			for i := 0; i < tt.count; i++ {
 				got, err := generateHKDFKey()
 				if !tt.wantErr(t, err, fmt.Sprintf("generateHKDFKey()")) {
@@ -62,9 +62,10 @@ func Test_generateHKDFKey(t *testing.T) {
 				}
 
 				assert.Len(t, got, tt.expectedLength, "generateHKDFKey()")
-				_, ok := seen[string(got)]
-				assert.False(t, ok, "generateHKDFKey() generated a duplicate key")
-				seen[string(got)] = 1
+				if last != nil {
+					assert.NotEqual(t, got, last, "generateHKDFKey() generated a duplicate key")
+				}
+				last = got
 			}
 		})
 	}
