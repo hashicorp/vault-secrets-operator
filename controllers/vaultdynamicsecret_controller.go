@@ -181,7 +181,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 					"failed to execute rollout restarts for target %#v: %s", target, err)
 			} else {
 				r.Recorder.Eventf(s, corev1.EventTypeNormal, "RolloutRestartTriggered",
-					"Rollout restart triggered for %s", target)
+					"Rollout restart triggered for %v", target)
 			}
 		}
 	}
