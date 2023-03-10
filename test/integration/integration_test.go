@@ -130,11 +130,11 @@ func getCRDClient(t *testing.T) client.Client {
 	return k8sClient
 }
 
-func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expectedData map[string]interface{}) {
+func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expectedData map[string]interface{}) (*corev1.Secret, error) {
 	t.Helper()
 	destSecret := &corev1.Secret{}
-	var err error
-	retry.DoWithRetry(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+	_, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+		var err error
 		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
 		if err != nil {
 			return "", err
@@ -168,14 +168,15 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, 
 
 		return "", err
 	})
+
+	return destSecret, err
 }
 
-func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, namespace, expectedCommonName, previousSerialNumber string) (serialNumber string) {
+func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, namespace, expectedCommonName, previousSerialNumber string) (string, *corev1.Secret, error) {
 	t.Helper()
 	destSecret := &corev1.Secret{}
-	newSerialNumber := ""
-	var err error
-	retry.DoWithRetry(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+	newSerialNumber, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+		var err error
 		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
 		if err != nil {
 			return "", err
@@ -197,11 +198,11 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, nam
 		if cert.SerialNumber.String() == previousSerialNumber {
 			return "", fmt.Errorf("serial number %q still matches previous serial number %q", cert.SerialNumber, previousSerialNumber)
 		}
-		newSerialNumber = cert.SerialNumber.String()
-		return "", nil
+
+		return cert.SerialNumber.String(), nil
 	})
 
-	return newSerialNumber
+	return newSerialNumber, destSecret, err
 }
 
 type dynamicK8SOutputs struct {
@@ -245,42 +246,52 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 			}
 			assert.Equal(t, expected, actual)
 
-			if vdsObj.Spec.Destination.Create {
-				// check the labels
-				assert.Equal(t, helpers.OwnerLabels, sec.Labels,
-					"expected owner labels not set on %s",
-					client.ObjectKeyFromObject(sec))
-
-				// check the OwnerReferences
-				expectedOwnerRefs := []v1.OwnerReference{
-					{
-						// For some reason TypeMeta is empty when using the client.Client
-						// from within the tests. So we have to hard code APIVersion and Kind.
-						// There are numerous related GH issues for this:
-						// Normally it should be:
-						// APIVersion: vdsObj.APIVersion,
-						// Kind:       vdsObj.Kind,
-						// e.g. https://github.com/kubernetes/client-go/issues/541
-						APIVersion: "secrets.hashicorp.com/v1alpha1",
-						Kind:       "VaultDynamicSecret",
-						Name:       vdsObj.GetName(),
-						UID:        vdsObj.GetUID(),
-					},
-				}
-				assert.Equal(t, expectedOwnerRefs, sec.OwnerReferences,
-					"expected owner references not set on %s",
-					client.ObjectKeyFromObject(sec))
-			} else {
-				assert.Nil(t, sec.Labels,
-					"expected no labels set on %s",
-					client.ObjectKeyFromObject(sec))
-				assert.Nil(t, sec.OwnerReferences,
-					"expected no OwnerReferences set on %s",
-					client.ObjectKeyFromObject(sec))
-			}
+			assertSyncableSecret(t, vdsObj,
+				"secrets.hashicorp.com/v1alpha1",
+				"VaultDynamicSecret", sec)
 
 			return "", nil
 		})
+}
+
+func assertSyncableSecret(t *testing.T, obj client.Object, expectedAPIVersion, expectedKind string, sec *corev1.Secret) {
+	t.Helper()
+
+	meta, err := helpers.NewSyncableSecretMetaData(obj)
+	require.NoError(t, err)
+
+	if meta.Destination.Create {
+		assert.Equal(t, helpers.OwnerLabels, sec.Labels,
+			"expected owner labels not set on %s",
+			client.ObjectKeyFromObject(sec))
+
+		// check the OwnerReferences
+		expectedOwnerRefs := []v1.OwnerReference{
+			{
+				// For some reason TypeMeta is empty when using the client.Client
+				// from within the tests. So we have to hard code APIVersion and Kind.
+				// There are numerous related GH issues for this:
+				// Normally it should be:
+				// APIVersion: meta.APIVersion,
+				// Kind:       meta.Kind,
+				// e.g. https://github.com/kubernetes/client-go/issues/541
+				APIVersion: expectedAPIVersion,
+				Kind:       expectedKind,
+				Name:       obj.GetName(),
+				UID:        obj.GetUID(),
+			},
+		}
+		assert.Equal(t, expectedOwnerRefs, sec.OwnerReferences,
+			"expected owner references not set on %s",
+			client.ObjectKeyFromObject(sec))
+	} else {
+		assert.Nil(t, sec.Labels,
+			"expected no labels set on %s",
+			client.ObjectKeyFromObject(sec))
+		assert.Nil(t, sec.OwnerReferences,
+			"expected no OwnerReferences set on %s",
+			client.ObjectKeyFromObject(sec))
+	}
 }
 
 func deployOperatorWithKustomize(t *testing.T, k8sOpts *k8s.KubectlOptions, kustomizeConfigPath string) {
