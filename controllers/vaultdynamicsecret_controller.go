@@ -34,10 +34,13 @@ const (
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Recorder       record.EventRecorder
-	ClientFactory  vault.ClientFactory
-	runtimePodName string
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.ClientFactory
+	// runtimePodUID should always be set when updating resource's Status.
+	// This is done via the downwardAPI. We get the current Pod's UID from either the
+	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
+	runtimePodUID types.UID
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -45,10 +48,12 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+//
 // required for rollout-restart
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//
 // needed for managing cached Clients, duplicated in vaultconnection_controller.go
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
 
@@ -61,12 +66,14 @@ type VaultDynamicSecretReconciler struct {
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if r.runtimePodName == "" {
-		r.runtimePodName = os.Getenv("OPERATOR_POD_NAME")
+	if r.runtimePodUID == "" {
+		if val := os.Getenv("OPERATOR_POD_UID"); val != "" {
+			r.runtimePodUID = types.UID(val)
+		}
 	}
-	if r.runtimePodName == "" {
-		if b, err := os.ReadFile("/var/run/podinfo/name"); err == nil {
-			r.runtimePodName = string(b)
+	if r.runtimePodUID == "" {
+		if b, err := os.ReadFile("/var/run/podinfo/uid"); err == nil {
+			r.runtimePodUID = types.UID(b)
 		}
 	}
 
@@ -84,7 +91,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	leaseID := o.Status.SecretLease.ID
 	// logger.Info("Last secret lease", "secretLease", o.Status.SecretLease, "epoch", r.epoch)
 	if leaseID != "" {
-		if r.runtimePodName != "" && r.runtimePodName != o.Status.LastRuntimePodName {
+		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
 			leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
@@ -92,14 +99,14 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			now := time.Now().Unix()
 			diff := ts - now
 			if diff > 0 {
-				o.Status.LastRuntimePodName = r.runtimePodName
+				horizon := computeHorizonWithJitter(time.Duration(diff) * time.Second)
 				if err := r.updateStatus(ctx, o); err != nil {
 					return ctrl.Result{}, err
 				}
-				horizon := computeHorizonWithJitter(time.Duration(diff) * time.Second)
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s", leaseID, horizon)
 				return ctrl.Result{RequeueAfter: horizon}, nil
+
 			}
 		}
 
@@ -124,7 +131,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = time.Now().Unix()
-			o.Status.LastRuntimePodName = r.runtimePodName
 			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -167,7 +173,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
-	o.Status.LastRuntimePodName = r.runtimePodName
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -245,6 +250,9 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient v
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+	if r.runtimePodUID != "" {
+		o.Status.LastRuntimePodUID = r.runtimePodUID
+	}
 	if err := r.Status().Update(ctx, o); err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)

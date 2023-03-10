@@ -5,6 +5,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type RolloutRestartTarget struct {
@@ -37,8 +38,9 @@ type VaultDynamicSecretStatus struct {
 	LastRenewalTime int64 `json:"lastRenewalTime"`
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
-	// LastRuntimePodName
-	LastRuntimePodName string `json:"LastRuntimePodName,omitempty"`
+	// LastRuntimePodUID used for tracking the transition from one Pod to the next.
+	// It is used to mitigate the effects of a Vault lease renewal storm.
+	LastRuntimePodUID types.UID `json:"lastRuntimePodUID,omitempty"`
 }
 
 type VaultSecretLease struct {

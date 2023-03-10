@@ -3,6 +3,9 @@
 
 package consts
 
+// logr V-levels mapped to human relatable names
+// See https://github.com/go-logr/logr#why-v-levels for more info.
 const (
-	LogLevelDebug = 5
+	LogLevelWarning = 4
+	LogLevelDebug   = 5
 )
