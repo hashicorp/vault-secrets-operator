@@ -41,14 +41,6 @@ type VaultDynamicSecretStatus struct {
 	LastRuntimePodName string `json:"LastRuntimePodName,omitempty"`
 }
 
-// VaultTokenMeta describes the Vault token used to sync the secret
-type VaultTokenMeta struct {
-	Accessor      string `json:"accessor"`
-	EntityID      string `json:"entityID"`
-	LeaseDuration int    `json:"leaseDuration"`
-	Renewable     bool   `json:"renewable"`
-}
-
 type VaultSecretLease struct {
 	// ID of the Vault secret.
 	ID string `json:"id"`
