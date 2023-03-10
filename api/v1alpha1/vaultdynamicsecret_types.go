@@ -51,7 +51,7 @@ type VaultTokenMeta struct {
 
 type VaultSecretLease struct {
 	// ID of the Vault secret.
-	ID string `json:"ID"`
+	ID string `json:"id"`
 	// LeaseDuration of the Vault secret.
 	LeaseDuration int `json:"duration"`
 	// Renewable Vault secret lease
