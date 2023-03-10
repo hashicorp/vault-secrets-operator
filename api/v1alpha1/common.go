@@ -13,13 +13,13 @@ type Destination struct {
 	// Name of the Secret
 	Name string `json:"name"`
 	// Create the destination Secret.
-	// If the Secret already exists no updates will be made to it.
+	// If the Secret already exists this should be set to false.
 	Create bool `json:"create,omitempty"`
 	// Labels to apply to the Secret. Requires Create to be set to true.
 	Labels map[string]string `json:"labels,omitempty"`
 	// Annotations to apply to the Secret. Requires Create to be set to true.
 	Annotations map[string]string `json:"annotations,omitempty"`
-	// Type of Kubernetes Secret. Requires Create to be set to true..
+	// Type of Kubernetes Secret. Requires Create to be set to true.
 	// Defaults to Opaque.
 	Type v1.SecretType `json:"type,omitempty"`
 }

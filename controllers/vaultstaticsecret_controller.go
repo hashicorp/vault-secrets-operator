@@ -75,13 +75,13 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var resp *api.KVSecret
 	switch o.Spec.Type {
-	case "kv-v1":
+	case consts.KVSecretTypeV1:
 		w, err := c.KVv1(o.Spec.Mount)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		resp, err = w.Get(ctx, o.Spec.Name)
-	case "kv-v2":
+	case consts.KVSecretTypeV2:
 		w, err := c.KVv2(o.Spec.Mount)
 		if err != nil {
 			return ctrl.Result{}, err
@@ -137,17 +137,19 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if syncSecret {
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Failed to update k8s secret: %s", err)
 			return ctrl.Result{}, err
 		}
+		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret synced")
+	} else {
+		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
 	}
 
 	if err := r.Status().Update(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonAccepted, "Secret synced")
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
@@ -187,19 +189,20 @@ func (r *VaultStaticSecretReconciler) handleSecretHMAC(ctx context.Context, o *s
 		// this would indicate an out-of-band change made to the Secret's data
 		// in this case the controller should do the sync.
 		if cur, ok, _ := helpers.GetSecret(ctx, r.Client, o); ok {
-			message, err := json.Marshal(cur.Data)
+			curMessage, err := json.Marshal(cur.Data)
 			if err != nil {
 				return false, nil, err
 			}
 
 			logger.V(consts.LogLevelDebug).Info("Doing Secret data drift detection", "lastMAC", lastMAC)
 			// we only care of the MAC has changed, it's new value is not important here.
-			valid, foundMAC, err := r.ValidateMACFunc(ctx, r.Client, message, lastMAC)
+			valid, foundMAC, err := r.ValidateMACFunc(ctx, r.Client, curMessage, lastMAC)
 			if err != nil {
 				return false, nil, err
 			}
 			if !valid {
-				logger.V(consts.LogLevelDebug).Info("Secret data drift detected", "lastMAC", lastMAC, "foundMAC", foundMAC)
+				logger.V(consts.LogLevelDebug).Info("Secret data drift detected",
+					"lastMAC", lastMAC, "foundMAC", foundMAC, "curMessage", curMessage, "message", message)
 			}
 
 			macsEqual = valid

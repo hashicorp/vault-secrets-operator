@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -38,8 +39,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
-	testKvMountPath := "kv-v1" + testID
-	testKvv2MountPath := "kv-v2" + testID
+	testKvMountPath := consts.KVSecretTypeV1 + testID
+	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
@@ -210,7 +211,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					VaultAuthRef: auths[0].ObjectMeta.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvMountPath,
-					Type:         "kv-v1",
+					Type:         consts.KVSecretTypeV1,
 					Name:         "secret",
 					Destination: secretsv1alpha1.Destination{
 						Name:   "secretkv",
@@ -229,7 +230,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
 					Namespace: testVaultNamespace,
 					Mount:     testKvv2MountPath,
-					Type:      "kv-v2",
+					Type:      consts.KVSecretTypeV2,
 					Name:      "secret",
 					Destination: secretsv1alpha1.Destination{
 						Name:   "secretkvv2",
@@ -272,17 +273,17 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		{
 			name:        "create-kv-v1",
 			create:      5,
-			createTypes: []string{"kv-v1"},
+			createTypes: []string{consts.KVSecretTypeV1},
 		},
 		{
 			name:        "create-kv-v2",
 			create:      5,
-			createTypes: []string{"kv-v2"},
+			createTypes: []string{consts.KVSecretTypeV2},
 		},
 		{
 			name:        "create-both",
 			create:      5,
-			createTypes: []string{"kv-v1", "kv-v2"},
+			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
 			name: "mixed-both",
@@ -298,30 +299,30 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			},
 			existing:    getExisting(),
 			create:      10,
-			createTypes: []string{"kv-v1", "kv-v2"},
+			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 	}
 
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret, data map[string]interface{}) {
 		switch vssObj.Spec.Type {
-		case "kv-v1":
+		case consts.KVSecretTypeV1:
 			require.NoError(t, vClient.KVv1(testKvMountPath).Put(ctx, vssObj.Spec.Name, data))
-		case "kv-v2":
+		case consts.KVSecretTypeV2:
 			_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, data)
 			require.NoError(t, err)
 		default:
-			t.Fatal("invalid KV type")
+			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
 		}
 	}
 
 	deleteKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
 		switch vssObj.Spec.Type {
-		case "kv-v1":
+		case consts.KVSecretTypeV1:
 			require.NoError(t, vClient.KVv1(testKvMountPath).Delete(ctx, vssObj.Spec.Name))
-		case "kv-v2":
+		case consts.KVSecretTypeV2:
 			require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Name))
 		default:
-			t.Fatal("invalid KV type")
+			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
 		}
 	}
 
@@ -337,8 +338,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			data = expected.update
 		}
 
-		secret, err := waitForSecretData(t, 30, 1*time.Second,
-			obj.Spec.Destination.Name, obj.ObjectMeta.Namespace, data)
+		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
+			obj.ObjectMeta.Namespace, data)
 		assert.NoError(t, err)
 
 		if err == nil {
@@ -399,7 +400,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 									Name:   dest,
 									Create: true,
 								},
-								RefreshAfter:   "5s",
+								RefreshAfter:   "7s",
 								HMACSecretData: true,
 							},
 						}
@@ -472,7 +473,9 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 	}
 }
 
-func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.Client, objKey client.ObjectKey) (*secretsv1alpha1.VaultStaticSecret, error) {
+func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.Client,
+	objKey client.ObjectKey,
+) (*secretsv1alpha1.VaultStaticSecret, error) {
 	t.Helper()
 	var cur secretsv1alpha1.VaultStaticSecret
 	err := backoff.Retry(func() error {
@@ -491,27 +494,39 @@ func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.C
 	return &cur, err
 }
 
-func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client, objKey client.ObjectKey, expectedMAC []byte) {
+func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client,
+	secObjKey client.ObjectKey, expectedMAC []byte,
+) {
 	t.Helper()
 
 	validateFunc := vault.NewMACValidateFromHKDFSecretFunc(vault.DefaultClientCacheStorageConfig().HKDFObjectKey)
 	var secret corev1.Secret
-	if err := crdClient.Get(ctx, objKey, &secret); err != nil {
+	if err := crdClient.Get(ctx, secObjKey, &secret); err != nil {
 		return
 	}
 
 	message, err := json.Marshal(secret.Data)
-	assert.NoError(t, err)
+	assert.NoError(t, err, "could not marshal Secret.Data, should never happen")
 	if t.Failed() {
 		return
 	}
 
-	valid, _, err := validateFunc(ctx, crdClient, message, expectedMAC)
+	valid, actualMAC, err := validateFunc(ctx, crdClient, message, expectedMAC)
 	assert.NoError(t, err)
-	assert.True(t, valid)
+	if err != nil {
+		assert.False(t, valid)
+	} else {
+		if !assert.True(t, valid, "computed message is invalid, expected %v, actual %s",
+			base64.StdEncoding.EncodeToString(expectedMAC),
+			base64.StdEncoding.EncodeToString(actualMAC)) {
+			log.Printf("%#v", secret.Data)
+		}
+	}
 }
 
-func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client, secret *corev1.Secret, expected map[string]interface{}) {
+func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client,
+	secret *corev1.Secret, expected map[string]interface{},
+) {
 	t.Helper()
 
 	// we want to test out drift detection by mutating the Secret,
@@ -521,7 +536,8 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 		"nefarious": []byte("actor"),
 	}
 	secret.Data = nefariousData
-	assert.NoError(t, crdClient.Update(ctx, secret), "unexpected, could not update Secret %s", secObjKey)
+	assert.NoError(t, crdClient.Update(ctx, secret),
+		"unexpected, could not update Secret %s", secObjKey)
 	if t.Failed() {
 		return
 	}

@@ -42,4 +42,5 @@ const (
 	ReasonPersistenceFailed         = "PersistenceFailed"
 	ReasonCacheRestorationFailed    = "CacheRestorationFailed"
 	ReasonCacheRestorationSucceeded = "CacheRestorationSucceeded"
+	ReasonSecretSync                = "SecretSync"
 )
