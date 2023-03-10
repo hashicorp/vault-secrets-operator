@@ -477,4 +477,4 @@ clean:
 # be used to submit a PR to vault docs.
 # Adapted from https://github.com/hashicorp/consul-k8s/tree/main/hack/helm-reference-gen
 gen-helm-docs:
-	@cd hack/helm-reference-gen; go run ./... $(vault)
+	@cd hack/helm-reference-gen; go run ./... --vault=$(vault)

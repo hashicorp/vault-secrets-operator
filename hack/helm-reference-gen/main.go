@@ -75,8 +75,13 @@ var (
 
 func main() {
 	validateFlag := flag.Bool("validate", false, "only validate that the markdown can be generated, don't actually generate anything")
+	vaultMdxFlag := flag.String("vault", "", "path to the helm reference documentation file")
 	chartDocsPath := "../../"
 	flag.Parse()
+
+	if *vaultMdxFlag == "" {
+		*vaultMdxFlag = "docs/helm.mdx"
+	}
 
 	if len(os.Args) > 3 {
 		fmt.Println("Error: extra arguments")
@@ -93,7 +98,7 @@ func main() {
 			if filepath.IsAbs(os.Args[1]) {
 				chartDocsPath = os.Args[1]
 			} else {
-				chartDocsPath = filepath.Join("../..", os.Args[1])
+				chartDocsPath = filepath.Join("../..", *vaultMdxFlag)
 			}
 			abs, _ := filepath.Abs(chartDocsPath)
 			fmt.Printf("Using Vault repo path: %s\n", abs)
@@ -119,7 +124,7 @@ func main() {
 	}
 
 	// Otherwise we'll go on to write the changes to the helm docs.
-	helmReferenceFile := filepath.Join(chartDocsPath, "docs/helm.mdx")
+	helmReferenceFile := filepath.Join(chartDocsPath)
 	helmReferenceBytes, err := os.ReadFile(helmReferenceFile)
 	if err != nil {
 		fmt.Println(err.Error())
