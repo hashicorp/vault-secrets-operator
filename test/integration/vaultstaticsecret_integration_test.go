@@ -34,7 +34,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
-	// Check to seee if we are attemmpting to deploy the controller with Helm.
+	// Check to see if we are attemmpting to deploy the controller with Helm.
 	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
 
 	// Construct the terraform options with default retryable errors to handle the most common
