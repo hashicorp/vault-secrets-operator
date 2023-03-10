@@ -5,25 +5,31 @@ package integration
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/json"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
 func TestVaultStaticSecret_kv(t *testing.T) {
@@ -98,7 +104,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		}
 		// Clean up resources with "terraform destroy" at the end of the test.
 		terraform.Destroy(t, terraformOptions)
-		os.RemoveAll(tempDir)
+		assert.NoError(t, os.RemoveAll(tempDir))
 
 		// Undeploy Kustomize
 		if !deployOperatorWithHelm {
@@ -210,7 +216,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						Name:   "secretkv",
 						Create: false,
 					},
-					RefreshAfter: "5s",
+					RefreshAfter:   "5s",
+					HMACSecretData: true,
 				},
 			},
 			// Create a VaultStaticSecret CR to trigger the sync for kvv2
@@ -234,6 +241,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		}
 	}
 
+	// only supports string values, for the sake of simplicity
 	type expectedData struct {
 		initial map[string]interface{}
 		update  map[string]interface{}
@@ -245,9 +253,10 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// expectedData maps to each vssObj in existing, so they need to be equal in length
 		expectedExisting []expectedData
 		create           int
+		createTypes      []string
 	}{
 		{
-			name: "existing-only",
+			name: "existing",
 			expectedExisting: []expectedData{
 				{
 					initial: map[string]interface{}{"password": "grapejuice", "username": "breakfast", "time": "now"},
@@ -261,12 +270,22 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			existing: getExisting(),
 		},
 		{
-			name:   "create-only",
-			create: 10,
+			name:        "create-kv-v1",
+			create:      5,
+			createTypes: []string{"kv-v1"},
 		},
 		{
-			name:   "mixed",
-			create: 10,
+			name:        "create-kv-v2",
+			create:      5,
+			createTypes: []string{"kv-v2"},
+		},
+		{
+			name:        "create-both",
+			create:      5,
+			createTypes: []string{"kv-v1", "kv-v2"},
+		},
+		{
+			name: "mixed-both",
 			expectedExisting: []expectedData{
 				{
 					initial: map[string]interface{}{"username": "baz", "fruit": "banana"},
@@ -277,7 +296,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					update:  map[string]interface{}{"username": "buz", "fruit": "mango"},
 				},
 			},
-			existing: getExisting(),
+			existing:    getExisting(),
+			create:      10,
+			createTypes: []string{"kv-v1", "kv-v2"},
 		},
 	}
 
@@ -318,12 +339,15 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 		secret, err := waitForSecretData(t, 30, 1*time.Second,
 			obj.Spec.Destination.Name, obj.ObjectMeta.Namespace, data)
+		assert.NoError(t, err)
+
 		if err == nil {
 			assertSyncableSecret(t, obj,
 				"secrets.hashicorp.com/v1alpha1",
 				"VaultStaticSecret", secret)
-		} else {
-			assert.NoError(t, err)
+			if obj.Spec.HMACSecretData {
+				assertHMAC(t, ctx, crdClient, obj, secret, data)
+			}
 		}
 	}
 
@@ -345,7 +369,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 			// create
 			for idx := 0; idx < tt.create; idx++ {
-				for _, kvType := range []string{"kv-v1", "kv-v2"} {
+				for _, kvType := range tt.createTypes {
 					count++
 					name := fmt.Sprintf("create-%s-%d", kvType, idx)
 					t.Run(name, func(t *testing.T) {
@@ -375,7 +399,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 									Name:   dest,
 									Create: true,
 								},
-								RefreshAfter: "5s",
+								RefreshAfter:   "5s",
+								HMACSecretData: true,
 							},
 						}
 
@@ -393,4 +418,149 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
+}
+
+func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, origVSSObj *secretsv1alpha1.VaultStaticSecret,
+	secret *corev1.Secret, expected map[string]interface{},
+) {
+	t.Helper()
+
+	secObjKey := client.ObjectKeyFromObject(secret)
+	vssObjKey := client.ObjectKeyFromObject(origVSSObj)
+	cur, err := awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
+	assert.NoError(t, err)
+	assert.NotNil(t, cur)
+	if t.Failed() {
+		return
+	}
+
+	originalMAC, err := base64.StdEncoding.DecodeString(cur.Status.SecretMAC)
+	assert.NoError(t, err)
+	if t.Failed() {
+		return
+	}
+
+	assertSecretDataHMAC(t, ctx, crdClient, secObjKey, originalMAC)
+	if t.Failed() {
+		return
+	}
+
+	assertHMACTriggeredRemediation(t, ctx, crdClient, secret, expected)
+	if t.Failed() {
+		return
+	}
+
+	// now ensure that the HMAC matches the original
+	cur, err = awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
+	assert.NoError(t, err)
+	assert.NotNil(t, cur)
+	if t.Failed() {
+		return
+	}
+
+	if assert.NotEmpty(t, cur.Status.SecretMAC) {
+		otherMAC, err := base64.StdEncoding.DecodeString(cur.Status.SecretMAC)
+		if err != nil {
+			assert.NoError(t, err)
+			return
+		}
+		assert.True(t, vault.EqualMACS(originalMAC, otherMAC))
+	}
+
+	if !t.Failed() {
+		assertSecretDataHMAC(t, ctx, crdClient, secObjKey, originalMAC)
+	}
+}
+
+func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.Client, objKey client.ObjectKey) (*secretsv1alpha1.VaultStaticSecret, error) {
+	t.Helper()
+	var cur secretsv1alpha1.VaultStaticSecret
+	err := backoff.Retry(func() error {
+		var v secretsv1alpha1.VaultStaticSecret
+		if err := crdClient.Get(ctx, objKey, &v); err != nil {
+			return backoff.Permanent(err)
+		}
+
+		if v.Status.SecretMAC == "" {
+			return fmt.Errorf("expected Status.SecretMAC not set on %s", objKey)
+		}
+		cur = v
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10))
+
+	return &cur, err
+}
+
+func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client, objKey client.ObjectKey, expectedMAC []byte) {
+	t.Helper()
+
+	validateFunc := vault.NewMACValidateFromHKDFSecretFunc(vault.DefaultClientCacheStorageConfig().HKDFObjectKey)
+	var secret corev1.Secret
+	if err := crdClient.Get(ctx, objKey, &secret); err != nil {
+		return
+	}
+
+	message, err := json.Marshal(secret.Data)
+	assert.NoError(t, err)
+	if t.Failed() {
+		return
+	}
+
+	valid, _, err := validateFunc(ctx, crdClient, message, expectedMAC)
+	assert.NoError(t, err)
+	assert.True(t, valid)
+}
+
+func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client, secret *corev1.Secret, expected map[string]interface{}) {
+	t.Helper()
+
+	// we want to test out drift detection by mutating the Secret,
+	// then waiting for it to be reconciled and properly remediated.
+	secObjKey := client.ObjectKeyFromObject(secret)
+	nefariousData := map[string][]byte{
+		"nefarious": []byte("actor"),
+	}
+	secret.Data = nefariousData
+	assert.NoError(t, crdClient.Update(ctx, secret), "unexpected, could not update Secret %s", secObjKey)
+	if t.Failed() {
+		return
+	}
+
+	// wait for the nefarious data to be updated in the Secret
+	// avoiding retry.* since those functions are already making too much noise
+	assert.NoError(t, backoff.Retry(func() error {
+		var s corev1.Secret
+		if err := crdClient.Get(ctx, secObjKey, &s); err != nil {
+			return err
+		}
+		// we can discard _raw here, since we are only checking if the other bits are the same.
+		if !reflect.DeepEqual(nefariousData, s.Data) {
+			return fmt.Errorf("nefarious data never updated in Secret %s", secObjKey)
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*250), 8)))
+	if t.Failed() {
+		return
+	}
+
+	// used for comparing map[string]interface{} to Secret.Data
+	// assumes that the tests only ever use string values.
+	cmp := map[string][]byte{}
+	for k, v := range expected {
+		cmp[k] = []byte(v.(string))
+	}
+	// wait for the reconciler to pick up the out-of-band change
+	// avoiding retry.* since those functions are already making too much noise
+	assert.NoError(t, backoff.Retry(func() error {
+		var s corev1.Secret
+		if err := crdClient.Get(ctx, secObjKey, &s); err != nil {
+			return err
+		}
+		// we can discard _raw here, since we are only checking if the other bits are the same.
+		delete(s.Data, "_raw")
+		if !reflect.DeepEqual(cmp, s.Data) {
+			return fmt.Errorf("expected data %#v not restored to %s", cmp, secObjKey)
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 30)))
 }

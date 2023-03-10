@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -27,9 +28,11 @@ import (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.ClientFactory
+	Scheme          *runtime.Scheme
+	Recorder        record.EventRecorder
+	ClientFactory   vault.ClientFactory
+	HMACFunc        vault.HMACFromHKDFSecretFunc
+	ValidateMACFunc vault.ValidateMACFromHKDFSecretFunc
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -58,7 +61,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	var refAfter time.Duration
+	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
 		d, err := time.ParseDuration(o.Spec.RefreshAfter)
 		if err != nil {
@@ -67,7 +70,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Failed to parse o.Spec.RefreshAfter %s", o.Spec.RefreshAfter)
 			return ctrl.Result{}, err
 		}
-		refAfter = d
+		requeueAfter, _ = computeHorizonWithJitter(d)
 	}
 
 	var resp *api.KVSecret
@@ -90,13 +93,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
 	}
+
 	if err != nil {
 		logger.Error(err, "Failed to read Vault secret")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
-		return ctrl.Result{
-			RequeueAfter: refAfter,
-		}, nil
+		return ctrl.Result{}, nil
 	}
 
 	if resp == nil {
@@ -104,7 +106,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Vault secret was empty, mount %s, name %s", o.Spec.Mount, o.Spec.Name)
 		return ctrl.Result{
-			RequeueAfter: refAfter,
+			RequeueAfter: requeueAfter,
 		}, nil
 	}
 
@@ -116,25 +118,98 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-			"Failed to update k8s secret: %s", err)
+	syncSecret := true
+	if o.Spec.HMACSecretData {
+		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
+		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
+		if requeueAfter == 0 {
+			// hardcoding a default horizon here, perhaps we will want make this value public?
+			requeueAfter, _ = computeHorizonWithJitter(time.Second * 60)
+		}
+		macsEqual, messageMAC, err := r.handleSecretHMAC(ctx, o, data)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		syncSecret = !macsEqual
+		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+	}
+
+	if syncSecret {
+		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
+				"Failed to update k8s secret: %s", err)
+			return ctrl.Result{}, err
+		}
+	}
+
+	if err := r.Status().Update(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonAccepted, "Secret synced")
 	return ctrl.Result{
-		RequeueAfter: refAfter,
+		RequeueAfter: requeueAfter,
 	}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultStaticSecret{}).
-		Complete(r)
+// handleSecretHMAC compares the HMAC of data to its previously computed value stored in o.Status.SecretHMAC,
+// returning true if they are equal. The computed new-MAC will be returned so that o.Status.SecretHMAC can be updated.
+func (r *VaultStaticSecretReconciler) handleSecretHMAC(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret, data map[string][]byte) (bool, []byte, error) {
+	logger := log.FromContext(ctx)
+
+	// HMAC the Vault secret data so that it can be compared to the what's in the destination Secret.
+	message, err := json.Marshal(data)
+	if err != nil {
+		return false, nil, err
+	}
+
+	newMAC, err := r.HMACFunc(ctx, r.Client, message)
+	if err != nil {
+		return false, nil, err
+	}
+
+	// we have never computed the Vault secret data HMAC,
+	// so there is no need to perform Secret data drift detection.
+	if o.Status.SecretMAC == "" {
+		return false, newMAC, nil
+	}
+
+	lastMAC, err := base64.StdEncoding.DecodeString(o.Status.SecretMAC)
+	if err != nil {
+		return false, nil, err
+	}
+
+	macsEqual := vault.EqualMACS(lastMAC, newMAC)
+	if macsEqual {
+		// check to see if the Secret.Data has drifted since the last sync,
+		// if it has then it will be overwritten with the Vault secret data
+		// this would indicate an out-of-band change made to the Secret's data
+		// in this case the controller should do the sync.
+		if cur, ok, _ := helpers.GetSecret(ctx, r.Client, o); ok {
+			message, err := json.Marshal(cur.Data)
+			if err != nil {
+				return false, nil, err
+			}
+
+			logger.V(consts.LogLevelDebug).Info("Doing Secret data drift detection", "lastMAC", lastMAC)
+			// we only care of the MAC has changed, it's new value is not important here.
+			valid, foundMAC, err := r.ValidateMACFunc(ctx, r.Client, message, lastMAC)
+			if err != nil {
+				return false, nil, err
+			}
+			if !valid {
+				logger.V(consts.LogLevelDebug).Info("Secret data drift detected", "lastMAC", lastMAC, "foundMAC", foundMAC)
+			}
+
+			macsEqual = valid
+		}
+	}
+
+	return macsEqual, newMAC, nil
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
 	if vaultSecret.Raw == nil {
 		return nil, fmt.Errorf("raw portion of vault secret was nil")
@@ -164,4 +239,11 @@ func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
 		k8sSecretData[k] = m
 	}
 	return k8sSecretData, nil
+}
+
+func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&secretsv1alpha1.VaultStaticSecret{}).
+		WithEventFilter(ignoreUpdatePredicate()).
+		Complete(r)
 }
