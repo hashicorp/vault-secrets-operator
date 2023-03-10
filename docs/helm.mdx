@@ -134,6 +134,8 @@ Use these links to navigate to a particular top-level stanza.
   * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
     which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
 
+  - `enabled` ((#v-defaultvaultconnection-enabled)) (`boolean: false`) - toggles the deployment of the VaultAuthMethod CR
+
   - `address` ((#v-defaultvaultconnection-address)) (`string: ""`) - Address of the Vault Server
     Example: http://vault.default.svc.cluster.local:8200
 

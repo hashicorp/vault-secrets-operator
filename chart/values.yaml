@@ -97,6 +97,7 @@ metricsService:
 defaultVaultConnection:
   # toggles the deployment of the VaultAuthMethod CR
   # @type: boolean
+  enabled: false
 
   # Address of the Vault Server
   # @type: string
