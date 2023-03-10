@@ -134,10 +134,12 @@ func main() {
 	}
 
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultStaticSecret"),
-		ClientFactory: clientFactory,
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Recorder:        mgr.GetEventRecorderFor("VaultStaticSecret"),
+		HMACFunc:        vclient.NewHMACFromHKDFSecretFunc(cfc.StorageConfig.HKDFObjectKey),
+		ValidateMACFunc: vclient.NewMACValidateFromHKDFSecretFunc(cfc.StorageConfig.HKDFObjectKey),
+		ClientFactory:   clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)

@@ -267,10 +267,10 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 		return nil, err
 	}
 
-	return c.restore(ctx, client, req, s)
+	return c.restore(ctx, req, s)
 }
 
-func (c *defaultClientCacheStorage) restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest, s *corev1.Secret) (*clientCacheStorageEntry, error) {
+func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCacheStorageRestoreRequest, s *corev1.Secret) (*clientCacheStorageEntry, error) {
 	if err := c.validateSecretMAC(req, s); err != nil {
 		return nil, err
 	}
@@ -393,7 +393,7 @@ func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlc
 			DecryptionVaultAuth: req.DecryptionVaultAuth,
 		}
 
-		entry, err := c.restore(ctx, client, req, &s)
+		entry, err := c.restore(ctx, req, &s)
 		if err != nil {
 			errs = errors.Join(errs, err)
 		}
@@ -425,7 +425,7 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 		return err
 	}
 
-	ok, err = validateMAC(message, messageMAC, c.hkdfKey)
+	ok, _, err = validateMAC(message, messageMAC, c.hkdfKey)
 	if err != nil {
 		return err
 	}
@@ -500,7 +500,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	s, err := CreateHKDFSecret(ctx, client, config.HKDFObjectKey)
+	s, err := createHKDFSecret(ctx, client, config.HKDFObjectKey)
 	if err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, err
@@ -508,7 +508,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	}
 
 	if s == nil {
-		s, err = GetHKDFSecret(ctx, client, config.HKDFObjectKey)
+		s, err = getHKDFSecret(ctx, client, config.HKDFObjectKey)
 		if err != nil {
 			return nil, err
 		}

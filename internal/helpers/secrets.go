@@ -30,11 +30,11 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/component":  "secret-sync",
 }
 
-// syncableSecretMetaData provides common data structure that extracts the bits pertinent
+// SyncableSecretMetaData provides common data structure that extracts the bits pertinent
 // when handling any of the sync-able secret custom resource types.
 //
 // See NewSyncableSecretMetaData for the supported object types.
-type syncableSecretMetaData struct {
+type SyncableSecretMetaData struct {
 	// APIVersion of the syncable-secret object. Maps to obj.APIVersion.
 	APIVersion string
 	// Kind of the syncable-secret object. Maps to obj.Kind.
@@ -43,26 +43,26 @@ type syncableSecretMetaData struct {
 	Destination *secretsv1alpha1.Destination
 }
 
-// NewSyncableSecretMetaData returns syncableSecretMetaData if obj is a supported type.
+// NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
 // An error will be returned of obj is not a supported type.
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
-func NewSyncableSecretMetaData(obj ctrlclient.Object) (*syncableSecretMetaData, error) {
+func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
 	switch t := obj.(type) {
 	case *secretsv1alpha1.VaultDynamicSecret:
-		return &syncableSecretMetaData{
+		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 		}, nil
 	case *secretsv1alpha1.VaultStaticSecret:
-		return &syncableSecretMetaData{
+		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 		}, nil
 	case *secretsv1alpha1.VaultPKISecret:
-		return &syncableSecretMetaData{
+		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
@@ -183,9 +183,19 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 //
 // See NewSyncableSecretMetaData for the supported types for obj.
 func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (bool, error) {
+	_, ok, err := getSecretExists(ctx, client, obj)
+	return ok, err
+}
+
+// GetSecret
+func GetSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
+	return getSecretExists(ctx, client, obj)
+}
+
+func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
 	meta, err := NewSyncableSecretMetaData(obj)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
@@ -195,14 +205,14 @@ func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlcl
 	if err := client.Get(ctx, key, &s); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
-			return false, nil
+			return nil, false, nil
 		}
 		// let the caller log the error
-		return false, err
+		return nil, false, err
 	}
 
 	logger.V(consts.LogLevelDebug).Info("Secret exists")
-	return true, nil
+	return &s, true, nil
 }
 
 // checkSecretIsOwnedByObj validates the Secret is owned by obj by checking its Labels and OwnerReferences.

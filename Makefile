@@ -169,7 +169,7 @@ check-tffmt: terraform ## Check formatting
 	@TERRAFORM_BIN=$(TERRAFORM) $(CURDIR)/scripts/tffmtcheck.sh $(CURDIR)
 
 .PHONY: vet
-vet: ## Run go vet against code.
+vet: go-version-check ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test

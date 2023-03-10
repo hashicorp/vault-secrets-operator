@@ -26,6 +26,7 @@ const (
 	ReasonSecretLeaseRenewal        = "SecretLeaseRenewal"
 	ReasonSecretLeaseRenewalError   = "SecretLeaseRenewalError"
 	ReasonSecretRotated             = "SecretRotated"
+	ReasonSecretSync                = "SecretSync"
 	ReasonSecretSyncError           = "SecretSyncError"
 	ReasonSecretSynced              = "SecretSynced"
 	ReasonStatusUpdateError         = "StatusUpdateError"

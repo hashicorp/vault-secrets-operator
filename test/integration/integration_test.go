@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -130,46 +131,57 @@ func getCRDClient(t *testing.T) client.Client {
 	return k8sClient
 }
 
-func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expectedData map[string]interface{}) (*corev1.Secret, error) {
+func waitForSecretData(t *testing.T, ctx context.Context, crdClient client.Client, maxRetries int, delay time.Duration,
+	name, namespace string, expectedData map[string]interface{},
+) (*corev1.Secret, error) {
 	t.Helper()
-	destSecret := &corev1.Secret{}
-	_, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
-		var err error
-		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
-		if err != nil {
+	var validSecret corev1.Secret
+	secObjKey := client.ObjectKey{Namespace: namespace, Name: name}
+	_, err := retry.DoWithRetryE(t,
+		fmt.Sprintf("wait for k8s Secret data to be synced by the operator, objKey=%s", secObjKey),
+		maxRetries, delay, func() (string, error) {
+			var err error
+			var destSecret corev1.Secret
+			if err := crdClient.Get(ctx, secObjKey, &destSecret); err != nil {
+				return "", err
+			}
+
+			if _, ok := destSecret.Data["_raw"]; !ok {
+				return "", fmt.Errorf("secret hasn't been synced yet, missing '_raw' field")
+			}
+
+			var rawSecret map[string]interface{}
+			err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
+			require.NoError(t, err)
+			if _, ok := rawSecret["data"]; ok {
+				rawSecret = rawSecret["data"].(map[string]interface{})
+			}
+			for k, v := range expectedData {
+				// compare expected secret data to _raw in the k8s secret
+				if !reflect.DeepEqual(v, rawSecret[k]) {
+					err = errors.Join(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
+				}
+				// compare expected secret k/v to the top level items in the k8s secret
+				if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
+					err = errors.Join(err, fmt.Errorf("expected '%s:%s', actual '%s:%s'", k, v, k, string(destSecret.Data[k])))
+				}
+			}
+			if len(expectedData) != len(rawSecret) {
+				err = errors.Join(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
+			}
+			// the k8s secret has an extra key because of the "_raw" item
+			if len(expectedData) != len(destSecret.Data)-1 {
+				err = errors.Join(err, fmt.Errorf("expected data length %d does not match k8s secret data length %d", len(expectedData), len(destSecret.Data)-1))
+			}
+
+			if err == nil {
+				validSecret = destSecret
+			}
+
 			return "", err
-		}
-		if _, ok := destSecret.Data["_raw"]; !ok {
-			return "", fmt.Errorf("secret hasn't been synced yet, missing '_raw' field")
-		}
-		var rawSecret map[string]interface{}
-		err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
-		require.NoError(t, err)
-		if _, ok := rawSecret["data"]; ok {
-			rawSecret = rawSecret["data"].(map[string]interface{})
-		}
-		for k, v := range expectedData {
-			// compare expected secret data to _raw in the k8s secret
-			if !reflect.DeepEqual(v, rawSecret[k]) {
-				err = errors.Join(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
-			}
-			// compare expected secret k/v to the top level items in the k8s secret
-			if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
-				err = errors.Join(err, fmt.Errorf("expected '%s:%s', actual '%s:%s'", k, v, k, string(destSecret.Data[k])))
-			}
-		}
-		if len(expectedData) != len(rawSecret) {
-			err = errors.Join(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
-		}
-		// the k8s secret has an extra key because of the "_raw" item
-		if len(expectedData) != len(destSecret.Data)-1 {
-			err = errors.Join(err, fmt.Errorf("expected data length %d does not match k8s secret data length %d", len(expectedData), len(destSecret.Data)-1))
-		}
+		})
 
-		return "", err
-	})
-
-	return destSecret, err
+	return &validSecret, err
 }
 
 func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, namespace, expectedCommonName, previousSerialNumber string) (string, *corev1.Secret, error) {
