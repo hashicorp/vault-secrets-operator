@@ -15,7 +15,7 @@ import (
 )
 
 // ClientConfig contains the connection and auth information to construct a
-// Vault ctrlclient
+// Vault Client.
 type ClientConfig struct {
 	// CACertSecretRef is the name of a k8 secret that contains a data key
 	// "ca.crt" that holds a CA cert that can be used to validate the
@@ -37,7 +37,7 @@ type ClientConfig struct {
 	// AuthLogin auth.AuthLogin
 }
 
-// MakeVaultClient creates a Vault API ctrlclient from a ClientConfig
+// MakeVaultClient creates a Vault api.Client from a ClientConfig.
 func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.Client) (*api.Client, error) {
 	l := log.FromContext(ctx)
 	if cfg == nil {

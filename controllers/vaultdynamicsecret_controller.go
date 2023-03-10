@@ -99,17 +99,14 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			now := time.Now().Unix()
 			diff := ts - now
 			if diff > 0 {
-				horizon, err := computeHorizonWithJitter(time.Duration(diff) * time.Second)
-				if err != nil {
-					logger.Error(err, "Failed to compute the new horizon")
-				} else {
-					if err := r.updateStatus(ctx, o); err != nil {
-						return ctrl.Result{}, err
-					}
-					r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-						"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s", leaseID, horizon)
-					return ctrl.Result{RequeueAfter: horizon}, nil
+				horizon := computeHorizonWithJitter(time.Duration(diff) * time.Second)
+				if err := r.updateStatus(ctx, o); err != nil {
+					return ctrl.Result{}, err
 				}
+				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
+					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s", leaseID, horizon)
+				return ctrl.Result{RequeueAfter: horizon}, nil
+
 			}
 		}
 
@@ -139,7 +136,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 
 			leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-			horizon, _ := computeHorizonWithJitter(leaseDuration)
+			if leaseDuration < 1 {
+				// set an artificial leaseDuration in the case the lease duration is not
+				// compatible with computeHorizonWithJitter()
+				leaseDuration = time.Second * 5
+			}
+			horizon := computeHorizonWithJitter(leaseDuration)
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"Renewed lease, lease_id=%s, horizon=%s", leaseID, horizon)
 
@@ -184,7 +186,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 					"failed to execute rollout restarts for target %#v: %s", target, err)
 			} else {
 				r.Recorder.Eventf(s, corev1.EventTypeNormal, "RolloutRestartTriggered",
-					"Rollout restart triggered for %s", target)
+					"Rollout restart triggered for %v", target)
 			}
 		}
 	}
@@ -194,7 +196,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon, _ := computeHorizonWithJitter(leaseDuration)
+	horizon := computeHorizonWithJitter(leaseDuration)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
 
