@@ -509,3 +509,12 @@ build-diags:
 .PHONY: clean
 clean:
 	rm -rf build
+
+
+# Generate Helm reference docs from values.yaml and update Vault website.
+# Usage: make gen-helm-docs vault=<path-to-vault-repo>.
+# If not options are given, the local copy of docs/helm.mdx will be updated, which can
+# be used to submit a PR to vault docs.
+# Adapted from https://github.com/hashicorp/consul-k8s/tree/main/hack/helm-reference-gen
+gen-helm-docs:
+	@cd hack/helm-reference-gen; go run ./... --vault=$(vault)
