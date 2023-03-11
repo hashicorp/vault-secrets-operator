@@ -26,10 +26,10 @@ type VaultDynamicSecretSpec struct {
 	Mount string `json:"mount"`
 	// Role in Vault to get the credentials for.
 	Role string `json:"role"`
-	// Dest could be some sort of k8s secret or something like that ....
-	Dest string `json:"dest"`
 	// RolloutRestartTargets
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
+	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
+	Destination Destination `json:"destination"`
 }
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret
@@ -54,8 +54,8 @@ type VaultSecretLease struct {
 	RequestID string `json:"requestID"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // VaultDynamicSecret is the Schema for the vaultdynamicsecrets API
 type VaultDynamicSecret struct {

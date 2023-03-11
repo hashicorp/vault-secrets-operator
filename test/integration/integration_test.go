@@ -25,11 +25,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes/scheme"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var (
@@ -39,6 +44,11 @@ var (
 	testVaultAddress    string
 	k8sVaultNamespace   string
 	kustomizeConfigRoot string
+
+	// extended in TestMain
+	scheme = ctrlruntime.NewScheme()
+	// set in TestMain
+	restConfig = rest.Config{}
 )
 
 func init() {
@@ -79,6 +89,10 @@ func init() {
 // See `make setup-integration-test` for manual testing.
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
+		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
+		restConfig = *ctrl.GetConfigOrDie()
+
 		os.Setenv("VAULT_ADDR", "http://127.0.0.1:38300")
 		os.Setenv("VAULT_TOKEN", "root")
 		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
@@ -107,19 +121,20 @@ func getVaultClient(t *testing.T, namespace string) *api.Client {
 }
 
 func getCRDClient(t *testing.T) client.Client {
+	// restConfig is set in TestMain for when running integration tests.
 	t.Helper()
-	err := secretsv1alpha1.AddToScheme(scheme.Scheme)
+
+	k8sClient, err := client.New(&restConfig, client.Options{Scheme: scheme})
 	require.NoError(t, err)
-	k8sClient, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
-	require.NoError(t, err)
+
 	return k8sClient
 }
 
-func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expectedData map[string]interface{}) {
+func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expectedData map[string]interface{}) (*corev1.Secret, error) {
 	t.Helper()
 	destSecret := &corev1.Secret{}
-	var err error
-	retry.DoWithRetry(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+	_, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+		var err error
 		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
 		if err != nil {
 			return "", err
@@ -153,14 +168,15 @@ func waitForSecretData(t *testing.T, maxRetries int, delay time.Duration, name, 
 
 		return "", err
 	})
+
+	return destSecret, err
 }
 
-func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, namespace, expectedCommonName, previousSerialNumber string) (serialNumber string) {
+func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, namespace, expectedCommonName, previousSerialNumber string) (string, *corev1.Secret, error) {
 	t.Helper()
 	destSecret := &corev1.Secret{}
-	newSerialNumber := ""
-	var err error
-	retry.DoWithRetry(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+	newSerialNumber, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
+		var err error
 		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
 		if err != nil {
 			return "", err
@@ -182,11 +198,11 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, nam
 		if cert.SerialNumber.String() == previousSerialNumber {
 			return "", fmt.Errorf("serial number %q still matches previous serial number %q", cert.SerialNumber, previousSerialNumber)
 		}
-		newSerialNumber = cert.SerialNumber.String()
-		return "", nil
+
+		return cert.SerialNumber.String(), nil
 	})
 
-	return newSerialNumber
+	return newSerialNumber, destSecret, err
 }
 
 type dynamicK8SOutputs struct {
@@ -205,12 +221,18 @@ type dynamicK8SOutputs struct {
 	K8sDBSecrets     []string `json:"k8s_db_secret"`
 }
 
-func waitForDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, name, namespace string, expected map[string]int) {
+func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int) {
 	t.Helper()
+
+	namespace := vdsObj.GetNamespace()
+	name := vdsObj.Spec.Destination.Name
+	opts := &k8s.KubectlOptions{
+		Namespace: namespace,
+	}
 	retry.DoWithRetry(t,
 		"wait for dynamic secret sync", maxRetries, delay,
 		func() (string, error) {
-			sec, err := k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
+			sec, err := k8s.GetSecretE(t, opts, name)
 			if err != nil {
 				return "", err
 			}
@@ -222,10 +244,54 @@ func waitForDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, nam
 			for f, b := range sec.Data {
 				actual[f] = len(b)
 			}
-			require.Equal(t, expected, actual)
+			assert.Equal(t, expected, actual)
+
+			assertSyncableSecret(t, vdsObj,
+				"secrets.hashicorp.com/v1alpha1",
+				"VaultDynamicSecret", sec)
 
 			return "", nil
 		})
+}
+
+func assertSyncableSecret(t *testing.T, obj client.Object, expectedAPIVersion, expectedKind string, sec *corev1.Secret) {
+	t.Helper()
+
+	meta, err := helpers.NewSyncableSecretMetaData(obj)
+	require.NoError(t, err)
+
+	if meta.Destination.Create {
+		assert.Equal(t, helpers.OwnerLabels, sec.Labels,
+			"expected owner labels not set on %s",
+			client.ObjectKeyFromObject(sec))
+
+		// check the OwnerReferences
+		expectedOwnerRefs := []v1.OwnerReference{
+			{
+				// For some reason TypeMeta is empty when using the client.Client
+				// from within the tests. So we have to hard code APIVersion and Kind.
+				// There are numerous related GH issues for this:
+				// Normally it should be:
+				// APIVersion: meta.APIVersion,
+				// Kind:       meta.Kind,
+				// e.g. https://github.com/kubernetes/client-go/issues/541
+				APIVersion: expectedAPIVersion,
+				Kind:       expectedKind,
+				Name:       obj.GetName(),
+				UID:        obj.GetUID(),
+			},
+		}
+		assert.Equal(t, expectedOwnerRefs, sec.OwnerReferences,
+			"expected owner references not set on %s",
+			client.ObjectKeyFromObject(sec))
+	} else {
+		assert.Nil(t, sec.Labels,
+			"expected no labels set on %s",
+			client.ObjectKeyFromObject(sec))
+		assert.Nil(t, sec.OwnerReferences,
+			"expected no OwnerReferences set on %s",
+			client.ObjectKeyFromObject(sec))
+	}
 }
 
 func deployOperatorWithKustomize(t *testing.T, k8sOpts *k8s.KubectlOptions, kustomizeConfigPath string) {

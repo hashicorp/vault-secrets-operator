@@ -104,7 +104,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 					return ctrl.Result{}, err
 				}
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s", leaseID, horizon)
+					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
+					leaseID, horizon)
 				return ctrl.Result{RequeueAfter: horizon}, nil
 
 			}
@@ -160,16 +161,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	s, err := r.getDestinationSecret(ctx, o)
+	secretLease, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-
-	secretLease, err := r.syncSecret(ctx, vClient, o, s)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	logger.Info("Wrote credentials", "dest", client.ObjectKeyFromObject(s))
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
@@ -181,11 +176,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if doRolloutRestart {
 		reason = consts.ReasonSecretRotated
 		for _, target := range o.Spec.RolloutRestartTargets {
-			if err := helpers.RolloutRestart(ctx, s, target, r.Client); err != nil {
-				r.Recorder.Eventf(s, corev1.EventTypeWarning, "RolloutRestartFailed",
+			if err := helpers.RolloutRestart(ctx, o, target, r.Client); err != nil {
+				r.Recorder.Eventf(o, corev1.EventTypeWarning, "RolloutRestartFailed",
 					"failed to execute rollout restarts for target %#v: %s", target, err)
 			} else {
-				r.Recorder.Eventf(s, corev1.EventTypeNormal, "RolloutRestartTriggered",
+				r.Recorder.Eventf(o, corev1.EventTypeNormal, "RolloutRestartTriggered",
 					"Rollout restart triggered for %v", target)
 			}
 		}
@@ -212,20 +207,7 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.Va
 	return true
 }
 
-func (r *VaultDynamicSecretReconciler) getDestinationSecret(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) (*corev1.Secret, error) {
-	secretObjKey := types.NamespacedName{
-		Namespace: o.Namespace,
-		Name:      o.Spec.Dest,
-	}
-
-	s := &corev1.Secret{}
-	if err := r.Client.Get(ctx, secretObjKey, s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret, s *corev1.Secret) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
 	path := fmt.Sprintf("%s/creds/%s", o.Spec.Mount, o.Spec.Role)
 	resp, err := vClient.Read(ctx, path)
 	if err != nil {
@@ -241,8 +223,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient v
 		return nil, err
 	}
 
-	s.Data = data
-	if err := r.Client.Update(ctx, s); err != nil {
+	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 		return nil, err
 	}
 
