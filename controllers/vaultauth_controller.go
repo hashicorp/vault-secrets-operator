@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,6 +22,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
 const vaultAuthFinalizer = "vaultauth.secrets.hashicorp.com/finalizer"
