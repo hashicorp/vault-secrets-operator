@@ -34,10 +34,13 @@ const (
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Recorder       record.EventRecorder
-	ClientFactory  vault.ClientFactory
-	runtimePodName string
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.ClientFactory
+	// runtimePodUID should always be set when updating resource's Status.
+	// This is done via the downwardAPI. We get the current Pod's UID from either the
+	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
+	runtimePodUID types.UID
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -45,11 +48,14 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
-//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;patch
+//
 // required for rollout-restart
-//+kubebuilder:rbac:groups={"extensions","apps"},resources=deployments,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups={"extensions","apps"},resources=statefulsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups={"extensions","apps"},resources=daemonsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//
+// needed for managing cached Clients, duplicated in vaultconnection_controller.go
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
 
 // Reconcile ensures that the VaultDynamicSecret Custom Resource is synced from Vault to its
 // configured Kubernetes secret. The resource will periodically be reconciled to renew the
@@ -60,8 +66,15 @@ type VaultDynamicSecretReconciler struct {
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if r.runtimePodName == "" {
-		r.runtimePodName = os.Getenv("OPERATOR_POD_NAME")
+	if r.runtimePodUID == "" {
+		if val := os.Getenv("OPERATOR_POD_UID"); val != "" {
+			r.runtimePodUID = types.UID(val)
+		}
+	}
+	if r.runtimePodUID == "" {
+		if b, err := os.ReadFile("/var/run/podinfo/uid"); err == nil {
+			r.runtimePodUID = types.UID(b)
+		}
 	}
 
 	o := &secretsv1alpha1.VaultDynamicSecret{}
@@ -74,22 +87,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Handling request")
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		logger.Info("Got deletion timestamp", "obj", o)
-		// status update will be taken care of in the call to handleFinalizer()
-		return r.handleFinalizer(ctx, o)
-	}
-
 	var doRolloutRestart bool
 	leaseID := o.Status.SecretLease.ID
 	// logger.Info("Last secret lease", "secretLease", o.Status.SecretLease, "epoch", r.epoch)
 	if leaseID != "" {
-		if r.runtimePodName != "" && r.runtimePodName != o.Status.LastRuntimePodName {
+		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
 			leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
@@ -97,18 +99,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			now := time.Now().Unix()
 			diff := ts - now
 			if diff > 0 {
-				horizon, err := computeHorizonWithJitter(time.Duration(diff) * time.Second)
-				if err != nil {
-					logger.Error(err, "Failed to compute the new horizon")
-				} else {
-					o.Status.LastRuntimePodName = r.runtimePodName
-					if err := r.updateStatus(ctx, o); err != nil {
-						return ctrl.Result{}, err
-					}
-					r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-						"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s", leaseID, horizon)
-					return ctrl.Result{RequeueAfter: horizon}, nil
+				horizon := computeHorizonWithJitter(time.Duration(diff) * time.Second)
+				if err := r.updateStatus(ctx, o); err != nil {
+					return ctrl.Result{}, err
 				}
+				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
+					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
+					leaseID, horizon)
+				return ctrl.Result{RequeueAfter: horizon}, nil
+
 			}
 		}
 
@@ -133,13 +132,17 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = time.Now().Unix()
-			o.Status.LastRuntimePodName = r.runtimePodName
 			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
 			}
 
 			leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-			horizon, _ := computeHorizonWithJitter(leaseDuration)
+			if leaseDuration < 1 {
+				// set an artificial leaseDuration in the case the lease duration is not
+				// compatible with computeHorizonWithJitter()
+				leaseDuration = time.Second * 5
+			}
+			horizon := computeHorizonWithJitter(leaseDuration)
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"Renewed lease, lease_id=%s, horizon=%s", leaseID, horizon)
 
@@ -158,20 +161,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	s, err := r.getDestinationSecret(ctx, o)
+	secretLease, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-
-	secretLease, err := r.syncSecret(ctx, vClient, o, s)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	logger.Info("Wrote credentials", "dest", client.ObjectKeyFromObject(s))
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
-	o.Status.LastRuntimePodName = r.runtimePodName
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -180,12 +176,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if doRolloutRestart {
 		reason = consts.ReasonSecretRotated
 		for _, target := range o.Spec.RolloutRestartTargets {
-			if err := helpers.RolloutRestart(ctx, s, target, r.Client); err != nil {
-				r.Recorder.Eventf(s, corev1.EventTypeWarning, "RolloutRestartFailed",
+			if err := helpers.RolloutRestart(ctx, o, target, r.Client); err != nil {
+				r.Recorder.Eventf(o, corev1.EventTypeWarning, "RolloutRestartFailed",
 					"failed to execute rollout restarts for target %#v: %s", target, err)
 			} else {
-				r.Recorder.Eventf(s, corev1.EventTypeNormal, "RolloutRestartTriggered",
-					"Rollout restart triggered for %s", target)
+				r.Recorder.Eventf(o, corev1.EventTypeNormal, "RolloutRestartTriggered",
+					"Rollout restart triggered for %v", target)
 			}
 		}
 	}
@@ -195,7 +191,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon, _ := computeHorizonWithJitter(leaseDuration)
+	horizon := computeHorizonWithJitter(leaseDuration)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
 
@@ -211,20 +207,7 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.Va
 	return true
 }
 
-func (r *VaultDynamicSecretReconciler) getDestinationSecret(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) (*corev1.Secret, error) {
-	secretObjKey := types.NamespacedName{
-		Namespace: o.Namespace,
-		Name:      o.Spec.Dest,
-	}
-
-	s := &corev1.Secret{}
-	if err := r.Client.Get(ctx, secretObjKey, s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret, s *corev1.Secret) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
 	path := fmt.Sprintf("%s/creds/%s", o.Spec.Mount, o.Spec.Role)
 	resp, err := vClient.Read(ctx, path)
 	if err != nil {
@@ -240,8 +223,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient v
 		return nil, err
 	}
 
-	s.Data = data
-	if err := r.Client.Update(ctx, s); err != nil {
+	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 		return nil, err
 	}
 
@@ -249,6 +231,9 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient v
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+	if r.runtimePodUID != "" {
+		o.Status.LastRuntimePodUID = r.runtimePodUID
+	}
 	if err := r.Status().Update(ctx, o); err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)
@@ -275,18 +260,6 @@ func (r *VaultDynamicSecretReconciler) renewLease(ctx context.Context, c vault.C
 	}
 
 	return r.getVaultSecretLease(resp), nil
-}
-
-func (r *VaultDynamicSecretReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) (ctrl.Result, error) {
-	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
-		controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer)
-		r.ClientFactory.RemoveObject(o)
-		if err := r.Update(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
 }
 
 func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {

@@ -12,21 +12,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
-)
-
-const (
-	vaultStaticSecretFinalizer = "vaultstaticsecret.secrets.hashicorp.com/finalizer"
 )
 
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
@@ -56,29 +51,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		logger.Info("Got deletion timestamp", "obj", o)
-		// status update will be taken care of in the call to handleFinalizer()
-		return r.handleFinalizer(ctx, o)
-	}
-
-	spec := o.Spec
-
-	sec1 := &corev1.Secret{}
-	if err := r.Client.Get(ctx,
-		types.NamespacedName{
-			Namespace: o.Namespace,
-			Name:      spec.Dest,
-		},
-		sec1,
-	); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	c, err := r.ClientFactory.GetClient(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
@@ -87,33 +59,33 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	var refAfter time.Duration
-	if spec.RefreshAfter != "" {
-		d, err := time.ParseDuration(spec.RefreshAfter)
+	if o.Spec.RefreshAfter != "" {
+		d, err := time.ParseDuration(o.Spec.RefreshAfter)
 		if err != nil {
-			logger.Error(err, "Failed to parse spec.RefreshAfter")
+			logger.Error(err, "Failed to parse o.Spec.RefreshAfter")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
-				"Failed to parse spec.RefreshAfter %s", spec.RefreshAfter)
+				"Failed to parse o.Spec.RefreshAfter %s", o.Spec.RefreshAfter)
 			return ctrl.Result{}, err
 		}
 		refAfter = d
 	}
 
 	var resp *api.KVSecret
-	switch spec.Type {
+	switch o.Spec.Type {
 	case "kv-v1":
-		w, err := c.KVv1(spec.Mount)
+		w, err := c.KVv1(o.Spec.Mount)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		resp, err = w.Get(ctx, spec.Name)
+		resp, err = w.Get(ctx, o.Spec.Name)
 	case "kv-v2":
-		w, err := c.KVv2(spec.Mount)
+		w, err := c.KVv2(o.Spec.Mount)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		resp, err = w.Get(ctx, spec.Name)
+		resp, err = w.Get(ctx, o.Spec.Name)
 	default:
-		err = fmt.Errorf("unsupported secret type %q", spec.Type)
+		err = fmt.Errorf("unsupported secret type %q", o.Spec.Type)
 		logger.Error(err, "")
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
@@ -128,26 +100,25 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	if resp == nil {
-		logger.Error(nil, "empty Vault secret", "mount", spec.Mount, "name", spec.Name)
+		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "name", o.Spec.Name)
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Vault secret was empty, mount %s, name %s", spec.Mount, spec.Name)
+			"Vault secret was empty, mount %s, name %s", o.Spec.Mount, o.Spec.Name)
 		return ctrl.Result{
 			RequeueAfter: refAfter,
 		}, nil
 	}
 
-	if sec1.Data, err = makeK8sSecret(resp); err != nil {
+	data, err := makeK8sSecret(resp)
+	if err != nil {
 		logger.Error(err, "Failed to construct k8s secret")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to construct k8s secret: %s", err)
 		return ctrl.Result{}, err
 	}
 
-	if err := r.Client.Update(ctx, sec1); err != nil {
-		logger.Error(err, "Failed to update k8s secret")
+	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-			"Failed to update k8s secret %s/%s: %s", sec1.ObjectMeta.Namespace,
-			sec1.ObjectMeta.Name, err)
+			"Failed to update k8s secret: %s", err)
 		return ctrl.Result{}, err
 	}
 
@@ -155,29 +126,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{
 		RequeueAfter: refAfter,
 	}, nil
-}
-
-func (r *VaultStaticSecretReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret) (ctrl.Result, error) {
-	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
-		controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer)
-		r.ClientFactory.RemoveObject(o)
-		if err := r.Update(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
-}
-
-func (r *VaultStaticSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret) error {
-	if !controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
-		controllerutil.AddFinalizer(o, vaultStaticSecretFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

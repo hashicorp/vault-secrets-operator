@@ -58,29 +58,6 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
-	case *secretsv1alpha1.VaultTransit:
-		authRef = o.Spec.VaultAuthRef
-		target = types.NamespacedName{
-			Namespace: o.Namespace,
-			Name:      o.Name,
-		}
-	case *secretsv1alpha1.VaultClientCache:
-		if o.Spec.TargetNamespace == "" {
-			return nil, client.ObjectKey{}, fmt.Errorf("the TargetNamespace is required for %T", o)
-		}
-		authObj, err := FindVaultAuthByUID(ctx, c, o.Spec.VaultAuthUID, o.Spec.VaultAuthGeneration)
-		if err != nil {
-			return nil, client.ObjectKey{}, err
-		}
-
-		if authObj == nil {
-			return nil, client.ObjectKey{}, fmt.Errorf("referent VaultAuth not found for %s", client.ObjectKeyFromObject(o))
-		}
-
-		return authObj, client.ObjectKey{
-			Namespace: o.Spec.TargetNamespace,
-			Name:      o.Name,
-		}, nil
 	default:
 		return nil, types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
 	}
@@ -164,14 +141,6 @@ func getWithRetry(ctx context.Context, c client.Client, key types.NamespacedName
 	}, bo)
 }
 
-func GetVaultTransit(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultTransit, error) {
-	o := &secretsv1alpha1.VaultTransit{}
-	if err := c.Get(ctx, key, o); err != nil {
-		return nil, err
-	}
-	return o, nil
-}
-
 // GetConnectionNamespacedName returns the NamespacedName for the VaultAuth's configured
 // vaultConnectionRef.
 // If the vaultConnectionRef is empty then defaults Namespace and Name will be returned.
@@ -193,17 +162,69 @@ func GetConnectionNamespacedName(a *secretsv1alpha1.VaultAuth) (types.Namespaced
 	}, nil
 }
 
-func FindVaultAuthByUID(ctx context.Context, client client.Client, uid types.UID, generation int64) (*secretsv1alpha1.VaultAuth, error) {
-	auths := &secretsv1alpha1.VaultAuthList{}
-	if err := client.List(ctx, auths); err != nil {
+func FindVaultAuthByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1alpha1.VaultAuth, error) {
+	var auths secretsv1alpha1.VaultAuthList
+	var opts []client.ListOption
+	if namespace != "" {
+		opts = append(opts, client.InNamespace(namespace))
+	}
+	if err := c.List(ctx, &auths, opts...); err != nil {
 		return nil, err
 	}
 
 	for _, item := range auths.Items {
 		if item.GetUID() == uid && item.GetGeneration() == generation {
-			return item.DeepCopy(), nil
+			setVaultConnectionRef(&item)
+			return &item, nil
 		}
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("object not found")
+}
+
+func FindVaultConnectionByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1alpha1.VaultConnection, error) {
+	var auths secretsv1alpha1.VaultConnectionList
+	var opts []client.ListOption
+	if namespace != "" {
+		opts = append(opts, client.InNamespace(namespace))
+	}
+	if err := c.List(ctx, &auths, opts...); err != nil {
+		return nil, err
+	}
+
+	for _, item := range auths.Items {
+		if item.GetUID() == uid && item.GetGeneration() == generation {
+			return &item, nil
+		}
+	}
+
+	return nil, fmt.Errorf("object not found")
+}
+
+// FindVaultAuthForStorageEncryption returns VaultAuth resource labeled with `cacheEncryption=true`, and is found in the Operator's namespace.
+// If none or more than one resource is found, an error will be returned.
+// The resulting resource must have a valid StorageEncryption configured.
+func FindVaultAuthForStorageEncryption(ctx context.Context, c client.Client) (*secretsv1alpha1.VaultAuth, error) {
+	opts := []client.ListOption{
+		client.InNamespace(OperatorNamespace),
+		client.MatchingLabels{
+			"cacheStorageEncryption": "true",
+		},
+	}
+	var auths secretsv1alpha1.VaultAuthList
+	if err := c.List(ctx, &auths, opts...); err != nil {
+		return nil, err
+	}
+
+	if len(auths.Items) != 1 {
+		return nil, fmt.Errorf("invalid VaultAuth for storage encryption, found=%d, required=1", len(auths.Items))
+	}
+
+	result := auths.Items[0]
+	if result.Spec.StorageEncryption == nil {
+		return nil, fmt.Errorf("invalid VaultAuth %s for storage encryption, no StorageEncryption configured",
+			client.ObjectKeyFromObject(&result))
+	}
+
+	return &result, nil
 }

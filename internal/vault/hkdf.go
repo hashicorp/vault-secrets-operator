@@ -34,6 +34,11 @@ func CreateHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrl
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objKey.Name,
 			Namespace: objKey.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       "vault-secrets-operator",
+				"app.kubernetes.io/managed-by": "hashicorp-vso",
+				"app.kubernetes.io/component":  "client-cache-storage-verification",
+			},
 		},
 		Immutable: pointer.Bool(true),
 		Data: map[string][]byte{
@@ -66,24 +71,16 @@ func GetHKDFSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient
 	return s, nil
 }
 
-func GetHKDFKeyFromSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) ([]byte, error) {
-	s, err := GetHKDFSecret(ctx, client, objKey)
-	if err != nil {
-		return nil, err
-	}
-	return s.Data[hkdfKeyName], nil
-}
-
 func validateHKDFSecret(s *corev1.Secret) ([]byte, error) {
-	var err error
+	var errs error
 	key, ok := s.Data[hkdfKeyName]
 	if !ok {
-		err = errors.Join(fmt.Errorf("secret %s is missing the required field %s", s, hkdfKeyName))
+		errs = errors.Join(errs, fmt.Errorf("secret %s is missing the required field %s", s, hkdfKeyName))
 	}
 
-	err = errors.Join(validateKeyLength(key))
+	errs = errors.Join(errs, validateKeyLength(key))
 
-	return key, err
+	return key, errs
 }
 
 func validateKeyLength(key []byte) error {
@@ -103,13 +100,13 @@ func validateMAC(message, messageMAC, key []byte) (bool, error) {
 }
 
 func macMessage(key, data []byte) ([]byte, error) {
-	var err error
+	var errs error
 	if len(key) != hkdfKeyLength {
-		err = errors.Join(fmt.Errorf("invalid key length %d", len(key)))
+		errs = errors.Join(errs, fmt.Errorf("invalid key length %d", len(key)))
 	}
-	err = errors.Join(validateKeyLength(key))
-	if err != nil {
-		return nil, err
+	errs = errors.Join(errs, validateKeyLength(key))
+	if errs != nil {
+		return nil, errs
 	}
 
 	mac := hmac.New(sha256.New, key)

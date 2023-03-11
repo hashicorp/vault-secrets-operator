@@ -7,26 +7,43 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
+	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
+	"github.com/cenkalti/backoff/v4"
+	"github.com/go-logr/logr"
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 const (
 	labelEncrypted       = "encrypted"
 	labelVaultTransitRef = "vaultTransitRef"
+	labelCacheKey        = "cacheKey"
 	fieldMACMessage      = "messageMAC"
 	fieldCachedSecret    = "secret"
+
+	labelAuthNamespace        = "auth/namespace"
+	labelAuthUID              = "auth/UID"
+	labelAuthGeneration       = "auth/generation"
+	labelConnectionNamespace  = "connection/namespace"
+	labelConnectionUID        = "connection/UID"
+	labelConnectionGeneration = "connection/generation"
+	labelProviderUID          = "provider/UID"
+	labelProviderNamespace    = "provider/namespace"
 )
 
 var (
@@ -34,12 +51,11 @@ var (
 	EncryptionRequiredError = fmt.Errorf("encryption required")
 )
 
-type ClientCacheStorageRequest struct {
-	Requestor         ctrlclient.ObjectKey
-	OwnerReferences   []metav1.OwnerReference
-	TransitObjKey     ctrlclient.ObjectKey
-	Client            Client
-	EnforceEncryption bool
+type ClientCacheStorageStoreRequest struct {
+	OwnerReferences     []metav1.OwnerReference
+	Client              Client
+	EncryptionClient    Client
+	EncryptionVaultAuth *secretsv1alpha1.VaultAuth
 }
 
 type ClientCacheStoragePruneRequest struct {
@@ -48,30 +64,57 @@ type ClientCacheStoragePruneRequest struct {
 }
 
 type ClientCacheStorageRestoreRequest struct {
-	Requestor    ctrlclient.ObjectKey
-	SecretObjKey ctrlclient.ObjectKey
-	CacheKey     string
+	SecretObjKey        ctrlclient.ObjectKey
+	CacheKey            ClientCacheKey
+	DecryptionClient    Client
+	DecryptionVaultAuth *secretsv1alpha1.VaultAuth
 }
 
-func (c ClientCacheStorageRequest) Validate() error {
+type ClientCacheStorageRestoreAllRequest struct {
+	DecryptionClient    Client
+	DecryptionVaultAuth *secretsv1alpha1.VaultAuth
+}
+
+// clientCacheStorageEntry represents a single Vault Client.
+// It contains the context needed to restore a Client to its original state.
+type clientCacheStorageEntry struct {
+	// CacheKey for the Storage entry
+	CacheKey ClientCacheKey
+	// VaultSecret contains the Vault authentication token
+	VaultSecret *api.Secret
+	// VaultAuthUID is the unique identifier of the VaultAuth custom resource
+	// that was used to create the cached Client.
+	VaultAuthUID types.UID
+	// VaultAuthNamespace is the k8s namespace of the VaultAuth custom resource
+	// that was used to create the cached Client.
+	VaultAuthNamespace string
+	// VaultAuthGeneration is the generation of the VaultAuth custom resource
+	// that was used to create the cached Client.
+	VaultAuthGeneration int64
+	// VaultConnectionUID is the unique identifier of the VaultConnection custom resource
+	// that was used to create the cached Client.
+	VaultConnectionUID types.UID
+	// VaultConnectionNamespace is the k8s namespace of the VaultConnection custom resource
+	// that was used to create the cached Client.
+	VaultConnectionNamespace string
+	// VaultConnectionGeneration is the generation of the VaultConnection custom resource
+	// that was used to create the cached Client.
+	VaultConnectionGeneration int64
+	// ProviderUID is the unique identifier of the CredentialProvider that
+	// was used to create the cached Client.
+	ProviderUID types.UID
+	// ProviderNamespace is the k8s namespace of the CredentialProvider that
+	// was used to create the cached Client.
+	ProviderNamespace string
+}
+
+func (c ClientCacheStorageStoreRequest) Validate() error {
 	var err error
 	if c.Client == nil {
 		err = errors.Join(err, fmt.Errorf("a Client must be set"))
 	}
 
-	if e := validateObjectKey(c.Requestor); e != nil {
-		err = errors.Join(err, fmt.Errorf("a Requestor must be set: %w", e))
-	}
-
-	if c.EnforceEncryption && !c.encryptionConfigured() {
-		err = errors.Join(err, fmt.Errorf("a TransitObjKey must be set: %w", EncryptionRequiredError))
-	}
-
 	return err
-}
-
-func (c ClientCacheStorageRequest) encryptionConfigured() bool {
-	return validateObjectKey(c.TransitObjKey) == nil
 }
 
 type PruneFilterFunc func(secret corev1.Secret) bool
@@ -79,32 +122,22 @@ type PruneFilterFunc func(secret corev1.Secret) bool
 var _ ClientCacheStorage = (*defaultClientCacheStorage)(nil)
 
 type ClientCacheStorage interface {
-	Get(context.Context, ctrlclient.Client, ctrlclient.ObjectKey) (*corev1.Secret, error)
-	Store(context.Context, ctrlclient.Client, ClientCacheStorageRequest) (*corev1.Secret, error)
-	Restore(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*api.Secret, error)
+	Store(context.Context, ctrlclient.Client, ClientCacheStorageStoreRequest) (*corev1.Secret, error)
+	Restore(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error)
+	RestoreAll(context.Context, ctrlclient.Client, ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error)
 	Prune(context.Context, ctrlclient.Client, ClientCacheStoragePruneRequest) (int, error)
-	EnforceEncryption() bool
+	Purge(context.Context, ctrlclient.Client) error
 }
 
 type defaultClientCacheStorage struct {
 	hkdfObjKey        ctrlclient.ObjectKey
 	hkdfKey           []byte
 	enforceEncryption bool
+	logger            logr.Logger
 	mu                sync.RWMutex
 }
 
-func (c *defaultClientCacheStorage) EnforceEncryption() bool {
-	return c.enforceEncryption
-}
-
-func (c *defaultClientCacheStorage) Get(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
-	if err := c.jitInit(ctx, client); err != nil {
-		return nil, err
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
+func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	s := &corev1.Secret{}
 	if err := client.Get(ctx, key, s); err != nil {
 		return nil, err
@@ -113,33 +146,58 @@ func (c *defaultClientCacheStorage) Get(ctx context.Context, client ctrlclient.C
 	return s, nil
 }
 
-func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRequest) (*corev1.Secret, error) {
+func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageStoreRequest) (*corev1.Secret, error) {
 	logger := log.FromContext(ctx)
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 
-	// global encryption policy checks, all requests must require encryption
-	logger.Info("ClientCacheStorage.Store()",
-		"enforceEncryption", c.EnforceEncryption(),
-		"encryptionConfigured", req.encryptionConfigured())
-	if c.EnforceEncryption() && !req.encryptionConfigured() {
-		return nil, fmt.Errorf("request does not support encryption and enforcing enabled: %w", EncryptionRequiredError)
-	}
-
-	if err := c.jitInit(ctx, client); err != nil {
-		return nil, err
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	authObj := req.Client.GetVaultAuthObj()
+	connObj := req.Client.GetVaultConnectionObj()
+	credentialProvider := req.Client.GetCredentialProvider()
 	cacheKey, err := req.Client.GetCacheKey()
 	if err != nil {
 		return nil, err
 	}
 
-	sec, err := req.Client.GetLastResponse()
+	if c.enforceEncryption && (req.EncryptionClient == nil || req.EncryptionVaultAuth == nil) {
+		return nil, fmt.Errorf("request is invalid for when enforcing encryption")
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// global encryption policy checks, all requests must require encryption
+	logger.Info("ClientCacheStorage.Store()",
+		"enforceEncryption", c.enforceEncryption)
+
+	labels := ctrlclient.MatchingLabels{
+		// cacheKey is the key used to access a Client from the ClientCache
+		labelCacheKey: cacheKey.String(),
+		// required for storage cache cleanup performed by the Client's VaultAuth
+		// this is done by controllers.VaultAuthReconciler
+		labelAuthNamespace:  authObj.Namespace,
+		labelAuthUID:        string(authObj.UID),
+		labelAuthGeneration: strconv.FormatInt(authObj.Generation, 10),
+		// required for storage cache cleanup performed by the Client's VaultConnect
+		// this is done by controllers.VaultConnectionReconciler
+		labelConnectionNamespace:  connObj.Namespace,
+		labelConnectionUID:        string(connObj.UID),
+		labelConnectionGeneration: strconv.FormatInt(connObj.Generation, 10),
+		labelProviderUID:          string(credentialProvider.GetUID()),
+		labelProviderNamespace:    credentialProvider.GetNamespace(),
+	}
+	s := &corev1.Secret{
+		// we always store Clients in an Immutable secret as an anti-tampering mitigation.
+		Immutable: pointer.Bool(true),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            fmt.Sprintf(NamePrefixVCC + cacheKey.String()),
+			Namespace:       common.OperatorNamespace,
+			OwnerReferences: req.OwnerReferences,
+			Labels:          c.addCommonMatchingLabels(labels),
+		},
+	}
+
+	sec := req.Client.GetTokenSecret()
 	if err != nil {
 		return nil, err
 	}
@@ -149,38 +207,24 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
-	secretLabels := map[string]string{
-		"cacheKey": cacheKey,
-	}
-	if c.EnforceEncryption() {
+	if c.enforceEncryption {
 		// needed for restoration
-		secretLabels[labelEncrypted] = "true"
-		secretLabels[labelVaultTransitRef] = req.TransitObjKey.Name
+		s.ObjectMeta.Labels[labelEncrypted] = "true"
+		s.ObjectMeta.Labels[labelVaultTransitRef] = req.EncryptionVaultAuth.Name
 
-		logger.Info("ClientCacheStorage.Store(), calling EncryptWithTransitFromObjKey",
-			"enforceEncryption", c.EnforceEncryption(),
-			"encryptionConfigured", req.encryptionConfigured(), "transitObjKey", req.TransitObjKey)
-		if encBytes, err := EncryptWithTransitFromObjKey(ctx, client, req.TransitObjKey, b); err != nil {
+		mount := req.EncryptionVaultAuth.Spec.StorageEncryption.Mount
+		keyName := req.EncryptionVaultAuth.Spec.StorageEncryption.KeyName
+		encBytes, err := EncryptWithTransit(ctx, req.EncryptionClient, mount, keyName, b)
+		if err != nil {
 			return nil, err
-		} else {
-			b = encBytes
 		}
+		b = encBytes
 	}
 
-	s := &corev1.Secret{
-		Immutable: pointer.Bool(true),
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName:    req.Requestor.Name + "-",
-			Namespace:       req.Requestor.Namespace,
-			OwnerReferences: req.OwnerReferences,
-			Labels:          secretLabels,
-		},
-		Data: map[string][]byte{
-			fieldCachedSecret: b,
-		},
+	s.Data = map[string][]byte{
+		fieldCachedSecret: b,
 	}
-
-	message, err := c.message(req.Requestor.Name, cacheKey, b)
+	message, err := c.message(s.Name, cacheKey.String(), b)
 	if err != nil {
 		return nil, err
 	}
@@ -192,22 +236,41 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 
 	s.Data[fieldMACMessage] = messageMAC
 	if err := client.Create(ctx, s); err != nil {
-		return nil, err
+		if apierrors.IsAlreadyExists(err) {
+			// since the Secret is immutable we need to always recreate it.
+			if err := client.Delete(ctx, s); err != nil {
+				return nil, err
+			}
+
+			// we want to retry create since the previous Delete() call is eventually consistent.
+			bo := backoff.NewExponentialBackOff()
+			bo.MaxInterval = 2 * time.Second
+			if err := backoff.Retry(func() error {
+				return client.Create(ctx, s)
+			}, backoff.WithMaxRetries(bo, 5)); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
 	return s, nil
 }
 
-func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest) (*api.Secret, error) {
-	if err := c.jitInit(ctx, client); err != nil {
-		return nil, err
-	}
+func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	s, err := c.Get(ctx, client, req.SecretObjKey)
+	s, err := c.getSecret(ctx, client, req.SecretObjKey)
 	if err != nil {
 		return nil, err
 	}
 
+	return c.restore(ctx, client, req, s)
+}
+
+func (c *defaultClientCacheStorage) restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest, s *corev1.Secret) (*clientCacheStorageEntry, error) {
 	if err := c.validateSecretMAC(req, s); err != nil {
 		return nil, err
 	}
@@ -216,12 +279,17 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 	if b, ok := s.Data[fieldCachedSecret]; ok {
 		transitRef := s.Labels["vaultTransitRef"]
 		if transitRef != "" {
-			objKey := ctrlclient.ObjectKey{
-				Namespace: req.Requestor.Namespace,
-				Name:      transitRef,
+			if req.DecryptionClient == nil || req.DecryptionVaultAuth == nil {
+				return nil, fmt.Errorf("request is invalid for decryption")
 			}
 
-			decBytes, err := DecryptWithTransitFromObjKey(ctx, client, objKey, b)
+			if req.DecryptionVaultAuth.Name != transitRef {
+				return nil, fmt.Errorf("invalid vaultTransitRef, need %s, have %s", transitRef, req.DecryptionVaultAuth.Name)
+			}
+
+			mount := req.DecryptionVaultAuth.Spec.StorageEncryption.Mount
+			keyName := req.DecryptionVaultAuth.Spec.StorageEncryption.KeyName
+			decBytes, err := DecryptWithTransit(ctx, req.DecryptionClient, mount, keyName, b)
 			if err != nil {
 				return nil, err
 			}
@@ -234,42 +302,106 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 		}
 	}
 
-	return secret, err
+	entry := &clientCacheStorageEntry{
+		CacheKey:                 req.CacheKey,
+		VaultSecret:              secret,
+		VaultAuthUID:             types.UID(s.Labels[labelAuthUID]),
+		VaultAuthNamespace:       s.Labels[labelAuthNamespace],
+		VaultConnectionUID:       types.UID(s.Labels[labelConnectionUID]),
+		VaultConnectionNamespace: s.Labels[labelConnectionNamespace],
+		ProviderUID:              types.UID(s.Labels[labelProviderUID]),
+		ProviderNamespace:        s.Labels[labelProviderNamespace],
+	}
+
+	if v, ok := s.Labels[labelAuthGeneration]; ok && v != "" {
+		generation, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, err
+		}
+		entry.VaultAuthGeneration = int64(generation)
+	}
+
+	if v, ok := s.Labels[labelConnectionGeneration]; ok && v != "" {
+		generation, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, err
+		}
+		entry.VaultConnectionGeneration = int64(generation)
+	}
+
+	return entry, nil
 }
 
 func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient.Client, req ClientCacheStoragePruneRequest) (int, error) {
-	secrets := &corev1.SecretList{}
-	if err := client.List(ctx, secrets, req.MatchingLabels); err != nil {
-		return 0, nil
-	}
-
-	if err := c.jitInit(ctx, client); err != nil {
-		return 0, err
-	}
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	var err error
+	secrets := &corev1.SecretList{}
+	if err := client.List(ctx, secrets, req.MatchingLabels, ctrlclient.InNamespace(common.OperatorNamespace)); err != nil {
+		return 0, nil
+	}
+
+	var errs error
 	var count int
 	for _, item := range secrets.Items {
-		if req.Filter(item) {
+		if req.Filter != nil && req.Filter(item) {
 			continue
 		}
 
-		dcObj := item.DeepCopy()
-		if err = client.Delete(ctx, dcObj); err != nil {
+		if err := client.Delete(ctx, &item); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
-			// requires go1.20+
-			err = errors.Join(err)
+
+			errs = errors.Join(errs, err)
 			continue
 		}
 		count++
 	}
 
-	return count, err
+	c.logger.V(consts.LogLevelDebug).Info("Pruned storage cache", "count", count, "total", len(secrets.Items))
+
+	return count, errs
+}
+
+// Purge all cached client Secrets. This should only be called when transitioning from persistence to non-persistence modes.
+func (c *defaultClientCacheStorage) Purge(ctx context.Context, client ctrlclient.Client) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return client.DeleteAllOf(ctx, &corev1.Secret{}, c.deleteAllOfOptions()...)
+}
+
+func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var errs error
+
+	found := &corev1.SecretList{}
+	if err := client.List(ctx, found, c.listOptions()...); err != nil {
+		return nil, err
+	}
+
+	var result []*clientCacheStorageEntry
+	for _, s := range found.Items {
+		cacheKey := ClientCacheKey(s.Labels[labelCacheKey])
+		req := ClientCacheStorageRestoreRequest{
+			SecretObjKey:        ctrlclient.ObjectKeyFromObject(&s),
+			CacheKey:            cacheKey,
+			DecryptionClient:    req.DecryptionClient,
+			DecryptionVaultAuth: req.DecryptionVaultAuth,
+		}
+
+		entry, err := c.restore(ctx, client, req, &s)
+		if err != nil {
+			errs = errors.Join(errs, err)
+		}
+
+		result = append(result, entry)
+	}
+
+	return result, errs
 }
 
 func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRestoreRequest, s *corev1.Secret) error {
@@ -288,7 +420,7 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 		return err
 	}
 
-	message, err := c.message(req.Requestor.Name, req.CacheKey, b)
+	message, err := c.message(s.Name, req.CacheKey.String(), b)
 	if err != nil {
 		return err
 	}
@@ -313,20 +445,37 @@ func (c *defaultClientCacheStorage) message(name, cacheKey string, secretData []
 	return append([]byte(name+cacheKey), secretData...), nil
 }
 
-// TODO: remove this once we figure out to initialize from main(),
-// currently there is no way to Get() objects before the controller-runtime cache has been started,
-// and we need to do that.
-func (c *defaultClientCacheStorage) jitInit(ctx context.Context, client ctrlclient.Client) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.hkdfKey == nil {
-		key, err := GetHKDFKeyFromSecret(ctx, client, c.hkdfObjKey)
-		if err != nil {
-			return err // TODO: maybe panic instead? Pretty brittle until we can init from main()
-		}
-		c.hkdfKey = key
+func (c *defaultClientCacheStorage) deleteAllOfOptions() []ctrlclient.DeleteAllOfOption {
+	var result []ctrlclient.DeleteAllOfOption
+	for _, opt := range c.listOptions() {
+		result = append(result, opt.(ctrlclient.DeleteAllOfOption))
 	}
-	return nil
+	return result
+}
+
+func (c *defaultClientCacheStorage) listOptions() []ctrlclient.ListOption {
+	return []ctrlclient.ListOption{
+		c.commonMatchingLabels(),
+		// We may want to reconsider constraining the purge to the OperatorNamespace,
+		// for example if the Operator is moved from one Namespace to another.
+		ctrlclient.InNamespace(common.OperatorNamespace),
+	}
+}
+
+func (c *defaultClientCacheStorage) commonMatchingLabels() ctrlclient.MatchingLabels {
+	return ctrlclient.MatchingLabels{
+		"app.kubernetes.io/name":       "vault-secrets-operator",
+		"app.kubernetes.io/managed-by": "vso",
+		"app.kubernetes.io/component":  "client-cache-storage",
+	}
+}
+
+func (c *defaultClientCacheStorage) addCommonMatchingLabels(labels ctrlclient.MatchingLabels) ctrlclient.MatchingLabels {
+	for k, v := range c.commonMatchingLabels() {
+		labels[k] = v
+	}
+
+	return labels
 }
 
 type ClientCacheStorageConfig struct {
@@ -351,26 +500,25 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	_, err := CreateHKDFSecret(ctx, client, config.HKDFObjectKey)
+	s, err := CreateHKDFSecret(ctx, client, config.HKDFObjectKey)
 	if err != nil {
 		if !apierrors.IsAlreadyExists(err) {
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 
-	// TODO: update to take a ctx and Client to validate the Secret before setting up the cache.
-	// Currently there is no way to do this from main()
-	//b, err := validateHKDFSecret(hkdfSecret)
-	//if err != nil {
-	//	return nil, err
-	//}
+	if s == nil {
+		s, err = GetHKDFSecret(ctx, client, config.HKDFObjectKey)
+		if err != nil {
+			return nil, err
+		}
+	}
 
-	// TODO: register a watcher for changes to the HKDF Secret, so we can detect key rotations.
 	return &defaultClientCacheStorage{
 		hkdfObjKey:        config.HKDFObjectKey,
+		hkdfKey:           s.Data[hkdfKeyName],
 		enforceEncryption: config.EnforceEncryption,
+		logger:            zap.New().WithName("ClientCacheStorage"),
 	}, nil
 }
 

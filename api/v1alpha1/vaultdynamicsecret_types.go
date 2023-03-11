@@ -5,6 +5,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type RolloutRestartTarget struct {
@@ -25,10 +26,10 @@ type VaultDynamicSecretSpec struct {
 	Mount string `json:"mount"`
 	// Role in Vault to get the credentials for.
 	Role string `json:"role"`
-	// Dest could be some sort of k8s secret or something like that ....
-	Dest string `json:"dest"`
 	// RolloutRestartTargets
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
+	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
+	Destination Destination `json:"destination"`
 }
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret
@@ -37,21 +38,14 @@ type VaultDynamicSecretStatus struct {
 	LastRenewalTime int64 `json:"lastRenewalTime"`
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
-	// LastRuntimePodName
-	LastRuntimePodName string `json:"LastRuntimePodName,omitempty"`
-}
-
-// VaultTokenMeta describes the Vault token used to sync the secret
-type VaultTokenMeta struct {
-	Accessor      string `json:"accessor"`
-	EntityID      string `json:"entityID"`
-	LeaseDuration int    `json:"leaseDuration"`
-	Renewable     bool   `json:"renewable"`
+	// LastRuntimePodUID used for tracking the transition from one Pod to the next.
+	// It is used to mitigate the effects of a Vault lease renewal storm.
+	LastRuntimePodUID types.UID `json:"lastRuntimePodUID,omitempty"`
 }
 
 type VaultSecretLease struct {
 	// ID of the Vault secret.
-	ID string `json:"ID"`
+	ID string `json:"id"`
 	// LeaseDuration of the Vault secret.
 	LeaseDuration int `json:"duration"`
 	// Renewable Vault secret lease
@@ -60,8 +54,8 @@ type VaultSecretLease struct {
 	RequestID string `json:"requestID"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // VaultDynamicSecret is the Schema for the vaultdynamicsecrets API
 type VaultDynamicSecret struct {

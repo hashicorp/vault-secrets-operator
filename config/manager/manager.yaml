@@ -44,6 +44,15 @@ spec:
       containers:
       - command:
         - /vault-secrets-operator
+        env:
+          - name: OPERATOR_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: OPERATOR_POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
         args:
         - --leader-elect
         image: controller:latest
@@ -76,5 +85,18 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        volumeMounts:
+          - name: podinfo
+            mountPath: /var/run/podinfo
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+      volumes:
+        - name: podinfo
+          downwardAPI:
+            items:
+              - path: "name"
+                fieldRef:
+                  fieldPath: metadata.name
+              - path: "uid"
+                fieldRef:
+                  fieldPath: metadata.uid

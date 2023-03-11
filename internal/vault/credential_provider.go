@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 const (
@@ -27,31 +26,32 @@ const (
 var providerMethodsSupported = []string{providerMethodKubernetes}
 
 type CredentialProvider interface {
-	Init(ctx context.Context, client ctrlclient.Client, object ctrlclient.Object) error
+	Init(ctx context.Context, client ctrlclient.Client, object *secretsv1alpha1.VaultAuth, providerNamespace string) error
 	GetUID() types.UID
+	GetNamespace() string
 	GetCreds(context.Context, ctrlclient.Client) (map[string]interface{}, error)
 }
 
 var _ CredentialProvider = (*kubernetesCredentialProvider)(nil)
 
 type kubernetesCredentialProvider struct {
-	authObj *secretsv1alpha1.VaultAuth
-	target  ctrlclient.ObjectKey
-	uid     types.UID
+	authObj           *secretsv1alpha1.VaultAuth
+	providerNamespace string
+	uid               types.UID
+}
+
+func (l *kubernetesCredentialProvider) GetNamespace() string {
+	return l.providerNamespace
 }
 
 func (l *kubernetesCredentialProvider) GetUID() types.UID {
 	return l.uid
 }
 
-func (l *kubernetesCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) error {
-	authObj, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
-	if err != nil {
-		return err
-	}
-
+func (l *kubernetesCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) error {
 	l.authObj = authObj
-	l.target = target
+	l.providerNamespace = providerNamespace
+
 	sa, err := l.getServiceAccount(ctx, client)
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (l *kubernetesCredentialProvider) Init(ctx context.Context, client ctrlclie
 
 func (l *kubernetesCredentialProvider) getServiceAccount(ctx context.Context, client ctrlclient.Client) (*corev1.ServiceAccount, error) {
 	key := ctrlclient.ObjectKey{
-		Namespace: l.target.Namespace,
+		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.Kubernetes.ServiceAccount,
 	}
 	sa := &corev1.ServiceAccount{}
@@ -116,15 +116,15 @@ func (l *kubernetesCredentialProvider) requestSAToken(ctx context.Context, clien
 	return tr, nil
 }
 
-func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, method string) (CredentialProvider, error) {
-	switch method {
+func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) (CredentialProvider, error) {
+	switch authObj.Spec.Method {
 	case providerMethodKubernetes:
 		provider := &kubernetesCredentialProvider{}
-		if err := provider.Init(ctx, client, obj); err != nil {
+		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
 			return nil, err
 		}
 		return provider, nil
 	default:
-		return nil, fmt.Errorf("unsupported authentication method %s", method)
+		return nil, fmt.Errorf("unsupported authentication method %s", authObj.Spec.Method)
 	}
 }

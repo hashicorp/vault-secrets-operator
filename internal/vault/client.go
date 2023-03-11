@@ -9,25 +9,76 @@ import (
 	"sync"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/hashicorp/vault/api"
-	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
-func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
-	// TODO add logic for restoration from cache
+type ClientOptions struct {
+	SkipRenewal bool
+}
+
+func defaultClientOptions() *ClientOptions {
+	return &ClientOptions{
+		SkipRenewal: false,
+	}
+}
+
+// NewClient returns a Client specific to obj.
+// Supported objects can be found in common.GetVaultAuthAndTarget.
+// An error will be returned if obj is deemed to be invalid.
+func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error) {
+	var authObj *secretsv1alpha1.VaultAuth
+	var providerNamespace string
+	switch t := obj.(type) {
+	case *secretsv1alpha1.VaultAuth:
+		// setting up a new Client is allowed in the case where the VaultAuth has StorageEncryption enabled.
+		// The object must also be in the Operator's Namespace.
+		authObj = t
+		providerNamespace = authObj.Namespace
+		if providerNamespace != common.OperatorNamespace {
+			return nil, fmt.Errorf("invalid object %T, only allowed in the %s namespace", authObj, common.OperatorNamespace)
+		}
+		if authObj.Spec.StorageEncryption == nil {
+			return nil, fmt.Errorf("invalid object %T, StorageEncryption not configured", t)
+		}
+	default:
+		// otherwise we fall back to the common.GetVaultAuthAndTarget() to decide whether, or not obj is supported.
+		a, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+		if err != nil {
+			return nil, err
+		}
+
+		providerNamespace = target.Namespace
+		authObj = a
+	}
+
+	connName, err := common.GetConnectionNamespacedName(authObj)
+	if err != nil {
+		return nil, err
+	}
+
+	connObj, err := common.GetVaultConnection(ctx, client, connName)
+	if err != nil {
+		return nil, err
+	}
 	c := &defaultClient{}
-	if err := c.Init(ctx, client, obj); err != nil {
+	if err := c.Init(ctx, client, authObj, connObj, providerNamespace, opts); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
-	c, err := NewClient(ctx, client, obj)
+// NewClientWithLogin returns a logged-in Client specific to obj.
+// Supported objects can be found in common.GetVaultAuthAndTarget.
+// An error will be returned if obj is deemed to be invalid.
+func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error) {
+	c, err := NewClient(ctx, client, obj, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -38,82 +89,96 @@ func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlc
 	return c, nil
 }
 
+// NewClientFromStorageEntry restores a Client from provided clientCacheStorageEntry.
+// If the restoration fails an error will be returned.
+func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, entry *clientCacheStorageEntry, opts *ClientOptions) (Client, error) {
+	authObj, err := common.FindVaultAuthByUID(ctx, client, entry.VaultAuthNamespace,
+		entry.VaultAuthUID, entry.VaultAuthGeneration)
+	if err != nil {
+		return nil, err
+	}
+
+	connObj, err := common.FindVaultConnectionByUID(ctx, client, entry.VaultConnectionNamespace,
+		entry.VaultConnectionUID, entry.VaultConnectionGeneration)
+	if err != nil {
+		return nil, err
+	}
+
+	c := &defaultClient{}
+	if err := c.Init(ctx, client, authObj, connObj, entry.ProviderNamespace, opts); err != nil {
+		return nil, err
+	}
+
+	if err := c.Restore(ctx, entry.VaultSecret); err != nil {
+		return nil, err
+	}
+
+	cacheKey, err := c.GetCacheKey()
+	if err != nil {
+		return nil, err
+	}
+	if cacheKey != entry.CacheKey {
+		return nil, fmt.Errorf("restored client's cacheKey %s does not match expected %s", cacheKey, entry.CacheKey)
+	}
+
+	if c.lastWatcherErr != nil {
+		return nil, fmt.Errorf("restored client failed to be renewed, err=%w", err)
+	}
+
+	return c, nil
+}
+
 type Client interface {
-	Init(context.Context, ctrlclient.Client, ctrlclient.Object) error
+	Init(context.Context, ctrlclient.Client, *secretsv1alpha1.VaultAuth, *secretsv1alpha1.VaultConnection, string, *ClientOptions) error
+	Login(context.Context, ctrlclient.Client) error
 	Read(context.Context, string) (*api.Secret, error)
 	Restore(context.Context, *api.Secret) error
-	Renew(context.Context) error
 	Write(context.Context, string, map[string]any) (*api.Secret, error)
-	GetLastResponse() (*api.Secret, error)
+	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
-	GetTokenTTL() (time.Duration, error)
-	Login(context.Context, ctrlclient.Client) error
-	GetVaultAuthObj() (*secretsv1alpha1.VaultAuth, error)
-	GetVaultConnectionObj() (*secretsv1alpha1.VaultConnection, error)
-	GetProviderID() (types.UID, error)
-	GetTarget() (ctrlclient.ObjectKey, error)
-	GetCacheKey() (string, error)
+	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
+	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
+	GetCredentialProvider() CredentialProvider
+	GetCacheKey() (ClientCacheKey, error)
 	KVv1(string) (*api.KVv1, error)
 	KVv2(string) (*api.KVv2, error)
+	Close()
 }
 
 var _ Client = (*defaultClient)(nil)
 
 type defaultClient struct {
-	initialized        bool
 	client             *api.Client
 	authObj            *secretsv1alpha1.VaultAuth
 	connObj            *secretsv1alpha1.VaultConnection
-	target             ctrlclient.ObjectKey
-	lastResp           *api.Secret
+	authSecret         *api.Secret
+	skipRenewal        bool
 	lastRenewal        int64
-	providerUID        types.UID
 	targetNamespace    string
 	credentialProvider CredentialProvider
+	watcher            *api.LifetimeWatcher
+	lastWatcherErr     error
 	once               sync.Once
 	mu                 sync.RWMutex
 }
 
-func (c *defaultClient) GetProviderID() (types.UID, error) {
-	if err := c.checkInitialized(); err != nil {
-		return "", err
-	}
-
-	return c.providerUID, nil
-}
-
-func (c *defaultClient) GetTarget() (ctrlclient.ObjectKey, error) {
-	if err := c.checkInitialized(); err != nil {
-		return ctrlclient.ObjectKey{}, err
-	}
-
-	return c.target, nil
+func (c *defaultClient) GetCredentialProvider() CredentialProvider {
+	return c.credentialProvider
 }
 
 func (c *defaultClient) KVv1(mount string) (*api.KVv1, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	return c.client.KVv1(mount), nil
 }
 
 func (c *defaultClient) KVv2(mount string) (*api.KVv2, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	return c.client.KVv2(mount), nil
 }
 
-func (c *defaultClient) GetCacheKey() (string, error) {
+func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if err := c.checkInitialized(); err != nil {
-		return "", err
-	}
 
-	return GenCacheClientKeyFromObjs(c.authObj, c.connObj, c.providerUID)
+	return ComputeClientCacheKeyFromClient(c)
 }
 
 // Restore self from the provided api.Secret (should have an Auth configured).
@@ -121,8 +186,9 @@ func (c *defaultClient) GetCacheKey() (string, error) {
 func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.initialized {
-		return fmt.Errorf("not initialized")
+
+	if c.watcher != nil {
+		c.watcher.Stop()
 	}
 
 	if secret == nil {
@@ -133,48 +199,50 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 		return fmt.Errorf("not an auth secret")
 	}
 
-	c.lastResp = secret
+	c.authSecret = secret
 	c.client.SetToken(secret.Auth.ClientToken)
 
-	return c.renew(ctx)
-}
-
-func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) error {
-	if c.initialized {
-		return fmt.Errorf("aleady initialized")
+	if secret.Auth.Renewable {
+		if err := c.startLifetimeWatcher(ctx); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth,
+	connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions,
+) error {
 	var err error
 	c.once.Do(func() {
-		err = c.init(ctx, client, obj)
-		if err == nil {
-			c.initialized = true
+		if opts == nil {
+			opts = defaultClientOptions()
 		}
+
+		err = c.init(ctx, client, authObj, connObj, providerNamespace, opts)
 	})
 
 	return err
 }
 
-func (c *defaultClient) GetTokenTTL() (time.Duration, error) {
-	last, err := c.GetLastResponse()
-	if err != nil {
-		return 0, err
-	}
-	return last.TokenTTL()
+func (c *defaultClient) getTokenTTL() (time.Duration, error) {
+	return c.authSecret.TokenTTL()
 }
 
 func (c *defaultClient) CheckExpiry(offset int64) (bool, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if !c.initialized {
-		return false, fmt.Errorf("not initialized")
-	}
 
-	if c.lastResp == nil || c.lastRenewal == 0 {
+	if c.authSecret == nil || c.lastRenewal == 0 {
 		return false, fmt.Errorf("cannot check client token expiry, never logged in")
 	}
 
-	ttl, err := c.GetTokenTTL()
+	return c.checkExpiry(offset)
+}
+
+func (c *defaultClient) checkExpiry(offset int64) (bool, error) {
+	ttl, err := c.getTokenTTL()
 	if err != nil {
 		return false, err
 	}
@@ -189,31 +257,91 @@ func (c *defaultClient) CheckExpiry(offset int64) (bool, error) {
 	return time.Now().After(ts), nil
 }
 
-func (c *defaultClient) GetLastResponse() (*api.Secret, error) {
+func (c *defaultClient) GetTokenSecret() *api.Secret {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if !c.initialized {
-		return nil, fmt.Errorf("not initialized")
-	}
 
-	return c.lastResp, nil
+	return c.authSecret
 }
 
-func (c *defaultClient) Renew(ctx context.Context) error {
+// Close un-initializes this Client, stopping its LifetimeWatcher in the process.
+// It is safe to be called multiple times.
+func (c *defaultClient) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.checkInitialized(); err != nil {
+
+	log.FromContext(nil).Info("Calling Client.Close()")
+	if c.watcher != nil {
+		c.watcher.Stop()
+	}
+	c.client = nil
+}
+
+// startLifetimeWatcher starts an api.LifetimeWatcher in a Go routine for this Client.
+// This will ensure that the auth token is periodically renewed.
+// If the Client's token is not renewable an error will be returned.
+func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
+	if c.skipRenewal {
+		return nil
+	}
+
+	if !c.authSecret.Auth.Renewable {
+		return fmt.Errorf("auth token is not renewable, cannot start the LifetimeWatcher")
+	}
+
+	if c.watcher != nil {
+		return fmt.Errorf("lifetimeWatcher already started")
+	}
+
+	watcher, err := c.client.NewLifetimeWatcher(&api.LifetimeWatcherInput{
+		Secret: c.authSecret,
+	})
+	if err != nil {
 		return err
 	}
 
-	return c.renew(ctx)
+	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
+		logger := log.FromContext(nil).V(consts.LogLevelDebug).WithName("lifetimeWatcher").WithValues(
+			"entityID", c.authSecret.Auth.EntityID)
+		logger.Info("Starting")
+		defer func() {
+			logger.Info("Stopping")
+			watcher.Stop()
+			c.watcher = nil
+		}()
+
+		go watcher.Start()
+		logger.Info("Started")
+		c.watcher = watcher
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-watcher.DoneCh():
+				if err != nil {
+					logger.Error(err, "LifetimeWatcher completed with an error")
+					c.lastWatcherErr = err
+				}
+				return
+			case renewal := <-watcher.RenewCh():
+				logger.Info("Successfully renewed the client")
+				c.authSecret = renewal.Secret
+				c.lastRenewal = renewal.RenewedAt.Unix()
+			}
+		}
+	}(ctx, c, watcher)
+
+	return nil
 }
 
+// Login the Client to Vault. Upon success, if the auth token is renewable,
+// an api.LifetimeWatcher will be started to ensure that the token is periodically renewed.
 func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.checkInitialized(); err != nil {
-		return err
+
+	if c.watcher != nil {
+		c.watcher.Stop()
 	}
 
 	creds, err := c.credentialProvider.GetCreds(ctx, client)
@@ -238,98 +366,66 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 
 	c.client.SetToken(resp.Auth.ClientToken)
 
-	c.lastResp = resp
+	c.authSecret = resp
 	c.lastRenewal = time.Now().Unix()
+
+	if resp.Auth.Renewable {
+		if err := c.startLifetimeWatcher(ctx); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
-func (c *defaultClient) GetVaultAuthObj() (*secretsv1alpha1.VaultAuth, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
-	return c.authObj, nil
+func (c *defaultClient) GetVaultAuthObj() *secretsv1alpha1.VaultAuth {
+	return c.authObj
 }
 
-func (c *defaultClient) GetVaultConnectionObj() (*secretsv1alpha1.VaultConnection, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
-	return c.connObj, nil
+func (c *defaultClient) GetVaultConnectionObj() *secretsv1alpha1.VaultConnection {
+	return c.connObj
 }
 
 func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	// TODO: add metrics
 	return c.client.Logical().ReadWithContext(ctx, path)
 }
 
 func (c *defaultClient) Write(ctx context.Context, path string, m map[string]any) (*api.Secret, error) {
-	if err := c.checkInitialized(); err != nil {
-		return nil, err
-	}
-
 	// TODO: add metrics
 	return c.client.Logical().WriteWithContext(ctx, path, m)
 }
 
-func (c *defaultClient) checkInitialized() error {
-	if !c.initialized {
-		return fmt.Errorf("not initialized")
-	}
-	return nil
-}
-
 func (c *defaultClient) renew(ctx context.Context) error {
 	// should be called from a write locked method only
-	if c.lastResp == nil {
+	if c.authSecret == nil {
 		return fmt.Errorf("cannot renew client token, never logged in")
 	}
 
-	if !c.lastResp.Auth.Renewable {
+	if !c.authSecret.Auth.Renewable {
 		return fmt.Errorf("cannot renew client token, non-renewable")
 	}
 
 	resp, err := c.Write(ctx, "/auth/token/renew-self", nil)
 	if err != nil {
-		c.lastResp = nil
+		c.authSecret = nil
 		c.lastRenewal = 0
 		return err
 	} else {
-		c.lastResp = resp
+		c.authSecret = resp
 		c.lastRenewal = time.Now().UTC().Unix()
 	}
 	return nil
 }
 
-func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) error {
-	auth, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
-	if err != nil {
-		return err
-	}
-
-	connName, err := common.GetConnectionNamespacedName(auth)
-	if err != nil {
-		return err
-	}
-
-	conn, err := common.GetVaultConnection(ctx, client, connName)
-	if err != nil {
-		return err
-	}
-
+func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions) error {
 	cfg := &ClientConfig{
-		Address:         conn.Spec.Address,
-		SkipTLSVerify:   conn.Spec.SkipTLSVerify,
-		TLSServerName:   conn.Spec.TLSServerName,
-		VaultNamespace:  auth.Spec.Namespace,
-		CACertSecretRef: conn.Spec.CACertSecretRef,
-		K8sNamespace:    target.Namespace,
+		Address:         connObj.Spec.Address,
+		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
+		TLSServerName:   connObj.Spec.TLSServerName,
+		VaultNamespace:  authObj.Spec.Namespace,
+		CACertSecretRef: connObj.Spec.CACertSecretRef,
+		K8sNamespace:    providerNamespace,
 	}
 
 	vc, err := MakeVaultClient(ctx, cfg, client)
@@ -337,17 +433,16 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, obj 
 		return err
 	}
 
-	credentialProvider, err := NewCredentialProvider(ctx, client, obj, auth.Spec.Method)
+	credentialProvider, err := NewCredentialProvider(ctx, client, authObj, providerNamespace)
 	if err != nil {
 		return err
 	}
 
+	c.skipRenewal = opts.SkipRenewal
 	c.credentialProvider = credentialProvider
-	c.providerUID = credentialProvider.GetUID()
 	c.client = vc
-	c.authObj = auth
-	c.connObj = conn
-	c.target = target
+	c.authObj = authObj
+	c.connObj = connObj
 
 	return nil
 }

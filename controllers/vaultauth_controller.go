@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
 const vaultAuthFinalizer = "vaultauth.secrets.hashicorp.com/finalizer"
@@ -29,8 +30,9 @@ const vaultAuthFinalizer = "vaultauth.secrets.hashicorp.com/finalizer"
 // VaultAuthReconciler reconciles a VaultAuth object
 type VaultAuthReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.CachingClientFactory
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths,verbs=get;list;watch;create;update;patch;delete
@@ -39,12 +41,13 @@ type VaultAuthReconciler struct {
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=serviceaccounts/token,verbs=get;list;create;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// needed for managing cached Clients, duplicated in vaultconnection_controller.go
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch;deletecollection
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// the VaultAuth object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
+// Reconcile reconciles the secretsv1alpha1.VaultAuth resource.
+// Each reconciliation will validate the resource's configuration
+//
+// Upon deletion of the resource, it will prune all referent Vault Client(s).
 func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	o, err := common.GetVaultAuth(ctx, r.Client, req.NamespacedName)
@@ -66,103 +69,55 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.handleFinalizer(ctx, o)
 	}
 
+	// assume that status is always invalid
+	o.Status.Valid = false
+
+	var errs error
 	// ensure that the vaultConnectionRef is set for any VaultAuth resource in the operator namespace.
 	if o.Namespace == common.OperatorNamespace && o.Spec.VaultConnectionRef == "" {
-		err := fmt.Errorf("vaultConnectionRef must be set on resources in the %q namespace", common.OperatorNamespace)
-		msg := "Invalid resource"
-		logger.Error(err, msg)
-		o.Status.Valid = false
-		o.Status.Error = err.Error()
-		logger.Error(err, o.Status.Error)
-		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
+		err = fmt.Errorf("vaultConnectionRef must be set on resources in the %q namespace", common.OperatorNamespace)
+		logger.Error(err, "Invalid resource")
+		errs = errors.Join(errs, err)
 	}
 
 	connName, err := common.GetConnectionNamespacedName(o)
 	if err != nil {
-		o.Status.Valid = false
-		o.Status.Error = consts.ReasonInvalidResourceRef
 		msg := "Invalid VaultConnectionRef"
 		logger.Error(err, msg)
-		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
+		r.recordEvent(o, consts.ReasonInvalidResourceRef, msg+": %s", err)
+		errs = errors.Join(errs, err)
 	}
 
-	_, err = common.GetVaultConnectionWithRetry(ctx, r.Client, connName, time.Millisecond*500, 60)
-	if err != nil {
-		o.Status.Error = err.Error()
-	} else {
+	if _, err = common.GetVaultConnectionWithRetry(ctx, r.Client, connName, time.Millisecond*500, 60); err != nil {
+		errs = errors.Join(errs, err)
 		logger.Error(err, "Failed to find VaultConnectionRef")
-		o.Status.Error = ""
+	}
+
+	// prune old referent Client from the ClientFactory's cache for all older generations of self.
+	// this is a bit of a sledgehammer, not all updated attributes of VaultConnection
+	// warrant eviction of a client cache entry, but this is a good start.
+	//
+	// This is also done in controllers.VaultConnectionReconciler
+	// TODO: consider adding a Predicate to the EventFilter, to filter events that do not result in a change to the Spec.
+	if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
+		FilterFunc:   filterOldCacheRefs,
+		PruneStorage: true,
+	}); err != nil {
+		errs = errors.Join(errs, err)
+	}
+
+	if errs == nil {
 		o.Status.Valid = true
+	} else {
+		o.Status.Error = errs.Error()
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
-	// evict old referent VaultClientCaches for all older generations of self.
-	// this is a bit of a sledgehammer, not all updated attributes of VaultAuth
-	// warrant eviction of a client cache entry, but this is a good start.
-	opts := cacheEvictionOption{
-		filterFunc: filterOldCacheRefsForAuth,
-		matchingLabels: client.MatchingLabels{
-			"vaultAuthRef":          o.GetName(),
-			"vaultAuthRefNamespace": o.GetNamespace(),
-		},
-	}
-	if _, err := evictClientCacheRefs(ctx, r.Client, o, r.Recorder, opts); err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-			"Failed to evict referent VaultCacheClient resources: %s", err)
-	}
 
 	r.recordEvent(o, consts.ReasonAccepted, "Successfully handled VaultAuth resource request")
-
 	return ctrl.Result{}, nil
-}
-
-func (r *VaultAuthReconciler) evictClientCacheRefs(ctx context.Context, o *secretsv1alpha1.VaultAuth, doEvict cacheFilterFunc) ([]string, error) {
-	caches := &secretsv1alpha1.VaultClientCacheList{}
-	matchLabels := client.MatchingLabels{
-		"vaultAuthRef":          o.Name,
-		"vaultAuthRefNamespace": o.Namespace,
-	}
-	if err := r.Client.List(ctx, caches, matchLabels); err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-			"Failed to list VaultCacheClient resources")
-		return nil, err
-	}
-
-	var evicted []string
-	var err error
-	// this is a bit of a sledgehammer, not all updated attributes of VaultAuth warrant evicting a client cache entry,
-	// but this is a good start at ensuring that all cached clients for an auth are properly updated on new VaultAuth generations.
-	for _, item := range caches.Items {
-		if doEvict(o, item) {
-			dcObj := item.DeepCopy()
-			if err := r.Client.Delete(ctx, dcObj); err != nil {
-				if apierrors.IsNotFound(err) {
-					continue
-				}
-				// requires go1.20+
-				err = errors.Join(err)
-				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-					"Failed to delete %s, on change to %s", item, o)
-				continue
-			}
-			evicted = append(evicted, client.ObjectKeyFromObject(dcObj).String())
-		}
-	}
-
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonVaultClientCacheEviction,
-		"Evicted %d referent VaultCacheClient resources: %v", len(evicted), evicted)
-
-	return evicted, err
 }
 
 func (r *VaultAuthReconciler) recordEvent(a *secretsv1alpha1.VaultAuth, reason, msg string, i ...interface{}) {
@@ -197,17 +152,10 @@ func (r *VaultAuthReconciler) addFinalizer(ctx context.Context, o *secretsv1alph
 
 func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultAuth) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultAuthFinalizer) {
-		opts := cacheEvictionOption{
-			filterFunc: filterAllCacheRefs,
-			matchingLabels: client.MatchingLabels{
-				"vaultAuthRef":          o.GetName(),
-				"vaultAuthRefNamespace": o.GetNamespace(),
-			},
-		}
-		_, err := evictClientCacheRefs(ctx, r.Client, o, r.Recorder, opts)
-		if err != nil {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonK8sClientError,
-				"Failed to evict referent VaultCacheClient resources: %s", err)
+		if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
+			FilterFunc:   filterAllCacheRefs,
+			PruneStorage: true,
+		}); err != nil {
 			return ctrl.Result{}, err
 		}
 

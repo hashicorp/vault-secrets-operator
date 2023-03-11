@@ -7,15 +7,6 @@ resource "helm_release" "postgres" {
 
   repository = "https://charts.bitnami.com/bitnami"
   chart      = "postgresql"
-
-  set {
-    name  = "auth.audit.logConnections"
-    value = "true"
-  }
-  set {
-    name  = "auth.audit.logConnections"
-    value = "true"
-  }
 }
 
 resource "kubernetes_namespace" "postgres" {
