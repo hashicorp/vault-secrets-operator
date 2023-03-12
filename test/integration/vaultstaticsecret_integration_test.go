@@ -347,7 +347,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				"secrets.hashicorp.com/v1alpha1",
 				"VaultStaticSecret", secret)
 			if obj.Spec.HMACSecretData {
-				assertHMAC(t, ctx, crdClient, obj, secret, data)
+				assertHMAC(t, ctx, crdClient, obj, secret)
 			}
 		}
 	}
@@ -400,7 +400,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 									Name:   dest,
 									Create: true,
 								},
-								RefreshAfter:   "7s",
+								RefreshAfter:   "5s",
 								HMACSecretData: true,
 							},
 						}
@@ -422,7 +422,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 }
 
 func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, origVSSObj *secretsv1alpha1.VaultStaticSecret,
-	secret *corev1.Secret, expected map[string]interface{},
+	secret *corev1.Secret,
 ) {
 	t.Helper()
 
@@ -446,30 +446,9 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 		return
 	}
 
-	assertHMACTriggeredRemediation(t, ctx, crdClient, secret, expected)
+	assertHMACTriggeredRemediation(t, ctx, crdClient, secret, cur)
 	if t.Failed() {
 		return
-	}
-
-	// now ensure that the HMAC matches the original
-	cur, err = awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
-	assert.NoError(t, err)
-	assert.NotNil(t, cur)
-	if t.Failed() {
-		return
-	}
-
-	if assert.NotEmpty(t, cur.Status.SecretMAC) {
-		otherMAC, err := base64.StdEncoding.DecodeString(cur.Status.SecretMAC)
-		if err != nil {
-			assert.NoError(t, err)
-			return
-		}
-		assert.True(t, vault.EqualMACS(originalMAC, otherMAC))
-	}
-
-	if !t.Failed() {
-		assertSecretDataHMAC(t, ctx, crdClient, secObjKey, originalMAC)
 	}
 }
 
@@ -477,7 +456,7 @@ func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.C
 	objKey client.ObjectKey,
 ) (*secretsv1alpha1.VaultStaticSecret, error) {
 	t.Helper()
-	var cur secretsv1alpha1.VaultStaticSecret
+	var vssObj secretsv1alpha1.VaultStaticSecret
 	err := backoff.Retry(func() error {
 		var v secretsv1alpha1.VaultStaticSecret
 		if err := crdClient.Get(ctx, objKey, &v); err != nil {
@@ -487,11 +466,11 @@ func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.C
 		if v.Status.SecretMAC == "" {
 			return fmt.Errorf("expected Status.SecretMAC not set on %s", objKey)
 		}
-		cur = v
+		vssObj = v
 		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10))
 
-	return &cur, err
+	return &vssObj, err
 }
 
 func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client,
@@ -524,12 +503,18 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 	}
 }
 
-func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client,
-	secret *corev1.Secret, expected map[string]interface{},
+func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client, secret *corev1.Secret,
+	vssObj *secretsv1alpha1.VaultStaticSecret,
 ) {
 	t.Helper()
 
-	// we want to test out drift detection by mutating the Secret,
+	// used for comparing map[string]interface{} to Secret.Data after mutating it below.
+	origData := map[string][]byte{}
+	for k, v := range secret.Data {
+		origData[k] = v
+	}
+
+	// we want to test out drift detection by mutating the Secret.Data,
 	// then waiting for it to be reconciled and properly remediated.
 	secObjKey := client.ObjectKeyFromObject(secret)
 	nefariousData := map[string][]byte{
@@ -543,7 +528,6 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 	}
 
 	// wait for the nefarious data to be updated in the Secret
-	// avoiding retry.* since those functions are already making too much noise
 	assert.NoError(t, backoff.Retry(func() error {
 		var s corev1.Secret
 		if err := crdClient.Get(ctx, secObjKey, &s); err != nil {
@@ -559,24 +543,26 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 		return
 	}
 
-	// used for comparing map[string]interface{} to Secret.Data
-	// assumes that the tests only ever use string values.
-	cmp := map[string][]byte{}
-	for k, v := range expected {
-		cmp[k] = []byte(v.(string))
-	}
 	// wait for the reconciler to pick up the out-of-band change
-	// avoiding retry.* since those functions are already making too much noise
 	assert.NoError(t, backoff.Retry(func() error {
 		var s corev1.Secret
 		if err := crdClient.Get(ctx, secObjKey, &s); err != nil {
 			return err
 		}
-		// we can discard _raw here, since we are only checking if the other bits are the same.
-		delete(s.Data, "_raw")
-		if !reflect.DeepEqual(cmp, s.Data) {
-			return fmt.Errorf("expected data %#v not restored to %s", cmp, secObjKey)
+		if !reflect.DeepEqual(origData, s.Data) {
+			return fmt.Errorf("expected data %#v not restored to %s", origData, secObjKey)
 		}
 		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 30)))
+
+	// assert that the vssObj.Status.SecretMAC did not change.
+	vssObjKey := client.ObjectKeyFromObject(vssObj)
+	updated, err := awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
+	assert.NoError(t, err)
+	assert.NotNil(t, updated)
+	if t.Failed() {
+		return
+	}
+
+	assert.Equal(t, vssObj.Status.SecretMAC, updated.Status.SecretMAC)
 }
