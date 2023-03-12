@@ -326,9 +326,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		}
 	}
 
-	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret, expected expectedData, initial bool) {
+	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret, expected expectedData, expectInitial bool) {
 		var data map[string]interface{}
-		if initial {
+		if expectInitial {
 			putKV(t, obj, expected.initial)
 			require.NoError(t, crdClient.Create(ctx, obj))
 			data = expected.initial
@@ -347,7 +347,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				"secrets.hashicorp.com/v1alpha1",
 				"VaultStaticSecret", secret)
 			if obj.Spec.HMACSecretData {
-				assertHMAC(t, ctx, crdClient, obj, secret)
+				assertHMAC(t, ctx, crdClient, obj, secret, expectInitial)
 			}
 		}
 	}
@@ -422,9 +422,16 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 }
 
 func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, origVSSObj *secretsv1alpha1.VaultStaticSecret,
-	secret *corev1.Secret,
+	secret *corev1.Secret, expectInitial bool,
 ) {
 	t.Helper()
+
+	if expectInitial {
+		assert.Empty(t, origVSSObj.Status.SecretMAC, "expected SecretMAC to be empty on initial check")
+		if t.Failed() {
+			return
+		}
+	}
 
 	secObjKey := client.ObjectKeyFromObject(secret)
 	vssObjKey := client.ObjectKeyFromObject(origVSSObj)
@@ -433,6 +440,22 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 	assert.NotNil(t, cur)
 	if t.Failed() {
 		return
+	}
+
+	if !expectInitial && origVSSObj.Status.SecretMAC == cur.Status.SecretMAC {
+		// wait for the Status update to complete.
+		assert.NoError(t, backoff.Retry(func() error {
+			var v secretsv1alpha1.VaultStaticSecret
+			err := crdClient.Get(ctx, vssObjKey, &v)
+			if t.Failed() {
+				return backoff.Permanent(err)
+			}
+			if v.Status.SecretMAC == origVSSObj.Status.SecretMAC {
+				return fmt.Errorf("expected SecretMac to change, actual=%s", origVSSObj.Status.SecretMAC)
+			}
+			cur = &v
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10)))
 	}
 
 	originalMAC, err := base64.StdEncoding.DecodeString(cur.Status.SecretMAC)
