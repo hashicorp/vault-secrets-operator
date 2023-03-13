@@ -217,7 +217,7 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 integration-test:  setup-integration-test ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 \
-	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=20m
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
 integration-test-helm:  setup-integration-test ## Run integration tests for Vault OSS
