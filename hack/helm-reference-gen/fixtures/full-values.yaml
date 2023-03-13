@@ -53,7 +53,7 @@ controller:
   # Sets the configuration settings used by the controller. Any custom changes will be reflected in the
   # data field of the configmap.
   # For more information on configuring resources, see the K8s documentation:
-  # https://kubernetes.io/docs/concepts/configuration/configmap/
+  # https://kubernetes.io/docs/concepts/configuration/configmap/ 
   # @recurse: true
   # @type: map
   controllerConfigMapYaml:
@@ -79,7 +79,7 @@ controller:
 metricsService:
   # Set the port settings for the metrics service.
   # For more information on configuring resources, see the K8s documentation:
-  # https://kubernetes.io/docs/concepts/services-networking/service/
+  # https://kubernetes.io/docs/concepts/services-networking/service/ 
   # @type: map
   ports:
   - name: https
@@ -91,9 +91,6 @@ metricsService:
 # Configures the default VaultConnection CR which will be used by resources
 # if they do not specify a VaultConnection reference. The name is 'default' and will
 # always be installed in the same namespace as the operator.
-# NOTE:
-# * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
-#   which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
 defaultVaultConnection:
   # toggles the deployment of the VaultAuthMethod CR
   # @type: boolean
@@ -101,8 +98,7 @@ defaultVaultConnection:
 
   # Address of the Vault Server
   # @type: string
-  # Example: http://vault.default.svc.cluster.local:8200
-  address: ""
+  address: http://vault.default.svc.cluster.local:8200
 
   # CACertSecret containing the trusted PEM encoded CA certificate chain.
   # Note: This secret must exist prior to deploying the CR.
@@ -118,6 +114,7 @@ defaultVaultConnection:
   skipTLSVerify: false
 
   # Headers to be included in all Vault requests.
+  # @type: string, eg:
   # headers: |
   #   "vault-something1": "foo"
   #   "vault-something2": "bar"
@@ -129,9 +126,6 @@ defaultVaultConnection:
 # Configures and deploys the default VaultAuthMethod CR which will be used by resources
 # if they do not specify a VaultAuthMethod reference. The name is 'default' and will
 # always be installed in the same namespace as the operator.
-# NOTE:
-# * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
-#   which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
 defaultAuthMethod:
   # toggles the deployment of the VaultAuthMethod CR
   # @type: boolean
@@ -139,7 +133,7 @@ defaultAuthMethod:
 
   # Vault namespace for the VaultAuthMethod CR
   # @type: string
-  namespace: ""
+  namespace: default
 
   # Vault Auth method to be used with the VaultAuthMethod CR
   # @type: string
@@ -154,8 +148,9 @@ defaultAuthMethod:
     # Vault Auth Role to use
     # This is a required field and must be setup in Vault prior to deploying the helm chart
     # if `defaultAuthMethod.enabled=true`
+    # TODO: mark required in the charts.
     # @type: string
-    role: ""
+    role: demo
 
     # Kubernetes ServiceAccount associated with the default Vault Auth Role
     # @type: string
@@ -182,7 +177,7 @@ defaultAuthMethod:
   # @type: string
   headers: ""
 
-## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored.
+## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored. 
 tests:
   # @type: boolean
   enabled: true
