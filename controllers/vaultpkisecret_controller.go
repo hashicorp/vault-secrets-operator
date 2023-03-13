@@ -52,8 +52,8 @@ type VaultPKISecretReconciler struct {
 func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	s := &secretsv1alpha1.VaultPKISecret{}
-	if err := r.Client.Get(ctx, req.NamespacedName, s); err != nil {
+	o := &secretsv1alpha1.VaultPKISecret{}
+	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -62,33 +62,35 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	path := r.getPath(s.Spec)
-	logger = logger.WithValues("vault_path", path, "dest", s.Spec.Dest)
+	path := r.getPath(o.Spec)
+	logger = logger.WithValues("vault_path", path, "dest", o.Spec.Dest)
 
-	if s.GetDeletionTimestamp() != nil {
-		if err := r.handleDeletion(ctx, logger, s); err != nil {
-			s.Status.Valid = false
-			s.Status.Error = reasonK8sClientError
+	if o.GetDeletionTimestamp() != nil {
+		if err := r.handleDeletion(ctx, logger, o); err != nil {
+			o.Status.Valid = false
+			o.Status.Error = reasonK8sClientError
 			msg := "Failed to handle deletion"
 			logger.Error(err, msg)
-			r.recordEvent(s, s.Status.Error, msg+": %s", err)
-			if err := r.updateStatus(ctx, s); err != nil {
+			r.recordEvent(o, o.Status.Error, msg+": %s", err)
+			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, err
 		}
 	}
 
+	// assume that status is always invalid
+	o.Status.Valid = false
+
 	var expiryOffset time.Duration
-	if s.Spec.ExpiryOffset != "" {
-		d, err := time.ParseDuration(s.Spec.ExpiryOffset)
+	if o.Spec.ExpiryOffset != "" {
+		d, err := time.ParseDuration(o.Spec.ExpiryOffset)
 		if err != nil {
-			s.Status.Valid = false
-			s.Status.Error = reasonInvalidConfiguration
-			msg := fmt.Sprintf("Failed to parse ExpiryOffset %q", s.Spec.ExpiryOffset)
+			o.Status.Error = reasonInvalidConfiguration
+			msg := fmt.Sprintf("Failed to parse ExpiryOffset %q", o.Spec.ExpiryOffset)
 			logger.Error(err, msg)
-			r.recordEvent(s, s.Status.Error, msg+": %s", err)
-			if err := r.updateStatus(ctx, s); err != nil {
+			r.recordEvent(o, o.Status.Error, msg+": %s", err)
+			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, err
@@ -96,36 +98,40 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		expiryOffset = d
 	}
 
-	if !s.Status.Renew && s.Status.SerialNumber != "" {
+	if !o.Status.Renew && o.Status.SerialNumber != "" {
 		// check if within the certificate renewal window
 		if expiryOffset > 0 {
-			if checkPKICertExpiry(s.Status.Expiration, expiryOffset) {
+			if checkPKICertExpiry(o.Status.Expiration, expiryOffset) {
 				logger.Info("Setting renewal for certificate expiry")
-				s.Status.Renew = true
-				if err := r.Status().Update(ctx, s); err != nil {
-					logger.Error(err, "Failed to update the status")
+				o.Status.Renew = true
+				o.Status.Valid = true
+				if err := r.updateStatus(ctx, o); err != nil {
 					return ctrl.Result{}, err
 				}
 
-				return ctrl.Result{}, nil
+				// Setting "Requeue: true" to ensure this is sent back through
+				// the reconcile loop now that we know it's time to renew
+				return ctrl.Result{
+					Requeue: true,
+				}, nil
 			}
 		}
 
+		// Requeue this object when it's closer to renewal time
 		return ctrl.Result{
-			RequeueAfter: expiryOffset,
+			RequeueAfter: getRenewTime(o.Status.Expiration, expiryOffset),
 		}, nil
 	}
 
 	// the secret should already be provisioned, the operator does
 	// not support dynamically creating secrets yet.
-	sec, err := r.getSecret(ctx, logger, s)
+	sec, err := r.getSecret(ctx, logger, o)
 	if err != nil {
-		msg := fmt.Sprintf("Kubernetes secret %s/%s does not exist yet", s.Namespace, s.Spec.Dest)
+		msg := fmt.Sprintf("Kubernetes secret %s/%s does not exist yet", o.Namespace, o.Spec.Dest)
 		logger.Info(msg)
-		s.Status.Valid = false
-		s.Status.Error = reasonK8sClientError
-		r.recordEvent(s, s.Status.Error, msg)
-		if err := r.updateStatus(ctx, s); err != nil {
+		o.Status.Error = reasonK8sClientError
+		r.recordEvent(o, o.Status.Error, msg)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -133,14 +139,13 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	vc, err := getVaultConfig(ctx, r.Client, s)
+	vc, err := getVaultConfig(ctx, r.Client, o)
 	if err != nil {
-		s.Status.Valid = false
-		s.Status.Error = reasonVaultClientError
+		o.Status.Error = reasonVaultClientError
 		msg := "Failed to retrieve Vault config"
 		logger.Error(err, msg)
-		r.recordEvent(s, s.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, s); err != nil {
+		r.recordEvent(o, o.Status.Error, msg+": %s", err)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
@@ -148,37 +153,34 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	c, err := getVaultClient(ctx, vc, r.Client)
 	if err != nil {
-		s.Status.Valid = false
-		s.Status.Error = reasonVaultClientError
+		o.Status.Error = reasonVaultClientError
 		msg := "Failed to get Vault client"
 		logger.Error(err, msg)
-		r.recordEvent(s, s.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, s); err != nil {
+		r.recordEvent(o, o.Status.Error, msg+": %s", err)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
 	}
 
-	resp, err := c.Logical().WriteWithContext(ctx, path, s.GetIssuerAPIData())
+	resp, err := c.Logical().WriteWithContext(ctx, path, o.GetIssuerAPIData())
 	if err != nil {
-		s.Status.Valid = false
-		s.Status.Error = reasonVaultClientError
+		o.Status.Error = reasonVaultClientError
 		msg := "Failed to issue certificate from Vault"
 		logger.Error(err, msg)
-		r.recordEvent(s, s.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, s); err != nil {
+		r.recordEvent(o, o.Status.Error, msg+": %s", err)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
 	}
 
 	if resp == nil {
-		s.Status.Valid = false
-		s.Status.Error = reasonVaultClientError
+		o.Status.Error = reasonVaultClientError
 		msg := fmt.Sprintf("Empty Vault secret at path %s", path)
 		logger.Error(nil, msg)
-		r.recordEvent(s, s.Status.Error, msg)
-		if err := r.updateStatus(ctx, s); err != nil {
+		r.recordEvent(o, o.Status.Error, msg)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -188,24 +190,22 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	certResp, err := vault.UnmarshalPKIIssueResponse(resp)
 	if err != nil {
-		s.Status.Valid = false
-		s.Status.Error = reasonVaultClientError
+		o.Status.Error = reasonVaultClientError
 		msg := "Failed to unmarshal PKI response"
 		logger.Error(err, msg)
-		r.recordEvent(s, s.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, s); err != nil {
+		r.recordEvent(o, o.Status.Error, msg+": %s", err)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
 	}
 
 	if certResp.SerialNumber == "" {
-		s.Status.Valid = false
-		s.Status.Error = reasonVaultClientError
+		o.Status.Error = reasonVaultClientError
 		msg := "Invalid Vault secret data, serial_number cannot be empty"
 		logger.Error(nil, msg)
-		r.recordEvent(s, s.Status.Error, msg)
-		if err := r.updateStatus(ctx, s); err != nil {
+		r.recordEvent(o, o.Status.Error, msg)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
@@ -213,12 +213,11 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	data, err := vault.MarshalSecretData(resp)
 	if err != nil {
-		s.Status.Valid = false
-		s.Status.Error = reasonVaultClientError
+		o.Status.Error = reasonVaultClientError
 		msg := "Failed to marshal Vault secret data"
 		logger.Error(err, msg)
-		r.recordEvent(s, s.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, s); err != nil {
+		r.recordEvent(o, o.Status.Error, msg+": %s", err)
+		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
@@ -229,37 +228,33 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Successfully updated the secret")
-	r.recordEvent(s, reasonAccepted, "Secret synced")
-
 	// revoke the certificate on renewal
-	if s.Spec.Revoke && s.Status.Renew && s.Status.SerialNumber != "" {
-		if err := r.revokeCertificate(ctx, logger, s); err != nil {
+	if o.Spec.Revoke && o.Status.Renew && o.Status.SerialNumber != "" {
+		if err := r.revokeCertificate(ctx, logger, o); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	s.Status.Valid = true
-	s.Status.Error = ""
-	s.Status.SerialNumber = certResp.SerialNumber
-	s.Status.Expiration = certResp.Expiration
-	s.Status.Renew = false
-	if err := r.updateStatus(ctx, s); err != nil {
+	o.Status.Valid = true
+	o.Status.Error = ""
+	o.Status.SerialNumber = certResp.SerialNumber
+	o.Status.Expiration = certResp.Expiration
+	o.Status.Renew = false
+	if err := r.updateStatus(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return ctrl.Result{}, err
 	}
 
-	if err := r.addFinalizer(ctx, logger, s); err != nil {
+	if err := r.addFinalizer(ctx, logger, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// TODO:
-	// set ctrl.Result.Requeue to true with RequeueAfter being the credential (expiry TTL - some offset)
-	//return ctrl.Result{
-	//	RequeueAfter: refAfter,
-	//}, err
+	logger.Info("Successfully updated the secret")
+	r.recordEvent(o, reasonAccepted, "Secret synced")
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{
+		RequeueAfter: getRenewTime(o.Status.Expiration, expiryOffset),
+	}, nil
 }
 
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
@@ -430,4 +425,9 @@ func checkPKICertExpiry(expiration int64, offset time.Duration) bool {
 	now := time.Now()
 
 	return now.After(expiry)
+}
+
+func getRenewTime(expiration int64, offset time.Duration) time.Duration {
+	renewTime := time.Unix(expiration-int64(offset.Seconds()), 0)
+	return renewTime.Sub(time.Now())
 }
