@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -498,8 +499,13 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 ) {
 	t.Helper()
 
-	assert.NoError(t, backoff.Retry(func() error {
-		expectedMAC, err := base64.StdEncoding.DecodeString(vssObj.Status.SecretMAC)
+	assert.NoError(t, backoff.RetryNotify(func() error {
+		obj, err := awaitSecretHMACStatus(t, ctx, crdClient, client.ObjectKeyFromObject(vssObj))
+		if err != nil {
+			return backoff.Permanent(err)
+		}
+
+		expectedMAC, err := base64.StdEncoding.DecodeString(obj.Status.SecretMAC)
 		if err != nil {
 			return backoff.Permanent(err)
 		}
@@ -521,13 +527,17 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 		}
 
 		if !valid {
-			return fmt.Errorf("computed message is invalid, expected %v, actual %s",
+			return fmt.Errorf("computed message is invalid, expected %v, actual %s, data %#v",
 				base64.StdEncoding.EncodeToString(expectedMAC),
-				base64.StdEncoding.EncodeToString(actualMAC))
+				base64.StdEncoding.EncodeToString(actualMAC),
+				secret.Data,
+			)
 		}
 
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 30)))
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 30),
+		func(err error, horizon time.Duration) { log.Printf("retrying on error %q, horizon=%s", err, horizon) }),
+	)
 }
 
 func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client,

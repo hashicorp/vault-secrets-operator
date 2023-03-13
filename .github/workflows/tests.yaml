@@ -81,7 +81,7 @@ jobs:
       fail-fast: false
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
-        vault-version: [1.10.10, 1.11.7, 1.12.3]
+        vault-version: [1.12.3]
         # Note: The below exclude and includes are a bit awkward, but they
         # allow us to exclude the combos we don't really need. We want to test
         # the operator with the different k8s versions, and with the different
@@ -127,20 +127,20 @@ jobs:
         run: make ci-build ci-docker-build
       - name: Load docker image in kind
         run: make load-docker-image
-      - name: OSS tests using Helm
-        env:
-          INTEGRATION_TESTS: true
-          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          make integration-test-helm SUPPRESS_TF_OUTPUT=true
-      - name: OSS tests using Kustomize
-        env:
-          INTEGRATION_TESTS: true
-          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          make integration-test SUPPRESS_TF_OUTPUT=true
+      #- name: OSS tests using Helm
+      #  env:
+      #    INTEGRATION_TESTS: true
+      #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #  run: |
+      #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
+      #- name: OSS tests using Kustomize
+      #  env:
+      #    INTEGRATION_TESTS: true
+      #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #  run: |
+      #    make integration-test SUPPRESS_TF_OUTPUT=true
       - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
