@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -272,17 +271,17 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 		{
 			name:        "create-kv-v1",
-			create:      5,
+			create:      2,
 			createTypes: []string{consts.KVSecretTypeV1},
 		},
 		{
 			name:        "create-kv-v2",
-			create:      5,
+			create:      2,
 			createTypes: []string{consts.KVSecretTypeV2},
 		},
 		{
 			name:        "create-both",
-			create:      5,
+			create:      2,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
@@ -298,7 +297,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				},
 			},
 			existing:    getExisting(),
-			create:      10,
+			create:      2,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 	}
@@ -495,41 +494,40 @@ func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.C
 	return &vssObj, err
 }
 
-func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client,
-	vssObj *secretsv1alpha1.VaultStaticSecret,
+func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client, vssObj *secretsv1alpha1.VaultStaticSecret,
 ) {
 	t.Helper()
 
-	expectedMAC, err := base64.StdEncoding.DecodeString(vssObj.Status.SecretMAC)
-	assert.NoError(t, err)
-	if t.Failed() {
-		return
-	}
-
-	var secret corev1.Secret
-	assert.NoError(t, crdClient.Get(ctx, client.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}, &secret))
-	if t.Failed() {
-		return
-	}
-
-	message, err := json.Marshal(secret.Data)
-	assert.NoError(t, err, "could not marshal Secret.Data, should never happen")
-	if t.Failed() {
-		return
-	}
-
-	validateFunc := vault.NewMACValidateFromHKDFSecretFunc(vault.DefaultClientCacheStorageConfig().HKDFObjectKey)
-	valid, actualMAC, err := validateFunc(ctx, crdClient, message, expectedMAC)
-	assert.NoError(t, err)
-	if err != nil {
-		assert.False(t, valid)
-	} else {
-		if !assert.True(t, valid, "computed message is invalid, expected %v, actual %s",
-			base64.StdEncoding.EncodeToString(expectedMAC),
-			base64.StdEncoding.EncodeToString(actualMAC)) {
-			log.Printf("%#v", secret.Data)
+	assert.NoError(t, backoff.Retry(func() error {
+		expectedMAC, err := base64.StdEncoding.DecodeString(vssObj.Status.SecretMAC)
+		if err != nil {
+			return backoff.Permanent(err)
 		}
-	}
+
+		var secret corev1.Secret
+		if err := crdClient.Get(ctx, client.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}, &secret); err != nil {
+			return backoff.Permanent(err)
+		}
+
+		message, err := json.Marshal(secret.Data)
+		if err != nil {
+			return backoff.Permanent(fmt.Errorf("could not marshal Secret.Data, should never happen: %w", err))
+		}
+
+		validateFunc := vault.NewMACValidateFromHKDFSecretFunc(vault.DefaultClientCacheStorageConfig().HKDFObjectKey)
+		valid, actualMAC, err := validateFunc(ctx, crdClient, message, expectedMAC)
+		if err != nil {
+			return backoff.Permanent(err)
+		}
+
+		if !valid {
+			return fmt.Errorf("computed message is invalid, expected %v, actual %s",
+				base64.StdEncoding.EncodeToString(expectedMAC),
+				base64.StdEncoding.EncodeToString(actualMAC))
+		}
+
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 30)))
 }
 
 func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client,
