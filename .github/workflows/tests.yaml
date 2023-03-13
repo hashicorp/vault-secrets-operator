@@ -126,7 +126,7 @@ jobs:
       - name: Build operator binary and image
         run: make ci-build ci-docker-build
       - name: Load docker image in kind
-        run: load-docker-image
+        run: make load-docker-image
       - name: OSS tests using Helm
         env:
           INTEGRATION_TESTS: true
