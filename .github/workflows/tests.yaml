@@ -125,13 +125,14 @@ jobs:
             ${{ runner.os }}-go-
       - name: Build operator binary and image
         run: make ci-build ci-docker-build
+      - name: Load docker image in kind
+        run: load-docker-image
       - name: OSS tests using Helm
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make ci-deploy-kind
           make integration-test-helm SUPPRESS_TF_OUTPUT=true
       - name: OSS tests using Kustomize
         env:
@@ -139,8 +140,6 @@ jobs:
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make ci-deploy-kind
-          make ci-deploy
           make integration-test SUPPRESS_TF_OUTPUT=true
       - name: ENT tests using Kustomize
         env:
@@ -148,6 +147,4 @@ jobs:
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
-          make ci-deploy-kind
-          make ci-deploy
           make integration-test-ent SUPPRESS_TF_OUTPUT=true

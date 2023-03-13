@@ -217,8 +217,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						Name:   "secretkv",
 						Create: false,
 					},
-					RefreshAfter:   "5s",
-					HMACSecretData: true,
+					RefreshAfter: "15s",
 				},
 			},
 			// Create a VaultStaticSecret CR to trigger the sync for kvv2
@@ -236,7 +235,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						Name:   "secretkvv2",
 						Create: false,
 					},
-					RefreshAfter: "5s",
+					RefreshAfter:   "5s",
+					HMACSecretData: false,
 				},
 			},
 		}
@@ -347,7 +347,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				"secrets.hashicorp.com/v1alpha1",
 				"VaultStaticSecret", secret)
 			if obj.Spec.HMACSecretData {
-				assertHMAC(t, ctx, crdClient, obj, secret, expectInitial)
+				assertHMAC(t, ctx, crdClient, obj, expectInitial)
+			} else {
+				assertNoHMAC(t, obj)
 			}
 		}
 	}
@@ -400,7 +402,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 									Name:   dest,
 									Create: true,
 								},
-								RefreshAfter:   "5s",
+								RefreshAfter:   "15s",
 								HMACSecretData: true,
 							},
 						}
@@ -421,8 +423,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 }
 
+func assertNoHMAC(t *testing.T, origVSSObj *secretsv1alpha1.VaultStaticSecret) {
+	assert.Empty(t, origVSSObj.Status.SecretMAC, "expected vssObj.Status.SecretMAC to be empty")
+}
+
 func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, origVSSObj *secretsv1alpha1.VaultStaticSecret,
-	secret *corev1.Secret, expectInitial bool,
+	expectInitial bool,
 ) {
 	t.Helper()
 
@@ -433,16 +439,15 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 		}
 	}
 
-	secObjKey := client.ObjectKeyFromObject(secret)
 	vssObjKey := client.ObjectKeyFromObject(origVSSObj)
-	cur, err := awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
+	vssObj, err := awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
 	assert.NoError(t, err)
-	assert.NotNil(t, cur)
+	assert.NotNil(t, vssObj)
 	if t.Failed() {
 		return
 	}
 
-	if !expectInitial && origVSSObj.Status.SecretMAC == cur.Status.SecretMAC {
+	if !expectInitial && origVSSObj.Status.SecretMAC == vssObj.Status.SecretMAC {
 		// wait for the Status update to complete.
 		assert.NoError(t, backoff.Retry(func() error {
 			var v secretsv1alpha1.VaultStaticSecret
@@ -453,23 +458,17 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 			if v.Status.SecretMAC == origVSSObj.Status.SecretMAC {
 				return fmt.Errorf("expected SecretMac to change, actual=%s", origVSSObj.Status.SecretMAC)
 			}
-			cur = &v
+			vssObj = &v
 			return nil
 		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10)))
 	}
 
-	originalMAC, err := base64.StdEncoding.DecodeString(cur.Status.SecretMAC)
-	assert.NoError(t, err)
+	assertSecretDataHMAC(t, ctx, crdClient, vssObj)
 	if t.Failed() {
 		return
 	}
 
-	assertSecretDataHMAC(t, ctx, crdClient, secObjKey, originalMAC)
-	if t.Failed() {
-		return
-	}
-
-	assertHMACTriggeredRemediation(t, ctx, crdClient, secret, cur)
+	assertHMACTriggeredRemediation(t, ctx, crdClient, vssObj)
 	if t.Failed() {
 		return
 	}
@@ -497,13 +496,19 @@ func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.C
 }
 
 func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client,
-	secObjKey client.ObjectKey, expectedMAC []byte,
+	vssObj *secretsv1alpha1.VaultStaticSecret,
 ) {
 	t.Helper()
 
-	validateFunc := vault.NewMACValidateFromHKDFSecretFunc(vault.DefaultClientCacheStorageConfig().HKDFObjectKey)
+	expectedMAC, err := base64.StdEncoding.DecodeString(vssObj.Status.SecretMAC)
+	assert.NoError(t, err)
+	if t.Failed() {
+		return
+	}
+
 	var secret corev1.Secret
-	if err := crdClient.Get(ctx, secObjKey, &secret); err != nil {
+	assert.NoError(t, crdClient.Get(ctx, client.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}, &secret))
+	if t.Failed() {
 		return
 	}
 
@@ -513,6 +518,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 		return
 	}
 
+	validateFunc := vault.NewMACValidateFromHKDFSecretFunc(vault.DefaultClientCacheStorageConfig().HKDFObjectKey)
 	valid, actualMAC, err := validateFunc(ctx, crdClient, message, expectedMAC)
 	assert.NoError(t, err)
 	if err != nil {
@@ -526,10 +532,17 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 	}
 }
 
-func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client, secret *corev1.Secret,
+func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client,
 	vssObj *secretsv1alpha1.VaultStaticSecret,
 ) {
 	t.Helper()
+
+	var secret corev1.Secret
+	secObjKey := client.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}
+	assert.NoError(t, crdClient.Get(ctx, secObjKey, &secret))
+	if t.Failed() {
+		return
+	}
 
 	// used for comparing map[string]interface{} to Secret.Data after mutating it below.
 	origData := map[string][]byte{}
@@ -539,12 +552,11 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 
 	// we want to test out drift detection by mutating the Secret.Data,
 	// then waiting for it to be reconciled and properly remediated.
-	secObjKey := client.ObjectKeyFromObject(secret)
 	nefariousData := map[string][]byte{
 		"nefarious": []byte("actor"),
 	}
 	secret.Data = nefariousData
-	assert.NoError(t, crdClient.Update(ctx, secret),
+	assert.NoError(t, crdClient.Update(ctx, &secret),
 		"unexpected, could not update Secret %s", secObjKey)
 	if t.Failed() {
 		return
@@ -556,12 +568,11 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 		if err := crdClient.Get(ctx, secObjKey, &s); err != nil {
 			return err
 		}
-		// we can discard _raw here, since we are only checking if the other bits are the same.
 		if !reflect.DeepEqual(nefariousData, s.Data) {
 			return fmt.Errorf("nefarious data never updated in Secret %s", secObjKey)
 		}
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*250), 8)))
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*250), 40)))
 	if t.Failed() {
 		return
 	}

@@ -32,6 +32,7 @@ type VaultStaticSecretSpec struct {
 	// the resource's Status.SecretMac field, and will be used for drift detection
 	// and during incoming Vault secret comparison.
 	// Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault.
+	// +kubebuilder:default=true
 	HMACSecretData bool `json:"hmacSecretData,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
 	Destination Destination `json:"destination"`
