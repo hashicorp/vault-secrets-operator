@@ -53,8 +53,5 @@ EOF
 
 for ns in tenant-{1,2} ; do
     kubectl delete namespace --wait --timeout=30s "${ns}" || true
-done
-
-for ns in tenant-{1,2} ; do
     kubectl create namespace "${ns}"
 done
