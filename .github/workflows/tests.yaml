@@ -110,7 +110,6 @@ jobs:
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
     strategy:
-      #max-parallel: 6
       fail-fast: false
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
@@ -172,15 +171,15 @@ jobs:
       #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       #  run: |
       #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
-      # TODO: disabling OSS tests to speed up the test workflow.
-      # Ideally we only need to test the latest release of OSS Vault.
-      #- name: OSS tests using Kustomize
-      #  env:
-      #    INTEGRATION_TESTS: true
-      #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #  run: |
-      #    make integration-test SUPPRESS_TF_OUTPUT=true
+      - name: OSS tests using Kustomize
+        # Ideally we only need to test the latest release of OSS Vault.
+        if: ${{ matrix.vault-version }} != "1.12.3"
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          make integration-test SUPPRESS_TF_OUTPUT=true
       - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
