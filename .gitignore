@@ -43,3 +43,4 @@ bin/*
 .idea
 *.png
 build
+.DS_Store

@@ -21,6 +21,8 @@ rules:
   - secrets
   verbs:
   - create
+  - delete
+  - deletecollection
   - get
   - list
   - patch
@@ -42,6 +44,33 @@ rules:
   - create
   - get
   - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - patch
   - watch
 - apiGroups:
   - secrets.hashicorp.com
@@ -91,6 +120,32 @@ rules:
   - secrets.hashicorp.com
   resources:
   - vaultconnections/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultdynamicsecrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultdynamicsecrets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultdynamicsecrets/status
   verbs:
   - get
   - patch
