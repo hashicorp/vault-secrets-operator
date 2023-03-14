@@ -91,6 +91,11 @@ spec:
                   to the `default` VaultConnection, configured in its own Kubernetes
                   namespace.
                 type: string
+              vaultTransitRef:
+                description: VaultTransitRef is the name of a VaultTransit custom
+                  resource that will be used for encryption/decryption of the cached
+                  client.
+                type: string
             required:
             - method
             - mount

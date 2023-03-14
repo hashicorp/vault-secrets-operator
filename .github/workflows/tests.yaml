@@ -18,13 +18,21 @@ jobs:
 
   fmtcheck:
     runs-on: ubuntu-latest
+    needs: [get-go-version]
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - run: |
           make check-fmt
   tf-fmtcheck:
     runs-on: ubuntu-latest
+    needs: [get-go-version]
     steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: actions/checkout@v3
       - run: |
           make check-tffmt
@@ -49,27 +57,64 @@ jobs:
 
   unitTest:
     runs-on: ubuntu-latest
+    needs: [get-go-version]
     steps:
       - uses: actions/checkout@v3
       - uses: chrisdickinson/setup-yq@latest
         with:
           yq-version: v4.30.8
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: mig4/setup-bats@v1
         with:
           bats-version: 1.8.2
       - run: make unit-test
 
+  build-docker-image:
+    outputs:
+      cache-key: ${{ steps.build-docker-image.outputs.cache-key }}
+      image-archive-file: ${{ steps.build-docker-image.outputs.image-archive-file }}
+    runs-on: ubuntu-latest
+    needs: [get-go-version]
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Build operator binary and image
+        id: build-docker-image
+        run: |
+          export IMAGE_ARCHIVE_FILE=dist/vso.tar
+          make ci-build ci-docker-build docker-image-save
+          image_checksum="$(sha256sum dist/vso.tar | cut -f1 -d' ')"
+          test -n "${image_checksum}" || (echo "image checksum is empty" >&2 ; exit 1)
+          echo "cache-key=${{ runner.os }}-docker-image-${image_checksum}" >> $GITHUB_OUTPUT
+          echo "image-archive-file=${IMAGE_ARCHIVE_FILE}" >> $GITHUB_OUTPUT
+      - uses: actions/cache/save@v3
+        id: docker-image-cache
+        with:
+          path: dist/vso.tar
+          key: ${{ steps.build-docker-image.outputs.cache-key }}
   integrationTest:
     runs-on: ubuntu-latest
-    needs: [fmtcheck, test, get-go-version]
+    needs: [fmtcheck, test, get-go-version, build-docker-image]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
     strategy:
       fail-fast: false
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
-        vault-version: [1.10.9, 1.11.6, 1.12.2]
-        # Note: The below exclude and include's are a bit awkward, but they
+        vault-version: [1.10.10, 1.11.7, 1.12.3]
+        # Note: The below exclude and includes are a bit awkward, but they
         # allow us to exclude the combos we don't really need. We want to test
         # the operator with the different k8s versions, and with the different
         # vault versions, but we don't care about testing all the k8s versions
@@ -83,15 +128,20 @@ jobs:
           - kind-k8s-version: 1.22.15
         include:
           - kind-k8s-version: 1.24.7
-            vault-version: 1.12.2
+            vault-version: 1.12.3
           - kind-k8s-version: 1.23.13
-            vault-version: 1.12.2
+            vault-version: 1.12.3
           - kind-k8s-version: 1.22.15
-            vault-version: 1.12.2
+            vault-version: 1.12.3
 
     name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          fail-on-cache-miss: true
+          path: dist/vso.tar
+          key: ${{ needs.build-docker-image.outputs.cache-key }}
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
@@ -99,6 +149,9 @@ jobs:
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      - name: Load Docker image
+        run:
+          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
@@ -110,31 +163,27 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      - name: Build operator binary and image
-        run: make ci-build ci-docker-build
-      - name: OSS tests using Helm
-        env:
-          INTEGRATION_TESTS: true
-          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          make ci-deploy-kind
-          make integration-test-helm
+      # TODO: disabling OSS Helm tests until the helm chart is stable
+      #- name: OSS tests using Helm
+      #  env:
+      #    INTEGRATION_TESTS: true
+      #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #  run: |
+      #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
       - name: OSS tests using Kustomize
+        # Ideally we only need to test the latest release of OSS Vault.
+        if: ${{ matrix.vault-version == '1.12.3' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make ci-deploy-kind
-          make ci-deploy
-          make integration-test
+          make integration-test SUPPRESS_TF_OUTPUT=true
       - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
-          make ci-deploy-kind
-          make ci-deploy
-          make integration-test-ent
+          make integration-test-ent SUPPRESS_TF_OUTPUT=true

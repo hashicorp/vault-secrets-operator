@@ -5,4 +5,7 @@ package consts
 
 const (
 	NameDefault = "default"
+
+	KVSecretTypeV2 = "kv-v2"
+	KVSecretTypeV1 = "kv-v1"
 )

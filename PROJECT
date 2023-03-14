@@ -43,4 +43,31 @@ resources:
   kind: VaultConnection
   path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: hashicorp.com
+  group: secrets
+  kind: VaultDynamicSecret
+  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: hashicorp.com
+  group: secrets
+  kind: VaultClientCache
+  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: hashicorp.com
+  group: secrets
+  kind: VaultTransit
+  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"

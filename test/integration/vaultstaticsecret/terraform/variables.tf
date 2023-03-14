@@ -5,9 +5,7 @@ variable "k8s_test_namespace" {
   default = "testing"
 }
 
-variable "k8s_vault_namespace" {
-  default = "demo"
-}
+variable "k8s_vault_connection_address" {}
 
 variable "k8s_config_context" {
   default = "kind-kind"
@@ -51,4 +49,3 @@ variable "deploy_operator_via_helm" {
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }
-
