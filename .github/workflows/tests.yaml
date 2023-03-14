@@ -153,6 +153,7 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      # TODO: disabling OSS Helm tests until the helm chart is stable
       #- name: OSS tests using Helm
       #  env:
       #    INTEGRATION_TESTS: true
@@ -160,6 +161,8 @@ jobs:
       #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       #  run: |
       #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
+      # TODO: disabling OSS tests to speed up the test workflow.
+      # Ideally we only need to test the latest release of OSS Vault.
       #- name: OSS tests using Kustomize
       #  env:
       #    INTEGRATION_TESTS: true

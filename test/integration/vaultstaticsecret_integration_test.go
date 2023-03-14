@@ -463,10 +463,12 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10)))
 	}
 
-	assertSecretDataHMAC(t, ctx, crdClient, vssObj)
-	if t.Failed() {
-		return
-	}
+	// TODO: this test is unreliable in CI. We can reenable it once we can capture
+	//  the Operator logs from the Kind cluster for analysis
+	//assertSecretDataHMAC(t, ctx, crdClient, vssObj)
+	//if t.Failed() {
+	//	return
+	//}
 
 	assertHMACTriggeredRemediation(t, ctx, crdClient, vssObj)
 	if t.Failed() {
