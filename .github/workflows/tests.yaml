@@ -73,7 +73,8 @@ jobs:
 
   build-docker-image:
     outputs:
-      cache-primary-key: ${{ steps.build-docker-image.outputs.cache-key }}
+      cache-key: ${{ steps.build-docker-image.outputs.cache-key }}
+      image-archive-file: ${{ steps.build-docker-image.outputs.image-archive-file }}
     runs-on: ubuntu-latest
     needs: [get-go-version]
     steps:
@@ -81,13 +82,23 @@ jobs:
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - name: Build operator binary and image
         id: build-docker-image
         run: |
-          make ci-build ci-docker-build docker-image-save IMAGE_ARCHIVE_FILE=dist/vso.tar
-          sha256_sum="$(sha256sum dist/vso.tar | cut -f1 -d' ')"
-          echo "cache-key=${{ runner.os }}-docker-image-${sha256_sum}"
-          echo "cache-key=${{ runner.os }}-docker-image-${sha256_sum}" >> $GITHUB_OUTPUT
+          export IMAGE_ARCHIVE_FILE=dist/vso.tar
+          make ci-build ci-docker-build docker-image-save
+          image_checksum="$(sha256sum dist/vso.tar | cut -f1 -d' ')"
+          test -n "${image_checksum}" || (echo "image checksum is empty" >&2 ; exit 1)
+          echo "cache-key=${{ runner.os }}-docker-image-${image_checksum}" >> $GITHUB_OUTPUT
+          echo "image-archive-file=${IMAGE_ARCHIVE_FILE}" >> $GITHUB_OUTPUT
       - uses: actions/cache/save@v3
         id: docker-image-cache
         with:
@@ -131,7 +142,7 @@ jobs:
         with:
           fail-on-cache-miss: true
           path: dist/vso.tar
-          key: ${{ needs.build-docker-image.outputs.cache-primary-key }}
+          key: ${{ needs.build-docker-image.outputs.cache-key }}
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
@@ -141,7 +152,7 @@ jobs:
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
       - name: Load Docker image
         run:
-          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=dist/vso.tar
+          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
