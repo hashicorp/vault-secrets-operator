@@ -372,7 +372,7 @@ delete-operator-pod:
 
 .PHONY: rollout-restart-operator
 rollout-restart-operator:
-	kubectl -n $(OPERATOR_NAMESPACE) rollout restart -l control-plane=controller-manager
+	kubectl -n $(OPERATOR_NAMESPACE) rollout restart deployment -l control-plane=controller-manager
 
 .PHONY: build-deploy-kind
 build-deploy-kind:
