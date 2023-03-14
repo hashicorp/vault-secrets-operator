@@ -217,7 +217,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						Name:   "secretkv",
 						Create: false,
 					},
-					RefreshAfter: "15s",
+					RefreshAfter: "5s",
 				},
 			},
 			// Create a VaultStaticSecret CR to trigger the sync for kvv2
@@ -402,7 +402,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 									Name:   dest,
 									Create: true,
 								},
-								RefreshAfter:   "15s",
+								RefreshAfter:   "5s",
 								HMACSecretData: true,
 							},
 						}
