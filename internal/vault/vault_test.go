@@ -23,7 +23,7 @@ func TestMakeVaultClient(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := map[string]struct {
-		vaultConfig     *VaultClientConfig
+		vaultConfig     *ClientConfig
 		CACert          []byte
 		makeBlankSecret bool
 		expectedError   error
@@ -31,10 +31,10 @@ func TestMakeVaultClient(t *testing.T) {
 		"empty everything": {
 			vaultConfig:   nil,
 			CACert:        nil,
-			expectedError: fmt.Errorf("VaultClientConfig was nil"),
+			expectedError: fmt.Errorf("ClientConfig was nil"),
 		},
 		"caCertSecretRef but k8s secret doesn't exist": {
-			vaultConfig: &VaultClientConfig{
+			vaultConfig: &ClientConfig{
 				CACertSecretRef: "missing",
 				K8sNamespace:    "default",
 				Address:         "localhost",
@@ -43,7 +43,7 @@ func TestMakeVaultClient(t *testing.T) {
 			expectedError: fmt.Errorf(`secrets "missing" not found`),
 		},
 		"caCert specified": {
-			vaultConfig: &VaultClientConfig{
+			vaultConfig: &ClientConfig{
 				CACertSecretRef: "vault-cert",
 				K8sNamespace:    "vault",
 				Address:         "localhost",
@@ -53,7 +53,7 @@ func TestMakeVaultClient(t *testing.T) {
 			expectedError: nil,
 		},
 		"caCert specified but empty": {
-			vaultConfig: &VaultClientConfig{
+			vaultConfig: &ClientConfig{
 				CACertSecretRef: "vault-cert",
 				K8sNamespace:    "vault",
 				Address:         "localhost",
@@ -64,7 +64,7 @@ func TestMakeVaultClient(t *testing.T) {
 			expectedError:   fmt.Errorf(`"ca.crt" was empty in the CA secret vault/vault-cert`),
 		},
 		"vault namespace": {
-			vaultConfig: &VaultClientConfig{
+			vaultConfig: &ClientConfig{
 				VaultNamespace: "vault-test-namespace",
 			},
 			CACert:        nil,

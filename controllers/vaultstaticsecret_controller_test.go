@@ -4,18 +4,14 @@
 package controllers
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
-	"github.com/go-logr/logr"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_makeK8sSecret(t *testing.T) {
-	l := logr.FromContextOrDiscard(context.Background())
-
 	tests := map[string]struct {
 		vaultSecret       *api.KVSecret
 		expectedK8sSecret map[string][]byte
@@ -112,7 +108,7 @@ func Test_makeK8sSecret(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			k8sSecret, err := makeK8sSecret(l, tc.vaultSecret)
+			k8sSecret, err := makeK8sSecret(tc.vaultSecret)
 			if tc.expectedError != nil {
 				assert.EqualError(t, err, tc.expectedError.Error())
 				assert.Nil(t, k8sSecret)

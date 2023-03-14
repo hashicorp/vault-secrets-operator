@@ -82,3 +82,31 @@ skinparam BackgroundColor LightBlue
     return Deletion Complete
 caption figure 4.2
 @enduml
+
+@startuml
+autonumber
+title Client Cache
+skinparam BackgroundColor LightBlue
+    SecretCustomResource -> SecretsOperator : SecretCustomResource Event
+    SecretCustomResource -> AuthLogin : Login
+    AuthLogin -> ClientCacheInMemory : Write
+    AuthLogin -> Operator : Create VaultClientCache CR
+    VaultClientCacheController -> ClientCacheInMemory : Fetch cached client
+    ClientCacheInMemory -> VaultClientCacheController : Cached hit
+    VaultClientCacheController -> VaultTransit : Lookup VaultTransit from ref
+    VaultTransit -> VaultClientCacheController : Enabled
+    VaultClientCacheController -> TransitEncrypt : Encrypt the Vault Client
+    TransitEncrypt -> VaultClientCacheController : Encrypted data
+    VaultClientCacheController -> KubernetesSecret : Store
+    AuthLogin -> ClientCacheInMemory : Cache miss
+    AuthLogin -> VaultClientCache : Read
+    AuthLogin -> CachedSecretRef : Read
+    AuthLogin -> VaultTransit : Enabled
+    AuthLogin -> TransitDecrypt : Decrypt the Vault Client
+    TransitDecrypt -> AuthLogin: Decrypted data
+    AuthLogin -> RenewClientToken : Success
+    ClientToken -> ClientCacheInMemory : Store
+    ClientCacheInMemory -> AuthLogin : Success
+    SecretCustomResource -> SecretCustomResource : Sync the secret using the cached Client
+caption figure 2.3
+@enduml
