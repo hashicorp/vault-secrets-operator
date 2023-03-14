@@ -71,9 +71,31 @@ jobs:
           bats-version: 1.8.2
       - run: make unit-test
 
+  build-docker-image:
+    outputs:
+      cache-primary-key: ${{ steps.build-docker-image.outputs.cache-key }}
+    runs-on: ubuntu-latest
+    needs: [get-go-version]
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
+      - uses: actions/checkout@v3
+      - name: Build operator binary and image
+        id: build-docker-image
+        run: |
+          make ci-build ci-docker-build docker-image-save IMAGE_ARCHIVE_FILE=dist/vso.tar
+          sha256_sum="$(sha256sum dist/vso.tar | cut -f1 -d' ')"
+          echo "cache-key=${{ runner.os }}-docker-image-${sha256_sum}"
+          echo "cache-key=${{ runner.os }}-docker-image-${sha256_sum}" >> $GITHUB_OUTPUT
+      - uses: actions/cache/save@v3
+        id: docker-image-cache
+        with:
+          path: dist/vso.tar
+          key: ${{ steps.build-docker-image.outputs.cache-key }}
   integrationTest:
     runs-on: ubuntu-latest
-    needs: [fmtcheck, test, get-go-version]
+    needs: [fmtcheck, test, get-go-version, build-docker-image]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
     strategy:
@@ -105,6 +127,11 @@ jobs:
     name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          fail-on-cache-miss: true
+          path: dist/vso.tar
+          key: ${{ needs.build-docker-image.outputs.cache-primary-key }}
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
@@ -112,6 +139,9 @@ jobs:
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      - name: Load Docker image
+        run:
+          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=dist/vso.tar
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
@@ -123,10 +153,6 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      - name: Build operator binary and image
-        run: make ci-build ci-docker-build
-      - name: Load docker image in kind
-        run: make load-docker-image
       #- name: OSS tests using Helm
       #  env:
       #    INTEGRATION_TESTS: true

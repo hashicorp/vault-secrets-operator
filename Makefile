@@ -77,6 +77,10 @@ endif
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
+
+# Default path to saving and loading the Docker image for IMG.
+IMAGE_ARCHIVE_FILE ?= $(BUILD_DIR)/$(subst /,_,$(IMAGE_TAG_BASE))-$(VERSION).tar
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.24.1
 
@@ -189,6 +193,14 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
 	docker build -t $(IMG) . --target=dev --build-arg GO_VERSION=$(shell cat .go-version)
+
+.PHONY: docker-image-save
+docker-image-save: ##
+	docker image save --output $(IMAGE_ARCHIVE_FILE) $(IMG)
+
+.PHONY: docker-image-load
+docker-image-load:  ##
+	docker image load --input $(IMAGE_ARCHIVE_FILE)
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
