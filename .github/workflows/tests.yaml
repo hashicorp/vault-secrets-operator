@@ -173,7 +173,7 @@ jobs:
       #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
       - name: OSS tests using Kustomize
         # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.vault-version }} != "1.12.3"
+        if: ${{ matrix.vault-version }} == "1.12.3"
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
