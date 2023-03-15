@@ -23,7 +23,7 @@ demo-setup-kind: ## create a kind cluster for running the acceptance tests local
 	$(MAKE) setup-kind load-docker-image \
 		KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) \
 		KIND_CONFIG_FILE=$(KIND_CONFIG_FILE) \
-		KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) \
+		KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT)
 
 .PHONY: demo-delete-kind
 demo-delete-kind: ## delete the kind cluster
