@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -418,9 +419,13 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 	// the function must always call Client.Close() to avoid leaking Go routines
 	cache, err := NewClientCache(config.ClientCacheSize, func(key, value interface{}) {
 		factory.onClientEvict(ctx, client, key.(ClientCacheKey), value.(Client))
-	})
+	}, metrics.Registry)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.CollectClientCacheMetrics {
+		metrics.Registry.MustRegister(newClientCacheCollector(cache, config.ClientCacheSize))
 	}
 
 	factory.cache = cache
@@ -429,10 +434,11 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 
 // CachingClientFactoryConfig provides the configuration for a CachingClientFactory instance.
 type CachingClientFactoryConfig struct {
-	Persist         bool
-	StorageConfig   *ClientCacheStorageConfig
-	ClientCacheSize int
-	Recorder        record.EventRecorder
+	Persist                   bool
+	StorageConfig             *ClientCacheStorageConfig
+	ClientCacheSize           int
+	CollectClientCacheMetrics bool
+	Recorder                  record.EventRecorder
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
