@@ -88,6 +88,8 @@ ENVTEST_K8S_VERSION = 1.24.1
 KIND_CLUSTER_NAME ?= vault-secrets-operator
 # Kind cluster context
 KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
+# Kind config file
+KIND_CONFIG ?= $(INTEGRATION_TEST_ROOT)/kind/config.yaml
 
 # Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
@@ -97,10 +99,14 @@ VAULT_ENTERPRISE ?= false
 # The vault license.
 _VAULT_LICENSE ?=
 
+# root directory for all integration tests
 INTEGRATION_TEST_ROOT = ./test/integration
 
+# directory containing Kubernetes patches to be applied after Vault is been brought up in K8s.
+VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
+
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
-TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
+TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
@@ -226,13 +232,13 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
 .PHONY: integration-test
-integration-test:  setup-integration-test ## Run integration tests for Vault OSS
+integration-test:  setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
-integration-test-helm:  setup-integration-test ## Run integration tests for Vault OSS
+integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
 	$(MAKE) integration-test DEPLOY_OPERATOR_WITH_HELM=true
 
 .PHONY: integration-test-ent
@@ -251,7 +257,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 		--wait=5m \
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
-		--config $(CURDIR)/test/integration/kind/config.yaml
+		--config $(KIND_CONFIG_FILE)
 	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
@@ -260,33 +266,41 @@ delete-kind: ## delete the kind cluster
 	find $(INTEGRATION_TEST_ROOT)/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
 
 .PHONY: setup-integration-test
-setup-integration-test: terraform kustomize set-vault-license ## Deploy Vault for integration testing
-	@mkdir -p $(TF_INFRA_STATE_DIR)
+## Create Vault inside the cluster
+setup-integration-test: setup-vault ## Deploy Vault Enterprise for integration testing
+
+.PHONY: setup-vault
+setup-vault: terraform kustomize set-vault-license ## Deploy Vault for integration testing
+	@mkdir -p $(TF_VAULT_STATE_DIR)
 ifeq ($(VAULT_ENTERPRISE), true)
     ## ensure that the license is *not* emitted to the console
-	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_INFRA_STATE_DIR)/license.auto.tfvars
+	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_VAULT_STATE_DIR)/license.auto.tfvars
 ifdef VAULT_IMAGE_REPO
 	$(eval EXTRA_VARS=-var vault_image_repo_ent=$(VAULT_IMAGE_REPO))
 endif
 else ifdef VAULT_IMAGE_REPO
 	$(eval EXTRA_VARS=-var vault_image_repo=$(VAULT_IMAGE_REPO))
 endif
-	@rm -f $(TF_INFRA_STATE_DIR)/*.tf
-	cp -v $(TF_INFRA_SRC_DIR)/*.tf $(TF_INFRA_STATE_DIR)/.
-	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) apply -auto-approve \
+	@rm -f $(TF_VAULT_STATE_DIR)/*.tf
+	cp -v $(TF_INFRA_SRC_DIR)/*.tf $(TF_VAULT_STATE_DIR)/.
+	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) apply -auto-approve \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
 		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
-	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
-	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(INTEGRATION_TEST_ROOT)/vault/patch-vault.sh
+	rm -f $(TF_VAULT_STATE_DIR)/*.tfvars
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(VAULT_PATCH_ROOT)/patch-vault.sh
 
 .PHONY: setup-integration-test-ent
 ## Create Vault inside the cluster
-setup-integration-test-ent: ## Deploy Vault Enterprise for integration testing
-	$(MAKE) setup-integration-test VAULT_ENTERPRISE=true
+setup-integration-test-ent: setup-vault-ent ## Deploy Vault Enterprise for integration testing
+
+.PHONY: setup-vault-ent
+## Create Vault inside the cluster
+setup-vault-ent: ## Deploy Vault Enterprise for integration testing
+	$(MAKE) setup-vault VAULT_ENTERPRISE=true
 
 .PHONY: set-vault-license
 set-vault-license:
@@ -321,11 +335,11 @@ load-docker-image: kustomize ## Deploy controller to the K8s cluster (without ge
 .PHONY: teardown-integration-test
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
-	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) destroy -auto-approve \
+	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) destroy -auto-approve \
 		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_license=ignored && \
-	rm -rf $(TF_INFRA_STATE_DIR)
+	rm -rf $(TF_VAULT_STATE_DIR)
 
 ##@ Generate Helm Chart
 ### Helmify regenerates the CRDs and copies them into the chart dir.
