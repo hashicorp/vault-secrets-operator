@@ -141,9 +141,6 @@ jobs:
         with:
           name: ${{ needs.build-docker-image.outputs.image-archive }}
           path: dist
-      - name: find dist
-        run:
-          find dist
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
