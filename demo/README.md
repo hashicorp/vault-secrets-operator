@@ -15,3 +15,8 @@ make -f demo.mk demo
 ```
 
 You can poke around on the demo cluster using one of your favorite tools.
+
+Run the following to tear down the demo cluster:
+```shell
+make -f demo.mk demo-destroy
+```

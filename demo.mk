@@ -27,8 +27,11 @@ demo-setup-kind: ## create a kind cluster for running the acceptance tests local
 
 .PHONY: demo-delete-kind
 demo-delete-kind: ## delete the kind cluster
-	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
-	find $(DEMO_ROOT) -type f -name '*tfstate*' | xargs rm &> /dev/null || true
+	@kind delete cluster --name $(KIND_CLUSTER_NAME) || true
+	@find $(DEMO_ROOT) -type f -name '*tfstate*' | xargs rm &> /dev/null || true
+
+.PHONY: demo-destroy
+demo-destroy: demo-delete-kind ## delete the kind cluster
 
 .PHONY: demo-infra-vault
 demo-infra-vault: ## Deploy Vault for the demo
