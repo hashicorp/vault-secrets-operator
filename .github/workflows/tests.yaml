@@ -113,7 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
-        vault-version: [1.10.10, 1.11.7, 1.12.3]
+        vault-version: [1.11.8, 1.12.4, 1.13.0]
         # Note: The below exclude and includes are a bit awkward, but they
         # allow us to exclude the combos we don't really need. We want to test
         # the operator with the different k8s versions, and with the different
@@ -121,18 +121,18 @@ jobs:
         # against all the vault versions.
         # Combos to exclude:
         #   kind-k8s-version: [1.22.15, 1.23.13, 1.24.7]
-        #   vault-version: [1.10.9, 1.11.6]
+        #   vault-version: [1.11.8, 1.12.4]
         exclude:
           - kind-k8s-version: 1.24.7
           - kind-k8s-version: 1.23.13
           - kind-k8s-version: 1.22.15
         include:
           - kind-k8s-version: 1.24.7
-            vault-version: 1.12.3
+            vault-version: 1.13.0
           - kind-k8s-version: 1.23.13
-            vault-version: 1.12.3
+            vault-version: 1.13.0
           - kind-k8s-version: 1.22.15
-            vault-version: 1.12.3
+            vault-version: 1.13.0
 
     name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
@@ -173,7 +173,7 @@ jobs:
       #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
       - name: OSS tests using Kustomize
         # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.vault-version == '1.12.3' }}
+        if: ${{ matrix.vault-version == '1.13.0' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
