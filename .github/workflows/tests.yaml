@@ -97,7 +97,7 @@ jobs:
           make ci-build ci-docker-build docker-image-save
           image_checksum="$(sha256sum ${IMAGE_ARCHIVE_FILE} | cut -f1 -d' ')"
           test -n "${image_checksum}" || (echo "image checksum is empty" >&2 ; exit 1)
-          echo "image-archive=vault-secrets-operator-docker-${image_checksum}.tar" >> $GITHUB_OUTPUT
+          echo "image-archive=vault-secrets-operator-docker-$(git rev-parse --short HEAD)_${image_checksum}" >> $GITHUB_OUTPUT
           echo "image-archive-file=${IMAGE_ARCHIVE_FILE}" >> $GITHUB_OUTPUT
       - uses: actions/upload-artifact@v3
         with:
@@ -140,6 +140,7 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: ${{ needs.build-docker-image.outputs.image-archive }}
+          path: dist
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
@@ -149,7 +150,7 @@ jobs:
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
       - name: Load Docker image
         run:
-          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
+          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=dist/${{ needs.build-docker-image.outputs.image-archive }}
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
