@@ -140,7 +140,6 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: ${{ needs.build-docker-image.outputs.image-archive }}
-          path: ${{ needs.build-docker-image.outputs.image-archive-file }}
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
