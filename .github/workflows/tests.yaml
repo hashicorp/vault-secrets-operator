@@ -141,6 +141,9 @@ jobs:
         with:
           name: ${{ needs.build-docker-image.outputs.image-archive }}
           path: dist
+      - name: find dist
+        run:
+          find dist
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
@@ -150,7 +153,7 @@ jobs:
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
       - name: Load Docker image
         run:
-          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=dist/${{ needs.build-docker-image.outputs.image-archive }}
+          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
