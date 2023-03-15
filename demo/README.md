@@ -6,7 +6,7 @@ To run the demo, perform the following from the project root
 
 If you haven't already built the vault-secrets-operator Docker image run:
 ```shell
-make  docker-build
+make docker-build
 ```
 
 Deploy the demo app:
