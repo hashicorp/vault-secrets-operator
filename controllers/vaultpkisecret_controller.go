@@ -99,29 +99,24 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		expiryOffset = d
 	}
 
-	if !o.Status.Renew && o.Status.SerialNumber != "" {
-		// check if within the certificate renewal window
+	timeToRenew := false
+	if o.Status.SerialNumber != "" {
 		if expiryOffset > 0 {
+			// check if within the certificate renewal window
 			if checkPKICertExpiry(o.Status.Expiration, expiryOffset) {
 				logger.Info("Setting renewal for certificate expiry")
-				o.Status.Renew = true
-				o.Status.Valid = true
-				if err := r.updateStatus(ctx, o); err != nil {
-					return ctrl.Result{}, err
-				}
-
-				// Setting "Requeue: true" to ensure this is sent back through
-				// the reconcile loop now that we know it's time to renew
+				timeToRenew = true
+			} else {
+				// Not time to renew yet, requeue closer to (Expiration - expiryOffset)
 				return ctrl.Result{
-					Requeue: true,
+					RequeueAfter: getRenewTime(o.Status.Expiration, expiryOffset),
 				}, nil
 			}
+		} else {
+			// Since renewal was not requested (ExpiryOffset: 0), return without
+			// requeuing
+			return ctrl.Result{}, nil
 		}
-
-		// Requeue this object when it's closer to renewal time
-		return ctrl.Result{
-			RequeueAfter: getRenewTime(o.Status.Expiration, expiryOffset),
-		}, nil
 	}
 
 	// the secret should already be provisioned, the operator does
@@ -224,7 +219,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// revoke the certificate on renewal
-	if o.Spec.Revoke && o.Status.Renew && o.Status.SerialNumber != "" {
+	if o.Spec.Revoke && timeToRenew && o.Status.SerialNumber != "" {
 		if err := r.revokeCertificate(ctx, logger, o); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -234,7 +229,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o.Status.Error = ""
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
-	o.Status.Renew = false
 	if err := r.updateStatus(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return ctrl.Result{}, err
