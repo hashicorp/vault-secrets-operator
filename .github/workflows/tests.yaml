@@ -149,6 +149,14 @@ jobs:
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      - name: Create kind export log root
+        id: create_kind_export_log_root
+        run: |
+          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs"
+          log_root="/tmp/${log_artifact_name}"
+          mkdir -p "${log_root}"
+          echo "log_root=${log_root}" >> $GITHUB_OUTPUT
+          echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
       - name: Load Docker image
         run:
           make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
@@ -170,7 +178,7 @@ jobs:
       #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
       #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       #  run: |
-      #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
+      #    make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: OSS tests using Kustomize
         # Ideally we only need to test the latest release of OSS Vault.
         if: ${{ matrix.vault-version == '1.13.0' }}
@@ -179,27 +187,17 @@ jobs:
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make integration-test SUPPRESS_TF_OUTPUT=true
+          make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
-          make integration-test-ent SUPPRESS_TF_OUTPUT=true
-      - name: Export cluster logs
-        if: success() || failure()
-        id: export_cluster_logs
-        run: |
-          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs"
-          log_dir="/tmp/${log_artifact_name}"
-          mkdir -p "${log_dir}"
-          kind export logs -n ${{ env.KIND_CLUSTER_NAME}} ${log_dir}
-          echo "log_dir=${log_dir}" >> $GITHUB_OUTPUT
-          echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
+          make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success() || failure()
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ steps.export_cluster_logs.outputs.log_artifact_name }}
-          path: ${{ steps.export_cluster_logs.outputs.log_dir }}
+          name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}
+          path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
