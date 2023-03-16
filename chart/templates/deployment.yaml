@@ -35,6 +35,23 @@ spec:
         kubectl.kubernetes.io/default-container: manager
     spec:
       containers:
+      - name: kube-rbac-proxy
+        args:
+        - --secure-listen-address=0.0.0.0:8443
+        - --upstream=http://127.0.0.1:8080/
+        - --logtostderr=true
+        - --v=0
+        env:
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ .Values.kubernetesClusterDomain }}
+        image: {{ .Values.controller.kubeRbacProxy.image.repository }}:{{ .Values.controller.kubeRbacProxy.image.tag }}
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
       - name: manager
         args:
         - --health-probe-bind-address=:8081
@@ -73,23 +90,6 @@ spec:
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
-      - name: kube-rbac-proxy
-        args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:8080/
-        - --logtostderr=true
-        - --v=0
-        env:
-        - name: KUBERNETES_CLUSTER_DOMAIN
-          value: {{ .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controller.kubeRbacProxy.image.repository }}:{{ .Values.controller.kubeRbacProxy.image.tag }}
-        ports:
-        - containerPort: 8443
-          name: https
-          protocol: TCP
-        resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
-        securityContext:
-          allowPrivilegeEscalation: false
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
