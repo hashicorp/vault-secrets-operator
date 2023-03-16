@@ -149,6 +149,20 @@ jobs:
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      - name: Export cluster logs pre
+        if: success() || failure()
+        id: export_cluster_logs_pre
+        run: |
+          cluster_log_dir="/tmp/kind-pre-${{ env.KIND_CLUSTER_NAME}}-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}"
+          mkdir -p "${cluster_log_dir}"
+          kind export logs -n ${{ env.KIND_CLUSTER_NAME}} ${cluster_log_dir}
+          echo "cluster_log_dir=${cluster_log_dir}" >> $GITHUB_OUTPUT
+      - name: Store kind cluster logs pre
+        if: success() || failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: kind-pre-${{ env.KIND_CLUSTER_NAME}}-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs
+          path: ${{ steps.export_cluster_logs_pre.outputs.cluster_log_dir }}
       - name: Load Docker image
         run:
           make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
@@ -204,4 +218,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: kind-${{ env.KIND_CLUSTER_NAME}}-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs
-          path: ${{ needs.export_cluster_logs.outputs.cluster_log_dir }}
+          path: ${{ steps.export_cluster_logs.outputs.cluster_log_dir }}
