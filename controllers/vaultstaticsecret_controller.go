@@ -31,8 +31,8 @@ type VaultStaticSecretReconciler struct {
 	Scheme          *runtime.Scheme
 	Recorder        record.EventRecorder
 	ClientFactory   vault.ClientFactory
-	HMACFunc        vault.HMACFromHKDFSecretFunc
-	ValidateMACFunc vault.ValidateMACFromHKDFSecretFunc
+	HMACFunc        vault.HMACFromSecretFunc
+	ValidateMACFunc vault.ValidateMACFromSecretFunc
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete

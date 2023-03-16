@@ -42,8 +42,8 @@ type VaultStaticSecretSpec struct {
 type VaultStaticSecretStatus struct {
 	// SecretMAC used when deciding whether new Vault secret data should be synced.
 	//
-	// The controller will compare the "new" Vault secret data to this value using HKDF+HMAC, if they are different,
-	// then the data will be synced to the Destination.
+	// The controller will compare the "new" Vault secret data to this value using HMAC,
+	// if they are different, then the data will be synced to the Destination.
 	//
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.

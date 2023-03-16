@@ -10,9 +10,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 
-	"golang.org/x/crypto/hkdf"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -20,25 +18,26 @@ import (
 )
 
 const (
-	hkdfKeyName   = "key"
-	hkdfKeyLength = 16
+	hmacKeyName   = "key"
+	hmacKeyLength = 16
 )
 
 type (
-	HMACFromHKDFSecretFunc        func(ctx context.Context, client ctrlclient.Client, message []byte) ([]byte, error)
-	ValidateMACFromHKDFSecretFunc func(ctx context.Context, client ctrlclient.Client, message, messageMAC []byte) (bool, []byte, error)
+	HMACFromSecretFunc        func(ctx context.Context, client ctrlclient.Client, message []byte) ([]byte, error)
+	ValidateMACFromSecretFunc func(ctx context.Context, client ctrlclient.Client, message, messageMAC []byte) (bool, []byte, error)
 )
 
 // used for monkey-patching unit tests
 var (
-	ioReadFull = io.ReadFull
-	EqualMACS  = hmac.Equal
+	// always use crypto/rand to ensure that any callers are cryptographically secure.
+	randRead  = rand.Read
+	EqualMACS = hmac.Equal
 )
 
-// createHKDFSecret with a generated HKDF key stored in Secret.Data with hkdfKeyName.
-// If the Secret already exist, or if the HKDF key could not be generated, an error will be returned.
-func createHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
-	key, err := generateHKDFKey()
+// createHMACKeySecret with a generated HMAC key stored in Secret.Data with hmacKeyName.
+// If the Secret already exist, or if the HMAC key could not be generated, an error will be returned.
+func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
+	key, err := generateHMACKey()
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +54,7 @@ func createHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrl
 		},
 		Immutable: pointer.Bool(true),
 		Data: map[string][]byte{
-			hkdfKeyName: key,
+			hmacKeyName: key,
 		},
 	}
 
@@ -66,8 +65,8 @@ func createHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrl
 	return s, nil
 }
 
-// getHKDFSecret returns the Secret for objKey. The Secret.Data must contain a valid HKDF key for hkdfKeyName.
-func getHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
+// getHMACKeySecret returns the Secret for objKey. The Secret.Data must contain a valid HMAC key for hmacKeyName.
+func getHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	if err := validateObjectKey(objKey); err != nil {
 		return nil, err
 	}
@@ -77,7 +76,7 @@ func getHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlcli
 		return nil, err
 	}
 
-	_, err := validateHKDFSecret(s)
+	_, err := validateHMACKeySecret(s)
 	if err != nil {
 		return nil, err
 	}
@@ -85,67 +84,67 @@ func getHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlcli
 	return s, nil
 }
 
-// getKeyFromHKDFSecret returns the HKDF key from Secret for objKey.
-func getKeyFromHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) ([]byte, error) {
-	s, err := getHKDFSecret(ctx, client, objKey)
+// getHMACKeyFromSecret returns the HMAC key from Secret for objKey.
+func getHMACKeyFromSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) ([]byte, error) {
+	s, err := getHMACKeySecret(ctx, client, objKey)
 	if err != nil {
 		return nil, err
 	}
 
-	return validateHKDFSecret(s)
+	return validateHMACKeySecret(s)
 }
 
-// NewHMACFromHKDFSecretFunc returns an HMACFromHKDFSecretFunc that can be used to compute a message MAC.
-// The objKey must point to a corev1.Secret that holds the HKDF private key.
-func NewHMACFromHKDFSecretFunc(objKey ctrlclient.ObjectKey) HMACFromHKDFSecretFunc {
+// NewHMACFromSecretFunc returns an HMACFromSecretFunc that can be used to compute a message MAC.
+// The objKey must point to a corev1.Secret that holds the HMAC private key.
+func NewHMACFromSecretFunc(objKey ctrlclient.ObjectKey) HMACFromSecretFunc {
 	return func(ctx context.Context, client ctrlclient.Client, message []byte) ([]byte, error) {
-		return hmacFromHKDFSecret(ctx, client, objKey, message)
+		return hmacFromSecret(ctx, client, objKey, message)
 	}
 }
 
-// NewMACValidateFromHKDFSecretFunc returns a ValidateMACFromHKDFSecretFunc that can be used to validate the message MAC.
-// The objKey must point to a corev1.Secret that holds the HKDF private key.
-func NewMACValidateFromHKDFSecretFunc(objKey ctrlclient.ObjectKey) ValidateMACFromHKDFSecretFunc {
+// NewMACValidateFromSecretFunc returns a ValidateMACFromSecretFunc that can be used to validate the message MAC.
+// The objKey must point to a corev1.Secret that holds the HMAC private key.
+func NewMACValidateFromSecretFunc(objKey ctrlclient.ObjectKey) ValidateMACFromSecretFunc {
 	return func(ctx context.Context, client ctrlclient.Client, message, messageMAC []byte) (bool, []byte, error) {
-		return validateMACFromHKDFSecret(ctx, client, objKey, message, messageMAC)
+		return validateMACFromSecret(ctx, client, objKey, message, messageMAC)
 	}
 }
 
-// hmacFromHKDFSecret computes the message's HMAC using the HKDF key stored in
+// hmacFromSecret computes the message's HMAC using the HMAC key stored in
 // the v1.Secret for objKey.
-// Validation of the HMAC can be done with validateMACFromHKDFSecret.
-func hmacFromHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey,
+// Validation of the HMAC can be done with validateMACFromSecret.
+func hmacFromSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey,
 	message []byte,
 ) ([]byte, error) {
-	key, err := getKeyFromHKDFSecret(ctx, client, objKey)
+	key, err := getHMACKeyFromSecret(ctx, client, objKey)
 	if err != nil {
 		return nil, err
 	}
 	return macMessage(key, message)
 }
 
-// validateMACFromHKDFSecret returns true if the messageMAC matches the HMAC of message.
-// The HKDF key is stored in the v1.Secret for objKey.
-// Typically, the messageMAC would come from hmacFromHKDFSecret.
+// validateMACFromSecret returns true if the messageMAC matches the HMAC of message.
+// The HMAC key is stored in the v1.Secret for objKey.
+// Typically, the messageMAC would come from hmacFromSecret.
 // Returns false on any error.
-func validateMACFromHKDFSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey,
+func validateMACFromSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey,
 	message, messageMAC []byte,
 ) (bool, []byte, error) {
-	key, err := getKeyFromHKDFSecret(ctx, client, objKey)
+	key, err := getHMACKeyFromSecret(ctx, client, objKey)
 	if err != nil {
 		return false, nil, err
 	}
 	return validateMAC(message, messageMAC, key)
 }
 
-// validateHKDFSecret returns the validated HKDF key from the Secret.
+// validateHMACKeySecret returns the validated key from the Secret.
 // Return an error if the Secret does not contain the key, or if the key has
 // an invalid length.
-func validateHKDFSecret(s *corev1.Secret) ([]byte, error) {
+func validateHMACKeySecret(s *corev1.Secret) ([]byte, error) {
 	var errs error
-	key, ok := s.Data[hkdfKeyName]
+	key, ok := s.Data[hmacKeyName]
 	if !ok {
-		errs = errors.Join(errs, fmt.Errorf("secret %s is missing the required field %s", s, hkdfKeyName))
+		errs = errors.Join(errs, fmt.Errorf("secret %s is missing the required field %s", s, hmacKeyName))
 	}
 
 	errs = errors.Join(errs, validateKeyLength(key))
@@ -153,9 +152,9 @@ func validateHKDFSecret(s *corev1.Secret) ([]byte, error) {
 	return key, errs
 }
 
-// validateKeyLength returns an error if the HKDF key's length is not equal to hkdfKeyLength.
+// validateKeyLength returns an error if the key's length is not equal to hmacKeyLength.
 func validateKeyLength(key []byte) error {
-	if len(key) != hkdfKeyLength {
+	if len(key) != hmacKeyLength {
 		return fmt.Errorf("invalid key length %d", len(key))
 	}
 	return nil
@@ -185,22 +184,11 @@ func macMessage(key, data []byte) ([]byte, error) {
 	return mac.Sum(nil), nil
 }
 
-// generateHKDFKey for computing HMACs.
-func generateHKDFKey() ([]byte, error) {
-	hash := sha256.New
-	salt := make([]byte, hash().Size())
-	if _, err := rand.Read(salt); err != nil {
-		return nil, err
-	}
-
-	secret := make([]byte, hash().Size()*2)
-	if _, err := rand.Read(secret); err != nil {
-		return nil, err
-	}
-
-	kdf := hkdf.New(hash, secret, salt, nil)
-	key := make([]byte, hkdfKeyLength)
-	if _, err := ioReadFull(kdf, key); err != nil {
+// generateHMACKey for computing HMACs. The key size is 128 bit.
+func generateHMACKey() ([]byte, error) {
+	key := make([]byte, hmacKeyLength)
+	_, err := randRead(key)
+	if err != nil {
 		return nil, err
 	}
 

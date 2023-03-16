@@ -4,33 +4,33 @@
 package vault
 
 import (
+	"crypto/rand"
 	"fmt"
-	"io"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_generateHKDFKey(t *testing.T) {
+func Test_generateHMACKey(t *testing.T) {
 	tests := []struct {
 		name           string
 		count          int
 		wantErr        assert.ErrorAssertionFunc
-		ioReadFullFunc func(io.Reader, []byte) (n int, err error)
+		randReadFunc   func([]byte) (n int, err error)
 		expectedLength int
 	}{
 		{
 			name:           "basic",
 			count:          100,
 			wantErr:        assert.NoError,
-			expectedLength: hkdfKeyLength,
+			expectedLength: hmacKeyLength,
 		},
 		{
 			name:           "error-permission-denied",
 			count:          1,
 			expectedLength: 0,
-			ioReadFullFunc: func(reader io.Reader, bytes []byte) (n int, err error) {
+			randReadFunc: func(bytes []byte) (n int, err error) {
 				return 0, os.ErrPermission
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -42,28 +42,28 @@ func Test_generateHKDFKey(t *testing.T) {
 			name:           "another",
 			count:          100,
 			wantErr:        assert.NoError,
-			expectedLength: hkdfKeyLength,
+			expectedLength: hmacKeyLength,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.ioReadFullFunc != nil {
+			if tt.randReadFunc != nil {
 				t.Cleanup(func() {
-					ioReadFull = io.ReadFull
+					randRead = rand.Read
 				})
-				ioReadFull = tt.ioReadFullFunc
+				randRead = tt.randReadFunc
 			}
 
 			var last []byte
 			for i := 0; i < tt.count; i++ {
-				got, err := generateHKDFKey()
-				if !tt.wantErr(t, err, fmt.Sprintf("generateHKDFKey()")) {
+				got, err := generateHMACKey()
+				if !tt.wantErr(t, err, fmt.Sprintf("generateHMACKey()")) {
 					return
 				}
 
-				assert.Len(t, got, tt.expectedLength, "generateHKDFKey()")
+				assert.Len(t, got, tt.expectedLength, "generateHMACKey()")
 				if last != nil {
-					assert.NotEqual(t, got, last, "generateHKDFKey() generated a duplicate key")
+					assert.NotEqual(t, got, last, "generateHMACKey() generated a duplicate key")
 				}
 				last = got
 			}
