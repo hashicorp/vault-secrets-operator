@@ -21,6 +21,7 @@ import (
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
+	"github.com/gruntwork-io/terratest/modules/shell"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
@@ -45,6 +46,13 @@ var (
 	testVaultAddress    string
 	k8sVaultNamespace   string
 	kustomizeConfigRoot string
+	// directory to store the kind logs after each test.
+	exportKindLogsRoot = os.Getenv("EXPORT_KIND_LOGS_ROOT")
+	entTests           = os.Getenv("ENT_TESTS") != ""
+	// use the Helm chart to deploy the operator. The default is to use Kustomize.
+	testWithHelm = os.Getenv("TEST_WITH_HELM") != ""
+	// set in TestMain
+	clusterName string
 
 	// extended in TestMain
 	scheme = ctrlruntime.NewScheme()
@@ -90,6 +98,11 @@ func init() {
 // See `make setup-integration-test` for manual testing.
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
+		clusterName = os.Getenv("KIND_CLUSTER_NAME")
+		if clusterName == "" {
+			os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
+			os.Exit(1)
+		}
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
 		restConfig = *ctrl.GetConfigOrDie()
@@ -316,4 +329,54 @@ func deployOperatorWithKustomize(t *testing.T, k8sOpts *k8s.KubectlOptions, kust
 			"--timeout=2m", "pod", "-l", "control-plane=controller-manager")
 	},
 	)
+}
+
+// exportKindLogs exports the kind logs for t if exportKindLogsRoot is not empty.
+// All logs are stored under exportKindLogsRoot. Every test should call this before
+// undeploying the Operator from Kubernetes.
+func exportKindLogs(t *testing.T) {
+	t.Helper()
+	if exportKindLogsRoot != "" {
+		exportDir := filepath.Join(exportKindLogsRoot, t.Name())
+		if testWithHelm {
+			exportDir += "-helm"
+		}
+		if entTests {
+			exportDir += "-ent"
+		} else {
+			exportDir += "-oss"
+		}
+
+		st, err := os.Stat(exportDir)
+		if err != nil && !os.IsNotExist(err) {
+			assert.NoError(t, err)
+			return
+		}
+
+		// target path exists
+		if st != nil {
+			if !st.IsDir() {
+				assert.Fail(t, "export path %s exists but is not a directory, cannot export logs", exportDir)
+				return
+			} else {
+				now := time.Now().Unix()
+				if err := os.Rename(exportDir, fmt.Sprintf("%s-%d", exportDir, now)); err != nil {
+					assert.NoError(t, err)
+					return
+				}
+			}
+		}
+
+		err = os.MkdirAll(exportDir, 0o755)
+		if err != nil {
+			assert.NoError(t, err)
+			return
+		}
+
+		command := shell.Command{
+			Command: "kind",
+			Args:    []string{"export", "logs", "-n", clusterName, exportDir},
+		}
+		shell.RunCommand(t, command)
+	}
 }

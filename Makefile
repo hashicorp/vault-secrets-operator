@@ -15,6 +15,8 @@ VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
 KIND_K8S_VERSION ?= v1.25.3
 VAULT_HELM_VERSION ?= 0.23.0
+# Root directory to export kind cluster logs after each test run.
+EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
@@ -24,7 +26,7 @@ TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
 
 # Run integration tests against a Helm installed Operator
-DEPLOY_OPERATOR_WITH_HELM ?=
+TEST_WITH_HELM ?=
 
 # Suppress the output from terraform when running the integration tests.
 SUPPRESS_TF_OUTPUT ?=
@@ -89,7 +91,7 @@ KIND_CLUSTER_NAME ?= vault-secrets-operator
 # Kind cluster context
 KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 # Kind config file
-KIND_CONFIG ?= $(INTEGRATION_TEST_ROOT)/kind/config.yaml
+KIND_CONFIG_FILE ?= $(INTEGRATION_TEST_ROOT)/kind/config.yaml
 
 # Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
@@ -239,7 +241,7 @@ integration-test:  setup-vault ## Run integration tests for Vault OSS
 
 .PHONY: integration-test-helm
 integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
-	$(MAKE) integration-test DEPLOY_OPERATOR_WITH_HELM=true
+	$(MAKE) integration-test TEST_WITH_HELM=true
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
