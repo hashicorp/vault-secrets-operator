@@ -85,16 +85,31 @@ spec:
                   type: string
                 description: Params to use when authenticating to Vault
                 type: object
+              storageEncryption:
+                description: 'StorageEncryption provides the necessary configuration
+                  to encrypt the client storage cache. This should only be configured
+                  when client cache persistence with encryption is enabled. This is
+                  done by passing setting the manager''s commandline argument --client-cache-persistence-model=direct-encrypted
+                  Typically there should only ever be one VaultAuth configured with
+                  StorageEncryption in the Cluster, and it should have the the label:
+                  cacheStorageEncryption=true'
+                properties:
+                  keyName:
+                    description: KeyName to use for encrypt/decrypt operations via
+                      Vault Transit.
+                    type: string
+                  mount:
+                    description: Mount path of the Transit engine in Vault.
+                    type: string
+                required:
+                - keyName
+                - mount
+                type: object
               vaultConnectionRef:
                 description: VaultConnectionRef of the corresponding VaultConnection
                   CustomResource. If no value is specified the Operator will default
                   to the `default` VaultConnection, configured in its own Kubernetes
                   namespace.
-                type: string
-              vaultTransitRef:
-                description: VaultTransitRef is the name of a VaultTransit custom
-                  resource that will be used for encryption/decryption of the cached
-                  client.
                 type: string
             required:
             - method

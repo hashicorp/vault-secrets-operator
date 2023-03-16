@@ -2,7 +2,6 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 */}}
-
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -21,21 +20,11 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - namespaces
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - secrets
   verbs:
   - create
   - delete
+  - deletecollection
   - get
   - list
   - patch
@@ -60,7 +49,6 @@ rules:
   - watch
 - apiGroups:
   - apps
-  - extensions
   resources:
   - daemonsets
   verbs:
@@ -70,7 +58,6 @@ rules:
   - watch
 - apiGroups:
   - apps
-  - extensions
   resources:
   - deployments
   verbs:
@@ -80,7 +67,6 @@ rules:
   - watch
 - apiGroups:
   - apps
-  - extensions
   resources:
   - statefulsets
   verbs:
@@ -214,32 +200,6 @@ rules:
   - secrets.hashicorp.com
   resources:
   - vaultstaticsecrets/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaulttransits
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaulttransits/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaulttransits/status
   verbs:
   - get
   - patch
