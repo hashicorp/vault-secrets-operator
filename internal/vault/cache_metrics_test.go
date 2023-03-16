@@ -151,6 +151,8 @@ func Test_clientCache_Metrics(t *testing.T) {
 			cache, err := NewClientCache(tt.size, nil, reg)
 			require.NoError(t, err)
 
+			require.Greater(t, tt.clientCount, 0, "test parameter 'clientCount' must be greater than zero")
+
 			var cacheKeys []ClientCacheKey
 			for i := 0; i < tt.clientCount; i++ {
 				c := &defaultClient{
@@ -183,6 +185,8 @@ func Test_clientCache_Metrics(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			// tt.missCount is used to increment the cache's missCounter,
+			// so we use a random CacheKey to ensure that we increment the counter.
 			for i := 0; i < tt.missCount; i++ {
 				cacheKey := ClientCacheKey(uuid.New().String())
 				_, ok := cache.Get(cacheKey)
@@ -192,11 +196,13 @@ func Test_clientCache_Metrics(t *testing.T) {
 
 			var cacheKeysEvicted []ClientCacheKey
 			if tt.size < tt.clientCount {
+				// in this test, the LRU cache is FIFO, so the first cache keys added above should have been evicted
+				// once we hit the LRU size limit.
 				cacheKeysEvicted = cacheKeys[0:tt.size]
 				cacheKeys = cacheKeys[tt.clientCount-tt.size:]
 			}
 			assert.Len(t, cacheKeysEvicted, int(tt.expectedEvicts),
-				"invalid test parameters for cache evictions")
+				"test parameter 'expectedEvicts' does not equal the number of synthesized client evictions")
 
 			for _, cacheKey := range cacheKeys {
 				_, ok := cache.Get(cacheKey)
