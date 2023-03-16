@@ -42,7 +42,7 @@ data "kubernetes_service" "postgres" {
 resource "vault_database_secrets_mount" "db" {
   namespace                 = local.namespace
   path                      = "${local.name_prefix}-db"
-  default_lease_ttl_seconds = 15
+  default_lease_ttl_seconds = 240
 
   postgresql {
     name              = "postgres"

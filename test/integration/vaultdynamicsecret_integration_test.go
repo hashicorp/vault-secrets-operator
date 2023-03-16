@@ -30,7 +30,7 @@ import (
 )
 
 func TestVaultDynamicSecret(t *testing.T) {
-	if os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != "" {
+	if testWithHelm {
 		t.Skipf("Test is not compatiable with Helm")
 	}
 	testID := fmt.Sprintf("vds")
@@ -85,7 +85,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_db_default_lease_ttl": 60,
 		},
 	}
-	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
+	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
 	tfOptions = setCommonTFOptions(t, tfOptions)
@@ -98,6 +98,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 				// removes the k8s namespace
 				assert.Nil(t, crdClient.Delete(ctx, c))
 			}
+
+			exportKindLogs(t)
+
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
 			os.RemoveAll(tempDir)

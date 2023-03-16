@@ -34,8 +34,8 @@ import (
 )
 
 func TestVaultStaticSecret_kv(t *testing.T) {
-	if os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != "" {
-		t.Skipf("Test is not compatiable with Helm, temporarily disabled")
+	if testWithHelm {
+		t.Skipf("Test is not compatiable with Helm")
 	}
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
@@ -43,7 +43,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
 
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -58,8 +57,6 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		"terraform",
 	)
 	require.Nil(t, err)
-	// Check to seee if we are attemmpting to deploy the controller with Helm.
-	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
 
 	k8sConfigContext := "kind-" + clusterName
 	k8sOpts := &k8s.KubectlOptions{
@@ -67,7 +64,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		Namespace:   operatorNS,
 	}
 	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
-	if !deployOperatorWithHelm {
+	if !testWithHelm {
 		// deploy the Operator with Kustomize
 		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
 	}
@@ -78,7 +75,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm":     deployOperatorWithHelm,
+			"deploy_operator_via_helm":     testWithHelm,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           "kind-" + clusterName,
@@ -87,7 +84,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			"operator_helm_chart_path":     chartPath,
 		},
 	}
-	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
+	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
 		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
@@ -103,12 +100,15 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			// removes the k8s namespace
 			assert.Nil(t, crdClient.Delete(ctx, c))
 		}
+
+		exportKindLogs(t)
+
 		// Clean up resources with "terraform destroy" at the end of the test.
 		terraform.Destroy(t, terraformOptions)
 		assert.NoError(t, os.RemoveAll(tempDir))
 
 		// Undeploy Kustomize
-		if !deployOperatorWithHelm {
+		if !testWithHelm {
 			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
 		}
 	})
@@ -182,7 +182,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 
 	// The Helm chart will deploy the defaultAuthMethod/Connection
-	if !deployOperatorWithHelm {
+	if !testWithHelm {
 		conns = append(conns, defaultConnection)
 		auths = append(auths, defaultAuthMethod)
 	}

@@ -1,10 +1,11 @@
 module github.com/hashicorp/vault-secrets-operator
 
-go 1.19
+go 1.20
 
 require (
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/go-logr/logr v1.2.3
+	github.com/google/uuid v1.3.0
 	github.com/gruntwork-io/terratest v0.41.3
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/golang-lru v0.5.4
@@ -55,7 +56,6 @@ require (
 	github.com/google/gnostic v0.5.7-v3refs // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.6.0 // indirect
 	github.com/gruntwork-io/go-commons v0.8.0 // indirect

@@ -25,8 +25,8 @@ import (
 )
 
 func TestVaultPKISecret(t *testing.T) {
-	if os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != "" {
-		t.Skipf("Test is not compatiable with Helm, temporarily disabled")
+	if testWithHelm {
+		t.Skipf("Test is not compatiable with Helm")
 	}
 
 	testID := strings.ToLower(random.UniqueId())
@@ -42,16 +42,13 @@ func TestVaultPKISecret(t *testing.T) {
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
-	// Check to see if we are attempting to deploy the controller with Helm.
-	deployOperatorWithHelm := os.Getenv("DEPLOY_OPERATOR_WITH_HELM") != ""
-
 	k8sConfigContext := "kind-" + clusterName
 	k8sOpts := &k8s.KubectlOptions{
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
 	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
-	if !deployOperatorWithHelm {
+	if !testWithHelm {
 		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
 	}
 
@@ -70,7 +67,7 @@ func TestVaultPKISecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm":     deployOperatorWithHelm,
+			"deploy_operator_via_helm":     testWithHelm,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           "kind-" + clusterName,
@@ -78,7 +75,7 @@ func TestVaultPKISecret(t *testing.T) {
 			"operator_helm_chart_path":     chartPath,
 		},
 	}
-	if entTests := os.Getenv("ENT_TESTS"); entTests != "" {
+	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
 		terraformOptions.Vars["vault_enterprise"] = true
 		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
@@ -87,11 +84,13 @@ func TestVaultPKISecret(t *testing.T) {
 
 	// Clean up resources with "terraform destroy" at the end of the test.
 	t.Cleanup(func() {
+		exportKindLogs(t)
+
 		terraform.Destroy(t, terraformOptions)
 		os.RemoveAll(tempDir)
 
 		// Undeploy Kustomize
-		if !deployOperatorWithHelm {
+		if !testWithHelm {
 			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
 		}
 	})
@@ -105,7 +104,7 @@ func TestVaultPKISecret(t *testing.T) {
 	// When we deploy the operator with Helm it will also deploy default VaultConnection/AuthMethod
 	// resources, so these are not needed. In this case, we will also clear the VaultAuthRef field of
 	// the target secret so that the controller uses the default AuthMethod.
-	if !deployOperatorWithHelm {
+	if !testWithHelm {
 		// Create a VaultConnection CR
 		testVaultConnection := &secretsv1alpha1.VaultConnection{
 			ObjectMeta: v1.ObjectMeta{
@@ -174,7 +173,7 @@ func TestVaultPKISecret(t *testing.T) {
 	}
 	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
 	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
-	//if deployOperatorWithHelm {
+	//if testWithHelm {
 	//	testVaultPKI.Spec.VaultAuthRef = ""
 	//}
 

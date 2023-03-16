@@ -73,7 +73,7 @@ jobs:
 
   build-docker-image:
     outputs:
-      cache-key: ${{ steps.build-docker-image.outputs.cache-key }}
+      image-archive: ${{ steps.build-docker-image.outputs.image-archive }}
       image-archive-file: ${{ steps.build-docker-image.outputs.image-archive-file }}
     runs-on: ubuntu-latest
     needs: [get-go-version]
@@ -95,25 +95,26 @@ jobs:
         run: |
           export IMAGE_ARCHIVE_FILE=dist/vso.tar
           make ci-build ci-docker-build docker-image-save
-          image_checksum="$(sha256sum dist/vso.tar | cut -f1 -d' ')"
+          image_checksum="$(sha256sum ${IMAGE_ARCHIVE_FILE} | cut -f1 -d' ')"
           test -n "${image_checksum}" || (echo "image checksum is empty" >&2 ; exit 1)
-          echo "cache-key=${{ runner.os }}-docker-image-${image_checksum}" >> $GITHUB_OUTPUT
+          echo "image-archive=vault-secrets-operator-docker-$(git rev-parse --short HEAD)_${image_checksum}" >> $GITHUB_OUTPUT
           echo "image-archive-file=${IMAGE_ARCHIVE_FILE}" >> $GITHUB_OUTPUT
-      - uses: actions/cache/save@v3
-        id: docker-image-cache
+      - uses: actions/upload-artifact@v3
         with:
-          path: dist/vso.tar
-          key: ${{ steps.build-docker-image.outputs.cache-key }}
+          name: ${{ steps.build-docker-image.outputs.image-archive }}
+          path: ${{ steps.build-docker-image.outputs.image-archive-file }}
+          if-no-files-found: error
   integrationTest:
     runs-on: ubuntu-latest
     needs: [fmtcheck, test, get-go-version, build-docker-image]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
         kind-k8s-version: [1.22.15, 1.23.13, 1.24.7, 1.25.3]
-        vault-version: [1.10.10, 1.11.7, 1.12.3]
+        vault-version: [1.11.8, 1.12.4, 1.13.0]
         # Note: The below exclude and includes are a bit awkward, but they
         # allow us to exclude the combos we don't really need. We want to test
         # the operator with the different k8s versions, and with the different
@@ -121,27 +122,26 @@ jobs:
         # against all the vault versions.
         # Combos to exclude:
         #   kind-k8s-version: [1.22.15, 1.23.13, 1.24.7]
-        #   vault-version: [1.10.9, 1.11.6]
+        #   vault-version: [1.11.8, 1.12.4]
         exclude:
           - kind-k8s-version: 1.24.7
           - kind-k8s-version: 1.23.13
           - kind-k8s-version: 1.22.15
         include:
           - kind-k8s-version: 1.24.7
-            vault-version: 1.12.3
+            vault-version: 1.13.0
           - kind-k8s-version: 1.23.13
-            vault-version: 1.12.3
+            vault-version: 1.13.0
           - kind-k8s-version: 1.22.15
-            vault-version: 1.12.3
+            vault-version: 1.13.0
 
     name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      - uses: actions/download-artifact@v3
         with:
-          fail-on-cache-miss: true
-          path: dist/vso.tar
-          key: ${{ needs.build-docker-image.outputs.cache-key }}
+          name: ${{ needs.build-docker-image.outputs.image-archive }}
+          path: dist
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@v1.4.0
         with:
@@ -149,6 +149,14 @@ jobs:
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      - name: Create kind export log root
+        id: create_kind_export_log_root
+        run: |
+          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs"
+          log_root="/tmp/${log_artifact_name}"
+          mkdir -p "${log_root}"
+          echo "log_root=${log_root}" >> $GITHUB_OUTPUT
+          echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
       - name: Load Docker image
         run:
           make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
@@ -168,22 +176,26 @@ jobs:
       #  env:
       #    INTEGRATION_TESTS: true
       #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       #  run: |
-      #    make integration-test-helm SUPPRESS_TF_OUTPUT=true
+      #    make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: OSS tests using Kustomize
         # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.vault-version == '1.12.3' }}
+        if: ${{ matrix.vault-version == '1.13.0' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make integration-test SUPPRESS_TF_OUTPUT=true
+          make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Kustomize
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
-          make integration-test-ent SUPPRESS_TF_OUTPUT=true
+          make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: Store kind cluster logs
+        if: success() || failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}
+          path: ${{ steps.create_kind_export_log_root.outputs.log_root }}

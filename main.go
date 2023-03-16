@@ -125,6 +125,7 @@ func main() {
 			os.Exit(1)
 		}
 
+		cfc.CollectClientCacheMetrics = metricsAddr != ""
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
 		if err != nil {
