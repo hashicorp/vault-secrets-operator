@@ -524,7 +524,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 			return backoff.Permanent(fmt.Errorf("could not marshal Secret.Data, should never happen: %w", err))
 		}
 
-		validateFunc := vault.NewMACValidateFromHKDFSecretFunc(vault.DefaultClientCacheStorageConfig().HKDFObjectKey)
+		validateFunc := vault.NewMACValidateFromSecretFunc(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
 		valid, actualMAC, err := validateFunc(ctx, crdClient, message, expectedMAC)
 		if err != nil {
 			return backoff.Permanent(err)
