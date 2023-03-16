@@ -191,7 +191,7 @@ jobs:
         if: success() || failure()
         id: export_cluster_logs
         run: |
-          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}"
+          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs"
           log_dir="/tmp/${log_artifact_name}"
           mkdir -p "${log_dir}"
           kind export logs -n ${{ env.KIND_CLUSTER_NAME}} ${log_dir}
