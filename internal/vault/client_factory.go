@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -417,9 +418,13 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 
 	// adds an onEvictCallbackFunc to the ClientCache
 	// the function must always call Client.Close() to avoid leaking Go routines
+	var metricsRegistry prometheus.Registerer
+	if config.CollectClientCacheMetrics {
+		metricsRegistry = metrics.Registry
+	}
 	cache, err := NewClientCache(config.ClientCacheSize, func(key, value interface{}) {
 		factory.onClientEvict(ctx, client, key.(ClientCacheKey), value.(Client))
-	}, metrics.Registry)
+	}, metricsRegistry)
 	if err != nil {
 		return nil, err
 	}

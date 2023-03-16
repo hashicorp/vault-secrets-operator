@@ -26,7 +26,7 @@ var (
 	metricsFQNClientCacheHits = prometheus.BuildFQName(
 		metricsNamespace, subsystemClientCache, "hits")
 
-	// metricsFQNClientCacheMisses for the ClientCache's misses.
+	// metricsFQNClientCacheMisses for the ClientCache.
 	metricsFQNClientCacheMisses = prometheus.BuildFQName(
 		metricsNamespace, subsystemClientCache, "misses")
 
