@@ -354,7 +354,7 @@ helm-chart: manifests kustomize helmify
 
 .PHONY: unit-test
 unit-test: ## Run unit tests for the helm chart
-	bats test/unit/
+	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
 ##@ Deployment
 
