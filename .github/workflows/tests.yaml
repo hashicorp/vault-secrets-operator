@@ -191,13 +191,15 @@ jobs:
         if: success() || failure()
         id: export_cluster_logs
         run: |
-          cluster_log_dir="/tmp/kind-${{ env.KIND_CLUSTER_NAME}}-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}"
-          mkdir -p "${cluster_log_dir}"
-          kind export logs -n ${{ env.KIND_CLUSTER_NAME}} ${cluster_log_dir}
-          echo "cluster_log_dir=${cluster_log_dir}" >> $GITHUB_OUTPUT
+          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}"
+          log_dir="/tmp/${log_artifact_name}"
+          mkdir -p "${log_dir}"
+          kind export logs -n ${{ env.KIND_CLUSTER_NAME}} ${log_dir}
+          echo "log_dir=${log_dir}" >> $GITHUB_OUTPUT
+          echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
       - name: Store kind cluster logs
         if: success() || failure()
         uses: actions/upload-artifact@v3
         with:
-          name: kind-${{ env.KIND_CLUSTER_NAME}}-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs
-          path: ${{ steps.export_cluster_logs.outputs.cluster_log_dir }}
+          name: ${{ steps.export_cluster_logs.outputs.log_artifact_name }}
+          path: ${{ steps.export_cluster_logs.outputs.log_dir }}
