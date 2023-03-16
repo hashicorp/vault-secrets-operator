@@ -74,7 +74,10 @@ func (c *clientCache) Add(client Client) (bool, error) {
 	return evicted, nil
 }
 
-// Remove a Client from the cache. The key can be had by calling Client.GetCacheKey(). Or computing it from computeClientCacheKey()
+// Remove a Client from the cache. The key can be had by calling Client.GetCacheKey(), or
+// by computing it from computeClientCacheKey().
+// Returns true if the key was present in the cache.
+// If it was present then Client.Close() will be called.
 func (c *clientCache) Remove(key ClientCacheKey) bool {
 	if v, ok := c.cache.Peek(key); ok {
 		v.(Client).Close()

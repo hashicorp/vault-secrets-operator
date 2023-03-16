@@ -102,47 +102,47 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 
 func Test_clientCache_Metrics(t *testing.T) {
 	tests := []struct {
-		name           string
-		clientCount    int
-		missCount      int
-		size           int
-		expectHits     float64
-		expectedEvicts float64
-		expectMisses   float64
+		name         string
+		size         int
+		clientCount  int
+		missCount    int
+		expectHits   float64
+		expectEvicts float64
+		expectMisses float64
 	}{
 		{
-			name:           "basic",
-			clientCount:    10,
-			size:           10,
-			expectHits:     10,
-			expectMisses:   0,
-			expectedEvicts: 0,
+			name:         "without-evictions",
+			clientCount:  10,
+			size:         10,
+			expectHits:   10,
+			expectMisses: 0,
+			expectEvicts: 0,
 		},
 		{
-			name:           "with-evictions",
-			clientCount:    10,
-			size:           5,
-			expectHits:     5,
-			expectMisses:   5,
-			expectedEvicts: 5,
+			name:         "with-evictions",
+			clientCount:  10,
+			size:         5,
+			expectHits:   5,
+			expectMisses: 5,
+			expectEvicts: 5,
 		},
 		{
-			name:           "misses-without-evictions",
-			clientCount:    10,
-			missCount:      6,
-			size:           10,
-			expectHits:     10,
-			expectMisses:   6,
-			expectedEvicts: 0,
+			name:         "misses-without-evictions",
+			clientCount:  10,
+			missCount:    6,
+			size:         10,
+			expectHits:   10,
+			expectMisses: 6,
+			expectEvicts: 0,
 		},
 		{
-			name:           "misses-with-evictions",
-			clientCount:    10,
-			missCount:      3,
-			size:           5,
-			expectHits:     5,
-			expectMisses:   8,
-			expectedEvicts: 5,
+			name:         "misses-with-evictions",
+			clientCount:  10,
+			missCount:    3,
+			size:         5,
+			expectHits:   5,
+			expectMisses: 8,
+			expectEvicts: 5,
 		},
 	}
 	for _, tt := range tests {
@@ -201,8 +201,8 @@ func Test_clientCache_Metrics(t *testing.T) {
 				cacheKeysEvicted = cacheKeys[0:tt.size]
 				cacheKeys = cacheKeys[tt.clientCount-tt.size:]
 			}
-			assert.Len(t, cacheKeysEvicted, int(tt.expectedEvicts),
-				"test parameter 'expectedEvicts' does not equal the number of synthesized client evictions")
+			assert.Len(t, cacheKeysEvicted, int(tt.expectEvicts),
+				"test parameter 'expectEvicts' does not equal the number of synthesized client evictions")
 
 			for _, cacheKey := range cacheKeys {
 				_, ok := cache.Get(cacheKey)
@@ -216,23 +216,46 @@ func Test_clientCache_Metrics(t *testing.T) {
 					"evicted Client found in cache for key %s", cacheKey)
 			}
 
-			mfs, err := reg.Gather()
-			require.NoError(t, err)
-			assert.Len(t, mfs, 3)
-			for _, mf := range mfs {
-				m := mf.GetMetric()
-				require.Len(t, m, 1)
-				msgFmt := "unexpected metric value for %s"
-				switch name := mf.GetName(); name {
-				case metricsFQNClientCacheEvictions:
-					assert.Equal(t, tt.expectedEvicts, *m[0].Gauge.Value, msgFmt, name)
-				case metricsFQNClientCacheHits:
-					assert.Equal(t, tt.expectHits, *m[0].Counter.Value, msgFmt, name)
-				case metricsFQNClientCacheMisses:
-					assert.Equal(t, tt.expectMisses, *m[0].Counter.Value, msgFmt, name)
-				default:
-					assert.Fail(t, "missing a test for metric %s", name)
+			assertGatheredMetrics := func() {
+				mfs, err := reg.Gather()
+				require.NoError(t, err)
+				assert.Len(t, mfs, 3)
+				for _, mf := range mfs {
+					m := mf.GetMetric()
+					require.Len(t, m, 1)
+					msgFmt := "unexpected metric value for %s"
+					switch name := mf.GetName(); name {
+					case metricsFQNClientCacheEvictions:
+						assert.Equal(t, tt.expectEvicts, *m[0].Gauge.Value, msgFmt, name)
+					case metricsFQNClientCacheHits:
+						assert.Equal(t, tt.expectHits, *m[0].Counter.Value, msgFmt, name)
+					case metricsFQNClientCacheMisses:
+						assert.Equal(t, tt.expectMisses, *m[0].Counter.Value, msgFmt, name)
+					default:
+						assert.Fail(t, "missing a test for metric %s", name)
+					}
 				}
+			}
+			assertGatheredMetrics()
+
+			if tt.expectEvicts > 0 {
+				// test that the evictsGauge is set to 0 whenever the length of the cache
+				// returns below its eviction size. So, first remove a Client from the cache,
+				// and then add it back. The gauge's value should be set to 0.
+				cacheKey := cacheKeys[0]
+				client, ok := cache.Get(cacheKey)
+				assert.True(t, ok, "expected key %s not in cache", cacheKey)
+				// remove a Client from the cache for cacheKey
+				assert.True(t, cache.Remove(cacheKey), "expected cache key %s in cache", cacheKey)
+				evicted, err := cache.Add(client)
+				require.NoError(t, err)
+				require.False(t, evicted)
+
+				// increment to expectHits to account for the call to cache.Get() above.
+				tt.expectHits++
+				// set expectEvicts to 0, then test the gather.
+				tt.expectEvicts = 0
+				assertGatheredMetrics()
 			}
 		})
 	}
