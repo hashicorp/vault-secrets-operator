@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -172,6 +173,6 @@ func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1a
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultAuth{}).
-		WithEventFilter(ignoreUpdatePredicate()).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }

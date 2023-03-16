@@ -12,10 +12,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/operator-framework/operator-lib/handler"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -109,7 +107,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			} else {
 				// Not time to renew yet, requeue closer to (Expiration - expiryOffset)
 				return ctrl.Result{
-					RequeueAfter: getRenewTime(o.Status.Expiration, expiryOffset),
+					RequeueAfter: computeHorizonWithJitter(getRenewTime(o.Status.Expiration, expiryOffset)),
 				}, nil
 			}
 		} else {
@@ -242,7 +240,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	r.recordEvent(o, consts.ReasonAccepted, "Secret synced")
 
 	return ctrl.Result{
-		RequeueAfter: getRenewTime(o.Status.Expiration, expiryOffset),
+		RequeueAfter: computeHorizonWithJitter(getRenewTime(o.Status.Expiration, expiryOffset)),
 	}, nil
 }
 
@@ -353,32 +351,14 @@ func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1alpha1.VaultPKISecret
 
 func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, p *secretsv1alpha1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
-	logger.Info("Updating status", "status", p.Status)
-	// Get the latest object before updating the status
-	pUpdated := &secretsv1alpha1.VaultPKISecret{}
-	key := types.NamespacedName{
-		Name:      p.Name,
-		Namespace: p.Namespace,
-	}
-	if err := r.Client.Get(ctx, key, pUpdated); err != nil {
-		return err
-	}
-	if p.ResourceVersion != pUpdated.ResourceVersion {
-		if !equality.Semantic.DeepEqual(p.Spec, pUpdated.Spec) {
-			logger.Info("resource changed, requeuing")
-			return fmt.Errorf("failed to update status, resource changed")
-		}
-	}
-
-	pUpdated.Status = p.Status
-	metrics.SetResourceStatus("vaultpkisecret", pUpdated, pUpdated.Status.Valid)
-	if err := r.Status().Update(ctx, pUpdated); err != nil {
+	metrics.SetResourceStatus("vaultpkisecret", p, p.Status.Valid)
+	if err := r.Status().Update(ctx, p); err != nil {
 		msg := "Failed to update the resource's status"
-		r.recordEvent(pUpdated, consts.ReasonStatusUpdateError, "%s: %s", msg, err)
+		r.recordEvent(p, consts.ReasonStatusUpdateError, "%s: %s", msg, err)
 		logger.Error(err, msg)
 		return err
 	}
-	pUpdated.DeepCopyInto(p)
+
 	return nil
 }
 
