@@ -130,8 +130,8 @@ type ClientCacheStorage interface {
 }
 
 type defaultClientCacheStorage struct {
-	hkdfObjKey        ctrlclient.ObjectKey
-	hkdfKey           []byte
+	hmacSecretObjKey  ctrlclient.ObjectKey
+	hmacKey           []byte
 	enforceEncryption bool
 	logger            logr.Logger
 	mu                sync.RWMutex
@@ -229,7 +229,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
-	messageMAC, err := macMessage(c.hkdfKey, message)
+	messageMAC, err := macMessage(c.hmacKey, message)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +425,7 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 		return err
 	}
 
-	ok, _, err = validateMAC(message, messageMAC, c.hkdfKey)
+	ok, _, err = validateMAC(message, messageMAC, c.hmacKey)
 	if err != nil {
 		return err
 	}
@@ -482,25 +482,25 @@ type ClientCacheStorageConfig struct {
 	// EnforceEncryption for persisting Clients i.e. the controller must have VaultTransitRef
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
 	EnforceEncryption bool
-	HKDFObjectKey     ctrlclient.ObjectKey
+	HMACSecretObjKey  ctrlclient.ObjectKey
 }
 
 func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
 	return &ClientCacheStorageConfig{
 		EnforceEncryption: false,
-		HKDFObjectKey: ctrlclient.ObjectKey{
-			Name:      NamePrefixVCC + "storage-hkdf-key",
+		HMACSecretObjKey: ctrlclient.ObjectKey{
+			Name:      NamePrefixVCC + "storage-hmac-key",
 			Namespace: common.OperatorNamespace,
 		},
 	}
 }
 
 func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client, config *ClientCacheStorageConfig) (ClientCacheStorage, error) {
-	if err := validateObjectKey(config.HKDFObjectKey); err != nil {
+	if err := validateObjectKey(config.HMACSecretObjKey); err != nil {
 		return nil, err
 	}
 
-	s, err := createHKDFSecret(ctx, client, config.HKDFObjectKey)
+	s, err := createHMACKeySecret(ctx, client, config.HMACSecretObjKey)
 	if err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, err
@@ -508,15 +508,15 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	}
 
 	if s == nil {
-		s, err = getHKDFSecret(ctx, client, config.HKDFObjectKey)
+		s, err = getHMACKeySecret(ctx, client, config.HMACSecretObjKey)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return &defaultClientCacheStorage{
-		hkdfObjKey:        config.HKDFObjectKey,
-		hkdfKey:           s.Data[hkdfKeyName],
+		hmacSecretObjKey:  config.HMACSecretObjKey,
+		hmacKey:           s.Data[hmacKeyName],
 		enforceEncryption: config.EnforceEncryption,
 		logger:            zap.New().WithName("ClientCacheStorage"),
 	}, nil
