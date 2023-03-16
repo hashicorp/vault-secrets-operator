@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+#
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+#
+
+set -eu -o pipefail
+
+YQ_VERSION="${YQ_VERSION:-4.31.2}"
+
+docker run --rm -i mikefarah/yq:${YQ_VERSION} "$@"
