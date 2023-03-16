@@ -5,6 +5,7 @@ package vault
 
 import (
 	"github.com/hashicorp/golang-lru"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ClientCachePruneFilterFunc allows for selective pruning of the ClientCache.
@@ -25,7 +26,10 @@ var _ ClientCache = (*clientCache)(nil)
 
 // clientCache implements ClientCache with an underlying LRU cache. The cache size is fixed.
 type clientCache struct {
-	cache *lru.Cache
+	cache         *lru.Cache
+	evictionGauge prometheus.Gauge
+	hitCounter    prometheus.Counter
+	missCounter   prometheus.Counter
 }
 
 func (c *clientCache) Contains(key ClientCacheKey) bool {
@@ -43,8 +47,12 @@ func (c *clientCache) Get(key ClientCacheKey) (Client, bool) {
 	var cacheEntry Client
 	v, ok := c.cache.Get(key)
 	if ok {
+		c.hitCounter.Inc()
 		cacheEntry = v.(Client)
+	} else {
+		c.missCounter.Inc()
 	}
+
 	return cacheEntry, ok
 }
 
@@ -55,10 +63,21 @@ func (c *clientCache) Add(client Client) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return c.cache.Add(cacheKey, client), nil
+
+	evicted := c.cache.Add(cacheKey, client)
+	if evicted {
+		c.evictionGauge.Inc()
+	} else {
+		c.evictionGauge.Set(0)
+	}
+
+	return evicted, nil
 }
 
-// Remove a Client from the cache. The key can be had by calling Client.GetCacheKey(). Or computing it from computeClientCacheKey()
+// Remove a Client from the cache. The key can be had by calling Client.GetCacheKey(), or
+// by computing it from computeClientCacheKey().
+// Returns true if the key was present in the cache.
+// If it was present then Client.Close() will be called.
 func (c *clientCache) Remove(key ClientCacheKey) bool {
 	if v, ok := c.cache.Peek(key); ok {
 		v.(Client).Close()
@@ -87,12 +106,35 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCache
 type onEvictCallbackFunc func(key, value interface{})
 
 // NewClientCache returns a ClientCache with its onEvictCallbackFunc set.
+// If metricsRegistry is not nil, then the ClientCache's metric collectors will be
+// registered in that prometheus.Registry. It's up to the caller to handle
+// unregistering the collectors.
 // An error will be returned if the cache could not be initialized.
-func NewClientCache(size int, callbackFunc onEvictCallbackFunc) (ClientCache, error) {
+func NewClientCache(size int, callbackFunc onEvictCallbackFunc, metricsRegistry prometheus.Registerer) (ClientCache, error) {
 	lruCache, err := lru.NewWithEvict(size, callbackFunc)
 	if err != nil {
 		return nil, err
 	}
 
-	return &clientCache{cache: lruCache}, nil
+	cache := &clientCache{
+		cache: lruCache,
+		evictionGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: metricsFQNClientCacheEvictions,
+			Help: "Number of cache evictions.",
+		}),
+		hitCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: metricsFQNClientCacheHits,
+			Help: "Number of cache hits.",
+		}),
+		missCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: metricsFQNClientCacheMisses,
+			Help: "Number of cache misses.",
+		}),
+	}
+
+	if metricsRegistry != nil {
+		metricsRegistry.MustRegister(cache.evictionGauge, cache.hitCounter, cache.missCounter)
+	}
+
+	return cache, nil
 }
