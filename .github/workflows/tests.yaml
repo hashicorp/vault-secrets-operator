@@ -109,6 +109,7 @@ jobs:
     needs: [fmtcheck, test, get-go-version, build-docker-image]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -175,7 +176,6 @@ jobs:
       #  env:
       #    INTEGRATION_TESTS: true
       #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       #  run: |
       #    make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: OSS tests using Kustomize
@@ -184,7 +184,6 @@ jobs:
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Kustomize
