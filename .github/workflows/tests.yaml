@@ -57,15 +57,20 @@ jobs:
 
   unitTest:
     runs-on: ubuntu-latest
-    needs: [get-go-version]
+    needs: [get-go-version, test]
     steps:
-      - uses: actions/checkout@v3
-      - uses: chrisdickinson/setup-yq@latest
-        with:
-          yq-version: v4.30.8
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - uses: mig4/setup-bats@v1
         with:
           bats-version: 1.8.2
