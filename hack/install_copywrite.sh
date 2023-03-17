@@ -20,6 +20,10 @@ if [ -f "${dest_file}" ]; then
 fi
 
 eval $(go env | egrep '^(GOOS|GOARCH)')
+if [ "$GOARCH" == 'amd64' ]; then
+  GOARCH='x86_64'
+fi
+
 archive_file="copywrite_${COPYWRITE_VERSION}_${GOOS}_${GOARCH}.tar.gz"
 base_url="https://github.com/hashicorp/copywrite/releases/download/v${COPYWRITE_VERSION}"
 tempdir=$(mktemp -d)
