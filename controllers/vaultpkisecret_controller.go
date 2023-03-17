@@ -117,8 +117,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// the secret should already be provisioned, the operator does
-	// not support dynamically creating secrets yet.
+	// In the case where the secret should exist already, check that it does
+	// before proceeding to issue a cert
 	if !o.Spec.Destination.Create {
 		exists, err := helpers.CheckSecretExists(ctx, r.Client, o)
 		if err != nil {
