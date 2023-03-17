@@ -3,48 +3,32 @@ name: Tests
 on: [push, workflow_dispatch]
 
 jobs:
-  get-go-version:
-    name: "Determine Go toolchain version"
-    runs-on: ubuntu-latest
-    outputs:
-      go-version: ${{ steps.get-go-version.outputs.go-version }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Determine Go version
-        id: get-go-version
-        run: |
-          echo "Building with Go $(cat .go-version)"
-          echo "go-version=$(cat .go-version)" >> $GITHUB_OUTPUT
-
   fmtcheck:
     runs-on: ubuntu-latest
-    needs: [get-go-version]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
       - run: |
           make check-fmt
   tf-fmtcheck:
     runs-on: ubuntu-latest
-    needs: [get-go-version]
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
       - uses: actions/checkout@v3
       - run: |
           make check-tffmt
 
   test:
     runs-on: ubuntu-latest
-    needs: [get-go-version]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
       - uses: actions/cache@v3
         with:
           path: |
@@ -57,12 +41,12 @@ jobs:
 
   unitTest:
     runs-on: ubuntu-latest
-    needs: [get-go-version, test]
+    needs: [test]
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
-      - uses: actions/checkout@v3
+          go-version-file: .go-version
       - uses: actions/cache@v3
         with:
           path: |
@@ -81,12 +65,11 @@ jobs:
       image-archive: ${{ steps.build-docker-image.outputs.image-archive }}
       image-archive-file: ${{ steps.build-docker-image.outputs.image-archive-file }}
     runs-on: ubuntu-latest
-    needs: [get-go-version]
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
-      - uses: actions/checkout@v3
+          go-version-file: .go-version
       - uses: actions/cache@v3
         with:
           path: |
@@ -111,7 +94,7 @@ jobs:
           if-no-files-found: error
   integrationTest:
     runs-on: ubuntu-latest
-    needs: [fmtcheck, test, get-go-version, build-docker-image]
+    needs: [fmtcheck, test, build-docker-image]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -167,7 +150,7 @@ jobs:
           make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=${{ needs.build-docker-image.outputs.image-archive-file }}
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
       - uses: actions/cache@v3
         with:
           path: |

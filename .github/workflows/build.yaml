@@ -14,19 +14,6 @@ env:
   PKG_NAME: "vault-secrets-operator"
 
 jobs:
-  get-go-version:
-    name: "Determine Go toolchain version"
-    runs-on: ubuntu-latest
-    outputs:
-      go-version: ${{ steps.get-go-version.outputs.go-version }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Determine Go version
-        id: get-go-version
-        run: |
-          echo "Building with Go $(cat .go-version)"
-          echo "go-version=$(cat .go-version)" >> $GITHUB_OUTPUT
-
   get-product-version:
     runs-on: ubuntu-latest
     outputs:
@@ -48,7 +35,7 @@ jobs:
       - name: Setup go
         uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
       - name: go fmt
         run: |
           make check-fmt
@@ -89,7 +76,6 @@ jobs:
   build:
     needs:
       - get-product-version
-      - get-go-version
       - build-pre-checks
     runs-on: ubuntu-latest
     strategy:
@@ -104,7 +90,7 @@ jobs:
       - name: Setup go
         uses: actions/setup-go@v3
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
 
       - name: Build
         env:
