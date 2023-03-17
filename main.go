@@ -149,6 +149,7 @@ func main() {
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		ClientFactory: clientFactory,
+		Recorder:      mgr.GetEventRecorderFor("VaultPKISecret"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
