@@ -25,6 +25,8 @@
 
 set -e
 
+. ${0%/*}/.functions
+
 # Unset CDPATH to restore default cd behavior. An exported CDPATH can
 # cause cd to output the current directory to STDOUT.
 unset CDPATH
@@ -137,18 +139,8 @@ s390x)
     ;;
 esac
 
-headers=(
-    '--header' "Accept: application/vnd.github+json"
-    '--header' "X-GitHub-Api-Version: 2022-11-28"
-)
-if [[ -n "${GITHUB_TOKEN}" ]]; then
-    headers+=(
-        '--header' "Authorization: Bearer ${GITHUB_TOKEN}"
-    )
-fi
-
 echo "Fetching release info from ${release_url}"
-releases=$(curl -sSf "${headers[@]}" "$release_url")
+releases=$(getGH "$release_url" -)
 
 if [[ $releases == *"API rate limit exceeded"* ]]; then
   echo "Github rate-limiter failed the request. Either authenticate by setting GITHUB_TOKEN or wait a couple of minutes."
@@ -170,7 +162,7 @@ if [[ -z "$RELEASE_URL" ]]; then
   exit 1
 fi
 
-curl -sLO "$RELEASE_URL"
+getGH "$RELEASE_URL"
 
 tar xzf ./kustomize_v*_${opsys}_${arch}.tar.gz
 
