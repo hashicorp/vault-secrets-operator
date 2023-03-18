@@ -19,6 +19,7 @@ import (
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
@@ -178,9 +179,10 @@ func TestVaultPKISecret(t *testing.T) {
 	//}
 
 	tests := []struct {
-		name     string
-		existing []*secretsv1alpha1.VaultPKISecret
-		create   int
+		name       string
+		existing   []*secretsv1alpha1.VaultPKISecret
+		create     int
+		secretType corev1.SecretType
 	}{
 		{
 			name:     "existing-only",
@@ -194,6 +196,11 @@ func TestVaultPKISecret(t *testing.T) {
 			name:     "mixed",
 			existing: getExisting(),
 			create:   5,
+		},
+		{
+			name:       "create-tls",
+			create:     5,
+			secretType: corev1.SecretTypeTLS,
 		},
 	}
 
@@ -226,6 +233,7 @@ func TestVaultPKISecret(t *testing.T) {
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,
+							Type:   tt.secretType,
 						},
 					},
 				})
@@ -250,8 +258,7 @@ func TestVaultPKISecret(t *testing.T) {
 					// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
 					// serial number of the generated cert
 					serialNumber, secret, err := waitForPKIData(t, 30, 1*time.Second,
-						vpsObj.Spec.Destination.Name, vpsObj.ObjectMeta.Namespace,
-						vpsObj.Spec.CommonName, "",
+						vpsObj, "",
 					)
 					require.NoError(t, err)
 					assert.NotEmpty(t, serialNumber)
@@ -260,11 +267,18 @@ func TestVaultPKISecret(t *testing.T) {
 						"secrets.hashicorp.com/v1alpha1",
 						"VaultPKISecret", secret)
 
+					if vpsObj.Spec.Destination.Create {
+						expectedType := vpsObj.Spec.Destination.Type
+						if expectedType == "" {
+							expectedType = corev1.SecretTypeOpaque
+						}
+						assert.Equal(t, expectedType, secret.Type)
+					}
+
 					// Use the serial number of the first generated cert to check that the cert
 					// is updated
 					newSerialNumber, secret, err := waitForPKIData(t, 30, 2*time.Second,
-						vpsObj.Spec.Destination.Name, vpsObj.ObjectMeta.Namespace,
-						vpsObj.Spec.CommonName, serialNumber,
+						vpsObj, serialNumber,
 					)
 					require.NoError(t, err)
 					assert.NotEmpty(t, newSerialNumber)
