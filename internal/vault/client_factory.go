@@ -416,12 +416,14 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		),
 	}
 
-	// adds an onEvictCallbackFunc to the ClientCache
-	// the function must always call Client.Close() to avoid leaking Go routines
 	var metricsRegistry prometheus.Registerer
 	if config.CollectClientCacheMetrics {
+		// register the ClientCache's metrics with the default registry.
 		metricsRegistry = metrics.Registry
 	}
+
+	// adds an onEvictCallbackFunc to the ClientCache
+	// the function must always call Client.Close() to avoid leaking Go routines
 	cache, err := NewClientCache(config.ClientCacheSize, func(key, value interface{}) {
 		factory.onClientEvict(ctx, client, key.(ClientCacheKey), value.(Client))
 	}, metricsRegistry)
@@ -461,7 +463,13 @@ func InitCachingClientFactory(ctx context.Context, client ctrlclient.Client, con
 	// TODO: add support for bulk restoration
 	logger := zap.New().WithName("initCachingClientFactory")
 	logger.Info("Initializing the CachingClientFactory")
-	clientCacheStorage, err := NewDefaultClientCacheStorage(ctx, client, config.StorageConfig)
+
+	var metricsRegistry prometheus.Registerer
+	if config.CollectClientCacheMetrics {
+		// register the ClientCache's metrics with the default registry.
+		metricsRegistry = metrics.Registry
+	}
+	clientCacheStorage, err := NewDefaultClientCacheStorage(ctx, client, config.StorageConfig, metricsRegistry)
 	if err != nil {
 		return nil, err
 	}
