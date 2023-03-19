@@ -13,6 +13,7 @@ const (
 	ReasonErrorGettingRef           = "ErrorGettingRef"
 	ReasonInvalidAuthConfiguration  = "InvalidAuthConfiguration"
 	ReasonInvalidCacheKey           = "InvalidCacheKey"
+	ReasonInvalidConfiguration      = "InvalidConfiguration"
 	ReasonInvalidConnection         = "InvalidVaultConnection"
 	ReasonInvalidHorizon            = "InvalidHorizon"
 	ReasonInvalidLeaseError         = "InvalidLeaseError"

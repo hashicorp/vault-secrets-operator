@@ -17,8 +17,9 @@ type VaultPKISecretSpec struct {
 	// configured in its own Kubernetes namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
-	// Namespace to get the secret from
+	// Namespace to get the secret from in Vault
 	Namespace string `json:"namespace,omitempty"`
+
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
 
@@ -98,11 +99,10 @@ type VaultPKISecretSpec struct {
 
 // VaultPKISecretStatus defines the observed state of VaultPKISecret
 type VaultPKISecretStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	SerialNumber string `json:"serialNumber"`
-	Expiration   int64  `json:"expiration"`
-	Renew        bool   `json:"renew"`
+	SerialNumber string `json:"serialNumber,omitempty"`
+	Expiration   int64  `json:"expiration,omitempty"`
+	Valid        bool   `json:"valid"`
+	Error        string `json:"error"`
 }
 
 //+kubebuilder:object:root=true
