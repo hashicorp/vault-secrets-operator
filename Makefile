@@ -21,6 +21,7 @@ EXPORT_KIND_LOGS_ROOT ?=
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
 HELMIFY_VERSION ?= v0.3.22
+COPYWRITE_VERSION ?= 0.16.3
 
 TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
@@ -151,13 +152,14 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-	@sh -c "'$(CURDIR)/scripts/fix-copyright.sh'"
+	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: generate
-generate: controller-gen go-version-check ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: fmt
 fmt: gofumpt ## Run gofumpt against code.
@@ -417,7 +419,7 @@ $(KUSTOMIZE): $(LOCALBIN)
 	test -s $(LOCALBIN)/kustomize || $(KUSTOMIZE_INSTALL_SCRIPT) $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN)
 
 .PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
+controller-gen: $(CONTROLLER_GEN) go-version-check ## Download controller-gen locally if necessary.
 $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
@@ -505,6 +507,10 @@ HELMIFY = $(shell which helmify)
 endif
 endif
 
+.PHONY: copywrite
+copywrite: ## Download copywrite locally if necessary.
+	@./hack/install_copywrite.sh
+	$(eval COPYWRITE=./bin/copywrite)
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.

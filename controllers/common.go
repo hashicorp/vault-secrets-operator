@@ -14,15 +14,6 @@ import (
 
 var random = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 
-func ignoreUpdatePredicate() predicate.Predicate {
-	return predicate.Funcs{
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			// Ignore updates to CR status in which case metadata.Generation does not change
-			return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
-		},
-	}
-}
-
 func filterNamespacePredicate(allowed []string) predicate.Predicate {
 	checkNamespace := func(obj client.Object) bool {
 		for _, ns := range allowed {

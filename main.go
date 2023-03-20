@@ -138,8 +138,8 @@ func main() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        mgr.GetEventRecorderFor("VaultStaticSecret"),
-		HMACFunc:        vclient.NewHMACFromHKDFSecretFunc(cfc.StorageConfig.HKDFObjectKey),
-		ValidateMACFunc: vclient.NewMACValidateFromHKDFSecretFunc(cfc.StorageConfig.HKDFObjectKey),
+		HMACFunc:        vclient.NewHMACFromSecretFunc(cfc.StorageConfig.HMACSecretObjKey),
+		ValidateMACFunc: vclient.NewMACValidateFromSecretFunc(cfc.StorageConfig.HMACSecretObjKey),
 		ClientFactory:   clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
@@ -149,6 +149,7 @@ func main() {
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		ClientFactory: clientFactory,
+		Recorder:      mgr.GetEventRecorderFor("VaultPKISecret"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)

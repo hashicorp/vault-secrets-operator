@@ -1,3 +1,6 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
 # service account for the operator
 resource "kubernetes_service_account" "operator" {
   metadata {

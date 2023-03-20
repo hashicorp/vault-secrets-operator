@@ -18,6 +18,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -31,8 +32,8 @@ type VaultStaticSecretReconciler struct {
 	Scheme          *runtime.Scheme
 	Recorder        record.EventRecorder
 	ClientFactory   vault.ClientFactory
-	HMACFunc        vault.HMACFromHKDFSecretFunc
-	ValidateMACFunc vault.ValidateMACFromHKDFSecretFunc
+	HMACFunc        vault.HMACFromSecretFunc
+	ValidateMACFunc vault.ValidateMACFromSecretFunc
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -247,6 +248,6 @@ func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1alpha1.VaultStaticSecret{}).
-		WithEventFilter(ignoreUpdatePredicate()).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }

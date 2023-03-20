@@ -1,3 +1,6 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
 # kubernetes auth config
 resource "vault_auth_backend" "default" {
   namespace = local.namespace
