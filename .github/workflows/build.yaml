@@ -111,6 +111,7 @@ jobs:
     name: Docker ${{ matrix.arch }} build
     needs:
       - get-product-version
+      - build-pre-checks
       - build
     runs-on: ubuntu-latest
     strategy:
