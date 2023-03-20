@@ -18,7 +18,7 @@ var metricsFQNClientCacheStorageLength = prometheus.BuildFQName(
 
 var _ prometheus.Collector = (*clientCacheCollector)(nil)
 
-// clientCacheCollector provides a prometheus.Collector for ClientCache metrics.
+// clientCacheCollector provides a prometheus.Collector for ClientCacheStorage metrics.
 type clientCacheStorageCollector struct {
 	storage ClientCacheStorage
 	ctx     context.Context
