@@ -163,6 +163,8 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	var err error
 	defer func() {
 		c.incrementRequestCounter(metricsOperationStore, err)
+		// track the store operation metrics to be in line with bulk operations like restore, prune, etc.
+		c.incrementOperationCounter(metricsOperationStore, err)
 	}()
 
 	err = req.Validate()
@@ -187,7 +189,6 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// global encryption policy checks, all requests must require encryption
 	logger.Info("ClientCacheStorage.Store()",
 		"enforceEncryption", c.enforceEncryption)
 

@@ -11,20 +11,16 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
-
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
@@ -357,7 +353,10 @@ func (m *cachingClientFactory) cacheClient(c Client) (ClientCacheKey, error) {
 // The result is cached in the ClientCache for future needs. This should only ever be need if the ClientCacheStorage
 // has enforceEncryption enabled.
 func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
-	if m.clientCacheKeyEncrypt == "" {
+	m.logger.Info("Setting up Vault Client for storage encryption",
+		"cacheKey", m.clientCacheKeyEncrypt)
+	cached := m.clientCacheKeyEncrypt != ""
+	if !cached {
 		encryptionVaultAuth, err := common.FindVaultAuthForStorageEncryption(ctx, client)
 		if err != nil {
 			return nil, err
@@ -382,6 +381,19 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 	if !ok {
 		return nil, fmt.Errorf("expected Client for storage encryption not found in the cache, "+
 			"cacheKey=%s", m.clientCacheKeyEncrypt)
+	}
+
+	if cached {
+		// ensure that the cached Vault Client is not expired, and if it is then call storageEncryptionClient() again.
+		// This operation should be safe since we are setting m.clientCacheKeyEncrypt to empty string,
+		// so there should be no risk of causing a maximum recursion error.
+		if expired, err := c.CheckExpiry(0); expired || err != nil {
+			m.logger.Info("Vault Client for storage encryption is expired, ",
+				"cacheKey", m.clientCacheKeyEncrypt)
+			m.cache.Remove(m.clientCacheKeyEncrypt)
+			m.clientCacheKeyEncrypt = ""
+			return m.storageEncryptionClient(ctx, client)
+		}
 	}
 
 	return c, nil
