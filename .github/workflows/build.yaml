@@ -28,10 +28,11 @@ jobs:
 
   build-pre-checks:
     runs-on: ubuntu-latest
-    needs: get-go-version
+    outputs:
+      go-version: ${{ steps.setup-go.outputs.go-version }}
     steps:
       - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
-      - name: Setup go
+      - name: setup-go
         uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
         with:
           go-version-file: .go-version
@@ -82,7 +83,7 @@ jobs:
         arch: ["arm", "arm64", "386", "amd64"]
       fail-fast: true
 
-    name: Go ${{ needs.get-go-version.outputs.go-version }} linux ${{ matrix.arch }} build
+    name: Go ${{ needs.build-pre-checks.outputs.go-version }} linux ${{ matrix.arch }} build
 
     steps:
       - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
@@ -111,7 +112,6 @@ jobs:
     needs:
       - get-product-version
       - build
-      - get-go-version
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -126,7 +126,7 @@ jobs:
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v1
         env:
-          GO_VERSION: ${{ needs.get-go-version.outputs.go-version }}
+          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
         with:
           version: ${{env.version}}
           target: release-default
