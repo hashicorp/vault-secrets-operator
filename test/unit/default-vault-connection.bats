@@ -19,9 +19,8 @@ load _helpers
     local actual=$(helm template \
         -s templates/default-vault-connection.yaml  \
         --set 'defaultVaultConnection.enabled=true' \
-        . | tee /dev/stderr |
-    yq 'length > 0' | tee /dev/stderr)
-    [ "${actual}" = "true" ]
+        . | yq 'select(documentIndex == 0) | .kind' | tee /dev/stderr)
+    [ "${actual}" = "VaultConnection" ]
 }
 
 #--------------------------------------------------------------------
@@ -32,7 +31,7 @@ load _helpers
     local object=$(helm template \
         -s templates/default-vault-connection.yaml  \
         --set 'defaultVaultConnection.enabled=true' \
-        . | tee /dev/stderr)
+        . | yq 'select(documentIndex == 0)' | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
      [ "${actual}" = "default" ]
@@ -53,7 +52,7 @@ load _helpers
         --set 'defaultVaultConnection.caCertSecret=foo' \
         --set 'defaultVaultConnection.tlsServerName=foo.com' \
         --set 'defaultVaultConnection.headers=foo: bar' \
-        . | tee /dev/stderr)
+        . | yq 'select(documentIndex == 0)' | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
      [ "${actual}" = "default" ]
