@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -257,11 +258,11 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 		return false, fmt.Errorf("%s is missing", corev1.TLSPrivateKeyKey)
 	}
 
-	if string(tlsCert) != string(secret.Data["certificate"]) {
+	if !bytes.Equal(tlsCert, secret.Data["certificate"]) {
 		return false, fmt.Errorf("%s did not equal certificate: %s, %s",
 			corev1.TLSCertKey, tlsCert, secret.Data["certificate"])
 	}
-	if string(tlsKey) != string(secret.Data["private_key"]) {
+	if !bytes.Equal(tlsKey, secret.Data["private_key"]) {
 		return false, fmt.Errorf("%s did not equal private_key: %s, %s",
 			corev1.TLSPrivateKeyKey, tlsKey, secret.Data["private_key"])
 	}
