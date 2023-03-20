@@ -596,6 +596,10 @@ func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
 func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	config *ClientCacheStorageConfig, metricsRegistry prometheus.Registerer,
 ) (ClientCacheStorage, error) {
+	if config == nil {
+		config = DefaultClientCacheStorageConfig()
+	}
+
 	if err := validateObjectKey(config.HMACSecretObjKey); err != nil {
 		return nil, err
 	}
