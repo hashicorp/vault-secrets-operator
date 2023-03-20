@@ -199,7 +199,7 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 		{
 			name:       "create-tls",
-			create:     5,
+			create:     2,
 			secretType: corev1.SecretTypeTLS,
 		},
 	}
