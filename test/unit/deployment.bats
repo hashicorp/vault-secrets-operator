@@ -140,7 +140,7 @@ load _helpers
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconcilesi-vds"])' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds"])' | tee /dev/stderr)
     [ "${actual}" = "false" ]
 }
 
