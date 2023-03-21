@@ -14,6 +14,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/vault/api"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -127,14 +128,19 @@ type ClientCacheStorage interface {
 	RestoreAll(context.Context, ctrlclient.Client, ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error)
 	Prune(context.Context, ctrlclient.Client, ClientCacheStoragePruneRequest) (int, error)
 	Purge(context.Context, ctrlclient.Client) error
+	Len(context.Context, ctrlclient.Client) (int, error)
 }
 
 type defaultClientCacheStorage struct {
-	hmacSecretObjKey  ctrlclient.ObjectKey
-	hmacKey           []byte
-	enforceEncryption bool
-	logger            logr.Logger
-	mu                sync.RWMutex
+	hmacSecretObjKey         ctrlclient.ObjectKey
+	hmacKey                  []byte
+	enforceEncryption        bool
+	logger                   logr.Logger
+	requestCounterVec        *prometheus.CounterVec
+	requestErrorCounterVec   *prometheus.CounterVec
+	operationCounterVec      *prometheus.CounterVec
+	operationErrorCounterVec *prometheus.CounterVec
+	mu                       sync.RWMutex
 }
 
 func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
@@ -148,25 +154,35 @@ func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlcl
 
 func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageStoreRequest) (*corev1.Secret, error) {
 	logger := log.FromContext(ctx)
-	if err := req.Validate(); err != nil {
+	var err error
+	defer func() {
+		c.incrementRequestCounter(metricsOperationStore, err)
+		// track the store operation metrics to be in line with bulk operations like restore, prune, etc.
+		c.incrementOperationCounter(metricsOperationStore, err)
+	}()
+
+	err = req.Validate()
+	if err != nil {
 		return nil, err
 	}
 
 	authObj := req.Client.GetVaultAuthObj()
 	connObj := req.Client.GetVaultConnectionObj()
 	credentialProvider := req.Client.GetCredentialProvider()
-	cacheKey, err := req.Client.GetCacheKey()
+
+	var cacheKey ClientCacheKey
+	cacheKey, err = req.Client.GetCacheKey()
 	if err != nil {
 		return nil, err
 	}
 
 	if c.enforceEncryption && (req.EncryptionClient == nil || req.EncryptionVaultAuth == nil) {
-		return nil, fmt.Errorf("request is invalid for when enforcing encryption")
+		err = fmt.Errorf("request is invalid for when enforcing encryption")
+		return nil, err
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// global encryption policy checks, all requests must require encryption
 	logger.Info("ClientCacheStorage.Store()",
 		"enforceEncryption", c.enforceEncryption)
 
@@ -198,11 +214,9 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	}
 
 	sec := req.Client.GetTokenSecret()
-	if err != nil {
-		return nil, err
-	}
 
-	b, err := json.Marshal(sec)
+	var b []byte
+	b, err = json.Marshal(sec)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +228,8 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 
 		mount := req.EncryptionVaultAuth.Spec.StorageEncryption.Mount
 		keyName := req.EncryptionVaultAuth.Spec.StorageEncryption.KeyName
-		encBytes, err := EncryptWithTransit(ctx, req.EncryptionClient, mount, keyName, b)
+		var encBytes []byte
+		encBytes, err = EncryptWithTransit(ctx, req.EncryptionClient, mount, keyName, b)
 		if err != nil {
 			return nil, err
 		}
@@ -224,33 +239,38 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	s.Data = map[string][]byte{
 		fieldCachedSecret: b,
 	}
-	message, err := c.message(s.Name, cacheKey.String(), b)
+	var message []byte
+	message, err = c.message(s.Name, cacheKey.String(), b)
 	if err != nil {
 		return nil, err
 	}
 
-	messageMAC, err := macMessage(c.hmacKey, message)
+	var messageMAC []byte
+	messageMAC, err = macMessage(c.hmacKey, message)
 	if err != nil {
 		return nil, err
 	}
 
 	s.Data[fieldMACMessage] = messageMAC
-	if err := client.Create(ctx, s); err != nil {
-		if apierrors.IsAlreadyExists(err) {
+	if e := client.Create(ctx, s); e != nil {
+		if apierrors.IsAlreadyExists(e) {
 			// since the Secret is immutable we need to always recreate it.
-			if err := client.Delete(ctx, s); err != nil {
+			err = client.Delete(ctx, s)
+			if err != nil {
 				return nil, err
 			}
 
 			// we want to retry create since the previous Delete() call is eventually consistent.
 			bo := backoff.NewExponentialBackOff()
 			bo.MaxInterval = 2 * time.Second
-			if err := backoff.Retry(func() error {
+			err = backoff.Retry(func() error {
 				return client.Create(ctx, s)
-			}, backoff.WithMaxRetries(bo, 5)); err != nil {
+			}, backoff.WithMaxRetries(bo, 5))
+			if err != nil {
 				return nil, err
 			}
 		} else {
+			err = e
 			return nil, err
 		}
 	}
@@ -262,16 +282,44 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	s, err := c.getSecret(ctx, client, req.SecretObjKey)
+	var err error
+	defer func() {
+		c.incrementRequestCounter(metricsOperationRestore, err)
+	}()
+
+	err = validateObjectKey(req.SecretObjKey)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.restore(ctx, req, s)
+	var secret *corev1.Secret
+	secret, err = c.getSecret(ctx, client, req.SecretObjKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var entry *clientCacheStorageEntry
+	entry, err = c.restore(ctx, req, secret)
+	return entry, err
+}
+
+func (c *defaultClientCacheStorage) Len(ctx context.Context, client ctrlclient.Client) (int, error) {
+	found, err := c.listSecrets(ctx, client, c.listOptions()...)
+	if err != nil {
+		return 0, err
+	}
+
+	return len(found), nil
 }
 
 func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCacheStorageRestoreRequest, s *corev1.Secret) (*clientCacheStorageEntry, error) {
-	if err := c.validateSecretMAC(req, s); err != nil {
+	var err error
+	defer func() {
+		c.incrementOperationCounter(metricsOperationRestore, err)
+	}()
+
+	err = c.validateSecretMAC(req, s)
+	if err != nil {
 		return nil, err
 	}
 
@@ -280,16 +328,19 @@ func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCache
 		transitRef := s.Labels["vaultTransitRef"]
 		if transitRef != "" {
 			if req.DecryptionClient == nil || req.DecryptionVaultAuth == nil {
-				return nil, fmt.Errorf("request is invalid for decryption")
+				err = fmt.Errorf("request is invalid for decryption")
+				return nil, err
 			}
 
 			if req.DecryptionVaultAuth.Name != transitRef {
-				return nil, fmt.Errorf("invalid vaultTransitRef, need %s, have %s", transitRef, req.DecryptionVaultAuth.Name)
+				err = fmt.Errorf("invalid vaultTransitRef, need %s, have %s", transitRef, req.DecryptionVaultAuth.Name)
+				return nil, err
 			}
 
 			mount := req.DecryptionVaultAuth.Spec.StorageEncryption.Mount
 			keyName := req.DecryptionVaultAuth.Spec.StorageEncryption.KeyName
-			decBytes, err := DecryptWithTransit(ctx, req.DecryptionClient, mount, keyName, b)
+			var decBytes []byte
+			decBytes, err = DecryptWithTransit(ctx, req.DecryptionClient, mount, keyName, b)
 			if err != nil {
 				return nil, err
 			}
@@ -297,7 +348,8 @@ func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCache
 			b = decBytes
 		}
 
-		if err := json.Unmarshal(b, &secret); err != nil {
+		err = json.Unmarshal(b, &secret)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -314,7 +366,8 @@ func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCache
 	}
 
 	if v, ok := s.Labels[labelAuthGeneration]; ok && v != "" {
-		generation, err := strconv.Atoi(v)
+		var generation int
+		generation, err = strconv.Atoi(v)
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +375,8 @@ func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCache
 	}
 
 	if v, ok := s.Labels[labelConnectionGeneration]; ok && v != "" {
-		generation, err := strconv.Atoi(v)
+		var generation int
+		generation, err = strconv.Atoi(v)
 		if err != nil {
 			return nil, err
 		}
@@ -336,19 +390,31 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	secrets := &corev1.SecretList{}
-	if err := client.List(ctx, secrets, req.MatchingLabels, ctrlclient.InNamespace(common.OperatorNamespace)); err != nil {
-		return 0, nil
+	var errs error
+	defer func() {
+		c.incrementRequestCounter(metricsOperationPrune, errs)
+	}()
+
+	if len(req.MatchingLabels) == 0 {
+		errs = errors.Join(fmt.Errorf("prune request requires at least one matching label"))
+		return 0, errs
 	}
 
-	var errs error
+	secrets, err := c.listSecrets(ctx, client, req.MatchingLabels, ctrlclient.InNamespace(common.OperatorNamespace))
+	if err != nil {
+		return 0, errors.Join(err)
+	}
+
 	var count int
-	for _, item := range secrets.Items {
+	for _, item := range secrets {
 		if req.Filter != nil && req.Filter(item) {
 			continue
 		}
 
 		if err := client.Delete(ctx, &item); err != nil {
+			if err != nil {
+				c.incrementOperationCounter(metricsOperationPrune, err)
+			}
 			if apierrors.IsNotFound(err) {
 				continue
 			}
@@ -356,12 +422,22 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 			errs = errors.Join(errs, err)
 			continue
 		}
+
+		c.incrementOperationCounter(metricsOperationPrune, nil)
 		count++
 	}
 
-	c.logger.V(consts.LogLevelDebug).Info("Pruned storage cache", "count", count, "total", len(secrets.Items))
+	c.logger.V(consts.LogLevelDebug).Info("Pruned storage cache", "count", count, "total", len(secrets))
 
 	return count, errs
+}
+
+func (c *defaultClientCacheStorage) listSecrets(ctx context.Context, client ctrlclient.Client, listOptions ...ctrlclient.ListOption) ([]corev1.Secret, error) {
+	secrets := &corev1.SecretList{}
+	if err := client.List(ctx, secrets, listOptions...); err != nil {
+		return nil, err
+	}
+	return secrets.Items, nil
 }
 
 // Purge all cached client Secrets. This should only be called when transitioning from persistence to non-persistence modes.
@@ -369,7 +445,13 @@ func (c *defaultClientCacheStorage) Purge(ctx context.Context, client ctrlclient
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	return client.DeleteAllOf(ctx, &corev1.Secret{}, c.deleteAllOfOptions()...)
+	var err error
+	defer func() {
+		c.incrementRequestCounter(metricsOperationPurge, err)
+	}()
+
+	err = client.DeleteAllOf(ctx, &corev1.Secret{}, c.deleteAllOfOptions()...)
+	return err
 }
 
 func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error) {
@@ -377,14 +459,18 @@ func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlc
 	defer c.mu.RUnlock()
 
 	var errs error
+	defer func() {
+		c.incrementRequestCounter(metricsOperationRestoreAll, errs)
+	}()
 
-	found := &corev1.SecretList{}
-	if err := client.List(ctx, found, c.listOptions()...); err != nil {
-		return nil, err
+	found, err := c.listSecrets(ctx, client, c.listOptions()...)
+	if err != nil {
+		errs = errors.Join(err)
+		return nil, errs
 	}
 
 	var result []*clientCacheStorageEntry
-	for _, s := range found.Items {
+	for _, s := range found {
 		cacheKey := ClientCacheKey(s.Labels[labelCacheKey])
 		req := ClientCacheStorageRestoreRequest{
 			SecretObjKey:        ctrlclient.ObjectKeyFromObject(&s),
@@ -478,6 +564,22 @@ func (c *defaultClientCacheStorage) addCommonMatchingLabels(labels ctrlclient.Ma
 	return labels
 }
 
+func (c *defaultClientCacheStorage) incrementRequestCounter(operation string, err error) {
+	if err != nil {
+		c.requestErrorCounterVec.WithLabelValues(operation).Inc()
+	} else {
+		c.requestCounterVec.WithLabelValues(operation).Inc()
+	}
+}
+
+func (c *defaultClientCacheStorage) incrementOperationCounter(operation string, err error) {
+	if err != nil {
+		c.operationErrorCounterVec.WithLabelValues(operation).Inc()
+	} else {
+		c.operationCounterVec.WithLabelValues(operation).Inc()
+	}
+}
+
 type ClientCacheStorageConfig struct {
 	// EnforceEncryption for persisting Clients i.e. the controller must have VaultTransitRef
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
@@ -495,7 +597,13 @@ func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
 	}
 }
 
-func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client, config *ClientCacheStorageConfig) (ClientCacheStorage, error) {
+func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
+	config *ClientCacheStorageConfig, metricsRegistry prometheus.Registerer,
+) (ClientCacheStorage, error) {
+	if config == nil {
+		config = DefaultClientCacheStorageConfig()
+	}
+
 	if err := validateObjectKey(config.HMACSecretObjKey); err != nil {
 		return nil, err
 	}
@@ -514,12 +622,66 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		}
 	}
 
-	return &defaultClientCacheStorage{
+	cacheStorage := &defaultClientCacheStorage{
 		hmacSecretObjKey:  config.HMACSecretObjKey,
 		hmacKey:           s.Data[hmacKeyName],
 		enforceEncryption: config.EnforceEncryption,
 		logger:            zap.New().WithName("ClientCacheStorage"),
-	}, nil
+		requestCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: metricsFQNClientCacheStorageReqsTotal,
+				Help: "Client storage cache request total",
+			}, []string{
+				metricsLabelOperation,
+			},
+		),
+		requestErrorCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: metricsFQNClientCacheStorageReqsTotalErrors,
+				Help: "Client storage cache request errors",
+			}, []string{
+				metricsLabelOperation,
+			},
+		),
+		operationCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: metricsFQNClientCacheStorageOpsTotal,
+				Help: "Client storage cache operations",
+			}, []string{
+				metricsLabelOperation,
+			},
+		),
+		operationErrorCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: metricsFQNClientCacheStorageOpsTotalErrors,
+				Help: "Client storage cache operation errors",
+			}, []string{
+				metricsLabelOperation,
+			},
+		),
+	}
+
+	if metricsRegistry != nil {
+		// metric for exporting the storage cache configuration
+		configGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: metricsFQNClientCacheStorageConfig,
+			Help: "Client storage cache config",
+			ConstLabels: map[string]string{
+				metricsLabelEnforceEncryption: strconv.FormatBool(cacheStorage.enforceEncryption),
+			},
+		})
+		configGauge.Set(1)
+		metricsRegistry.MustRegister(
+			configGauge,
+			cacheStorage.requestCounterVec,
+			cacheStorage.requestErrorCounterVec,
+			cacheStorage.operationCounterVec,
+			cacheStorage.operationErrorCounterVec,
+			newClientCacheStorageCollector(cacheStorage, ctx, client),
+		)
+	}
+
+	return cacheStorage, nil
 }
 
 func validateObjectKey(key ctrlclient.ObjectKey) error {
