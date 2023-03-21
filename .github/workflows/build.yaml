@@ -124,6 +124,7 @@ jobs:
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v1
         env:
+          VERSION: ${{ needs.get-product-version.outputs.product-version }}
           GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
         with:
           version: ${{env.version}}
