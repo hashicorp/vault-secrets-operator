@@ -13,25 +13,12 @@ env:
   PKG_NAME: "vault-secrets-operator"
 
 jobs:
-  get-go-version:
-    name: "Determine Go toolchain version"
-    runs-on: ubuntu-latest
-    outputs:
-      go-version: ${{ steps.get-go-version.outputs.go-version }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Determine Go version
-        id: get-go-version
-        run: |
-          echo "Building with Go $(cat .go-version)"
-          echo "go-version=$(cat .go-version)" >> $GITHUB_OUTPUT
-
   get-product-version:
     runs-on: ubuntu-latest
     outputs:
       product-version: ${{ steps.get-product-version.outputs.product-version }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - name: get product version
         id: get-product-version
         run: |
@@ -41,13 +28,14 @@ jobs:
 
   build-pre-checks:
     runs-on: ubuntu-latest
-    needs: get-go-version
+    outputs:
+      go-version: ${{ steps.setup-go.outputs.go-version }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Setup go
-        uses: actions/setup-go@v3
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+      - id: setup-go
+        uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
       - name: go fmt
         run: |
           make check-fmt
@@ -72,7 +60,7 @@ jobs:
       filepath: ${{ steps.generate-metadata-file.outputs.filepath }}
     steps:
       - name: 'Checkout directory'
-        uses: actions/checkout@v3
+        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - name: Generate metadata file
         id: generate-metadata-file
         uses: hashicorp/actions-generate-metadata@v1
@@ -80,7 +68,7 @@ jobs:
           version: ${{ needs.get-product-version.outputs.product-version }}
           product: ${{ env.PKG_NAME }}
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
           name: metadata.json
           path: ${{ steps.generate-metadata-file.outputs.filepath }}
@@ -88,7 +76,6 @@ jobs:
   build:
     needs:
       - get-product-version
-      - get-go-version
       - build-pre-checks
     runs-on: ubuntu-latest
     strategy:
@@ -96,14 +83,14 @@ jobs:
         arch: ["arm", "arm64", "386", "amd64"]
       fail-fast: true
 
-    name: Go ${{ needs.get-go-version.outputs.go-version }} linux ${{ matrix.arch }} build
+    name: Go ${{ needs.build-pre-checks.outputs.go-version }} linux ${{ matrix.arch }} build
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - name: Setup go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
         with:
-          go-version: ${{ needs.get-go-version.outputs.go-version }}
+          go-version-file: .go-version
 
       - name: Build
         env:
@@ -115,7 +102,7 @@ jobs:
           mkdir dist out
           make ci-build
           zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
           name: ${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
           path: out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
@@ -124,8 +111,8 @@ jobs:
     name: Docker ${{ matrix.arch }} build
     needs:
       - get-product-version
+      - build-pre-checks
       - build
-      - get-go-version
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -136,11 +123,11 @@ jobs:
       version: ${{needs.get-product-version.outputs.product-version}}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v1
         env:
-          GO_VERSION: ${{ needs.get-go-version.outputs.go-version }}
+          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
         with:
           version: ${{env.version}}
           target: release-default
