@@ -5,6 +5,7 @@
 resources:
 - secrets_v1alpha1_vaultstaticsecret.yaml
 - secrets_v1alpha1_vaultpkisecret.yaml
+- secrets_v1alpha1_vaultpkisecret_tls.yaml
 - secrets_v1alpha1_vaultauth.yaml
 - secrets_v1alpha1_vaultconnection.yaml
 - secrets_v1alpha1_vaultdynamicsecret.yaml

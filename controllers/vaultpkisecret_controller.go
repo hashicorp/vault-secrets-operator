@@ -212,6 +212,10 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		return ctrl.Result{}, err
 	}
+	if o.Spec.Destination.Type == corev1.SecretTypeTLS {
+		data[corev1.TLSCertKey] = data["certificate"]
+		data[corev1.TLSPrivateKeyKey] = data["private_key"]
+	}
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 		return ctrl.Result{}, err
 	}
