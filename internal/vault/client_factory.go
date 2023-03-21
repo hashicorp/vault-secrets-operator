@@ -388,8 +388,14 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 		// This operation should be safe since we are setting m.clientCacheKeyEncrypt to empty string,
 		// so there should be no risk of causing a maximum recursion error.
 		if expired, err := c.CheckExpiry(0); expired || err != nil {
-			m.logger.Info("Vault Client for storage encryption is expired, ",
-				"cacheKey", m.clientCacheKeyEncrypt)
+			if err != nil {
+				m.logger.Error(err, "Failed to check the Vault client expiry, recreating it",
+					"cacheKey", m.clientCacheKeyEncrypt)
+			}
+			if expired {
+				m.logger.Info("Vault Client for storage encryption has expired, recreating it",
+					"cacheKey", m.clientCacheKeyEncrypt)
+			}
 			m.cache.Remove(m.clientCacheKeyEncrypt)
 			m.clientCacheKeyEncrypt = ""
 			return m.storageEncryptionClient(ctx, client)

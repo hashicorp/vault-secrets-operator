@@ -40,7 +40,7 @@ var (
 
 var _ prometheus.Collector = (*clientCacheCollector)(nil)
 
-// clientCacheCollector provides a prometheus.Collector for ClientCacheStorage metrics.
+// clientCacheStorageCollector provides a prometheus.Collector for ClientCacheStorage metrics.
 type clientCacheStorageCollector struct {
 	storage ClientCacheStorage
 	ctx     context.Context
