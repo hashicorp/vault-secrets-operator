@@ -8,6 +8,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 const (
@@ -25,17 +27,17 @@ const (
 // metricsFQNClientCacheStorageLength for the ClientCache.
 var (
 	metricsFQNClientCacheStorageConfig = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientStorageCache, "config")
+		metrics.MetricsNamespace, subsystemClientStorageCache, "config")
 	metricsFQNClientCacheStorageLength = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientStorageCache, "length")
+		metrics.MetricsNamespace, subsystemClientStorageCache, "length")
 	metricsFQNClientCacheStorageReqsTotal = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientStorageCache, "requests_total")
+		metrics.MetricsNamespace, subsystemClientStorageCache, "requests_total")
 	metricsFQNClientCacheStorageReqsTotalErrors = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientStorageCache, "requests_total_errors")
+		metrics.MetricsNamespace, subsystemClientStorageCache, "requests_total_errors")
 	metricsFQNClientCacheStorageOpsTotal = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientStorageCache, "operations_total")
+		metrics.MetricsNamespace, subsystemClientStorageCache, "operations_total")
 	metricsFQNClientCacheStorageOpsTotalErrors = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientStorageCache, "operations_total_errors")
+		metrics.MetricsNamespace, subsystemClientStorageCache, "operations_total_errors")
 )
 
 var _ prometheus.Collector = (*clientCacheStorageCollector)(nil)

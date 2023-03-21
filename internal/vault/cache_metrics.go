@@ -5,10 +5,11 @@ package vault
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 const (
-	metricsNamespace     = "vso"
 	subsystemClientCache = "client_cache"
 )
 
@@ -16,23 +17,23 @@ var (
 
 	// metricsFQNClientCacheSize for the ClientCache.
 	metricsFQNClientCacheSize = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientCache, "size")
+		metrics.MetricsNamespace, subsystemClientCache, "size")
 
 	// metricsFQNClientCacheLength for the ClientCache.
 	metricsFQNClientCacheLength = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientCache, "length")
+		metrics.MetricsNamespace, subsystemClientCache, "length")
 
 	// metricsFQNClientCacheHits for the ClientCache.
 	metricsFQNClientCacheHits = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientCache, "hits")
+		metrics.MetricsNamespace, subsystemClientCache, "hits")
 
 	// metricsFQNClientCacheMisses for the ClientCache.
 	metricsFQNClientCacheMisses = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientCache, "misses")
+		metrics.MetricsNamespace, subsystemClientCache, "misses")
 
 	// metricsFQNClientCacheEvictions for the ClientCache.
 	metricsFQNClientCacheEvictions = prometheus.BuildFQName(
-		metricsNamespace, subsystemClientCache, "evictions")
+		metrics.MetricsNamespace, subsystemClientCache, "evictions")
 )
 
 var _ prometheus.Collector = (*clientCacheCollector)(nil)
