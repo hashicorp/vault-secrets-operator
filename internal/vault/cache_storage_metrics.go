@@ -38,7 +38,7 @@ var (
 		metricsNamespace, subsystemClientStorageCache, "operations_total_errors")
 )
 
-var _ prometheus.Collector = (*clientCacheCollector)(nil)
+var _ prometheus.Collector = (*clientCacheStorageCollector)(nil)
 
 // clientCacheStorageCollector provides a prometheus.Collector for ClientCacheStorage metrics.
 type clientCacheStorageCollector struct {
