@@ -45,12 +45,6 @@ const (
 	labelConnectionGeneration = "connection/generation"
 	labelProviderUID          = "provider/UID"
 	labelProviderNamespace    = "provider/namespace"
-
-	metricsOperationStore      = "store"
-	metricsOperationRestore    = "restore"
-	metricsOperationRestoreAll = "restore_all"
-	metricsOperationPrune      = "prune"
-	metricsOperationPurge      = "purge"
 )
 
 var (
@@ -288,10 +282,10 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	var err error
-	defer func() {
-		c.incrementRequestCounter(metricsOperationRestore, err)
-	}()
+	err := validateObjectKey(req.SecretObjKey)
+	if err != nil {
+		return nil, err
+	}
 
 	var secret *corev1.Secret
 	secret, err = c.getSecret(ctx, client, req.SecretObjKey)
@@ -299,9 +293,7 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 		return nil, err
 	}
 
-	var entry *clientCacheStorageEntry
-	entry, err = c.restore(ctx, req, secret)
-	return entry, err
+	return c.restore(ctx, req, secret)
 }
 
 func (c *defaultClientCacheStorage) Len(ctx context.Context, client ctrlclient.Client) (int, error) {
@@ -395,6 +387,11 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 	defer func() {
 		c.incrementRequestCounter(metricsOperationPrune, errs)
 	}()
+
+	if len(req.MatchingLabels) == 0 {
+		errs = errors.Join(fmt.Errorf("prune request requires at least one matching label"))
+		return 0, errs
+	}
 
 	secrets, err := c.listSecrets(ctx, client, req.MatchingLabels, ctrlclient.InNamespace(common.OperatorNamespace))
 	if err != nil {
@@ -625,42 +622,34 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		logger:            zap.New().WithName("ClientCacheStorage"),
 		requestCounterVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: metricsNamespace,
-				Subsystem: subsystemClientStorageCache,
-				Name:      "requests_total",
-				Help:      "Client storage cache request total",
+				Name: metricsFQNClientCacheStorageReqsTotal,
+				Help: "Client storage cache request total",
 			}, []string{
-				"operation",
+				metricsLabelOperation,
 			},
 		),
 		requestErrorCounterVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: metricsNamespace,
-				Subsystem: subsystemClientStorageCache,
-				Name:      "requests_total_errors",
-				Help:      "Client storage cache request errors",
+				Name: metricsFQNClientCacheStorageReqsTotalErrors,
+				Help: "Client storage cache request errors",
 			}, []string{
-				"operation",
+				metricsLabelOperation,
 			},
 		),
 		operationCounterVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: metricsNamespace,
-				Subsystem: subsystemClientStorageCache,
-				Name:      "operations_total",
-				Help:      "Client storage cache operations",
+				Name: metricsFQNClientCacheStorageOpsTotal,
+				Help: "Client storage cache operations",
 			}, []string{
-				"operation",
+				metricsLabelOperation,
 			},
 		),
 		operationErrorCounterVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: metricsNamespace,
-				Subsystem: subsystemClientStorageCache,
-				Name:      "operations_total_errors",
-				Help:      "Client storage cache operation errors",
+				Name: metricsFQNClientCacheStorageOpsTotalErrors,
+				Help: "Client storage cache operation errors",
 			}, []string{
-				"operation",
+				metricsLabelOperation,
 			},
 		),
 	}
@@ -668,12 +657,10 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	if metricsRegistry != nil {
 		// metric for exporting the storage cache configuration
 		configGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: metricsNamespace,
-			Subsystem: subsystemClientStorageCache,
-			Name:      "config",
-			Help:      "Client storage cache config",
+			Name: metricsFQNClientCacheStorageConfig,
+			Help: "Client storage cache config",
 			ConstLabels: map[string]string{
-				"enforce_encryption": strconv.FormatBool(cacheStorage.enforceEncryption),
+				metricsLabelEnforceEncryption: strconv.FormatBool(cacheStorage.enforceEncryption),
 			},
 		})
 		configGauge.Set(1)
