@@ -174,7 +174,7 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			name:                "store",
 			client:              fake.NewClientBuilder().Build(),
 			expectedLength:      5,
-			expectedMetricCount: 4,
+			expectedMetricCount: 6,
 			expectMetrics: expectMetrics{
 				store: &expected{
 					reqs: &expectedMetricVec{
@@ -195,7 +195,7 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			client:              fake.NewClientBuilder().Build(),
 			errorClient:         fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build(),
 			expectedLength:      4,
-			expectedMetricCount: 4,
+			expectedMetricCount: 5,
 			expectMetrics: expectMetrics{
 				store: &expected{
 					reqs: &expectedMetricVec{

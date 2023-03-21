@@ -282,7 +282,12 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	err := validateObjectKey(req.SecretObjKey)
+	var err error
+	defer func() {
+		c.incrementRequestCounter(metricsOperationRestore, err)
+	}()
+
+	err = validateObjectKey(req.SecretObjKey)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +298,9 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 		return nil, err
 	}
 
-	return c.restore(ctx, req, secret)
+	var entry *clientCacheStorageEntry
+	entry, err = c.restore(ctx, req, secret)
+	return entry, err
 }
 
 func (c *defaultClientCacheStorage) Len(ctx context.Context, client ctrlclient.Client) (int, error) {
