@@ -637,7 +637,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		),
 		requestErrorCounterVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: metricsFQNClientCacheStorageReqsTotalErrors,
+				Name: metricsFQNClientCacheStorageReqsErrorsTotal,
 				Help: "Client storage cache request errors",
 			}, []string{
 				metricsLabelOperation,
@@ -653,7 +653,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		),
 		operationErrorCounterVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: metricsFQNClientCacheStorageOpsTotalErrors,
+				Name: metricsFQNClientCacheStorageOpsErrorsTotal,
 				Help: "Client storage cache operation errors",
 			}, []string{
 				metricsLabelOperation,
