@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -25,6 +26,7 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	//+kubebuilder:scaffold:imports
@@ -75,8 +77,12 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	// versionInfo is used when setting up the buildInfo metric below
+	versionInfo := version.Version()
 	if printVersion {
-		os.Stdout.WriteString(fmt.Sprintf("%#v\n", version.Version()))
+		if _, err := os.Stdout.WriteString(fmt.Sprintf("%#v\n", versionInfo)); err != nil {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 
@@ -109,6 +115,10 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 
+	collectMetrics := metricsAddr != ""
+	if collectMetrics {
+		ctrlmetrics.Registry.MustRegister(metrics.NewBuildInfoGauge(versionInfo))
+	}
 	var clientFactory vclient.CachingClientFactory
 	{
 		switch clientCachePersistenceModel {
@@ -133,7 +143,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		cfc.CollectClientCacheMetrics = metricsAddr != ""
+		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
 		if err != nil {
