@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package controllers
+package common
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
-func Test_getConnectionNamespacedName(t *testing.T) {
+func Test_GetConnectionNamespacedName(t *testing.T) {
 	tests := []struct {
 		name            string
 		a               *secretsv1alpha1.VaultAuth
@@ -35,16 +35,10 @@ func Test_getConnectionNamespacedName(t *testing.T) {
 				},
 			},
 			want: types.NamespacedName{
-				Namespace: operatorNamespace,
+				Namespace: OperatorNamespace,
 				Name:      consts.NameDefault,
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				valid := err == nil
-				if !valid {
-					t.Errorf("%s unexpected err: %s", err)
-				}
-				return valid
-			},
+			wantErr: assert.NoError,
 		},
 		{
 			name: "empty-connection-ref-expect-error",
@@ -79,25 +73,19 @@ func Test_getConnectionNamespacedName(t *testing.T) {
 				Namespace: "baz",
 				Name:      "foo",
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				valid := err == nil
-				if !valid {
-					t.Errorf("%s unexpected err: %s", err)
-				}
-				return valid
-			},
+			wantErr: assert.NoError,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.unsetDefaultsNS {
-				curDefaultNamespace := operatorNamespace
-				operatorNamespace = ""
+				curDefaultNamespace := OperatorNamespace
+				OperatorNamespace = ""
 				t.Cleanup(func() {
-					operatorNamespace = curDefaultNamespace
+					OperatorNamespace = curDefaultNamespace
 				})
 			}
-			got, err := getConnectionNamespacedName(tt.a)
+			got, err := GetConnectionNamespacedName(tt.a)
 			if !tt.wantErr(t, err, fmt.Sprintf("getConnectionNamespacedName(%v)", tt.a)) {
 				return
 			}

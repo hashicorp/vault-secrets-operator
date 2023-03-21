@@ -38,8 +38,10 @@ end
 title Dynamic Secret rotation
 autonumber
 alt#Gold #LightBlue Happy Path: DynamicSecret Rotation
-    SecretsOperator -> VaultAPI : Secret within expiry window; GET Secret for path
+    SecretsOperator -> VaultAPI : Check secret lease expiry
+    SecretsOperator -> VaultAPI : Secret expired; GET Secret for path
     VaultAPI -> SecretsOperator : Secret response
+    SecretsOperator -> VaultAPI : Renew lease if not expired
     SecretsOperator -> KubernetesSecretAPI : Store Secret
     KubernetesSecretAPI -> SecretsOperator : Update Response
     SecretsOperator -> KubernetesAPI : Update DynamicSecret Status metadata

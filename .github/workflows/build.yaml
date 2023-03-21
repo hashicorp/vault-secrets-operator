@@ -1,10 +1,13 @@
 name: build
 
-on: [push, workflow_dispatch]
-#on:
-#  workflow_dispatch:
-#  push:
-#    branches: ["*"]
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 0.1.0"
+        type: string
+        required: false
 
 env:
   PKG_NAME: "vault-secrets-operator"

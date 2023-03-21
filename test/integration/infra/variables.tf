@@ -45,3 +45,8 @@ variable "vault_enterprise" {
 variable "vault_chart_version" {
   default = "0.23.0"
 }
+
+variable "install_kube_prometheus" {
+  type    = bool
+  default = false
+}

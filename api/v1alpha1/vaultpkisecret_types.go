@@ -17,8 +17,9 @@ type VaultPKISecretSpec struct {
 	// configured in its own Kubernetes namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
-	// Namespace to get the secret from
+	// Namespace to get the secret from in Vault
 	Namespace string `json:"namespace,omitempty"`
+
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
 
@@ -43,9 +44,11 @@ type VaultPKISecretSpec struct {
 	// This parameter is part of the request URL.
 	IssuerRef string `json:"issuerRef,omitempty"`
 
-	// Dest is the name of the secret. The secret must exist and be
-	// writable by the operator.
-	Dest string `json:"dest"`
+	// Destination provides configuration necessary for syncing the Vault secret
+	// to Kubernetes. If the type is set to "kubernetes.io/tls", the Vault
+	// response fields "certificate" and "private_key" will be copied to fields
+	// "tls.crt" and "tls.key", respectively, in the Kubernetes secret.
+	Destination Destination `json:"destination"`
 
 	// CommonName to include in the request.
 	CommonName string `json:"commonName"`
@@ -99,11 +102,10 @@ type VaultPKISecretSpec struct {
 
 // VaultPKISecretStatus defines the observed state of VaultPKISecret
 type VaultPKISecretStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	SerialNumber string `json:"serialNumber"`
-	Expiration   int64  `json:"expiration"`
-	Renew        bool   `json:"renew"`
+	SerialNumber string `json:"serialNumber,omitempty"`
+	Expiration   int64  `json:"expiration,omitempty"`
+	Valid        bool   `json:"valid"`
+	Error        string `json:"error"`
 }
 
 //+kubebuilder:object:root=true

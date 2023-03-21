@@ -22,19 +22,32 @@ type VaultStaticSecretSpec struct {
 	Mount string `json:"mount"`
 	// Name of the secret in Vault
 	Name string `json:"name"`
-	// Dest could be some sort of k8s secret or something like that ....
-	Dest string `json:"dest"`
-	// Secret type
+	// Type of the Vault static secret
 	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
 	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation
 	RefreshAfter string `json:"refreshAfter,omitempty"`
+	// HMACSecretData determines whether the Operator computes the
+	// HMAC of the Secret's data. The MAC value will be stored in
+	// the resource's Status.SecretMac field, and will be used for drift detection
+	// and during incoming Vault secret comparison.
+	// Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault.
+	// +kubebuilder:default=true
+	HMACSecretData bool `json:"hmacSecretData,omitempty"`
+	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
+	Destination Destination `json:"destination"`
 }
 
 // VaultStaticSecretStatus defines the observed state of VaultStaticSecret
 type VaultStaticSecretStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// SecretMAC used when deciding whether new Vault secret data should be synced.
+	//
+	// The controller will compare the "new" Vault secret data to this value using HMAC,
+	// if they are different, then the data will be synced to the Destination.
+	//
+	// The SecretMac is also used to detect drift in the Destination Secret's Data.
+	// If drift is detected the data will be synced to the Destination.
+	SecretMAC string `json:"secretMAC,omitempty"`
 }
 
 //+kubebuilder:object:root=true

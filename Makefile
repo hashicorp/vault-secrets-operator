@@ -5,17 +5,37 @@
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-prototype
 
+GO_VERSION = $(shell cat .go-version)
+
+CONFIG_MANAGER_DIR ?= config/manager
+KUSTOMIZE_BUILD_DIR ?= config/default
+
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
-K8S_VAULT_NAMESPACE ?= demo
+K8S_VAULT_NAMESPACE ?= vault
 KIND_K8S_VERSION ?= v1.25.3
 VAULT_HELM_VERSION ?= 0.23.0
+# Root directory to export kind cluster logs after each test run.
+EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
 HELMIFY_VERSION ?= v0.3.22
+COPYWRITE_VERSION ?= 0.16.3
 
-TESTARGS ?= '-test.v'
+TESTCOUNT ?= 1
+TESTARGS ?= -test.v -count=$(TESTCOUNT)
+
+# Run integration tests against a Helm installed Operator
+TEST_WITH_HELM ?=
+
+# Suppress the output from terraform when running the integration tests.
+SUPPRESS_TF_OUTPUT ?=
+# Skip the integration test cleanup.
+SKIP_CLEANUP ?=
+# The number of k8s secrets to create in the VaultDynamicSecret's integration tests.
+K8S_DB_SECRET_COUNT ?=
+
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -60,6 +80,10 @@ endif
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
+
+# Default path to saving and loading the Docker image for IMG.
+IMAGE_ARCHIVE_FILE ?= $(BUILD_DIR)/$(subst /,_,$(IMAGE_TAG_BASE))-$(VERSION).tar
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.24.1
 
@@ -67,8 +91,10 @@ ENVTEST_K8S_VERSION = 1.24.1
 KIND_CLUSTER_NAME ?= vault-secrets-operator
 # Kind cluster context
 KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
+# Kind config file
+KIND_CONFIG_FILE ?= $(INTEGRATION_TEST_ROOT)/kind/config.yaml
 
-# Operator namespace as configured in config/default/kustomization.yaml
+# Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
 
 # Run tests against Vault enterprise when true.
@@ -76,8 +102,14 @@ VAULT_ENTERPRISE ?= false
 # The vault license.
 _VAULT_LICENSE ?=
 
-TF_INFRA_SRC_DIR ?= ./test/integration/infra
-TF_INFRA_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
+# root directory for all integration tests
+INTEGRATION_TEST_ROOT = ./test/integration
+
+# directory containing Kubernetes patches to be applied after Vault is been brought up in K8s.
+VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
+
+TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
+TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
@@ -120,21 +152,27 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-	@sh -c "'$(CURDIR)/scripts/fix-copyright.sh'"
+	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: fmt
 fmt: gofumpt ## Run gofumpt against code.
 	$(GOFUMPT) -l -w -extra .
 
 .PHONY: check-fmt
-check-fmt: gofumpt ## Check formatting
+check-fmt: gofumpt go-version-check ## Check formatting
+	@sh -c $(CURDIR)/scripts/goversioncheck.sh
 	@GOFUMPT_BIN=$(GOFUMPT) $(CURDIR)/scripts/gofmtcheck.sh $(CURDIR)
+
+.PHONY: go-version-check
+go-version-check: ## Check formatting
+	@sh -c $(CURDIR)/scripts/goversioncheck.sh
 
 .PHONY: tffmt
 fmttf: terraform ## Run gofumpt against code.
@@ -145,7 +183,7 @@ check-tffmt: terraform ## Check formatting
 	@TERRAFORM_BIN=$(TERRAFORM) $(CURDIR)/scripts/tffmtcheck.sh $(CURDIR)
 
 .PHONY: vet
-vet: ## Run go vet against code.
+vet: go-version-check ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
@@ -165,6 +203,14 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
 	docker build -t $(IMG) . --target=dev --build-arg GO_VERSION=$(shell cat .go-version)
+
+.PHONY: docker-image-save
+docker-image-save: ##
+	docker image save --output $(IMAGE_ARCHIVE_FILE) $(IMG)
+
+.PHONY: docker-image-load
+docker-image-load:  ##
+	docker image load --input $(IMAGE_ARCHIVE_FILE)
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -190,12 +236,14 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
 .PHONY: integration-test
-integration-test:  setup-integration-test ## Run integration tests for Vault OSS
-	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -count=1 -timeout=10m
+integration-test:  setup-vault ## Run integration tests for Vault OSS
+	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
+    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 \
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
-integration-test-helm:  setup-integration-test ## Run integration tests for Vault OSS
-	$(MAKE) integration-test DEPLOY_OPERATOR_WITH_HELM=true
+integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
+	$(MAKE) integration-test TEST_WITH_HELM=true
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
@@ -210,44 +258,53 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
 	kind create cluster \
+		--wait=5m \
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
-		--config $(CURDIR)/test/integration/kind/config.yaml
+		--config $(KIND_CONFIG_FILE)
 	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
+	find $(INTEGRATION_TEST_ROOT)/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
 
 .PHONY: setup-integration-test
-setup-integration-test: terraform kustomize set-vault-license ## Deploy Vault for integration testing
-	@mkdir -p $(TF_INFRA_STATE_DIR)
+## Create Vault inside the cluster
+setup-integration-test: setup-vault ## Deploy Vault Enterprise for integration testing
+
+.PHONY: setup-vault
+setup-vault: terraform kustomize set-vault-license ## Deploy Vault for integration testing
+	@mkdir -p $(TF_VAULT_STATE_DIR)
 ifeq ($(VAULT_ENTERPRISE), true)
     ## ensure that the license is *not* emitted to the console
-	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_INFRA_STATE_DIR)/license.auto.tfvars
+	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_VAULT_STATE_DIR)/license.auto.tfvars
 ifdef VAULT_IMAGE_REPO
 	$(eval EXTRA_VARS=-var vault_image_repo_ent=$(VAULT_IMAGE_REPO))
 endif
 else ifdef VAULT_IMAGE_REPO
 	$(eval EXTRA_VARS=-var vault_image_repo=$(VAULT_IMAGE_REPO))
 endif
-	@rm -f $(TF_INFRA_STATE_DIR)/*.tf
-	cp $(TF_INFRA_SRC_DIR)/*.tf $(TF_INFRA_STATE_DIR)/.
-	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) apply -auto-approve \
+	@rm -f $(TF_VAULT_STATE_DIR)/*.tf
+	cp -v $(TF_INFRA_SRC_DIR)/*.tf $(TF_VAULT_STATE_DIR)/.
+	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) apply -auto-approve \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
 		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
-	rm -f $(TF_INFRA_STATE_DIR)/*.tfvars
-
-	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) ./test/integration/vault/patch-vault.sh
+	rm -f $(TF_VAULT_STATE_DIR)/*.tfvars
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(VAULT_PATCH_ROOT)/patch-vault.sh
 
 .PHONY: setup-integration-test-ent
 ## Create Vault inside the cluster
-setup-integration-test-ent: ## Deploy Vault Enterprise for integration testing
-	$(MAKE) setup-integration-test VAULT_ENTERPRISE=true
+setup-integration-test-ent: setup-vault-ent ## Deploy Vault Enterprise for integration testing
+
+.PHONY: setup-vault-ent
+## Create Vault inside the cluster
+setup-vault-ent: ## Deploy Vault Enterprise for integration testing
+	$(MAKE) setup-vault VAULT_ENTERPRISE=true
 
 .PHONY: set-vault-license
 set-vault-license:
@@ -269,21 +326,24 @@ endif
 
 .PHONY: ci-deploy
 ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: ci-deploy-kind
-ci-deploy-kind: kustomize ## Deploy controller to the K8s cluster (without generating assets)
+ci-deploy-kind: load-docker-image ## Deploy controller to the K8s cluster (without generating assets)
+
+.PHONY: load-docker-image
+load-docker-image: kustomize ## Deploy controller to the K8s cluster (without generating assets)
 	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
 
 .PHONY: teardown-integration-test
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
-	$(TERRAFORM) -chdir=$(TF_INFRA_STATE_DIR) destroy -auto-approve \
+	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) destroy -auto-approve \
 		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_license=ignored && \
-	rm -rf $(TF_INFRA_STATE_DIR)
+	rm -rf $(TF_VAULT_STATE_DIR)
 
 ##@ Generate Helm Chart
 ### Helmify regenerates the CRDs and copies them into the chart dir.
@@ -292,11 +352,11 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 ### regenerating the CRDs from the config directory.
 .PHONY: helm-chart
 helm-chart: manifests kustomize helmify
-	$(KUSTOMIZE) build config/default | $(HELMIFY) -crd-dir
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | $(HELMIFY) -crd-dir
 
 .PHONY: unit-test
 unit-test: ## Run unit tests for the helm chart
-	bats test/unit/
+	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
 ##@ Deployment
 
@@ -314,17 +374,27 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy-kind
-deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMG)
-	$(MAKE) deploy
+deploy-kind: manifests kustomize load-docker-image deploy ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+
+.PHONY: delete-operator-pod
+delete-operator-pod:
+	kubectl -n $(OPERATOR_NAMESPACE) delete pod  -l control-plane=controller-manager
+
+.PHONY: rollout-restart-operator
+rollout-restart-operator:
+	kubectl -n $(OPERATOR_NAMESPACE) rollout restart deployment -l control-plane=controller-manager
+
+.PHONY: build-deploy-kind
+build-deploy-kind:
+	$(MAKE) generate manifests docker-build deploy-kind delete-operator-pod
 
 ##@ Build Dependencies
 
@@ -349,7 +419,7 @@ $(KUSTOMIZE): $(LOCALBIN)
 	test -s $(LOCALBIN)/kustomize || $(KUSTOMIZE_INSTALL_SCRIPT) $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN)
 
 .PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
+controller-gen: $(CONTROLLER_GEN) go-version-check ## Download controller-gen locally if necessary.
 $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
@@ -361,7 +431,7 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: bundle
 bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	operator-sdk bundle validate ./bundle
 
@@ -437,6 +507,10 @@ HELMIFY = $(shell which helmify)
 endif
 endif
 
+.PHONY: copywrite
+copywrite: ## Download copywrite locally if necessary.
+	@./hack/install_copywrite.sh
+	$(eval COPYWRITE=./bin/copywrite)
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
@@ -469,3 +543,12 @@ build-diags:
 .PHONY: clean
 clean:
 	rm -rf build
+
+
+# Generate Helm reference docs from values.yaml and update Vault website.
+# Usage: make gen-helm-docs vault=<path-to-vault-repo>.
+# If not options are given, the local copy of docs/helm.mdx will be updated, which can
+# be used to submit a PR to vault docs.
+# Adapted from https://github.com/hashicorp/consul-k8s/tree/main/hack/helm-reference-gen
+gen-helm-docs:
+	@cd hack/helm-reference-gen; go run ./... --vault=$(vault)

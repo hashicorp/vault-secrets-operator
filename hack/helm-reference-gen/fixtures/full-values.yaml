@@ -1,0 +1,183 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+# Top level configuration for the vault secrets operator deployment.
+# This is comprised of a controller and a kube rbac proxy container.
+controller:
+
+  # Set the number of replicas for the operator.
+  # @type: integer
+  replicas: 1
+
+  # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
+  # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
+  kubeRbacProxy:
+    # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
+    image:
+      repository: gcr.io/kubebuilder/kube-rbac-proxy
+      tag: v0.11.0
+
+    # Configures the default resources for the kube rbac proxy container.
+    # For more information on configuring resources, see the K8s documentation:
+    # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+    # @recurse: true
+    # @type: map
+    resources:
+      limits:
+        cpu: 500m
+        memory: 128Mi
+      requests:
+        cpu: 5m
+        memory: 64Mi
+
+  # Settings related to the vault-secrets-operator container.
+  manager:
+    # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
+    image:
+      repository: hashicorp/vault-secrets-operator
+      tag: 0.0.0-dev
+
+    # Configures the default resources for the vault-secrets-operator container.
+    # For more information on configuring resources, see the K8s documentation:
+    # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+    # @recurse: true
+    # @type: map
+    resources:
+      limits:
+        cpu: 500m
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 64Mi
+
+  # Sets the configuration settings used by the controller. Any custom changes will be reflected in the
+  # data field of the configmap.
+  # For more information on configuring resources, see the K8s documentation:
+  # https://kubernetes.io/docs/concepts/configuration/configmap/ 
+  # @recurse: true
+  # @type: map
+  controllerConfigMapYaml:
+    health:
+      healthProbeBindAddress: :8081
+    leaderElection:
+      leaderElect: true
+      resourceName: b0d477c0.hashicorp.com
+    metrics:
+      bindAddress: 127.0.0.1:8080
+    webhook:
+      port: 9443
+
+  # Configures the environment variable KUBERNETES_CLUSTER_DOMAIN used by KubeDNS.
+  # @type: string
+  kubernetesClusterDomain: cluster.local
+
+
+# Configure the metrics service ports used by the metrics service.
+# Set the configuration fo the metricsService port.
+# @recurse: true
+# @type: map
+metricsService:
+  # Set the port settings for the metrics service.
+  # For more information on configuring resources, see the K8s documentation:
+  # https://kubernetes.io/docs/concepts/services-networking/service/ 
+  # @type: map
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  type: ClusterIP
+
+# Configures the default VaultConnection CR which will be used by resources
+# if they do not specify a VaultConnection reference. The name is 'default' and will
+# always be installed in the same namespace as the operator.
+defaultVaultConnection:
+  # toggles the deployment of the VaultAuthMethod CR
+  # @type: boolean
+  enabled: false
+
+  # Address of the Vault Server
+  # @type: string
+  address: http://vault.default.svc.cluster.local:8200
+
+  # CACertSecret containing the trusted PEM encoded CA certificate chain.
+  # Note: This secret must exist prior to deploying the CR.
+  # @type: string
+  caCertSecret: ""
+
+  # TLSServerName to use as the SNI host for TLS connections.
+  # @type: string
+  tlsServerName: ""
+
+  # SkipTLSVerify for TLS connections.
+  # @type: boolean
+  skipTLSVerify: false
+
+  # Headers to be included in all Vault requests.
+  # @type: string, eg:
+  # headers: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  # @type: string
+  headers: ""
+
+
+# Configures and deploys the default VaultAuthMethod CR which will be used by resources
+# if they do not specify a VaultAuthMethod reference. The name is 'default' and will
+# always be installed in the same namespace as the operator.
+defaultAuthMethod:
+  # toggles the deployment of the VaultAuthMethod CR
+  # @type: boolean
+  enabled: false
+
+  # Vault namespace for the VaultAuthMethod CR
+  # @type: string
+  namespace: default
+
+  # Vault Auth method to be used with the VaultAuthMethod CR
+  # @type: string
+  method: kubernetes
+
+  # Mount path for the Vault Auth Method.
+  # @type: string
+  mount: kubernetes
+
+  # Vault Kubernetes auth method specific configuration
+  kubernetes:
+    # Vault Auth Role to use
+    # This is a required field and must be setup in Vault prior to deploying the helm chart
+    # if `defaultAuthMethod.enabled=true`
+    # TODO: mark required in the charts.
+    # @type: string
+    role: demo
+
+    # Kubernetes ServiceAccount associated with the default Vault Auth Role
+    # @type: string
+    serviceAccount: default
+
+    # Token Audience is required and should match whatever the audience
+    # of the vault kubernetes auth role has set.
+    # @type: array<string>
+    tokenAudiences: []
+
+  # Params to use when authenticating to Vault
+  # params: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  # @type: string
+  params: ""
+
+  # Headers to be included in all Vault requests.
+  # headers: |
+  #   "vault-something1": "foo"
+  #   "vault-something2": "bar"
+  #   "vault-something3": "baz"
+  # @type: string
+  headers: ""
+
+## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored. 
+tests:
+  # @type: boolean
+  enabled: true

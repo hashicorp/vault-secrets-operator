@@ -35,7 +35,8 @@ spec:
         kubectl.kubernetes.io/default-container: manager
     spec:
       containers:
-      - args:
+      - name: kube-rbac-proxy
+        args:
         - --secure-listen-address=0.0.0.0:8443
         - --upstream=http://127.0.0.1:8080/
         - --logtostderr=true
@@ -44,7 +45,6 @@ spec:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.kubernetesClusterDomain }}
         image: {{ .Values.controller.kubeRbacProxy.image.repository }}:{{ .Values.controller.kubeRbacProxy.image.tag }}
-        name: kube-rbac-proxy
         ports:
         - containerPort: 8443
           name: https
@@ -52,13 +52,22 @@ spec:
         resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
         securityContext:
           allowPrivilegeEscalation: false
-      - args:
+      - name: manager
+        args:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
         - --leader-elect
         command:
         - /vault-secrets-operator
         env:
+        - name: OPERATOR_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OPERATOR_POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.kubernetesClusterDomain }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
@@ -69,7 +78,6 @@ spec:
             port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
-        name: manager
         readinessProbe:
           httpGet:
             path: /readyz
@@ -79,7 +87,20 @@ spec:
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
         securityContext:
           allowPrivilegeEscalation: false
+        volumeMounts:
+        - mountPath: /var/run/podinfo
+          name: podinfo
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
+      volumes:
+      - downwardAPI:
+          items:
+          - fieldRef:
+              fieldPath: metadata.name
+            path: name
+          - fieldRef:
+              fieldPath: metadata.uid
+            path: uid
+        name: podinfo
