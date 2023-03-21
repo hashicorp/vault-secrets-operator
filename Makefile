@@ -194,7 +194,9 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: build
 build: generate fmt vet ## Build manager binary.
-	go build -o bin/vault-secrets-operator main.go
+	go build \
+    	-ldflags "${LD_FLAGS} $(shell ./scripts/ldflags-version.sh)" \
+		-o bin/vault-secrets-operator main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.

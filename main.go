@@ -26,6 +26,7 @@ import (
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -53,6 +54,8 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var clientCachePersistenceModel string
+	var printVersion bool
+	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
@@ -71,6 +74,11 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	if printVersion {
+		os.Stdout.WriteString(fmt.Sprintf("%#v\n", version.Version()))
+		os.Exit(0)
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
