@@ -37,6 +37,35 @@ controller:
       repository: hashicorp/vault-secrets-operator
       tag: 0.0.0-dev
 
+    # Configures the client cache which is used by the controller to cache (and potentially persist) vault tokens that
+    # are the result of using the VaultAuthMethod. This enables re-use of Vault Tokens
+    # throughout their TTLs as well as the ability to renew.
+    clientCache:
+      # Defines the `-client-cache-persistence-model` which caches+persists vault tokens.
+      # Valid values are:
+      # "none" - in-memory client cache is used, no tokens are persisted.
+      # "direct-unencrypted" - in-memory client cache is persisted, unencrypted. This is NOT recommended for any production workload.
+      # "direct-encrypted" - in-memory client cache is persisted encrypted using the Vault Transit engine.
+      #
+      # default: "none"
+      # @type: string
+      persistenceModel: ""
+
+      # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
+      # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
+      # of the client cache which can result in additional Vault client counts.
+      #
+      # default: 10000
+      # @type: integer
+      cacheSize:
+
+    # Defines the maximum number of concurrent reconciles by the controller.
+    # NOTE: Currently this is only used by the reconciliation logic of dynamic secrets.
+    #
+    # default: 100
+    # @type: integer
+    maxConcurrentReconciles:
+
     # Configures the default resources for the vault-secrets-operator container.
     # For more information on configuring resources, see the K8s documentation:
     # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
