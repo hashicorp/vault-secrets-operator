@@ -7,6 +7,9 @@ ARG GO_VERSION=latest
 # -----------------------------------
 FROM golang:$GO_VERSION as dev-builder
 
+ARG LD_FLAGS
+ARG GOOS=linux
+ARG GOARCH=amd64
 ENV BIN_NAME=vault-secrets-operator
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -23,7 +26,7 @@ COPY internal/ internal/
 COPY controllers/ controllers/
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o $BIN_NAME main.go
+RUN CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LD_FLAGS" -a -o $BIN_NAME main.go
 
 # dev image
 # -----------------------------------

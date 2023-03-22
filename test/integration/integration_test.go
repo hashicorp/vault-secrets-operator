@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -197,28 +198,43 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient client.Clien
 	return &validSecret, err
 }
 
-func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, namespace, expectedCommonName, previousSerialNumber string) (string, *corev1.Secret, error) {
+func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *secretsv1alpha1.VaultPKISecret, previousSerialNumber string) (string, *corev1.Secret, error) {
 	t.Helper()
 	destSecret := &corev1.Secret{}
 	newSerialNumber, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
 		var err error
-		destSecret, err = k8s.GetSecretE(t, &k8s.KubectlOptions{Namespace: namespace}, name)
+		destSecret, err = k8s.GetSecretE(t,
+			&k8s.KubectlOptions{Namespace: vpsObj.ObjectMeta.Namespace},
+			vpsObj.Spec.Destination.Name,
+		)
 		if err != nil {
 			return "", err
 		}
 		if len(destSecret.Data) == 0 {
-			return "", fmt.Errorf("data in secret %s/%s is empty: %#v", namespace, name, destSecret)
+			return "", fmt.Errorf("data in secret %s/%s is empty: %#v",
+				vpsObj.ObjectMeta.Namespace, vpsObj.Spec.Destination.Name, destSecret)
 		}
-		if len(destSecret.Data["certificate"]) == 0 {
-			return "", fmt.Errorf("certificate is empty")
+		for _, field := range []string{"certificate", "private_key"} {
+			if len(destSecret.Data[field]) == 0 {
+				return "", fmt.Errorf(field + " is empty")
+			}
+		}
+		tlsFieldsCheck, err := checkTLSFields(destSecret)
+		if vpsObj.Spec.Destination.Type == corev1.SecretTypeTLS {
+			assert.True(t, tlsFieldsCheck)
+			assert.NoError(t, err)
+		} else {
+			assert.False(t, tlsFieldsCheck)
+			assert.Error(t, err)
 		}
 
 		pem, rest := pem.Decode(destSecret.Data["certificate"])
 		assert.Empty(t, rest)
 		cert, err := x509.ParseCertificate(pem.Bytes)
 		require.NoError(t, err)
-		if cert.Subject.CommonName != expectedCommonName {
-			return "", fmt.Errorf("subject common name %q does not match expected %q", cert.Subject.CommonName, expectedCommonName)
+		if cert.Subject.CommonName != vpsObj.Spec.CommonName {
+			return "", fmt.Errorf("subject common name %q does not match expected %q",
+				cert.Subject.CommonName, vpsObj.Spec.CommonName)
 		}
 		if cert.SerialNumber.String() == previousSerialNumber {
 			return "", fmt.Errorf("serial number %q still matches previous serial number %q", cert.SerialNumber, previousSerialNumber)
@@ -228,6 +244,29 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, name, nam
 	})
 
 	return newSerialNumber, destSecret, err
+}
+
+// Checks that both TLS fields are present and equal to their vault response
+// counterparts
+func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
+	var tlsCert []byte
+	if tlsCert, ok = secret.Data[corev1.TLSCertKey]; !ok {
+		return false, fmt.Errorf("%s is missing", corev1.TLSCertKey)
+	}
+	var tlsKey []byte
+	if tlsKey, ok = secret.Data[corev1.TLSPrivateKeyKey]; !ok {
+		return false, fmt.Errorf("%s is missing", corev1.TLSPrivateKeyKey)
+	}
+
+	if !bytes.Equal(tlsCert, secret.Data["certificate"]) {
+		return false, fmt.Errorf("%s did not equal certificate: %s, %s",
+			corev1.TLSCertKey, tlsCert, secret.Data["certificate"])
+	}
+	if !bytes.Equal(tlsKey, secret.Data["private_key"]) {
+		return false, fmt.Errorf("%s did not equal private_key: %s, %s",
+			corev1.TLSPrivateKeyKey, tlsKey, secret.Data["private_key"])
+	}
+	return true, nil
 }
 
 type dynamicK8SOutputs struct {

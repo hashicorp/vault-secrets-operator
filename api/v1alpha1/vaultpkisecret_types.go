@@ -44,7 +44,10 @@ type VaultPKISecretSpec struct {
 	// This parameter is part of the request URL.
 	IssuerRef string `json:"issuerRef,omitempty"`
 
-	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
+	// Destination provides configuration necessary for syncing the Vault secret
+	// to Kubernetes. If the type is set to "kubernetes.io/tls", the Vault
+	// response fields "certificate" and "private_key" will be copied to fields
+	// "tls.crt" and "tls.key", respectively, in the Kubernetes secret.
 	Destination Destination `json:"destination"`
 
 	// CommonName to include in the request.
