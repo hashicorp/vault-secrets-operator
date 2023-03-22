@@ -44,6 +44,12 @@ type VaultPKISecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//
+// required for rollout-restart
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state. It
@@ -220,6 +226,14 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	reason := consts.ReasonSecretSync
+	if timeToRenew {
+		reason = consts.ReasonSecretRotated
+		// rollout-restart errors are not retryable
+		// all error reporting is handled by helpers.HandleRolloutRestarts
+		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
+	}
+
 	// revoke the certificate on renewal
 	if o.Spec.Revoke && timeToRenew && o.Status.SerialNumber != "" {
 		if err := r.revokeCertificate(ctx, logger, o); err != nil {
@@ -241,7 +255,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	logger.Info("Successfully updated the secret")
-	r.recordEvent(o, consts.ReasonAccepted, "Secret synced")
+	r.recordEvent(o, reason, "Secret synced")
 
 	return ctrl.Result{
 		RequeueAfter: computeHorizonWithJitter(getRenewTime(o.Status.Expiration, expiryOffset)),

@@ -41,6 +41,12 @@ type VaultStaticSecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+//
+// required for rollout-restart
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//
 
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -119,6 +125,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	var doRolloutRestart bool
 	syncSecret := true
 	if o.Spec.HMACSecretData {
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
@@ -132,8 +139,14 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
+		doRolloutRestart = o.Status.SecretMAC != "" && !macsEqual
 		syncSecret = !macsEqual
+
 		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+	} else if len(o.Spec.RolloutRestartTargets) > 0 {
+		logger.V(consts.LogLevelWarning).Info("Ignoring RolloutRestartTargets",
+			"hmacSecretData", o.Spec.HMACSecretData,
+			"targets", o.Spec.RolloutRestartTargets)
 	}
 
 	if syncSecret {
@@ -142,7 +155,14 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Failed to update k8s secret: %s", err)
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret synced")
+		reason := consts.ReasonSecretSync
+		if doRolloutRestart {
+			reason = consts.ReasonSecretRotated
+			// rollout-restart errors are not retryable
+			// all error reporting is handled by helpers.HandleRolloutRestarts
+			_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
+		}
+		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
 	} else {
 		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
 	}

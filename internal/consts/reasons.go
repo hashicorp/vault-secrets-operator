@@ -24,6 +24,8 @@ const (
 	ReasonPersistenceFailed         = "PersistenceFailed"
 	ReasonPersistenceForbidden      = "PersistenceForbidden"
 	ReasonPersistentCacheCleanup    = "PersistentCacheCleanup"
+	ReasonRolloutRestartFailed      = "RolloutRestartFailed"
+	ReasonRolloutRestartTriggered   = "RolloutRestartTriggered"
 	ReasonSecretLeaseRenewal        = "SecretLeaseRenewal"
 	ReasonSecretLeaseRenewalError   = "SecretLeaseRenewalError"
 	ReasonSecretRotated             = "SecretRotated"

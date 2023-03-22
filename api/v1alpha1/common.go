@@ -23,3 +23,12 @@ type Destination struct {
 	// Defaults to Opaque.
 	Type v1.SecretType `json:"type,omitempty"`
 }
+
+// RolloutRestartTarget provides the configuration required to perform a
+// rollout-restart of the supported resources upon Vault Secret rotation.
+// Supported resources: Deployment, DaemonSet, StatefulSet
+type RolloutRestartTarget struct {
+	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet}
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}

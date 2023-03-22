@@ -44,6 +44,13 @@ type VaultPKISecretSpec struct {
 	// This parameter is part of the request URL.
 	IssuerRef string `json:"issuerRef,omitempty"`
 
+	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
+	// not support dynamically reloading a rotated secret.
+	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
+	// trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.
+	// See RolloutRestartTarget for more details.
+	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
+
 	// Destination provides configuration necessary for syncing the Vault secret
 	// to Kubernetes. If the type is set to "kubernetes.io/tls", the Vault
 	// response fields "certificate" and "private_key" will be copied to fields
