@@ -79,9 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # * Linux dropped 386 support in 2012.
         # * Distroless docker container only supports amd64+arm64.
-        # arch: ["arm", "arm64", "386", "amd64"]
         arch: ["arm64", "amd64"]
       fail-fast: true
     steps:
