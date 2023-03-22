@@ -55,7 +55,7 @@ spec:
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       containers:
-      - name: pre-delete-vault-auth-cr
+      - name: pre-delete-vault-auth
         image: bitnami/kubectl
         command:
          - "bin/bash"
