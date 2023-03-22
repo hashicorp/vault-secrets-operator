@@ -43,11 +43,11 @@ metadata:
 spec:
   template:
     metadata:
-      name: testing-stuff
+      name: {{ include "chart.fullname" . }}-pre-delete-vault-connection-cr
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       containers:
-      - name: test
+      - name: pre-delete-vault-connection
         image: bitnami/kubectl
         command:
          - "bin/bash"
