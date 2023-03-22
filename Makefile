@@ -194,7 +194,9 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: build
 build: generate fmt vet ## Build manager binary.
-	go build -o bin/vault-secrets-operator main.go
+	go build \
+    	-ldflags "${LD_FLAGS} $(shell ./scripts/ldflags-version.sh)" \
+		-o bin/vault-secrets-operator main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -202,7 +204,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t $(IMG) . --target=dev --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) . --target=dev \
+	--build-arg GOOS=$(GOOS) \
+	--build-arg GOARCH=$(GOARCH) \
+	--build-arg GO_VERSION=$(shell cat .go-version) \
+	--build-arg LD_FLAGS="$(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)"
 
 .PHONY: docker-image-save
 docker-image-save: ##
@@ -221,10 +227,12 @@ docker-push: ## Push docker image with the manager.
 .PHONY: ci-build
 ci-build: ## Build operator binary (without generating assets).
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
+		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
 		-a \
 		-o $(BUILD_DIR)/$(BIN_NAME) \
 		.
 
+# TODO: this does not work on arm64 build machines.
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
 	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
