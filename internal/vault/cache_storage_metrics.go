@@ -32,12 +32,12 @@ var (
 		metrics.MetricsNamespace, subsystemClientStorageCache, "length")
 	metricsFQNClientCacheStorageReqsTotal = prometheus.BuildFQName(
 		metrics.MetricsNamespace, subsystemClientStorageCache, "requests_total")
-	metricsFQNClientCacheStorageReqsTotalErrors = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "requests_total_errors")
+	metricsFQNClientCacheStorageReqsErrorsTotal = prometheus.BuildFQName(
+		metrics.MetricsNamespace, subsystemClientStorageCache, "requests_errors_total")
 	metricsFQNClientCacheStorageOpsTotal = prometheus.BuildFQName(
 		metrics.MetricsNamespace, subsystemClientStorageCache, "operations_total")
-	metricsFQNClientCacheStorageOpsTotalErrors = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "operations_total_errors")
+	metricsFQNClientCacheStorageOpsErrorsTotal = prometheus.BuildFQName(
+		metrics.MetricsNamespace, subsystemClientStorageCache, "operations_errors_total")
 )
 
 var _ prometheus.Collector = (*clientCacheStorageCollector)(nil)

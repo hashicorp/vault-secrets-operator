@@ -497,11 +497,11 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 					assert.Equal(t, tt.expectedLength, m[0].Gauge.GetValue(), msgFmt, "value", name)
 				case metricsFQNClientCacheStorageReqsTotal:
 					assertMetrics(t, m, name, false)
-				case metricsFQNClientCacheStorageReqsTotalErrors:
+				case metricsFQNClientCacheStorageReqsErrorsTotal:
 					assertMetrics(t, m, name, true)
 				case metricsFQNClientCacheStorageOpsTotal:
 					assertMetrics(t, m, name, false)
-				case metricsFQNClientCacheStorageOpsTotalErrors:
+				case metricsFQNClientCacheStorageOpsErrorsTotal:
 					assertMetrics(t, m, name, true)
 				default:
 					assert.Fail(t, "missing a test for metric %s", name)
