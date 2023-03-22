@@ -162,3 +162,16 @@ event "promote-production-docker" {
     on = "always"
   }
 }
+
+event "promote-production-helm" {
+  depends = ["promote-production-packaging"]
+  action "promote-production-helm" {
+    organization = "hashicorp"
+    repository = "crt-workflows-common"
+    workflow = "promote-production-helm"
+  }
+
+  notification {
+    on = "always"
+  }
+}
