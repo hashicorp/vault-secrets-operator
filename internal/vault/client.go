@@ -340,13 +340,20 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	var errs error
+	startTS := time.Now()
+	defer func() {
+		c.observeTime(startTS, "login")
+		c.incrementOperationCounter("login", errs)
+	}()
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
 
 	creds, err := c.credentialProvider.GetCreds(ctx, client)
 	if err != nil {
-		return err
+		errs = err
+		return errs
 	}
 
 	if len(c.authObj.Spec.Headers) > 0 {
@@ -361,7 +368,8 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	path := fmt.Sprintf("auth/%s/login", c.authObj.Spec.Mount)
 	resp, err := c.Write(ctx, path, creds)
 	if err != nil {
-		return err
+		errs = err
+		return errs
 	}
 
 	c.client.SetToken(resp.Auth.ClientToken)
@@ -371,7 +379,8 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 
 	if resp.Auth.Renewable {
 		if err := c.startLifetimeWatcher(ctx); err != nil {
-			return err
+			errs = err
+			return errs
 		}
 	}
 
@@ -387,29 +396,57 @@ func (c *defaultClient) GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
 }
 
 func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, error) {
-	// TODO: add metrics
-	return c.client.Logical().ReadWithContext(ctx, path)
+	var err error
+	startTS := time.Now()
+	defer func() {
+		c.observeTime(startTS, "read")
+		c.incrementOperationCounter("read", err)
+	}()
+
+	var secret *api.Secret
+	secret, err = c.client.Logical().ReadWithContext(ctx, path)
+	return secret, err
 }
 
 func (c *defaultClient) Write(ctx context.Context, path string, m map[string]any) (*api.Secret, error) {
-	// TODO: add metrics
-	return c.client.Logical().WriteWithContext(ctx, path, m)
+	var err error
+	startTS := time.Now()
+	defer func() {
+		c.observeTime(startTS, "write")
+		c.incrementOperationCounter("write", err)
+	}()
+
+	var secret *api.Secret
+	secret, err = c.client.Logical().WriteWithContext(ctx, path, m)
+	return secret, err
 }
 
 func (c *defaultClient) renew(ctx context.Context) error {
 	// should be called from a write locked method only
+	var errs error
+	startTS := time.Now()
+	defer func() {
+		c.incrementOperationCounter("renew", errs)
+		if errs == nil {
+			c.observeTime(startTS, "renew")
+		}
+	}()
+
 	if c.authSecret == nil {
-		return fmt.Errorf("cannot renew client token, never logged in")
+		errs = fmt.Errorf("cannot renew client token, never logged in")
+		return errs
 	}
 
 	if !c.authSecret.Auth.Renewable {
-		return fmt.Errorf("cannot renew client token, non-renewable")
+		errs = fmt.Errorf("cannot renew client token, non-renewable")
+		return errs
 	}
 
 	resp, err := c.Write(ctx, "/auth/token/renew-self", nil)
 	if err != nil {
 		c.authSecret = nil
 		c.lastRenewal = 0
+		errs = err
 		return err
 	} else {
 		c.authSecret = resp
@@ -445,4 +482,18 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, auth
 	c.connObj = connObj
 
 	return nil
+}
+
+func (c *defaultClient) observeTime(ts time.Time, operation string) {
+	clientOperationTimes.WithLabelValues(operation, ctrlclient.ObjectKeyFromObject(c.connObj).String()).Observe(
+		time.Since(ts).Seconds(),
+	)
+}
+
+func (c *defaultClient) incrementOperationCounter(operation string, err error) {
+	vaultConn := ctrlclient.ObjectKeyFromObject(c.connObj).String()
+	clientOperationErrors.WithLabelValues(operation, vaultConn).Inc()
+	if err != nil {
+		clientOperations.WithLabelValues(operation, vaultConn).Inc()
+	}
 }

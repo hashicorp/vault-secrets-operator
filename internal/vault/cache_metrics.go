@@ -17,23 +17,23 @@ var (
 
 	// metricsFQNClientCacheSize for the ClientCache.
 	metricsFQNClientCacheSize = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientCache, "size")
+		metrics.Namespace, subsystemClientCache, "size")
 
 	// metricsFQNClientCacheLength for the ClientCache.
 	metricsFQNClientCacheLength = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientCache, "length")
+		metrics.Namespace, subsystemClientCache, metrics.NameLength)
 
 	// metricsFQNClientCacheHits for the ClientCache.
 	metricsFQNClientCacheHits = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientCache, "hits")
+		metrics.Namespace, subsystemClientCache, "hits")
 
 	// metricsFQNClientCacheMisses for the ClientCache.
 	metricsFQNClientCacheMisses = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientCache, "misses")
+		metrics.Namespace, subsystemClientCache, "misses")
 
 	// metricsFQNClientCacheEvictions for the ClientCache.
 	metricsFQNClientCacheEvictions = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientCache, "evictions")
+		metrics.Namespace, subsystemClientCache, "evictions")
 )
 
 var _ prometheus.Collector = (*clientCacheCollector)(nil)

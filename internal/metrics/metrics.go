@@ -10,9 +10,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-// MetricsNamespace should be use for all Operator metrics that are not
+// MetricsNamespace should be used for all Operator metrics that are not
 // provided by the controller-runtime.
-const MetricsNamespace = "vso"
+const (
+	Namespace      = "vso"
+	LabelOperation = "operation"
+	// LabelVaultConnection usually contains the full name of VaultConnection CR.
+	// e.g. namespace1/connection1
+	LabelVaultConnection = "vault_connection"
+
+	OperationGet        = "get"
+	OperationStore      = "store"
+	OperationRestore    = "restore"
+	OperationRestoreAll = "restore_all"
+	OperationPrune      = "prune"
+	OperationPurge      = "purge"
+
+	NameConfig                = "config"
+	NameLength                = "length"
+	NameOperationsTotal       = "operations_total"
+	NameOperationsErrorsTotal = "operations_errors_total"
+	NameOperationsTimeSeconds = "operations_time_seconds"
+	NameRequestsTotal         = "requests_total"
+	NameRequestsErrorsTotal   = "requests_errors_total"
+)
 
 var ResourceStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "controller_resource_status",
@@ -44,7 +65,7 @@ func SetResourceStatus(controller string, o client.Object, valid bool) {
 func NewBuildInfoGauge(info apimachineryversion.Info) prometheus.Gauge {
 	metric := prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
+			Namespace: Namespace,
 			Subsystem: "build",
 			Name:      "info",
 			Help:      "Vault Secrets Operator build info.",
