@@ -57,7 +57,11 @@ func HandleRolloutRestarts(ctx context.Context, client ctrlclient.Client, obj ct
 		}
 	}
 
-	logger.Error(errs, "Rollout restart failed", "targets", targets)
+	if errs != nil {
+		logger.Error(errs, "Rollout restart failed", "targets", targets)
+	} else {
+		logger.V(consts.LogLevelDebug).Info("Rollout restart succeeded", "total", len(targets))
+	}
 
 	return errs
 }
