@@ -38,7 +38,7 @@ type VaultStaticSecretSpec struct {
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
 	// trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.
-	// All configured targets wil be ignored if HMACSecretData is not set to true.
+	// All configured targets wil be ignored if HMACSecretData is set to false.
 	// See RolloutRestartTarget for more details.
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.

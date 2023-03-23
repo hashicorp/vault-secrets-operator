@@ -226,7 +226,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	reason := consts.ReasonSecretSync
+	reason := consts.ReasonSecretSynced
 	if timeToRenew {
 		reason = consts.ReasonSecretRotated
 		// rollout-restart errors are not retryable

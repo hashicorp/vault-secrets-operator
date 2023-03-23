@@ -158,7 +158,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Failed to update k8s secret: %s", err)
 			return ctrl.Result{}, err
 		}
-		reason := consts.ReasonSecretSync
+		reason := consts.ReasonSecretSynced
 		if doRolloutRestart {
 			reason = consts.ReasonSecretRotated
 			// rollout-restart errors are not retryable
