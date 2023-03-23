@@ -59,7 +59,7 @@ jobs:
     outputs:
       filepath: ${{ steps.generate-metadata-file.outputs.filepath }}
     steps:
-      - name: 'Checkout directory'
+      - name: Checkout directory
         uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - name: Generate metadata file
         id: generate-metadata-file
@@ -67,31 +67,28 @@ jobs:
         with:
           version: ${{ needs.get-product-version.outputs.product-version }}
           product: ${{ env.PKG_NAME }}
-
+          repositoryOwner: "hashicorp"
       - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
           name: metadata.json
           path: ${{ steps.generate-metadata-file.outputs.filepath }}
 
   build:
-    needs:
-      - get-product-version
-      - build-pre-checks
+    name: Go ${{ needs.build-pre-checks.outputs.go-version }} linux ${{ matrix.arch }} build
+    needs: [get-product-version, build-pre-checks]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm", "arm64", "386", "amd64"]
+        # * Distroless docker container only supports amd64+arm64.
+        arch: ["arm64", "amd64"]
       fail-fast: true
-
-    name: Go ${{ needs.build-pre-checks.outputs.go-version }} linux ${{ matrix.arch }} build
-
     steps:
-      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+      - name: Checkout
+        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - name: Setup go
         uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
         with:
           go-version-file: .go-version
-
       - name: Build
         env:
           GOOS: "linux"
@@ -102,17 +99,15 @@ jobs:
           mkdir dist out
           make ci-build
           zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/
-      - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      - name: Upload binaries
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
           name: ${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
           path: out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip
 
   build-docker:
     name: Docker ${{ matrix.arch }} build
-    needs:
-      - get-product-version
-      - build-pre-checks
-      - build
+    needs: [get-product-version, build-pre-checks, build]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -127,6 +122,7 @@ jobs:
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v1
         env:
+          VERSION: ${{ needs.get-product-version.outputs.product-version }}
           GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
         with:
           version: ${{env.version}}
