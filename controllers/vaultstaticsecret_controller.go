@@ -134,12 +134,15 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			// hardcoding a default horizon here, perhaps we will want make this value public?
 			requeueAfter = computeHorizonWithJitter(time.Second * 60)
 		}
+
+		// doRolloutRestart only if this is not the first time this secret has been synced
+		doRolloutRestart = o.Status.SecretMAC != ""
+
 		macsEqual, messageMAC, err := r.handleSecretHMAC(ctx, o, data)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 
-		doRolloutRestart = o.Status.SecretMAC != "" && !macsEqual
 		syncSecret = !macsEqual
 
 		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
