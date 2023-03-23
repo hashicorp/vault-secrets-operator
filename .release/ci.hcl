@@ -164,7 +164,7 @@ event "promote-production-docker" {
 }
 
 event "promote-production-helm" {
-  depends = ["promote-production-packaging"]
+  depends = ["promote-production-docker"]
   action "promote-production-helm" {
     organization = "hashicorp"
     repository = "crt-workflows-common"
