@@ -21,7 +21,7 @@ import (
 )
 
 // annotationRestartedAt is updated to trigger a rollout-restart
-const annotationRestartedAt = "kubectl.kubernetes.io/restartedAt"
+const annotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
 
 // HandleRolloutRestarts for all v1alpha1.RolloutRestartTarget(s) configured for obj.
 // Supported objs are: v1alpha1.VaultDynamicSecret, v1alpha1.VaultStaticSecret, v1alpha1.VaultPKISecret
