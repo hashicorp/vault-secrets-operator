@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/json"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -92,7 +92,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	terraformOptions = setCommonTFOptions(t, terraformOptions)
 
 	crdClient := getCRDClient(t)
-	var created []client.Object
+	var created []ctrlclient.Object
 	ctx := context.Background()
 	t.Cleanup(func() {
 		for _, c := range created {
@@ -217,7 +217,14 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						Name:   "secretkv",
 						Create: false,
 					},
-					RefreshAfter: "5s",
+					HMACSecretData: true,
+					RefreshAfter:   "5s",
+					RolloutRestartTargets: []secretsv1alpha1.RolloutRestartTarget{
+						{
+							Kind: "Deployment",
+							Name: "vso",
+						},
+					},
 				},
 			},
 			// Create a VaultStaticSecret CR to trigger the sync for kvv2
@@ -351,6 +358,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			} else {
 				assertNoHMAC(t, obj)
 			}
+			if !expectInitial {
+				assertRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
+			}
 		}
 	}
 
@@ -427,7 +437,7 @@ func assertNoHMAC(t *testing.T, origVSSObj *secretsv1alpha1.VaultStaticSecret) {
 	assert.Empty(t, origVSSObj.Status.SecretMAC, "expected vssObj.Status.SecretMAC to be empty")
 }
 
-func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, origVSSObj *secretsv1alpha1.VaultStaticSecret,
+func assertHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, origVSSObj *secretsv1alpha1.VaultStaticSecret,
 	expectInitial bool,
 ) {
 	t.Helper()
@@ -439,8 +449,8 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 		}
 	}
 
-	vssObjKey := client.ObjectKeyFromObject(origVSSObj)
-	vssObj, err := awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
+	vssObjKey := ctrlclient.ObjectKeyFromObject(origVSSObj)
+	vssObj, err := awaitSecretHMACStatus(t, ctx, client, vssObjKey)
 	assert.NoError(t, err)
 	assert.NotNil(t, vssObj)
 	if t.Failed() {
@@ -451,7 +461,7 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 		// wait for the Status update to complete.
 		assert.NoError(t, backoff.Retry(func() error {
 			var v secretsv1alpha1.VaultStaticSecret
-			err := crdClient.Get(ctx, vssObjKey, &v)
+			err := client.Get(ctx, vssObjKey, &v)
 			if t.Failed() {
 				return backoff.Permanent(err)
 			}
@@ -465,27 +475,27 @@ func assertHMAC(t *testing.T, ctx context.Context, crdClient client.Client, orig
 
 	// TODO: this test is unreliable in CI. We can reenable it once we can capture
 	//  the Operator logs from the Kind cluster for further analysis
-	//assertSecretDataHMAC(t, ctx, crdClient, vssObj)
+	//assertSecretDataHMAC(t, ctx, client, vssObj)
 	//if t.Failed() {
 	//	return
 	//}
 
 	// TODO: this test is unreliable in CI. We can reenable it once we can capture
 	//  the Operator logs from the Kind cluster for further analysis
-	//assertHMACTriggeredRemediation(t, ctx, crdClient, vssObj)
+	//assertHMACTriggeredRemediation(t, ctx, client, vssObj)
 	//if t.Failed() {
 	//	return
 	//}
 }
 
-func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.Client,
-	objKey client.ObjectKey,
+func awaitSecretHMACStatus(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	objKey ctrlclient.ObjectKey,
 ) (*secretsv1alpha1.VaultStaticSecret, error) {
 	t.Helper()
 	var vssObj secretsv1alpha1.VaultStaticSecret
 	err := backoff.Retry(func() error {
 		var v secretsv1alpha1.VaultStaticSecret
-		if err := crdClient.Get(ctx, objKey, &v); err != nil {
+		if err := client.Get(ctx, objKey, &v); err != nil {
 			return backoff.Permanent(err)
 		}
 
@@ -499,12 +509,12 @@ func awaitSecretHMACStatus(t *testing.T, ctx context.Context, crdClient client.C
 	return &vssObj, err
 }
 
-func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Client, vssObj *secretsv1alpha1.VaultStaticSecret,
+func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, vssObj *secretsv1alpha1.VaultStaticSecret,
 ) {
 	t.Helper()
 
 	assert.NoError(t, backoff.RetryNotify(func() error {
-		obj, err := awaitSecretHMACStatus(t, ctx, crdClient, client.ObjectKeyFromObject(vssObj))
+		obj, err := awaitSecretHMACStatus(t, ctx, client, ctrlclient.ObjectKeyFromObject(vssObj))
 		if err != nil {
 			return backoff.Permanent(err)
 		}
@@ -515,7 +525,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 		}
 
 		var secret corev1.Secret
-		if err := crdClient.Get(ctx, client.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}, &secret); err != nil {
+		if err := client.Get(ctx, ctrlclient.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}, &secret); err != nil {
 			return backoff.Permanent(err)
 		}
 
@@ -525,7 +535,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 		}
 
 		validateFunc := vault.NewMACValidateFromSecretFunc(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
-		valid, actualMAC, err := validateFunc(ctx, crdClient, message, expectedMAC)
+		valid, actualMAC, err := validateFunc(ctx, client, message, expectedMAC)
 		if err != nil {
 			return backoff.Permanent(err)
 		}
@@ -544,14 +554,14 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, crdClient client.Cl
 	)
 }
 
-func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient client.Client,
+func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, client ctrlclient.Client,
 	vssObj *secretsv1alpha1.VaultStaticSecret,
 ) {
 	t.Helper()
 
 	var secret corev1.Secret
-	secObjKey := client.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}
-	assert.NoError(t, crdClient.Get(ctx, secObjKey, &secret))
+	secObjKey := ctrlclient.ObjectKey{Namespace: vssObj.Namespace, Name: vssObj.Spec.Destination.Name}
+	assert.NoError(t, client.Get(ctx, secObjKey, &secret))
 	if t.Failed() {
 		return
 	}
@@ -568,7 +578,7 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 		"nefarious": []byte("actor"),
 	}
 	secret.Data = nefariousData
-	assert.NoError(t, crdClient.Update(ctx, &secret),
+	assert.NoError(t, client.Update(ctx, &secret),
 		"unexpected, could not update Secret %s", secObjKey)
 	if t.Failed() {
 		return
@@ -577,7 +587,7 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 	// wait for the nefarious data to be updated in the Secret
 	assert.NoError(t, backoff.Retry(func() error {
 		var s corev1.Secret
-		if err := crdClient.Get(ctx, secObjKey, &s); err != nil {
+		if err := client.Get(ctx, secObjKey, &s); err != nil {
 			return err
 		}
 		if !reflect.DeepEqual(nefariousData, s.Data) {
@@ -592,7 +602,7 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 	// wait for the reconciler to pick up the out-of-band change
 	assert.NoError(t, backoff.Retry(func() error {
 		var s corev1.Secret
-		if err := crdClient.Get(ctx, secObjKey, &s); err != nil {
+		if err := client.Get(ctx, secObjKey, &s); err != nil {
 			return err
 		}
 		if !reflect.DeepEqual(origData, s.Data) {
@@ -602,8 +612,8 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, crdClient
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 30)))
 
 	// assert that the vssObj.Status.SecretMAC did not change.
-	vssObjKey := client.ObjectKeyFromObject(vssObj)
-	updated, err := awaitSecretHMACStatus(t, ctx, crdClient, vssObjKey)
+	vssObjKey := ctrlclient.ObjectKeyFromObject(vssObj)
+	updated, err := awaitSecretHMACStatus(t, ctx, client, vssObjKey)
 	assert.NoError(t, err)
 	assert.NotNil(t, updated)
 	if t.Failed() {

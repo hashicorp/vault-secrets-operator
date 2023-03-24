@@ -168,6 +168,12 @@ func TestVaultPKISecret(t *testing.T) {
 						Name:   "pki1",
 						Create: false,
 					},
+					RolloutRestartTargets: []secretsv1alpha1.RolloutRestartTarget{
+						{
+							Kind: "Deployment",
+							Name: "vso",
+						},
+					},
 				},
 			},
 		}
@@ -286,6 +292,8 @@ func TestVaultPKISecret(t *testing.T) {
 					assertSyncableSecret(t, vpsObj,
 						"secrets.hashicorp.com/v1alpha1",
 						"VaultPKISecret", secret)
+
+					assertRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
 				})
 			}
 

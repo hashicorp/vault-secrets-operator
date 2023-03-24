@@ -27,6 +27,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
@@ -34,7 +35,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
@@ -135,22 +136,22 @@ func getVaultClient(t *testing.T, namespace string) *api.Client {
 	return client
 }
 
-func getCRDClient(t *testing.T) client.Client {
+func getCRDClient(t *testing.T) ctrlclient.Client {
 	// restConfig is set in TestMain for when running integration tests.
 	t.Helper()
 
-	k8sClient, err := client.New(&restConfig, client.Options{Scheme: scheme})
+	k8sClient, err := ctrlclient.New(&restConfig, ctrlclient.Options{Scheme: scheme})
 	require.NoError(t, err)
 
 	return k8sClient
 }
 
-func waitForSecretData(t *testing.T, ctx context.Context, crdClient client.Client, maxRetries int, delay time.Duration,
+func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, maxRetries int, delay time.Duration,
 	name, namespace string, expectedData map[string]interface{},
 ) (*corev1.Secret, error) {
 	t.Helper()
 	var validSecret corev1.Secret
-	secObjKey := client.ObjectKey{Namespace: namespace, Name: name}
+	secObjKey := ctrlclient.ObjectKey{Namespace: namespace, Name: name}
 	_, err := retry.DoWithRetryE(t,
 		fmt.Sprintf("wait for k8s Secret data to be synced by the operator, objKey=%s", secObjKey),
 		maxRetries, delay, func() (string, error) {
@@ -283,6 +284,7 @@ type dynamicK8SOutputs struct {
 	TransitKeyName   string   `json:"transit_key_name"`
 	TransitRef       string   `json:"transit_ref"`
 	K8sDBSecrets     []string `json:"k8s_db_secret"`
+	DeploymentName   string   `json:"deployment_name"`
 }
 
 func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int) {
@@ -318,7 +320,7 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 		})
 }
 
-func assertSyncableSecret(t *testing.T, obj client.Object, expectedAPIVersion, expectedKind string, sec *corev1.Secret) {
+func assertSyncableSecret(t *testing.T, obj ctrlclient.Object, expectedAPIVersion, expectedKind string, sec *corev1.Secret) {
 	t.Helper()
 
 	meta, err := helpers.NewSyncableSecretMetaData(obj)
@@ -327,12 +329,12 @@ func assertSyncableSecret(t *testing.T, obj client.Object, expectedAPIVersion, e
 	if meta.Destination.Create {
 		assert.Equal(t, helpers.OwnerLabels, sec.Labels,
 			"expected owner labels not set on %s",
-			client.ObjectKeyFromObject(sec))
+			ctrlclient.ObjectKeyFromObject(sec))
 
 		// check the OwnerReferences
 		expectedOwnerRefs := []v1.OwnerReference{
 			{
-				// For some reason TypeMeta is empty when using the client.Client
+				// For some reason TypeMeta is empty when using the ctrlclient.Client
 				// from within the tests. So we have to hard code APIVersion and Kind.
 				// There are numerous related GH issues for this:
 				// Normally it should be:
@@ -347,14 +349,14 @@ func assertSyncableSecret(t *testing.T, obj client.Object, expectedAPIVersion, e
 		}
 		assert.Equal(t, expectedOwnerRefs, sec.OwnerReferences,
 			"expected owner references not set on %s",
-			client.ObjectKeyFromObject(sec))
+			ctrlclient.ObjectKeyFromObject(sec))
 	} else {
 		assert.Nil(t, sec.Labels,
 			"expected no labels set on %s",
-			client.ObjectKeyFromObject(sec))
+			ctrlclient.ObjectKeyFromObject(sec))
 		assert.Nil(t, sec.OwnerReferences,
 			"expected no OwnerReferences set on %s",
-			client.ObjectKeyFromObject(sec))
+			ctrlclient.ObjectKeyFromObject(sec))
 	}
 }
 
@@ -417,5 +419,58 @@ func exportKindLogs(t *testing.T) {
 			Args:    []string{"export", "logs", "-n", clusterName, exportDir},
 		}
 		shell.RunCommand(t, command)
+	}
+}
+
+func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget) {
+	t.Helper()
+
+	// see secretsv1alpha1.RolloutRestartTarget for supported target resources.
+	timeNow := time.Now().UTC()
+	for _, target := range targets {
+		var tObj ctrlclient.Object
+		tObjKey := ctrlclient.ObjectKey{
+			Namespace: obj.GetNamespace(),
+			Name:      target.Name,
+		}
+		var annotations map[string]string
+		switch target.Kind {
+		case "Deployment":
+			var o appsv1.Deployment
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				annotations = o.Spec.Template.Annotations
+				tObj = &o
+			}
+		case "StatefulSet":
+			var o appsv1.StatefulSet
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				annotations = o.Spec.Template.Annotations
+				tObj = &o
+			}
+		case "ReplicaSet":
+			var o appsv1.ReplicaSet
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				annotations = o.Spec.Template.Annotations
+				tObj = &o
+			}
+		default:
+			assert.Fail(t,
+				"unsupported rollout-restart Kind %q for target %v", target.Kind, target)
+		}
+
+		assert.Greater(t, tObj.GetGeneration(), int64(1))
+		expectedAnnotation := helpers.AnnotationRestartedAt
+		val, ok := annotations[expectedAnnotation]
+		if !assert.True(t, ok,
+			"expected annotation %q is not present", expectedAnnotation) {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, val)
+		if !assert.NoError(t, err,
+			"invalid value for %q", expectedAnnotation) {
+			continue
+		}
+		assert.True(t, ts.Before(timeNow),
+			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
 	}
 }

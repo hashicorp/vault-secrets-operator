@@ -18,12 +18,12 @@ import (
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -41,7 +41,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
 	crdClient := getCRDClient(t)
-	var created []client.Object
+	var created []ctrlclient.Object
 	ctx := context.Background()
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
@@ -82,7 +82,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 60,
+			"vault_db_default_lease_ttl": 30,
 		},
 	}
 	if entTests {
@@ -167,7 +167,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 	}
 
-	create := func(o client.Object) {
+	create := func(o ctrlclient.Object) {
 		require.Nil(t, crdClient.Create(ctx, o))
 		created = append(created, o)
 	}
@@ -231,7 +231,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 				}
 			})
 			// pre-created secrets test
-			for _, dest := range tt.existing {
+			for idx, dest := range tt.existing {
 				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
@@ -247,6 +247,15 @@ func TestVaultDynamicSecret(t *testing.T) {
 						},
 					},
 				}
+				if idx == 0 {
+					vdsObj.Spec.RolloutRestartTargets = []secretsv1alpha1.RolloutRestartTarget{
+						{
+							Kind: "Deployment",
+							Name: outputs.DeploymentName,
+						},
+					}
+				}
+
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
 				objsCreated = append(objsCreated, vdsObj)
 			}
@@ -296,7 +305,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						return
 					}
 
-					objKey := client.ObjectKeyFromObject(obj)
+					objKey := ctrlclient.ObjectKeyFromObject(obj)
 					var vdsObjFinal secretsv1alpha1.VaultDynamicSecret
 					require.NoError(t, backoff.Retry(
 						func() error {
@@ -316,17 +325,64 @@ func TestVaultDynamicSecret(t *testing.T) {
 					assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
 
 					var pods corev1.PodList
-					assert.NoError(t, crdClient.List(ctx, &pods, client.InNamespace(operatorNS),
-						client.MatchingLabels{
+					assert.NoError(t, crdClient.List(ctx, &pods, ctrlclient.InNamespace(operatorNS),
+						ctrlclient.MatchingLabels{
 							"control-plane": "controller-manager",
 						},
 					))
 					require.Equal(t, 1, len(pods.Items))
 					assert.Equal(t, pods.Items[0].UID, vdsObjFinal.Status.LastRuntimePodUID)
+
+					assertDynamicSecretRotation(t, ctx, crdClient, &vdsObjFinal)
 				})
 			}
 
 			assert.Greater(t, count, 0, "no tests were run")
 		})
+	}
+}
+
+// assertDynamicSecretRotation revokes the lease of vdsObjFinal,
+// then waits for the controller to rotate the secret..
+func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
+	client ctrlclient.Client, vdsObj *secretsv1alpha1.VaultDynamicSecret,
+) {
+	vClient, err := api.NewClient(api.DefaultConfig())
+	if vdsObj.Spec.Namespace != "" {
+		vClient.SetNamespace(vdsObj.Spec.Namespace)
+	}
+	if !assert.NoError(t, err) {
+		return
+	}
+	// revoke the lease
+	if !assert.NoError(t, vClient.Sys().Revoke(vdsObj.Status.SecretLease.ID)) {
+		return
+	}
+
+	// wait for the rotation
+	if !assert.NoError(t, backoff.Retry(func() error {
+		var o secretsv1alpha1.VaultDynamicSecret
+		if err := client.Get(ctx,
+			ctrlclient.ObjectKeyFromObject(vdsObj), &o); err != nil {
+			return backoff.Permanent(err)
+		}
+		if o.Status.SecretLease.ID == vdsObj.Status.SecretLease.ID {
+			return fmt.Errorf("secret never rotated")
+		}
+		return nil
+	}, backoff.WithMaxRetries(
+		backoff.NewConstantBackOff(time.Millisecond*500),
+		uint64(vdsObj.Status.SecretLease.LeaseDuration*2)),
+	)) {
+		return
+	}
+
+	// check that all rollout-restarts completed successfully
+	if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
+		// TODO(tech-debt): add method waiting for rollout-restart, for now we
+		//  can provide an artificial grace period.
+		time.Sleep(5 * time.Second)
+		assertRolloutRestarts(t, ctx, client,
+			vdsObj, vdsObj.Spec.RolloutRestartTargets)
 	}
 }
