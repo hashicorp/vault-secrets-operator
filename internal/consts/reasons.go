@@ -8,6 +8,8 @@ const (
 	ReasonInvalidConfiguration    = "InvalidConfiguration"
 	ReasonInvalidResourceRef      = "InvalidResourceRef"
 	ReasonK8sClientError          = "K8sClientError"
+	ReasonRolloutRestartFailed    = "RolloutRestartFailed"
+	ReasonRolloutRestartTriggered = "RolloutRestartTriggered"
 	ReasonSecretLeaseRenewal      = "SecretLeaseRenewal"
 	ReasonSecretLeaseRenewalError = "SecretLeaseRenewalError"
 	ReasonSecretRotated           = "SecretRotated"

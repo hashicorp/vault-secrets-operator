@@ -179,15 +179,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	reason := consts.ReasonSecretSynced
 	if doRolloutRestart {
 		reason = consts.ReasonSecretRotated
-		for _, target := range o.Spec.RolloutRestartTargets {
-			if err := helpers.RolloutRestart(ctx, o, target, r.Client); err != nil {
-				r.Recorder.Eventf(o, corev1.EventTypeWarning, "RolloutRestartFailed",
-					"failed to execute rollout restarts for target %#v: %s", target, err)
-			} else {
-				r.Recorder.Eventf(o, corev1.EventTypeNormal, "RolloutRestartTriggered",
-					"Rollout restart triggered for %v", target)
-			}
-		}
+		// rollout-restart errors are not retryable
+		// all error reporting is handled by helpers.HandleRolloutRestarts
+		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
 	if !r.isRenewableLease(secretLease, o) {

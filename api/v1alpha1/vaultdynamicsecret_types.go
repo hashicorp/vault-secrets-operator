@@ -8,12 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-type RolloutRestartTarget struct {
-	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet}
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-}
-
 // VaultDynamicSecretSpec defines the desired state of VaultDynamicSecret
 type VaultDynamicSecretSpec struct {
 	// VaultAuthRef to the VaultAuth resource
@@ -26,7 +20,11 @@ type VaultDynamicSecretSpec struct {
 	Mount string `json:"mount"`
 	// Role in Vault to get the credentials for.
 	Role string `json:"role"`
-	// RolloutRestartTargets
+	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
+	// not support dynamically reloading a rotated secret.
+	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
+	// trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.
+	// See RolloutRestartTarget for more details.
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
 	Destination Destination `json:"destination"`
