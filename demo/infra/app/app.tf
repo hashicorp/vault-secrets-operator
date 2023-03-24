@@ -74,7 +74,7 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
       rolloutRestartTargets = [
         {
           kind = "Deployment"
-          name = "vs-db-demo"
+          name = "vso-db-demo"
         }
       ]
     }
@@ -95,12 +95,12 @@ resource "kubernetes_manifest" "vault-dynamic-secret-create" {
       role      = local.db_role
       destination = {
         create : true
-        name : "vs-db-demo-created"
+        name : "vso-db-demo-created"
       }
       rolloutRestartTargets = [
         {
           kind = "Deployment"
-          name = "vs-db-demo"
+          name = "vso-db-demo"
         }
       ]
     }
