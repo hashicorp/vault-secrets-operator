@@ -72,16 +72,12 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	path := r.getPath(o.Spec)
 	if o.GetDeletionTimestamp() != nil {
 		if err := r.handleDeletion(ctx, logger, o); err != nil {
-			o.Status.Valid = false
-			o.Status.Error = consts.ReasonK8sClientError
 			msg := "Failed to handle deletion"
 			logger.Error(err, msg)
 			r.recordEvent(o, o.Status.Error, msg+": %s", err)
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
 			return ctrl.Result{}, err
 		}
+		return ctrl.Result{}, nil
 	}
 
 	// assume that status is always invalid
@@ -266,18 +262,18 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Lo
 	l.Info("In deletion")
 	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		if err := r.finalizePKI(ctx, l, s); err != nil {
-			l.Error(err, "finalizer failed")
-			// TODO: decide how to handle a failed finalizer
-			// return ctrl.Result{}, nil
+			l.Error(err, "Failed to finalize")
+			return err
 		}
 
 		l.Info("Removing finalizer")
-		controllerutil.RemoveFinalizer(s, vaultPKIFinalizer)
-		if err := r.Update(ctx, s); err != nil {
-			l.Error(err, "failed to remove finalizer")
-			return err
+		if controllerutil.RemoveFinalizer(s, vaultPKIFinalizer) {
+			if err := r.Update(ctx, s); err != nil {
+				l.Error(err, "Failed to remove the finalizer")
+				return err
+			}
+			l.Info("Successfully removed the finalizer")
 		}
-		l.Info("Successfully removed the finalizer")
 
 		return nil
 	}
