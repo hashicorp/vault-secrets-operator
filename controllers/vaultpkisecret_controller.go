@@ -150,7 +150,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	c, err := r.ClientFactory.GetClient(ctx, r.Client, o)
+	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -325,7 +325,7 @@ func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.L
 }
 
 func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
-	c, err := r.ClientFactory.GetClient(ctx, r.Client, s)
+	c, err := r.ClientFactory.Get(ctx, r.Client, s)
 	if err != nil {
 		return err
 	}

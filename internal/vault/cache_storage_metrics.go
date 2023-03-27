@@ -14,30 +14,24 @@ import (
 
 const (
 	subsystemClientStorageCache = subsystemClientCache + "_storage"
-	metricsOperationStore       = "store"
-	metricsOperationRestore     = "restore"
-	metricsOperationRestoreAll  = "restore_all"
-	metricsOperationPrune       = "prune"
-	metricsOperationPurge       = "purge"
 
-	metricsLabelOperation         = "operation"
 	metricsLabelEnforceEncryption = "enforce_encryption"
 )
 
 // metricsFQNClientCacheStorageLength for the ClientCache.
 var (
 	metricsFQNClientCacheStorageConfig = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "config")
+		metrics.Namespace, subsystemClientStorageCache, metrics.NameConfig)
 	metricsFQNClientCacheStorageLength = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "length")
+		metrics.Namespace, subsystemClientStorageCache, metrics.NameLength)
 	metricsFQNClientCacheStorageReqsTotal = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "requests_total")
+		metrics.Namespace, subsystemClientStorageCache, metrics.NameRequestsTotal)
 	metricsFQNClientCacheStorageReqsErrorsTotal = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "requests_errors_total")
+		metrics.Namespace, subsystemClientStorageCache, metrics.NameRequestsErrorsTotal)
 	metricsFQNClientCacheStorageOpsTotal = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "operations_total")
+		metrics.Namespace, subsystemClientStorageCache, metrics.NameOperationsTotal)
 	metricsFQNClientCacheStorageOpsErrorsTotal = prometheus.BuildFQName(
-		metrics.MetricsNamespace, subsystemClientStorageCache, "operations_errors_total")
+		metrics.Namespace, subsystemClientStorageCache, metrics.NameOperationsErrorsTotal)
 )
 
 var _ prometheus.Collector = (*clientCacheStorageCollector)(nil)

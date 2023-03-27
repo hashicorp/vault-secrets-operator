@@ -113,7 +113,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 		}
 
-		vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
+		vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
 		if err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 				"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
@@ -158,7 +158,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	vClient, err := r.ClientFactory.GetClient(ctx, r.Client, o)
+	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)

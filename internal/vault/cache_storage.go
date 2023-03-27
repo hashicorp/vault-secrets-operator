@@ -28,6 +28,7 @@ import (
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 const (
@@ -156,9 +157,9 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	logger := log.FromContext(ctx)
 	var err error
 	defer func() {
-		c.incrementRequestCounter(metricsOperationStore, err)
+		c.incrementRequestCounter(metrics.OperationStore, err)
 		// track the store operation metrics to be in line with bulk operations like restore, prune, etc.
-		c.incrementOperationCounter(metricsOperationStore, err)
+		c.incrementOperationCounter(metrics.OperationStore, err)
 	}()
 
 	err = req.Validate()
@@ -284,7 +285,7 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 
 	var err error
 	defer func() {
-		c.incrementRequestCounter(metricsOperationRestore, err)
+		c.incrementRequestCounter(metrics.OperationRestore, err)
 	}()
 
 	err = validateObjectKey(req.SecretObjKey)
@@ -315,7 +316,7 @@ func (c *defaultClientCacheStorage) Len(ctx context.Context, client ctrlclient.C
 func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCacheStorageRestoreRequest, s *corev1.Secret) (*clientCacheStorageEntry, error) {
 	var err error
 	defer func() {
-		c.incrementOperationCounter(metricsOperationRestore, err)
+		c.incrementOperationCounter(metrics.OperationRestore, err)
 	}()
 
 	err = c.validateSecretMAC(req, s)
@@ -392,7 +393,7 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 
 	var errs error
 	defer func() {
-		c.incrementRequestCounter(metricsOperationPrune, errs)
+		c.incrementRequestCounter(metrics.OperationPrune, errs)
 	}()
 
 	if len(req.MatchingLabels) == 0 {
@@ -413,7 +414,7 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 
 		if err := client.Delete(ctx, &item); err != nil {
 			if err != nil {
-				c.incrementOperationCounter(metricsOperationPrune, err)
+				c.incrementOperationCounter(metrics.OperationPrune, err)
 			}
 			if apierrors.IsNotFound(err) {
 				continue
@@ -423,7 +424,7 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 			continue
 		}
 
-		c.incrementOperationCounter(metricsOperationPrune, nil)
+		c.incrementOperationCounter(metrics.OperationPrune, nil)
 		count++
 	}
 
@@ -447,7 +448,7 @@ func (c *defaultClientCacheStorage) Purge(ctx context.Context, client ctrlclient
 
 	var err error
 	defer func() {
-		c.incrementRequestCounter(metricsOperationPurge, err)
+		c.incrementRequestCounter(metrics.OperationPurge, err)
 	}()
 
 	err = client.DeleteAllOf(ctx, &corev1.Secret{}, c.deleteAllOfOptions()...)
@@ -460,7 +461,7 @@ func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlc
 
 	var errs error
 	defer func() {
-		c.incrementRequestCounter(metricsOperationRestoreAll, errs)
+		c.incrementRequestCounter(metrics.OperationRestoreAll, errs)
 	}()
 
 	found, err := c.listSecrets(ctx, client, c.listOptions()...)
@@ -632,7 +633,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 				Name: metricsFQNClientCacheStorageReqsTotal,
 				Help: "Client storage cache request total",
 			}, []string{
-				metricsLabelOperation,
+				metrics.LabelOperation,
 			},
 		),
 		requestErrorCounterVec: prometheus.NewCounterVec(
@@ -640,7 +641,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 				Name: metricsFQNClientCacheStorageReqsErrorsTotal,
 				Help: "Client storage cache request errors",
 			}, []string{
-				metricsLabelOperation,
+				metrics.LabelOperation,
 			},
 		),
 		operationCounterVec: prometheus.NewCounterVec(
@@ -648,7 +649,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 				Name: metricsFQNClientCacheStorageOpsTotal,
 				Help: "Client storage cache operations",
 			}, []string{
-				metricsLabelOperation,
+				metrics.LabelOperation,
 			},
 		),
 		operationErrorCounterVec: prometheus.NewCounterVec(
@@ -656,7 +657,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 				Name: metricsFQNClientCacheStorageOpsErrorsTotal,
 				Help: "Client storage cache operation errors",
 			}, []string{
-				metricsLabelOperation,
+				metrics.LabelOperation,
 			},
 		),
 	}
