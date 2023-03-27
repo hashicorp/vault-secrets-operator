@@ -91,9 +91,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 	terraformOptions = setCommonTFOptions(t, terraformOptions)
 
+	ctx := context.Background()
 	crdClient := getCRDClient(t)
 	var created []ctrlclient.Object
-	ctx := context.Background()
 	t.Cleanup(func() {
 		for _, c := range created {
 			// test that the custom resources can be deleted before tf destroy

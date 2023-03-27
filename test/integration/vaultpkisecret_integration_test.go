@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
@@ -83,9 +84,18 @@ func TestVaultPKISecret(t *testing.T) {
 	}
 	terraformOptions = setCommonTFOptions(t, terraformOptions)
 
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+	var created []ctrlclient.Object
 	// Clean up resources with "terraform destroy" at the end of the test.
 	t.Cleanup(func() {
 		exportKindLogs(t)
+
+		for _, c := range created {
+			// test that the custom resources can be deleted before tf destroy
+			// removes the k8s namespace
+			assert.Nil(t, crdClient.Delete(ctx, c))
+		}
 
 		terraform.Destroy(t, terraformOptions)
 		os.RemoveAll(tempDir)
@@ -98,9 +108,6 @@ func TestVaultPKISecret(t *testing.T) {
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
 	terraform.InitAndApply(t, terraformOptions)
-
-	crdClient := getCRDClient(t)
-	ctx := context.Background()
 
 	// When we deploy the operator with Helm it will also deploy default VaultConnection/AuthMethod
 	// resources, so these are not needed. In this case, we will also clear the VaultAuthRef field of
@@ -117,9 +124,8 @@ func TestVaultPKISecret(t *testing.T) {
 			},
 		}
 
-		defer crdClient.Delete(ctx, testVaultConnection)
-		err := crdClient.Create(ctx, testVaultConnection)
-		require.NoError(t, err)
+		require.NoError(t, crdClient.Create(ctx, testVaultConnection))
+		created = append(created, testVaultConnection)
 
 		// Create a VaultAuth CR
 		testVaultAuth := &secretsv1alpha1.VaultAuth{
@@ -140,9 +146,8 @@ func TestVaultPKISecret(t *testing.T) {
 			},
 		}
 
-		defer crdClient.Delete(ctx, testVaultAuth)
-		err = crdClient.Create(ctx, testVaultAuth)
-		require.NoError(t, err)
+		require.NoError(t, crdClient.Create(ctx, testVaultAuth))
+		created = append(created, testVaultAuth)
 	}
 
 	// Create a VaultPKI CR to trigger the sync

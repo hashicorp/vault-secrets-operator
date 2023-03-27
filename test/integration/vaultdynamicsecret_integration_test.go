@@ -40,9 +40,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	ctx := context.Background()
 	crdClient := getCRDClient(t)
 	var created []ctrlclient.Object
-	ctx := context.Background()
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
