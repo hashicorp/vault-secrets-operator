@@ -188,8 +188,14 @@ jobs:
         run: |
           make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
-        if: success() || failure()
+        if: success()
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
           name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}
+          path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: Store kind cluster logs failure
+        if: failure()
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        with:
+          name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}-failed
           path: ${{ steps.create_kind_export_log_root.outputs.log_root }}

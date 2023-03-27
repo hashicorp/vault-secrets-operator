@@ -20,8 +20,8 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
-// annotationRestartedAt is updated to trigger a rollout-restart
-const annotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
+// AnnotationRestartedAt is updated to trigger a rollout-restart
+const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
 
 // HandleRolloutRestarts for all v1alpha1.RolloutRestartTarget(s) configured for obj.
 // Supported objs are: v1alpha1.VaultDynamicSecret, v1alpha1.VaultStaticSecret, v1alpha1.VaultPKISecret
@@ -114,21 +114,21 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
-		t.Spec.Template.ObjectMeta.Annotations[annotationRestartedAt] = time.Now().Format(time.RFC3339)
+		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 		return client.Patch(ctx, t, patch)
 	case *appsv1.StatefulSet:
 		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
-		t.Spec.Template.ObjectMeta.Annotations[annotationRestartedAt] = time.Now().Format(time.RFC3339)
+		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 		return client.Patch(ctx, t, patch)
 	case *appsv1.DaemonSet:
 		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
-		t.Spec.Template.ObjectMeta.Annotations[annotationRestartedAt] = time.Now().Format(time.RFC3339)
+		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 		return client.Patch(ctx, t, patch)
 	default:
 		return fmt.Errorf("unsupported type %T for rollout-restart patching", t)
