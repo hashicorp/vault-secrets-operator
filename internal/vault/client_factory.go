@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,11 +19,12 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 const (
@@ -30,7 +32,7 @@ const (
 )
 
 type ClientFactory interface {
-	GetClient(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
+	Get(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 }
 
 // clientCacheObjectFilterFunc provides a way to selectively prune  CachingClientFactory's Client cache.
@@ -57,9 +59,11 @@ type cachingClientFactory struct {
 	persist            bool
 	encryptionRequired bool
 	// clientCacheKeyEncrypt is a member of the ClientCache, it is instantiated whenever the ClientCacheStorage has enforceEncryption enabled.
-	clientCacheKeyEncrypt ClientCacheKey
-	logger                logr.Logger
-	mu                    sync.RWMutex
+	clientCacheKeyEncrypt  ClientCacheKey
+	logger                 logr.Logger
+	requestCounterVec      *prometheus.CounterVec
+	requestErrorCounterVec *prometheus.CounterVec
+	mu                     sync.RWMutex
 }
 
 // Prune the storage for the requesting object and CachingClientFactoryPruneRequest.
@@ -138,6 +142,15 @@ func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Cl
 		return nil, nil
 	}
 
+	startTS := time.Now()
+	var errs error
+	defer func() {
+		m.incrementRequestCounter(metrics.OperationRestore, errs)
+		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationRestore).Observe(
+			time.Since(startTS).Seconds(),
+		)
+	}()
+
 	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
@@ -163,21 +176,30 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 		return nil
 	}
 
+	startTS := time.Now()
+	var errs error
+	defer func() {
+		m.incrementRequestCounter(metrics.OperationRestoreAll, errs)
+		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationRestoreAll).Observe(
+			time.Since(startTS).Seconds(),
+		)
+	}()
 	req, err := m.restoreAllRequest(ctx, client)
 	if err != nil {
-		return err
+		errs = err
+		return errs
 	}
 
 	entries, err := m.storage.RestoreAll(ctx, client, req)
 	if err != nil {
 		m.logger.Error(err, "RestoreAll failed from storage")
-		return err
+		errs = err
+		return errs
 	}
 	if entries == nil {
 		return nil
 	}
 
-	var errs error
 	pruneIt := func(entry *clientCacheStorageEntry) {
 		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {
 			m.logger.Error(err, "Failed to prune invalid storage entry", "cacheKey", entry.CacheKey)
@@ -206,15 +228,25 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 // On a cache miss, an attempt at restoration from storage will be made, if a restoration attempt fails,
 // a new Client will be instantiated, and an attempt to login into Vault will be made.
 // Upon successful restoration/instantiation/login, the Client will be cached for calls.
-func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
+func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
 	logger := log.FromContext(ctx).WithName("cachingClientFactory")
 	logger.V(consts.LogLevelDebug).Info("Cache info", "length", m.cache.Len())
+	startTS := time.Now()
+	var errs error
+	defer func() {
+		m.incrementRequestCounter(metrics.OperationGet, errs)
+		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationGet).Observe(
+			time.Since(startTS).Seconds(),
+		)
+	}()
+
 	cacheKey, err := ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 			"Failed to get cacheKey from obj, err=%s", err)
-		return nil, err
+		errs = errors.Join(err)
+		return nil, errs
 	}
 
 	// try and fetch the client from the in-memory Client cache
@@ -239,13 +271,15 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 	c, err = NewClientWithLogin(ctx, client, obj, nil)
 	if err != nil {
 		logger.Error(err, "Failed to get NewClientWithLogin")
-		return nil, err
+		errs = errors.Join(err)
+		return nil, errs
 	}
 
 	// cache the new Client for future requests.
 	cacheKey, err = m.cacheClient(c)
 	if err != nil {
-		return nil, err
+		errs = errors.Join(err)
+		return nil, errs
 	}
 
 	if m.persist && m.storage != nil {
@@ -254,10 +288,15 @@ func (m *cachingClientFactory) GetClient(ctx context.Context, client ctrlclient.
 		}
 	}
 
-	return c, nil
+	return c, errs
 }
 
 func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclient.Client, c Client) error {
+	var errs error
+	defer func() {
+		m.incrementRequestCounter(metrics.OperationStore, errs)
+	}()
+
 	if !m.persist || m.storage == nil {
 		return fmt.Errorf("storing impossible, storage is not enabled")
 	}
@@ -270,7 +309,8 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 	if m.encryptionRequired {
 		c, err := m.storageEncryptionClient(ctx, client)
 		if err != nil {
-			return err
+			errs = errors.Join(err)
+			return errs
 		}
 		authObj := c.GetVaultAuthObj()
 		req.EncryptionClient = c
@@ -278,7 +318,8 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 	}
 
 	if _, err := m.storage.Store(ctx, client, req); err != nil {
-		return err
+		errs = errors.Join(err)
+		return errs
 	}
 
 	return nil
@@ -419,6 +460,14 @@ func (m *cachingClientFactory) restoreAllRequest(ctx context.Context, client ctr
 	return req, nil
 }
 
+func (c *cachingClientFactory) incrementRequestCounter(operation string, err error) {
+	if err != nil {
+		c.requestErrorCounterVec.WithLabelValues(operation).Inc()
+	} else {
+		c.requestCounterVec.WithLabelValues(operation).Inc()
+	}
+}
+
 // NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
 // The ClientCache's onEvictCallback is registered with the factory's onClientEvict(),
 // to ensure any evictions are handled by the factory (this is very important).
@@ -432,25 +481,48 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
 		),
+		requestCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: metricsFQNClientFactoryReqsTotal,
+				Help: "Client factory request total",
+			}, []string{
+				metrics.LabelOperation,
+			},
+		),
+		requestErrorCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: metricsFQNClientFactoryReqsErrorsTotal,
+				Help: "Client factory request errors total",
+			}, []string{
+				metrics.LabelOperation,
+			},
+		),
 	}
 
-	var metricsRegistry prometheus.Registerer
 	if config.CollectClientCacheMetrics {
-		// register the ClientCache's metrics with the default registry.
-		metricsRegistry = metrics.Registry
+		if config.MetricsRegistry == nil {
+			return nil, fmt.Errorf(
+				"a MetricsRegistry must be specified when metrics collection is enabled")
+		}
+
+		config.MetricsRegistry.MustRegister(
+			factory.requestCounterVec,
+			factory.requestErrorCounterVec,
+			clientFactoryOperationTimes,
+		)
 	}
 
 	// adds an onEvictCallbackFunc to the ClientCache
 	// the function must always call Client.Close() to avoid leaking Go routines
 	cache, err := NewClientCache(config.ClientCacheSize, func(key, value interface{}) {
 		factory.onClientEvict(ctx, client, key.(ClientCacheKey), value.(Client))
-	}, metricsRegistry)
+	}, config.MetricsRegistry)
 	if err != nil {
 		return nil, err
 	}
 
 	if config.CollectClientCacheMetrics {
-		metrics.Registry.MustRegister(newClientCacheCollector(cache, config.ClientCacheSize))
+		ctrlmetrics.Registry.MustRegister(newClientCacheCollector(cache, config.ClientCacheSize))
 	}
 
 	factory.cache = cache
@@ -464,6 +536,7 @@ type CachingClientFactoryConfig struct {
 	ClientCacheSize           int
 	CollectClientCacheMetrics bool
 	Recorder                  record.EventRecorder
+	MetricsRegistry           prometheus.Registerer
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
@@ -472,6 +545,7 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 		StorageConfig:   DefaultClientCacheStorageConfig(),
 		ClientCacheSize: 10000,
 		Recorder:        &nullEventRecorder{},
+		MetricsRegistry: ctrlmetrics.Registry,
 	}
 }
 
@@ -485,7 +559,7 @@ func InitCachingClientFactory(ctx context.Context, client ctrlclient.Client, con
 	var metricsRegistry prometheus.Registerer
 	if config.CollectClientCacheMetrics {
 		// register the ClientCache's metrics with the default registry.
-		metricsRegistry = metrics.Registry
+		metricsRegistry = ctrlmetrics.Registry
 	}
 	clientCacheStorage, err := NewDefaultClientCacheStorage(ctx, client, config.StorageConfig, metricsRegistry)
 	if err != nil {

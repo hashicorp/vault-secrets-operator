@@ -9,12 +9,10 @@ import (
 	"fmt"
 	"os"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -117,7 +115,10 @@ func main() {
 
 	collectMetrics := metricsAddr != ""
 	if collectMetrics {
-		ctrlmetrics.Registry.MustRegister(metrics.NewBuildInfoGauge(versionInfo))
+		cfc.MetricsRegistry.MustRegister(
+			metrics.NewBuildInfoGauge(versionInfo),
+		)
+		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
 	}
 	var clientFactory vclient.CachingClientFactory
 	{

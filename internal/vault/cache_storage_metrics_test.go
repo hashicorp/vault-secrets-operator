@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 func Test_clientCacheStorageCollector(t *testing.T) {
@@ -102,32 +103,32 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 
 	storeLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metricsLabelOperation),
-			Value: pointer.String(metricsOperationStore),
+			Name:  pointer.String(metrics.LabelOperation),
+			Value: pointer.String(metrics.OperationStore),
 		},
 	}
 	restoreLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metricsLabelOperation),
-			Value: pointer.String(metricsOperationRestore),
+			Name:  pointer.String(metrics.LabelOperation),
+			Value: pointer.String(metrics.OperationRestore),
 		},
 	}
 	restoreAllLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metricsLabelOperation),
-			Value: pointer.String(metricsOperationRestoreAll),
+			Name:  pointer.String(metrics.LabelOperation),
+			Value: pointer.String(metrics.OperationRestoreAll),
 		},
 	}
 	purgeLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metricsLabelOperation),
-			Value: pointer.String(metricsOperationPurge),
+			Name:  pointer.String(metrics.LabelOperation),
+			Value: pointer.String(metrics.OperationPurge),
 		},
 	}
 	pruneLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metricsLabelOperation),
-			Value: pointer.String(metricsOperationPrune),
+			Name:  pointer.String(metrics.LabelOperation),
+			Value: pointer.String(metrics.OperationPrune),
 		},
 	}
 
@@ -352,9 +353,9 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 				for i := 0; i < count; i++ {
 					for _, p := range mv.labelPairs {
 						switch opType := p.GetValue(); opType {
-						case metricsOperationStore:
+						case metrics.OperationStore:
 							secrets = append(secrets, storeSecret(t, ctx, tt.client, storage, i))
-						case metricsOperationRestore:
+						case metrics.OperationRestore:
 							// restore() is a sub operation of restoreAll, so there is no need to induce it when a restoreAll() test is expected.
 							if tt.expectMetrics.restoreAll != nil {
 								continue
@@ -366,7 +367,7 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 								CacheKey:     ClientCacheKey(secret.Labels[labelCacheKey]),
 							})
 							require.NoError(t, err)
-						case metricsOperationPrune:
+						case metrics.OperationPrune:
 							// prune() is a sub operation of purge, so there is no need to induce it when a purge() test is expected.
 							if tt.expectMetrics.purge != nil {
 								continue
@@ -377,7 +378,7 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 								MatchingLabels: secret.Labels,
 							})
 							require.NoError(t, err)
-						case metricsOperationPurge:
+						case metrics.OperationPurge:
 							err := storage.Purge(ctx, tt.client)
 							require.NoError(t, err)
 						default:
@@ -403,16 +404,16 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 				for i := 0; i < int(*mv.errorsTotal); i++ {
 					for _, p := range mv.labelPairs {
 						switch opType := p.GetValue(); opType {
-						case metricsOperationStore:
+						case metrics.OperationStore:
 							_, err := storage.Store(ctx, client, ClientCacheStorageStoreRequest{})
 							assert.Error(t, err)
-						case metricsOperationRestore:
+						case metrics.OperationRestore:
 							_, err := storage.Restore(ctx, client, ClientCacheStorageRestoreRequest{})
 							assert.Error(t, err)
-						case metricsOperationPurge:
+						case metrics.OperationPurge:
 							err := storage.Purge(ctx, client)
 							assert.Error(t, err)
-						case metricsOperationPrune:
+						case metrics.OperationPrune:
 							_, err := storage.Prune(ctx, client, ClientCacheStoragePruneRequest{})
 							assert.Error(t, err)
 						default:
@@ -460,13 +461,13 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 					var opType string
 					for _, p := range m.GetLabel() {
 						switch opType = p.GetValue(); opType {
-						case metricsOperationStore:
+						case metrics.OperationStore:
 							e = tt.expectMetrics.store
-						case metricsOperationRestore:
+						case metrics.OperationRestore:
 							e = tt.expectMetrics.restore
-						case metricsOperationPurge:
+						case metrics.OperationPurge:
 							e = tt.expectMetrics.purge
-						case metricsOperationPrune:
+						case metrics.OperationPrune:
 							e = tt.expectMetrics.prune
 						default:
 							assert.Fail(t, "unsupported metrics operation type %s", opType)
