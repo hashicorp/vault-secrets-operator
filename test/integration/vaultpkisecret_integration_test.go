@@ -293,7 +293,12 @@ func TestVaultPKISecret(t *testing.T) {
 						"secrets.hashicorp.com/v1alpha1",
 						"VaultPKISecret", secret)
 
-					assertRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
+					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
+						// TODO(tech-debt): add method waiting for rollout-restart, for now we
+						//  can provide an artificial grace period.
+						time.Sleep(5 * time.Second)
+						assertRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
+					}
 				})
 			}
 
