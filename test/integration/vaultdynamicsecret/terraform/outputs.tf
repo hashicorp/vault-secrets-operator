@@ -40,3 +40,6 @@ output "k8s_config_context" {
 output "namespace" {
   value = local.namespace
 }
+output "deployment_name" {
+  value = kubernetes_deployment.vso.metadata[0].name
+}
