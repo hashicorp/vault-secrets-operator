@@ -25,6 +25,10 @@ const (
 	OperationRestoreAll = "restore_all"
 	OperationPrune      = "prune"
 	OperationPurge      = "purge"
+	OperationLogin      = "login"
+	OperationRenew      = "renew"
+	OperationRead       = "read"
+	OperationWrite      = "write"
 
 	NameConfig                = "config"
 	NameLength                = "length"

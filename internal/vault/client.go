@@ -17,6 +17,7 @@ import (
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 type ClientOptions struct {
@@ -343,8 +344,8 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	var errs error
 	startTS := time.Now()
 	defer func() {
-		c.observeTime(startTS, "login")
-		c.incrementOperationCounter("login", errs)
+		c.observeTime(startTS, metrics.OperationLogin)
+		c.incrementOperationCounter(metrics.OperationLogin, errs)
 	}()
 	if c.watcher != nil {
 		c.watcher.Stop()
@@ -399,8 +400,8 @@ func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, err
 	var err error
 	startTS := time.Now()
 	defer func() {
-		c.observeTime(startTS, "read")
-		c.incrementOperationCounter("read", err)
+		c.observeTime(startTS, metrics.OperationRead)
+		c.incrementOperationCounter(metrics.OperationRead, err)
 	}()
 
 	var secret *api.Secret
@@ -412,8 +413,8 @@ func (c *defaultClient) Write(ctx context.Context, path string, m map[string]any
 	var err error
 	startTS := time.Now()
 	defer func() {
-		c.observeTime(startTS, "write")
-		c.incrementOperationCounter("write", err)
+		c.observeTime(startTS, metrics.OperationWrite)
+		c.incrementOperationCounter(metrics.OperationWrite, err)
 	}()
 
 	var secret *api.Secret
@@ -426,9 +427,9 @@ func (c *defaultClient) renew(ctx context.Context) error {
 	var errs error
 	startTS := time.Now()
 	defer func() {
-		c.incrementOperationCounter("renew", errs)
+		c.incrementOperationCounter(metrics.OperationRenew, errs)
 		if errs == nil {
-			c.observeTime(startTS, "renew")
+			c.observeTime(startTS, metrics.OperationRenew)
 		}
 	}()
 
