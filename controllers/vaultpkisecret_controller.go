@@ -44,6 +44,12 @@ type VaultPKISecretReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//
+// required for rollout-restart
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state. It
@@ -66,16 +72,12 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	path := r.getPath(o.Spec)
 	if o.GetDeletionTimestamp() != nil {
 		if err := r.handleDeletion(ctx, logger, o); err != nil {
-			o.Status.Valid = false
-			o.Status.Error = consts.ReasonK8sClientError
 			msg := "Failed to handle deletion"
 			logger.Error(err, msg)
 			r.recordEvent(o, o.Status.Error, msg+": %s", err)
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
 			return ctrl.Result{}, err
 		}
+		return ctrl.Result{}, nil
 	}
 
 	// assume that status is always invalid
@@ -220,6 +222,14 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	reason := consts.ReasonSecretSynced
+	if timeToRenew {
+		reason = consts.ReasonSecretRotated
+		// rollout-restart errors are not retryable
+		// all error reporting is handled by helpers.HandleRolloutRestarts
+		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
+	}
+
 	// revoke the certificate on renewal
 	if o.Spec.Revoke && timeToRenew && o.Status.SerialNumber != "" {
 		if err := r.revokeCertificate(ctx, logger, o); err != nil {
@@ -241,7 +251,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	logger.Info("Successfully updated the secret")
-	r.recordEvent(o, consts.ReasonAccepted, "Secret synced")
+	r.recordEvent(o, reason, "Secret synced")
 
 	return ctrl.Result{
 		RequeueAfter: computeHorizonWithJitter(getRenewTime(o.Status.Expiration, expiryOffset)),
@@ -252,18 +262,18 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Lo
 	l.Info("In deletion")
 	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		if err := r.finalizePKI(ctx, l, s); err != nil {
-			l.Error(err, "finalizer failed")
-			// TODO: decide how to handle a failed finalizer
-			// return ctrl.Result{}, nil
+			l.Error(err, "Failed to finalize")
+			return err
 		}
 
 		l.Info("Removing finalizer")
-		controllerutil.RemoveFinalizer(s, vaultPKIFinalizer)
-		if err := r.Update(ctx, s); err != nil {
-			l.Error(err, "failed to remove finalizer")
-			return err
+		if controllerutil.RemoveFinalizer(s, vaultPKIFinalizer) {
+			if err := r.Update(ctx, s); err != nil {
+				l.Error(err, "Failed to remove the finalizer")
+				return err
+			}
+			l.Info("Successfully removed the finalizer")
 		}
-		l.Info("Successfully removed the finalizer")
 
 		return nil
 	}

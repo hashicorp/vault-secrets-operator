@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -150,8 +151,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{RequeueAfter: horizon}, nil
 		} else {
 			doRolloutRestart = true
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
-				"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
+			if !isLeaseNotfoundError(err) {
+				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
+					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
+			}
 		}
 	}
 
@@ -176,15 +179,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	reason := consts.ReasonSecretSynced
 	if doRolloutRestart {
 		reason = consts.ReasonSecretRotated
-		for _, target := range o.Spec.RolloutRestartTargets {
-			if err := helpers.RolloutRestart(ctx, o, target, r.Client); err != nil {
-				r.Recorder.Eventf(o, corev1.EventTypeWarning, "RolloutRestartFailed",
-					"failed to execute rollout restarts for target %#v: %s", target, err)
-			} else {
-				r.Recorder.Eventf(o, corev1.EventTypeNormal, "RolloutRestartTriggered",
-					"Rollout restart triggered for %v", target)
-			}
-		}
+		// rollout-restart errors are not retryable
+		// all error reporting is handled by helpers.HandleRolloutRestarts
+		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
 	if !r.isRenewableLease(secretLease, o) {
@@ -281,4 +278,13 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		WithOptions(opts).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
+}
+
+func isLeaseNotfoundError(err error) bool {
+	if respErr, ok := err.(*api.ResponseError); ok && respErr != nil {
+		if respErr.StatusCode == http.StatusBadRequest {
+			return len(respErr.Errors) == 1 && respErr.Errors[0] == "lease not found"
+		}
+	}
+	return false
 }
