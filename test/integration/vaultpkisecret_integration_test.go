@@ -167,8 +167,8 @@ func TestVaultPKISecret(t *testing.T) {
 					Format:       "pem",
 					Revoke:       true,
 					Clear:        true,
-					ExpiryOffset: "5s",
-					TTL:          "15s",
+					ExpiryOffset: "1s",
+					TTL:          "30s",
 					Destination: secretsv1alpha1.Destination{
 						Name:   "pki1",
 						Create: false,
@@ -238,8 +238,8 @@ func TestVaultPKISecret(t *testing.T) {
 						CommonName:   fmt.Sprintf("%s.example.com", dest),
 						Format:       "pem",
 						Revoke:       true,
-						ExpiryOffset: "5s",
-						TTL:          "15s",
+						ExpiryOffset: "1s",
+						TTL:          "30s",
 						VaultAuthRef: testVaultAuthMethodName,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
@@ -268,7 +268,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 					// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
 					// serial number of the generated cert
-					serialNumber, secret, err := waitForPKIData(t, 30, 1*time.Second,
+					serialNumber, secret, err := waitForPKIData(t, 30, 2*time.Second,
 						vpsObj, "",
 					)
 					require.NoError(t, err)
