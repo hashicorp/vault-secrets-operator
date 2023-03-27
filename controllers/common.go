@@ -104,12 +104,15 @@ func RemoveAllFinalizers(shutdownCtx context.Context, c client.Client, log logr.
 	}
 	removeFinalizers(shutdownCtx, c, log, vdsList, vaultDynamicSecretFinalizer)
 
-	vssList := &secretsv1alpha1.VaultStaticSecretList{}
-	err = c.List(shutdownCtx, vssList, opts...)
-	if err != nil {
-		log.Error(err, "Unable to list VaultStaticSecret resources")
-	}
-	removeFinalizers(shutdownCtx, c, log, vssList, vaultStaticSecretFinalizer)
+	/*
+		// FIXME: We don't have a static secret finalizer right?
+		vssList := &secretsv1alpha1.VaultStaticSecretList{}
+		err = c.List(shutdownCtx, vssList, opts...)
+		if err != nil {
+			log.Error(err, "Unable to list VaultStaticSecret resources")
+		}
+		removeFinalizers(shutdownCtx, c, log, vssList, vaultStaticSecretFinalizer)
+	*/
 
 	vpkiList := &secretsv1alpha1.VaultPKISecretList{}
 	err = c.List(shutdownCtx, vpkiList, opts...)
@@ -156,17 +159,20 @@ func removeFinalizers(shutdownCtx context.Context, c client.Client, log logr.Log
 				}
 			}
 		}
-	case vaultStaticSecretFinalizer:
-		vamL := objs.(*secretsv1alpha1.VaultStaticSecretList)
-		for _, x := range vamL.Items {
-			cnt++
-			if controllerutil.RemoveFinalizer(&x, finalizerStr) {
-				log.Info(fmt.Sprintf("updating finalizer for StaticSecret %s", x.Name))
-				if err := c.Update(shutdownCtx, &x, &client.UpdateOptions{}); err != nil {
-					log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultStaticSecretFinalizer, x.Name))
+		/*
+			// FIXME: We dont have a finalizer right?
+			case vaultStaticSecretFinalizer:
+				vamL := objs.(*secretsv1alpha1.VaultStaticSecretList)
+				for _, x := range vamL.Items {
+					cnt++
+					if controllerutil.RemoveFinalizer(&x, finalizerStr) {
+						log.Info(fmt.Sprintf("updating finalizer for StaticSecret %s", x.Name))
+						if err := c.Update(shutdownCtx, &x, &client.UpdateOptions{}); err != nil {
+							log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultStaticSecretFinalizer, x.Name))
+						}
+					}
 				}
-			}
-		}
+		*/
 	case vaultDynamicSecretFinalizer:
 		vamL := objs.(*secretsv1alpha1.VaultDynamicSecretList)
 		for _, x := range vamL.Items {
