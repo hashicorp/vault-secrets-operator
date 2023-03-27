@@ -60,10 +60,6 @@ resource "kubernetes_deployment" "vso" {
               memory = "50Mi"
             }
           }
-
-            initial_delay_seconds = 3
-            period_seconds        = 3
-          }
         }
       }
     }
