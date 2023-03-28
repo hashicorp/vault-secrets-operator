@@ -141,7 +141,6 @@ func main() {
 	}
 
 	ctx := ctrl.SetupSignalHandler()
-	var defaultClient client.Client
 
 	collectMetrics := metricsAddr != ""
 	if collectMetrics {
@@ -166,7 +165,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		defaultClient, err = client.New(config, client.Options{
+		defaultClient, err := client.New(config, client.Options{
 			Scheme: mgr.GetScheme(),
 		})
 		if err != nil {
