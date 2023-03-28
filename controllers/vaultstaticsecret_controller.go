@@ -61,7 +61,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	c, err := r.ClientFactory.GetClient(ctx, r.Client, o)
+	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault auth login: %s", err)
