@@ -9,8 +9,6 @@ on:
 jobs:
   sync:
     uses: hashicorp/vault-workflows-common/.github/workflows/jira.yaml@main
-    # assuming you use Vault to get secrets
-    # if you use GitHub secrets, use secrets.XYZ instead of steps.secrets.outputs.XYZ
     secrets:
       JIRA_SYNC_BASE_URL: ${{ secrets.JIRA_SYNC_BASE_URL }}
       JIRA_SYNC_USER_EMAIL: ${{ secrets.JIRA_SYNC_USER_EMAIL }}
