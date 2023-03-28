@@ -1,0 +1,31 @@
+{{- /*
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+*/ -}}
+
+{{- if eq .Values.controller.manager.clientCache.persistenceModel "direct-encrypted" }}
+apiVersion: secrets.hashicorp.com/v1alpha1
+kind: VaultAuth
+metadata:
+  name: {{ include "chart.fullname" . }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    control-plane: controller-manager
+    component: controller-manager
+    app.kubernetes.io/component: controller-manager
+    cacheStorageEncryption: "true"
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
+  method: "kubernetes"
+  mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
+  kubernetes:
+    role: {{ .Values.controller.manager.clientCache.storageEncryption.role }}
+    serviceAccount: {{ include "chart.fullname" . }}-controller-manager
+    {{- if .Values.controller.manager.clientCache.storageEncryption.tokenAudiences }}
+    audiences: {{ .Values.controller.manager.clientCache.storageEncryption.tokenAudiences | toJson }}
+    {{- end }}
+  storageEncryption:
+    keyName: {{ .Values.controller.manager.clientCache.storageEncryption.keyName }}
+    mount: {{ .Values.controller.manager.clientCache.storageEncryption.transitMount }}
+{{- end }}

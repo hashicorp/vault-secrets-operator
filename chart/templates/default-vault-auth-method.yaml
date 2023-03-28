@@ -15,9 +15,6 @@ metadata:
     app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.defaultAuthMethod.vaultConnectionRef }}
-  vaultConnectionRef: {{ .Values.defaultAuthMethod.vaultConnectionRef }}
-  {{- end }}
   namespace: {{ .Values.defaultAuthMethod.namespace }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
@@ -27,11 +24,6 @@ spec:
     {{- if .Values.defaultAuthMethod.kubernetes.tokenAudiences }}
     audiences: {{ .Values.defaultAuthMethod.kubernetes.tokenAudiences | toJson }}
     {{- end }}
-  {{- if .Values.defaultAuthMethod.storageEncryption.enabled }}
-  storageEncryption:
-    keyName: {{ .Values.defaultAuthMethod.storageEncryption.keyName }}
-    mount: {{ .Values.defaultAuthMethod.storageEncryption.mount }}
-  {{- end }}
   {{- if .Values.defaultAuthMethod.headers }}
   headers:
     {{ tpl .Values.defaultAuthMethod.headers . | trim }}

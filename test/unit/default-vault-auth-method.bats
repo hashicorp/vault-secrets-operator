@@ -45,11 +45,6 @@ load _helpers
      [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
      [ "${actual}" = "default" ]
-    # storageEncryption is disabled by default
-    actual=$(echo "$object" | yq '.metadata.storageEncryption.keyName | length > 0' | tee /dev/stderr)
-     [ "${actual}" = "false" ]
-    actual=$(echo "$object" | yq '.metadata.storageEncryption.mount | length > 0' | tee /dev/stderr)
-     [ "${actual}" = "false" ]
 }
 
 @test "defaultAuthMethod/CR: settings can be modified for auth method" {
@@ -87,22 +82,3 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
      [ "${actual}" = "baz" ]
 }
-
-@test "defaultAuthMethod/CR: storageEncyption can be configured" {
-    cd `chart_dir`
-    local object=$(helm template \
-        -s templates/default-vault-auth-method.yaml  \
-        --set 'defaultAuthMethod.enabled=true' \
-        --set 'defaultAuthMethod.namespace=tenant-2' \
-        --set 'defaultAuthMethod.method=JWT' \
-        --set 'defaultAuthMethod.storageEncryption.enabled=true' \
-        --set 'defaultAuthMethod.storageEncryption.keyName=foo' \
-        --set 'defaultAuthMethod.storageEncryption.mount=foo/bar/baz' \
-        . | tee /dev/stderr)
-
-    actual=$(echo "$object" | yq '.spec.storageEncryption.keyName' | tee /dev/stderr)
-     [ "${actual}" = "foo" ]
-    actual=$(echo "$object" | yq '.spec.storageEncryption.mount' | tee /dev/stderr)
-     [ "${actual}" = "foo/bar/baz" ]
-}
-
