@@ -77,26 +77,11 @@ func RemoveAllFinalizers(ctx context.Context, c client.Client, log logr.Logger) 
 	// * VaultStaticSecret
 	// * VaultPKISecret
 
-	/*
-		// TODO: Can we figure out a way to replace `removeFinalizers()` with this?
-		remove := func(items []client.Object, finalizer string) {
-			for _, x := range items {
-				if controllerutil.RemoveFinalizer(x, finalizer) {
-					log.Info(fmt.Sprintf("updating finalizer for Auth %s", x.GetName()))
-					if err := c.Update(ctx, x, &client.UpdateOptions{}); err != nil {
-						log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultAuthFinalizer, x.GetName()))
-					}
-				}
-			}
-		}
-	*/
-
 	vamList := &secretsv1alpha1.VaultAuthList{}
 	err := c.List(ctx, vamList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultAuth resources")
 	}
-	// remove(vamList, vamList.Items, vaultAuthFinalizer)
 	removeFinalizers(ctx, c, log, vamList, vaultAuthFinalizer)
 
 	vcList := &secretsv1alpha1.VaultConnectionList{}
