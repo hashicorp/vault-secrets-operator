@@ -136,7 +136,7 @@ spec:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
-        - --shutdown=true
+        - --finalizer-cleanup=true
         command:
         - /vault-secrets-operator
       restartPolicy: Never

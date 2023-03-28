@@ -33,9 +33,9 @@ import (
 )
 
 var (
-	scheme      = runtime.NewScheme()
-	setupLog    = ctrl.Log.WithName("setup")
-	shutdownLog = ctrl.Log.WithName("shutdown")
+	scheme              = runtime.NewScheme()
+	setupLog            = ctrl.Log.WithName("setup")
+	finalizerCleanupLog = ctrl.Log.WithName("cleanup")
 )
 
 func init() {
@@ -58,7 +58,7 @@ func main() {
 	var probeAddr string
 	var clientCachePersistenceModel string
 	var printVersion bool
-	var shutdown bool
+	var finalizerCleanup bool
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -73,7 +73,7 @@ func main() {
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
-	flag.BoolVar(&shutdown, "shutdown", false, "Remove finalizers from all CRs in preparation for shutdown.")
+	flag.BoolVar(&finalizerCleanup, "finalizer-cleanup", false, "Remove finalizers from all CRs in preparation for shutdown.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -93,10 +93,10 @@ func main() {
 	config := ctrl.GetConfigOrDie()
 
 	// This flag is passed by the pre-delete hook on helm uninstall.
-	if shutdown {
-		shutdownLog.Info("commencing shutdown cleanup of finalizers")
-		var shutdownClient client.Client
-		shutdownClient, err := client.New(config, client.Options{
+	if finalizerCleanup {
+		finalizerCleanupLog.Info("commencing cleanup of finalizers")
+		var finalizerCleanupClient client.Client
+		finalizerCleanupClient, err := client.New(config, client.Options{
 			Scheme: scheme,
 		})
 
@@ -107,10 +107,9 @@ func main() {
 		// context and its parent alive longer than necessary.
 		defer cancel()
 
-		allNamespaces := false
-		shutdownLog.Info("deleting finalizers")
-		if err = controllers.RemoveAllFinalizers(shutdownCtx, shutdownClient, shutdownLog, allNamespaces); err != nil {
-			shutdownLog.Error(err, "unable to remove finalizers")
+		finalizerCleanupLog.Info("deleting finalizers")
+		if err = controllers.RemoveAllFinalizers(shutdownCtx, finalizerCleanupClient, finalizerCleanupLog); err != nil {
+			finalizerCleanupLog.Error(err, "unable to remove finalizers")
 			os.Exit(1)
 		}
 		return

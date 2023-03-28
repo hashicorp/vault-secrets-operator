@@ -63,18 +63,12 @@ func computeHorizonWithJitter(minDuration time.Duration) time.Duration {
 }
 
 // RemoveAllFinalizers is responsible for removing all finalizers added by the controller to prevent
-// finalizers from going stale when the controller is being deleted. This function should only be called by the
-// leader when the deployment has replicas, and only called when the deployment has a deletionTimestamp.
-func RemoveAllFinalizers(shutdownCtx context.Context, c client.Client, log logr.Logger, allNamespaces bool) error {
-	// opts := client.ListOptions{}
+// finalizers from going stale when the controller is being deleted.
+func RemoveAllFinalizers(ctx context.Context, c client.Client, log logr.Logger) error {
+	// To support allNamespaces, do not add the common.OperatorNamespace filter, aka opts := client.ListOptions{}
 	opts := []client.ListOption{
 		client.InNamespace(common.OperatorNamespace),
 	}
-	// We don't need to be too restrictive for this filter because we own all of these resources anyways.
-	// However, we may want to only remove those in the operator's namespace, in which case restrict it.
-	// if allNamespaces != true {
-	//opts.Namespace = common.OperatorNamespace
-	//}
 	// Fetch all custom resources via a list and call RemoveFinalizer() on each resource.
 	// Do this for each resource type:
 	// * VaultAuthMethod
@@ -83,47 +77,52 @@ func RemoveAllFinalizers(shutdownCtx context.Context, c client.Client, log logr.
 	// * VaultStaticSecret
 	// * VaultPKISecret
 
+	/*
+		// TODO: Can we figure out a way to replace `removeFinalizers()` with this?
+		remove := func(items []client.Object, finalizer string) {
+			for _, x := range items {
+				if controllerutil.RemoveFinalizer(x, finalizer) {
+					log.Info(fmt.Sprintf("updating finalizer for Auth %s", x.GetName()))
+					if err := c.Update(ctx, x, &client.UpdateOptions{}); err != nil {
+						log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultAuthFinalizer, x.GetName()))
+					}
+				}
+			}
+		}
+	*/
+
 	vamList := &secretsv1alpha1.VaultAuthList{}
-	err := c.List(shutdownCtx, vamList, opts...)
+	err := c.List(ctx, vamList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultAuth resources")
 	}
-	removeFinalizers(shutdownCtx, c, log, vamList, vaultAuthFinalizer)
+	// remove(vamList, vamList.Items, vaultAuthFinalizer)
+	removeFinalizers(ctx, c, log, vamList, vaultAuthFinalizer)
 
 	vcList := &secretsv1alpha1.VaultConnectionList{}
-	err = c.List(shutdownCtx, vcList, opts...)
+	err = c.List(ctx, vcList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultConnection resources")
 	}
-	removeFinalizers(shutdownCtx, c, log, vcList, vaultConnectionFinalizer)
+	removeFinalizers(ctx, c, log, vcList, vaultConnectionFinalizer)
 
 	vdsList := &secretsv1alpha1.VaultDynamicSecretList{}
-	err = c.List(shutdownCtx, vdsList, opts...)
+	err = c.List(ctx, vdsList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultDynamicSecret resources")
 	}
-	removeFinalizers(shutdownCtx, c, log, vdsList, vaultDynamicSecretFinalizer)
-
-	/*
-		// FIXME: We don't have a static secret finalizer right?
-		vssList := &secretsv1alpha1.VaultStaticSecretList{}
-		err = c.List(shutdownCtx, vssList, opts...)
-		if err != nil {
-			log.Error(err, "Unable to list VaultStaticSecret resources")
-		}
-		removeFinalizers(shutdownCtx, c, log, vssList, vaultStaticSecretFinalizer)
-	*/
+	removeFinalizers(ctx, c, log, vdsList, vaultDynamicSecretFinalizer)
 
 	vpkiList := &secretsv1alpha1.VaultPKISecretList{}
-	err = c.List(shutdownCtx, vpkiList, opts...)
+	err = c.List(ctx, vpkiList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultPKISecret resources")
 	}
-	removeFinalizers(shutdownCtx, c, log, vpkiList, vaultPKIFinalizer)
+	removeFinalizers(ctx, c, log, vpkiList, vaultPKIFinalizer)
 	return nil
 }
 
-func removeFinalizers(shutdownCtx context.Context, c client.Client, log logr.Logger, objs interface{}, finalizerStr string) error {
+func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, objs interface{}, finalizerStr string) error {
 	cnt := 0
 	switch finalizerStr {
 	case vaultAuthFinalizer:
@@ -132,7 +131,7 @@ func removeFinalizers(shutdownCtx context.Context, c client.Client, log logr.Log
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, finalizerStr) {
 				log.Info(fmt.Sprintf("updating finalizer for Auth %s", x.Name))
-				if err := c.Update(shutdownCtx, &x, &client.UpdateOptions{}); err != nil {
+				if err := c.Update(ctx, &x, &client.UpdateOptions{}); err != nil {
 					log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultAuthFinalizer, x.Name))
 				}
 			}
@@ -143,7 +142,7 @@ func removeFinalizers(shutdownCtx context.Context, c client.Client, log logr.Log
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, finalizerStr) {
 				log.Info(fmt.Sprintf("updating finalizer for PKI %s", x.Name))
-				if err := c.Update(shutdownCtx, &x, &client.UpdateOptions{}); err != nil {
+				if err := c.Update(ctx, &x, &client.UpdateOptions{}); err != nil {
 					log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultPKIFinalizer, x.Name))
 				}
 			}
@@ -154,32 +153,18 @@ func removeFinalizers(shutdownCtx context.Context, c client.Client, log logr.Log
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, finalizerStr) {
 				log.Info(fmt.Sprintf("updating finalizer for Connection %s", x.Name))
-				if err := c.Update(shutdownCtx, &x, &client.UpdateOptions{}); err != nil {
+				if err := c.Update(ctx, &x, &client.UpdateOptions{}); err != nil {
 					log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultConnectionFinalizer, x.Name))
 				}
 			}
 		}
-		/*
-			// FIXME: We dont have a finalizer right?
-			case vaultStaticSecretFinalizer:
-				vamL := objs.(*secretsv1alpha1.VaultStaticSecretList)
-				for _, x := range vamL.Items {
-					cnt++
-					if controllerutil.RemoveFinalizer(&x, finalizerStr) {
-						log.Info(fmt.Sprintf("updating finalizer for StaticSecret %s", x.Name))
-						if err := c.Update(shutdownCtx, &x, &client.UpdateOptions{}); err != nil {
-							log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultStaticSecretFinalizer, x.Name))
-						}
-					}
-				}
-		*/
 	case vaultDynamicSecretFinalizer:
 		vamL := objs.(*secretsv1alpha1.VaultDynamicSecretList)
 		for _, x := range vamL.Items {
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, finalizerStr) {
 				log.Info(fmt.Sprintf("updating finalizer for DynamicSecret %s", x.Name))
-				if err := c.Update(shutdownCtx, &x, &client.UpdateOptions{}); err != nil {
+				if err := c.Update(ctx, &x, &client.UpdateOptions{}); err != nil {
 					log.Error(err, fmt.Sprintf("unable to update finalizer for %s: %s", vaultDynamicSecretFinalizer, x.Name))
 				}
 			}
