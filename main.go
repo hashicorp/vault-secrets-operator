@@ -75,7 +75,7 @@ func main() {
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
-	flag.BoolVar(&printVersion, "shutdown", false, "Remove finalizers from all CRs in preparation for shutdown.")
+	flag.BoolVar(&shutdown, "shutdown", false, "Remove finalizers from all CRs in preparation for shutdown.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -90,16 +90,15 @@ func main() {
 		}
 		os.Exit(0)
 	}
-
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
 	config := ctrl.GetConfigOrDie()
 
 	// This flag is passed by the pre-delete hook on helm uninstall.
 	if shutdown {
+		shutdownLog.Info("commencing shutdown cleanup of finalizers")
 		var shutdownClient client.Client
 		shutdownClient, err := client.New(config, client.Options{
-			// TODO: will this work?
-			// Scheme: mgr.GetScheme(),
 			Scheme: scheme,
 		})
 
@@ -113,11 +112,9 @@ func main() {
 		allNamespaces := false
 		shutdownLog.Info("deleting finalizers")
 		if err = controllers.RemoveAllFinalizers(shutdownCtx, shutdownClient, shutdownLog, allNamespaces); err != nil {
-			time.Sleep(time.Second * 360)
 			shutdownLog.Error(err, "unable to remove finalizers")
 			os.Exit(1)
 		}
-		time.Sleep(time.Second * 360)
 		return
 	}
 
