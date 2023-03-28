@@ -27,6 +27,11 @@ spec:
     {{- if .Values.defaultAuthMethod.kubernetes.tokenAudiences }}
     audiences: {{ .Values.defaultAuthMethod.kubernetes.tokenAudiences | toJson }}
     {{- end }}
+  {{- if .Values.defaultAuthMethod.storageEncryption.enabled }}
+  storageEncryption:
+    keyName: {{ .Values.defaultAuthMethod.storageEncryption.keyName }}
+    mount: {{ .Values.defaultAuthMethod.storageEncryption.mount }}
+  {{- end }}
   {{- if .Values.defaultAuthMethod.headers }}
   headers:
     {{ tpl .Values.defaultAuthMethod.headers . | trim }}

@@ -195,6 +195,22 @@ defaultAuthMethod:
     # @type: array<string>
     tokenAudiences: []
 
+  # StorageEncryption provides the necessary configuration to encrypt the client storage
+  # cache within Kubernetes objects using (required) Vault Transit Engine.
+  # This should only be configured when client cache persistence with encryption is enabled.
+  # E.g. `controller.manager.clientCache.persistenceMode=direct-encrypted`
+  # Typically there should only ever be one VaultAuth configured with
+  # StorageEncryption in the Cluster
+  storageEncryption:
+    # @type: boolean
+    enabled: false
+    # KeyName to use for encrypt/decrypt operations via Vault Transit.
+    # @type: string
+    keyName: ""
+    # Mount path of the Transit engine in Vault.
+    # @type: string
+    mount: ""
+
   # Params to use when authenticating to Vault
   # params: |
   #   "vault-something1": "foo"
