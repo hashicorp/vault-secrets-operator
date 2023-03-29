@@ -27,10 +27,6 @@ import (
 )
 
 func TestVaultPKISecret(t *testing.T) {
-	if testWithHelm {
-		t.Skipf("Test is not compatiable with Helm")
-	}
-
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testPKIMountPath := "pki-" + testID
@@ -52,6 +48,12 @@ func TestVaultPKISecret(t *testing.T) {
 	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
 	if !testWithHelm {
 		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	}
+
+	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
+	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
+	if testWithHelm {
+		testVaultAuthMethodName = ""
 	}
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
@@ -183,11 +185,6 @@ func TestVaultPKISecret(t *testing.T) {
 			},
 		}
 	}
-	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
-	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
-	//if testWithHelm {
-	//	testVaultPKI.Spec.VaultAuthRef = ""
-	//}
 
 	tests := []struct {
 		name       string
