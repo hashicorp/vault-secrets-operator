@@ -1,6 +1,32 @@
-# vault-secrets-operator
+# Vault Secrets Operator
 
-Kubernetes operator for Vault secrets synchronization
+The Vault Secrets Operator (VSO) allows Pods to consume Vault secrets natively from Kubernetes Secrets.
+
+## Overview
+
+The Vault Secrets Operator operates by watching for changes to its supported set of Custom Resource Definitions (CRD).
+Each CRD provides the specification required to allow the *Operator* to synchronize a Vault Secrets to a Kubernetes Secret.
+The *Operator* writes the *source* Vault secret data directly to the *destination* Kubernetes Secret, ensuring that any
+changes made to the *source* are replicated to the *destination* over its lifetime. In this way, an application only needs
+to have access to the *destination* secret in order to make use of the secret data contained within.
+
+See the developer docs for more info [here](https://developer.hashicorp.com/vault/docs/platform/k8s/vso)
+
+*Please note that The Vault Secrets Operator is in public beta. Please provide your feedback by opening a GitHub issue
+[here](https://github.com/hashicorp/vault-secrets-operator/issues). We will be accepting PR contributions after the beta period elapsed.  <br />
+Thanks!*
+
+### Features
+
+The following features are supported by the Vault Secrets Operator:
+
+- All Vault secret engines supported.
+- TLS/mTLS communications with Vault.
+- Authentication using the requesting `Pod`'s `ServiceAccount` via the [Kubernetes Auth Method](https://developer.hashicorp.com/vault/docs/auth/kubernetes)
+- Syncing Vault Secrets to Kubernetes Secrets.
+- Secret rotation for `Deployment`, `ReplicaSet`, `StatefulSet` Kubernetes resource types.
+- Prometheus' instrumentation for monitoring the *Operator*
+- Supported installation methods: `Helm`, `Kustomize`
 
 ## Samples
 
