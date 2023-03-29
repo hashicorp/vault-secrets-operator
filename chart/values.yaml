@@ -93,7 +93,7 @@ controller:
         # @type: string
         serviceAccount: ""
 
-        # Token Audience should match the aaudience of the vault kubernetes auth role.
+        # Token Audience should match the audience of the vault kubernetes auth role.
         # @type: array<string>
         tokenAudiences: []
 
@@ -232,7 +232,7 @@ defaultAuthMethod:
     # @type: string
     serviceAccount: default
 
-    # Token Audience should match the aaudience of the vault kubernetes auth role.
+    # Token Audience should match the audience of the vault kubernetes auth role.
     # @type: array<string>
     tokenAudiences: []
 
