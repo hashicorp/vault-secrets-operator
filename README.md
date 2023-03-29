@@ -13,7 +13,7 @@ to have access to the *destination* secret in order to make use of the secret da
 See the developer docs for more info [here](https://developer.hashicorp.com/vault/docs/platform/k8s/vso)
 
 *Please note that The Vault Secrets Operator is in public beta. Please provide your feedback by opening a GitHub issue
-[here](https://github.com/hashicorp/vault-secrets-operator/issues). We will be reviewing PR contributions after the beta period elapsed.  <br />
+[here](https://github.com/hashicorp/vault-secrets-operator/issues). We will be reviewing PR contributions after the beta period has elapsed.<br />
 Thanks!*
 
 ### Features
