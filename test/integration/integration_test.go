@@ -388,6 +388,12 @@ func exportKindLogs(t *testing.T) {
 			exportDir += "-oss"
 		}
 
+		if t.Failed() {
+			exportDir += "-failed"
+		} else {
+			exportDir += "-passed"
+		}
+
 		st, err := os.Stat(exportDir)
 		if err != nil && !os.IsNotExist(err) {
 			assert.NoError(t, err)
