@@ -7,7 +7,7 @@
 apiVersion: secrets.hashicorp.com/v1alpha1
 kind: VaultAuth
 metadata:
-  name: {{ include "chart.fullname" . }}-operator
+  name: {{ include "chart.fullname" . }}-default-transit-auth
   namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
@@ -21,7 +21,7 @@ spec:
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
   kubernetes:
     role: {{ .Values.controller.manager.clientCache.storageEncryption.role }}
-    serviceAccount: {{ include "chart.fullname" . }}-controller-manager
+    serviceAccount: {{ .Values.controller.manager.clientCache.storageEncryption.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname" . )) }}
     {{- if .Values.controller.manager.clientCache.storageEncryption.tokenAudiences }}
     audiences: {{ .Values.controller.manager.clientCache.storageEncryption.tokenAudiences | toJson }}
     {{- end }}

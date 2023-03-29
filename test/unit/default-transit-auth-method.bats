@@ -27,12 +27,23 @@ load _helpers
 #--------------------------------------------------------------------
 # settings
 
+@test "defaultTransitAuthMethod/CR: serviceaccount uses operator sa as a default" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-transit-auth-method.yaml  \
+        --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+        . | tee /dev/stderr)
+
+    actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
+     [ "${actual}" = "release-name-vault-secrets-operator-controller-manager" ]
+}
 @test "defaultTransitAuthMethod/CR: settings can be modified" {
     cd `chart_dir`
     local object=$(helm template \
         -s templates/default-transit-auth-method.yaml  \
         --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
         --set 'controller.manager.clientCache.storageEncryption.namespace=foo-ns' \
+        --set 'controller.manager.clientCache.storageEncryption.serviceAccount=foo-sa' \
         --set 'controller.manager.clientCache.storageEncryption.mount=foo-mount' \
         --set 'controller.manager.clientCache.storageEncryption.role=foo-role' \
         --set 'controller.manager.clientCache.storageEncryption.tokenAudiences={vault,foo}' \
@@ -52,7 +63,7 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.kubernetes.role' | tee /dev/stderr)
      [ "${actual}" = "foo-role" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
-     [ "${actual}" = "release-name-vault-secrets-operator-controller-manager" ]
+     [ "${actual}" = "foo-sa" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.audiences' | tee /dev/stderr)
      [ "${actual}" = '["vault", "foo"]' ]
     actual=$(echo "$object" | yq '.spec.storageEncryption.keyName' | tee /dev/stderr)
