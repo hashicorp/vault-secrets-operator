@@ -82,4 +82,3 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
      [ "${actual}" = "baz" ]
 }
-
