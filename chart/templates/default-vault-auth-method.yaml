@@ -15,9 +15,6 @@ metadata:
     app.kubernetes.io/component: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.defaultAuthMethod.vaultConnectionRef }}
-  vaultConnectionRef: {{ .Values.defaultAuthMethod.vaultConnectionRef }}
-  {{- end }}
   namespace: {{ .Values.defaultAuthMethod.namespace }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
