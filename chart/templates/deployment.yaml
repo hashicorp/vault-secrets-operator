@@ -117,7 +117,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "chart.fullname" . }}-pre-delete-coontroller-cleanup
+  name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "chart.labels" . | nindent 4 }}
@@ -129,7 +129,7 @@ metadata:
 spec:
   template:
     metadata:
-      name: {{ include "chart.fullname" . }}-pre-delete-coontroller-cleanup
+      name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       containers:
