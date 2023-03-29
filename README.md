@@ -25,7 +25,7 @@ The following features are supported by the Vault Secrets Operator:
 - Authentication using the requesting `Pod`'s `ServiceAccount` via the [Kubernetes Auth Method](https://developer.hashicorp.com/vault/docs/auth/kubernetes)
 - Syncing Vault Secrets to Kubernetes Secrets.
 - Secret rotation for `Deployment`, `ReplicaSet`, `StatefulSet` Kubernetes resource types.
-- Prometheus instrumentation for monitoring the *Operator*
+- Prometheus' instrumentation for monitoring the *Operator*
 - Supported installation methods: `Helm`, `Kustomize`
 
 ## Samples
