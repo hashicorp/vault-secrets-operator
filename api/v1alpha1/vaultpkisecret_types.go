@@ -70,8 +70,8 @@ type VaultPKISecretSpec struct {
 	// The requested URI SANs.
 	URISans []string `json:"uriSans,omitempty"`
 
-	//Requested other SANs, in an array with the format
-	//<oid>;UTF8:<utf8 string value> for each entry.
+	// Requested other SANs, in an array with the format
+	// oid;type:value for each entry.
 	OtherSans string `json:"otherSans,omitempty"`
 
 	// TTL for the certificate; sets the expiration date.
