@@ -4,10 +4,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -31,8 +33,9 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme              = runtime.NewScheme()
+	setupLog            = ctrl.Log.WithName("setup")
+	finalizerCleanupLog = ctrl.Log.WithName("cleanup")
 )
 
 func init() {
@@ -55,6 +58,7 @@ func main() {
 	var probeAddr string
 	var clientCachePersistenceModel string
 	var printVersion bool
+	var finalizerCleanup bool
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -69,6 +73,7 @@ func main() {
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
+	flag.BoolVar(&finalizerCleanup, "finalizer-cleanup", false, "Remove finalizers from all CRs in preparation for shutdown.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -83,10 +88,33 @@ func main() {
 		}
 		os.Exit(0)
 	}
-
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	config := ctrl.GetConfigOrDie()
+
+	// This flag is passed by the pre-delete hook on helm uninstall.
+	if finalizerCleanup {
+		finalizerCleanupLog.Info("commencing cleanup of finalizers")
+		var finalizerCleanupClient client.Client
+		finalizerCleanupClient, err := client.New(config, client.Options{
+			Scheme: scheme,
+		})
+
+		d := time.Now().Add(time.Second * 60)
+		shutdownCtx, cancel := context.WithDeadline(context.Background(), d)
+		// Even though ctx will be expired, it is good practice to call its
+		// cancellation function in any case. Failure to do so may keep the
+		// context and its parent alive longer than necessary.
+		defer cancel()
+
+		finalizerCleanupLog.Info("deleting finalizers")
+		if err = controllers.RemoveAllFinalizers(shutdownCtx, finalizerCleanupClient, finalizerCleanupLog); err != nil {
+			finalizerCleanupLog.Error(err, "unable to remove finalizers")
+			os.Exit(1)
+		}
+		return
+	}
+
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,

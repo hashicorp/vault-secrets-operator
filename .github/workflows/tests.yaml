@@ -165,13 +165,12 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      # TODO: disabling OSS Helm tests until the helm chart is stable
-      #- name: OSS tests using Helm
-      #  env:
-      #    INTEGRATION_TESTS: true
-      #    VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-      #  run: |
-      #    make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: OSS tests using Helm
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+        run: |
+          make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: OSS tests using Kustomize
         # Ideally we only need to test the latest release of OSS Vault.
         if: ${{ matrix.vault-version == '1.13.0' }}

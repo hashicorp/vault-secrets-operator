@@ -113,3 +113,30 @@ spec:
               fieldPath: metadata.uid
             path: uid
         name: podinfo
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
+  namespace: {{ .Release.Namespace }}
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    metadata:
+      name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
+    spec:
+      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      containers:
+      - name: pre-delete-controller-cleanup
+        image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
+        args:
+        - --finalizer-cleanup=true
+        command:
+        - /vault-secrets-operator
+      restartPolicy: Never
