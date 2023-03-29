@@ -32,7 +32,7 @@ Application deployment:
 # Be sure to scrub any sensitive values!
 ```
 
-Other useful info to include: `kubectl describe deployment <app>` and `kubectl describe replicaset <app>` output.
+Other useful info to include: `kubectl describe deployment <app>` and `kubectl describe <vso-custom-resource> <app>` output.
 
 **Expected behavior**
 A clear and concise description of what you expected to happen.
