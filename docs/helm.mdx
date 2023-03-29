@@ -105,9 +105,9 @@ Use these links to navigate to a particular top-level stanza.
           if `defaultAuthMethod.enabled=true`
 
         - `serviceAccount` ((#v-controller-manager-clientcache-storageencryption-serviceaccount)) (`string: ""`) - Kubernetes ServiceAccount associated with the default Vault Auth Role
-          default: Operator's Namespace
+          default: Operator's ServiceAccount
 
-        - `tokenAudiences` ((#v-controller-manager-clientcache-storageencryption-tokenaudiences)) (`array<string>: []`) - Token Audience should match the aaudience of the vault kubernetes auth role.
+        - `tokenAudiences` ((#v-controller-manager-clientcache-storageencryption-tokenaudiences)) (`array<string>: []`) - Token Audience should match the audience of the vault kubernetes auth role.
 
         - `transitMount` ((#v-controller-manager-clientcache-storageencryption-transitmount)) (`string: ""`) - Mount path for the Transit Method.
 
@@ -228,7 +228,7 @@ Use these links to navigate to a particular top-level stanza.
 
     - `serviceAccount` ((#v-defaultauthmethod-kubernetes-serviceaccount)) (`string: default`) - Kubernetes ServiceAccount associated with the default Vault Auth Role
 
-    - `tokenAudiences` ((#v-defaultauthmethod-kubernetes-tokenaudiences)) (`array<string>: []`) - Token Audience should match the aaudience of the vault kubernetes auth role.
+    - `tokenAudiences` ((#v-defaultauthmethod-kubernetes-tokenaudiences)) (`array<string>: []`) - Token Audience should match the audience of the vault kubernetes auth role.
 
   - `params` ((#v-defaultauthmethod-params)) (`string: ""`) - Params to use when authenticating to Vault
     params: |

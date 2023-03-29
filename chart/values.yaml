@@ -89,7 +89,7 @@ controller:
         role: ""
 
         # Kubernetes ServiceAccount associated with the default Vault Auth Role
-        # default: Operator's Namespace
+        # default: Operator's ServiceAccount
         # @type: string
         serviceAccount: ""
 
