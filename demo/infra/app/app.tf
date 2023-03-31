@@ -154,11 +154,14 @@ resource "kubernetes_deployment" "example" {
           }
         }
         container {
-          image = "nginx:latest"
-          name  = "example"
+          image = "postgres:latest"
+          name  = "demo"
+          command = [
+            "sh", "-c", "while : ; do psql postgresql://$PGUSERNAME@${local.postgres_host}/postgres?sslmode=disable -c 'select 1;' ; sleep 5; done"
+          ]
 
           env {
-            name = "DB_PASSWORD"
+            name = "PGPASSWORD"
             value_from {
               secret_key_ref {
                 name = kubernetes_secret.db.metadata[0].name
@@ -168,7 +171,7 @@ resource "kubernetes_deployment" "example" {
           }
 
           env {
-            name = "DB_USERNAME"
+            name = "PGUSERNAME"
             value_from {
               secret_key_ref {
                 name = kubernetes_secret.db.metadata[0].name
@@ -186,27 +189,12 @@ resource "kubernetes_deployment" "example" {
           resources {
             limits = {
               cpu    = "0.5"
-              memory = "512Mi"
+              memory = "64Mi"
             }
             requests = {
               cpu    = "250m"
               memory = "50Mi"
             }
-          }
-
-          liveness_probe {
-            http_get {
-              path = "/"
-              port = 80
-
-              http_header {
-                name  = "X-Custom-Header"
-                value = "Awesome"
-              }
-            }
-
-            initial_delay_seconds = 3
-            period_seconds        = 3
           }
         }
       }
