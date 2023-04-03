@@ -135,6 +135,7 @@ type Client interface {
 	Read(context.Context, string) (*api.Secret, error)
 	Restore(context.Context, *api.Secret) error
 	Write(context.Context, string, map[string]any) (*api.Secret, error)
+	Delete(context.Context, string) (*api.Secret, error)
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
 	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
@@ -419,6 +420,19 @@ func (c *defaultClient) Write(ctx context.Context, path string, m map[string]any
 
 	var secret *api.Secret
 	secret, err = c.client.Logical().WriteWithContext(ctx, path, m)
+	return secret, err
+}
+
+func (c *defaultClient) Delete(ctx context.Context, path string) (*api.Secret, error) {
+	var err error
+	startTS := time.Now()
+	defer func() {
+		c.observeTime(startTS, metrics.OperationWrite)
+		c.incrementOperationCounter(metrics.OperationWrite, err)
+	}()
+
+	var secret *api.Secret
+	secret, err = c.client.Logical().DeleteWithContext(ctx, path)
 	return secret, err
 }
 
