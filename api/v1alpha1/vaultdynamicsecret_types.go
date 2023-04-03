@@ -16,6 +16,8 @@ type VaultDynamicSecretSpec struct {
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 	// Namespace where the secrets engine is mounted in Vault.
 	Namespace string `json:"namespace,omitempty"`
+	// Path of the dynamic secret in Vault.
+	Path string `json:"path"`
 	// Mount path of the secret's engine in Vault.
 	Mount string `json:"mount"`
 	// Role in Vault to get the credentials for.

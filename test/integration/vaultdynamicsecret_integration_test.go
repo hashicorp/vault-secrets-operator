@@ -241,6 +241,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Role:      outputs.DBRole,
+						Path:      fmt.Sprintf("%s/creds/%s", outputs.DBPath, outputs.DBRole),
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: false,
@@ -272,6 +273,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Role:      outputs.DBRole,
+						Path:      fmt.Sprintf("%s/creds/%s", outputs.DBPath, outputs.DBRole),
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,
