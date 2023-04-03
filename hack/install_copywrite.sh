@@ -41,6 +41,7 @@ pushd $tempdir > /dev/null
 popd > /dev/null
 
 rm -f "${dest_file%/*}"/copywrite*
+mkdir bin/
 mv "${tempdir}/copywrite" "${dest_file}"
 ln -sf "${dest_filename}" "${dest_file%/*}/copywrite"
 
