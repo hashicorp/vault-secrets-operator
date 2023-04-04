@@ -139,16 +139,18 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 
 			leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-			if leaseDuration < 1 {
-				// set an artificial leaseDuration in the case the lease duration is not
-				// compatible with computeHorizonWithJitter()
-				leaseDuration = time.Second * 5
-			}
 			horizon := computeHorizonWithJitter(leaseDuration)
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"Renewed lease, lease_id=%s, horizon=%s", leaseID, horizon)
 
-			return ctrl.Result{RequeueAfter: horizon}, nil
+			// the next reconcile would run after the credential expire; let's rollout-restart earlier
+			if horizon > leaseDuration {
+				doRolloutRestart = true
+				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
+					"credential will expire soon, triggering a rollout-restart, lease_id=%s", leaseID)
+			} else {
+				return ctrl.Result{RequeueAfter: horizon}, nil
+			}
 		} else {
 			doRolloutRestart = true
 			if !isLeaseNotfoundError(err) {
