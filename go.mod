@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/cenkalti/backoff/v4 v4.2.0
-	github.com/go-logr/logr v1.2.3
+	github.com/go-logr/logr v1.2.4
 	github.com/google/uuid v1.3.0
 	github.com/gruntwork-io/terratest v0.41.16
 	github.com/hashicorp/go-rootcerts v1.0.2
@@ -12,7 +12,7 @@ require (
 	github.com/hashicorp/vault/api v1.9.0
 	github.com/hashicorp/vault/sdk v0.8.1
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.27.5
+	github.com/onsi/gomega v1.27.6
 	github.com/operator-framework/operator-lib v0.11.0
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
@@ -21,7 +21,7 @@ require (
 	k8s.io/apimachinery v0.26.3
 	k8s.io/client-go v0.26.3
 	k8s.io/utils v0.0.0-20221128185143-99ec85e7a448
-	sigs.k8s.io/controller-runtime v0.14.5
+	sigs.k8s.io/controller-runtime v0.14.6
 )
 
 require (
