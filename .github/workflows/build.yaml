@@ -136,11 +136,12 @@ jobs:
 
   integrationTest:
     runs-on: ubuntu-latest
-    needs: [build-pre-checks, build-docker]
+    needs: [get-product-version, build-pre-checks, build-docker]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      version: ${{needs.get-product-version.outputs.product-version}}
+      VERSION: ${{ needs.get-product-version.outputs.product-version }}
+      OPERATOR_IMAGE: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
     strategy:
       fail-fast: false
       matrix:
@@ -174,12 +175,12 @@ jobs:
       - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
       - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
         with:
-          name: ${{ needs.build-docker-image.outputs.image-archive }}
+          name: ${{ env.OPERATOR_IMAGE }}
           path: dist
       - name: Create K8s Kind Cluster
         uses: helm/kind-action@d8ccf8fb623ce1bb360ae2f45f323d9d5c5e9f00 # v1.5.0
         with:
-          version: v0.17.0
+          version: v0.18.0
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
@@ -192,13 +193,16 @@ jobs:
           echo "log_root=${log_root}" >> $GITHUB_OUTPUT
           echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
       - name: Load Docker image
+        # Load the amd64 docker image from the build-docker job
         run:
-          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=vault-secrets-operator_release-default_linux_amd64_${{env.version}}_${{ github.sha }}.docker.tar
+          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=dist/${{ env.OPERATOR_IMAGE }}
       - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
         with:
           go-version-file: .go-version
           cache: true
       - name: OSS tests using Helm
+        # Ideally we only need to test the latest release of OSS Vault.
+        if: ${{ matrix.vault-version == '1.13.1' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
@@ -206,7 +210,7 @@ jobs:
           make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: OSS tests using Kustomize
         # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.vault-version == '1.13.0' }}
+        if: ${{ matrix.vault-version == '1.13.1' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
