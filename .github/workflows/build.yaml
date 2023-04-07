@@ -133,3 +133,14 @@ jobs:
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.version}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.version}}
+      - name: Check binary version in container
+        shell: bash
+        run: |
+          versionOutput=$(docker run hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
+          echo $versionOutput
+          gitVersion=$(echo $versionOutput | jq -r .gitVersion)
+
+          if [ "$gitVersion" != "${{ env.version }}" ]; then
+            echo "$gitVersion expected to be ${{ env.version }}"
+            exit 1
+          fi
