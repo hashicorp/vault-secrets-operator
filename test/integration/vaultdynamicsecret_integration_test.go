@@ -85,6 +85,12 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_db_default_lease_ttl": 30,
 		},
 	}
+	if operatorImageRepo != "" {
+		tfOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		tfOptions.Vars["operator_image_tag"] = operatorImageTag
+	}
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
