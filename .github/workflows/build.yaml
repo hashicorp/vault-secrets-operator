@@ -133,3 +133,105 @@ jobs:
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.version}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.version}}
+
+  integrationTest:
+    runs-on: ubuntu-latest
+    needs: [get-product-version, build-pre-checks, build-docker]
+    env:
+      KIND_CLUSTER_NAME: vault-secrets-operator
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.get-product-version.outputs.product-version }}
+      OPERATOR_IMAGE: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
+    strategy:
+      fail-fast: false
+      matrix:
+        kind-k8s-version: [1.22.17, 1.23.17, 1.24.12, 1.25.8, 1.26.3]
+        vault-version: [1.11.9, 1.12.5, 1.13.1]
+        # Note: The below exclude and includes are a bit awkward, but they
+        # allow us to exclude the combos we don't really need. We want to test
+        # the operator with the different k8s versions, and with the different
+        # vault versions, but we don't care about testing all the k8s versions
+        # against all the vault versions.
+        # Combos to exclude:
+        #   kind-k8s-version: [1.22.17, 1.23.17, 1.24.12, 1.25.8]
+        #   vault-version: [1.11.9, 1.12.5]
+        exclude:
+          - kind-k8s-version: 1.25.8
+          - kind-k8s-version: 1.24.12
+          - kind-k8s-version: 1.23.17
+          - kind-k8s-version: 1.22.17
+        include:
+          - kind-k8s-version: 1.25.8
+            vault-version: 1.13.1
+          - kind-k8s-version: 1.24.7
+            vault-version: 1.13.1
+          - kind-k8s-version: 1.23.13
+            vault-version: 1.13.1
+          - kind-k8s-version: 1.22.15
+            vault-version: 1.13.1
+
+    name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
+    steps:
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+      - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+        with:
+          name: ${{ env.OPERATOR_IMAGE }}
+          path: dist
+      - name: Create K8s Kind Cluster
+        uses: helm/kind-action@d8ccf8fb623ce1bb360ae2f45f323d9d5c5e9f00 # v1.5.0
+        with:
+          version: v0.18.0
+          cluster_name: ${{ env.KIND_CLUSTER_NAME }}
+          config: test/integration/kind/config.yaml
+          node_image: kindest/node:v${{ matrix.kind-k8s-version }}
+      - name: Create kind export log root
+        id: create_kind_export_log_root
+        run: |
+          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs"
+          log_root="/tmp/${log_artifact_name}"
+          mkdir -p "${log_root}"
+          echo "log_root=${log_root}" >> $GITHUB_OUTPUT
+          echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
+      - name: Load Docker image
+        # Load the amd64 docker image from the build-docker job
+        run:
+          make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=dist/${{ env.OPERATOR_IMAGE }}
+      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: OSS tests using Helm
+        # Ideally we only need to test the latest release of OSS Vault.
+        if: ${{ matrix.vault-version == '1.13.1' }}
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+        run: |
+          make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: OSS tests using Kustomize
+        # Ideally we only need to test the latest release of OSS Vault.
+        if: ${{ matrix.vault-version == '1.13.1' }}
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
+        run: |
+          make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: ENT tests using Kustomize
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
+        run: |
+          make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: Store kind cluster logs
+        if: success()
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        with:
+          name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}
+          path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: Store kind cluster logs failure
+        if: failure()
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        with:
+          name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}-failed
+          path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
