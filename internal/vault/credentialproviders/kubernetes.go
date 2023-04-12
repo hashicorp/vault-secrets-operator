@@ -2,6 +2,7 @@ package credentialproviders
 
 import (
 	"context"
+
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 	authv1 "k8s.io/api/authentication/v1"
@@ -22,7 +23,8 @@ type KubernetesCredentialProvider struct {
 }
 
 func NewKubernetesCredentialProvider(authObj *secretsv1alpha1.VaultAuth, providerNamespace string,
-	uid types.UID) *KubernetesCredentialProvider {
+	uid types.UID,
+) *KubernetesCredentialProvider {
 	return &KubernetesCredentialProvider{
 		authObj,
 		providerNamespace,
