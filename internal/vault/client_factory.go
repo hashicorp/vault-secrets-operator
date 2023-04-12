@@ -223,11 +223,13 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 	return errs
 }
 
-// GetClient is meant to be called for all resources that require access to Vault.
+// Get is meant to be called for all resources that require access to Vault.
 // It will attempt to fetch a Client from the in-memory cache for the provided Object.
 // On a cache miss, an attempt at restoration from storage will be made, if a restoration attempt fails,
 // a new Client will be instantiated, and an attempt to login into Vault will be made.
 // Upon successful restoration/instantiation/login, the Client will be cached for calls.
+//
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
 	logger := log.FromContext(ctx).WithName("cachingClientFactory")
 	logger.V(consts.LogLevelDebug).Info("Cache info", "length", m.cache.Len())
@@ -249,13 +251,50 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, errs
 	}
 
+	ns, err := common.GetVaultNamespace(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	namespacedClient := func(c Client) (Client, error) {
+		// handle the case where the "root" Client's namespace differs from that of the one specified in obj.Spec.Namespace.
+		// in which case we cache and return the namespaced Clone of the "root" Client.
+		if ns != "" && ns != c.Namespace() {
+			cacheKeyClone, err := ClientCacheKeyClone(cacheKey, ns)
+			if err != nil {
+				return nil, err
+			}
+
+			if clone, ok := m.cache.Get(cacheKeyClone); ok {
+				return clone, nil
+			}
+
+			clone, err := c.Clone(ns)
+			if err != nil {
+				return nil, err
+			}
+
+			logger.Info("Cloned Client",
+				"namespace", ns, "cacheKeyClone", cacheKeyClone)
+			if _, err := m.cache.Add(clone); err != nil {
+				return nil, err
+			}
+
+			return clone, nil
+		}
+		return c, nil
+	}
+
 	// try and fetch the client from the in-memory Client cache
 	c, ok := m.cache.Get(cacheKey)
 	if ok {
 		// return the Client from the cache if it is not expired.
 		if expired, err := c.CheckExpiry(0); !expired && err == nil {
-			return c, nil
+			return namespacedClient(c)
 		}
+
+		// remove the parent Client from the cache in order to prune any of its clones.
+		m.cache.Remove(cacheKey)
 	}
 
 	m.mu.Lock()
@@ -263,7 +302,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	if !ok && (m.persist && m.storage != nil) {
 		// try and restore from Client storage cache, if properly configured to do so.
 		if restored, err := m.restoreClientFromCacheKey(ctx, client, cacheKey); err == nil {
-			return restored, nil
+			return namespacedClient(restored)
 		}
 	}
 
@@ -275,7 +314,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, errs
 	}
 
-	// cache the new Client for future requests.
+	// cache the parent Client for future requests.
 	cacheKey, err = m.cacheClient(c)
 	if err != nil {
 		errs = errors.Join(err)
@@ -286,6 +325,11 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		if err := m.storeClient(ctx, client, c); err != nil {
 			logger.Error(err, "Failed to store the client")
 		}
+	}
+
+	c, err = namespacedClient(c)
+	if err != nil {
+		errs = errors.Join(err)
 	}
 
 	return c, errs
@@ -379,6 +423,10 @@ func (m *cachingClientFactory) cacheClient(c Client) (ClientCacheKey, error) {
 	cacheKey, err := c.GetCacheKey()
 	if err != nil {
 		return "", err
+	}
+
+	if c.IsClone() {
+		return "", fmt.Errorf("cannot cache cloned Clients")
 	}
 
 	if _, err := m.cache.Add(c); err != nil {

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/vault/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -102,13 +103,17 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 
 func Test_clientCache_Metrics(t *testing.T) {
 	tests := []struct {
-		name         string
-		size         int
-		clientCount  int
-		missCount    int
-		expectHits   float64
-		expectEvicts float64
-		expectMisses float64
+		name              string
+		size              int
+		clientCount       int
+		withClones        bool
+		missCount         int
+		expectHits        float64
+		expectEvicts      float64
+		expectMisses      float64
+		expectCloneHits   float64
+		expectCloneEvicts float64
+		expectCloneMisses float64
 	}{
 		{
 			name:         "without-evictions",
@@ -117,6 +122,16 @@ func Test_clientCache_Metrics(t *testing.T) {
 			expectHits:   10,
 			expectMisses: 0,
 			expectEvicts: 0,
+		},
+		{
+			name:            "without-evictions-and-clones",
+			clientCount:     10,
+			withClones:      true,
+			size:            10,
+			expectHits:      10,
+			expectMisses:    0,
+			expectEvicts:    0,
+			expectCloneHits: 10,
 		},
 		{
 			name:         "with-evictions",
@@ -144,6 +159,17 @@ func Test_clientCache_Metrics(t *testing.T) {
 			expectMisses: 8,
 			expectEvicts: 5,
 		},
+		{
+			name:            "misses-with-evictions-and-clones",
+			clientCount:     10,
+			withClones:      true,
+			missCount:       3,
+			size:            5,
+			expectHits:      5,
+			expectMisses:    8,
+			expectEvicts:    5,
+			expectCloneHits: 5,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -154,8 +180,12 @@ func Test_clientCache_Metrics(t *testing.T) {
 			require.Greater(t, tt.clientCount, 0, "test parameter 'clientCount' must be greater than zero")
 
 			var cacheKeys []ClientCacheKey
+			var cacheCloneKeys []ClientCacheKey
 			for i := 0; i < tt.clientCount; i++ {
+				client, err := api.NewClient(api.DefaultConfig())
+				require.NoError(t, err)
 				c := &defaultClient{
+					client: client,
 					authObj: &secretsv1alpha1.VaultAuth{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:       fmt.Sprintf("auth-%d", i),
@@ -163,7 +193,7 @@ func Test_clientCache_Metrics(t *testing.T) {
 							Generation: 0,
 						},
 						Spec: secretsv1alpha1.VaultAuthSpec{
-							Method: "kubernetes",
+							Method: providerMethodKubernetes,
 						},
 					},
 					connObj: &secretsv1alpha1.VaultConnection{
@@ -183,6 +213,16 @@ func Test_clientCache_Metrics(t *testing.T) {
 				cacheKeys = append(cacheKeys, cacheKey)
 				_, err = cache.Add(c)
 				require.NoError(t, err)
+
+				if tt.withClones {
+					clone, err := c.Clone(fmt.Sprintf("ns-%d", i))
+					require.NoError(t, err)
+					cacheKey, err := clone.GetCacheKey()
+					require.NoError(t, err)
+					cacheCloneKeys = append(cacheCloneKeys, cacheKey)
+					_, err = cache.Add(clone)
+					require.NoError(t, err)
+				}
 			}
 
 			// tt.missCount is used to increment the cache's missCounter,
@@ -200,6 +240,9 @@ func Test_clientCache_Metrics(t *testing.T) {
 				// once we hit the LRU size limit.
 				cacheKeysEvicted = cacheKeys[0:tt.size]
 				cacheKeys = cacheKeys[tt.clientCount-tt.size:]
+				if tt.withClones {
+					cacheCloneKeys = cacheCloneKeys[tt.clientCount-tt.size:]
+				}
 			}
 			assert.Len(t, cacheKeysEvicted, int(tt.expectEvicts),
 				"test parameter 'expectEvicts' does not equal the number of synthesized client evictions")
@@ -208,6 +251,12 @@ func Test_clientCache_Metrics(t *testing.T) {
 				_, ok := cache.Get(cacheKey)
 				assert.True(t, ok,
 					"expected Client not found in cache for key %s", cacheKey)
+			}
+
+			for _, cacheKey := range cacheCloneKeys {
+				_, ok := cache.Get(cacheKey)
+				assert.True(t, ok,
+					"expected Client clone not found in cache for key %s", cacheKey)
 			}
 
 			for _, cacheKey := range cacheKeysEvicted {
@@ -219,7 +268,7 @@ func Test_clientCache_Metrics(t *testing.T) {
 			assertGatheredMetrics := func() {
 				mfs, err := reg.Gather()
 				require.NoError(t, err)
-				assert.Len(t, mfs, 3)
+				assert.Len(t, mfs, 6)
 				for _, mf := range mfs {
 					m := mf.GetMetric()
 					require.Len(t, m, 1)
@@ -231,6 +280,12 @@ func Test_clientCache_Metrics(t *testing.T) {
 						assert.Equal(t, tt.expectHits, *m[0].Counter.Value, msgFmt, name)
 					case metricsFQNClientCacheMisses:
 						assert.Equal(t, tt.expectMisses, *m[0].Counter.Value, msgFmt, name)
+					case metricsFQNClientCloneCacheEvictions:
+						assert.Equal(t, tt.expectCloneEvicts, *m[0].Gauge.Value, msgFmt, name)
+					case metricsFQNClientCloneCacheHits:
+						assert.Equal(t, tt.expectCloneHits, *m[0].Counter.Value, msgFmt, name)
+					case metricsFQNClientCloneCacheMisses:
+						assert.Equal(t, tt.expectCloneMisses, *m[0].Counter.Value, msgFmt, name)
 					default:
 						assert.Fail(t, "missing a test for metric %s", name)
 					}
