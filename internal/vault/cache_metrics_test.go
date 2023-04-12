@@ -5,6 +5,7 @@ package vault
 
 import (
 	"fmt"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 	"testing"
 
 	"github.com/google/uuid"
@@ -60,9 +61,8 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 							Generation: 0,
 						},
 					},
-					credentialProvider: &kubernetesCredentialProvider{
-						uid: types.UID(uuid.New().String()),
-					},
+					credentialProvider: credentialproviders.NewKubernetesCredentialProvider(nil, "",
+						types.UID(uuid.New().String())),
 				})
 				require.NoError(t, err)
 			}
@@ -173,9 +173,8 @@ func Test_clientCache_Metrics(t *testing.T) {
 							Generation: 0,
 						},
 					},
-					credentialProvider: &kubernetesCredentialProvider{
-						uid: types.UID(uuid.New().String()),
-					},
+					credentialProvider: credentialproviders.NewKubernetesCredentialProvider(nil, "",
+						types.UID(uuid.New().String())),
 				}
 
 				cacheKey, err := c.GetCacheKey()
