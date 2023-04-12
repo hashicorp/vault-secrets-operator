@@ -7,7 +7,6 @@ ARG GO_VERSION=latest
 # -----------------------------------
 FROM golang:$GO_VERSION as dev-builder
 
-ARG LD_FLAGS
 ARG GOOS=linux
 ARG GOARCH=amd64
 ENV BIN_NAME=vault-secrets-operator
@@ -24,6 +23,10 @@ COPY main.go main.go
 COPY api/ api/
 COPY internal/ internal/
 COPY controllers/ controllers/
+
+# These flags gets redynamically computed on each `docker build` invocation, keep this under `go mod download` and friends
+# so it doesn't unnecessarily bust the Docker cache.
+ARG LD_FLAGS
 
 # Build
 RUN CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LD_FLAGS" -a -o $BIN_NAME main.go
