@@ -18,7 +18,12 @@ const (
 	providerMethodJwt        string = "jwt"
 )
 
-var providerMethodsSupported = []string{providerMethodKubernetes, providerMethodJwt}
+var (
+	providerMethodsSupported = []string{providerMethodKubernetes, providerMethodJwt}
+
+	_ CredentialProvider = (*credentialproviders.KubernetesCredentialProvider)(nil)
+	_ CredentialProvider = (*credentialproviders.JwtCredentialProvider)(nil)
+)
 
 type CredentialProvider interface {
 	Init(ctx context.Context, client ctrlclient.Client, object *secretsv1alpha1.VaultAuth, providerNamespace string) error
