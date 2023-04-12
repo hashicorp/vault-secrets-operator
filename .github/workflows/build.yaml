@@ -136,11 +136,11 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          versionOutput=$(docker run hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
-          echo $versionOutput
-          gitVersion=$(echo $versionOutput | jq -r .gitVersion)
+          version_output=$(docker run hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
+          echo $version_output
+          git_version=$(echo $version_output | jq -r .gitVersion)
 
-          if [ "$gitVersion" != "${{ env.version }}" ]; then
+          if [ "$git_version" != "${{ env.version }}" ]; then
             echo "$gitVersion expected to be ${{ env.version }}"
             exit 1
           fi
