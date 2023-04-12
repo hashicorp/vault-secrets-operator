@@ -171,6 +171,7 @@ func TestVaultPKISecret(t *testing.T) {
 					Clear:        true,
 					ExpiryOffset: "1s",
 					TTL:          "30s",
+					AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 					Destination: secretsv1alpha1.Destination{
 						Name:   "pki1",
 						Create: false,
@@ -238,6 +239,7 @@ func TestVaultPKISecret(t *testing.T) {
 						ExpiryOffset: "1s",
 						TTL:          "30s",
 						VaultAuthRef: testVaultAuthMethodName,
+						AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,

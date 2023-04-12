@@ -4,6 +4,8 @@
 package v1alpha1
 
 import (
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -130,13 +132,16 @@ type VaultPKISecret struct {
 func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 	m := map[string]interface{}{
 		"common_name":          v.Spec.CommonName,
-		"alt_names":            v.Spec.AltNames,
 		"ip_sans":              v.Spec.IPSans,
 		"uri_sans":             v.Spec.URISans,
 		"other_sans":           v.Spec.OtherSans,
 		"ttl":                  v.Spec.TTL,
 		"not_after":            v.Spec.NotAfter,
 		"exclude_cn_from_sans": v.Spec.ExcludeCNFromSans,
+	}
+
+	if len(v.Spec.AltNames) > 0 {
+		m["alt_names"] = strings.Join(v.Spec.AltNames, ",")
 	}
 
 	if v.Spec.Format != "" {
