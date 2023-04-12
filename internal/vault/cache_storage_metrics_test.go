@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 	"github.com/prometheus/client_golang/prometheus"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -533,9 +534,8 @@ func storeSecret(t *testing.T, ctx context.Context, client ctrlclient.Client, st
 					Generation: 0,
 				},
 			},
-			credentialProvider: &kubernetesCredentialProvider{
-				uid: types.UID(uuid.New().String()),
-			},
+			credentialProvider: credentialproviders.NewKubernetesCredentialProvider(nil, "",
+				types.UID(uuid.New().String())),
 		},
 	}
 	secret, err := storage.Store(ctx, client, req)
