@@ -20,6 +20,8 @@ type VaultDynamicSecretSpec struct {
 	Mount string `json:"mount"`
 	// Role in Vault to get the credentials for.
 	Role string `json:"role"`
+	// Revoke the credential when the resource is deleted.
+	Revoke bool `json:"revoke,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will

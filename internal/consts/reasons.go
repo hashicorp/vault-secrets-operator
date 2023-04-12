@@ -11,6 +11,7 @@ const (
 	ReasonRolloutRestartFailed    = "RolloutRestartFailed"
 	ReasonRolloutRestartTriggered = "RolloutRestartTriggered"
 	ReasonSecretLeaseRenewal      = "SecretLeaseRenewal"
+	ReasonSecretLeaseRevoked      = "SecretLeaseRevoked"
 	ReasonSecretLeaseRenewalError = "SecretLeaseRenewalError"
 	ReasonSecretRotated           = "SecretRotated"
 	ReasonSecretSync              = "SecretSync"

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gruntwork-io/terratest/modules/retry"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
@@ -88,6 +90,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
+	var outputs dynamicK8SOutputs
 	tfOptions = setCommonTFOptions(t, tfOptions)
 
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
@@ -98,6 +101,31 @@ func TestVaultDynamicSecret(t *testing.T) {
 				// removes the k8s namespace
 				assert.Nil(t, crdClient.Delete(ctx, c))
 			}
+			fmt.Println("================== starting shutdown ============")
+			time.Sleep(time.Second * 120)
+			// Get a Vault client
+			cfg := api.DefaultConfig()
+			cfg.Address = "http://127.0.0.1:38300"
+			c, err := api.NewClient(cfg)
+			assert.NoError(t, err)
+			c.SetToken("root")
+			// Check to be sure all leases have been revoked.
+			retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
+				fmt.Println("======== entering cleanup ===========")
+				// ensure the leases have been revoked.
+				resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/readonly", outputs.DBRole))
+				if err != nil {
+					return "", err
+				}
+				if resp == nil || resp.Data == nil || len(resp.Data) == 0 {
+					return "", nil
+				}
+				keys := resp.Data["keys"].([]interface{})
+				if len(keys) > 0 {
+					return "", fmt.Errorf("Leases still found: %d", len(keys))
+				}
+				return "", nil
+			})
 
 			exportKindLogs(t)
 
@@ -130,7 +158,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
 	require.Nil(t, err)
 
-	var outputs dynamicK8SOutputs
 	require.Nil(t, json.Unmarshal(b, &outputs))
 
 	// Set the secrets in vault to be synced to kubernetes
@@ -225,6 +252,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			t.Cleanup(func() {
 				if !skipCleanup {
+					// delete the secrets first.
 					for _, obj := range objsCreated {
 						assert.NoError(t, crdClient.Delete(ctx, obj))
 					}
@@ -241,6 +269,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Role:      outputs.DBRole,
+						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: false,
@@ -272,6 +301,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Role:      outputs.DBRole,
+						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,

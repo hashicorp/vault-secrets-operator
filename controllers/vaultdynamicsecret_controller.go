@@ -81,6 +81,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	o := &secretsv1alpha1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
+		if o.GetDeletionTimestamp() != nil {
+			logger.Info("================ DELETION TIMESTAMP 1 ===============")
+			if err := r.handleDeletion(ctx, o); err != nil {
+				msg := "Failed to handle deletion"
+				logger.Error(err, msg)
+				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoked, msg+": %s", err)
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -89,9 +99,19 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	if o.GetDeletionTimestamp() != nil {
+		logger.Info("================ DELETION TIMESTAMP 2 ===============")
+		if err := r.handleDeletion(ctx, o); err != nil {
+			msg := "Failed to handle deletion"
+			logger.Error(err, msg)
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoked, msg+": %s", err)
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	var doRolloutRestart bool
 	leaseID := o.Status.SecretLease.ID
-	// logger.Info("Last secret lease", "secretLease", o.Status.SecretLease, "epoch", r.epoch)
 	if leaseID != "" {
 		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
@@ -206,6 +226,7 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.Va
 }
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
+	// TODO: Add o.Spec.SecretPath and user it here if it is set.
 	path := fmt.Sprintf("%s/creds/%s", o.Spec.Mount, o.Spec.Role)
 	resp, err := vClient.Read(ctx, path)
 	if err != nil {
@@ -287,4 +308,48 @@ func isLeaseNotfoundError(err error) bool {
 		}
 	}
 	return false
+}
+
+func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+	logger := log.FromContext(ctx)
+	logger.Info("========= In deletion ==========")
+	logger.Info(fmt.Sprintf("================== %v", o.Spec))
+	// Fixme: do we need to && against Renewable as well?
+	if o.Spec.Revoke {
+		logger.Info("Revoking credential")
+		if err := r.revokeCredential(ctx, o); err != nil {
+			logger.Error(err, "Failed to revoke credential")
+			return err
+		}
+	}
+	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
+		logger.Info("Removing finalizer")
+		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {
+			if err := r.Update(ctx, o); err != nil {
+				logger.Error(err, "Failed to remove the finalizer")
+				return err
+			}
+			logger.Info("Successfully removed the finalizer")
+		}
+	}
+	return nil
+}
+
+func (r *VaultDynamicSecretReconciler) revokeCredential(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+	logger := log.FromContext(ctx)
+	c, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		return err
+	}
+	logger.Info(fmt.Sprintf("Revoking lease for credential %q", o.Status.SecretLease.ID))
+
+	_, err = c.Write(ctx, "/sys/leases/revoke", map[string]interface{}{
+		"lease_id": o.Status.SecretLease.ID,
+	})
+	if err != nil {
+		logger.Error(err, "Failed to revoke lease for credential", "id", o.Status.SecretLease.ID)
+		return err
+	}
+
+	return nil
 }
