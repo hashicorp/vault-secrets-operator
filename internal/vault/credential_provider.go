@@ -6,6 +6,7 @@ package vault
 import (
 	"context"
 	"fmt"
+
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 	"k8s.io/apimachinery/pkg/types"
@@ -13,12 +14,11 @@ import (
 )
 
 const (
-	TokenGenerateName        string = "vso-"
 	providerMethodKubernetes string = "kubernetes"
 	providerMethodJwt        string = "jwt"
 )
 
-var providerMethodsSupported = []string{providerMethodKubernetes}
+var providerMethodsSupported = []string{providerMethodKubernetes, providerMethodJwt}
 
 type CredentialProvider interface {
 	Init(ctx context.Context, client ctrlclient.Client, object *secretsv1alpha1.VaultAuth, providerNamespace string) error

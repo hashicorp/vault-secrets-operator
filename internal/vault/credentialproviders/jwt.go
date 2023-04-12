@@ -3,6 +3,7 @@ package credentialproviders
 import (
 	"context"
 	"fmt"
+
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 
 	"github.com/google/uuid"

@@ -5,8 +5,9 @@ package vault
 
 import (
 	"fmt"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 	"testing"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
