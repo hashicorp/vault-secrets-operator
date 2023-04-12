@@ -159,4 +159,12 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "defaultAuthMethod.kubernetes.tokenAudiences"
     value = "{${vault_kubernetes_auth_backend_role.default.audience}}"
   }
+  set {
+    name  = "controller.manager.image.repository"
+    value = var.operator_image_repo
+  }
+  set {
+    name  = "controller.manager.image.tag"
+    value = var.operator_image_tag
+  }
 }

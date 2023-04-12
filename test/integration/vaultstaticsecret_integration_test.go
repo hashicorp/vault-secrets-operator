@@ -82,6 +82,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			"operator_helm_chart_path":     chartPath,
 		},
 	}
+	if operatorImageRepo != "" {
+		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
+	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
 		terraformOptions.Vars["vault_enterprise"] = true
@@ -92,7 +98,13 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
 	var created []ctrlclient.Object
+
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
+		if skipCleanup {
+			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
+			return
+		}
 		for _, c := range created {
 			// test that the custom resources can be deleted before tf destroy
 			// removes the k8s namespace

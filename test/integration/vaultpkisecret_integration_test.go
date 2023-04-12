@@ -80,6 +80,12 @@ func TestVaultPKISecret(t *testing.T) {
 			"operator_helm_chart_path":     chartPath,
 		},
 	}
+	if operatorImageRepo != "" {
+		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
+	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
 		terraformOptions.Vars["vault_enterprise"] = true
