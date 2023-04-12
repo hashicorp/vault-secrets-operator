@@ -1,10 +1,11 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package credentialproviders
 
 import (
 	"context"
 	"fmt"
-
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 
 	"github.com/google/uuid"
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
@@ -16,8 +17,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
-
-var _ vault.CredentialProvider = (*JwtCredentialProvider)(nil)
 
 type JwtCredentialProvider struct {
 	authObj           *secretsv1alpha1.VaultAuth
@@ -91,7 +90,7 @@ func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 func (l *JwtCredentialProvider) requestSAToken(ctx context.Context, client ctrlclient.Client, sa *corev1.ServiceAccount) (*authv1.TokenRequest, error) {
 	tr := &authv1.TokenRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: vault.TokenGenerateName,
+			GenerateName: TokenGenerateName,
 		},
 		Spec: authv1.TokenRequestSpec{
 			ExpirationSeconds: pointer.Int64(l.authObj.Spec.Kubernetes.TokenExpirationSeconds),

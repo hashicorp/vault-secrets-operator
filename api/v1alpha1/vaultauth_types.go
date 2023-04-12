@@ -29,10 +29,10 @@ type VaultAuthConfigKubernetes struct {
 type VaultAuthConfigJwt struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// Token to use when authenticating to Vault's jwt
+	// Token to use for authenticating to Vault.
 	// authentication backend.
 	Token string `json:"token,omitempty"`
-	// ServiceAccount to use when creating the ServiceAccount token to authenticate to Vault's jwt
+	// ServiceAccount to use for creating the ServiceAccount token to authenticate to Vault.
 	// authentication backend.
 	ServiceAccount string `json:"serviceAccount,omitempty"`
 	// TokenAudiences to include in the ServiceAccount token.

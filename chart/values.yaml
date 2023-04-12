@@ -276,7 +276,7 @@ jwtAuthMethod:
   # @type: string
   mount: jwt
 
-  # Vault Kubernetes auth method specific configuration
+  # Vault JWT auth method specific configuration
   jwt:
     # Vault Auth Role to use
     # This is a required field and must be setup in Vault prior to deploying the helm chart
