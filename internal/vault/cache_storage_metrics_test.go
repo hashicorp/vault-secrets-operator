@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 	"github.com/prometheus/client_golang/prometheus"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +23,7 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 )
 
 func Test_clientCacheStorageCollector(t *testing.T) {
