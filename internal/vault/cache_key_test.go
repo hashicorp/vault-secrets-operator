@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 	"github.com/stretchr/testify/assert"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 )
 
 const (
