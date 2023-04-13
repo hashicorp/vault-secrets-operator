@@ -57,7 +57,7 @@ type VaultAuthSpec struct {
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
-	// +kubebuilder:validation:Enum=kubernetes
+	// +kubebuilder:validation:Enum=kubernetes,jwt
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
