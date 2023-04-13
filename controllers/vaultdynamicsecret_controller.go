@@ -81,16 +81,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	o := &secretsv1alpha1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
-		if o.GetDeletionTimestamp() != nil {
-			logger.Info("================ DELETION TIMESTAMP 1 ===============")
-			if err := r.handleDeletion(ctx, o); err != nil {
-				msg := "Failed to handle deletion"
-				logger.Error(err, msg)
-				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoked, msg+": %s", err)
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
-		}
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -100,7 +90,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if o.GetDeletionTimestamp() != nil {
-		logger.Info("================ DELETION TIMESTAMP 2 ===============")
+		logger.Info("================ DELETION TIMESTAMP 1 ===============")
 		if err := r.handleDeletion(ctx, o); err != nil {
 			msg := "Failed to handle deletion"
 			logger.Error(err, msg)
