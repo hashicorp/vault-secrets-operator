@@ -42,6 +42,36 @@ spec:
                   type: string
                 description: Headers to be included in all Vault requests.
                 type: object
+              jwt:
+                description: Jwt specific auth configuration, requires that the Method
+                  be set to jwt.
+                properties:
+                  audiences:
+                    description: TokenAudiences to include in the ServiceAccount token.
+                    items:
+                      type: string
+                    type: array
+                  role:
+                    description: Role to use for authenticating to Vault.
+                    type: string
+                  serviceAccount:
+                    description: ServiceAccount to use when creating a ServiceAccount
+                      token to authenticate to Vault's JWT authentication backend.
+                    type: string
+                  token:
+                    description: Token to use when authenticating to Vault's JWT authentication
+                      backend.
+                    type: string
+                  tokenExpirationSeconds:
+                    default: 600
+                    description: TokenExpirationSeconds to set the ServiceAccount
+                      token.
+                    format: int64
+                    minimum: 600
+                    type: integer
+                required:
+                - role
+                type: object
               kubernetes:
                 description: Kubernetes specific auth configuration, requires that
                   the Method be set to kubernetes.
