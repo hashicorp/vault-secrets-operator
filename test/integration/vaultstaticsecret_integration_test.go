@@ -370,7 +370,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			if obj.Spec.Destination.Create {
 				sec, _, err := helpers.GetSecret(ctx, crdClient, obj)
 				if assert.NoError(t, err) {
-					// ensure that a Secret deleted ouf of band is properly restored
+					// ensure that a Secret deleted out-of-band is properly restored
 					if assert.NoError(t, crdClient.Delete(ctx, sec)) {
 						_, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
 							obj.ObjectMeta.Namespace, data)
