@@ -42,7 +42,10 @@ func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			return err
 		}
 		l.uid = sa.UID
-	} else if l.authObj.Spec.Jwt.Token != "" {
+	} else if l.authObj.Spec.Jwt.Token != nil &&
+		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef != nil &&
+		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Name != "" &&
+		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key != "" {
 		l.uid = types.UID(uuid.New().String())
 	} else {
 		return fmt.Errorf("either serviceAccount or jwt is required in VaultAuth Custom Resource to" +
@@ -55,7 +58,7 @@ func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ctrlclient.Client) (*corev1.ServiceAccount, error) {
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
-		Name:      l.authObj.Spec.Kubernetes.ServiceAccount,
+		Name:      l.authObj.Spec.Jwt.ServiceAccount,
 	}
 	sa := &corev1.ServiceAccount{}
 	if err := client.Get(ctx, key, sa); err != nil {
@@ -64,25 +67,50 @@ func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ct
 	return sa, nil
 }
 
+func (l *JwtCredentialProvider) getTokenSecret(ctx context.Context, client ctrlclient.Client) (*corev1.Secret, error) {
+	key := ctrlclient.ObjectKey{
+		Namespace: l.providerNamespace,
+		Name:      l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Name,
+	}
+	secret := &corev1.Secret{}
+	if err := client.Get(ctx, key, secret); err != nil {
+		return nil, err
+	}
+
+	return secret, nil
+}
+
 func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
 
-	sa, err := l.getServiceAccount(ctx, client)
+	if l.authObj.Spec.Jwt.ServiceAccount != "" {
+		sa, err := l.getServiceAccount(ctx, client)
+		if err != nil {
+			logger.Error(err, "Failed to get service account")
+			return nil, err
+		}
+
+		tr, err := l.requestSAToken(ctx, client, sa)
+		if err != nil {
+			logger.Error(err, "Failed to get service account token")
+			return nil, err
+		}
+
+		// credentials needed for Jwt auth
+		return map[string]interface{}{
+			"role": l.authObj.Spec.Jwt.Role,
+			"jwt":  tr.Status.Token,
+		}, nil
+	}
+
+	secret, err := l.getTokenSecret(ctx, client)
 	if err != nil {
-		logger.Error(err, "Failed to get service account")
 		return nil, err
 	}
 
-	tr, err := l.requestSAToken(ctx, client, sa)
-	if err != nil {
-		logger.Error(err, "Failed to get service account token")
-		return nil, err
-	}
-
-	// credentials needed for Jwt auth
 	return map[string]interface{}{
-		"role": l.authObj.Spec.Kubernetes.Role,
-		"jwt":  tr.Status.Token,
+		"role": l.authObj.Spec.Jwt.Role,
+		"jwt":  secret.Data[l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key],
 	}, nil
 }
 
@@ -93,8 +121,8 @@ func (l *JwtCredentialProvider) requestSAToken(ctx context.Context, client ctrlc
 			GenerateName: TokenGenerateName,
 		},
 		Spec: authv1.TokenRequestSpec{
-			ExpirationSeconds: pointer.Int64(l.authObj.Spec.Kubernetes.TokenExpirationSeconds),
-			Audiences:         l.authObj.Spec.Kubernetes.TokenAudiences,
+			ExpirationSeconds: pointer.Int64(l.authObj.Spec.Jwt.TokenExpirationSeconds),
+			Audiences:         l.authObj.Spec.Jwt.TokenAudiences,
 		},
 		Status: authv1.TokenRequestStatus{},
 	}
