@@ -230,6 +230,8 @@ func (r *VaultStaticSecretReconciler) handleSecretHMAC(ctx context.Context, o *s
 			}
 
 			macsEqual = valid
+		} else {
+			macsEqual = false
 		}
 	}
 
