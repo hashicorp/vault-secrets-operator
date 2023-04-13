@@ -81,7 +81,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	o := &secretsv1alpha1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
+		logger.Info("=========== Get failed ==========")
+		logger.Error(err, "=== ERROR ================== %v", "obj", o)
+		if o != nil {
+			logger.Info(fmt.Sprintf("==================== %v", o.GetDeletionTimestamp()))
+		}
 		if apierrors.IsNotFound(err) {
+			logger.Error(err, "=== ENOENT ================== %v", "obj", o)
 			return ctrl.Result{}, nil
 		}
 
@@ -89,6 +95,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	logger.Info(fmt.Sprintf("==================== %v", o.GetDeletionTimestamp()))
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("================ DELETION TIMESTAMP 1 ===============")
 		if err := r.handleDeletion(ctx, o); err != nil {

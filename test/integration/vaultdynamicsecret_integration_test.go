@@ -96,37 +96,38 @@ func TestVaultDynamicSecret(t *testing.T) {
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
-			for _, c := range created {
-				// test that the custom resources can be deleted before tf destroy
-				// removes the k8s namespace
-				assert.Nil(t, crdClient.Delete(ctx, c))
-			}
-			fmt.Println("================== starting shutdown ============")
-			time.Sleep(time.Second * 120)
-			// Get a Vault client
-			cfg := api.DefaultConfig()
-			cfg.Address = "http://127.0.0.1:38300"
-			c, err := api.NewClient(cfg)
-			assert.NoError(t, err)
-			c.SetToken("root")
-			// Check to be sure all leases have been revoked.
-			retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
-				fmt.Println("======== entering cleanup ===========")
-				// ensure the leases have been revoked.
-				resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/readonly", outputs.DBRole))
-				if err != nil {
-					return "", err
+			/*
+				for _, c := range created {
+					// test that the custom resources can be deleted before tf destroy
+					// removes the k8s namespace
+					assert.Nil(t, crdClient.Delete(ctx, c))
 				}
-				if resp == nil || resp.Data == nil || len(resp.Data) == 0 {
+				fmt.Println("================== starting shutdown ============")
+				time.Sleep(time.Second * 120)
+				// Get a Vault client
+				cfg := api.DefaultConfig()
+				cfg.Address = "http://127.0.0.1:38300"
+				c, err := api.NewClient(cfg)
+				assert.NoError(t, err)
+				c.SetToken("root")
+				// Check to be sure all leases have been revoked.
+				retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
+					fmt.Println("======== entering cleanup ===========")
+					// ensure the leases have been revoked.
+					resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/readonly", outputs.DBRole))
+					if err != nil {
+						return "", err
+					}
+					if resp == nil || resp.Data == nil || len(resp.Data) == 0 {
+						return "", nil
+					}
+					keys := resp.Data["keys"].([]interface{})
+					if len(keys) > 0 {
+						return "", fmt.Errorf("Leases still found: %d", len(keys))
+					}
 					return "", nil
-				}
-				keys := resp.Data["keys"].([]interface{})
-				if len(keys) > 0 {
-					return "", fmt.Errorf("Leases still found: %d", len(keys))
-				}
-				return "", nil
-			})
-
+				})
+			*/
 			exportKindLogs(t)
 
 			// Clean up resources with "terraform destroy" at the end of the test.
@@ -366,9 +367,40 @@ func TestVaultDynamicSecret(t *testing.T) {
 					assertDynamicSecretRotation(t, ctx, crdClient, &vdsObjFinal)
 				})
 			}
-
 			assert.Greater(t, count, 0, "no tests were run")
 		})
+		for _, c := range created {
+			// test that the custom resources can be deleted before tf destroy
+			// removes the k8s namespace
+			assert.Nil(t, crdClient.Delete(ctx, c))
+		}
+		fmt.Println("================== starting shutdown ============")
+		time.Sleep(time.Second * 120)
+		// Get a Vault client
+		cfg := api.DefaultConfig()
+		cfg.Address = "http://127.0.0.1:38300"
+		c, err := api.NewClient(cfg)
+		assert.NoError(t, err)
+		c.SetToken("root")
+		// Check to be sure all leases have been revoked.
+		retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
+			fmt.Println("======== entering cleanup ===========")
+			// ensure the leases have been revoked.
+			resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/readonly", outputs.DBRole))
+			if err != nil {
+				return "", err
+			}
+			if resp == nil || resp.Data == nil || len(resp.Data) == 0 {
+				return "", nil
+			}
+			keys := resp.Data["keys"].([]interface{})
+			if len(keys) > 0 {
+				return "", fmt.Errorf("Leases still found: %d", len(keys))
+			}
+			return "", nil
+		})
+		fmt.Println("======== finished cleanup ===========")
+		time.Sleep(time.Minute * 5)
 	}
 }
 
