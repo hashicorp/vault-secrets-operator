@@ -75,6 +75,7 @@ resource "vault_pki_secret_backend_role" "role" {
   key_bits         = 4096
   allowed_domains  = ["example.com"]
   allow_subdomains = true
+  allowed_uri_sans = ["uri1.example.com", "uri2.example.com"]
 }
 
 resource "vault_pki_secret_backend_root_cert" "test" {
