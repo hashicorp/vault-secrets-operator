@@ -148,8 +148,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 	}
-	auths := []*secretsv1alpha1.VaultAuth{
-		{
+	authObjMap := map[string]*secretsv1alpha1.VaultAuth{
+		"kubernetes": {
 			ObjectMeta: v1.ObjectMeta{
 				Name:      consts.NameDefault,
 				Namespace: operatorNS,
@@ -165,6 +165,44 @@ func TestVaultDynamicSecret(t *testing.T) {
 				},
 			},
 		},
+		//"jwt-token": {
+		//	ObjectMeta: v1.ObjectMeta{
+		//		Name:      consts.NameDefault,
+		//		Namespace: operatorNS,
+		//	},
+		//	Spec: secretsv1alpha1.VaultAuthSpec{
+		//		Namespace: outputs.Namespace,
+		//		Method:    "jwt",
+		//		Mount:     outputs.AuthMount,
+		//		Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
+		//			Role: outputs.AuthRole,
+		//			Token: &secretsv1alpha1.Token{
+		//				ValueFrom: &corev1.EnvVarSource{
+		//					SecretKeyRef: &corev1.SecretKeySelector{
+		//						LocalObjectReference: corev1.LocalObjectReference{Name: "auth-jwt-secret"},
+		//						Key:                  "token",
+		//					},
+		//				},
+		//			},
+		//		},
+		//	},
+		//},
+		//"jwt-serviceaccount": {
+		//	ObjectMeta: v1.ObjectMeta{
+		//		Name:      "jwt-serviceaccountprovided",
+		//		Namespace: operatorNS,
+		//	},
+		//	Spec: secretsv1alpha1.VaultAuthSpec{
+		//		Namespace: outputs.Namespace,
+		//		Method:    "jwt",
+		//		Mount:     outputs.AuthMount,
+		//		Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+		//			Role:           outputs.AuthRole,
+		//			ServiceAccount: "default",
+		//			TokenAudiences: []string{"vault"},
+		//		},
+		//	},
+		//},
 	}
 
 	create := func(o ctrlclient.Object) {
@@ -175,13 +213,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 	for _, o := range conns {
 		create(o)
 	}
-	for _, o := range auths {
-		create(o)
-	}
 
 	tests := []struct {
 		name     string
-		authObj  *secretsv1alpha1.VaultAuth
 		expected map[string]int
 		create   int
 		existing []string
@@ -189,7 +223,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		{
 			name:     "existing-only",
 			existing: outputs.K8sDBSecrets,
-			authObj:  auths[0],
 			expected: map[string]int{
 				"_raw":     100,
 				"username": 51,
@@ -197,9 +230,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:    "create-only",
-			create:  5,
-			authObj: auths[0],
+			name:   "create-only",
+			create: 5,
 			expected: map[string]int{
 				"_raw":     100,
 				"username": 51,
@@ -210,7 +242,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:     "mixed",
 			create:   5,
 			existing: outputs.K8sDBSecrets,
-			authObj:  auths[0],
 			expected: map[string]int{
 				"_raw":     100,
 				"username": 51,
@@ -219,127 +250,140 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var objsCreated []*secretsv1alpha1.VaultDynamicSecret
+	var lastAuthObjKey string
+	for authObjKey, authObj := range authObjMap {
+		// Delete the last VaultAuth object and create a new K8s object
+		// if the current one has a different spec (using key to distinguish)
+		if lastAuthObjKey != "" {
+			require.Nil(t, crdClient.Delete(ctx, authObjMap[lastAuthObjKey]))
+		}
+		require.Nil(t, crdClient.Create(ctx, authObj))
+		lastAuthObjKey = authObjKey
 
-			t.Cleanup(func() {
-				if !skipCleanup {
-					for _, obj := range objsCreated {
-						assert.NoError(t, crdClient.Delete(ctx, obj))
+		for _, tt := range tests {
+			t.Run(fmt.Sprintf("%s using %s VaultAuth", tt.name, authObjKey), func(t *testing.T) {
+				var objsCreated []*secretsv1alpha1.VaultDynamicSecret
+
+				t.Cleanup(func() {
+					if !skipCleanup {
+						for _, obj := range objsCreated {
+							assert.NoError(t, crdClient.Delete(ctx, obj))
+						}
 					}
-				}
-			})
-			// pre-created secrets test
-			for idx, dest := range tt.existing {
-				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
-					ObjectMeta: v1.ObjectMeta{
-						Namespace: outputs.K8sNamespace,
-						Name:      dest,
-					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-						Namespace: outputs.Namespace,
-						Mount:     outputs.DBPath,
-						Role:      outputs.DBRole,
-						Destination: secretsv1alpha1.Destination{
-							Name:   dest,
-							Create: false,
-						},
-					},
-				}
-				if idx == 0 {
-					vdsObj.Spec.RolloutRestartTargets = []secretsv1alpha1.RolloutRestartTarget{
-						{
-							Kind: "Deployment",
-							Name: outputs.DeploymentName,
-						},
-					}
-				}
-
-				assert.NoError(t, crdClient.Create(ctx, vdsObj))
-				objsCreated = append(objsCreated, vdsObj)
-			}
-
-			// create secrets tests
-			for idx := 0; idx < tt.create; idx++ {
-				dest := fmt.Sprintf("%s-create-%d", tt.name, idx)
-				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
-					ObjectMeta: v1.ObjectMeta{
-						Namespace: outputs.K8sNamespace,
-						Name:      dest,
-					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-						Namespace: outputs.Namespace,
-						Mount:     outputs.DBPath,
-						Role:      outputs.DBRole,
-						Destination: secretsv1alpha1.Destination{
-							Name:   dest,
-							Create: true,
-						},
-					},
-				}
-
-				assert.NoError(t, crdClient.Create(ctx, vdsObj))
-				objsCreated = append(objsCreated, vdsObj)
-			}
-
-			var count int
-			for idx, obj := range objsCreated {
-				nameFmt := "existing-dest-%d"
-				if obj.Spec.Destination.Create {
-					nameFmt = "create-dest-%d"
-				}
-				count++
-				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
-					// capture obj for parallel test
-					obj := obj
-					t.Parallel()
-					assertDynamicSecret(t,
-						tfOptions.MaxRetries,
-						tfOptions.TimeBetweenRetries,
-						obj,
-						tt.expected,
-					)
-
-					if t.Failed() {
-						return
-					}
-
-					objKey := ctrlclient.ObjectKeyFromObject(obj)
-					var vdsObjFinal secretsv1alpha1.VaultDynamicSecret
-					require.NoError(t, backoff.Retry(
-						func() error {
-							var vdsObj secretsv1alpha1.VaultDynamicSecret
-							require.NoError(t, crdClient.Get(ctx, objKey, &vdsObj))
-							if vdsObj.Status.SecretLease.ID == "" {
-								return fmt.Errorf("expected lease ID to be set on %s", objKey)
-							}
-							vdsObjFinal = vdsObj
-							return nil
-						},
-						backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10),
-					))
-
-					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
-					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
-					assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
-
-					var pods corev1.PodList
-					assert.NoError(t, crdClient.List(ctx, &pods, ctrlclient.InNamespace(operatorNS),
-						ctrlclient.MatchingLabels{
-							"control-plane": "controller-manager",
-						},
-					))
-					require.Equal(t, 1, len(pods.Items))
-					assert.Equal(t, pods.Items[0].UID, vdsObjFinal.Status.LastRuntimePodUID)
-
-					assertDynamicSecretRotation(t, ctx, crdClient, &vdsObjFinal)
 				})
-			}
+				// pre-created secrets test
+				for idx, dest := range tt.existing {
+					vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+						ObjectMeta: v1.ObjectMeta{
+							Namespace: outputs.K8sNamespace,
+							Name:      dest,
+						},
+						Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+							Namespace: outputs.Namespace,
+							Mount:     outputs.DBPath,
+							Role:      outputs.DBRole,
+							Destination: secretsv1alpha1.Destination{
+								Name:   dest,
+								Create: false,
+							},
+						},
+					}
+					if idx == 0 {
+						vdsObj.Spec.RolloutRestartTargets = []secretsv1alpha1.RolloutRestartTarget{
+							{
+								Kind: "Deployment",
+								Name: outputs.DeploymentName,
+							},
+						}
+					}
 
-			assert.Greater(t, count, 0, "no tests were run")
-		})
+					assert.NoError(t, crdClient.Create(ctx, vdsObj))
+					objsCreated = append(objsCreated, vdsObj)
+				}
+
+				// create secrets tests
+				for idx := 0; idx < tt.create; idx++ {
+					dest := fmt.Sprintf("%s-create-%d", tt.name, idx)
+					vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+						ObjectMeta: v1.ObjectMeta{
+							Namespace: outputs.K8sNamespace,
+							Name:      dest,
+						},
+						Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+							Namespace: outputs.Namespace,
+							Mount:     outputs.DBPath,
+							Role:      outputs.DBRole,
+							Destination: secretsv1alpha1.Destination{
+								Name:   dest,
+								Create: true,
+							},
+						},
+					}
+
+					assert.NoError(t, crdClient.Create(ctx, vdsObj))
+					objsCreated = append(objsCreated, vdsObj)
+				}
+
+				var count int
+				for idx, obj := range objsCreated {
+					nameFmt := "existing-dest-%d"
+					if obj.Spec.Destination.Create {
+						nameFmt = "create-dest-%d"
+					}
+					count++
+					t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
+						// capture obj for parallel test
+						obj := obj
+						t.Parallel()
+						assertDynamicSecret(t,
+							tfOptions.MaxRetries,
+							tfOptions.TimeBetweenRetries,
+							obj,
+							tt.expected,
+						)
+
+						if t.Failed() {
+							return
+						}
+
+						objKey := ctrlclient.ObjectKeyFromObject(obj)
+						var vdsObjFinal secretsv1alpha1.VaultDynamicSecret
+						require.NoError(t, backoff.Retry(
+							func() error {
+								var vdsObj secretsv1alpha1.VaultDynamicSecret
+								require.NoError(t, crdClient.Get(ctx, objKey, &vdsObj))
+								if vdsObj.Status.SecretLease.ID == "" {
+									return fmt.Errorf("expected lease ID to be set on %s", objKey)
+								}
+								vdsObjFinal = vdsObj
+								return nil
+							},
+							backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10),
+						))
+
+						assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
+						assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
+						assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+
+						var pods corev1.PodList
+						assert.NoError(t, crdClient.List(ctx, &pods, ctrlclient.InNamespace(operatorNS),
+							ctrlclient.MatchingLabels{
+								"control-plane": "controller-manager",
+							},
+						))
+						require.Equal(t, 1, len(pods.Items))
+						assert.Equal(t, pods.Items[0].UID, vdsObjFinal.Status.LastRuntimePodUID)
+
+						assertDynamicSecretRotation(t, ctx, crdClient, &vdsObjFinal)
+					})
+				}
+
+				assert.Greater(t, count, 0, "no tests were run")
+			})
+		}
 	}
+
+	require.Nil(t, crdClient.Delete(ctx, authObjMap[lastAuthObjKey]))
 }
 
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
