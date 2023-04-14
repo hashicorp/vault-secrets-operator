@@ -85,9 +85,9 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
 
 # jwt auth config
 resource "vault_jwt_auth_backend" "dev" {
-  namespace             = vault_auth_backend.default.namespace
-  path                  = local.jwt_auth_mount
-  oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
+  namespace          = vault_auth_backend.default.namespace
+  path               = local.jwt_auth_mount
+  oidc_discovery_url = "https://kubernetes.default.svc.cluster.local"
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
