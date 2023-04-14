@@ -85,9 +85,9 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
 
 # jwt auth config
 resource "vault_jwt_auth_backend" "dev" {
-  namespace = vault_auth_backend.default.namespace
-  path                = local.jwt_auth_mount
-  oidc_discovery_url  = "https://kubernetes.default.svc.cluster.local"
+  namespace             = vault_auth_backend.default.namespace
+  path                  = local.jwt_auth_mount
+  oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
   oidc_discovery_ca_pem = "@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 }
 
@@ -98,7 +98,7 @@ resource "vault_jwt_auth_backend_role" "dev" {
   role_type       = "jwt"
   bound_audiences = ["vault"]
   user_claim      = "https://vault/user"
-  token_policies  = [
+  token_policies = [
     vault_policy.db.name,
   ]
 }
