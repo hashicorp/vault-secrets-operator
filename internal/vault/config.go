@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/vault/api"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -21,7 +21,11 @@ type ClientConfig struct {
 	// "ca.crt" that holds a CA cert that can be used to validate the
 	// certificate presented by the Vault server
 	CACertSecretRef string
-	// K8sNamespace the namespace of the CACertSecretRef secret
+	// CACertConfigmapRef is the name of a k8 secret that contains a data key
+	// "ca.crt" that holds a CA cert that can be used to validate the
+	// certificate presented by the Vault server
+	CACertConfigmapRef string
+	// K8sNamespace the namespace of the CACertSecretRef or CACertConfigmapRef secret
 	K8sNamespace string
 	// Address is the URL of the Vault server
 	Address string
@@ -45,18 +49,36 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 	}
 
 	var b []byte
+	var CACertRef string
 	if cfg.CACertSecretRef != "" {
+		CACertRef = cfg.CACertSecretRef
 		s := &v1.Secret{}
 		if err := client.Get(ctx, types.NamespacedName{
 			Namespace: cfg.K8sNamespace,
-			Name:      cfg.CACertSecretRef,
+			Name:      CACertRef,
 		}, s); err != nil {
 			return nil, err
 		}
 		var ok bool
 		if b, ok = s.Data["ca.crt"]; !ok {
-			return nil, fmt.Errorf(`"ca.crt" was empty in the CA secret %s/%s`, cfg.K8sNamespace, cfg.CACertSecretRef)
+			return nil, fmt.Errorf(`"ca.crt" was empty in the CA secret %s/%s`, cfg.K8sNamespace, CACertRef)
 		}
+	}
+	if cfg.CACertConfigmapRef != "" {
+		CACertRef = cfg.CACertConfigmapRef
+		s := &v1.ConfigMap{}
+		if err := client.Get(ctx, types.NamespacedName{
+			Namespace: cfg.K8sNamespace,
+			Name:      CACertRef,
+		}, s); err != nil {
+			return nil, err
+		}
+		var ok bool
+		var data string
+		if data, ok = s.Data["ca.crt"]; !ok {
+			return nil, fmt.Errorf(`"ca.crt" was empty in the CA configMap %s/%s`, cfg.K8sNamespace, CACertRef)
+		}
+		b = []byte(data)
 	}
 
 	config := api.DefaultConfig()
