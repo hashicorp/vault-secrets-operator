@@ -231,6 +231,7 @@ func (r *VaultStaticSecretReconciler) handleSecretHMAC(ctx context.Context, o *s
 
 			macsEqual = valid
 		} else {
+			// assume MACs are not equal if the secret does not exist or an error (ignored) has occurred
 			macsEqual = false
 		}
 	}
