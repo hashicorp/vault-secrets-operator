@@ -89,3 +89,17 @@ resource "helm_release" "vault" {
     }
   }
 }
+
+resource "kubernetes_cluster_role_binding" "oidc-reviewer" {
+  metadata {}
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = "system:service-account-issuer-discovery"
+  }
+  subject {
+    kind = "Group"
+    name = "system:unauthenticated"
+  }
+}
+
