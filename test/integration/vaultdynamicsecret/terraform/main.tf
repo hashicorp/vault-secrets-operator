@@ -88,7 +88,6 @@ resource "vault_jwt_auth_backend" "dev" {
   namespace             = vault_auth_backend.default.namespace
   path                  = local.jwt_auth_mount
   oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
-  oidc_discovery_ca_pem = "@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
