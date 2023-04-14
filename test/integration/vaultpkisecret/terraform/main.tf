@@ -75,6 +75,7 @@ resource "vault_pki_secret_backend_role" "role" {
   key_bits         = 4096
   allowed_domains  = ["example.com"]
   allow_subdomains = true
+  allowed_uri_sans = ["uri1.example.com", "uri2.example.com"]
 }
 
 resource "vault_pki_secret_backend_root_cert" "test" {
@@ -158,5 +159,13 @@ resource "helm_release" "vault-secrets-operator" {
   set {
     name  = "defaultAuthMethod.kubernetes.tokenAudiences"
     value = "{${vault_kubernetes_auth_backend_role.default.audience}}"
+  }
+  set {
+    name  = "controller.manager.image.repository"
+    value = var.operator_image_repo
+  }
+  set {
+    name  = "controller.manager.image.tag"
+    value = var.operator_image_tag
   }
 }

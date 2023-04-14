@@ -5,12 +5,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -58,8 +60,10 @@ func main() {
 	var probeAddr string
 	var clientCachePersistenceModel string
 	var printVersion bool
+	var outputFormat string
 	var finalizerCleanup bool
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
+	flag.StringVar(&outputFormat, "output", "", "Output format for the operator version information (yaml or json)")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
@@ -83,7 +87,29 @@ func main() {
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
 	if printVersion {
-		if _, err := os.Stdout.WriteString(fmt.Sprintf("%#v\n", versionInfo)); err != nil {
+		outputString := ""
+		switch outputFormat {
+		case "":
+			outputString = fmt.Sprintf("%#v\n", versionInfo)
+		case "yaml":
+			yamlBytes, err := yaml.Marshal(&versionInfo)
+			if err != nil {
+				os.Exit(1)
+			}
+			outputString = string(yamlBytes)
+		case "json":
+			jsonBytes, err := json.MarshalIndent(&versionInfo, "", "  ")
+			if err != nil {
+				os.Exit(1)
+			}
+			outputString = string(jsonBytes)
+		default:
+			if _, err := os.Stderr.WriteString("--output should be either 'yaml' or 'json'\n"); err != nil {
+				os.Exit(1)
+			}
+			os.Exit(1)
+		}
+		if _, err := os.Stdout.WriteString(outputString); err != nil {
 			os.Exit(1)
 		}
 		os.Exit(0)

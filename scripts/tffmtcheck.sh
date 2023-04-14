@@ -12,7 +12,7 @@ if ! needs_update=$(${terraform_bin} fmt -recursive -check ${dir}) ; then
     cat << HERE >&2
 terraform fmt needs to be run on following files:
   ${needs_update}
-Run 'make tffmt' to reformat the code.
+Run 'make fmttf' to reformat the code.
 HERE
     exit 1
 fi

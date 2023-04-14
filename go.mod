@@ -6,7 +6,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/go-logr/logr v1.2.4
 	github.com/google/uuid v1.3.0
-	github.com/gruntwork-io/terratest v0.41.17
+	github.com/gruntwork-io/terratest v0.41.18
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hashicorp/vault/api v1.9.0
@@ -17,6 +17,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/stretchr/testify v1.8.2
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.26.3
 	k8s.io/apimachinery v0.26.3
 	k8s.io/client-go v0.26.3
@@ -128,7 +129,6 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.26.1 // indirect
 	k8s.io/component-base v0.26.1 // indirect
 	k8s.io/klog/v2 v2.80.1 // indirect
