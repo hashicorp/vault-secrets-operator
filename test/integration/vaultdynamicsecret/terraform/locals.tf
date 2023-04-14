@@ -10,9 +10,9 @@ locals {
   k8s_namespace = "${local.name_prefix}-k8s-ns"
 
   # auth locals
-  auth_mount         = "${local.name_prefix}-auth-mount"
+  auth_mount            = "${local.name_prefix}-auth-mount"
   kubernetes_auth_mount = "${local.auth_mount}-kubernetes"
-  jwt_auth_mount = "${local.auth_mount}-jwt"
+  jwt_auth_mount        = "${local.auth_mount}-jwt"
 
   auth_policy        = "${local.name_prefix}-auth-policy"
   auth_role          = "auth-role"
