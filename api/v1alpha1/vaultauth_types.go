@@ -67,7 +67,7 @@ type VaultAuthSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// Kubernetes specific auth configuration, requires that the Method be set to kubernetes.
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
-	// Jwt specific auth configuration, requires that the Method be set to jwt/oidc.
+	// Jwt specific auth configuration, requires that the Method be set to jwt.
 	Jwt *VaultAuthConfigJwt `json:"jwt,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
