@@ -134,7 +134,7 @@ controller:
       leaderElect: true
       resourceName: b0d477c0.hashicorp.com
     metrics:
-      bindAddress: 127.0.0.1:8080
+      bindAddress: :8080
     webhook:
       port: 9443
 
@@ -148,7 +148,7 @@ controller:
 # @recurse: true
 # @type: map
 metricsService:
-  # Set the port settings for the metrics service.
+  # Set the port settings for the metrics service and prometheus metrics
   # For more information on configuring resources, see the K8s documentation:
   # https://kubernetes.io/docs/concepts/services-networking/service/
   # @type: map
@@ -157,6 +157,10 @@ metricsService:
     port: 8443
     protocol: TCP
     targetPort: https
+  - name: prometheus
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
   type: ClusterIP
 
 # Configures the default VaultConnection CR which will be used by resources
