@@ -89,7 +89,7 @@ resource "helm_release" "vault" {
     }
   }
 }
-
+/*
 resource "kubernetes_cluster_role_binding" "oidc-reviewer" {
   metadata {}
   role_ref {
@@ -102,4 +102,4 @@ resource "kubernetes_cluster_role_binding" "oidc-reviewer" {
     name = "system:unauthenticated"
   }
 }
-
+*/

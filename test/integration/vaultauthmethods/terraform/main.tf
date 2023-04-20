@@ -104,6 +104,35 @@ path "${vault_mount.kvv2.path}/*" {
 EOT
 }
 
+resource "vault_auth_backend" "approle" {
+  type = "approle"
+}
+
+resource "vault_approle_auth_backend_role" "role" {
+  backend        = data.vault_auth_backend.out.path
+  #backend        = vault_auth_backend.approle.path
+  role_name      = var.approle_role_name
+  token_policies = ["default"]
+  # So we can use wrap_ttl
+  # bind_secret_id = true
+  # role_id = "abcd1234"
+}
+
+resource "vault_approle_auth_backend_role_secret_id" "id" {
+  backend        = data.vault_auth_backend.out.path
+  #backend   = vault_auth_backend.approle.path
+  role_name = vault_approle_auth_backend_role.role.role_name
+}
+
+resource "vault_policy" "approle" {
+  name      = "approle"
+  namespace = local.namespace
+  policy    = <<EOT
+path "${vault_mount.kvv2.path}/*" {
+  capabilities = ["read","list","update"]
+}
+EOT
+}
 resource "helm_release" "vault-secrets-operator" {
   count            = var.deploy_operator_via_helm ? 1 : 0
   name             = "test"

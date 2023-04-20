@@ -56,6 +56,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_config_context":           "kind-" + clusterName,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
+			"approle_role_name":            "approle",
 		},
 	}
 	if entTests {

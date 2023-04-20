@@ -49,3 +49,8 @@ variable "deploy_operator_via_helm" {
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }
+
+# AppRole specific variables
+variable "approle_role_name" {
+  default = "approle"
+}
