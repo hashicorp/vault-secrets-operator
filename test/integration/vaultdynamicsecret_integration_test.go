@@ -221,7 +221,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			t.Cleanup(func() {
 				if !skipCleanup {
-					// delete the secrets first.
 					for _, obj := range objsCreated {
 						assert.NoError(t, crdClient.Delete(ctx, obj))
 					}
@@ -338,7 +337,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
-	// Delete remaining CRDs which were created, and then validate that the leases are revoked.
+	// Delete remaining CRDs which were created, and then validate that the leases are all revoked.
 	for _, c := range created {
 		// test that the custom resources can be deleted before tf destroy
 		// removes the k8s namespace
@@ -346,11 +345,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 	// Get a Vault client so we can validate that all leases have been removed.
 	cfg := api.DefaultConfig()
-	// TODO: figure out why this doesnt work with os.getenv()
-	cfg.Address = "http://127.0.0.1:38300"
+	cfg.Address = vaultAddr
 	c, err := api.NewClient(cfg)
 	assert.NoError(t, err)
-	c.SetToken("root")
+	c.SetToken(vaultToken)
 	// Check to be sure all leases have been revoked.
 	retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
 		// ensure that all leases have been revoked.
@@ -358,7 +356,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		if resp == nil || resp.Data == nil || len(resp.Data) == 0 {
+		if resp == nil {
 			return "", nil
 		}
 		keys := resp.Data["keys"].([]interface{})
