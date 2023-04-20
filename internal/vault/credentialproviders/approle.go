@@ -5,7 +5,6 @@ package credentialproviders
 
 import (
 	"context"
-	"strings"
 
 	"github.com/google/uuid"
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
@@ -37,11 +36,8 @@ func (l *ApproleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 func (l *ApproleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	// credentials needed for approle auth
 	creds := map[string]interface{}{
-		"role_id":   l.authObj.Spec.AppRole.Role,
+		"role_id":   l.authObj.Spec.AppRole.RoleID,
 		"secret_id": l.authObj.Spec.AppRole.SecretID,
-	}
-	if len(l.authObj.Spec.AppRole.CidrList) != 0 {
-		creds["cidr_list"] = strings.Join(l.authObj.Spec.AppRole.CidrList, ",")
 	}
 	return creds, nil
 }

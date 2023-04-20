@@ -119,7 +119,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Method:    "approle",
 				Mount:     "approle",
 				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
-					Role:     outputs.AppRoleRoleID,
+					RoleID:   outputs.AppRoleRoleID,
 					SecretID: outputs.AppRoleSecretID,
 				},
 			},
