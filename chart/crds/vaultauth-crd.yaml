@@ -41,45 +41,15 @@ spec:
                 description: AppRole specific auth configuration, requires that the
                   Method be set to approle.
                 properties:
-                  cidr_list:
-                    description: CidrList - List of CIDR blocks enforcing secret IDs
-                      to be used from specific set of IP addresses. If secret_id_bound_cidrs
-                      is set on the role, then the list of CIDR blocks listed here
-                      should be a subset of the CIDR blocks listed on the role.
-                    items:
-                      type: string
-                    type: array
-                  metadata:
-                    description: Metadata to be tied to the SecretID. This should
-                      be a JSON-formatted string containing the metadata in key-value
-                      pairs. This metadata will be set on tokens issued with this
-                      SecretID, and is logged in audit logs in plaintext.
-                    type: string
-                  num_uses:
-                    description: NumUses - Number of times this SecretID can be used,
-                      after which the SecretID expires. A value of zero will allow
-                      unlimited uses. Overrides secret_id_num_uses role option when
-                      supplied. May not be higher than role's secret_id_num_uses.
-                    type: integer
                   role:
-                    description: Role (role_name) to use for authenticating to Vault.
+                    description: RoleID (role_id) to use for authenticating to Vault.
                     type: string
                   secret_id:
+                    description: SecretID (secret_id) to use for authenticating to
+                      Vault.
                     type: string
-                  token_bound_cidrs:
-                    description: TokenBoundCidrs - list of CIDR blocks; if set, specifies
-                      blocks of IP addresses which can use the auth tokens generated
-                      by this SecretID. Overrides any role-set value but must be a
-                      subset.
-                    items:
-                      type: string
-                    type: array
-                  ttl:
-                    description: TTL - Duration in seconds (3600) or an integer time
-                      unit (60m) after which this SecretID expires. A value of zero
-                      will allow the SecretID to not expire. Overrides secret_id_ttl
-                      role option when supplied. May not be longer than role's secret_id_ttl.
-                    type: string
+                required:
+                - role
                 type: object
               headers:
                 additionalProperties:
@@ -105,7 +75,97 @@ spec:
                   token:
                     description: Token to use when authenticating to Vault's JWT authentication
                       backend.
-                    type: string
+                    properties:
+                      valueFrom:
+                        description: EnvVarSource represents a source for the value
+                          of an EnvVar.
+                        properties:
+                          configMapKeyRef:
+                            description: Selects a key of a ConfigMap.
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  TODO: Add other useful fields. apiVersion, kind,
+                                  uid?'
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its
+                                  key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          fieldRef:
+                            description: 'Selects a field of the pod: supports metadata.name,
+                              metadata.namespace, `metadata.labels[''<KEY>'']`, `metadata.annotations[''<KEY>'']`,
+                              spec.nodeName, spec.serviceAccountName, status.hostIP,
+                              status.podIP, status.podIPs.'
+                            properties:
+                              apiVersion:
+                                description: Version of the schema the FieldPath is
+                                  written in terms of, defaults to "v1".
+                                type: string
+                              fieldPath:
+                                description: Path of the field to select in the specified
+                                  API version.
+                                type: string
+                            required:
+                            - fieldPath
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          resourceFieldRef:
+                            description: 'Selects a resource of the container: only
+                              resources limits and requests (limits.cpu, limits.memory,
+                              limits.ephemeral-storage, requests.cpu, requests.memory
+                              and requests.ephemeral-storage) are currently supported.'
+                            properties:
+                              containerName:
+                                description: 'Container name: required for volumes,
+                                  optional for env vars'
+                                type: string
+                              divisor:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                description: Specifies the output format of the exposed
+                                  resources, defaults to "1"
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              resource:
+                                description: 'Required: resource to select'
+                                type: string
+                            required:
+                            - resource
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          secretKeyRef:
+                            description: Selects a key of a secret in the pod's namespace
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  TODO: Add other useful fields. apiVersion, kind,
+                                  uid?'
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                    required:
+                    - valueFrom
+                    type: object
                   tokenExpirationSeconds:
                     default: 600
                     description: TokenExpirationSeconds to set the ServiceAccount
@@ -147,6 +207,7 @@ spec:
                 description: Method to use when authenticating to Vault.
                 enum:
                 - kubernetes
+                - jwt
                 - approle
                 type: string
               mount:
