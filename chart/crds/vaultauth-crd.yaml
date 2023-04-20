@@ -64,6 +64,8 @@ spec:
                   role:
                     description: Role (role_name) to use for authenticating to Vault.
                     type: string
+                  secret_id:
+                    type: string
                   token_bound_cidrs:
                     description: TokenBoundCidrs - list of CIDR blocks; if set, specifies
                       blocks of IP addresses which can use the auth tokens generated

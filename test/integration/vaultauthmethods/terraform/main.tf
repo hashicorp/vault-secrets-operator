@@ -104,23 +104,22 @@ path "${vault_mount.kvv2.path}/*" {
 EOT
 }
 
+# Create the Vault Auth Backend for AppRole
 resource "vault_auth_backend" "approle" {
   type = "approle"
 }
 
+# Create the Vault Auth Backend Role for AppRole
 resource "vault_approle_auth_backend_role" "role" {
-  backend        = data.vault_auth_backend.out.path
-  #backend        = vault_auth_backend.approle.path
-  role_name      = var.approle_role_name
-  token_policies = ["default"]
-  # So we can use wrap_ttl
-  # bind_secret_id = true
-  # role_id = "abcd1234"
+  backend   = vault_auth_backend.approle.path
+  role_name = var.approle_role_name
+  # role_id is auto-generated, and we use this to do the Login
+  token_policies = [vault_policy.approle.name]
 }
 
+# Creates the Secret ID for the AppRole
 resource "vault_approle_auth_backend_role_secret_id" "id" {
-  backend        = data.vault_auth_backend.out.path
-  #backend   = vault_auth_backend.approle.path
+  backend   = vault_auth_backend.approle.path
   role_name = vault_approle_auth_backend_role.role.role_name
 }
 
@@ -131,8 +130,12 @@ resource "vault_policy" "approle" {
 path "${vault_mount.kvv2.path}/*" {
   capabilities = ["read","list","update"]
 }
+path "auth/approle/login" {
+  capabilities = ["read","update"]
+}
 EOT
 }
+
 resource "helm_release" "vault-secrets-operator" {
   count            = var.deploy_operator_via_helm ? 1 : 0
   name             = "test"

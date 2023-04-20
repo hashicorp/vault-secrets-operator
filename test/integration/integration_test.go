@@ -285,6 +285,8 @@ type dynamicK8SOutputs struct {
 	TransitRef       string   `json:"transit_ref"`
 	K8sDBSecrets     []string `json:"k8s_db_secret"`
 	DeploymentName   string   `json:"deployment_name"`
+	AppRoleSecretID  string   `json:"secret_id"`
+	AppRoleRoleID    string   `json:"role_id"`
 }
 
 func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int) {

@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -38,7 +39,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "vaultstaticsecret/terraform"),
+		path.Join(testRoot, "vaultauthmethods/terraform"),
 		tempDir,
 		"terraform",
 	)
@@ -56,7 +57,6 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_config_context":           "kind-" + clusterName,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
-			"approle_role_name":            "approle",
 		},
 	}
 	if entTests {
@@ -83,6 +83,10 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
 	terraform.InitAndApply(t, terraformOptions)
+	b, err := json.Marshal(terraform.OutputAll(t, terraformOptions))
+	require.Nil(t, err)
+	var outputs dynamicK8SOutputs
+	require.Nil(t, json.Unmarshal(b, &outputs))
 
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
@@ -105,24 +109,22 @@ func TestVaultAuthMethods(t *testing.T) {
 				},
 			},
 		},
-		/*
-			{
-					ObjectMeta: v1.ObjectMeta{
-						Name:      "vaultauth-test-approle",
-						Namespace: testK8sNamespace,
-					},
-					Spec: secretsv1alpha1.VaultAuthSpec{
-						Namespace: testVaultNamespace,
-						Method:    "approle",
-						Mount:     "approle",
-						AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
-							Role: "role1",
-							// TODO: secret-id?
-						},
-					},
+		{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "vaultauth-test-approle",
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultAuthSpec{
+				Namespace: testVaultNamespace,
+				Method:    "approle",
+				Mount:     "approle",
+				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
+					Role:     outputs.AppRoleRoleID,
+					SecretID: outputs.AppRoleSecretID,
 				},
-				// TODO: Any other Auth methods supported
-		*/
+			},
+		},
+		// TODO: Any other Auth methods supported
 	}
 	expectedData := map[string]interface{}{"foo": "bar"}
 
@@ -134,7 +136,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 
 	// create the VSS secrets
-	for _, a := range auths {
+	for x, a := range auths {
 		dest := fmt.Sprintf("kv-%s", a.Name)
 		secretName := fmt.Sprintf("test-secret-%s", a.Spec.Method)
 		secrets = append(secrets,
@@ -144,7 +146,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
-					VaultAuthRef: auths[0].ObjectMeta.Name,
+					VaultAuthRef: auths[x].ObjectMeta.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
 					Type:         "kv-v2",
@@ -163,7 +165,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 
 	deleteKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
-		require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Name))
+		vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Name)
 	}
 
 	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret) {
@@ -181,6 +183,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			require.Nil(t, crdClient.Create(ctx, secrets[x]))
 			assertSync(t, secrets[x])
 			t.Cleanup(func() {
+				crdClient.Delete(ctx, secrets[x])
 				deleteKV(t, secrets[x])
 			})
 		})

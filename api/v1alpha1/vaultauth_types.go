@@ -101,7 +101,8 @@ type VaultAuthConfigAppRole struct {
 	// TTL - Duration in seconds (3600) or an integer time unit (60m) after which this SecretID expires.
 	// A value of zero will allow the SecretID to not expire. Overrides secret_id_ttl role option when supplied.
 	// May not be longer than role's secret_id_ttl.
-	TTL string `json:"ttl,omitempty"`
+	TTL      string `json:"ttl,omitempty"`
+	SecretID string `json:"secret_id,omitempty"`
 }
 
 // VaultAuthStatus defines the observed state of VaultAuth
