@@ -83,8 +83,9 @@ type VaultAuthSpec struct {
 type VaultAuthConfigAppRole struct {
 	// RoleID (role_id) to use for authenticating to Vault.
 	RoleID string `json:"role"`
-	// SecretID (secret_id) to use for authenticating to Vault.
-	SecretID string `json:"secret_id,omitempty"`
+	// Selects a key of a secret in the AuthMethod's namespace which holds the secret_id of the approle used
+	// to authenticate to Vault.
+	SecretKeyRef *corev1.SecretKeySelector `json:"secretKeyRef"`
 }
 
 // VaultAuthStatus defines the observed state of VaultAuth

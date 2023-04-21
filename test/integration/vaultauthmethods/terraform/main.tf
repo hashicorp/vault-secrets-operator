@@ -95,9 +95,8 @@ resource "vault_kubernetes_auth_backend_role" "default" {
 }
 
 resource "vault_policy" "default" {
-  name      = "dev"
-  namespace = local.namespace
-  policy    = <<EOT
+  name   = "dev"
+  policy = <<EOT
 path "${vault_mount.kvv2.path}/*" {
   capabilities = ["read"]
 }
@@ -111,6 +110,7 @@ resource "vault_auth_backend" "approle" {
 
 # Create the Vault Auth Backend Role for AppRole
 resource "vault_approle_auth_backend_role" "role" {
+  namespace = local.namespace
   backend   = vault_auth_backend.approle.path
   role_name = var.approle_role_name
   # role_id is auto-generated, and we use this to do the Login
@@ -119,8 +119,19 @@ resource "vault_approle_auth_backend_role" "role" {
 
 # Creates the Secret ID for the AppRole
 resource "vault_approle_auth_backend_role_secret_id" "id" {
+  namespace = local.namespace
   backend   = vault_auth_backend.approle.path
   role_name = vault_approle_auth_backend_role.role.role_name
+}
+
+resource "kubernetes_secret" "secretid" {
+  metadata {
+    name      = "secretid"
+    namespace = var.k8s_test_namespace
+  }
+  data = {
+    id = vault_approle_auth_backend_role_secret_id.id.secret_id
+  }
 }
 
 resource "vault_policy" "approle" {

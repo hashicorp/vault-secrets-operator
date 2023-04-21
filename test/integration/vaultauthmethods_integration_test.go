@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
@@ -119,8 +121,13 @@ func TestVaultAuthMethods(t *testing.T) {
 				Method:    "approle",
 				Mount:     "approle",
 				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
-					RoleID:   outputs.AppRoleRoleID,
-					SecretID: outputs.AppRoleSecretID,
+					RoleID: outputs.AppRoleRoleID,
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "secretid",
+						},
+						Key: "id",
+					},
 				},
 			},
 		},
