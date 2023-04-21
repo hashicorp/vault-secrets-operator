@@ -334,7 +334,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 // errors.
 func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
 	logger := log.FromContext(ctx)
-	logger.Info(fmt.Sprintf("Revoking lease for credential %q", o.Status.SecretLease.ID))
+	logger.Info("Revoking lease for credential ", "id", o.Status.SecretLease.ID)
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
 		return err
