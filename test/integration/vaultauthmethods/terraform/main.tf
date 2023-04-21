@@ -164,21 +164,4 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "defaultVaultConnection.address"
     value = var.k8s_vault_connection_address
   }
-  # Auth Method Configuration
-  set {
-    name  = "defaultAuthMethod.enabled"
-    value = "true"
-  }
-  set {
-    name  = "defaultAuthMethod.namespace"
-    value = var.vault_test_namespace
-  }
-  set {
-    name  = "defaultAuthMethod.kubernetes.role"
-    value = vault_kubernetes_auth_backend_role.default.role_name
-  }
-  set {
-    name  = "defaultAuthMethod.kubernetes.tokenAudiences"
-    value = "{${vault_kubernetes_auth_backend_role.default.audience}}"
-  }
 }
