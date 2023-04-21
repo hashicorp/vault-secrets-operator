@@ -105,7 +105,8 @@ EOT
 
 # Create the Vault Auth Backend for AppRole
 resource "vault_auth_backend" "approle" {
-  type = "approle"
+  namespace = local.namespace
+  type      = "approle"
 }
 
 # Create the Vault Auth Backend Role for AppRole
