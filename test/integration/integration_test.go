@@ -55,7 +55,9 @@ var (
 	// use the Helm chart to deploy the operator. The default is to use Kustomize.
 	testWithHelm = os.Getenv("TEST_WITH_HELM") != ""
 	// set in TestMain
-	clusterName string
+	clusterName       string
+	operatorImageRepo string
+	operatorImageTag  string
 
 	// extended in TestMain
 	scheme = ctrlruntime.NewScheme()
@@ -106,6 +108,8 @@ func TestMain(m *testing.M) {
 			os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
 			os.Exit(1)
 		}
+		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
+		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
 		restConfig = *ctrl.GetConfigOrDie()

@@ -30,6 +30,7 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
@@ -81,6 +82,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			"operator_helm_chart_path":     chartPath,
 		},
 	}
+	if operatorImageRepo != "" {
+		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
+	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
 		terraformOptions.Vars["vault_enterprise"] = true
@@ -91,7 +98,13 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
 	var created []ctrlclient.Object
+
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
+		if skipCleanup {
+			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
+			return
+		}
 		for _, c := range created {
 			// test that the custom resources can be deleted before tf destroy
 			// removes the k8s namespace
@@ -344,9 +357,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, data)
-		assert.NoError(t, err)
-
-		if err == nil {
+		if assert.NoError(t, err) {
 			assertSyncableSecret(t, obj,
 				"secrets.hashicorp.com/v1alpha1",
 				"VaultStaticSecret", secret)
@@ -355,6 +366,19 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			} else {
 				assertNoHMAC(t, obj)
 			}
+
+			if obj.Spec.Destination.Create {
+				sec, _, err := helpers.GetSecret(ctx, crdClient, obj)
+				if assert.NoError(t, err) {
+					// ensure that a Secret deleted out-of-band is properly restored
+					if assert.NoError(t, crdClient.Delete(ctx, sec)) {
+						_, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
+							obj.ObjectMeta.Namespace, data)
+						assert.NoError(t, err)
+					}
+				}
+			}
+
 			if !expectInitial && len(obj.Spec.RolloutRestartTargets) > 0 {
 				// TODO(tech-debt): add method waiting for rollout-restart, for now we
 				//  can provide an artificial grace period.
@@ -372,9 +396,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			for idx, vssObj := range tt.existing {
 				count++
 				t.Run(fmt.Sprintf("%s-existing-%d", tt.name, idx), func(t *testing.T) {
-					t.Cleanup(func() {
-						assert.NoError(t, crdClient.Delete(ctx, vssObj))
-					})
+					if !skipCleanup {
+						t.Cleanup(func() {
+							assert.NoError(t, crdClient.Delete(ctx, vssObj))
+						})
+					}
 					assertSync(t, vssObj, tt.expectedExisting[idx], true)
 					assertSync(t, vssObj, tt.expectedExisting[idx], false)
 				})
@@ -417,10 +443,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 							},
 						}
 
-						t.Cleanup(func() {
-							assert.NoError(t, crdClient.Delete(ctx, vssObj))
-							deleteKV(t, vssObj)
-						})
+						if !skipCleanup {
+							t.Cleanup(func() {
+								assert.NoError(t, crdClient.Delete(ctx, vssObj))
+								deleteKV(t, vssObj)
+							})
+						}
 
 						assertSync(t, vssObj, expected, true)
 						assertSync(t, vssObj, expected, false)
