@@ -43,10 +43,9 @@ func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			return err
 		}
 		l.uid = sa.UID
-	} else if l.authObj.Spec.Jwt.Token != nil &&
-		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef != nil &&
-		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Name != "" &&
-		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key != "" {
+	} else if l.authObj.Spec.Jwt.TokenSecretKeySelector != nil &&
+		l.authObj.Spec.Jwt.TokenSecretKeySelector.Name != "" &&
+		l.authObj.Spec.Jwt.TokenSecretKeySelector.Key != "" {
 		var err error
 		l.tokenSecret, err = l.getTokenSecret(ctx, client)
 		if err != nil {
@@ -76,7 +75,7 @@ func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ct
 func (l *JwtCredentialProvider) getTokenSecret(ctx context.Context, client ctrlclient.Client) (*corev1.Secret, error) {
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
-		Name:      l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Name,
+		Name:      l.authObj.Spec.Jwt.TokenSecretKeySelector.Name,
 	}
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, key, secret); err != nil {
@@ -111,7 +110,7 @@ func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 
 	return map[string]interface{}{
 		"role": l.authObj.Spec.Jwt.Role,
-		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key]),
+		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.Jwt.TokenSecretKeySelector.Key]),
 	}, nil
 }
 
