@@ -160,13 +160,9 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "jwt",
 				Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
 					Role: outputs.AuthRole,
-					Token: &secretsv1alpha1.Token{
-						ValueFrom: &corev1.EnvVarSource{
-							SecretKeyRef: &corev1.SecretKeySelector{
-								LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-								Key:                  secretKey,
-							},
-						},
+					TokenSecretKeySelector: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+						Key:                  secretKey,
 					},
 				},
 			},
