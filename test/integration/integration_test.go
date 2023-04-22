@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -270,6 +271,10 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 	return true, nil
 }
 
+type authMethodsK8sOutputs struct {
+	AuthRole string `json:"auth_role"`
+}
+
 type dynamicK8SOutputs struct {
 	NamePrefix       string   `json:"name_prefix"`
 	Namespace        string   `json:"namespace"`
@@ -478,5 +483,40 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 		}
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
+	}
+}
+
+func getK8sCaPem(t *testing.T, k8sOpts *k8s.KubectlOptions) string {
+	t.Helper()
+	out, err := retry.DoWithRetryE(t, "viewK8sCaCert", 5, time.Second, func() (string, error) {
+		return k8s.RunKubectlAndGetOutputE(t, k8sOpts,
+			"config", "view", "--raw",
+			"--minify", "--flatten", "-o", "jsonpath={.clusters[].cluster.certificate-authority-data}")
+	})
+	assert.NoError(t, err)
+
+	decoded, err := base64.StdEncoding.DecodeString(out)
+	assert.NoError(t, err)
+
+	return string(decoded)
+}
+
+func createJwtTokenSecretObj(t *testing.T, k8sOpts *k8s.KubectlOptions, secretName, secretKey string) *corev1.Secret {
+	t.Helper()
+	out, err := retry.DoWithRetryE(t, "createK8sToken", 5, time.Second, func() (string, error) {
+		return k8s.RunKubectlAndGetOutputE(t, k8sOpts,
+			"create", "token", "default", "--audience=vault", "-o", "jsonpath={.status.token}")
+	})
+	require.NoError(t, err)
+
+	return &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      secretName,
+			Namespace: k8sOpts.Namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			secretKey: out,
+		},
 	}
 }
