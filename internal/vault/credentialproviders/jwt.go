@@ -9,7 +9,6 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 
-	"github.com/google/uuid"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +21,7 @@ import (
 type JwtCredentialProvider struct {
 	authObj           *secretsv1alpha1.VaultAuth
 	providerNamespace string
+	tokenSecret       *corev1.Secret
 	uid               types.UID
 }
 
@@ -47,7 +47,12 @@ func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef != nil &&
 		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Name != "" &&
 		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key != "" {
-		l.uid = types.UID(uuid.New().String())
+		var err error
+		l.tokenSecret, err = l.getTokenSecret(ctx, client)
+		if err != nil {
+			return err
+		}
+		l.uid = l.tokenSecret.ObjectMeta.UID
 	} else {
 		return fmt.Errorf("either serviceAccount or jwt is required in VaultAuth Custom Resource to" +
 			" retrieve credentials to authenticate to Vault's jwt authentication backend")
@@ -104,14 +109,9 @@ func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 		}, nil
 	}
 
-	secret, err := l.getTokenSecret(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-
 	return map[string]interface{}{
 		"role": l.authObj.Spec.Jwt.Role,
-		"jwt":  secret.Data[l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key],
+		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key]),
 	}, nil
 }
 
