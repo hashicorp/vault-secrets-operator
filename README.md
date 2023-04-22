@@ -129,3 +129,16 @@ make ci-build ci-docker-build ci-deploy-kind ci-deploy
 # Run the integration tests (includes Vault deployment)
 make integration-test
 ```
+
+### Integration Tests in EKS
+
+```shell
+# Create an EKS cluster and a ECR repository
+make create-eks
+
+# Build the operator binary, image, and deploy to the ECR repository
+make ci-ecr-build-push 
+
+# Run the integration tests (includes Vault deployment)
+make ci-deploy integration-test-eks
+```

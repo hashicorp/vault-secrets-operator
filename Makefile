@@ -111,6 +111,9 @@ VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
+# directory for eks infrastructure for running tests
+TF_EKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
+
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
 GOOS ?= linux
@@ -368,6 +371,53 @@ helm-chart: manifests kustomize helmify
 unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
+##@ EKS
+.PHONY: create-eks
+create-eks: ## Create a new EKS cluster
+	$(TERRAFORM) -chdir=$(TF_EKS_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_EKS_DIR) apply -auto-approve
+	$(AWS) eks --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) update-kubeconfig \
+    --name $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_name)
+
+.PHONY: ci-ecr-build
+ci-ecr-build: ## Build operator binary (without generating assets).
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
+		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
+		-a \
+		-o $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME) \
+		.
+
+# Currently only supports amd64
+.PHONY: ci-ecr-build-push
+ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
+	@$(eval IMG := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url):$(VERSION))
+	$(MAKE) ci-ecr-build GOOS=$(GOOS) GOARCH=$(GOARCH)
+	docker build -t $(IMG) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version) --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH)
+	$(AWS) ecr get-login-password --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) | docker login --username AWS --password-stdin $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url)
+	docker push $(IMG)
+
+.PHONY: integration-test-eks
+integration-test-eks: ## Run unit tests in the EKS cluster
+	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
+	@$(eval IMAGE_TAG_BASE := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url))
+	$(MAKE) setup-vault KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE)
+	kubectl port-forward vault-0 -n $(K8S_VAULT_NAMESPACE) 38300:8200 &
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
+	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
+    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
+	
+.PHONY: ci-ecr-delete
+ci-ecr-delete: ## Delete the ECR repository
+	@$(eval AWS_REGION := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region))
+	@$(eval ECR_REPO_NAME := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_name))
+	$(AWS) ecr batch-delete-image --region $(AWS_REGION) --repository-name $(ECR_REPO_NAME) --image-ids imageTag="$(VERSION)" || true;
+
+.PHONY: destroy-eks
+destroy-eks: ## Destroy the EKS cluster
+	$(TERRAFORM) -chdir=$(TF_EKS_DIR) destroy -auto-approve
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -452,6 +502,24 @@ bundle-build: ## Build the bundle image.
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
+.PHONY: aws
+AWS = ./bin/aws
+aws: ## Download aws cli locally if necessary.
+ifeq (,$(wildcard $(AWS)))
+ifeq (,$(shell which $(notdir $(AWS)) 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(AWS)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sfSLo $(AWS).zip https://awscli.amazonaws.com/awscli-exe-$${OS}-$${ARCH}.zip -o "awscliv2.zip" ; \
+	unzip awscliv2.zip -d $(dir $(AWS)) $(notdir $(AWS)) ;\
+	rm -f awscliv2.zip ; \
+	}
+else
+AWS = $(shell which aws)
+endif
+endif
 
 .PHONY: opm
 OPM = ./bin/opm
