@@ -91,7 +91,9 @@ resource "helm_release" "vault" {
 }
 
 resource "kubernetes_cluster_role_binding" "oidc-reviewer" {
-  metadata {}
+  metadata {
+    name = "oidc-reviewer-cluster-role-binding"
+  }
   role_ref {
     api_group = "rbac.authorization.k8s.io"
     kind      = "ClusterRole"
