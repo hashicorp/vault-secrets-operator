@@ -53,7 +53,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		"terraform",
 	)
 	require.Nil(t, err)
-	
+
 	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
