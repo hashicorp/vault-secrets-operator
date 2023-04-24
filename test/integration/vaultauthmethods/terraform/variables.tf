@@ -57,3 +57,11 @@ variable "deploy_operator_via_helm" {
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }
+
+variable "operator_image_repo" {
+  default = "hashicorp/vault-secrets-operator"
+}
+
+variable "operator_image_tag" {
+  default = "0.0.0-dev"
+}

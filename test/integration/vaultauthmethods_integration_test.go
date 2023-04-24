@@ -69,6 +69,12 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_ca_pem":                   k8sCaPem,
 		},
 	}
+	if operatorImageRepo != "" {
+		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
+	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
 		terraformOptions.Vars["vault_enterprise"] = true

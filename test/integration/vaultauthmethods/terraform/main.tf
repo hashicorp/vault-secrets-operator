@@ -138,6 +138,15 @@ resource "helm_release" "vault-secrets-operator" {
   wait             = true
   chart            = var.operator_helm_chart_path
 
+  set {
+    name  = "controller.manager.image.repository"
+    value = var.operator_image_repo
+  }
+  set {
+    name  = "controller.manager.image.tag"
+    value = var.operator_image_tag
+  }
+
   # Connection Configuration
   set {
     name  = "defaultVaultConnection.enabled"
