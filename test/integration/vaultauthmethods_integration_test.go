@@ -13,13 +13,12 @@ import (
 	"testing"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -53,7 +52,6 @@ func TestVaultAuthMethods(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm":     "true",
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           "kind-" + clusterName,
@@ -94,13 +92,14 @@ func TestVaultAuthMethods(t *testing.T) {
 	vClient := getVaultClient(t, testVaultNamespace)
 
 	auths := []*secretsv1alpha1.VaultAuth{
-		// Create a non-default VaultAuth CR
+		// Create a VaultAuth CR for each Auth Method we support.
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultauth-test-kubernetes",
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultAuthSpec{
+				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
 				Method:    "kubernetes",
 				Mount:     "kubernetes",
@@ -117,6 +116,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultAuthSpec{
+				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
 				Method:    "approle",
 				Mount:     "approle",
@@ -133,30 +133,29 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		// TODO: Any other Auth methods supported
 	}
-	expectedData := map[string]interface{}{"foo": "bar"}
+	data := map[string]interface{}{"foo": "bar"}
 
-	// Apply all of the Auth Methods
+	// Create the Auth Methods, the Connection is deployed by Helm.
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)
 	}
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
-
-	// create the VSS secrets
+	// VSS secrets, one for each Auth Method.
 	for x, a := range auths {
 		dest := fmt.Sprintf("kv-%s", a.Name)
-		secretName := fmt.Sprintf("test-secret-%s", a.Spec.Method)
+		vssSecretName := fmt.Sprintf("test-secret-%s", a.Spec.Method)
 		secrets = append(secrets,
 			&secretsv1alpha1.VaultStaticSecret{
 				ObjectMeta: v1.ObjectMeta{
-					Name:      secretName,
+					Name:      vssSecretName,
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
 					VaultAuthRef: auths[x].ObjectMeta.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
-					Type:         "kv-v2",
+					Type:         consts.KVSecretTypeV2,
 					Name:         dest,
 					Destination: secretsv1alpha1.Destination{
 						Name:   dest,
@@ -166,18 +165,20 @@ func TestVaultAuthMethods(t *testing.T) {
 			})
 	}
 
+	// Put the KV object into Vault.
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
-		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, expectedData)
+		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, data)
 		require.NoError(t, err)
 	}
 
+	// Delete the KV object from Vault.
 	deleteKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
 		vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Name)
 	}
 
 	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret) {
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
-			obj.ObjectMeta.Namespace, expectedData)
+			obj.ObjectMeta.Namespace, data)
 		assert.NoError(t, err)
 		assertSyncableSecret(t, obj,
 			"secrets.hashicorp.com/v1alpha1",
@@ -186,8 +187,11 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	for x, tt := range auths {
 		t.Run(tt.Spec.Method, func(t *testing.T) {
+			// Create the KV secret in Vault.
 			putKV(t, secrets[x])
+			// Create the VSS object referencing the object in Vault.
 			require.Nil(t, crdClient.Create(ctx, secrets[x]))
+			// Assert that the Kube secret exists + has correct Data.
 			assertSync(t, secrets[x])
 			t.Cleanup(func() {
 				crdClient.Delete(ctx, secrets[x])

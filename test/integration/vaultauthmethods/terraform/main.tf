@@ -36,13 +36,6 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
-resource "kubernetes_secret" "secretkv" {
-  metadata {
-    name      = "secretkv"
-    namespace = kubernetes_namespace.tenant-1.metadata[0].name
-  }
-}
-
 resource "kubernetes_secret" "secretkvv2" {
   metadata {
     name      = "kv-kubernetes"
@@ -149,7 +142,6 @@ EOT
 }
 
 resource "helm_release" "vault-secrets-operator" {
-  count            = var.deploy_operator_via_helm ? 1 : 0
   name             = "test"
   namespace        = var.operator_namespace
   create_namespace = true
