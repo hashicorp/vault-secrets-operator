@@ -26,11 +26,6 @@ type VaultAuthConfigKubernetes struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
-// Token represents the token if present in a VaultAuthConfigJwt.
-type Token struct {
-	ValueFrom *corev1.EnvVarSource `json:"valueFrom"`
-}
-
 // VaultAuthConfigJwt provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigJwt struct {
 	// Role to use for authenticating to Vault.

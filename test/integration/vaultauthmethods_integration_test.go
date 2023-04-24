@@ -107,12 +107,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	// Create a jwt auth token secret
 	secretName := "jwt-auth-secret"
 	secretKey := "token"
-	secretObj := createJwtTokenSecretObj(t, &k8s.KubectlOptions{
-		ContextName: k8sConfigContext,
-		Namespace:   testK8sNamespace,
-	}, secretName, secretKey)
-
-	require.Nil(t, crdClient.Create(ctx, secretObj))
+	secretObj := createJwtTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName, secretKey)
 	created = append(created, secretObj)
 
 	auths := []*secretsv1alpha1.VaultAuth{
