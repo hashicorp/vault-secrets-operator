@@ -509,8 +509,8 @@ func getK8sCaPem(t *testing.T, k8sOpts *k8s.KubectlOptions) string {
 func createJwtTokenSecretObj(t *testing.T, k8sOpts *k8s.KubectlOptions, secretName, secretKey string) *corev1.Secret {
 	t.Helper()
 	out, err := retry.DoWithRetryE(t, "createK8sToken", 5, time.Second, func() (string, error) {
-		return k8s.RunKubectlAndGetOutputE(t, k8sOpts,
-			"create", "token", "default", "--audience", "vault", "-o", "jsonpath={.status.token}")
+		return k8s.RunKubectlAndGetOutputE(t, k8sOpts, "create", "token", "default", "-o", "jsonpath={.status.token}")
+		//"create", "token", "default", "--audience", "vault", "-o", "jsonpath={.status.token}")
 	})
 	require.NoError(t, err)
 

@@ -132,7 +132,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
 					Role:           outputs.AuthRole,
 					ServiceAccount: "default",
-					TokenAudiences: []string{"vault"},
+					//TokenAudiences: []string{"vault"},
 				},
 			},
 		},
