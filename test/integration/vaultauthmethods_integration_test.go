@@ -31,6 +31,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
+	k8sConfigContext := "kind-" + clusterName
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -54,10 +55,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		Vars: map[string]interface{}{
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_test_namespace":           testK8sNamespace,
-			"k8s_config_context":           "kind-" + clusterName,
+			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
 		},
+	}
+	if operatorImageRepo != "" {
+		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
 	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
