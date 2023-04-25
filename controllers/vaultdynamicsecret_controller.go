@@ -175,8 +175,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	reason := consts.ReasonSecretSynced
+	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
+	horizon := computeHorizonWithJitter(leaseDuration)
+	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
+		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
+
 	if doRolloutRestart {
 		reason = consts.ReasonSecretRotated
 		// rollout-restart errors are not retryable
@@ -187,11 +191,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if !r.isRenewableLease(secretLease, o) {
 		return ctrl.Result{}, nil
 	}
-
-	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon := computeHorizonWithJitter(leaseDuration)
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
 
 	return ctrl.Result{RequeueAfter: horizon}, nil
 }
