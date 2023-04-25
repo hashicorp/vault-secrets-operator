@@ -11,7 +11,6 @@ variable "k8s_vault_connection_address" {
 }
 
 variable "k8s_config_context" {
-  type    = string
   default = "kind-kind"
 }
 
@@ -25,8 +24,19 @@ variable "k8s_host" {
   default = "https://kubernetes.default.svc"
 }
 
+variable "k8s_ca_pem" {
+  default = ""
+}
+
+variable "k8s_token" {
+  default = ""
+}
+
+variable "vault_kv_mount_path" {
+  default = "kv"
+}
+
 variable "vault_kvv2_mount_path" {
-  type    = string
   default = "kvv2"
 }
 

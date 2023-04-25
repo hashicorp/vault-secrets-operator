@@ -7,9 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-
-	"github.com/google/uuid"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,11 +14,14 @@ import (
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
 type JwtCredentialProvider struct {
 	authObj           *secretsv1alpha1.VaultAuth
 	providerNamespace string
+	tokenSecret       *corev1.Secret
 	uid               types.UID
 }
 
@@ -43,14 +43,18 @@ func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			return err
 		}
 		l.uid = sa.UID
-	} else if l.authObj.Spec.Jwt.Token != nil &&
-		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef != nil &&
-		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Name != "" &&
-		l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key != "" {
-		l.uid = types.UID(uuid.New().String())
+	} else if l.authObj.Spec.Jwt.TokenSecretKeySelector != nil &&
+		l.authObj.Spec.Jwt.TokenSecretKeySelector.Name != "" &&
+		l.authObj.Spec.Jwt.TokenSecretKeySelector.Key != "" {
+		var err error
+		l.tokenSecret, err = l.getTokenSecret(ctx, client)
+		if err != nil {
+			return err
+		}
+		l.uid = l.tokenSecret.ObjectMeta.UID
 	} else {
-		return fmt.Errorf("either serviceAccount or jwt is required in VaultAuth Custom Resource to" +
-			" retrieve credentials to authenticate to Vault's jwt authentication backend")
+		return fmt.Errorf("either serviceAccount or jwt token secret key selector is required to " +
+			"retrieve credentials to authenticate to Vault's jwt authentication backend")
 	}
 
 	return nil
@@ -71,7 +75,7 @@ func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ct
 func (l *JwtCredentialProvider) getTokenSecret(ctx context.Context, client ctrlclient.Client) (*corev1.Secret, error) {
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
-		Name:      l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Name,
+		Name:      l.authObj.Spec.Jwt.TokenSecretKeySelector.Name,
 	}
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, key, secret); err != nil {
@@ -104,14 +108,9 @@ func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 		}, nil
 	}
 
-	secret, err := l.getTokenSecret(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-
 	return map[string]interface{}{
 		"role": l.authObj.Spec.Jwt.Role,
-		"jwt":  secret.Data[l.authObj.Spec.Jwt.Token.ValueFrom.SecretKeyRef.Key],
+		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.Jwt.TokenSecretKeySelector.Key]),
 	}, nil
 }
 

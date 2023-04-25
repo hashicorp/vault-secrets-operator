@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gruntwork-io/terratest/modules/files"
+	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -46,6 +47,11 @@ func TestVaultAuthMethods(t *testing.T) {
 		"terraform",
 	)
 	require.Nil(t, err)
+	// fetch k8s ca cert using go client
+	k8sCaPem := getK8sCaPem(t, &k8s.KubectlOptions{
+		ContextName: k8sConfigContext,
+		Namespace:   testVaultNamespace,
+	})
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -58,6 +64,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
+			"k8s_ca_pem":                   k8sCaPem,
 		},
 	}
 	if operatorImageRepo != "" {
@@ -90,30 +97,78 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
 	terraform.InitAndApply(t, terraformOptions)
+
+	// Parse terraform output
 	b, err := json.Marshal(terraform.OutputAll(t, terraformOptions))
 	require.Nil(t, err)
-	var outputs dynamicK8SOutputs
+
+	var outputs authMethodsK8sOutputs
 	require.Nil(t, json.Unmarshal(b, &outputs))
 
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
 
+	data := map[string]interface{}{"foo": "bar"}
+
+	// Create a jwt auth token secret
+	secretName := "jwt-auth-secret"
+	secretKey := "token"
+	secretObj := createJwtTokenSecretObj(t, &k8s.KubectlOptions{
+		ContextName: k8sConfigContext,
+		Namespace:   testK8sNamespace,
+	}, secretName, secretKey)
+	require.Nil(t, crdClient.Create(ctx, secretObj))
+	created = append(created, secretObj)
+
 	auths := []*secretsv1alpha1.VaultAuth{
-		// Create a VaultAuth CR for each Auth Method we support.
+		// Create a non-default VaultAuth CR
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultauth-test-kubernetes",
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultAuthSpec{
-				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
 				Method:    "kubernetes",
 				Mount:     "kubernetes",
 				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-					Role:           "role1",
+					Role:           outputs.AuthRole,
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
+				},
+			},
+		},
+		{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "vaultauth-test-jwt-serviceaccount",
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultAuthSpec{
+				Namespace: testVaultNamespace,
+				Method:    "jwt",
+				Mount:     "jwt",
+				Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
+					Role:           outputs.AuthRole,
+					ServiceAccount: "default",
+					TokenAudiences: []string{"vault"},
+				},
+			},
+		},
+		{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "vaultauth-test-jwt-secret",
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultAuthSpec{
+				Namespace: testVaultNamespace,
+				Method:    "jwt",
+				Mount:     "jwt",
+				Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
+					Role: outputs.AuthRole,
+					TokenSecretKeySelector: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+						Key:                  secretKey,
+					},
 				},
 			},
 		},
@@ -138,11 +193,8 @@ func TestVaultAuthMethods(t *testing.T) {
 				},
 			},
 		},
-		// TODO: Any other Auth methods supported
 	}
-	data := map[string]interface{}{"foo": "bar"}
 
-	// Create the Auth Methods, the Connection is deployed by Helm.
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)
@@ -151,11 +203,11 @@ func TestVaultAuthMethods(t *testing.T) {
 	// VSS secrets, one for each Auth Method.
 	for _, a := range auths {
 		dest := fmt.Sprintf("kv-%s", a.Name)
-		vssSecretName := fmt.Sprintf("test-secret-%s", a.ObjectMeta.Name)
+		secretName := fmt.Sprintf("test-secret-%s", a.ObjectMeta.Name)
 		secrets = append(secrets,
 			&secretsv1alpha1.VaultStaticSecret{
 				ObjectMeta: v1.ObjectMeta{
-					Name:      vssSecretName,
+					Name:      secretName,
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{

@@ -35,8 +35,9 @@ type Token struct {
 type VaultAuthConfigJwt struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// Token to use when authenticating to Vault's JWT authentication backend.
-	Token *Token `json:"token,omitempty"`
+	// TokenSecretKeySelector to use when referencing the secret containing the JWT token
+	// to authenticate to Vault's JWT authentication backend.
+	TokenSecretKeySelector *corev1.SecretKeySelector `json:"tokenSecretKeySelector,omitempty"`
 	// ServiceAccount to use when creating a ServiceAccount token to authenticate to Vault's
 	// JWT authentication backend.
 	ServiceAccount string `json:"serviceAccount,omitempty"`

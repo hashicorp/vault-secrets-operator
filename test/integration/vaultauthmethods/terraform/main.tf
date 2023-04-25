@@ -43,6 +43,13 @@ resource "kubernetes_secret" "secretkvv2" {
   }
 }
 
+resource "kubernetes_secret" "secretkv" {
+  metadata {
+    name      = "secretkv"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+}
+
 provider "vault" {
   # Configuration options
 }
@@ -137,6 +144,34 @@ path "${vault_mount.kvv2.path}/*" {
 }
 path "auth/approle/login" {
   capabilities = ["read","update"]
+}
+EOT
+}
+
+# jwt auth config
+resource "vault_jwt_auth_backend" "dev" {
+  namespace             = local.namespace
+  path                  = "jwt"
+  oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
+  oidc_discovery_ca_pem = var.k8s_ca_pem
+}
+
+resource "vault_jwt_auth_backend_role" "dev" {
+  namespace       = local.namespace
+  backend         = "jwt"
+  role_name       = local.auth_role
+  role_type       = "jwt"
+  bound_audiences = ["vault"]
+  user_claim      = "sub"
+  token_policies  = [vault_policy.default.name]
+}
+
+resource "vault_policy" "default" {
+  name      = "dev"
+  namespace = local.namespace
+  policy    = <<EOT
+path "${vault_mount.kvv2.path}/*" {
+  capabilities = ["read"]
 }
 EOT
 }
