@@ -63,9 +63,11 @@ variable "approle_role_name" {
 }
 
 variable "operator_image_repo" {
+  type    = string
   default = "hashicorp/vault-secrets-operator"
 }
 
 variable "operator_image_tag" {
+  type    = string
   default = "0.0.0-dev"
 }

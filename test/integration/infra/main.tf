@@ -89,6 +89,7 @@ resource "helm_release" "vault" {
     }
   }
 }
+
 resource "kubernetes_cluster_role_binding" "oidc-reviewer" {
   metadata {
     name = "oidc-reviewer-cluster-role-binding"
