@@ -80,6 +80,12 @@ func TestVaultPKISecret(t *testing.T) {
 			"operator_helm_chart_path":     chartPath,
 		},
 	}
+	if operatorImageRepo != "" {
+		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
+	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
 		terraformOptions.Vars["vault_enterprise"] = true
@@ -172,6 +178,9 @@ func TestVaultPKISecret(t *testing.T) {
 					Clear:        true,
 					ExpiryOffset: "1s",
 					TTL:          "30s",
+					AltNames:     []string{"alt1.example.com", "alt2.example.com"},
+					URISans:      []string{"uri1.example.com", "uri2.example.com"},
+					IPSans:       []string{"127.1.1.1", "127.0.0.1"},
 					Destination: secretsv1alpha1.Destination{
 						Name:   "pki1",
 						Create: false,
@@ -239,6 +248,9 @@ func TestVaultPKISecret(t *testing.T) {
 						ExpiryOffset: "1s",
 						TTL:          "30s",
 						VaultAuthRef: testVaultAuthMethodName,
+						AltNames:     []string{"alt1.example.com", "alt2.example.com"},
+						URISans:      []string{"uri1.example.com", "uri2.example.com"},
+						IPSans:       []string{"127.1.1.1", "127.0.0.1"},
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,
