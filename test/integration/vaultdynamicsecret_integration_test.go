@@ -14,11 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/retry"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
+	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
@@ -352,7 +351,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 	// Check to be sure all leases have been revoked.
 	retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
 		// ensure that all leases have been revoked.
-		resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/readonly", outputs.DBRole))
+		resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/%s", outputs.DBPath, outputs.DBRole))
 		if err != nil {
 			return "", err
 		}

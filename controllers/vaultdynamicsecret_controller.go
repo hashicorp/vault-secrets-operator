@@ -189,7 +189,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	// Revoke the existing Lease if it did exist before and we just renewed it.
 	if o.Spec.Revoke && oldLease.ID != "" && oldLease.Renewable {
-		// Ignore the error.
 		r.revokeLease(ctx, o, oldLease.ID)
 	}
 
@@ -310,11 +309,10 @@ func isLeaseNotfoundError(err error) bool {
 // * removing our finalizer
 func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
 	logger := log.FromContext(ctx)
-	if err := r.revokeLease(ctx, o, ""); err != nil {
-		// Do not return error, otherwise we may fail to remove the finalizer.
-		// Worst case at this point we will leave a dangling lease instead of a secret which
-		// cannot be deleted.
-	}
+	// We are ignoring errors inside `revokeLease`, otherwise we may fail to remove the finalizer.
+	// Worst case at this point we will leave a dangling lease instead of a secret which
+	// cannot be deleted. Events are emitted in these cases.
+	r.revokeLease(ctx, o, "")
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {
@@ -332,9 +330,9 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 // NOTE: Enabling revocation requires the VaultAuthMethod referenced by `o.Spec.VaultAuthRef` to have a policy
 // that includes `path "sys/leases/revoke" { capabilities = ["update"] }`, otherwise this will fail with permission
 // errors.
-func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret, id string) error {
+func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret, id string) {
 	logger := log.FromContext(ctx)
-	// Allows us to override the SecretLease in the event that we want to revoke an old lease.
+	// Allow us to override the SecretLease in the event that we want to revoke an old lease.
 	leaseID := id
 	if leaseID == "" {
 		leaseID = o.Status.SecretLease.ID
@@ -342,7 +340,8 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	logger.Info("Revoking lease for credential ", "id", leaseID)
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
-		return err
+		logger.Error(err, "Failed to get client when revoking lease for ", "id", leaseID)
+		return
 	}
 	if _, err = c.Write(ctx, "/sys/leases/revoke", map[string]interface{}{
 		"lease_id": leaseID,
@@ -353,6 +352,6 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	} else {
 		msg := "Lease revoked"
 		r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRevoke, msg+": %s", leaseID)
+		logger.Info("Lease revoked ", "id", leaseID)
 	}
-	return err
 }
