@@ -334,15 +334,15 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 // errors.
 func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret, id string) error {
 	logger := log.FromContext(ctx)
-	logger.Info("Revoking lease for credential ", "id", o.Status.SecretLease.ID)
-	c, err := r.ClientFactory.Get(ctx, r.Client, o)
-	if err != nil {
-		return err
-	}
 	// Allows us to override the SecretLease in the event that we want to revoke an old lease.
 	leaseID := id
 	if leaseID == "" {
 		leaseID = o.Status.SecretLease.ID
+	}
+	logger.Info("Revoking lease for credential ", "id", leaseID)
+	c, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		return err
 	}
 	if _, err = c.Write(ctx, "/sys/leases/revoke", map[string]interface{}{
 		"lease_id": leaseID,
