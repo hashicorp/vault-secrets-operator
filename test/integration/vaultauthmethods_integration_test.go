@@ -105,10 +105,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	var outputs authMethodsK8sOutputs
 	require.Nil(t, json.Unmarshal(b, &outputs))
 
-	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
-
-	data := map[string]interface{}{"foo": "bar"}
 
 	// Create a jwt auth token secret
 	secretName := "jwt-auth-secret"
@@ -121,13 +118,14 @@ func TestVaultAuthMethods(t *testing.T) {
 	created = append(created, secretObj)
 
 	auths := []*secretsv1alpha1.VaultAuth{
-		// Create a non-default VaultAuth CR
+		// Create a non-default VaultAuth CR for kubernetes
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultauth-test-kubernetes",
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultAuthSpec{
+				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
 				Method:    "kubernetes",
 				Mount:     "kubernetes",
@@ -144,6 +142,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultAuthSpec{
+				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
 				Method:    "jwt",
 				Mount:     "jwt",
@@ -160,6 +159,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1alpha1.VaultAuthSpec{
+				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
 				Method:    "jwt",
 				Mount:     "jwt",
@@ -185,6 +185,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
 					RoleID: outputs.AppRoleRoleID,
 					SecretKeyRef: &corev1.SecretKeySelector{
+						// secretid is deployed by tf
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: "secretid",
 						},
@@ -197,7 +198,6 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
-		created = append(created, a)
 	}
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// VSS secrets, one for each Auth Method.
@@ -224,6 +224,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			})
 	}
 
+	data := map[string]interface{}{"foo": "bar"}
 	// Put the KV object into Vault.
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
 		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, data)

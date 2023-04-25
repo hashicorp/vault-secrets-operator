@@ -11,6 +11,7 @@ variable "k8s_vault_connection_address" {
 }
 
 variable "k8s_config_context" {
+  type    = string
   default = "kind-kind"
 }
 
@@ -25,18 +26,12 @@ variable "k8s_host" {
 }
 
 variable "k8s_ca_pem" {
+  type    = string
   default = ""
-}
-
-variable "k8s_token" {
-  default = ""
-}
-
-variable "vault_kv_mount_path" {
-  default = "kv"
 }
 
 variable "vault_kvv2_mount_path" {
+  type    = string
   default = "kvv2"
 }
 
@@ -65,4 +60,12 @@ variable "operator_namespace" {
 variable "approle_role_name" {
   type    = string
   default = "approle"
+}
+
+variable "operator_image_repo" {
+  default = "hashicorp/vault-secrets-operator"
+}
+
+variable "operator_image_tag" {
+  default = "0.0.0-dev"
 }

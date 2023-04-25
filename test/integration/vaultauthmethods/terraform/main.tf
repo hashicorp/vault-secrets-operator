@@ -30,6 +30,10 @@ provider "helm" {
   }
 }
 
+provider "vault" {
+  # Configuration options
+}
+
 resource "kubernetes_namespace" "tenant-1" {
   metadata {
     name = var.k8s_test_namespace
@@ -48,14 +52,6 @@ resource "kubernetes_secret" "secretkv" {
     name      = "secretkv"
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
   }
-}
-
-provider "vault" {
-  # Configuration options
-}
-
-locals {
-  namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
 }
 
 resource "vault_mount" "kvv2" {
@@ -86,7 +82,7 @@ resource "vault_kubernetes_auth_backend_config" "default" {
 resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
-  role_name                        = "role1"
+  role_name                        = local.auth_role
   bound_service_account_names      = ["default"]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
@@ -166,16 +162,6 @@ resource "vault_jwt_auth_backend_role" "dev" {
   token_policies  = [vault_policy.default.name]
 }
 
-resource "vault_policy" "default" {
-  name      = "dev"
-  namespace = local.namespace
-  policy    = <<EOT
-path "${vault_mount.kvv2.path}/*" {
-  capabilities = ["read"]
-}
-EOT
-}
-
 resource "helm_release" "vault-secrets-operator" {
   name             = "test"
   namespace        = var.operator_namespace
@@ -191,5 +177,13 @@ resource "helm_release" "vault-secrets-operator" {
   set {
     name  = "defaultVaultConnection.address"
     value = var.k8s_vault_connection_address
+  }
+  set {
+    name  = "controller.manager.image.repository"
+    value = var.operator_image_repo
+  }
+  set {
+    name  = "controller.manager.image.tag"
+    value = var.operator_image_tag
   }
 }
