@@ -60,7 +60,6 @@ func TestVaultAuthMethods(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm":     "true",
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           k8sConfigContext,
@@ -192,7 +191,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					VaultAuthRef: a.ObjectMeta.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
-					Type:         "kv-v2",
+					Type:         consts.KVSecretTypeV2,
 					Name:         dest,
 					Destination: secretsv1alpha1.Destination{
 						Name:   dest,
