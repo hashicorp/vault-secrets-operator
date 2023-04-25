@@ -529,8 +529,8 @@ func createJwtTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 			Namespace: namespace,
 		},
 		Type: corev1.SecretTypeOpaque,
-		StringData: map[string]string{
-			secretKey: tokenReq.Status.Token,
+		Data: map[string][]byte{
+			secretKey: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))
