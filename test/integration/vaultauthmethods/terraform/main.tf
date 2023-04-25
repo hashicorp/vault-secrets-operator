@@ -42,14 +42,7 @@ resource "kubernetes_namespace" "tenant-1" {
 
 resource "kubernetes_secret" "secretkvv2" {
   metadata {
-    name      = "kv-kubernetes"
-    namespace = kubernetes_namespace.tenant-1.metadata[0].name
-  }
-}
-
-resource "kubernetes_secret" "secretkv" {
-  metadata {
-    name      = "secretkv"
+    name      = "secretkvv2"
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
   }
 }

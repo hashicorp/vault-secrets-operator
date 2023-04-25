@@ -198,6 +198,7 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
+		created = append(created, a)
 	}
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// VSS secrets, one for each Auth Method.
