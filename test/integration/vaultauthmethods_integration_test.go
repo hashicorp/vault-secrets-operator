@@ -142,9 +142,9 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// VSS secrets, one for each Auth Method.
-	for x, a := range auths {
+	for _, a := range auths {
 		dest := fmt.Sprintf("kv-%s", a.Name)
-		vssSecretName := fmt.Sprintf("test-secret-%s", a.Spec.Method)
+		vssSecretName := fmt.Sprintf("test-secret-%s", a.ObjectMeta.Name)
 		secrets = append(secrets,
 			&secretsv1alpha1.VaultStaticSecret{
 				ObjectMeta: v1.ObjectMeta{
@@ -152,7 +152,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
-					VaultAuthRef: auths[x].ObjectMeta.Name,
+					VaultAuthRef: a.ObjectMeta.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
 					Type:         consts.KVSecretTypeV2,
