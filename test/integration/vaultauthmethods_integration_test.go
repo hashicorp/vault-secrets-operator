@@ -167,6 +167,28 @@ func TestVaultAuthMethods(t *testing.T) {
 				},
 			},
 		},
+		{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "vaultauth-test-approle",
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultAuthSpec{
+				// No VaultConnectionRef - using the default.
+				Namespace: testVaultNamespace,
+				Method:    "approle",
+				Mount:     "approle",
+				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
+					RoleID: outputs.AppRoleRoleID,
+					SecretKeyRef: &corev1.SecretKeySelector{
+						// secretid is deployed by tf
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "secretid",
+						},
+						Key: "id",
+					},
+				},
+			},
+		},
 	}
 	expectedData := map[string]interface{}{"foo": "bar"}
 
@@ -221,8 +243,11 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	for x, tt := range auths {
 		t.Run(tt.Spec.Method, func(t *testing.T) {
+			// Create the KV secret in Vault.
 			putKV(t, secrets[x])
+			// Create the VSS object referencing the object in Vault.
 			require.Nil(t, crdClient.Create(ctx, secrets[x]))
+			// Assert that the Kube secret exists + has correct Data.
 			assertSync(t, secrets[x])
 			t.Cleanup(func() {
 				deleteKV(t, secrets[x])

@@ -44,6 +44,15 @@ type VaultAuthConfigJwt struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
+// VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to Vault.
+type VaultAuthConfigAppRole struct {
+	// RoleID (role_id) to use for authenticating to Vault.
+	RoleID string `json:"roleid"`
+	// Selects a key of a secret in the AuthMethod's namespace which holds the secret_id of the approle used
+	// to authenticate to Vault.
+	SecretKeyRef *corev1.SecretKeySelector `json:"secretKeyRef"`
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
@@ -53,7 +62,7 @@ type VaultAuthSpec struct {
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
-	// +kubebuilder:validation:Enum=kubernetes;jwt
+	// +kubebuilder:validation:Enum=kubernetes;jwt;approle
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
@@ -65,6 +74,8 @@ type VaultAuthSpec struct {
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
 	// Jwt specific auth configuration, requires that the Method be set to jwt.
 	Jwt *VaultAuthConfigJwt `json:"jwt,omitempty"`
+	// AppRole specific auth configuration, requires that the Method be set to approle.
+	AppRole *VaultAuthConfigAppRole `json:"approle,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
 	// This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted
