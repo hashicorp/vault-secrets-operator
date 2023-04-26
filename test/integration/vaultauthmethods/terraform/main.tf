@@ -36,6 +36,18 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
+resource "kubernetes_secret" "default-sa" {
+  metadata {
+    namespace = var.k8s_test_namespace
+    name      = "default-sa-secret"
+    annotations = {
+      "kubernetes.io/service-account.name" = "default"
+    }
+  }
+  type = "kubernetes.io/service-account-token"
+  depends_on = [kubernetes_namespace.tenant-1]
+}
+
 provider "vault" {
   # Configuration options
 }
@@ -84,17 +96,6 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   token_ttl                        = 3600
   token_policies                   = [vault_policy.default.name]
   audience                         = "vault"
-}
-
-resource "kubernetes_secret" "default-sa" {
-  metadata {
-    namespace = var.k8s_test_namespace
-    name      = "default-sa-secret"
-    annotations = {
-      "kubernetes.io/service-account.name" = "default"
-    }
-  }
-  type = "kubernetes.io/service-account-token"
 }
 
 # jwt auth config
