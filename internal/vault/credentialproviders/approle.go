@@ -6,13 +6,13 @@ package credentialproviders
 import (
 	"context"
 
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	"github.com/google/uuid"
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
 type ApproleCredentialProvider struct {
@@ -38,13 +38,13 @@ func (l *ApproleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 
 func (l *ApproleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
-	// fetch the secretID
+	// Fetch the secret_id each time we call GetCreds in case the secret_id has changed since
+	// the last time the client token was generated. In the case of approle this is assumed likely.
 	sid, err := l.getSecretID(ctx, client)
 	if err != nil || sid == "" {
 		logger.Error(err, "Failed to get secret_id for ", "role_id", l.authObj.Spec.AppRole.RoleID)
 		return nil, err
 	}
-
 	// credentials needed for approle auth
 	creds := map[string]interface{}{
 		"role_id":   l.authObj.Spec.AppRole.RoleID,
@@ -54,12 +54,14 @@ func (l *ApproleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 }
 
 func (l *ApproleCredentialProvider) getSecretID(ctx context.Context, client ctrlclient.Client) (string, error) {
+	logger := log.FromContext(ctx)
 	key := ctrlclient.ObjectKey{
 		Namespace: l.authObj.Namespace,
 		Name:      l.authObj.Spec.AppRole.SecretKeyRef.Name,
 	}
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, key, secret); err != nil {
+		logger.Error(err, "Failed to get client when fetching secret_id ", "role_id", l.authObj.Spec.AppRole.RoleID)
 		return "", err
 	}
 	secretID := string(secret.Data[l.authObj.Spec.AppRole.SecretKeyRef.Key])
