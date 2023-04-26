@@ -89,7 +89,7 @@ resource "vault_kubernetes_auth_backend_role" "default" {
 resource "kubernetes_secret" "default-sa" {
   metadata {
     namespace = var.k8s_test_namespace
-    name = "default-sa-secret"
+    name      = "default-sa-secret"
     annotations = {
       "kubernetes.io/service-account.name" = "default"
     }
@@ -113,7 +113,7 @@ resource "vault_jwt_auth_backend_role" "dev" {
   bound_audiences = ["vault"]
   user_claim      = "sub"
   token_policies  = [vault_policy.default.name]
-  depends_on = [vault_jwt_auth_backend.dev]
+  depends_on      = [vault_jwt_auth_backend.dev]
 }
 
 resource "helm_release" "vault-secrets-operator" {
