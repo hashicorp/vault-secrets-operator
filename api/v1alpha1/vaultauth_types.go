@@ -4,7 +4,6 @@
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,13 +25,21 @@ type VaultAuthConfigKubernetes struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
+// SecretKeySelector selects a key of a Secret.
+type SecretKeySelector struct {
+	// Name of the secret in the referring object's namespace to select from.
+	Name string `json:"name"`
+	// Key of the secret to select from. Must be a valid secret key.
+	Key string `json:"key"`
+}
+
 // VaultAuthConfigJwt provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigJwt struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// TokenSecretKeySelector to use when referencing the secret containing the JWT token
+	// SecretKeyRef to use when referencing the secret containing the JWT token
 	// to authenticate to Vault's JWT authentication backend.
-	TokenSecretKeySelector *corev1.SecretKeySelector `json:"tokenSecretKeySelector,omitempty"`
+	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
 	// ServiceAccount to use when creating a ServiceAccount token to authenticate to Vault's
 	// JWT authentication backend.
 	ServiceAccount string `json:"serviceAccount,omitempty"`

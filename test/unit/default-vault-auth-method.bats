@@ -146,9 +146,9 @@ load _helpers
      [ "${actual}" = "baz" ]
 
     # secret related specs should not exist
-    actual=$(echo "$object" | yq '.spec.jwt.tokenSecretKeySelector.name' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.name' | tee /dev/stderr)
      [ "${actual}" = null ]
-    actual=$(echo "$object" | yq '.spec.jwt.tokenSecretKeySelector.Key' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.key' | tee /dev/stderr)
      [ "${actual}" = null ]
 }
 
@@ -178,9 +178,9 @@ load _helpers
      [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.jwt.role' | tee /dev/stderr)
      [ "${actual}" = "role-1" ]
-    actual=$(echo "$object" | yq '.spec.jwt.tokenSecretKeySelector.name' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.name' | tee /dev/stderr)
      [ "${actual}" = "secret-1" ]
-    actual=$(echo "$object" | yq '.spec.jwt.tokenSecretKeySelector.key' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.key' | tee /dev/stderr)
      [ "${actual}" = "secret-key-1" ]
     actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
      [ "${actual}" = "bar" ]
