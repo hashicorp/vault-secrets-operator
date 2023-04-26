@@ -86,12 +86,23 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   audience                         = "vault"
 }
 
+resource "kubernetes_secret" "default-sa" {
+  metadata {
+    namespace = var.k8s_test_namespace
+    name = "default-sa-secret"
+    annotations = {
+      "kubernetes.io/service-account.name" = "default"
+    }
+  }
+  type = "kubernetes.io/service-account-token"
+}
+
 # jwt auth config
 resource "vault_jwt_auth_backend" "dev" {
   namespace             = local.namespace
   path                  = "jwt"
   oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
-  oidc_discovery_ca_pem = var.k8s_ca_pem
+  oidc_discovery_ca_pem = nonsensitive(kubernetes_secret.default-sa.data["ca.crt"])
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
@@ -102,6 +113,7 @@ resource "vault_jwt_auth_backend_role" "dev" {
   bound_audiences = ["vault"]
   user_claim      = "sub"
   token_policies  = [vault_policy.default.name]
+  depends_on = [vault_jwt_auth_backend.dev]
 }
 
 resource "helm_release" "vault-secrets-operator" {

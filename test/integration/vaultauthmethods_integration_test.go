@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/gruntwork-io/terratest/modules/files"
-	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -48,12 +48,6 @@ func TestVaultAuthMethods(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	// fetch k8s ca cert using go client
-	k8sCaPem := getK8sCaPem(t, &k8s.KubectlOptions{
-		ContextName: k8sConfigContext,
-		Namespace:   testVaultNamespace,
-	})
-
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
@@ -65,7 +59,6 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
-			"k8s_ca_pem":                   k8sCaPem,
 		},
 	}
 	if operatorImageRepo != "" {
