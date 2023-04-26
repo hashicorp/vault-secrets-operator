@@ -227,6 +227,15 @@ jobs:
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
         run: |
           make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: ENT tests using Kustomize
+        # Ideally we only need to test the latest release of OSS Vault.
+        if: ${{ matrix.vault-version == '1.13.1' }}
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
+        run: |
+          make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Helm
         env:
           INTEGRATION_TESTS: true
