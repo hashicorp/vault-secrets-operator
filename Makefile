@@ -389,8 +389,12 @@ ci-ecr-build: ## Build operator binary for ECR (without generating assets).
 
 .PHONY: port-forward
 port-forward:
-	@echo "Starting port forwarding..."
-	@bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n $(K8S_VAULT_NAMESPACE) statefulset/vault 38300:8200; done'
+	@if lsof -Pi :38300 -sTCP:LISTEN -t >/dev/null ; then \
+	    echo "Port 38300 is already in use, please free it up and try again."; \
+	else \
+	    echo "Starting port forwarding..."; \
+	    bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n $(K8S_VAULT_NAMESPACE) statefulset/vault 38300:8200; done'; \
+	fi
 
 # Currently only supports amd64
 .PHONY: ci-ecr-build-push
