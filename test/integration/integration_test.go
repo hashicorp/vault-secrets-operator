@@ -100,6 +100,11 @@ func init() {
 //   - Vault is deployed and accessible
 //
 // See `make setup-integration-test` for manual testing.
+const (
+	vaultToken = "root"
+	vaultAddr  = "http://127.0.0.1:38300"
+)
+
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		clusterName = os.Getenv("KIND_CLUSTER_NAME")
@@ -113,8 +118,8 @@ func TestMain(m *testing.M) {
 		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
 		restConfig = *ctrl.GetConfigOrDie()
 
-		os.Setenv("VAULT_ADDR", "http://127.0.0.1:38300")
-		os.Setenv("VAULT_TOKEN", "root")
+		os.Setenv("VAULT_ADDR", vaultAddr)
+		os.Setenv("VAULT_TOKEN", vaultToken)
 		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
 		os.Exit(m.Run())
 	}

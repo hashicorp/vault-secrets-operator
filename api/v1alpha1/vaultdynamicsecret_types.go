@@ -20,6 +20,8 @@ type VaultDynamicSecretSpec struct {
 	Mount string `json:"mount"`
 	// Role in Vault to get the credentials for.
 	Role string `json:"role"`
+	// Revoke the existing lease when a lease is rotated or on VDS resource deletion.
+	Revoke bool `json:"revoke,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
