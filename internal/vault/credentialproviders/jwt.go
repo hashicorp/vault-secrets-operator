@@ -7,11 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -43,9 +40,9 @@ func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			return err
 		}
 		l.uid = sa.UID
-	} else if l.authObj.Spec.Jwt.TokenSecretKeySelector != nil &&
-		l.authObj.Spec.Jwt.TokenSecretKeySelector.Name != "" &&
-		l.authObj.Spec.Jwt.TokenSecretKeySelector.Key != "" {
+	} else if l.authObj.Spec.Jwt.SecretKeyRef != nil &&
+		l.authObj.Spec.Jwt.SecretKeyRef.Name != "" &&
+		l.authObj.Spec.Jwt.SecretKeyRef.Key != "" {
 		var err error
 		l.tokenSecret, err = l.getTokenSecret(ctx, client)
 		if err != nil {
@@ -75,7 +72,7 @@ func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ct
 func (l *JwtCredentialProvider) getTokenSecret(ctx context.Context, client ctrlclient.Client) (*corev1.Secret, error) {
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
-		Name:      l.authObj.Spec.Jwt.TokenSecretKeySelector.Name,
+		Name:      l.authObj.Spec.Jwt.SecretKeyRef.Name,
 	}
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, key, secret); err != nil {
@@ -95,7 +92,7 @@ func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 			return nil, err
 		}
 
-		tr, err := l.requestSAToken(ctx, client, sa)
+		tr, err := requestSAToken(ctx, client, sa, l.authObj.Spec.Jwt.TokenExpirationSeconds, l.authObj.Spec.Jwt.TokenAudiences)
 		if err != nil {
 			logger.Error(err, "Failed to get service account token")
 			return nil, err
@@ -108,28 +105,14 @@ func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 		}, nil
 	}
 
-	return map[string]interface{}{
-		"role": l.authObj.Spec.Jwt.Role,
-		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.Jwt.TokenSecretKeySelector.Key]),
-	}, nil
-}
-
-// requestSAToken for the provided ServiceAccount.
-func (l *JwtCredentialProvider) requestSAToken(ctx context.Context, client ctrlclient.Client, sa *corev1.ServiceAccount) (*authv1.TokenRequest, error) {
-	tr := &authv1.TokenRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: TokenGenerateName,
-		},
-		Spec: authv1.TokenRequestSpec{
-			ExpirationSeconds: pointer.Int64(l.authObj.Spec.Jwt.TokenExpirationSeconds),
-			Audiences:         l.authObj.Spec.Jwt.TokenAudiences,
-		},
-		Status: authv1.TokenRequestStatus{},
-	}
-
-	if err := client.SubResource("token").Create(ctx, sa, tr); err != nil {
+	var err error
+	l.tokenSecret, err = l.getTokenSecret(ctx, client)
+	if err != nil {
 		return nil, err
 	}
 
-	return tr, nil
+	return map[string]interface{}{
+		"role": l.authObj.Spec.Jwt.Role,
+		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.Jwt.SecretKeyRef.Key]),
+	}, nil
 }
