@@ -17,6 +17,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
+	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
@@ -96,12 +97,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
-			for _, c := range created {
-				// test that the custom resources can be deleted before tf destroy
-				// removes the k8s namespace
-				assert.Nil(t, crdClient.Delete(ctx, c))
-			}
-
 			exportKindLogs(t)
 
 			// Clean up resources with "terraform destroy" at the end of the test.
@@ -244,6 +239,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Role:      outputs.DBRole,
+						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: false,
@@ -275,6 +271,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Role:      outputs.DBRole,
+						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,
@@ -339,10 +336,37 @@ func TestVaultDynamicSecret(t *testing.T) {
 					assertDynamicSecretRotation(t, ctx, crdClient, &vdsObjFinal)
 				})
 			}
-
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
+	// Delete remaining CRDs which were created, and then validate that the leases are all revoked.
+	for _, c := range created {
+		// test that the custom resources can be deleted before tf destroy
+		// removes the k8s namespace
+		assert.Nil(t, crdClient.Delete(ctx, c))
+	}
+	// Get a Vault client so we can validate that all leases have been removed.
+	cfg := api.DefaultConfig()
+	cfg.Address = vaultAddr
+	c, err := api.NewClient(cfg)
+	assert.NoError(t, err)
+	c.SetToken(vaultToken)
+	// Check to be sure all leases have been revoked.
+	retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
+		// ensure that all leases have been revoked.
+		resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/%s", outputs.DBPath, outputs.DBRole))
+		if err != nil {
+			return "", err
+		}
+		if resp == nil {
+			return "", nil
+		}
+		keys := resp.Data["keys"].([]interface{})
+		if len(keys) > 0 {
+			return "", fmt.Errorf("Leases still found: %d", len(keys))
+		}
+		return "", nil
+	})
 }
 
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
