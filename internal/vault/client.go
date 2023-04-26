@@ -23,7 +23,6 @@ import (
 
 type ClientOptions struct {
 	SkipRenewal bool
-	Namespace   string
 }
 
 func defaultClientOptions() *ClientOptions {
