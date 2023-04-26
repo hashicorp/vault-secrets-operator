@@ -44,7 +44,7 @@ resource "kubernetes_secret" "default-sa" {
       "kubernetes.io/service-account.name" = "default"
     }
   }
-  type = "kubernetes.io/service-account-token"
+  type       = "kubernetes.io/service-account-token"
   depends_on = [kubernetes_namespace.tenant-1]
 }
 
