@@ -255,6 +255,10 @@ integration-test:  setup-vault ## Run integration tests for Vault OSS
 integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
 	$(MAKE) integration-test TEST_WITH_HELM=true
 
+.PHONY: integration-test-helm-ent
+integration-test-ent: ## Run integration tests for Vault Enterprise
+	$(MAKE) integration-test TEST_WITH_HELM=true VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
+
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
