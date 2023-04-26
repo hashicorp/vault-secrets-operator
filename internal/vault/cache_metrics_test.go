@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
-
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
 )
 
 func Test_clientCacheCollector_Collect(t *testing.T) {
