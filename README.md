@@ -129,3 +129,19 @@ make ci-build ci-docker-build ci-deploy-kind ci-deploy
 # Run the integration tests (includes Vault deployment)
 make integration-test
 ```
+
+### Integration Tests in EKS
+
+```shell
+# Create an EKS cluster and a ECR repository
+make create-eks
+
+# Build the operator binary, image, and deploy to the ECR repository
+make ci-ecr-build-push 
+
+# Run the integration tests (includes Vault OSS deployment)
+make integration-test-eks
+
+# Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
+make integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
+```
