@@ -111,6 +111,8 @@ VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
+TF_GKE_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/gke
+
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
 GOOS ?= linux
@@ -368,6 +370,37 @@ helm-chart: manifests kustomize helmify
 unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
+##@ GKE
+.PHONY: create-gke
+create-gke: ## Create a new GKE cluster
+	$(TERRAFORM) -chdir=$(TF_GKE_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_GKE_DIR) apply -auto-approve
+	$(GCLOUD) container clusters get-credentials $$($(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name) \
+	--region $$($(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw region)
+
+# Currently only supports amd64
+.PHONY: ci-gar-build-push
+ci-gar-build-push: ## Build the operator image and push it to the GAR repository
+	@$(eval GCP_REGION := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw region))
+	@$(eval GCP_PROJ_ID := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw project_id))
+	@$(eval GCP_GAR_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw gar_name))
+	@$(eval IMAGE_TAG_BASE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJ_ID)/$(GCP_GAR_NAME)/$(BIN_NAME))
+	@$(eval IMG := $(IMAGE_TAG_BASE):$(VERSION))
+	$(MAKE) ci-build ci-docker-build
+	$(GCLOUD) auth configure-docker $(GCP_REGION)-docker.pkg.dev
+	docker push $(IMG)
+
+.PHONY: integration-test-gke
+integration-test-gke: ## Run integration tests in the GKE cluster
+	$(eval CLUSTER_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name))
+	$(eval KIND_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(CLUSTER_NAME) | awk '{print $$2}'))
+	$(MAKE) port-forward &
+	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG)
+
+.PHONY: destroy-gke
+destroy-gke: ## Destroy the GKE cluster
+	$(TERRAFORM) -chdir=$(TF_GKE_DIR) destroy -auto-approve
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -452,6 +485,24 @@ bundle-build: ## Build the bundle image.
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
+.PHONY: gcloud
+GCLOUD = ./bin/gcloud
+gcloud: ## Download gcloud cli locally if necessary.
+ifeq (,$(wildcard $(GCLOUD)))
+ifeq (,$(shell which $(notdir $(GCLOUD)) 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(GCLOUD)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sfSLo $(GCLOUD).tar.gz https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-361.0.0-$${OS}-$${ARCH}.tar.gz ; \
+	tar -xvf $(GCLOUD).tar.gz -C $(dir $(GCLOUD)) --strip-components=1 google-cloud-sdk/bin/gcloud ;\
+	rm -f $(GCLOUD).tar.gz ; \
+	}
+else
+GCLOUD = $(shell which gcloud)
+endif
+endif
 
 .PHONY: opm
 OPM = ./bin/opm
