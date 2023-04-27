@@ -9,4 +9,5 @@ resources:
 - secrets_v1alpha1_vaultauth.yaml
 - secrets_v1alpha1_vaultconnection.yaml
 - secrets_v1alpha1_vaultdynamicsecret.yaml
-#+kubebuilder:scaffold:manifestskustomizesamples
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
