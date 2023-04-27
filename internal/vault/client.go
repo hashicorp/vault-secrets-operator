@@ -196,7 +196,6 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	clone.SetToken(c.client.Token())
 
 	client := &defaultClient{
 		client:             clone,

@@ -276,7 +276,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 
 			logger.Info("Cloned Client",
 				"namespace", ns, "cacheKeyClone", cacheKeyClone)
-			if _, err := m.cache.Add(clone); err != nil {
+			if _, err := m.cacheClient(clone); err != nil {
 				return nil, err
 			}
 
@@ -425,15 +425,11 @@ func (m *cachingClientFactory) cacheClient(c Client) (ClientCacheKey, error) {
 		return "", err
 	}
 
-	if c.IsClone() {
-		return "", fmt.Errorf("cannot cache cloned Clients")
-	}
-
 	if _, err := m.cache.Add(c); err != nil {
 		m.logger.Error(err, "Failed to added to the cache", "client", c)
 		return "", errs
 	}
-	m.logger.V(consts.LogLevelDebug).Info("Cached the client", "cacheKey", cacheKey)
+	m.logger.V(consts.LogLevelDebug).Info("Cached the client", "cacheKey", cacheKey, "isClone", c.IsClone())
 
 	return cacheKey, nil
 }

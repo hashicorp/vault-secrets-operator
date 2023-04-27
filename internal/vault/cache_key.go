@@ -37,8 +37,7 @@ func (k ClientCacheKey) String() string {
 }
 
 func (k ClientCacheKey) IsClone() bool {
-	match := cloneKeyRe.MatchString(k.String())
-	return match
+	return cloneKeyRe.MatchString(k.String())
 }
 
 // ComputeClientCacheKeyFromClient for use in a ClientCache. It is derived from the configuration the Client.
