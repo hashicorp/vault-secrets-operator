@@ -15,52 +15,52 @@ import (
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
-type JwtCredentialProvider struct {
+type JWTCredentialProvider struct {
 	authObj           *secretsv1alpha1.VaultAuth
 	providerNamespace string
 	tokenSecret       *corev1.Secret
 	uid               types.UID
 }
 
-func (l *JwtCredentialProvider) GetNamespace() string {
+func (l *JWTCredentialProvider) GetNamespace() string {
 	return l.providerNamespace
 }
 
-func (l *JwtCredentialProvider) GetUID() types.UID {
+func (l *JWTCredentialProvider) GetUID() types.UID {
 	return l.uid
 }
 
-func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) error {
+func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) error {
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
-	if l.authObj.Spec.Jwt.ServiceAccount != "" {
+	if l.authObj.Spec.JWT.ServiceAccount != "" {
 		sa, err := l.getServiceAccount(ctx, client)
 		if err != nil {
 			return err
 		}
 		l.uid = sa.UID
-	} else if l.authObj.Spec.Jwt.SecretKeyRef != nil &&
-		l.authObj.Spec.Jwt.SecretKeyRef.Name != "" &&
-		l.authObj.Spec.Jwt.SecretKeyRef.Key != "" {
+	} else if l.authObj.Spec.JWT.SecretKeyRef != nil &&
+		l.authObj.Spec.JWT.SecretKeyRef.Name != "" &&
+		l.authObj.Spec.JWT.SecretKeyRef.Key != "" {
 		var err error
-		l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.Jwt.SecretKeyRef.Name)
+		l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretKeyRef.Name)
 		if err != nil {
 			return err
 		}
 		l.uid = l.tokenSecret.ObjectMeta.UID
 	} else {
-		return fmt.Errorf("either serviceAccount or jwt token secret key selector is required to " +
-			"retrieve credentials to authenticate to Vault's jwt authentication backend")
+		return fmt.Errorf("either serviceAccount or JWT token secret key selector is required to " +
+			"retrieve credentials to authenticate to Vault's JWT authentication backend")
 	}
 
 	return nil
 }
 
-func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ctrlclient.Client) (*corev1.ServiceAccount, error) {
+func (l *JWTCredentialProvider) getServiceAccount(ctx context.Context, client ctrlclient.Client) (*corev1.ServiceAccount, error) {
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
-		Name:      l.authObj.Spec.Jwt.ServiceAccount,
+		Name:      l.authObj.Spec.JWT.ServiceAccount,
 	}
 	sa := &corev1.ServiceAccount{}
 	if err := client.Get(ctx, key, sa); err != nil {
@@ -69,37 +69,37 @@ func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ct
 	return sa, nil
 }
 
-func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
+func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
 
-	if l.authObj.Spec.Jwt.ServiceAccount != "" {
+	if l.authObj.Spec.JWT.ServiceAccount != "" {
 		sa, err := l.getServiceAccount(ctx, client)
 		if err != nil {
 			logger.Error(err, "Failed to get service account")
 			return nil, err
 		}
 
-		tr, err := requestSAToken(ctx, client, sa, l.authObj.Spec.Jwt.TokenExpirationSeconds, l.authObj.Spec.Jwt.TokenAudiences)
+		tr, err := requestSAToken(ctx, client, sa, l.authObj.Spec.JWT.TokenExpirationSeconds, l.authObj.Spec.JWT.TokenAudiences)
 		if err != nil {
 			logger.Error(err, "Failed to get service account token")
 			return nil, err
 		}
 
-		// credentials needed for Jwt auth
+		// credentials needed for JWT auth
 		return map[string]interface{}{
-			"role": l.authObj.Spec.Jwt.Role,
+			"role": l.authObj.Spec.JWT.Role,
 			"jwt":  tr.Status.Token,
 		}, nil
 	}
 
 	var err error
-	l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.Jwt.SecretKeyRef.Name)
+	l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretKeyRef.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	return map[string]interface{}{
-		"role": l.authObj.Spec.Jwt.Role,
-		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.Jwt.SecretKeyRef.Key]),
+		"role": l.authObj.Spec.JWT.Role,
+		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.JWT.SecretKeyRef.Key]),
 	}, nil
 }

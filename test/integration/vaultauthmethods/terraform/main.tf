@@ -90,7 +90,7 @@ resource "vault_kubernetes_auth_backend_config" "default" {
 resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
-  role_name                        = local.auth_role
+  role_name                        = var.auth_role
   bound_service_account_names      = ["default"]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
@@ -109,7 +109,7 @@ resource "vault_jwt_auth_backend" "dev" {
 resource "vault_jwt_auth_backend_role" "dev" {
   namespace       = local.namespace
   backend         = "jwt"
-  role_name       = local.auth_role
+  role_name       = var.auth_role
   role_type       = "jwt"
   bound_audiences = ["vault"]
   user_claim      = "sub"

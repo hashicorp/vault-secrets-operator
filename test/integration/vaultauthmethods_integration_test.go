@@ -103,7 +103,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	// Create a jwt auth token secret
 	secretName := "jwt-auth-secret"
 	secretKey := "token"
-	secretObj := createJwtTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName, secretKey)
+	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName, secretKey)
 	created = append(created, secretObj)
 
 	auths := []*secretsv1alpha1.VaultAuth{
@@ -133,7 +133,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Namespace: testVaultNamespace,
 				Method:    "jwt",
 				Mount:     "jwt",
-				Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
+				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
 					Role:           outputs.AuthRole,
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
@@ -149,7 +149,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Namespace: testVaultNamespace,
 				Method:    "jwt",
 				Mount:     "jwt",
-				Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
+				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
 					Role: outputs.AuthRole,
 					SecretKeyRef: &secretsv1alpha1.SecretKeySelector{
 						Name: secretName,
@@ -159,19 +159,17 @@ func TestVaultAuthMethods(t *testing.T) {
 			},
 		},
 	}
-	expectedData := map[string]interface{}{"foo": "bar"}
-
 	// Apply all of the Auth Methods
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)
 	}
-	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 
+	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
 		dest := fmt.Sprintf("kv-%s", a.Name)
-		secretName := fmt.Sprintf("test-secret-%s", a.ObjectMeta.Name)
+		secretName := fmt.Sprintf("test-secret-%s", a.Name)
 		secrets = append(secrets,
 			&secretsv1alpha1.VaultStaticSecret{
 				ObjectMeta: v1.ObjectMeta{
@@ -179,7 +177,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
-					VaultAuthRef: a.ObjectMeta.Name,
+					VaultAuthRef: a.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
 					Type:         consts.KVSecretTypeV2,
@@ -191,7 +189,12 @@ func TestVaultAuthMethods(t *testing.T) {
 				},
 			})
 	}
+	// Add to the created for cleanup
+	for _, secret := range secrets {
+		created = append(created, secret)
+	}
 
+	expectedData := map[string]interface{}{"foo": "bar"}
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
 		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, expectedData)
 		require.NoError(t, err)
@@ -210,13 +213,13 @@ func TestVaultAuthMethods(t *testing.T) {
 			"VaultStaticSecret", secret)
 	}
 
-	for x, tt := range auths {
+	for idx, tt := range auths {
 		t.Run(tt.Spec.Method, func(t *testing.T) {
-			putKV(t, secrets[x])
-			require.Nil(t, crdClient.Create(ctx, secrets[x]))
-			assertSync(t, secrets[x])
+			putKV(t, secrets[idx])
+			require.Nil(t, crdClient.Create(ctx, secrets[idx]))
+			assertSync(t, secrets[idx])
 			t.Cleanup(func() {
-				deleteKV(t, secrets[x])
+				deleteKV(t, secrets[idx])
 			})
 		})
 	}

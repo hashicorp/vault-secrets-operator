@@ -33,8 +33,8 @@ type SecretKeySelector struct {
 	Key string `json:"key"`
 }
 
-// VaultAuthConfigJwt provides VaultAuth configuration options needed for authenticating to Vault.
-type VaultAuthConfigJwt struct {
+// VaultAuthConfigJWT provides VaultAuth configuration options needed for authenticating to Vault.
+type VaultAuthConfigJWT struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
 	// SecretKeyRef to use when referencing the secret containing the JWT token
@@ -70,8 +70,8 @@ type VaultAuthSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// Kubernetes specific auth configuration, requires that the Method be set to kubernetes.
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
-	// Jwt specific auth configuration, requires that the Method be set to jwt.
-	Jwt *VaultAuthConfigJwt `json:"jwt,omitempty"`
+	// JWT specific auth configuration, requires that the Method be set to jwt.
+	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
 	// This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted

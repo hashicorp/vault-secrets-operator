@@ -495,7 +495,7 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 	}
 }
 
-func createJwtTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
+func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
 	t.Helper()
 
 	serviceAccount := &corev1.ServiceAccount{

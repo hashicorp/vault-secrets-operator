@@ -43,7 +43,7 @@ spec:
                   description: Headers to be included in all Vault requests.
                   type: object
                 jwt:
-                  description: Jwt specific auth configuration, requires that the Method
+                  description: JWT specific auth configuration, requires that the Method
                     be set to jwt.
                   properties:
                     audiences:

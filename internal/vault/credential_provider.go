@@ -16,14 +16,14 @@ import (
 
 const (
 	providerMethodKubernetes string = "kubernetes"
-	providerMethodJwt        string = "jwt"
+	providerMethodJWT        string = "jwt"
 )
 
 var (
-	providerMethodsSupported = []string{providerMethodKubernetes, providerMethodJwt}
+	providerMethodsSupported = []string{providerMethodKubernetes, providerMethodJWT}
 
 	_ CredentialProvider = (*credentialproviders.KubernetesCredentialProvider)(nil)
-	_ CredentialProvider = (*credentialproviders.JwtCredentialProvider)(nil)
+	_ CredentialProvider = (*credentialproviders.JWTCredentialProvider)(nil)
 )
 
 type CredentialProvider interface {
@@ -34,9 +34,13 @@ type CredentialProvider interface {
 }
 
 func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) (CredentialProvider, error) {
+	if authObj == nil {
+		return nil, fmt.Errorf("non-nil VaultAuth pointer is required to create a credential provider")
+	}
+
 	switch authObj.Spec.Method {
-	case providerMethodJwt:
-		provider := &credentialproviders.JwtCredentialProvider{}
+	case providerMethodJWT:
+		provider := &credentialproviders.JWTCredentialProvider{}
 		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
 			return nil, err
 		}
