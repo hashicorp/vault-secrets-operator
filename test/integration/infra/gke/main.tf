@@ -29,11 +29,11 @@ resource "google_compute_subnetwork" "subnet" {
 resource "google_container_cluster" "primary" {
   name     = local.cluster_name
   location = var.region
-  
-  node_locations = ["${var.region}-a"]
+
+  node_locations           = ["${var.region}-a"]
   remove_default_node_pool = true
   initial_node_count       = 1
-  
+
   network    = google_compute_network.vpc.name
   subnetwork = google_compute_subnetwork.subnet.name
 
@@ -49,8 +49,8 @@ resource "google_container_node_pool" "primary_nodes" {
   location   = var.region
   node_count = var.gke_num_nodes
   autoscaling {
-      min_node_count = 1
-      max_node_count = 3
+    min_node_count = 1
+    max_node_count = 3
   }
 
   node_config {
@@ -63,11 +63,11 @@ resource "google_container_node_pool" "primary_nodes" {
     labels = {
       env = local.cluster_name
     }
-    
+
     # preemptible  = true
-    machine_type = "n1-standard-1"
+    machine_type    = "n1-standard-1"
     service_account = google_service_account.default.email
-    tags         = ["gke-node", local.cluster_name]
+    tags            = ["gke-node", local.cluster_name]
     metadata = {
       disable-legacy-endpoints = "true"
     }
@@ -90,13 +90,13 @@ resource "google_service_account" "default" {
 
 resource "google_project_iam_member" "default_gar_writer" {
   project = var.project_id
-  role = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.default.email}"
+  role    = "roles/storage.objectViewer"
+  member  = "serviceAccount:${google_service_account.default.email}"
 }
 
 # Give it appropriate permissions to pull the image
 resource "google_project_iam_member" "default_gar_reader" {
   project = var.project_id
-  role = "roles/artifactregistry.reader"
-  member = "serviceAccount:${google_service_account.default.email}"
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.default.email}"
 }

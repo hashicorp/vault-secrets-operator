@@ -12,5 +12,5 @@ variable "project_id" {
 
 variable "region" {
   description = "region"
-  default = "us-west1"
+  default     = "us-west1"
 }
