@@ -44,7 +44,7 @@ func (l *JwtCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 		l.authObj.Spec.Jwt.SecretKeyRef.Name != "" &&
 		l.authObj.Spec.Jwt.SecretKeyRef.Key != "" {
 		var err error
-		l.tokenSecret, err = l.getTokenSecret(ctx, client)
+		l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.Jwt.SecretKeyRef.Name)
 		if err != nil {
 			return err
 		}
@@ -67,19 +67,6 @@ func (l *JwtCredentialProvider) getServiceAccount(ctx context.Context, client ct
 		return nil, err
 	}
 	return sa, nil
-}
-
-func (l *JwtCredentialProvider) getTokenSecret(ctx context.Context, client ctrlclient.Client) (*corev1.Secret, error) {
-	key := ctrlclient.ObjectKey{
-		Namespace: l.providerNamespace,
-		Name:      l.authObj.Spec.Jwt.SecretKeyRef.Name,
-	}
-	secret := &corev1.Secret{}
-	if err := client.Get(ctx, key, secret); err != nil {
-		return nil, err
-	}
-
-	return secret, nil
 }
 
 func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
@@ -106,7 +93,7 @@ func (l *JwtCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	}
 
 	var err error
-	l.tokenSecret, err = l.getTokenSecret(ctx, client)
+	l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.Jwt.SecretKeyRef.Name)
 	if err != nil {
 		return nil, err
 	}

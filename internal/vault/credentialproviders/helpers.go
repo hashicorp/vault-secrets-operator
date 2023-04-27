@@ -32,3 +32,17 @@ func requestSAToken(ctx context.Context, client ctrlclient.Client, sa *corev1.Se
 
 	return tr, nil
 }
+
+// getSecret for the provided namespace and name
+func getSecret(ctx context.Context, client ctrlclient.Client, namespace, name string) (*corev1.Secret, error) {
+	key := ctrlclient.ObjectKey{
+		Namespace: namespace,
+		Name:      name,
+	}
+	secret := &corev1.Secret{}
+	if err := client.Get(ctx, key, secret); err != nil {
+		return nil, err
+	}
+
+	return secret, nil
+}
