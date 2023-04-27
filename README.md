@@ -139,6 +139,9 @@ make create-eks
 # Build the operator binary, image, and deploy to the ECR repository
 make ci-ecr-build-push 
 
-# Run the integration tests (includes Vault deployment)
-make ci-deploy integration-test-eks
+# Run the integration tests (includes Vault OSS deployment)
+make integration-test-eks
+
+# Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
+make integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```

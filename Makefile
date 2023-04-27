@@ -379,14 +379,6 @@ create-eks: ## Create a new EKS cluster
 	$(AWS) eks --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) update-kubeconfig \
     --name $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_name)
 
-.PHONY: ci-ecr-build
-ci-ecr-build: ## Build operator binary for ECR (without generating assets).
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
-		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
-		-a \
-		-o $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME) \
-		.
-
 .PHONY: port-forward
 port-forward:
 	@if lsof -Pi :38300 -sTCP:LISTEN -t >/dev/null ; then \
@@ -400,8 +392,7 @@ port-forward:
 .PHONY: ci-ecr-build-push
 ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
 	@$(eval IMG := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url):$(VERSION))
-	$(MAKE) ci-ecr-build GOOS=$(GOOS) GOARCH=$(GOARCH)
-	docker build -t $(IMG) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version) --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH)
+	$(MAKE) ci-build ci-docker-build IMG=$(IMG)
 	$(AWS) ecr get-login-password --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) | docker login --username AWS --password-stdin $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url)
 	docker push $(IMG)
 
