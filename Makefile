@@ -43,6 +43,9 @@ SKIP_CLEANUP ?=
 # The number of k8s secrets to create in the VaultDynamicSecret's integration tests.
 K8S_DB_SECRET_COUNT ?=
 
+# Cloud test options
+SKIP_AWS_TESTS ?= true
+SKIP_AWS_STATIC_CREDS_TEST ?= true
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -246,12 +249,11 @@ ci-build: ## Build operator binary (without generating assets).
 		-o $(BUILD_DIR)/$(BIN_NAME) \
 		.
 
-# TODO: this does not work on arm64 build machines.
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
 	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
 	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
-	docker build -t $(IMG) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
@@ -273,6 +275,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm

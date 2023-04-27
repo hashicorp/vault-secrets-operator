@@ -56,6 +56,37 @@ type VaultAuthConfigAppRole struct {
 	SecretRef string `json:"secretRef"`
 }
 
+// VaultAuthConfigAWS provides VaultAuth configuration options needed for
+// authenticating to Vault via an AWS AuthMethod
+type VaultAuthConfigAWS struct {
+	// Role to use for authenticating to Vault.
+	Role string `json:"role"`
+	// Region to use for signing the authentication request
+	Region string `json:"region,omitempty"`
+	// HeaderValue - the Vault header value to include in the STS signing request
+	HeaderValue string `json:"headerValue,omitempty"`
+
+	// The role session name to use when creating a webidentity provider
+	SessionName string `json:"sessionName,omitempty"`
+
+	// The STS endpoint to use; if not set will use the default
+	STSEndpoint string `json:"stsEndpoint,omitempty"`
+
+	// The IAM endpoint to use; if not set will use the default
+	IAMEndpoint string `json:"iamEndpoint,omitempty"`
+
+	// AWSCredsRef is the name of a Kubernetes Secret which holds credentials
+	// for AWS. Expected keys include `access_key_id`, `secret_access_key`,
+	// `session_token`
+	AWSCredsRef string `json:"awsCredsRef,omitempty"`
+
+	// IRSAServiceAccount name to use with IAM Roles for Service Accounts
+	// (IRSA), and should be annotated with "eks.amazonaws.com/role-arn". This
+	// ServiceAccount will be checked for other EKS annotations:
+	// eks.amazonaws.com/audience and eks.amazonaws.com/token-expiration
+	IRSAServiceAccount string `json:"irsaServiceAccount,omitempty"`
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
@@ -65,7 +96,7 @@ type VaultAuthSpec struct {
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
-	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole
+	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
@@ -79,6 +110,8 @@ type VaultAuthSpec struct {
 	AppRole *VaultAuthConfigAppRole `json:"appRole,omitempty"`
 	// JWT specific auth configuration, requires that the Method be set to `jwt`.
 	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
+	// AWS specific auth configuration, requires that Method be set to `aws`.
+	AWS *VaultAuthConfigAWS `json:"aws,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
 	// This is done by passing setting the manager's commandline argument

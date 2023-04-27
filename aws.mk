@@ -27,7 +27,6 @@ create-eks: ## Create a new EKS cluster
 import-aws-vars:
 -include $(TF_EKS_STATE_DIR)/outputs.env
 
-# Currently only supports amd64
 .PHONY: build-push
 build-push: import-aws-vars ci-build ci-docker-build ## Build the operator image and push it to the GAR repository
 	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(ECR_URL)
@@ -38,7 +37,9 @@ integration-test-eks: build-push ## Run integration tests in the EKS cluster
 	aws eks --region $(AWS_REGION) update-kubeconfig --name $(EKS_CLUSTER_NAME)
 	$(MAKE) port-forward &
 	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
-	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(EKS_OIDC_URL) VAULT_OIDC_CA=false
+	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(EKS_OIDC_URL) VAULT_OIDC_CA=false \
+	AWS_REGION=$(AWS_REGION) AWS_IRSA_ROLE=$(IRSA_ROLE) AWS_ACCOUNT_ID=$(ACCOUNT_ID) \
+	SKIP_AWS_TESTS=false SKIP_AWS_STATIC_CREDS_TEST=true
 
 .PHONY: destroy-ecr
 destroy-ecr: ## Destroy the ECR repository

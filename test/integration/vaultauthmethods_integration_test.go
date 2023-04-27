@@ -25,6 +25,12 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
+const (
+	envSkipAWS            = "SKIP_AWS_TESTS"
+	envSkipAWSStaticCreds = "SKIP_AWS_STATIC_CREDS_TEST"
+	defaultAWSRegion      = "us-east-2"
+)
+
 func TestVaultAuthMethods(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
@@ -43,6 +49,18 @@ func TestVaultAuthMethods(t *testing.T) {
 		vault_oidc_ca = "true"
 	}
 	appRoleMountPath := "approle"
+	runAWSTests := true
+	if run, _ := runAWS(); !run {
+		runAWSTests = false
+	}
+	runAWSStaticTest := true
+	if run, _ := runAWSStaticCreds(); !run {
+		runAWSStaticTest = false
+	}
+	awsRegion := defaultAWSRegion
+	if r := os.Getenv("AWS_REGION"); r != "" {
+		awsRegion = r
+	}
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -72,6 +90,10 @@ func TestVaultAuthMethods(t *testing.T) {
 			"approle_mount_path":           appRoleMountPath,
 			"vault_oidc_discovery_url":     vault_oidc_discovery_url,
 			"vault_oidc_ca":                vault_oidc_ca,
+			"run_aws_tests":                runAWSTests,
+			"run_aws_static_creds_test":    runAWSStaticTest,
+			"irsa_assumable_role_arn":      os.Getenv("AWS_IRSA_ROLE"),
+			"aws_account_id":               os.Getenv("AWS_ACCOUNT_ID"),
 		},
 	}
 	if operatorImageRepo != "" {
@@ -120,68 +142,157 @@ func TestVaultAuthMethods(t *testing.T) {
 	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName)
 	created = append(created, secretObj)
 
-	auths := []*secretsv1alpha1.VaultAuth{
-		// Create a non-default VaultAuth CR
+	auths := []struct {
+		shouldRun func() (bool, string)
+		vaultAuth *secretsv1alpha1.VaultAuth
+	}{
 		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      "vaultauth-test-kubernetes",
-				Namespace: testK8sNamespace,
-			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
-				Namespace: testVaultNamespace,
-				Method:    "kubernetes",
-				Mount:     "kubernetes",
-				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-					Role:           outputs.AuthRole,
-					ServiceAccount: consts.NameDefault,
-					TokenAudiences: []string{"vault"},
+			shouldRun: alwaysRun,
+			// Create a non-default VaultAuth CR
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-kubernetes",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "kubernetes",
+					Mount:     "kubernetes",
+					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+						Role:           outputs.AuthRole,
+						ServiceAccount: consts.NameDefault,
+						TokenAudiences: []string{"vault"},
+					},
 				},
 			},
 		},
 		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      "vaultauth-test-jwt-serviceaccount",
-				Namespace: testK8sNamespace,
-			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
-				Namespace: testVaultNamespace,
-				Method:    "jwt",
-				Mount:     "jwt",
-				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
-					Role:           outputs.AuthRole,
-					ServiceAccount: consts.NameDefault,
-					TokenAudiences: []string{"vault"},
+			shouldRun: alwaysRun,
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-jwt-serviceaccount",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "jwt",
+					Mount:     "jwt",
+					JWT: &secretsv1alpha1.VaultAuthConfigJWT{
+						Role:           outputs.AuthRole,
+						ServiceAccount: consts.NameDefault,
+						TokenAudiences: []string{"vault"},
+					},
 				},
 			},
 		},
 		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      "vaultauth-test-jwt-secret",
-				Namespace: testK8sNamespace,
-			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
-				Namespace: testVaultNamespace,
-				Method:    "jwt",
-				Mount:     "jwt",
-				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
-					Role:      outputs.AuthRole,
-					SecretRef: secretName,
+			shouldRun: alwaysRun,
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-jwt-secret",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "jwt",
+					Mount:     "jwt",
+					JWT: &secretsv1alpha1.VaultAuthConfigJWT{
+						Role:      outputs.AuthRole,
+						SecretRef: secretName,
+					},
 				},
 			},
 		},
 		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      "vaultauth-test-approle",
-				Namespace: testK8sNamespace,
+			shouldRun: alwaysRun,
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-approle",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					// No VaultConnectionRef - using the default.
+					Namespace: testVaultNamespace,
+					Method:    "appRole",
+					Mount:     appRoleMountPath,
+					AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
+						RoleID:    outputs.AppRoleRoleID,
+						SecretRef: "secretid",
+					},
+				},
 			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
-				// No VaultConnectionRef - using the default.
-				Namespace: testVaultNamespace,
-				Method:    "appRole",
-				Mount:     appRoleMountPath,
-				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
-					RoleID:    outputs.AppRoleRoleID,
-					SecretRef: "secretid",
+		},
+		{
+			shouldRun: runAWS,
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-aws-irsa",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "aws",
+					Mount:     "aws",
+					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+						Role:               outputs.AuthRole + "-aws-irsa",
+						Region:             awsRegion,
+						IRSAServiceAccount: "irsa-test",
+					},
+				},
+			},
+		},
+		{
+			shouldRun: runAWS,
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-aws-node",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "aws",
+					Mount:     "aws",
+					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+						Role:   outputs.AuthRole + "-aws-node",
+						Region: awsRegion,
+					},
+				},
+			},
+		},
+		{
+			shouldRun: runAWS,
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-aws-instance-profile",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "aws",
+					Mount:     "aws",
+					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+						Role:   outputs.AuthRole + "-aws-instance-profile",
+						Region: awsRegion,
+					},
+				},
+			},
+		},
+		{
+			shouldRun: runAWSStaticCreds,
+			vaultAuth: &secretsv1alpha1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-aws-static",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "aws",
+					Mount:     "aws",
+					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+						Role:        outputs.AuthRole + "-aws-static",
+						Region:      awsRegion,
+						AWSCredsRef: "aws-static-creds",
+					},
 				},
 			},
 		},
@@ -190,14 +301,22 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	// Apply all the Auth Methods
 	for _, a := range auths {
-		require.Nil(t, crdClient.Create(ctx, a))
-		created = append(created, a)
+		if run, why := a.shouldRun(); !run {
+			t.Log(why)
+			continue
+		}
+		require.Nil(t, crdClient.Create(ctx, a.vaultAuth))
+		created = append(created, a.vaultAuth)
 	}
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
-		dest := fmt.Sprintf("kv-%s", a.Name)
-		secretName := fmt.Sprintf("test-secret-%s", a.Name)
+		if run, why := a.shouldRun(); !run {
+			t.Log(why)
+			continue
+		}
+		dest := fmt.Sprintf("kv-%s", a.vaultAuth.Name)
+		secretName := fmt.Sprintf("test-secret-%s", a.vaultAuth.Name)
 		secrets = append(secrets,
 			&secretsv1alpha1.VaultStaticSecret{
 				ObjectMeta: v1.ObjectMeta{
@@ -205,7 +324,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
-					VaultAuthRef: a.Name,
+					VaultAuthRef: a.vaultAuth.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
 					Type:         consts.KVSecretTypeV2,
@@ -243,7 +362,10 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 
 	for idx, tt := range auths {
-		t.Run(tt.Spec.Method, func(t *testing.T) {
+		t.Run(tt.vaultAuth.ObjectMeta.Name, func(t *testing.T) {
+			if run, why := tt.shouldRun(); !run {
+				t.Skip(why)
+			}
 			// Create the KV secret in Vault.
 			putKV(t, secrets[idx])
 			// Create the VSS object referencing the object in Vault.
@@ -255,4 +377,35 @@ func TestVaultAuthMethods(t *testing.T) {
 			})
 		})
 	}
+}
+
+func alwaysRun() (bool, string) { return true, "" }
+
+// checks whether or not to run the aws tests
+func runAWS() (bool, string) {
+	if v := os.Getenv(envSkipAWS); v == "true" {
+		return false, envSkipAWS + " is set to 'true'"
+	}
+	return true, ""
+}
+
+// checks whether or not to run the static creds test
+func runAWSStaticCreds() (bool, string) {
+	if run, why := runAWS(); !run {
+		return run, why
+	}
+	if v := os.Getenv(envSkipAWSStaticCreds); v == "true" {
+		return false, envSkipAWSStaticCreds + " is set to 'true'"
+	}
+	tfVars := []string{
+		"TF_VAR_aws_access_key_id",
+		"TF_VAR_aws_secret_access_key",
+		"TF_VAR_aws_static_creds_role",
+	}
+	for _, tfv := range tfVars {
+		if v := os.Getenv(tfv); v == "" {
+			return false, tfv + " not set"
+		}
+	}
+	return true, ""
 }

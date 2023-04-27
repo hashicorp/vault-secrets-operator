@@ -169,6 +169,76 @@ path "auth/${vault_auth_backend.approle.path}/login" {
 EOT
 }
 
+# aws auth config
+resource "kubernetes_service_account" "irsa_assumable" {
+  metadata {
+    name      = "irsa-test"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    annotations = {
+      "eks.amazonaws.com/role-arn" : "${var.irsa_assumable_role_arn}",
+    }
+  }
+}
+
+resource "vault_auth_backend" "aws" {
+  type = "aws"
+  path = "aws"
+}
+
+resource "vault_aws_auth_backend_client" "aws" {
+  backend      = vault_auth_backend.aws.path
+  sts_region   = var.aws_region
+  sts_endpoint = "https://sts.${var.aws_region}.amazonaws.com"
+}
+
+resource "vault_aws_auth_backend_role" "aws-irsa" {
+  backend                  = vault_auth_backend.aws.path
+  role                     = "${var.auth_role}-aws-irsa"
+  auth_type                = "iam"
+  bound_iam_principal_arns = ["${var.irsa_assumable_role_arn}"]
+  token_policies           = [vault_policy.default.name]
+}
+
+resource "vault_aws_auth_backend_role" "aws-node" {
+  backend                  = vault_auth_backend.aws.path
+  role                     = "${var.auth_role}-aws-node"
+  auth_type                = "iam"
+  bound_iam_principal_arns = ["arn:aws:iam::${var.aws_account_id}:role/eks-nodes-eks-*"]
+  token_policies           = [vault_policy.default.name]
+}
+
+resource "vault_aws_auth_backend_role" "aws-instance-profile" {
+  backend                         = vault_auth_backend.aws.path
+  role                            = "${var.auth_role}-aws-instance-profile"
+  auth_type                       = "iam"
+  inferred_entity_type            = "ec2_instance"
+  inferred_aws_region             = var.aws_region
+  bound_account_ids               = ["${var.aws_account_id}"]
+  bound_iam_instance_profile_arns = ["arn:aws:iam::${var.aws_account_id}:instance-profile/eks-*"]
+  token_policies                  = [vault_policy.default.name]
+}
+
+resource "vault_aws_auth_backend_role" "aws-static" {
+  count                    = var.run_aws_static_creds_test ? 1 : 0
+  backend                  = vault_auth_backend.aws.path
+  role                     = "${var.auth_role}-aws-static"
+  auth_type                = "iam"
+  bound_iam_principal_arns = ["${var.aws_static_creds_role}"]
+  token_policies           = [vault_policy.default.name]
+}
+
+resource "kubernetes_secret" "static-creds" {
+  count = var.run_aws_static_creds_test ? 1 : 0
+  metadata {
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    name      = "aws-static-creds"
+  }
+  data = {
+    "access_key_id"     = "${var.aws_access_key_id}"
+    "secret_access_key" = "${var.aws_secret_access_key}"
+  }
+}
+
 # VSO Helm chart
 resource "helm_release" "vault-secrets-operator" {
   name             = "test"

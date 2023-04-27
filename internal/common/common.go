@@ -5,6 +5,7 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -23,8 +24,8 @@ import (
 
 var (
 	// OperatorNamespace of the current operator instance, set in init()
-	OperatorNamespace     string
-	InvalidObjectKeyError = fmt.Errorf("invalid objectKey")
+	OperatorNamespace   string
+	ErrInvalidObjectKey = errors.New("invalid objectKey")
 )
 
 func init() {
@@ -252,7 +253,7 @@ func GetVaultNamespace(obj client.Object) (string, error) {
 
 func ValidateObjectKey(key ctrlclient.ObjectKey) error {
 	if key.Name == "" || key.Namespace == "" {
-		return InvalidObjectKeyError
+		return ErrInvalidObjectKey
 	}
 	return nil
 }
