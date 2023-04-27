@@ -237,6 +237,8 @@ jobs:
         run: |
           make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Helm
+        # TODO: When the VDS integration test supports Helm swap the matrix filter so this test runs the full matrix.
+        if: ${{ matrix.vault-version == '1.13.1' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
