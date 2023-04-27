@@ -228,8 +228,8 @@ jobs:
         run: |
           make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Kustomize
-        # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.vault-version == '1.13.1' }}
+        # TODO: When the VDS integration test supports Helm we test against one version of (ENT) Vault like the other tests.
+        # if: ${{ matrix.vault-version == '1.13.1' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
