@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-
-	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 const (
@@ -211,9 +211,8 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 				c = &defaultClient{
 					authObj: tt.authObj,
 					connObj: tt.connObj,
-					credentialProvider: &kubernetesCredentialProvider{
-						uid: tt.providerUID,
-					},
+					credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
+						tt.providerUID),
 				}
 			}
 

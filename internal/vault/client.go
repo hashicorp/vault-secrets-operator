@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
+
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/hashicorp/vault/api"
@@ -139,7 +141,7 @@ type Client interface {
 	CheckExpiry(int64) (bool, error)
 	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
 	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
-	GetCredentialProvider() CredentialProvider
+	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
 	KVv1(string) (*api.KVv1, error)
 	KVv2(string) (*api.KVv2, error)
@@ -156,14 +158,14 @@ type defaultClient struct {
 	skipRenewal        bool
 	lastRenewal        int64
 	targetNamespace    string
-	credentialProvider CredentialProvider
+	credentialProvider credentials.CredentialProvider
 	watcher            *api.LifetimeWatcher
 	lastWatcherErr     error
 	once               sync.Once
 	mu                 sync.RWMutex
 }
 
-func (c *defaultClient) GetCredentialProvider() CredentialProvider {
+func (c *defaultClient) GetCredentialProvider() credentials.CredentialProvider {
 	return c.credentialProvider
 }
 
@@ -471,7 +473,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, auth
 		return err
 	}
 
-	credentialProvider, err := NewCredentialProvider(ctx, client, authObj, providerNamespace)
+	credentialProvider, err := credentials.NewCredentialProvider(ctx, client, authObj, providerNamespace)
 	if err != nil {
 		return err
 	}
