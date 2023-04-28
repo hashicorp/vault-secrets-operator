@@ -29,7 +29,7 @@ spec:
   jwt:
     role: {{ .Values.defaultAuthMethod.jwt.role }}
     {{- if and .Values.defaultAuthMethod.jwt.secretName .Values.defaultAuthMethod.jwt.secretKey }}
-    tokenSecretKeySelector:
+    secretKeyRef:
         name: {{ .Values.defaultAuthMethod.jwt.secretName }}
         key: {{ .Values.defaultAuthMethod.jwt.secretKey }}
     {{- else if .Values.defaultAuthMethod.jwt.serviceAccount }}

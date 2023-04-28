@@ -50,21 +50,17 @@ spec:
                       to Vault.
                     properties:
                       key:
-                        description: The key of the secret to select from.  Must be
-                          a valid secret key.
+                        description: Key of the secret to select from. Must be a valid
+                          secret key.
                         type: string
                       name:
-                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                          TODO: Add other useful fields. apiVersion, kind, uid?'
+                        description: Name of the secret in the referring object's
+                          namespace to select from.
                         type: string
-                      optional:
-                        description: Specify whether the Secret or its key must be
-                          defined
-                        type: boolean
                     required:
                     - key
+                    - name
                     type: object
-                    x-kubernetes-map-type: atomic
                 required:
                 - roleid
                 - secretKeyRef
@@ -75,7 +71,7 @@ spec:
                 description: Headers to be included in all Vault requests.
                 type: object
               jwt:
-                description: Jwt specific auth configuration, requires that the Method
+                description: JWT specific auth configuration, requires that the Method
                   be set to jwt.
                 properties:
                   audiences:
@@ -86,6 +82,23 @@ spec:
                   role:
                     description: Role to use for authenticating to Vault.
                     type: string
+                  secretKeyRef:
+                    description: SecretKeyRef to use when referencing the secret containing
+                      the JWT token to authenticate to Vault's JWT authentication
+                      backend.
+                    properties:
+                      key:
+                        description: Key of the secret to select from. Must be a valid
+                          secret key.
+                        type: string
+                      name:
+                        description: Name of the secret in the referring object's
+                          namespace to select from.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
                   serviceAccount:
                     description: ServiceAccount to use when creating a ServiceAccount
                       token to authenticate to Vault's JWT authentication backend.
@@ -97,27 +110,6 @@ spec:
                     format: int64
                     minimum: 600
                     type: integer
-                  tokenSecretKeySelector:
-                    description: TokenSecretKeySelector to use when referencing the
-                      secret containing the JWT token to authenticate to Vault's JWT
-                      authentication backend.
-                    properties:
-                      key:
-                        description: The key of the secret to select from.  Must be
-                          a valid secret key.
-                        type: string
-                      name:
-                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                          TODO: Add other useful fields. apiVersion, kind, uid?'
-                        type: string
-                      optional:
-                        description: Specify whether the Secret or its key must be
-                          defined
-                        type: boolean
-                    required:
-                    - key
-                    type: object
-                    x-kubernetes-map-type: atomic
                 required:
                 - role
                 type: object

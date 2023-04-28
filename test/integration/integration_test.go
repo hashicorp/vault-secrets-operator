@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -102,6 +101,11 @@ func init() {
 //   - Vault is deployed and accessible
 //
 // See `make setup-integration-test` for manual testing.
+const (
+	vaultToken = "root"
+	vaultAddr  = "http://127.0.0.1:38300"
+)
+
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		clusterName = os.Getenv("KIND_CLUSTER_NAME")
@@ -115,8 +119,8 @@ func TestMain(m *testing.M) {
 		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
 		restConfig = *ctrl.GetConfigOrDie()
 
-		os.Setenv("VAULT_ADDR", "http://127.0.0.1:38300")
-		os.Setenv("VAULT_TOKEN", "root")
+		os.Setenv("VAULT_ADDR", vaultAddr)
+		os.Setenv("VAULT_TOKEN", vaultToken)
 		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
 		os.Exit(m.Run())
 	}
@@ -492,22 +496,7 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 	}
 }
 
-func getK8sCaPem(t *testing.T, k8sOpts *k8s.KubectlOptions) string {
-	t.Helper()
-	out, err := retry.DoWithRetryE(t, "viewK8sCaCert", 5, time.Second, func() (string, error) {
-		return k8s.RunKubectlAndGetOutputE(t, k8sOpts,
-			"config", "view", "--raw",
-			"--minify", "--flatten", "-o", "jsonpath={.clusters[].cluster.certificate-authority-data}")
-	})
-	assert.NoError(t, err)
-
-	decoded, err := base64.StdEncoding.DecodeString(out)
-	assert.NoError(t, err)
-
-	return string(decoded)
-}
-
-func createJwtTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
+func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
 	t.Helper()
 
 	serviceAccount := &corev1.ServiceAccount{

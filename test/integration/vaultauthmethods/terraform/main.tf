@@ -36,6 +36,18 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
+resource "kubernetes_secret" "default-sa" {
+  metadata {
+    namespace = var.k8s_test_namespace
+    name      = "default-sa-secret"
+    annotations = {
+      "kubernetes.io/service-account.name" = "default"
+    }
+  }
+  type       = "kubernetes.io/service-account-token"
+  depends_on = [kubernetes_namespace.tenant-1]
+}
+
 provider "vault" {
   # Configuration options
 }
@@ -78,7 +90,7 @@ resource "vault_kubernetes_auth_backend_config" "default" {
 resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
-  role_name                        = local.auth_role
+  role_name                        = var.auth_role
   bound_service_account_names      = ["default"]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
@@ -91,17 +103,18 @@ resource "vault_jwt_auth_backend" "dev" {
   namespace             = local.namespace
   path                  = "jwt"
   oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
-  oidc_discovery_ca_pem = var.k8s_ca_pem
+  oidc_discovery_ca_pem = nonsensitive(kubernetes_secret.default-sa.data["ca.crt"])
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
   namespace       = local.namespace
   backend         = "jwt"
-  role_name       = local.auth_role
+  role_name       = var.auth_role
   role_type       = "jwt"
   bound_audiences = ["vault"]
   user_claim      = "sub"
   token_policies  = [vault_policy.default.name]
+  depends_on      = [vault_jwt_auth_backend.dev]
 }
 
 # Create the Vault Auth Backend for AppRole

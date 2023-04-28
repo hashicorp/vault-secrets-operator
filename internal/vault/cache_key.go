@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
+
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -60,7 +62,7 @@ func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client,
 		return "", err
 	}
 
-	provider, err := NewCredentialProvider(ctx, client, authObj, target.Namespace)
+	provider, err := credentials.NewCredentialProvider(ctx, client, authObj, target.Namespace)
 	if err != nil {
 		return "", err
 	}

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
-
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 func Test_clientCacheCollector_Collect(t *testing.T) {
@@ -62,7 +61,7 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 							Generation: 0,
 						},
 					},
-					credentialProvider: credentialproviders.NewKubernetesCredentialProvider(nil, "",
+					credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
 						types.UID(uuid.New().String())),
 				})
 				require.NoError(t, err)
@@ -174,7 +173,7 @@ func Test_clientCache_Metrics(t *testing.T) {
 							Generation: 0,
 						},
 					},
-					credentialProvider: credentialproviders.NewKubernetesCredentialProvider(nil, "",
+					credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
 						types.UID(uuid.New().String())),
 				}
 

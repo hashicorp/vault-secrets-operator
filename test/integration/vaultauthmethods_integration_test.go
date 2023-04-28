@@ -14,12 +14,10 @@ import (
 	"time"
 
 	"github.com/gruntwork-io/terratest/modules/files"
-	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -48,12 +46,6 @@ func TestVaultAuthMethods(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	// fetch k8s ca cert using go client
-	k8sCaPem := getK8sCaPem(t, &k8s.KubectlOptions{
-		ContextName: k8sConfigContext,
-		Namespace:   testVaultNamespace,
-	})
-
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	terraformOptions := &terraform.Options{
@@ -65,7 +57,6 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
-			"k8s_ca_pem":                   k8sCaPem,
 		},
 	}
 	if operatorImageRepo != "" {
@@ -112,7 +103,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	// Create a jwt auth token secret
 	secretName := "jwt-auth-secret"
 	secretKey := "token"
-	secretObj := createJwtTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName, secretKey)
+	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName, secretKey)
 	created = append(created, secretObj)
 
 	auths := []*secretsv1alpha1.VaultAuth{
@@ -142,7 +133,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Namespace: testVaultNamespace,
 				Method:    "jwt",
 				Mount:     "jwt",
-				Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
+				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
 					Role:           outputs.AuthRole,
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
@@ -158,11 +149,11 @@ func TestVaultAuthMethods(t *testing.T) {
 				Namespace: testVaultNamespace,
 				Method:    "jwt",
 				Mount:     "jwt",
-				Jwt: &secretsv1alpha1.VaultAuthConfigJwt{
+				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
 					Role: outputs.AuthRole,
-					TokenSecretKeySelector: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-						Key:                  secretKey,
+					SecretKeyRef: &secretsv1alpha1.SecretKeySelector{
+						Name: secretName,
+						Key:  secretKey,
 					},
 				},
 			},
@@ -179,12 +170,9 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "approle",
 				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
 					RoleID: outputs.AppRoleRoleID,
-					SecretKeyRef: &corev1.SecretKeySelector{
-						// secretid is deployed by tf
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "secretid",
-						},
-						Key: "id",
+					SecretKeyRef: &secretsv1alpha1.SecretKeySelector{
+						Name: "secretid",
+						Key:  "id",
 					},
 				},
 			},
@@ -198,11 +186,10 @@ func TestVaultAuthMethods(t *testing.T) {
 		created = append(created, a)
 	}
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
-
 	// create the VSS secrets
 	for _, a := range auths {
 		dest := fmt.Sprintf("kv-%s", a.Name)
-		secretName := fmt.Sprintf("test-secret-%s", a.ObjectMeta.Name)
+		secretName := fmt.Sprintf("test-secret-%s", a.Name)
 		secrets = append(secrets,
 			&secretsv1alpha1.VaultStaticSecret{
 				ObjectMeta: v1.ObjectMeta{
@@ -210,7 +197,8 @@ func TestVaultAuthMethods(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
-					VaultAuthRef: a.ObjectMeta.Name,
+					//					VaultAuthRef: a.ObjectMeta.Name,
+					VaultAuthRef: a.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
 					Type:         consts.KVSecretTypeV2,
@@ -221,6 +209,10 @@ func TestVaultAuthMethods(t *testing.T) {
 					},
 				},
 			})
+	}
+	// Add to the created for cleanup
+	for _, secret := range secrets {
+		created = append(created, secret)
 	}
 
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {

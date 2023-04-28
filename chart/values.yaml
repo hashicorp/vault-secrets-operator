@@ -284,7 +284,6 @@ defaultAuthMethod:
     # @type: string
     secretKey: ""
 
-
   # Params to use when authenticating to Vault
   # params: |
   #   "vault-something1": "foo"
