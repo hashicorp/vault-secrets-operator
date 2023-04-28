@@ -66,12 +66,17 @@ spec:
         {{- if .Values.controller.manager.clientCache.cacheSize }}
         - --client-cache-size={{ .Values.controller.manager.clientCache.cacheSize }}
         {{- end }}
+        {{ - if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
+        - --vault-token-revocation-required
+        {{ - end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles-vds={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
         command:
         - /vault-secrets-operator
         env:
+        - name: OPERATOR_DEPLOYMENT_NAME
+          value: {{ include "chart.fullname" . }}-controller-manager
         - name: OPERATOR_POD_NAME
           valueFrom:
             fieldRef:
@@ -105,7 +110,7 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds : {{ .Values.controller.terminationGracePeriodSeconds }}
       volumes:
       - downwardAPI:
           items:
@@ -140,6 +145,12 @@ spec:
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
         - --finalizer-cleanup=true
+        {{ - if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
+        - --vault-token-revocation-required
+        {{ - end }}
         command:
         - /vault-secrets-operator
+        env:
+        - name: OPERATOR_DEPLOYMENT_NAME
+          value: {{ include "chart.fullname" . }}-controller-manager
       restartPolicy: Never

@@ -23,6 +23,7 @@ type ClientCache interface {
 	Len() int
 	Prune(filterFunc ClientCachePruneFilterFunc) []ClientCacheKey
 	Contains(key ClientCacheKey) bool
+	Keys() []ClientCacheKey
 }
 
 var _ ClientCache = (*clientCache)(nil)
@@ -131,6 +132,14 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCache
 	}
 
 	return pruned
+}
+
+func (c *clientCache) Keys() []ClientCacheKey {
+	var keys []ClientCacheKey
+	for _, k := range c.cache.Keys() {
+		keys = append(keys, k.(ClientCacheKey))
+	}
+	return keys
 }
 
 func (c *clientCache) remove(key ClientCacheKey, client Client) bool {

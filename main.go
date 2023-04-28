@@ -28,6 +28,8 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
@@ -35,9 +37,9 @@ import (
 )
 
 var (
-	scheme              = runtime.NewScheme()
-	setupLog            = ctrl.Log.WithName("setup")
-	finalizerCleanupLog = ctrl.Log.WithName("cleanup")
+	scheme     = runtime.NewScheme()
+	setupLog   = ctrl.Log.WithName("setup")
+	cleanupLog = ctrl.Log.WithName("cleanup")
 )
 
 func init() {
@@ -62,6 +64,9 @@ func main() {
 	var printVersion bool
 	var outputFormat string
 	var finalizerCleanup bool
+	var vaultTokenRevocationRequired bool
+
+	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
 	flag.StringVar(&outputFormat, "output", "", "Output format for the operator version information (yaml or json)")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -78,6 +83,8 @@ func main() {
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
 	flag.BoolVar(&finalizerCleanup, "finalizer-cleanup", false, "Remove finalizers from all CRs in preparation for shutdown.")
+	flag.BoolVar(&vaultTokenRevocationRequired, "vault-token-revocation-required", false,
+		"Revoke all cached Vault client tokens for shutdown.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -118,24 +125,36 @@ func main() {
 
 	config := ctrl.GetConfigOrDie()
 
+	defaultClient, err := client.New(config, client.Options{
+		Scheme: scheme,
+	})
+	if err != nil {
+		setupLog.Error(err, "Failed to instantiate a default Client")
+		os.Exit(1)
+	}
+
+	// These flags are passed by the pre-delete hook on helm uninstall.
+	// cleanUp := finalizerCleanup || vaultClientCacheCleanup
+
 	// This flag is passed by the pre-delete hook on helm uninstall.
 	if finalizerCleanup {
-		finalizerCleanupLog.Info("commencing cleanup of finalizers")
-		var finalizerCleanupClient client.Client
-		finalizerCleanupClient, err := client.New(config, client.Options{
-			Scheme: scheme,
-		})
+		cleanupLog.Info("commencing cleanup of finalizers")
+		duration := time.Now().Add(time.Second * 60)
+		shutdownCtx, cancel := context.WithDeadline(context.Background(), duration)
 
-		d := time.Now().Add(time.Second * 60)
-		shutdownCtx, cancel := context.WithDeadline(context.Background(), d)
+		if vaultTokenRevocationRequired {
+			helpers.SetDeletionTimestampReceived(shutdownCtx, defaultClient)
+			helpers.AwaitManagerAcked(shutdownCtx, cleanupLog, defaultClient)
+		}
+
 		// Even though ctx will be expired, it is good practice to call its
 		// cancellation function in any case. Failure to do so may keep the
 		// context and its parent alive longer than necessary.
 		defer cancel()
 
-		finalizerCleanupLog.Info("deleting finalizers")
-		if err = controllers.RemoveAllFinalizers(shutdownCtx, finalizerCleanupClient, finalizerCleanupLog); err != nil {
-			finalizerCleanupLog.Error(err, "unable to remove finalizers")
+		cleanupLog.Info("deleting finalizers")
+		if err = controllers.RemoveAllFinalizers(shutdownCtx, defaultClient, cleanupLog); err != nil {
+			cleanupLog.Error(err, "unable to remove finalizers")
 			os.Exit(1)
 		}
 		return
@@ -164,8 +183,14 @@ func main() {
 		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
-
-	ctx := ctrl.SetupSignalHandler()
+	handlerCtx := ctrl.SetupSignalHandler()
+	var (
+		ctx    = handlerCtx
+		cancel context.CancelFunc
+	)
+	if vaultTokenRevocationRequired {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
 
 	collectMetrics := metricsAddr != ""
 	if collectMetrics {
@@ -174,6 +199,7 @@ func main() {
 		)
 		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
 	}
+
 	var clientFactory vclient.CachingClientFactory
 	{
 		switch clientCachePersistenceModel {
@@ -190,14 +216,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		defaultClient, err := client.New(config, client.Options{
-			Scheme: mgr.GetScheme(),
-		})
-		if err != nil {
-			setupLog.Error(err, "Failed to instantiate a default Client")
-			os.Exit(1)
-		}
-
+		cfc.TokenRevocationRequired = vaultTokenRevocationRequired
 		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
@@ -205,6 +224,29 @@ func main() {
 			setupLog.Error(err, "Failed to setup the Vault ClientFactory")
 			os.Exit(1)
 		}
+	}
+
+	if vaultTokenRevocationRequired {
+		ctx, cancel = context.WithCancel(context.Background())
+
+		if common.OperatorDeploymentUID, err = common.GetOperatorDeploymentUID(defaultClient); err != nil {
+			setupLog.Error(err, "failed to get operator deployment uid")
+			os.Exit(1)
+		}
+
+		if err = helpers.CreateDeploymentStatusConfigMap(ctx, defaultClient); err != nil {
+			setupLog.Error(err, fmt.Sprintf("Failed to create %s ConfigMap", helpers.DeploymentStatusConfigMapName))
+			os.Exit(1)
+		}
+
+		go helpers.AwaitDeletionTimestampReceived(ctx, setupLog, defaultClient)
+		go func() {
+			<-handlerCtx.Done()
+
+			clientFactory.Disable(ctx)
+			clientFactory.RevokeAll(ctx)
+			cancel()
+		}()
 	}
 
 	if err = (&controllers.VaultStaticSecretReconciler{
@@ -269,7 +311,6 @@ func main() {
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
 	)
-
 	mgr.GetCache()
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")

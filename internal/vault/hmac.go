@@ -15,6 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 const (
@@ -51,6 +53,7 @@ func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey c
 				"app.kubernetes.io/managed-by": "hashicorp-vso",
 				"app.kubernetes.io/component":  "client-cache-storage-verification",
 			},
+			OwnerReferences: []metav1.OwnerReference{common.GetOperatorDeploymentOwnerReference()},
 		},
 		Immutable: pointer.Bool(true),
 		Data: map[string][]byte{

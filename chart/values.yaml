@@ -105,6 +105,11 @@ controller:
         # @type: string
         transitMount: ""
 
+      # Toggles the revocation of Vault client tokens upon the operator deployment deletion
+      # Clients from in-memory cache will be revoked. If persistence model is in use, persisted tokens will be revoked.
+      # @type: boolean
+      vaultTokenRevocationRequired: false
+
     # Defines the maximum number of concurrent reconciles by the controller.
     # NOTE: Currently this is only used by the reconciliation logic of dynamic secrets.
     #
@@ -145,6 +150,10 @@ controller:
   # Configures the environment variable KUBERNETES_CLUSTER_DOMAIN used by KubeDNS.
   # @type: string
   kubernetesClusterDomain: cluster.local
+
+  # Optional duration in seconds the pod needs to terminate gracefully.
+  # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
+  terminationGracePeriodSeconds: 10
 
 
 # Configure the metrics service ports used by the metrics service.

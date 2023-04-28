@@ -31,6 +31,12 @@ const (
 	NamePrefixVCC = "vso-cc-"
 )
 
+type ClientFactoryDisabledError struct{}
+
+func (e *ClientFactoryDisabledError) Error() string {
+	return "ClientFactory disabled due to operator deployment deletion"
+}
+
 type ClientFactory interface {
 	Get(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 }
@@ -48,16 +54,20 @@ type CachingClientFactory interface {
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
+	Disable(context.Context)
+	RevokeAll(context.Context)
 }
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
 
 type cachingClientFactory struct {
-	cache              ClientCache
-	storage            ClientCacheStorage
-	recorder           record.EventRecorder
-	persist            bool
-	encryptionRequired bool
+	cache                   ClientCache
+	storage                 ClientCacheStorage
+	recorder                record.EventRecorder
+	persist                 bool
+	encryptionRequired      bool
+	tokenRevocationRequired bool
+	disable                 bool
 	// clientCacheKeyEncrypt is a member of the ClientCache, it is instantiated whenever the ClientCacheStorage has enforceEncryption enabled.
 	clientCacheKeyEncrypt  ClientCacheKey
 	logger                 logr.Logger
@@ -72,6 +82,10 @@ type cachingClientFactory struct {
 // Pruning continues on error, so there is a possibility that only a subset of the requested Secrets will be removed
 // from the ClientCacheStorage.
 func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, req CachingClientFactoryPruneRequest) (int, error) {
+	if m.isDisabled() {
+		return 0, &ClientFactoryDisabledError{}
+	}
+
 	var filter ClientCachePruneFilterFunc
 	switch cur := obj.(type) {
 	case *secretsv1alpha1.VaultAuth:
@@ -223,6 +237,81 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 	return errs
 }
 
+// RevokeAll will attempt to revoke all Client tokens. If storage is not enabled, tokens in cache will be revoked.
+// Otherwise, revocation will take place in both cache and storage.
+// Normally this should be called upon operator deployment deletion if client cache cleanup is required
+func (m *cachingClientFactory) RevokeAll(ctx context.Context, client ctrlclient.Client) {
+	if !m.tokenRevocationRequired {
+		m.logger.Error(nil, "Cached client cleanup must be required to revoke all client tokens")
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// revoke in-memory cached clients
+	for _, k := range m.cache.Keys() {
+		logger := m.logger.WithValues("cacheKey", k)
+		logger.Info("Revoking cached client")
+		c, ok := m.cache.Get(k)
+		if !ok {
+			logger.Error(nil, "Failed to get cached client")
+			continue
+		}
+
+		if _, err := c.Write(ctx, "/auth/token/revoke-self", nil); err != nil {
+			logger.Error(err, "Failed to revoke cached client")
+		} else {
+			logger.Info("Successfully revoked cached client")
+		}
+	}
+
+	// revoke tokens in storage
+	if !m.persist || m.storage == nil {
+		return
+	}
+
+	req, err := m.restoreAllRequest(ctx, client)
+	if err != nil {
+		m.logger.Error(err, "Failed to revoke cached client")
+	}
+
+	entries, err := m.storage.RestoreAll(ctx, client, req)
+	if err != nil {
+		m.logger.Error(err, "RestoreAll failed from storage")
+	}
+
+	if entries == nil {
+		return
+	}
+
+	m.logger.Info("Restoring and self-revoking all Clients in storage", "numEntries", len(entries))
+	for _, entry := range entries {
+		logger := m.logger.WithValues("cacheKey", entry.CacheKey)
+		logger.Info("Restoring client in storage")
+		if c, err := m.restoreClient(ctx, client, entry); err != nil {
+			logger.Error(err, "Restore failed", "cacheKey", entry.CacheKey)
+		} else if _, err = c.Write(ctx, "/auth/token/revoke-self", nil); err != nil {
+			logger.Error(err, "Failed to self-revoke client from storage")
+		} else {
+			logger.Info("Successfully self-revoked client from storage")
+		}
+	}
+}
+
+// Disable will disable client cache, "blocking" ClientFactory interface calls
+func (m *cachingClientFactory) Disable(ctx context.Context) {
+	m.mu.Lock()
+	m.disable = true
+	m.mu.Unlock()
+	m.logger.Info("Disabled ClientFactory")
+}
+
+func (m *cachingClientFactory) isDisabled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.disable
+}
+
 // Get is meant to be called for all resources that require access to Vault.
 // It will attempt to fetch a Client from the in-memory cache for the provided Object.
 // On a cache miss, an attempt at restoration from storage will be made, if a restoration attempt fails,
@@ -241,6 +330,11 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 			time.Since(startTS).Seconds(),
 		)
 	}()
+
+	if m.isDisabled() {
+		errs = errors.Join(&ClientFactoryDisabledError{})
+		return nil, errs
+	}
 
 	cacheKey, err := ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
@@ -359,6 +453,10 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 		authObj := c.GetVaultAuthObj()
 		req.EncryptionClient = c
 		req.EncryptionVaultAuth = authObj
+	}
+
+	if m.tokenRevocationRequired {
+		req.OwnerReferences = append(req.OwnerReferences, common.GetOperatorDeploymentOwnerReference())
 	}
 
 	if _, err := m.storage.Store(ctx, client, req); err != nil {
@@ -517,10 +615,11 @@ func (c *cachingClientFactory) incrementRequestCounter(operation string, err err
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
 	factory := &cachingClientFactory{
-		storage:            cacheStorage,
-		recorder:           config.Recorder,
-		persist:            config.Persist,
-		encryptionRequired: config.StorageConfig.EnforceEncryption,
+		storage:                 cacheStorage,
+		recorder:                config.Recorder,
+		persist:                 config.Persist,
+		tokenRevocationRequired: config.TokenRevocationRequired,
+		encryptionRequired:      config.StorageConfig.EnforceEncryption,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -575,6 +674,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 
 // CachingClientFactoryConfig provides the configuration for a CachingClientFactory instance.
 type CachingClientFactoryConfig struct {
+	TokenRevocationRequired   bool
 	Persist                   bool
 	StorageConfig             *ClientCacheStorageConfig
 	ClientCacheSize           int
