@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -55,13 +54,10 @@ func (l *ApproleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 
 func (l *ApproleCredentialProvider) getSecretID(ctx context.Context, client ctrlclient.Client) (string, error) {
 	logger := log.FromContext(ctx)
-	key := ctrlclient.ObjectKey{
-		Namespace: l.authObj.Namespace,
-		Name:      l.authObj.Spec.AppRole.SecretKeyRef.Name,
-	}
-	secret := &corev1.Secret{}
-	if err := client.Get(ctx, key, secret); err != nil {
-		logger.Error(err, "Failed to get client when fetching secret_id ", "role_id", l.authObj.Spec.AppRole.RoleID)
+
+	secret, err := getSecret(ctx, client, l.authObj.Namespace, l.authObj.Spec.AppRole.SecretKeyRef.Name)
+	if err != nil {
+		logger.Error(err, "Failed to get secret when fetching secret_id ", "role_id", l.authObj.Spec.AppRole.RoleID)
 		return "", err
 	}
 	secretID := string(secret.Data[l.authObj.Spec.AppRole.SecretKeyRef.Key])

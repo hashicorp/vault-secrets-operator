@@ -197,7 +197,6 @@ func TestVaultAuthMethods(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1alpha1.VaultStaticSecretSpec{
-					//					VaultAuthRef: a.ObjectMeta.Name,
 					VaultAuthRef: a.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
@@ -233,16 +232,16 @@ func TestVaultAuthMethods(t *testing.T) {
 			"VaultStaticSecret", secret)
 	}
 
-	for x, tt := range auths {
+	for idx, tt := range auths {
 		t.Run(tt.Spec.Method, func(t *testing.T) {
 			// Create the KV secret in Vault.
-			putKV(t, secrets[x])
+			putKV(t, secrets[idx])
 			// Create the VSS object referencing the object in Vault.
-			require.Nil(t, crdClient.Create(ctx, secrets[x]))
+			require.Nil(t, crdClient.Create(ctx, secrets[idx]))
 			// Assert that the Kube secret exists + has correct Data.
-			assertSync(t, secrets[x])
+			assertSync(t, secrets[idx])
 			t.Cleanup(func() {
-				deleteKV(t, secrets[x])
+				deleteKV(t, secrets[idx])
 			})
 		})
 	}
