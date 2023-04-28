@@ -134,9 +134,9 @@ resource "vault_approle_auth_backend_role" "role" {
 
 # Creates the Secret ID for the AppRole
 resource "vault_approle_auth_backend_role_secret_id" "id" {
-  namespace = local.namespace
-  backend   = vault_auth_backend.approle.path
-  role_name = vault_approle_auth_backend_role.role.role_name
+  namespace  = local.namespace
+  backend    = vault_auth_backend.approle.path
+  role_name  = vault_approle_auth_backend_role.role.role_name
   depends_on = [kubernetes_namespace.tenant-1, vault_approle_auth_backend_role.role]
 }
 
