@@ -228,12 +228,23 @@ jobs:
         run: |
           make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Kustomize
+        # TODO: When the VDS integration test supports Helm we test against one version of (ENT) Vault like the other tests.
+        # if: ${{ matrix.vault-version == '1.13.1' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
           make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+      - name: ENT tests using Helm
+        # TODO: When the VDS integration test supports Helm swap the matrix filter so this test runs the full matrix.
+        if: ${{ matrix.vault-version == '1.13.1' }}
+        env:
+          INTEGRATION_TESTS: true
+          VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
+          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
+        run: |
+          make integration-test-helm-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success()
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
