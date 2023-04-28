@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentialproviders"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 const (
@@ -211,7 +211,7 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 				c = &defaultClient{
 					authObj: tt.authObj,
 					connObj: tt.connObj,
-					credentialProvider: credentialproviders.NewKubernetesCredentialProvider(nil, "",
+					credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
 						tt.providerUID),
 				}
 			}

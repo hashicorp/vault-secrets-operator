@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package credentialproviders
+package credentials
 
 import (
 	"context"
@@ -14,6 +14,8 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
+
+var _ CredentialProvider = (*JWTCredentialProvider)(nil)
 
 type JWTCredentialProvider struct {
 	authObj           *secretsv1alpha1.VaultAuth
