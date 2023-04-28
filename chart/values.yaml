@@ -236,6 +236,35 @@ defaultAuthMethod:
     # @type: array<string>
     tokenAudiences: []
 
+  # Vault JWT auth method specific configuration
+  jwt:
+    # Vault Auth Role to use
+    # This is a required field and must be setup in Vault prior to deploying the helm chart
+    # if `jwtAuthMethod.enabled=true`
+    # @type: string
+    role: ""
+
+    # One of the following is required prior to deploying the helm chart
+    # - K8s secret that contains the JWT
+    # - K8s service account if a service account JWT is used as a Vault JWT auth token and needs generating by VSO
+
+    # Name of Kubernetes Secret that has the Vault JWT auth token. This is a required field if a JWT is provided
+    # @type: string
+    secretName: ""
+
+    # Key of Kubernetes Secret that has the Vault JWT auth token. This is a required field if JWT is provided
+    # @type: string
+    secretKey: ""
+
+    # Kubernetes ServiceAccount to generate a service account JWT
+    # @type: string
+    serviceAccount: "default"
+
+    # Token Audience should match the bound_audiences or the `aud` list in bound_claims if applicable
+    # of the Vault JWT auth role.
+    # @type: array<string>
+    tokenAudiences: [ ]
+
   # Params to use when authenticating to Vault
   # params: |
   #   "vault-something1": "foo"

@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
@@ -279,6 +280,10 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 	return true, nil
 }
 
+type authMethodsK8sOutputs struct {
+	AuthRole string `json:"auth_role"`
+}
+
 type dynamicK8SOutputs struct {
 	NamePrefix       string   `json:"name_prefix"`
 	Namespace        string   `json:"namespace"`
@@ -488,4 +493,36 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
 	}
+}
+
+func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
+	t.Helper()
+
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "default",
+			Namespace: namespace,
+		},
+	}
+	tokenReq := &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			Audiences: []string{"vault"},
+		},
+	}
+	require.Nil(t, crdClient.SubResource("token").Create(ctx, serviceAccount, tokenReq))
+	require.NotNil(t, tokenReq.Status.Token)
+
+	secretObj := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			secretKey: []byte(tokenReq.Status.Token),
+		},
+	}
+	require.Nil(t, crdClient.Create(ctx, secretObj))
+
+	return secretObj
 }
