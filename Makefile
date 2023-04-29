@@ -386,6 +386,35 @@ helm-chart: manifests kustomize helmify
 unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
+##@ AKS
+.PHONY: create-aks
+create-aks: ## Create a new AKS cluster
+	$(TERRAFORM) -chdir=$(TF_AKS_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_AKS_DIR) apply -auto-approve
+	$(AZURE) aks get-credentials --resource-group $$($(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw resource_group_name) update-kubeconfig \
+    --name $$($(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw kubernetes_cluster_name)
+
+# Currently only supports amd64
+.PHONY: ci-acr-build-push
+ci-acr-build-push: ## Build the operator image and push it to the ACR repository
+	@$(eval ACR_NAME := $(shell $(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw container_repository_name))
+	@$(eval IMG := $(ACR_NAME).azurecr.io/$(IMAGE_TAG_BASE):$(VERSION))
+	$(MAKE) ci-build ci-docker-build IMG=$(IMG)
+	$(AZURE) acr login --name $(ACR_NAME)
+	docker push $(IMG)
+
+.PHONY: integration-test-aks
+integration-test-aks: ## Run integration tests in the AKS cluster
+	@$(eval ACR_NAME := $(shell $(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw container_repository_name))	
+	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw kubernetes_cluster_name))
+	@$(eval IMAGE_TAG_BASE := $(ACR_NAME).azurecr.io/$(IMAGE_TAG_BASE))
+	$(MAKE) port-forward &
+	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
+
+.PHONY: destroy-aks
+destroy-aks: ## Destroy the AKS cluster
+	$(TERRAFORM) -chdir=$(TF_AKS_DIR) destroy -auto-approve
+
 ##@ EKS
 .PHONY: create-eks
 create-eks: ## Create a new EKS cluster
@@ -510,6 +539,23 @@ bundle-build: ## Build the bundle image.
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
+.PHONY: azure
+AZURE = ./bin/azure
+azure: ## Download Azure cli locally if necessary.
+ifeq (,$(wildcard $(AZURE)))
+ifeq (,$(shell which $(notdir $(AZURE)) 2>/dev/null))
+	@{
+	set -e ;
+	mkdir -p $(dir $(AZURE)) ;
+	OS=$(shell uname -s | tr '[:upper:]' '[:lower:]') &&
+	curl -sSL https://aka.ms/InstallAzureCLIDeb | bash ;
+	mv /usr/bin/az $(AZURE) ;
+	}
+else
+AZURE = $(shell which azure)
+endif
+endif
 
 .PHONY: aws
 AWS = ./bin/aws
