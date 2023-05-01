@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-
-	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 const (
@@ -211,9 +211,8 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 				c = &defaultClient{
 					authObj: tt.authObj,
 					connObj: tt.connObj,
-					credentialProvider: &kubernetesCredentialProvider{
-						uid: tt.providerUID,
-					},
+					credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
+						tt.providerUID),
 				}
 			}
 
@@ -234,17 +233,23 @@ func TestClientCacheKey_IsClone(t *testing.T) {
 	}{
 		{
 			name: "is-not-a-clone-no-suffix",
-			k:    ClientCacheKey(fmt.Sprintf("%s-%s", providerMethodKubernetes, computedHash)),
+			k: ClientCacheKey(fmt.Sprintf("%s-%s",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
 			want: false,
 		},
 		{
 			name: "is-not-a-clone-empty-suffix",
-			k:    ClientCacheKey(fmt.Sprintf("%s-%s-", providerMethodKubernetes, computedHash)),
+			k: ClientCacheKey(fmt.Sprintf("%s-%s-",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
 			want: false,
 		},
 		{
 			name: "is-a-clone",
-			k:    ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2", providerMethodKubernetes, computedHash)),
+			k: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
 			want: true,
 		},
 	}
@@ -264,15 +269,21 @@ func TestClientCacheKeyClone(t *testing.T) {
 		wantErr   assert.ErrorAssertionFunc
 	}{
 		{
-			name:      "valid",
-			key:       ClientCacheKey(fmt.Sprintf("%s-%s", providerMethodKubernetes, computedHash)),
+			name: "valid",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
 			namespace: "ns1/ns2",
-			want:      ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2", providerMethodKubernetes, computedHash)),
-			wantErr:   assert.NoError,
+			want: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			wantErr: assert.NoError,
 		},
 		{
-			name:      "fail-empty-namespace",
-			key:       ClientCacheKey(fmt.Sprintf("%s-%s", providerMethodKubernetes, computedHash)),
+			name: "fail-empty-namespace",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
 			namespace: "",
 			want:      "",
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -280,8 +291,10 @@ func TestClientCacheKeyClone(t *testing.T) {
 			},
 		},
 		{
-			name:      "fail-parent-is-clone",
-			key:       ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2", providerMethodKubernetes, computedHash)),
+			name: "fail-parent-is-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
 			namespace: "ns3",
 			want:      "",
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
