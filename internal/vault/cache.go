@@ -169,8 +169,6 @@ func onEvictPruneClonesFunc(cache *clientCache) onEvictCallbackFunc {
 // An error will be returned if the cache could not be initialized.
 func NewClientCache(size int, callbackFunc onEvictCallbackFunc, metricsRegistry prometheus.Registerer) (ClientCache, error) {
 	cache := &clientCache{
-		// cache:      lruCache,
-		// cloneCache: lruCloneCache,
 		evictionGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: metricsFQNClientCacheEvictions,
 			Help: "Number of cache evictions.",
