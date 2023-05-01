@@ -38,16 +38,16 @@ func (l *ApproleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 func (l *ApproleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
 	// Fetch the secret_id each time we call GetCreds in case the secret_id has changed since
-	// the last time the client token was generated. In the case of approle this is assumed likely.
-	sid, err := l.getSecretID(ctx, client)
-	if err != nil || sid == "" {
+	// the last time the client token was generated. In the case of AppRole this is assumed to be common.
+	secretID, err := l.getSecretID(ctx, client)
+	if err != nil || secretID == "" {
 		logger.Error(err, "Failed to get secret_id for ", "role_id", l.authObj.Spec.AppRole.RoleID)
 		return nil, err
 	}
 	// credentials needed for approle auth
 	creds := map[string]interface{}{
 		"role_id":   l.authObj.Spec.AppRole.RoleID,
-		"secret_id": sid,
+		"secret_id": secretID,
 	}
 	return creds, nil
 }
