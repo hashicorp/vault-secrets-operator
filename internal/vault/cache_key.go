@@ -11,14 +11,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
-
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
-
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 var (
