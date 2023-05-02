@@ -38,14 +38,13 @@ resource "kubernetes_namespace" "tenant-1" {
 
 resource "kubernetes_secret" "default-sa" {
   metadata {
-    namespace = var.k8s_test_namespace
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
     name      = "default-sa-secret"
     annotations = {
       "kubernetes.io/service-account.name" = "default"
     }
   }
-  type       = "kubernetes.io/service-account-token"
-  depends_on = [kubernetes_namespace.tenant-1]
+  type = "kubernetes.io/service-account-token"
 }
 
 provider "vault" {
@@ -107,14 +106,13 @@ resource "vault_jwt_auth_backend" "dev" {
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
-  namespace       = local.namespace
+  namespace       = vault_jwt_auth_backend.dev.namespace
   backend         = "jwt"
   role_name       = var.auth_role
   role_type       = "jwt"
   bound_audiences = ["vault"]
   user_claim      = "sub"
   token_policies  = [vault_policy.default.name]
-  depends_on      = [vault_jwt_auth_backend.dev]
 }
 
 resource "helm_release" "vault-secrets-operator" {
