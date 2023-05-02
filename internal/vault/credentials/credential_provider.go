@@ -34,7 +34,7 @@ func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authOb
 	}
 
 	switch authObj.Spec.Method {
-	case providerMethodJWT:
+	case ProviderMethodJWT:
 		provider := &JWTCredentialProvider{}
 		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
 			return nil, err
@@ -46,7 +46,7 @@ func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authOb
 			return nil, err
 		}
 		return provider, nil
-	case providerMethodKubernetes:
+	case ProviderMethodKubernetes:
 		provider := &KubernetesCredentialProvider{}
 		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
 			return nil, err

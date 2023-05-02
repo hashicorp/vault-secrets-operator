@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 
@@ -23,6 +25,10 @@ var (
 	errorKeyLengthExceeded = errors.New("cache-key length exceeded")
 	errorDuplicateUID      = errors.New("duplicate UID")
 	errorInvalidUIDLength  = errors.New("invalid UID length")
+	cacheKeyRe             = regexp.MustCompile(fmt.Sprintf(
+		`(%s)-[[:xdigit:]]{22}`,
+		strings.Join(credentials.ProviderMethodsSupported, "|")))
+	cloneKeyRe = regexp.MustCompile(fmt.Sprintf(`^%s-.+$`, cacheKeyRe))
 )
 
 // ClientCacheKey is a type that holds the unique value of an entity in a ClientCache.
@@ -31,6 +37,10 @@ type ClientCacheKey string
 
 func (k ClientCacheKey) String() string {
 	return string(k)
+}
+
+func (k ClientCacheKey) IsClone() bool {
+	return cloneKeyRe.MatchString(k.String())
 }
 
 // ComputeClientCacheKeyFromClient for use in a ClientCache. It is derived from the configuration the Client.
@@ -126,4 +136,18 @@ func computeClientCacheKey(authObj *secretsv1alpha1.VaultAuth, connObj *secretsv
 	}
 
 	return ClientCacheKey(key), nil
+}
+
+// ClientCacheKeyClone returns a ClientCacheKey that contains the Vault namespace as its suffix.
+// The clone key is meant to differentiate a "parent" cache key from its clones.
+func ClientCacheKeyClone(key ClientCacheKey, namespace string) (ClientCacheKey, error) {
+	if namespace == "" {
+		return "", errors.New("namespace cannot be empty")
+	}
+
+	if key.IsClone() {
+		return "", errors.New("parent key cannot be a clone")
+	}
+
+	return ClientCacheKey(fmt.Sprintf("%s-%s", key, namespace)), nil
 }
