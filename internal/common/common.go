@@ -228,3 +228,21 @@ func FindVaultAuthForStorageEncryption(ctx context.Context, c client.Client) (*s
 
 	return &result, nil
 }
+
+// GetVaultNamespace for the Syncable Secret type object.
+//
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
+func GetVaultNamespace(obj client.Object) (string, error) {
+	var ns string
+	switch o := obj.(type) {
+	case *secretsv1alpha1.VaultPKISecret:
+		ns = o.Spec.Namespace
+	case *secretsv1alpha1.VaultStaticSecret:
+		ns = o.Spec.Namespace
+	case *secretsv1alpha1.VaultDynamicSecret:
+		ns = o.Spec.Namespace
+	default:
+		return "", fmt.Errorf("unsupported type %T", o)
+	}
+	return ns, nil
+}

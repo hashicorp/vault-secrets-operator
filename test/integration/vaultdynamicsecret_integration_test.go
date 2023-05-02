@@ -55,7 +55,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	k8sConfigContext := "kind-" + clusterName
+	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
 	k8sOpts := &k8s.KubectlOptions{
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,

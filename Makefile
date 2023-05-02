@@ -111,7 +111,9 @@ VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
+# directory for cloud hosted k8s infrastructure for running tests
 TF_GKE_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/gke
+TF_EKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
 
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
@@ -250,12 +252,16 @@ integration-test:  setup-vault ## Run integration tests for Vault OSS
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
-    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) CGO_ENABLED=0 \
+    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
 integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
 	$(MAKE) integration-test TEST_WITH_HELM=true
+
+.PHONY: integration-test-helm-ent
+integration-test-helm-ent: ## Run integration tests for Vault Enterprise
+	$(MAKE) integration-test TEST_WITH_HELM=true VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 
 .PHONY: integration-test-ent
 integration-test-ent: ## Run integration tests for Vault Enterprise
@@ -371,6 +377,7 @@ unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
 ##@ GKE
+
 .PHONY: create-gke
 create-gke: ## Create a new GKE cluster
 	$(TERRAFORM) -chdir=$(TF_GKE_DIR) init -upgrade
@@ -386,20 +393,63 @@ ci-gar-build-push: ## Build the operator image and push it to the GAR repository
 	@$(eval GCP_GAR_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw gar_name))
 	@$(eval IMAGE_TAG_BASE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJ_ID)/$(GCP_GAR_NAME)/$(BIN_NAME))
 	@$(eval IMG := $(IMAGE_TAG_BASE):$(VERSION))
-	$(MAKE) ci-build ci-docker-build
+	$(MAKE) ci-build ci-docker-build IMG=$(IMG)
 	$(GCLOUD) auth configure-docker $(GCP_REGION)-docker.pkg.dev
 	docker push $(IMG)
 
 .PHONY: integration-test-gke
 integration-test-gke: ## Run integration tests in the GKE cluster
-	$(eval CLUSTER_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name))
 	$(eval KIND_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(CLUSTER_NAME) | awk '{print $$2}'))
+	$(eval CLUSTER_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name))
 	$(MAKE) port-forward &
 	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG)
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
 	$(TERRAFORM) -chdir=$(TF_GKE_DIR) destroy -auto-approve
+
+##@ EKS
+
+.PHONY: create-eks
+create-eks: ## Create a new EKS cluster
+	$(TERRAFORM) -chdir=$(TF_EKS_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_EKS_DIR) apply -auto-approve
+	$(AWS) eks --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) update-kubeconfig \
+    --name $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_name)
+
+.PHONY: port-forward
+port-forward:
+	@if lsof -Pi :38300 -sTCP:LISTEN -t >/dev/null ; then \
+	    echo "Port 38300 is already in use, please free it up and try again."; \
+	else \
+	    echo "Starting port forwarding..."; \
+	    bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n $(K8S_VAULT_NAMESPACE) statefulset/vault 38300:8200; done'; \
+	fi
+
+# Currently only supports amd64
+.PHONY: ci-ecr-build-push
+ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
+	@$(eval IMG := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url):$(VERSION))
+	$(MAKE) ci-build ci-docker-build IMG=$(IMG)
+	$(AWS) ecr get-login-password --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) | docker login --username AWS --password-stdin $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url)
+	docker push $(IMG)
+
+.PHONY: integration-test-eks
+integration-test-eks: ## Run integration tests in the EKS cluster
+	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
+	@$(eval IMAGE_TAG_BASE := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url))
+	$(MAKE) port-forward &
+	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
+
+.PHONY: ci-ecr-delete
+ci-ecr-delete: ## Delete the ECR repository
+	@$(eval AWS_REGION := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region))
+	@$(eval ECR_REPO_NAME := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_name))
+	$(AWS) ecr batch-delete-image --region $(AWS_REGION) --repository-name $(ECR_REPO_NAME) --image-ids imageTag="$(VERSION)" || true;
+
+.PHONY: destroy-eks
+destroy-eks: ## Destroy the EKS cluster
+	$(TERRAFORM) -chdir=$(TF_EKS_DIR) destroy -auto-approve
 
 ##@ Deployment
 
@@ -501,6 +551,24 @@ ifeq (,$(shell which $(notdir $(GCLOUD)) 2>/dev/null))
 	}
 else
 GCLOUD = $(shell which gcloud)
+endif
+endif
+
+.PHONY: aws
+AWS = ./bin/aws
+aws: ## Download aws cli locally if necessary.
+ifeq (,$(wildcard $(AWS)))
+ifeq (,$(shell which $(notdir $(AWS)) 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(AWS)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sfSLo $(AWS).zip https://awscli.amazonaws.com/awscli-exe-$${OS}-$${ARCH}.zip -o "awscliv2.zip" ; \
+	unzip awscliv2.zip -d $(dir $(AWS)) $(notdir $(AWS)) ;\
+	rm -f awscliv2.zip ; \
+	}
+else
+AWS = $(shell which aws)
 endif
 endif
 
