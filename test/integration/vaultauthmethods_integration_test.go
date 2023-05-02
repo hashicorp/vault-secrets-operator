@@ -159,7 +159,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			},
 		},
 	}
-	// Apply all of the Auth Methods
+	// Apply all the Auth Methods
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)
@@ -207,7 +207,9 @@ func TestVaultAuthMethods(t *testing.T) {
 	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret) {
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, expectedData)
-		assert.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		assertSyncableSecret(t, obj,
 			"secrets.hashicorp.com/v1alpha1",
 			"VaultStaticSecret", secret)
