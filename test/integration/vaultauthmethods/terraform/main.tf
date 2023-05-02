@@ -44,7 +44,7 @@ resource "kubernetes_secret" "default-sa" {
       "kubernetes.io/service-account.name" = "default"
     }
   }
-  type       = "kubernetes.io/service-account-token"
+  type = "kubernetes.io/service-account-token"
 }
 
 provider "vault" {
@@ -133,9 +133,9 @@ resource "vault_approle_auth_backend_role" "role" {
 
 # Creates the Secret ID for the AppRole
 resource "vault_approle_auth_backend_role_secret_id" "id" {
-  namespace  = local.namespace
-  backend    = vault_auth_backend.approle.path
-  role_name  = vault_approle_auth_backend_role.role.role_name
+  namespace = local.namespace
+  backend   = vault_auth_backend.approle.path
+  role_name = vault_approle_auth_backend_role.role.role_name
 }
 
 # Kubernetes secret to hold the secretid
