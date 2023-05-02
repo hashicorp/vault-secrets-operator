@@ -38,14 +38,13 @@ resource "kubernetes_namespace" "tenant-1" {
 
 resource "kubernetes_secret" "default-sa" {
   metadata {
-    namespace = var.k8s_test_namespace
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
     name      = "default-sa-secret"
     annotations = {
       "kubernetes.io/service-account.name" = "default"
     }
   }
   type       = "kubernetes.io/service-account-token"
-  depends_on = [kubernetes_namespace.tenant-1]
 }
 
 provider "vault" {
@@ -137,14 +136,13 @@ resource "vault_approle_auth_backend_role_secret_id" "id" {
   namespace  = local.namespace
   backend    = vault_auth_backend.approle.path
   role_name  = vault_approle_auth_backend_role.role.role_name
-  depends_on = [kubernetes_namespace.tenant-1, vault_approle_auth_backend_role.role]
 }
 
 # Kubernetes secret to hold the secretid
 resource "kubernetes_secret" "secretid" {
   metadata {
     name      = "secretid"
-    namespace = var.k8s_test_namespace
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
   }
   data = {
     id = vault_approle_auth_backend_role_secret_id.id.secret_id
