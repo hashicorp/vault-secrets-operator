@@ -33,8 +33,6 @@ type ClientConfig struct {
 	TLSServerName string
 	// VaultNamespace is the namespace in Vault to auth to
 	VaultNamespace string
-	// AuthLogin for Vault getting a vault token
-	// AuthLogin auth.AuthLogin
 }
 
 // MakeVaultClient creates a Vault api.Client from a ClientConfig.
@@ -70,9 +68,12 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		return nil, err
 	}
 
+	config.CloneToken = true
+	config.CloneHeaders = true
+
 	c, err := api.NewClient(config)
 	if err != nil {
-		l.Error(err, "error setting up Vault API ctrlclient")
+		l.Error(err, "error setting up Vault API client")
 		return nil, err
 	}
 	if cfg.VaultNamespace != "" {

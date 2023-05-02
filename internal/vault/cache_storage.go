@@ -114,6 +114,10 @@ func (c ClientCacheStorageStoreRequest) Validate() error {
 	var err error
 	if c.Client == nil {
 		err = errors.Join(err, fmt.Errorf("a Client must be set"))
+	} else {
+		if c.Client.IsClone() {
+			err = errors.Join(err, fmt.Errorf("cloned Clients cannot be stored"))
+		}
 	}
 
 	return err
