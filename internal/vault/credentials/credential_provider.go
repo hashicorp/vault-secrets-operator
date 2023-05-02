@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	providerMethodKubernetes string = "kubernetes"
-	providerMethodJWT        string = "jwt"
-	providerMethodAppRole    string = "approle"
+	ProviderMethodKubernetes string = "kubernetes"
+	ProviderMethodJWT        string = "jwt"
+	ProviderMethodAppRole    string = "approle"
 )
 
-var providerMethodsSupported = []string{providerMethodKubernetes, providerMethodJWT, providerMethodAppRole}
+var ProviderMethodsSupported = []string{ProviderMethodKubernetes, ProviderMethodJWT, ProviderMethodAppRole}
 
 type CredentialProvider interface {
 	Init(ctx context.Context, client ctrlclient.Client, object *secretsv1alpha1.VaultAuth, providerNamespace string) error
@@ -40,7 +40,7 @@ func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authOb
 			return nil, err
 		}
 		return provider, nil
-	case providerMethodAppRole:
+	case ProviderMethodAppRole:
 		provider := &ApproleCredentialProvider{}
 		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
 			return nil, err
