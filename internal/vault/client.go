@@ -140,6 +140,7 @@ type Client interface {
 	Write(context.Context, string, map[string]any) (*api.Secret, error)
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
+	Valid() error
 	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
 	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
@@ -169,6 +170,34 @@ type defaultClient struct {
 	lastWatcherErr     error
 	once               sync.Once
 	mu                 sync.RWMutex
+}
+
+func (c *defaultClient) Valid() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.authSecret == nil {
+		return fmt.Errorf("auth secret not set, never logged in")
+	}
+
+	if !c.skipRenewal {
+		if c.lastWatcherErr != nil {
+			return c.lastWatcherErr
+		}
+		if c.watcher == nil {
+			return errors.New("lifetime watcher not set")
+		}
+	}
+
+	if expired, err := c.checkExpiry(0); expired || err != nil {
+		var errs error
+		if expired {
+			errs = errors.Join(errs, errors.New("client token expired"))
+		}
+		return errors.Join(errs, err)
+	}
+
+	return nil
 }
 
 func (c *defaultClient) IsClone() bool {
