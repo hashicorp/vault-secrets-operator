@@ -224,3 +224,91 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 		})
 	}
 }
+
+func TestClientCacheKey_IsClone(t *testing.T) {
+	tests := []struct {
+		name string
+		k    ClientCacheKey
+		want bool
+	}{
+		{
+			name: "is-not-a-clone-no-suffix",
+			k: ClientCacheKey(fmt.Sprintf("%s-%s",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			want: false,
+		},
+		{
+			name: "is-not-a-clone-empty-suffix",
+			k: ClientCacheKey(fmt.Sprintf("%s-%s-",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			want: false,
+		},
+		{
+			name: "is-a-clone",
+			k: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, tt.k.IsClone(), "IsClone()")
+		})
+	}
+}
+
+func TestClientCacheKeyClone(t *testing.T) {
+	tests := []struct {
+		name      string
+		key       ClientCacheKey
+		namespace string
+		want      ClientCacheKey
+		wantErr   assert.ErrorAssertionFunc
+	}{
+		{
+			name: "valid",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			namespace: "ns1/ns2",
+			want: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "fail-empty-namespace",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			namespace: "",
+			want:      "",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "namespace cannot be empty")
+			},
+		},
+		{
+			name: "fail-parent-is-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
+				credentials.ProviderMethodKubernetes,
+				computedHash)),
+			namespace: "ns3",
+			want:      "",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "parent key cannot be a clone")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ClientCacheKeyClone(tt.key, tt.namespace)
+			if !tt.wantErr(t, err, fmt.Sprintf("ClientCacheKeyClone(%v, %v)", tt.key, tt.namespace)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "ClientCacheKeyClone(%v, %v)", tt.key, tt.namespace)
+		})
+	}
+}
