@@ -252,6 +252,7 @@ ci-test: vet envtest ## Run tests in CI (without generating assets)
 .PHONY: copy-config
 copy-config: ## Copy kustomize config to CONFIG_BUILD_DIR
 	@rm -rf $(CONFIG_BUILD_DIR)
+	@mkdir -p $(dir $(CONFIG_BUILD_DIR))
 	@cp -a $(CONFIG_SRC_DIR) $(CONFIG_BUILD_DIR)
 
 .PHONY: set-image
