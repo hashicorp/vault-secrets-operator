@@ -91,17 +91,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	var doRolloutRestart bool
 	leaseID := o.Status.SecretLease.ID
-	// logger.Info("Last secret lease", "secretLease", o.Status.SecretLease, "epoch", r.epoch)
 	if leaseID != "" {
 		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
-			leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
-			ts := time.Unix(o.Status.LastRenewalTime, 0).Add(leaseDuration).Unix()
-			now := time.Now().Unix()
-			diff := ts - now
-			if diff > 0 {
-				horizon := computeHorizonWithJitter(time.Duration(diff) * time.Second)
+			if !inRenewalWindow(o.Status) {
+				leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
+				horizon := computeDynamicHorizonWithJitter(leaseDuration)
 				if err := r.updateStatus(ctx, o); err != nil {
 					return ctrl.Result{}, err
 				}
@@ -109,7 +105,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 					leaseID, horizon)
 				return ctrl.Result{RequeueAfter: horizon}, nil
-
 			}
 		}
 
@@ -144,7 +139,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				// compatible with computeHorizonWithJitter()
 				leaseDuration = time.Second * 5
 			}
-			horizon := computeHorizonWithJitter(leaseDuration)
+			horizon := computeDynamicHorizonWithJitter(leaseDuration)
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"Renewed lease, lease_id=%s, horizon=%s", leaseID, horizon)
 
@@ -177,7 +172,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	reason := consts.ReasonSecretSynced
 	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon := computeHorizonWithJitter(leaseDuration)
+	horizon := computeDynamicHorizonWithJitter(leaseDuration)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
 
@@ -286,4 +281,13 @@ func isLeaseNotfoundError(err error) bool {
 		}
 	}
 	return false
+}
+
+// inRenewalWindow checks if 2/3 of the lease duration of a VDS has elapsed
+func inRenewalWindow(status secretsv1alpha1.VaultDynamicSecretStatus) bool {
+	leaseDuration := time.Duration(status.SecretLease.LeaseDuration) * time.Second
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * 2 / 3)
+	ts := time.Unix(status.LastRenewalTime, 0).Add(startRenewingAt).Unix()
+	now := time.Now().Unix()
+	return ts-now <= 0
 }

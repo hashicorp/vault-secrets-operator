@@ -34,6 +34,21 @@ func computeHorizonWithJitter(minDuration time.Duration) time.Duration {
 	return minDuration - (time.Duration(jitterMax) + time.Duration(uint64(random.Int63())%u))
 }
 
+// computeDynamicHorizonWithJitter returns a time.Duration that is 2/3 of the
+// lease duration, plus additional random jitter (up to 10% of the lease), to
+// ensure the horizon falls within the 2/3 renewal window
+func computeDynamicHorizonWithJitter(leaseDuration time.Duration) time.Duration {
+	jitterMax := 0.1 * float64(leaseDuration.Nanoseconds())
+
+	u := uint64(jitterMax)
+	if u <= 0 {
+		return 0
+	}
+
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * 2 / 3)
+	return startRenewingAt + time.Duration(jitterMax) - time.Duration(uint64(random.Int63())%u)
+}
+
 // RemoveAllFinalizers is responsible for removing all finalizers added by the controller to prevent
 // finalizers from going stale when the controller is being deleted.
 func RemoveAllFinalizers(ctx context.Context, c client.Client, log logr.Logger) error {
