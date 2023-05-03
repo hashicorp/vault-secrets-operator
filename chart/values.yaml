@@ -32,6 +32,10 @@ controller:
 
   # Settings related to the vault-secrets-operator container.
   manager:
+     # This value defines additional annotations for the deployment. This should be formatted as a multi-line
+    # string.
+    annotations: null
+
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       repository: hashicorp/vault-secrets-operator
