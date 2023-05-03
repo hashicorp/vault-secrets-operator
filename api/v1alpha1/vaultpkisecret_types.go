@@ -60,7 +60,7 @@ type VaultPKISecretSpec struct {
 	Destination Destination `json:"destination"`
 
 	// CommonName to include in the request.
-	CommonName string `json:"commonName"`
+	CommonName string `json:"commonName,omitempty"`
 
 	// AltNames to include in the request
 	// May contain both DNS names and email addresses.
