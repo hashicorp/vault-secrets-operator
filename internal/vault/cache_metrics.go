@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	subsystemClientCache = "client_cache"
+	subsystemClientCache      = "client_cache"
+	subsystemClientCloneCache = "client_clone_cache"
 )
 
 var (
@@ -34,6 +35,18 @@ var (
 	// metricsFQNClientCacheEvictions for the ClientCache.
 	metricsFQNClientCacheEvictions = prometheus.BuildFQName(
 		metrics.Namespace, subsystemClientCache, "evictions")
+
+	// metricsFQNClientCloneCacheHits for the ClientCache.
+	metricsFQNClientCloneCacheHits = prometheus.BuildFQName(
+		metrics.Namespace, subsystemClientCloneCache, "hits")
+
+	// metricsFQNClientCloneCacheMisses for the ClientCache.
+	metricsFQNClientCloneCacheMisses = prometheus.BuildFQName(
+		metrics.Namespace, subsystemClientCloneCache, "misses")
+
+	// metricsFQNClientCacheEvictions for the ClientCache.
+	metricsFQNClientCloneCacheEvictions = prometheus.BuildFQName(
+		metrics.Namespace, subsystemClientCloneCache, "evictions")
 )
 
 var _ prometheus.Collector = (*clientCacheCollector)(nil)

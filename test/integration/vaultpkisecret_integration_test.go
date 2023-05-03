@@ -40,7 +40,10 @@ func TestVaultPKISecret(t *testing.T) {
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
-	k8sConfigContext := "kind-" + clusterName
+	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
 	k8sOpts := &k8s.KubectlOptions{
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
@@ -74,7 +77,7 @@ func TestVaultPKISecret(t *testing.T) {
 			"deploy_operator_via_helm":     testWithHelm,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_test_namespace":           testK8sNamespace,
-			"k8s_config_context":           "kind-" + clusterName,
+			"k8s_config_context":           k8sConfigContext,
 			"vault_pki_mount_path":         testPKIMountPath,
 			"operator_helm_chart_path":     chartPath,
 		},

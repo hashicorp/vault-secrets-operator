@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
@@ -100,6 +101,11 @@ func init() {
 //   - Vault is deployed and accessible
 //
 // See `make setup-integration-test` for manual testing.
+const (
+	vaultToken = "root"
+	vaultAddr  = "http://127.0.0.1:38300"
+)
+
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		clusterName = os.Getenv("KIND_CLUSTER_NAME")
@@ -113,8 +119,8 @@ func TestMain(m *testing.M) {
 		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
 		restConfig = *ctrl.GetConfigOrDie()
 
-		os.Setenv("VAULT_ADDR", "http://127.0.0.1:38300")
-		os.Setenv("VAULT_TOKEN", "root")
+		os.Setenv("VAULT_ADDR", vaultAddr)
+		os.Setenv("VAULT_TOKEN", vaultToken)
 		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
 		os.Exit(m.Run())
 	}
@@ -272,6 +278,10 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 			corev1.TLSPrivateKeyKey, tlsKey, secret.Data["private_key"])
 	}
 	return true, nil
+}
+
+type authMethodsK8sOutputs struct {
+	AuthRole string `json:"auth_role"`
 }
 
 type dynamicK8SOutputs struct {
@@ -483,4 +493,36 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
 	}
+}
+
+func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
+	t.Helper()
+
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "default",
+			Namespace: namespace,
+		},
+	}
+	tokenReq := &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			Audiences: []string{"vault"},
+		},
+	}
+	require.Nil(t, crdClient.SubResource("token").Create(ctx, serviceAccount, tokenReq))
+	require.NotNil(t, tokenReq.Status.Token)
+
+	secretObj := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			secretKey: []byte(tokenReq.Status.Token),
+		},
+	}
+	require.Nil(t, crdClient.Create(ctx, secretObj))
+
+	return secretObj
 }
