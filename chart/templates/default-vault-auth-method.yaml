@@ -28,10 +28,8 @@ spec:
   {{- else if eq .Values.defaultAuthMethod.method "jwt" }}
   jwt:
     role: {{ .Values.defaultAuthMethod.jwt.role }}
-    {{- if and .Values.defaultAuthMethod.jwt.secretName .Values.defaultAuthMethod.jwt.secretKey }}
-    secretKeyRef:
-        name: {{ .Values.defaultAuthMethod.jwt.secretName }}
-        key: {{ .Values.defaultAuthMethod.jwt.secretKey }}
+    {{- if .Values.defaultAuthMethod.jwt.secretRef }}
+    secretRef: {{ .Values.defaultAuthMethod.jwt.secretRef }}
     {{- else if .Values.defaultAuthMethod.jwt.serviceAccount }}
     serviceAccount: {{ .Values.defaultAuthMethod.jwt.serviceAccount }}
     {{- if .Values.defaultAuthMethod.jwt.tokenAudiences }}
@@ -41,9 +39,7 @@ spec:
   {{- else if eq .Values.defaultAuthMethod.method "approle" }}
   approle:
     roleId: {{ .Values.defaultAuthMethod.approle.roleid }}
-    secretKeyRef:
-      name: {{ .Values.defaultAuthMethod.approle.secretName }}
-      key: {{ .Values.defaultAuthMethod.approle.secretKey }}
+    secretRef: {{ .Values.defaultAuthMethod.approle.secretRef }}
   {{- end }}
   {{- if .Values.defaultAuthMethod.headers }}
   headers:

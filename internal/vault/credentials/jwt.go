@@ -42,11 +42,9 @@ func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			return err
 		}
 		l.uid = sa.UID
-	} else if l.authObj.Spec.JWT.SecretKeyRef != nil &&
-		l.authObj.Spec.JWT.SecretKeyRef.Name != "" &&
-		l.authObj.Spec.JWT.SecretKeyRef.Key != "" {
+	} else if l.authObj.Spec.JWT.SecretRef != "" {
 		var err error
-		l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretKeyRef.Name)
+		l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretRef)
 		if err != nil {
 			return err
 		}
@@ -95,13 +93,13 @@ func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	}
 
 	var err error
-	l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretKeyRef.Name)
+	l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretRef)
 	if err != nil {
 		return nil, err
 	}
 
 	return map[string]interface{}{
 		"role": l.authObj.Spec.JWT.Role,
-		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.JWT.SecretKeyRef.Key]),
+		"jwt":  string(l.tokenSecret.Data[JWTCredentialProviderSecretKey]),
 	}, nil
 }

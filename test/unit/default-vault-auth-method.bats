@@ -146,9 +146,7 @@ load _helpers
      [ "${actual}" = "baz" ]
 
     # secret related specs should not exist
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.name' | tee /dev/stderr)
-     [ "${actual}" = null ]
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.key' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretRef' | tee /dev/stderr)
      [ "${actual}" = null ]
 }
 
@@ -161,8 +159,7 @@ load _helpers
         --set 'defaultAuthMethod.method=jwt' \
         --set 'defaultAuthMethod.mount=foo' \
         --set 'defaultAuthMethod.jwt.role=role-1' \
-        --set 'defaultAuthMethod.jwt.secretName=secret-1' \
-        --set 'defaultAuthMethod.jwt.secretKey=secret-key-1' \
+        --set 'defaultAuthMethod.jwt.secretRef=secret-1' \
         --set 'defaultAuthMethod.headers=foo: bar' \
         --set 'defaultAuthMethod.params=foo: baz' \
         . | tee /dev/stderr)
@@ -178,10 +175,8 @@ load _helpers
      [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.jwt.role' | tee /dev/stderr)
      [ "${actual}" = "role-1" ]
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.name' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretRef' | tee /dev/stderr)
      [ "${actual}" = "secret-1" ]
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.key' | tee /dev/stderr)
-     [ "${actual}" = "secret-key-1" ]
     actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
      [ "${actual}" = "bar" ]
     actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
@@ -202,8 +197,7 @@ load _helpers
         --set 'defaultAuthMethod.method=approle' \
         --set 'defaultAuthMethod.namespace=tenant-2' \
         --set 'defaultAuthMethod.approle.roleid=role-1' \
-        --set 'defaultAuthMethod.approle.secretName=secret-1' \
-        --set 'defaultAuthMethod.approle.secretKey=secret-key-1' \
+        --set 'defaultAuthMethod.approle.secretRef=secret-1' \
         --set 'defaultAuthMethod.mount=foo' \
         . | tee /dev/stderr)
 
@@ -218,8 +212,6 @@ load _helpers
      [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.approle.roleId' | tee /dev/stderr)
      [ "${actual}" = "role-1" ]
-    actual=$(echo "$object" | yq '.spec.approle.secretKeyRef.name' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.approle.secretRef' | tee /dev/stderr)
      [ "${actual}" = "secret-1" ]
-    actual=$(echo "$object" | yq '.spec.approle.secretKeyRef.key' | tee /dev/stderr)
-     [ "${actual}" = "secret-key-1" ]
 }

@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 	"os"
 	"path"
 	"path/filepath"
@@ -496,7 +497,7 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 	}
 }
 
-func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
+func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName string) *corev1.Secret {
 	t.Helper()
 
 	serviceAccount := &corev1.ServiceAccount{
@@ -520,7 +521,7 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			secretKey: []byte(tokenReq.Status.Token),
+			credentials.JWTCredentialProviderSecretKey: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))

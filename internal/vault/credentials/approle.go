@@ -34,9 +34,9 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 	logger := log.FromContext(ctx)
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
-	secret, err := getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.AppRole.SecretKeyRef.Name)
+	secret, err := getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.AppRole.SecretRef)
 	if err != nil {
-		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretKeyRef.Name)
+		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return err
 	}
 	l.uid = secret.UID
@@ -63,14 +63,14 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 func (l *AppRoleCredentialProvider) getSecretID(ctx context.Context, client ctrlclient.Client) (string, error) {
 	logger := log.FromContext(ctx)
 
-	secret, err := getSecret(ctx, client, l.authObj.Namespace, l.authObj.Spec.AppRole.SecretKeyRef.Name)
+	secret, err := getSecret(ctx, client, l.authObj.Namespace, l.authObj.Spec.AppRole.SecretRef)
 	if err != nil {
 		logger.Error(err, "Failed to get secret when fetching secret_id", "role_id", l.authObj.Spec.AppRole.RoleID)
 		return "", err
 	}
-	secretID := string(secret.Data[l.authObj.Spec.AppRole.SecretKeyRef.Key])
+	secretID := string(secret.Data[AppRoleCredentialProviderSecretKey])
 	if secretID == "" {
-		return "", fmt.Errorf("Invalid key reference for secret_id, empty data")
+		return "", fmt.Errorf("Invalid reference for secret_id, empty data")
 	}
 	return secretID, nil
 }

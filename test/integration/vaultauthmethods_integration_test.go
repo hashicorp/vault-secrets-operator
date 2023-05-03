@@ -104,8 +104,7 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	// Create a jwt auth token secret
 	secretName := "jwt-auth-secret"
-	secretKey := "token"
-	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName, secretKey)
+	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName)
 	created = append(created, secretObj)
 
 	auths := []*secretsv1alpha1.VaultAuth{
@@ -152,11 +151,8 @@ func TestVaultAuthMethods(t *testing.T) {
 				Method:    "jwt",
 				Mount:     "jwt",
 				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
-					Role: outputs.AuthRole,
-					SecretKeyRef: &secretsv1alpha1.SecretKeySelector{
-						Name: secretName,
-						Key:  secretKey,
-					},
+					Role:      outputs.AuthRole,
+					SecretRef: secretName,
 				},
 			},
 		},
@@ -171,11 +167,8 @@ func TestVaultAuthMethods(t *testing.T) {
 				Method:    "approle",
 				Mount:     appRoleMountPath,
 				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
-					RoleID: outputs.AppRoleRoleID,
-					SecretKeyRef: &secretsv1alpha1.SecretKeySelector{
-						Name: "secretid",
-						Key:  "id",
-					},
+					RoleID:    outputs.AppRoleRoleID,
+					SecretRef: "secretid",
 				},
 			},
 		},

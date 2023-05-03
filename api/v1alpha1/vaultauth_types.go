@@ -25,21 +25,13 @@ type VaultAuthConfigKubernetes struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
-// SecretKeySelector selects a key of a Secret.
-type SecretKeySelector struct {
-	// Name of the secret in the referring object's namespace to select from.
-	Name string `json:"name"`
-	// Key of the secret to select from. Must be a valid secret key.
-	Key string `json:"key"`
-}
-
 // VaultAuthConfigJWT provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigJWT struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// SecretKeyRef to use when referencing the secret containing the JWT token
-	// to authenticate to Vault's JWT authentication backend.
-	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
+	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which provides the JWT token
+	// to authenticate to Vault's JWT authentication backend. The secret must have a key named `jwt` which holds the JWT token.
+	SecretRef string `json:"secretRef,omitempty"`
 	// ServiceAccount to use when creating a ServiceAccount token to authenticate to Vault's
 	// JWT authentication backend.
 	ServiceAccount string `json:"serviceAccount,omitempty"`
@@ -56,9 +48,10 @@ type VaultAuthConfigJWT struct {
 type VaultAuthConfigAppRole struct {
 	// RoleID `role_id` of the AppRole Role to use for authenticating to Vault.
 	RoleID string `json:"roleId"`
-	// Selects a secret in the AuthMethod's namespace which holds the `secret_id` of the AppRole used
-	// to authenticate to Vault.
-	SecretKeyRef *SecretKeySelector `json:"secretKeyRef"`
+
+	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which provides the
+	// `secret_id` associated with the AppRole Role. The secret must have a key named `id` which holds the `secret_id`.
+	SecretRef string `json:"secretRef"`
 }
 
 // VaultAuthSpec defines the desired state of VaultAuth
