@@ -11,7 +11,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,6 +18,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
