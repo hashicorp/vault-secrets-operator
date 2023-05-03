@@ -120,6 +120,7 @@ resource "vault_jwt_auth_backend_role" "dev" {
 resource "vault_auth_backend" "approle" {
   namespace = local.namespace
   type      = "approle"
+  path      = var.approle_mount_path
 }
 
 # Create the Vault Auth Backend Role for AppRole
@@ -156,7 +157,7 @@ resource "vault_policy" "approle" {
 path "${vault_mount.kvv2.path}/*" {
   capabilities = ["read","list","update"]
 }
-path "auth/approle/login" {
+path "auth/${vault_auth_backend.approle.path}/login" {
   capabilities = ["read","update"]
 }
 EOT

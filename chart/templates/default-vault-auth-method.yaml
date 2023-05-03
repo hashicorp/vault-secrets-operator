@@ -40,7 +40,7 @@ spec:
     {{- end }}
   {{- else if eq .Values.defaultAuthMethod.method "approle" }}
   approle:
-    roleid: {{ .Values.defaultAuthMethod.approle.roleid }}
+    roleId: {{ .Values.defaultAuthMethod.approle.roleid }}
     secretKeyRef:
       name: {{ .Values.defaultAuthMethod.approle.secretName }}
       key: {{ .Values.defaultAuthMethod.approle.secretKey }}

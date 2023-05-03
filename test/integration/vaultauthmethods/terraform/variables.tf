@@ -41,6 +41,11 @@ variable "approle_role_name" {
   default = "approle"
 }
 
+variable "approle_mount_path" {
+  type    = string
+  default = "approle"
+}
+
 variable "vault_enterprise" {
   type    = bool
   default = false

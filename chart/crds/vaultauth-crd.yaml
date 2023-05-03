@@ -39,15 +39,16 @@ spec:
             properties:
               approle:
                 description: AppRole specific auth configuration, requires that the
-                  Method be set to approle.
+                  Method be set to `approle`.
                 properties:
-                  roleid:
-                    description: RoleID (role_id) to use for authenticating to Vault.
+                  roleId:
+                    description: RoleID `role_id` of the AppRole Role to use for authenticating
+                      to Vault.
                     type: string
                   secretKeyRef:
-                    description: Selects a key of a secret in the AuthMethod's namespace
-                      which holds the secret_id of the approle used to authenticate
-                      to Vault.
+                    description: Selects a secret in the AuthMethod's namespace which
+                      holds the `secret_id` of the AppRole used to authenticate to
+                      Vault.
                     properties:
                       key:
                         description: Key of the secret to select from. Must be a valid
@@ -62,7 +63,7 @@ spec:
                     - name
                     type: object
                 required:
-                - roleid
+                - roleId
                 - secretKeyRef
                 type: object
               headers:
@@ -72,7 +73,7 @@ spec:
                 type: object
               jwt:
                 description: JWT specific auth configuration, requires that the Method
-                  be set to jwt.
+                  be set to `jwt`.
                 properties:
                   audiences:
                     description: TokenAudiences to include in the ServiceAccount token.
@@ -115,7 +116,7 @@ spec:
                 type: object
               kubernetes:
                 description: Kubernetes specific auth configuration, requires that
-                  the Method be set to kubernetes.
+                  the Method be set to `kubernetes`.
                 properties:
                   audiences:
                     description: TokenAudiences to include in the ServiceAccount token.
@@ -164,7 +165,7 @@ spec:
                   when client cache persistence with encryption is enabled. This is
                   done by passing setting the manager''s commandline argument --client-cache-persistence-model=direct-encrypted
                   Typically there should only ever be one VaultAuth configured with
-                  StorageEncryption in the Cluster, and it should have the the label:
+                  StorageEncryption in the Cluster, and it should have the label:
                   cacheStorageEncryption=true'
                 properties:
                   keyName:

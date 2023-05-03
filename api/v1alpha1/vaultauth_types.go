@@ -51,11 +51,12 @@ type VaultAuthConfigJWT struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
-// VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to Vault.
+// VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to Vault via an
+// AppRole AuthMethod.
 type VaultAuthConfigAppRole struct {
-	// RoleID (role_id) to use for authenticating to Vault.
-	RoleID string `json:"roleid"`
-	// Selects a key of a secret in the AuthMethod's namespace which holds the secret_id of the approle used
+	// RoleID `role_id` of the AppRole Role to use for authenticating to Vault.
+	RoleID string `json:"roleId"`
+	// Selects a secret in the AuthMethod's namespace which holds the `secret_id` of the AppRole used
 	// to authenticate to Vault.
 	SecretKeyRef *SecretKeySelector `json:"secretKeyRef"`
 }
@@ -77,16 +78,16 @@ type VaultAuthSpec struct {
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.
 	Headers map[string]string `json:"headers,omitempty"`
-	// Kubernetes specific auth configuration, requires that the Method be set to kubernetes.
+	// Kubernetes specific auth configuration, requires that the Method be set to `kubernetes`.
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
-	// AppRole specific auth configuration, requires that the Method be set to approle.
+	// AppRole specific auth configuration, requires that the Method be set to `approle`.
 	AppRole *VaultAuthConfigAppRole `json:"approle,omitempty"`
-	// JWT specific auth configuration, requires that the Method be set to jwt.
+	// JWT specific auth configuration, requires that the Method be set to `jwt`.
 	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
 	// This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted
-	// Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the
+	// Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have
 	// the label: cacheStorageEncryption=true
 	StorageEncryption *StorageEncryption `json:"storageEncryption,omitempty"`
 }

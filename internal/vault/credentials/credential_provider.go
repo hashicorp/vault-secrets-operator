@@ -41,7 +41,7 @@ func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authOb
 		}
 		return provider, nil
 	case ProviderMethodAppRole:
-		provider := &ApproleCredentialProvider{}
+		provider := &AppRoleCredentialProvider{}
 		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
 			return nil, err
 		}

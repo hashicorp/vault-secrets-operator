@@ -31,6 +31,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
 	k8sConfigContext := "kind-" + clusterName
+	appRoleMountPath := "approle"
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -57,6 +58,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
+			"approle_mount_path":           appRoleMountPath,
 		},
 	}
 	if operatorImageRepo != "" {
@@ -167,7 +169,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
 				Method:    "approle",
-				Mount:     "approle",
+				Mount:     appRoleMountPath,
 				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
 					RoleID: outputs.AppRoleRoleID,
 					SecretKeyRef: &secretsv1alpha1.SecretKeySelector{
@@ -180,7 +182,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 	expectedData := map[string]interface{}{"foo": "bar"}
 
-	// Apply all of the Auth Methods
+	// Apply all the Auth Methods
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)

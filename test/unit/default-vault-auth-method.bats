@@ -216,7 +216,7 @@ load _helpers
      [ "${actual}" = "approle" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
      [ "${actual}" = "foo" ]
-    actual=$(echo "$object" | yq '.spec.approle.roleid' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.approle.roleId' | tee /dev/stderr)
      [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.approle.secretKeyRef.name' | tee /dev/stderr)
      [ "${actual}" = "secret-1" ]
