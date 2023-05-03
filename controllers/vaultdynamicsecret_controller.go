@@ -250,6 +250,14 @@ func (r *VaultDynamicSecretReconciler) renewLease(ctx context.Context, c vault.C
 	if err != nil {
 		return nil, err
 	}
+	// The renewal duration can come back as less than the requested increment
+	// if the time remaining on max_ttl is less than the increment. If there are
+	// rollout restart targets and the renewal was capped in this manner, return
+	// an error to ensure the targets have valid credentials while going through
+	// the rollout restart.
+	if len(o.Spec.RolloutRestartTargets) > 0 && resp.LeaseDuration < o.Status.SecretLease.LeaseDuration {
+		return nil, fmt.Errorf("lease renewal was capped to %ds, less than the requested %ds", resp.LeaseDuration, o.Status.SecretLease.LeaseDuration)
+	}
 
 	return r.getVaultSecretLease(resp), nil
 }
