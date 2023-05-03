@@ -156,4 +156,30 @@ load _helpers
     [ "${actual}" = "true" ]
 }
 
+#--------------------------------------------------------------------
+# annotations
 
+@test "controller/Deployment: annotations not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)#
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = "1" ]
+}
+
+@test "controller/Deployment: annotations can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.annotations.annot1=value1' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = "2" ]
+   actual=$(echo "$object" | yq '.annot1' | tee /dev/stderr)
+    [ "${actual}" = "value1" ]
+}

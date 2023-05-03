@@ -30,11 +30,13 @@ controller:
         cpu: 5m
         memory: 64Mi
 
+  # This value defines additional annotations for the deployment. This should be formatted as a multi-line
+  # string.
+  annotations: null
+
   # Settings related to the vault-secrets-operator container.
   manager:
-     # This value defines additional annotations for the deployment. This should be formatted as a multi-line
-    # string.
-    annotations: null
+
 
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
