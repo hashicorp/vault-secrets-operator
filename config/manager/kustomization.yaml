@@ -11,11 +11,9 @@ configMapGenerator:
 - files:
   - controller_manager_config.yaml
   name: manager-config
-
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
 images:
 - name: controller
   newName: hashicorp/vault-secrets-operator
   newTag: 0.1.0-beta
-
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
