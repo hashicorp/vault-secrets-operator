@@ -364,7 +364,5 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 func inRenewalWindow(status secretsv1alpha1.VaultDynamicSecretStatus) bool {
 	leaseDuration := time.Duration(status.SecretLease.LeaseDuration) * time.Second
 	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * 2 / 3)
-	ts := time.Unix(status.LastRenewalTime, 0).Add(startRenewingAt).Unix()
-	now := time.Now().Unix()
-	return ts-now <= 0
-}
+	ts := time.Unix(status.LastRenewalTime, 0).Add(startRenewingAt)
+	return time.Now().After(ts)
