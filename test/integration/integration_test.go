@@ -79,7 +79,7 @@ func init() {
 		panic(err)
 	}
 
-	kustomizeConfigRoot, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "config"))
+	kustomizeConfigRoot, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "build", "config"))
 	if err != nil {
 		panic(err)
 	}
