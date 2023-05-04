@@ -34,7 +34,13 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 	logger := log.FromContext(ctx)
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
-	secret, err := getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.AppRole.SecretRef)
+
+	// We use the UID of the secret which holds the AppRole Role's secret_id for the provider UID
+	key := ctrlclient.ObjectKey{
+		Namespace: l.providerNamespace,
+		Name:      l.authObj.Spec.AppRole.SecretRef,
+	}
+	secret, err := getSecret(ctx, client, key)
 	if err != nil {
 		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return err
@@ -45,32 +51,25 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 
 func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
-	// Fetch the secret_id each time we call GetCreds in case the secret_id has changed since
-	// the last time the client token was generated. In the case of AppRole this is assumed to be common.
-	secretID, err := l.getSecretID(ctx, client)
+	// Fetch the secret_id from the Kubernetes Secret each time there is a call to GetCreds in case the secret_id has
+	// changed since the last time the client token was generated. In the case of AppRole this is assumed to be common.
+	key := ctrlclient.ObjectKey{
+		Namespace: l.providerNamespace,
+		Name:      l.authObj.Spec.AppRole.SecretRef,
+	}
+	secret, err := getSecret(ctx, client, key)
 	if err != nil {
-		logger.Error(err, "Failed to get secret_id", "role_id", l.authObj.Spec.AppRole.RoleID)
+		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
+		return nil, err
+	}
+	if secret.Data[ProviderSecretKeyAppRole] == nil {
+		err = fmt.Errorf("unable to get Secret data from Secret")
+		logger.Error(err, "Failed to get secret_id from secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return nil, err
 	}
 	// credentials needed for AppRole auth
-	creds := map[string]interface{}{
+	return map[string]interface{}{
 		"role_id":   l.authObj.Spec.AppRole.RoleID,
-		"secret_id": secretID,
-	}
-	return creds, nil
-}
-
-func (l *AppRoleCredentialProvider) getSecretID(ctx context.Context, client ctrlclient.Client) (string, error) {
-	logger := log.FromContext(ctx)
-
-	secret, err := getSecret(ctx, client, l.authObj.Namespace, l.authObj.Spec.AppRole.SecretRef)
-	if err != nil {
-		logger.Error(err, "Failed to get secret when fetching secret_id", "role_id", l.authObj.Spec.AppRole.RoleID)
-		return "", err
-	}
-	secretID := string(secret.Data[AppRoleCredentialProviderSecretKey])
-	if secretID == "" {
-		return "", fmt.Errorf("Invalid reference for secret_id, empty data")
-	}
-	return secretID, nil
+		"secret_id": string(secret.Data[ProviderSecretKeyAppRole]),
+	}, nil
 }

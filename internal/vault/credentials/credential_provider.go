@@ -16,7 +16,7 @@ import (
 const (
 	ProviderMethodKubernetes string = "kubernetes"
 	ProviderMethodJWT        string = "jwt"
-	ProviderMethodAppRole    string = "approle"
+	ProviderMethodAppRole    string = "appRole"
 )
 
 var ProviderMethodsSupported = []string{ProviderMethodKubernetes, ProviderMethodJWT, ProviderMethodAppRole}

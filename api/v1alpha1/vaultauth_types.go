@@ -63,7 +63,7 @@ type VaultAuthSpec struct {
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
-	// +kubebuilder:validation:Enum=kubernetes;jwt;approle
+	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
@@ -73,8 +73,8 @@ type VaultAuthSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// Kubernetes specific auth configuration, requires that the Method be set to `kubernetes`.
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
-	// AppRole specific auth configuration, requires that the Method be set to `approle`.
-	AppRole *VaultAuthConfigAppRole `json:"approle,omitempty"`
+	// AppRole specific auth configuration, requires that the Method be set to `appRole`.
+	AppRole *VaultAuthConfigAppRole `json:"appRole,omitempty"`
 	// JWT specific auth configuration, requires that the Method be set to `jwt`.
 	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.

@@ -265,7 +265,7 @@ defaultAuthMethod:
 
   # AppRole auth method specific configuration
   approle:
-    # Role (role_id) to use for authenticating to Vault.
+    # AppRole Role's `role_id` to use for authenticating to Vault.
     # This is a required field and must be setup in Vault prior to deploying the helm chart
     # @type: string
     roleId: ""

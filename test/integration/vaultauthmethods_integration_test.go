@@ -164,7 +164,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			Spec: secretsv1alpha1.VaultAuthSpec{
 				// No VaultConnectionRef - using the default.
 				Namespace: testVaultNamespace,
-				Method:    "approle",
+				Method:    "appRole",
 				Mount:     appRoleMountPath,
 				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
 					RoleID:    outputs.AppRoleRoleID,

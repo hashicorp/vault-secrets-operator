@@ -44,7 +44,11 @@ func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 		l.uid = sa.UID
 	} else if l.authObj.Spec.JWT.SecretRef != "" {
 		var err error
-		l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretRef)
+		key := ctrlclient.ObjectKey{
+			Namespace: l.providerNamespace,
+			Name:      l.authObj.Spec.JWT.SecretRef,
+		}
+		l.tokenSecret, err = getSecret(ctx, client, key)
 		if err != nil {
 			return err
 		}
@@ -93,13 +97,21 @@ func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	}
 
 	var err error
-	l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretRef)
+	key := ctrlclient.ObjectKey{
+		Namespace: l.providerNamespace,
+		Name:      l.authObj.Spec.JWT.SecretRef,
+	}
+	l.tokenSecret, err = getSecret(ctx, client, key)
 	if err != nil {
 		return nil, err
 	}
-
+	if l.tokenSecret.Data[ProviderSecretKeyJWT] == nil {
+		err = fmt.Errorf("unable to get Secret data from Secret")
+		logger.Error(err, "Failed to get secret_id from secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
+		return nil, err
+	}
 	return map[string]interface{}{
 		"role": l.authObj.Spec.JWT.Role,
-		"jwt":  string(l.tokenSecret.Data[JWTCredentialProviderSecretKey]),
+		"jwt":  string(l.tokenSecret.Data[ProviderSecretKeyJWT]),
 	}, nil
 }

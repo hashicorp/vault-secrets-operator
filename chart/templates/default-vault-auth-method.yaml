@@ -36,10 +36,10 @@ spec:
     audiences: {{ .Values.defaultAuthMethod.jwt.tokenAudiences | toJson }}
     {{- end }}
     {{- end }}
-  {{- else if eq .Values.defaultAuthMethod.method "approle" }}
-  approle:
-    roleId: {{ .Values.defaultAuthMethod.approle.roleid }}
-    secretRef: {{ .Values.defaultAuthMethod.approle.secretRef }}
+  {{- else if eq .Values.defaultAuthMethod.method "appRole" }}
+  appRole:
+    roleId: {{ .Values.defaultAuthMethod.appRole.roleid }}
+    secretRef: {{ .Values.defaultAuthMethod.appRole.secretRef }}
   {{- end }}
   {{- if .Values.defaultAuthMethod.headers }}
   headers:
