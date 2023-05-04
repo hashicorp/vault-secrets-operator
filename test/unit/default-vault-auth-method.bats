@@ -189,15 +189,15 @@ load _helpers
      [ "${actual}" = null ]
 }
 
-@test "defaultAuthMethod/CR: settings can be modified for approle auth method" {
+@test "defaultAuthMethod/CR: settings can be modified for appRole auth method" {
     cd `chart_dir`
     local object=$(helm template \
         -s templates/default-vault-auth-method.yaml  \
         --set 'defaultAuthMethod.enabled=true' \
-        --set 'defaultAuthMethod.method=approle' \
+        --set 'defaultAuthMethod.method=appRole' \
         --set 'defaultAuthMethod.namespace=tenant-2' \
-        --set 'defaultAuthMethod.approle.roleid=role-1' \
-        --set 'defaultAuthMethod.approle.secretRef=secret-1' \
+        --set 'defaultAuthMethod.appRole.roleid=role-1' \
+        --set 'defaultAuthMethod.appRole.secretRef=secret-1' \
         --set 'defaultAuthMethod.mount=foo' \
         . | tee /dev/stderr)
 
@@ -207,11 +207,11 @@ load _helpers
      [ "${actual}" = "tenant-2" ]
 
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
-     [ "${actual}" = "approle" ]
+     [ "${actual}" = "appRole" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
      [ "${actual}" = "foo" ]
-    actual=$(echo "$object" | yq '.spec.approle.roleId' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.appRole.roleId' | tee /dev/stderr)
      [ "${actual}" = "role-1" ]
-    actual=$(echo "$object" | yq '.spec.approle.secretRef' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.appRole.secretRef' | tee /dev/stderr)
      [ "${actual}" = "secret-1" ]
 }
