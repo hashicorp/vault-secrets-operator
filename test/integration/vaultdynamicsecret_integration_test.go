@@ -31,9 +31,6 @@ import (
 )
 
 func TestVaultDynamicSecret(t *testing.T) {
-	if testWithHelm {
-		t.Skipf("Test is not compatiable with Helm")
-	}
 	testID := fmt.Sprintf("vds")
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
@@ -63,8 +60,12 @@ func TestVaultDynamicSecret(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
+	// TODO: setup persistence in auth method/connection in tf
 	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted")
-	deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+
+	if !testWithHelm {
+		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	}
 
 	k8sDBSecretsCountFromTF := 5
 	if v := os.Getenv("K8S_DB_SECRET_COUNT"); v != "" {
@@ -80,14 +81,22 @@ func TestVaultDynamicSecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
+			"deploy_operator_via_helm":   testWithHelm,
+			"operator_helm_chart_path":   chartPath,
 			"k8s_config_context":         k8sConfigContext,
 			"name_prefix":                testID,
 			"k8s_db_secret_count":        k8sDBSecretsCountFromTF,
-			"vault_address":              os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                os.Getenv("VAULT_TOKEN"),
+			"vault_address":              vaultAddr,
+			"vault_token":                vaultToken,
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 30,
 		},
+	}
+	if operatorImageRepo != "" {
+		tfOptions.Vars["operator_image_repo"] = operatorImageRepo
+	}
+	if operatorImageTag != "" {
+		tfOptions.Vars["operator_image_tag"] = operatorImageTag
 	}
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
@@ -104,7 +113,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 			os.RemoveAll(tempDir)
 
 			// Undeploy Kustomize
-			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			if !testWithHelm {
+				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			}
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
@@ -134,47 +145,49 @@ func TestVaultDynamicSecret(t *testing.T) {
 	// Set the secrets in vault to be synced to kubernetes
 	// vClient := getVaultClient(t, testVaultNamespace)
 	// Create a VaultConnection CR
-	conns := []*secretsv1alpha1.VaultConnection{
-		// Create the default VaultConnection CR in the Operator's namespace
-		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.NameDefault,
-				Namespace: operatorNS,
-			},
-			Spec: secretsv1alpha1.VaultConnectionSpec{
-				Address: testVaultAddress,
-			},
-		},
-	}
-	auths := []*secretsv1alpha1.VaultAuth{
-		{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.NameDefault,
-				Namespace: operatorNS,
-			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
-				Namespace: outputs.Namespace,
-				Method:    "kubernetes",
-				Mount:     outputs.AuthMount,
-				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
-					TokenAudiences: []string{"vault"},
+	if !testWithHelm {
+
+		conns := []*secretsv1alpha1.VaultConnection{
+			// Create the default VaultConnection CR in the Operator's namespace
+			{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      consts.NameDefault,
+					Namespace: operatorNS,
+				},
+				Spec: secretsv1alpha1.VaultConnectionSpec{
+					Address: testVaultAddress,
 				},
 			},
-		},
-	}
+		}
+		auths := []*secretsv1alpha1.VaultAuth{
+			{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      consts.NameDefault,
+					Namespace: operatorNS,
+				},
+				Spec: secretsv1alpha1.VaultAuthSpec{
+					Namespace: outputs.Namespace,
+					Method:    "kubernetes",
+					Mount:     outputs.AuthMount,
+					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+						Role:           outputs.AuthRole,
+						ServiceAccount: "default",
+						TokenAudiences: []string{"vault"},
+					},
+				},
+			},
+		}
+		create := func(o ctrlclient.Object) {
+			require.Nil(t, crdClient.Create(ctx, o))
+			created = append(created, o)
+		}
 
-	create := func(o ctrlclient.Object) {
-		require.Nil(t, crdClient.Create(ctx, o))
-		created = append(created, o)
-	}
-
-	for _, o := range conns {
-		create(o)
-	}
-	for _, o := range auths {
-		create(o)
+		for _, o := range conns {
+			create(o)
+		}
+		for _, o := range auths {
+			create(o)
+		}
 	}
 
 	tests := []struct {
@@ -187,7 +200,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		{
 			name:     "existing-only",
 			existing: outputs.K8sDBSecrets,
-			authObj:  auths[0],
 			expected: map[string]int{
 				"_raw":     100,
 				"username": 51,
@@ -195,9 +207,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:    "create-only",
-			create:  5,
-			authObj: auths[0],
+			name:   "create-only",
+			create: 5,
 			expected: map[string]int{
 				"_raw":     100,
 				"username": 51,
@@ -208,7 +219,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:     "mixed",
 			create:   5,
 			existing: outputs.K8sDBSecrets,
-			authObj:  auths[0],
 			expected: map[string]int{
 				"_raw":     100,
 				"username": 51,

@@ -82,3 +82,85 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
   ]
   audience = "vault"
 }
+
+resource "helm_release" "vault-secrets-operator" {
+  count            = var.deploy_operator_via_helm ? 1 : 0
+  name             = "test"
+  namespace        = var.operator_namespace_name
+  create_namespace = true
+  wait             = true
+  chart            = var.operator_helm_chart_path
+
+  # Connection Configuration
+  set {
+    name  = "defaultVaultConnection.enabled"
+    value = "true"
+  }
+  set {
+    name  = "defaultVaultConnection.address"
+    value = var.vault_address
+  }
+  # Auth Method Configuration
+  set {
+    name  = "defaultAuthMethod.enabled"
+    value = "true"
+  }
+  set {
+    name  = "defaultAuthMethod.method"
+    value = "kubernetes"
+  }
+  dynamic "set" {
+    for_each = var.vault_enterprise ? [""] : []
+    content {
+      name  = "defaultAuthMethod.namespace"
+      value = local.namespace
+    }
+  }
+  set {
+    name  = "defaultAuthMethod.kubernetes.role"
+    value = vault_kubernetes_auth_backend_role.dev.role_name
+  }
+  set {
+    name  = "defaultAuthMethod.kubernetes.tokenAudiences"
+    value = "{${vault_kubernetes_auth_backend_role.dev.audience}}"
+  }
+  set {
+    name  = "controller.manager.image.repository"
+    value = var.operator_image_repo
+  }
+  set {
+    name  = "controller.manager.image.tag"
+    value = var.operator_image_tag
+  }
+  set {
+    name  = "controller.manager.clientCache.persistenceModel"
+    value = "direct-encrypted"
+  }
+  dynamic "set" {
+    for_each = var.vault_enterprise ? [""] : []
+    content {
+      name  = "controller.manager.clientCache.storageEncryption.namespace"
+      value = local.namespace
+    }
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.keyName"
+    value = vault_transit_secret_backend_key.cache.name
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.transitMount"
+    value = vault_transit_secret_backend_key.cache.backend
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.serviceAccount"
+    value = "${local.name_prefix}-operator" #kubernetes_service_account.operator.metadata[0].name
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.tokenAudiences"
+    value = "{${join(",", local.token_audience)}}"
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.role"
+    value = local.auth_role_operator
+  }
+}

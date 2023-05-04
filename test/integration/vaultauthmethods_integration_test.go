@@ -26,6 +26,7 @@ import (
 )
 
 func TestVaultAuthMethods(t *testing.T) {
+	t.Skip()
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID

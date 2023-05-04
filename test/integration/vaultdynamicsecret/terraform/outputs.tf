@@ -23,7 +23,7 @@ output "db_path" {
   value = vault_database_secrets_mount.db.path
 }
 output "transit_ref" {
-  value = kubernetes_manifest.vault-auth-operator.manifest.metadata.name
+  value = var.deploy_operator_via_helm ? local.helm_transit_ref_name : kubernetes_manifest.vault-auth-operator[0].manifest.metadata.name
 }
 output "transit_path" {
   value = vault_mount.transit.path

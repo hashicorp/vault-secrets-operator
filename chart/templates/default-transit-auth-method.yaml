@@ -28,4 +28,5 @@ spec:
   storageEncryption:
     keyName: {{ .Values.controller.manager.clientCache.storageEncryption.keyName }}
     mount: {{ .Values.controller.manager.clientCache.storageEncryption.transitMount }}
+  vaultConnectionRef: "default"
 {{- end }}

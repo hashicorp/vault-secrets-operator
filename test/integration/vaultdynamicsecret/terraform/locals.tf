@@ -6,6 +6,12 @@ locals {
   name_prefix = "${var.name_prefix}-${random_string.prefix.result}"
   namespace   = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
 
+  operator_namespace    = var.deploy_operator_via_helm ? helm_release.vault-secrets-operator[0].namespace : data.kubernetes_namespace.operator[0].metadata[0].name
+  helm_transit_ref_name = "${helm_release.vault-secrets-operator[0].name}-default-transit-auth"
+
+  operator_service_account_name = "${local.name_prefix}-operator"
+  token_audience                = ["vault"]
+
   # k8s locals
   k8s_namespace = "${local.name_prefix}-k8s-ns"
 

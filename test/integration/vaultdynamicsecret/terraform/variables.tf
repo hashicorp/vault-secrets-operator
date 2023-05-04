@@ -1,7 +1,7 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-variable "operator_namespace" {
+variable "operator_namespace_name" {
   default = "vault-secrets-operator-system"
 }
 
@@ -44,3 +44,21 @@ variable "vault_db_default_lease_ttl" {
 
 variable "vault_address" {}
 variable "vault_token" {}
+
+# The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
+variable "operator_helm_chart_path" {
+  default = "../../../../chart"
+}
+
+variable "deploy_operator_via_helm" {
+  type    = bool
+  default = false
+}
+
+variable "operator_image_repo" {
+  default = "hashicorp/vault-secrets-operator"
+}
+
+variable "operator_image_tag" {
+  default = "0.0.0-dev"
+}

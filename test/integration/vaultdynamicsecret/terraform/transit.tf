@@ -2,15 +2,17 @@
 # SPDX-License-Identifier: MPL-2.0
 
 data "kubernetes_namespace" "operator" {
+  count = var.deploy_operator_via_helm ? 0 : 1
   metadata {
-    name = var.operator_namespace
+    name = var.operator_namespace_name
   }
 }
+
 # service account for the operator
 resource "kubernetes_service_account" "operator" {
   metadata {
-    namespace = data.kubernetes_namespace.operator.metadata[0].name
-    name      = "${local.name_prefix}-operator"
+    namespace = local.operator_namespace
+    name      = local.operator_service_account_name
   }
 }
 
@@ -49,12 +51,13 @@ EOT
 }
 
 resource "kubernetes_manifest" "vault-auth-operator" {
+  count = var.deploy_operator_via_helm ? 0 : 1
   manifest = {
     apiVersion = "secrets.hashicorp.com/v1alpha1"
     kind       = "VaultAuth"
     metadata = {
       name      = "${local.name_prefix}-operator"
-      namespace = data.kubernetes_namespace.operator.metadata[0].name
+      namespace = local.operator_namespace
       labels = {
         cacheStorageEncryption = "true"
       }
