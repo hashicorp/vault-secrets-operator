@@ -106,7 +106,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
-			if !inRenewalWindow(o.Status) {
+			if !inRenewalWindow(o) {
 				leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
 				horizon := computeDynamicHorizonWithJitter(leaseDuration)
 				if err := r.updateStatus(ctx, o); err != nil {
@@ -158,7 +158,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		} else {
 			// The secretLease was not renewed or failed, continue through Reconcile and do a rollout restart.
 			doRolloutRestart = true
-			if !isLeaseNotfoundError(err) {
+			if e, ok := err.(*LeaseTruncatedError); ok {
+				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
+					"Lease renewal duration was truncated from %ds to %ds, requesting new credentials", e.Expected, e.Actual)
+			} else if !isLeaseNotfoundError(err) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 			}
@@ -269,12 +272,13 @@ func (r *VaultDynamicSecretReconciler) renewLease(ctx context.Context, c vault.C
 		return nil, err
 	}
 	// The renewal duration can come back as less than the requested increment
-	// if the time remaining on max_ttl is less than the increment. If there are
-	// rollout restart targets and the renewal was capped in this manner, return
-	// an error to ensure the targets have valid credentials while going through
-	// the rollout restart.
-	if len(o.Spec.RolloutRestartTargets) > 0 && resp.LeaseDuration < o.Status.SecretLease.LeaseDuration {
-		return nil, fmt.Errorf("lease renewal was capped to %ds, less than the requested %ds", resp.LeaseDuration, o.Status.SecretLease.LeaseDuration)
+	// if the time remaining on max_ttl is less than the increment. In this case
+	// return an error so new credentials are acquired.
+	if resp.LeaseDuration < o.Status.SecretLease.LeaseDuration {
+		return r.getVaultSecretLease(resp), &LeaseTruncatedError{
+			Expected: o.Status.SecretLease.LeaseDuration,
+			Actual:   resp.LeaseDuration,
+		}
 	}
 
 	return r.getVaultSecretLease(resp), nil
@@ -361,8 +365,9 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 }
 
 // inRenewalWindow checks if 2/3 of the lease duration of a VDS has elapsed
-func inRenewalWindow(status secretsv1alpha1.VaultDynamicSecretStatus) bool {
-	leaseDuration := time.Duration(status.SecretLease.LeaseDuration) * time.Second
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * 2 / 3)
-	ts := time.Unix(status.LastRenewalTime, 0).Add(startRenewingAt)
+func inRenewalWindow(vds *secretsv1alpha1.VaultDynamicSecret) bool {
+	leaseDuration := time.Duration(vds.Status.SecretLease.LeaseDuration) * time.Second
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(vds.Spec.RenewalPercent) / 100)
+	ts := time.Unix(vds.Status.LastRenewalTime, 0).Add(startRenewingAt)
 	return time.Now().After(ts)
+}

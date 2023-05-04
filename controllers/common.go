@@ -17,6 +17,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+// LeaseTruncatedError indicates that the requested lease renewal duration is
+// less than expected
+type LeaseTruncatedError struct {
+	Expected int
+	Actual   int
+}
+
+func (l *LeaseTruncatedError) Error() string {
+	return fmt.Sprintf("lease renewal duration was truncated from %ds to %ds",
+		l.Expected, l.Actual)
+}
+
 var random = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 
 // computeHorizonWithJitter returns a time.Duration minus a random offset, with an

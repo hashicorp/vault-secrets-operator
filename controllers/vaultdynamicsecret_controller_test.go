@@ -13,42 +13,62 @@ import (
 
 func Test_inRenewalWindow(t *testing.T) {
 	tests := map[string]struct {
-		status           secretsv1alpha1.VaultDynamicSecretStatus
+		vds              *secretsv1alpha1.VaultDynamicSecret
 		expectedInWindow bool
 	}{
 		"full lease elapsed": {
-			status: secretsv1alpha1.VaultDynamicSecretStatus{
-				SecretLease: secretsv1alpha1.VaultSecretLease{
-					LeaseDuration: 600,
+			vds: &secretsv1alpha1.VaultDynamicSecret{
+				Status: secretsv1alpha1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1alpha1.VaultSecretLease{
+						LeaseDuration: 600,
+					},
+					LastRenewalTime: time.Now().Unix() - 600,
 				},
-				LastRenewalTime: time.Now().Unix() - 600,
+				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					RenewalPercent: 67,
+				},
 			},
 			expectedInWindow: true,
 		},
 		"two thirds elapsed": {
-			status: secretsv1alpha1.VaultDynamicSecretStatus{
-				SecretLease: secretsv1alpha1.VaultSecretLease{
-					LeaseDuration: 600,
+			vds: &secretsv1alpha1.VaultDynamicSecret{
+				Status: secretsv1alpha1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1alpha1.VaultSecretLease{
+						LeaseDuration: 600,
+					},
+					LastRenewalTime: time.Now().Unix() - 450,
 				},
-				LastRenewalTime: time.Now().Unix() - 400,
+				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					RenewalPercent: 67,
+				},
 			},
 			expectedInWindow: true,
 		},
 		"one third elapsed": {
-			status: secretsv1alpha1.VaultDynamicSecretStatus{
-				SecretLease: secretsv1alpha1.VaultSecretLease{
-					LeaseDuration: 600,
+			vds: &secretsv1alpha1.VaultDynamicSecret{
+				Status: secretsv1alpha1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1alpha1.VaultSecretLease{
+						LeaseDuration: 600,
+					},
+					LastRenewalTime: time.Now().Unix() - 200,
 				},
-				LastRenewalTime: time.Now().Unix() - 200,
+				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					RenewalPercent: 67,
+				},
 			},
 			expectedInWindow: false,
 		},
 		"past end of lease": {
-			status: secretsv1alpha1.VaultDynamicSecretStatus{
-				SecretLease: secretsv1alpha1.VaultSecretLease{
-					LeaseDuration: 600,
+			vds: &secretsv1alpha1.VaultDynamicSecret{
+				Status: secretsv1alpha1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1alpha1.VaultSecretLease{
+						LeaseDuration: 600,
+					},
+					LastRenewalTime: time.Now().Unix() - 800,
 				},
-				LastRenewalTime: time.Now().Unix() - 800,
+				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					RenewalPercent: 67,
+				},
 			},
 			expectedInWindow: true,
 		},
@@ -56,7 +76,7 @@ func Test_inRenewalWindow(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedInWindow, inRenewalWindow(tc.status))
+			assert.Equal(t, tc.expectedInWindow, inRenewalWindow(tc.vds))
 		})
 	}
 }
