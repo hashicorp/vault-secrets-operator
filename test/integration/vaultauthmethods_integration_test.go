@@ -221,7 +221,9 @@ func TestVaultAuthMethods(t *testing.T) {
 	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret) {
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, expectedData)
-		assert.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		assertSyncableSecret(t, obj,
 			"secrets.hashicorp.com/v1alpha1",
 			"VaultStaticSecret", secret)
