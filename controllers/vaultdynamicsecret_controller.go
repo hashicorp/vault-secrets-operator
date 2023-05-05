@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -158,7 +159,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		} else {
 			// The secretLease was not renewed or failed, continue through Reconcile and do a rollout restart.
 			doRolloutRestart = true
-			if e, ok := err.(*LeaseTruncatedError); ok {
+			if e, ok := err.(*LeaseTruncatedError); ok || e != nil && errors.As(err, &e) {
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Lease renewal duration was truncated from %ds to %ds, requesting new credentials", e.Expected, e.Actual)
 			} else if !isLeaseNotfoundError(err) {
@@ -364,10 +365,13 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	}
 }
 
-// inRenewalWindow checks if 2/3 of the lease duration of a VDS has elapsed
+// inRenewalWindow checks if the specified percentage of the VDS lease duration
+// has elapsed
 func inRenewalWindow(vds *secretsv1alpha1.VaultDynamicSecret) bool {
+	renewalPercent := capRenewalPercent(vds.Spec.RenewalPercent)
 	leaseDuration := time.Duration(vds.Status.SecretLease.LeaseDuration) * time.Second
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(vds.Spec.RenewalPercent) / 100)
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(renewalPercent) / 100)
+
 	ts := time.Unix(vds.Status.LastRenewalTime, 0).Add(startRenewingAt)
 	return time.Now().After(ts)
 }

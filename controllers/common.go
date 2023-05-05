@@ -53,13 +53,29 @@ func computeHorizonWithJitter(minDuration time.Duration) time.Duration {
 	return minDuration - (time.Duration(max) + time.Duration(jitter))
 }
 
+// capRenewalPercent returns a renewalPercent capped between 0 and 90
+// inclusively
+func capRenewalPercent(renewalPercent int) (rp int) {
+	switch {
+	case renewalPercent > 90:
+		rp = 90
+	case renewalPercent < 0:
+		rp = 0
+	default:
+		rp = renewalPercent
+	}
+	return rp
+}
+
 // computeDynamicHorizonWithJitter returns a time.Duration that is the specified
 // percentage of the lease duration, plus additional random jitter (up to 10% of
 // the lease), to ensure the horizon falls within the specified renewal window
 func computeDynamicHorizonWithJitter(leaseDuration time.Duration, renewalPercent int) time.Duration {
+	cappedRenewalPercent := capRenewalPercent(renewalPercent)
+
 	max, jitter := computeMaxJitter(leaseDuration)
 
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(renewalPercent) / 100)
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(cappedRenewalPercent) / 100)
 
 	return startRenewingAt + time.Duration(max) - time.Duration(jitter)
 }

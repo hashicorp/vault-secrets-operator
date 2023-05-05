@@ -72,6 +72,20 @@ func Test_inRenewalWindow(t *testing.T) {
 			},
 			expectedInWindow: true,
 		},
+		"renewalPercent is 0": {
+			vds: &secretsv1alpha1.VaultDynamicSecret{
+				Status: secretsv1alpha1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1alpha1.VaultSecretLease{
+						LeaseDuration: 600,
+					},
+					LastRenewalTime: time.Now().Unix() - 400,
+				},
+				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					RenewalPercent: 0,
+				},
+			},
+			expectedInWindow: true,
+		},
 	}
 
 	for name, tc := range tests {
