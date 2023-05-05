@@ -28,7 +28,7 @@ func (l *LeaseTruncatedError) Error() string {
 	return fmt.Sprintf("lease renewal duration was truncated from %ds to %ds",
 		l.Expected, l.Actual)
 }
-
+var _ error = (*LeaseTruncatedError)(nil)
 var random = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 
 // computeMaxJitter with max as 10% of the duration, and jitter a random amount
