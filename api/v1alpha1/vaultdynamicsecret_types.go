@@ -18,8 +18,10 @@ type VaultDynamicSecretSpec struct {
 	Namespace string `json:"namespace,omitempty"`
 	// Mount path of the secret's engine in Vault.
 	Mount string `json:"mount"`
-	// Role in Vault to get the credentials for.
-	Role string `json:"role"`
+	// Path in Vault to get the credentials for, and is relative to Mount.
+	// Please consult https://developer.hashicorp.com/vault/docs/secrets if one is
+	// uncertain about what 'path' should be set to.
+	Path string `json:"path"`
 	// Revoke the existing lease when a lease is rotated or on VDS resource deletion.
 	Revoke bool `json:"revoke,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does

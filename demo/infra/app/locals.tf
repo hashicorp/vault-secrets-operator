@@ -18,4 +18,5 @@ locals {
   # db locals
   postgres_host = "${data.kubernetes_service.postgres.metadata[0].name}.${helm_release.postgres.namespace}.svc.cluster.local:${data.kubernetes_service.postgres.spec[0].port[0].port}"
   db_role       = "dev-postgres"
+  db_creds_path = "creds/${var.db_role}"
 }

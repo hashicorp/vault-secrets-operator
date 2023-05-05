@@ -17,7 +17,7 @@ output "auth_role" {
   value = local.auth_role
 }
 output "db_role" {
-  value = local.db_role
+  value = var.db_role
 }
 output "db_path" {
   value = vault_database_secrets_mount.db.path

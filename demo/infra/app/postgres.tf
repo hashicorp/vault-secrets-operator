@@ -54,7 +54,7 @@ resource "vault_database_secrets_mount" "db" {
     connection_url    = "postgresql://{{username}}:{{password}}@${local.postgres_host}/postgres?sslmode=disable"
     verify_connection = false
     allowed_roles = [
-      local.db_role,
+      var.db_role,
     ]
   }
 }
@@ -62,7 +62,7 @@ resource "vault_database_secrets_mount" "db" {
 resource "vault_database_secret_backend_role" "postgres" {
   namespace = local.namespace
   backend   = vault_database_secrets_mount.db.path
-  name      = local.db_role
+  name      = var.db_role
   db_name   = vault_database_secrets_mount.db.postgresql[0].name
   creation_statements = [
     "CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';",
