@@ -17,6 +17,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+var (
+	_      error = (*LeaseTruncatedError)(nil)
+	random       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+)
+
 // LeaseTruncatedError indicates that the requested lease renewal duration is
 // less than expected
 type LeaseTruncatedError struct {
@@ -28,8 +33,6 @@ func (l *LeaseTruncatedError) Error() string {
 	return fmt.Sprintf("lease renewal duration was truncated from %ds to %ds",
 		l.Expected, l.Actual)
 }
-var _ error = (*LeaseTruncatedError)(nil)
-var random = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 
 // computeMaxJitter with max as 10% of the duration, and jitter a random amount
 // between 0-10%
