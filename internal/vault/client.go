@@ -10,17 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
-
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	"github.com/hashicorp/vault/api"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 type ClientOptions struct {
