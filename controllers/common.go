@@ -31,34 +31,37 @@ func (l *LeaseTruncatedError) Error() string {
 
 var random = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 
+// computeMaxJitter with max as 10% of the duration, and jitter a random amount
+// between 0-10%
+func computeMaxJitter(duration time.Duration) (max float64, jitter uint64) {
+	max = 0.1 * float64(duration.Nanoseconds())
+	u := uint64(max)
+	if u == 0 {
+		jitter = 0
+	} else {
+		jitter = uint64(random.Int63()) % u
+	}
+	return max, jitter
+}
+
 // computeHorizonWithJitter returns a time.Duration minus a random offset, with an
 // additional random jitter added to reduce pressure on the Reconciler.
 // based https://github.com/hashicorp/vault/blob/03d2be4cb943115af1bcddacf5b8d79f3ec7c210/api/lifetime_watcher.go#L381
-// If max jitter computed is less than or equal 0, the result will be 0,
-// that is done to avoid the divide by zero runtime error. The caller should handle that case.
 func computeHorizonWithJitter(minDuration time.Duration) time.Duration {
-	jitterMax := 0.1 * float64(minDuration.Nanoseconds())
+	max, jitter := computeMaxJitter(minDuration)
 
-	u := uint64(jitterMax)
-	if u <= 0 {
-		return 0
-	}
-	return minDuration - (time.Duration(jitterMax) + time.Duration(uint64(random.Int63())%u))
+	return minDuration - (time.Duration(max) + time.Duration(jitter))
 }
 
-// computeDynamicHorizonWithJitter returns a time.Duration that is 2/3 of the
-// lease duration, plus additional random jitter (up to 10% of the lease), to
-// ensure the horizon falls within the 2/3 renewal window
-func computeDynamicHorizonWithJitter(leaseDuration time.Duration) time.Duration {
-	jitterMax := 0.1 * float64(leaseDuration.Nanoseconds())
+// computeDynamicHorizonWithJitter returns a time.Duration that is the specified
+// percentage of the lease duration, plus additional random jitter (up to 10% of
+// the lease), to ensure the horizon falls within the specified renewal window
+func computeDynamicHorizonWithJitter(leaseDuration time.Duration, renewalPercent int) time.Duration {
+	max, jitter := computeMaxJitter(leaseDuration)
 
-	u := uint64(jitterMax)
-	if u <= 0 {
-		return 0
-	}
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(renewalPercent) / 100)
 
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * 2 / 3)
-	return startRenewingAt + time.Duration(jitterMax) - time.Duration(uint64(random.Int63())%u)
+	return startRenewingAt + time.Duration(max) - time.Duration(jitter)
 }
 
 // RemoveAllFinalizers is responsible for removing all finalizers added by the controller to prevent

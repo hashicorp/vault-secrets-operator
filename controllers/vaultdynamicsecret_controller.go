@@ -108,7 +108,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			// and the lease is still within the renewal window.
 			if !inRenewalWindow(o) {
 				leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
-				horizon := computeDynamicHorizonWithJitter(leaseDuration)
+				horizon := computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
 				if err := r.updateStatus(ctx, o); err != nil {
 					return ctrl.Result{}, err
 				}
@@ -151,7 +151,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				// compatible with computeHorizonWithJitter()
 				leaseDuration = time.Second * 5
 			}
-			horizon := computeDynamicHorizonWithJitter(leaseDuration)
+			horizon := computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"Renewed lease, lease_id=%s, horizon=%s", leaseID, horizon)
 			return ctrl.Result{RequeueAfter: horizon}, nil
@@ -193,7 +193,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	reason := consts.ReasonSecretSynced
 	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon := computeDynamicHorizonWithJitter(leaseDuration)
+	horizon := computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
 
