@@ -168,6 +168,8 @@ load _helpers
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
     [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq '.annot1' | tee /dev/stderr)
+    [ "${actual}" = "value1" ]
 }
 
 @test "controller/Deployment: annotations can be set" {
@@ -175,11 +177,16 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       --set 'controller.annotations.annot1=value1' \
+      --set 'controller.annotations.annot2=value2' \
       . | tee /dev/stderr |
       yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-    [ "${actual}" = "2" ]
+    [ "${actual}" = "3" ]
+   actual=$(echo "$object" | yq '.kubectl.kubernetes.io/default-container' | tee /dev/stderr)
+    [ "${actual}" = "manager" ]
    actual=$(echo "$object" | yq '.annot1' | tee /dev/stderr)
     [ "${actual}" = "value1" ]
+   actual=$(echo "$object" | yq '.annot2' | tee /dev/stderr)
+    [ "${actual}" = "value2" ]
 }
