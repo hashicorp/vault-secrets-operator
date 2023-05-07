@@ -13,13 +13,13 @@ resource "random_string" "suffix" {
 
 # VPC
 resource "google_compute_network" "vpc" {
-  name                    = "${local.cluster_name}-vpc"
+  name                    = "vpc-${local.cluster_name}"
   auto_create_subnetworks = "false"
 }
 
 # Subnet
 resource "google_compute_subnetwork" "subnet" {
-  name          = "${local.cluster_name}-subnet"
+  name          = "subnet-${local.cluster_name}"
   region        = var.region
   network       = google_compute_network.vpc.name
   ip_cidr_range = "10.10.0.0/24"
@@ -40,6 +40,9 @@ resource "google_container_cluster" "primary" {
   workload_identity_config {
     workload_pool = "${var.project_id}.svc.id.goog"
   }
+
+  depends_on = [google_project_iam_member.default_gar_reader,
+  google_project_iam_member.default_gar_writer]
 }
 
 # Separately Managed Node Pool
@@ -84,7 +87,7 @@ resource "google_artifact_registry_repository" "vault-secrets-operator" {
 
 # Create a new Service account for pulling the image from private repository
 resource "google_service_account" "default" {
-  account_id   = "${local.cluster_name}-sa"
+  account_id   = "sa-${local.cluster_name}"
   display_name = "GKE Service Account"
 }
 
