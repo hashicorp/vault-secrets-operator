@@ -399,8 +399,8 @@ ci-gar-build-push: ## Build the operator image and push it to the GAR repository
 
 .PHONY: integration-test-gke
 integration-test-gke: ## Run integration tests in the GKE cluster
-	$(eval KIND_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(CLUSTER_NAME) | awk '{print $$2}'))
 	$(eval CLUSTER_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name))
+	$(eval KIND_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(CLUSTER_NAME) | awk '{print $$2}'))
 	$(MAKE) port-forward &
 	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG)
 

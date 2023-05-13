@@ -30,7 +30,10 @@ func TestVaultAuthMethods(t *testing.T) {
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
-	k8sConfigContext := "kind-" + clusterName
+	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
