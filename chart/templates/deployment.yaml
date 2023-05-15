@@ -37,7 +37,6 @@ spec:
       securityContext:
         runAsUser: 10000
         runAsGroup: 30000
-        fsGroup: 20000
         seccompProfile:
           type: RuntimeDefault
         runAsNonRoot: true
@@ -149,7 +148,6 @@ spec:
       securityContext:
         runAsUser: 10000
         runAsGroup: 30000
-        fsGroup: 20000
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       containers:
       - name: pre-delete-controller-cleanup
