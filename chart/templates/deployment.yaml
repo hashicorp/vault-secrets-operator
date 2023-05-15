@@ -34,6 +34,13 @@ spec:
       annotations:
         kubectl.kubernetes.io/default-container: manager
     spec:
+      securityContext:
+        runAsUser: 10000
+        runAsGroup: 30000
+        fsGroup: 20000
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
       containers:
       - name: kube-rbac-proxy
         args:
@@ -51,7 +58,11 @@ spec:
           protocol: TCP
         resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
         securityContext:
+          readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
       - name: manager
         args:
         - --health-probe-bind-address=:8081
@@ -95,12 +106,16 @@ spec:
           periodSeconds: 10
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
         securityContext:
+          capabilities:
+            drop:
+              - ALL
           allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
+          readOnlyRootFilesystem: true
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
-      securityContext:
-        runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
@@ -131,12 +146,26 @@ spec:
     metadata:
       name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
     spec:
+      securityContext:
+        runAsUser: 10000
+        runAsGroup: 30000
+        fsGroup: 20000
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       containers:
       - name: pre-delete-controller-cleanup
+        resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
         - --finalizer-cleanup=true
         command:
         - /vault-secrets-operator
+        securityContext:
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
       restartPolicy: Never
