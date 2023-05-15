@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -21,7 +20,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
 
-// operatorNamespace of the current operator instance, set in init()
+// OperatorNamespace of the current operator instance, set in init()
 var OperatorNamespace string
 
 func init() {

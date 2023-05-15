@@ -7,8 +7,11 @@ VERSION ?= 0.0.0-dev
 
 GO_VERSION = $(shell cat .go-version)
 
-CONFIG_MANAGER_DIR ?= config/manager
-KUSTOMIZE_BUILD_DIR ?= config/default
+CONFIG_SRC_DIR ?= config
+CONFIG_BUILD_DIR ?= build/config
+CONFIG_MANAGER_DIR ?= $(CONFIG_BUILD_DIR)/manager
+KUSTOMIZATION ?= default
+KUSTOMIZE_BUILD_DIR ?= $(CONFIG_BUILD_DIR)/$(KUSTOMIZATION)
 
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
@@ -247,9 +250,18 @@ ci-docker-build: ## Build docker image with the operator (without generating ass
 ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
-.PHONY: integration-test
-integration-test:  setup-vault ## Run integration tests for Vault OSS
+.PHONY: copy-config
+copy-config: ## Copy kustomize config to CONFIG_BUILD_DIR
+	@rm -rf $(CONFIG_BUILD_DIR)
+	@mkdir -p $(dir $(CONFIG_BUILD_DIR))
+	@cp -a $(CONFIG_SRC_DIR) $(CONFIG_BUILD_DIR)
+
+.PHONY: set-image
+set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_DIR
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+
+.PHONY: set-image integration-test
+integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
@@ -343,8 +355,7 @@ endif
 endif
 
 .PHONY: ci-deploy
-ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
-	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+ci-deploy: kustomize set-image ## Deploy controller to the K8s cluster (without generating assets)
 	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: ci-deploy-kind
@@ -466,8 +477,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+deploy: manifests kustomize set-image ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: undeploy
@@ -522,10 +532,9 @@ $(ENVTEST): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 .PHONY: bundle
-bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize set-image ## Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q
-	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	operator-sdk bundle validate ./bundle
 
 .PHONY: bundle-build
