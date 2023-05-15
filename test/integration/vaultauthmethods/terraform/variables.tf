@@ -27,6 +27,14 @@ variable "k8s_token" {
   default = ""
 }
 
+variable "vault_oidc_discovery_url" {
+  default = "https://kubernetes.default.svc.cluster.local"
+}
+
+variable "vault_oidc_ca" {
+  default = true
+}
+
 variable "vault_kvv2_mount_path" {
   default = "kvv2"
 }
