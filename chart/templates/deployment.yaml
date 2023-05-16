@@ -46,7 +46,7 @@ spec:
         - --v=0
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
-          value: {{ .Values.kubernetesClusterDomain }}
+          value: {{ .Values.controller.kubernetesClusterDomain }}
         image: {{ .Values.controller.kubeRbacProxy.image.repository }}:{{ .Values.controller.kubeRbacProxy.image.tag }}
         ports:
         - containerPort: 8443
@@ -81,7 +81,7 @@ spec:
             fieldRef:
               fieldPath: metadata.uid
         - name: KUBERNETES_CLUSTER_DOMAIN
-          value: {{ .Values.kubernetesClusterDomain }}
+          value: {{ .Values.controller.kubernetesClusterDomain }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         imagePullPolicy: IfNotPresent
         livenessProbe:

@@ -156,6 +156,37 @@ load _helpers
     [ "${actual}" = "true" ]
 }
 
+# kubernetesClusterDomain
+@test "controller/Deployment: controller.kubernetesClusterDomain not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.containers[0].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "cluster.local" ]
+
+   actual=$(echo "$object" | yq '.containers[1].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "cluster.local" ]
+}
+
+@test "controller/Deployment: controller.kubernetesClusterDomain can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.kubernetesClusterDomain=foo.bar' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.containers[0].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "foo.bar" ]
+
+   actual=$(echo "$object" | yq '.containers[1].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "foo.bar" ]
+
+}
+
 #--------------------------------------------------------------------
 # annotations
 
@@ -189,4 +220,4 @@ load _helpers
     [ "${actual}" = "value1" ]
    actual=$(echo "$object" | yq '.annot2' | tee /dev/stderr)
     [ "${actual}" = "value2" ]
-}
+
