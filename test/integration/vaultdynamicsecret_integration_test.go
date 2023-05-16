@@ -239,7 +239,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Path:      "creds/" + outputs.DBRole,
-						Revoke:    false,
+						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: false,
@@ -271,7 +271,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Path:      "creds/" + outputs.DBRole,
-						Revoke:    false,
+						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,
