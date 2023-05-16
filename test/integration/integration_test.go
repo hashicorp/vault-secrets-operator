@@ -482,7 +482,9 @@ func waitForRolloutRestartsAndAssert(t *testing.T, ctx context.Context, client c
 						"unsupported rollout-restart Kind %q for target %v", target.Kind, target)
 				}
 
-				assert.Greater(t, tObj.GetGeneration(), int64(1))
+				if tObj.GetGeneration() <= int64(1) {
+					return "", fmt.Errorf("generation has not been udpated yet: %v", tObj.GetGeneration())
+				}
 				expectedAnnotation := helpers.AnnotationRestartedAt
 				val, ok := annotations[expectedAnnotation]
 				if !ok {
