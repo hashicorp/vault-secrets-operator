@@ -411,9 +411,10 @@ ci-gar-build-push: ## Build the operator image and push it to the GAR repository
 .PHONY: integration-test-gke
 integration-test-gke: ## Run integration tests in the GKE cluster
 	$(eval CLUSTER_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name))
+	$(eval GKE_OIDC_URL := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw oidc_discovery_url))
 	$(eval KIND_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(CLUSTER_NAME) | awk '{print $$2}'))
 	$(MAKE) port-forward &
-	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG)
+	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG) TF_VAR_vault_oidc_discovery_url=$(GKE_OIDC_URL) TF_VAR_vault_oidc_ca=false
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster

@@ -145,3 +145,16 @@ make integration-test-eks
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
 make integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```
+
+### Integration Tests in GKE
+
+```shell
+# Create an GKE cluster and a GAR repository
+make create-gke
+
+# Build & operator image & run the integration tests (includes Vault OSS deployment)
+make ci-gar-build-push integration-test-gke
+
+# Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
+make ci-gar-build-push integration-test-gke VAULT_ENTERPRISE=true ENT_TESTS=true
+```
