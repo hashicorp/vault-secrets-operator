@@ -22,6 +22,10 @@ type VaultDynamicSecretSpec struct {
 	// Please consult https://developer.hashicorp.com/vault/docs/secrets if one is
 	// uncertain about what 'path' should be set to.
 	Path string `json:"path"`
+	// Params that can be passed when requesting credentials/secrets.
+	// Please consult https://developer.hashicorp.com/vault/docs/secrets if one is
+	// uncertain about what 'params' should/can be set to.
+	Params map[string]string `json:"params,omitempty"`
 	// RenewalPercent is the percent out of 100 of the lease duration when the
 	// lease is renewed. Defaults to 67 percent plus jitter.
 	// +kubebuilder:default=67

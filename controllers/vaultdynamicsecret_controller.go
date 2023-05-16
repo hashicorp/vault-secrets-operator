@@ -221,11 +221,23 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.Va
 	return true
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(
+	ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret,
+) (*secretsv1alpha1.VaultSecretLease, error) {
 	path := fmt.Sprintf("%s/%s", o.Spec.Mount, o.Spec.Path)
-	resp, err := vClient.Read(ctx, path)
-	if err != nil {
-		return nil, err
+	var err error
+	var resp *api.Secret
+	if len(o.Spec.Params) > 0 {
+		params := make(map[string]any)
+		for k, v := range o.Spec.Params {
+			params[k] = v
+		}
+		resp, err = c.Write(ctx, path, params)
+	} else {
+		resp, err = c.Read(ctx, path)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if resp == nil {
@@ -264,7 +276,9 @@ func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *se
 	}
 }
 
-func (r *VaultDynamicSecretReconciler) renewLease(ctx context.Context, c vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) renewLease(
+	ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret,
+) (*secretsv1alpha1.VaultSecretLease, error) {
 	resp, err := c.Write(ctx, "/sys/leases/renew", map[string]interface{}{
 		"lease_id":  o.Status.SecretLease.ID,
 		"increment": o.Status.SecretLease.LeaseDuration,

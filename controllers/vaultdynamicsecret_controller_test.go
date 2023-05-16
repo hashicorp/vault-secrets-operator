@@ -4,11 +4,20 @@
 package controllers
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	"github.com/stretchr/testify/assert"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 )
 
 func Test_inRenewalWindow(t *testing.T) {
@@ -93,4 +102,166 @@ func Test_inRenewalWindow(t *testing.T) {
 			assert.Equal(t, tc.expectedInWindow, inRenewalWindow(tc.vds))
 		})
 	}
+}
+
+func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
+	type fields struct {
+		Client        client.Client
+		runtimePodUID types.UID
+	}
+	type args struct {
+		ctx     context.Context
+		vClient *mockRecordingVaultClient
+		o       *secretsv1alpha1.VaultDynamicSecret
+	}
+	tests := []struct {
+		name           string
+		fields         fields
+		args           args
+		want           *secretsv1alpha1.VaultSecretLease
+		expectRequests []*mockRequest
+		wantErr        assert.ErrorAssertionFunc
+	}{
+		{
+			name: "no-params",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:                 "baz",
+						Path:                  "foo",
+						Params:                nil,
+						RenewalPercent:        0,
+						Revoke:                false,
+						RolloutRestartTargets: nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					method: "GET",
+					path:   "baz/foo",
+					params: nil,
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "with-params",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount: "baz",
+						Path:  "foo",
+						Params: map[string]string{
+							"qux": "bar",
+						},
+						RenewalPercent:        0,
+						Revoke:                false,
+						RolloutRestartTargets: nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					method: "POST",
+					path:   "baz/foo",
+					params: map[string]any{
+						"qux": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &VaultDynamicSecretReconciler{
+				Client: tt.fields.Client,
+			}
+			got, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o)
+			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)
+			assert.Equalf(t, tt.expectRequests, tt.args.vClient.requests, "syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)
+		})
+	}
+}
+
+type mockRequest struct {
+	method string
+	path   string
+	params map[string]any
+}
+
+type mockRecordingVaultClient struct {
+	requests []*mockRequest
+}
+
+func (m *mockRecordingVaultClient) Read(ctx context.Context, s string) (*api.Secret, error) {
+	m.requests = append(m.requests, &mockRequest{
+		method: "GET",
+		path:   s,
+		params: nil,
+	})
+	return &api.Secret{
+		Data: make(map[string]interface{}),
+	}, nil
+}
+
+func (m *mockRecordingVaultClient) Write(ctx context.Context, s string, params map[string]any) (*api.Secret, error) {
+	m.requests = append(m.requests, &mockRequest{
+		method: "POST",
+		path:   s,
+		params: params,
+	})
+	return &api.Secret{
+		Data: make(map[string]interface{}),
+	}, nil
+}
+
+func (m *mockRecordingVaultClient) KVv1(s string) (*api.KVv1, error) {
+	return nil, nil
+}
+
+func (m *mockRecordingVaultClient) KVv2(s string) (*api.KVv2, error) {
+	return nil, nil
 }
