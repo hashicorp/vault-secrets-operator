@@ -30,5 +30,9 @@ variable "k8s_db_secret_count" {
   default = 50
 }
 
+variable "db_role" {
+  default = "dev-postgres"
+}
+
 variable "vault_address" {}
 variable "vault_token" {}
