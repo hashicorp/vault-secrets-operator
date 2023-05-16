@@ -159,6 +159,49 @@ metricsService:
     targetPort: https
   type: ClusterIP
 
+# Configure a Prometheus Service Monitor.
+prometheus:
+  serviceMonitor:
+    # The Prometheus operator *must* be installed before enabling this feature,
+    # if not the chart will fail to install due to missing CustomResourceDefinitions
+    # provided by the operator.
+    #
+    # Instructions on how to install the Helm chart can be found here:
+    #  https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+    # More information can be found here:
+    #  https://github.com/prometheus-operator/prometheus-operator
+    #  https://github.com/prometheus-operator/kube-prometheus
+
+    # Enable deployment of Operator ServiceMonitor CustomResource.
+    # @type: boolean
+    enabled: false
+
+    # Selector labels to add to the ServiceMonitor.
+    selectors: {}
+
+
+    # Configuration for the Service Monitor Endpoint:
+    endpoint:
+      # Path for Prometheus scrapes
+      # @type: string
+      path: /metrics
+      # Port for Prometheus scrapes
+      # @type: string
+      port: https
+      # Scheme for Prometheus scrapes
+      # @type: string
+      scheme: https
+      # Interval at which Prometheus scrapes metrics
+      # @type: string
+      interval: 30s
+      # Timeout for Prometheus scrapes
+      # @type: string
+      scrapeTimeout: 10s
+      # tlsConfig for Prometheus scrapes
+      # @type: string
+      tlsConfig:
+        insecureSkipVerify: true
+
 # Configures the default VaultConnection CR which will be used by resources
 # if they do not specify a VaultConnection reference. The name is 'default' and will
 # always be installed in the same namespace as the operator.
