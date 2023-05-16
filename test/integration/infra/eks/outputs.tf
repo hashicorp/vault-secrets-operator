@@ -35,3 +35,8 @@ output "ecr_name" {
   description = "ECR repository name"
   value       = aws_ecr_repository.vault-secrets-operator.name
 }
+
+output "oidc_discovery_url" {
+  description = "EKS OIDC discovery URL"
+  value       = module.eks.cluster_oidc_issuer_url
+}

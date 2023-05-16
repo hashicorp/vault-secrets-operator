@@ -415,8 +415,9 @@ ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
 integration-test-eks: ## Run integration tests in the EKS cluster
 	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
 	@$(eval IMAGE_TAG_BASE := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url))
+	@$(eval EKS_OIDC_URL := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw oidc_discovery_url))
 	$(MAKE) port-forward &
-	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
+	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION) TF_VAR_vault_oidc_discovery_url=$(EKS_OIDC_URL) TF_VAR_vault_oidc_ca=false
 
 .PHONY: ci-ecr-delete
 ci-ecr-delete: ## Delete the ECR repository
