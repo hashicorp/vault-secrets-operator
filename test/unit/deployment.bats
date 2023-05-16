@@ -184,7 +184,6 @@ load _helpers
 
    actual=$(echo "$object" | yq '.containers[1].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
     [ "${actual}" = "foo.bar" ]
-
 }
 
 #--------------------------------------------------------------------
@@ -220,4 +219,4 @@ load _helpers
     [ "${actual}" = "value1" ]
    actual=$(echo "$object" | yq '.annot2' | tee /dev/stderr)
     [ "${actual}" = "value2" ]
-
+}
