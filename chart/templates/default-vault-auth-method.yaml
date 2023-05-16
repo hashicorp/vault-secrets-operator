@@ -18,12 +18,27 @@ spec:
   namespace: {{ .Values.defaultAuthMethod.namespace }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
+  {{- if eq .Values.defaultAuthMethod.method "kubernetes" }}
   kubernetes:
     role: {{ .Values.defaultAuthMethod.kubernetes.role }}
     serviceAccount: {{ .Values.defaultAuthMethod.kubernetes.serviceAccount }}
     {{- if .Values.defaultAuthMethod.kubernetes.tokenAudiences }}
     audiences: {{ .Values.defaultAuthMethod.kubernetes.tokenAudiences | toJson }}
     {{- end }}
+  {{- else if eq .Values.defaultAuthMethod.method "jwt" }}
+  jwt:
+    role: {{ .Values.defaultAuthMethod.jwt.role }}
+    {{- if and .Values.defaultAuthMethod.jwt.secretName .Values.defaultAuthMethod.jwt.secretKey }}
+    secretKeyRef:
+        name: {{ .Values.defaultAuthMethod.jwt.secretName }}
+        key: {{ .Values.defaultAuthMethod.jwt.secretKey }}
+    {{- else if .Values.defaultAuthMethod.jwt.serviceAccount }}
+    serviceAccount: {{ .Values.defaultAuthMethod.jwt.serviceAccount }}
+    {{- if .Values.defaultAuthMethod.jwt.tokenAudiences }}
+    audiences: {{ .Values.defaultAuthMethod.jwt.tokenAudiences | toJson }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
   {{- if .Values.defaultAuthMethod.headers }}
   headers:
     {{ tpl .Values.defaultAuthMethod.headers . | trim }}

@@ -5,19 +5,20 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	"github.com/hashicorp/vault/api"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 type ClientOptions struct {
@@ -139,31 +140,79 @@ type Client interface {
 	CheckExpiry(int64) (bool, error)
 	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
 	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
-	GetCredentialProvider() CredentialProvider
+	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
 	KVv1(string) (*api.KVv1, error)
 	KVv2(string) (*api.KVv2, error)
 	Close()
+	Clone(string) (Client, error)
+	IsClone() bool
+	Namespace() string
+	SetNamespace(string)
 }
 
 var _ Client = (*defaultClient)(nil)
 
 type defaultClient struct {
 	client             *api.Client
+	isClone            bool
 	authObj            *secretsv1alpha1.VaultAuth
 	connObj            *secretsv1alpha1.VaultConnection
 	authSecret         *api.Secret
 	skipRenewal        bool
 	lastRenewal        int64
 	targetNamespace    string
-	credentialProvider CredentialProvider
+	credentialProvider credentials.CredentialProvider
 	watcher            *api.LifetimeWatcher
 	lastWatcherErr     error
 	once               sync.Once
 	mu                 sync.RWMutex
 }
 
-func (c *defaultClient) GetCredentialProvider() CredentialProvider {
+func (c *defaultClient) IsClone() bool {
+	return c.isClone
+}
+
+func (c *defaultClient) Namespace() string {
+	return c.client.Namespace()
+}
+
+func (c *defaultClient) SetNamespace(s string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.client.SetNamespace(s)
+}
+
+func (c *defaultClient) Clone(namespace string) (Client, error) {
+	if namespace == "" {
+		return nil, errors.New("namespace cannot be empty")
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	clone, err := c.client.Clone()
+	if err != nil {
+		return nil, err
+	}
+
+	client := &defaultClient{
+		client:             clone,
+		isClone:            true,
+		authObj:            c.authObj,
+		connObj:            c.connObj,
+		authSecret:         c.authSecret,
+		skipRenewal:        true,
+		targetNamespace:    c.targetNamespace,
+		credentialProvider: c.credentialProvider,
+	}
+	client.SetNamespace(namespace)
+
+	return client, nil
+}
+
+func (c *defaultClient) GetCredentialProvider() credentials.CredentialProvider {
 	return c.credentialProvider
 }
 
@@ -179,7 +228,16 @@ func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return ComputeClientCacheKeyFromClient(c)
+	cacheKey, err := ComputeClientCacheKeyFromClient(c)
+	if err != nil {
+		return "", err
+	}
+
+	if c.IsClone() {
+		cacheKey = ClientCacheKey(fmt.Sprintf("%s-%s", cacheKey, c.Namespace()))
+	}
+
+	return cacheKey, nil
 }
 
 // Restore self from the provided api.Secret (should have an Auth configured).
@@ -471,7 +529,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, auth
 		return err
 	}
 
-	credentialProvider, err := NewCredentialProvider(ctx, client, authObj, providerNamespace)
+	credentialProvider, err := credentials.NewCredentialProvider(ctx, client, authObj, providerNamespace)
 	if err != nil {
 		return err
 	}
@@ -493,8 +551,8 @@ func (c *defaultClient) observeTime(ts time.Time, operation string) {
 
 func (c *defaultClient) incrementOperationCounter(operation string, err error) {
 	vaultConn := ctrlclient.ObjectKeyFromObject(c.connObj).String()
-	clientOperationErrors.WithLabelValues(operation, vaultConn).Inc()
+	clientOperations.WithLabelValues(operation, vaultConn).Inc()
 	if err != nil {
-		clientOperations.WithLabelValues(operation, vaultConn).Inc()
+		clientOperationErrors.WithLabelValues(operation, vaultConn).Inc()
 	}
 }
