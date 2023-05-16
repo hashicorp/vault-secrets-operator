@@ -313,7 +313,8 @@ func TestVaultPKISecret(t *testing.T) {
 					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
 						// TODO(tech-debt): add method waiting for rollout-restart, for now we
 						//  can provide an artificial grace period.
-						time.Sleep(5 * time.Second)
+						// Bumping this to 10 seconds to allow the controller time to reconcile in CI.
+						time.Sleep(10 * time.Second)
 						assertRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
 					}
 				})
