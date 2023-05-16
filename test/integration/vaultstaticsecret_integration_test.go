@@ -383,10 +383,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			}
 
 			if !expectInitial && len(obj.Spec.RolloutRestartTargets) > 0 {
-				// TODO(tech-debt): add method waiting for rollout-restart, for now we
-				//  can provide an artificial grace period.
-				time.Sleep(5 * time.Second)
-				assertRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
+				waitForRolloutRestartsAndAssert(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
 			}
 		}
 	}

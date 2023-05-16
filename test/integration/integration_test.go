@@ -442,57 +442,64 @@ func exportKindLogs(t *testing.T) {
 	}
 }
 
-func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget) {
+func waitForRolloutRestartsAndAssert(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget) {
 	t.Helper()
 
-	// see secretsv1alpha1.RolloutRestartTarget for supported target resources.
-	timeNow := time.Now().UTC()
-	for _, target := range targets {
-		var tObj ctrlclient.Object
-		tObjKey := ctrlclient.ObjectKey{
-			Namespace: obj.GetNamespace(),
-			Name:      target.Name,
-		}
-		var annotations map[string]string
-		switch target.Kind {
-		case "Deployment":
-			var o appsv1.Deployment
-			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-				annotations = o.Spec.Template.Annotations
-				tObj = &o
-			}
-		case "StatefulSet":
-			var o appsv1.StatefulSet
-			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-				annotations = o.Spec.Template.Annotations
-				tObj = &o
-			}
-		case "ReplicaSet":
-			var o appsv1.ReplicaSet
-			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-				annotations = o.Spec.Template.Annotations
-				tObj = &o
-			}
-		default:
-			assert.Fail(t,
-				"unsupported rollout-restart Kind %q for target %v", target.Kind, target)
-		}
+	secObjKey := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: obj.GetName()}
+	_, err := retry.DoWithRetryE(t,
+		fmt.Sprintf("wait for k8s rollout-restart to be triggered, objKey=%s", secObjKey),
+		10, 1*time.Second, func() (string, error) {
+			// see secretsv1alpha1.RolloutRestartTarget for supported target resources.
+			timeNow := time.Now().UTC()
+			for _, target := range targets {
+				var tObj ctrlclient.Object
+				tObjKey := ctrlclient.ObjectKey{
+					Namespace: obj.GetNamespace(),
+					Name:      target.Name,
+				}
+				var annotations map[string]string
+				switch target.Kind {
+				case "Deployment":
+					var o appsv1.Deployment
+					if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+						annotations = o.Spec.Template.Annotations
+						tObj = &o
+					}
+				case "StatefulSet":
+					var o appsv1.StatefulSet
+					if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+						annotations = o.Spec.Template.Annotations
+						tObj = &o
+					}
+				case "ReplicaSet":
+					var o appsv1.ReplicaSet
+					if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+						annotations = o.Spec.Template.Annotations
+						tObj = &o
+					}
+				default:
+					assert.Fail(t,
+						"unsupported rollout-restart Kind %q for target %v", target.Kind, target)
+				}
 
-		assert.Greater(t, tObj.GetGeneration(), int64(1))
-		expectedAnnotation := helpers.AnnotationRestartedAt
-		val, ok := annotations[expectedAnnotation]
-		if !assert.True(t, ok,
-			"expected annotation %q is not present", expectedAnnotation) {
-			continue
-		}
-		ts, err := time.Parse(time.RFC3339, val)
-		if !assert.NoError(t, err,
-			"invalid value for %q", expectedAnnotation) {
-			continue
-		}
-		assert.True(t, ts.Before(timeNow),
-			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
-	}
+				assert.Greater(t, tObj.GetGeneration(), int64(1))
+				expectedAnnotation := helpers.AnnotationRestartedAt
+				val, ok := annotations[expectedAnnotation]
+				if !ok {
+					return "", fmt.Errorf("expected annotation %q is not present", expectedAnnotation)
+				}
+				ts, err := time.Parse(time.RFC3339, val)
+				if err != nil {
+					return "", fmt.Errorf("invalid value for %q", expectedAnnotation)
+				}
+				if !ts.Before(timeNow) {
+					return "", fmt.Errorf("timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
+				}
+			}
+			return "", nil
+		},
+	)
+	assert.NoError(t, err)
 }
 
 func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
