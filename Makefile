@@ -115,6 +115,7 @@ TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
 # directory for eks infrastructure for running tests
+TF_AKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/aks
 TF_EKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
 
 BUILD_DIR = dist
