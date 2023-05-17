@@ -67,7 +67,6 @@ resource "google_container_node_pool" "primary_nodes" {
       env = local.cluster_name
     }
 
-    # preemptible  = true
     machine_type    = "n1-standard-1"
     service_account = google_service_account.default.email
     tags            = ["gke-node", local.cluster_name]
