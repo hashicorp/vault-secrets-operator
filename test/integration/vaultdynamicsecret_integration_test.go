@@ -406,7 +406,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 
 	// check that all rollout-restarts completed successfully
 	if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
-		waitForRolloutRestartsAndAssert(t, ctx, client,
+		waitForRolloutRestartsAndAssertRollout(t, ctx, client,
 			vdsObj, vdsObj.Spec.RolloutRestartTargets)
 	}
 }
