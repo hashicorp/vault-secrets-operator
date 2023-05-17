@@ -47,9 +47,9 @@ spec:
                     type: string
                   secretRef:
                     description: SecretRef is the name of a Kubernetes secret in the
-                      consumer's (VDS/VSS/PKI) namespace which provides the `secret_id`
-                      associated with the AppRole Role. The secret must have a key
-                      named `id` which holds the `secret_id`.
+                      consumer's (VDS/VSS/PKI) namespace which provides the AppRole
+                      Role's SecretID. The secret must have a key named `id` which
+                      holds the ppRole Role's secretID.
                     type: string
                 required:
                 - roleId
@@ -141,7 +141,7 @@ spec:
                 description: 'StorageEncryption provides the necessary configuration
                   to encrypt the client storage cache. This should only be configured
                   when client cache persistence with encryption is enabled. This is
-                  done by passing setting the manager''s commandline argument --client-cache-persistence-model=direct-encrypted
+                  done by passing setting the manager''s commandline argument --client-cache-persistence-model=direct-encrypted.
                   Typically there should only ever be one VaultAuth configured with
                   StorageEncryption in the Cluster, and it should have the label:
                   cacheStorageEncryption=true'

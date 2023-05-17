@@ -51,8 +51,9 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 
 func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
-	// Fetch the secret_id from the Kubernetes Secret each time there is a call to GetCreds in case the secret_id has
-	// changed since the last time the client token was generated. In the case of AppRole this is assumed to be common.
+	// Fetch the AppRole Role's SecretID from the Kubernetes Secret each time there is a call to
+	// GetCreds in case the SecretID has changed since the last time the client token was
+	// generated. In the case of AppRole this is assumed to be common.
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.AppRole.SecretRef,
@@ -62,14 +63,20 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return nil, err
 	}
-	if secret.Data[ProviderSecretKeyAppRole] == nil {
-		err = fmt.Errorf("unable to get Secret data from Secret")
-		logger.Error(err, "Failed to get secret_id from secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
-		return nil, err
+	secretID := secret.Data[ProviderSecretKeyAppRole]
+	if secretID == nil {
+		logger.Error(err, "Failed to get secretID from secret, no key found", "secret_name",
+			l.authObj.Spec.AppRole.SecretRef)
+		return nil, fmt.Errorf("no key %q found in secret", ProviderSecretKeyAppRole)
+	}
+	if string(secretID) == "" {
+		logger.Error(err, "Failed to get secretID from secret, no data", "secret_name",
+			l.authObj.Spec.AppRole.SecretRef)
+		return nil, fmt.Errorf("no data found in secret key %q", ProviderSecretKeyAppRole)
 	}
 	// credentials needed for AppRole auth
 	return map[string]interface{}{
 		"role_id":   l.authObj.Spec.AppRole.RoleID,
-		"secret_id": string(secret.Data[ProviderSecretKeyAppRole]),
+		"secret_id": string(secretID),
 	}, nil
 }

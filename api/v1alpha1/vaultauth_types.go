@@ -29,8 +29,9 @@ type VaultAuthConfigKubernetes struct {
 type VaultAuthConfigJWT struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which provides the JWT token
-	// to authenticate to Vault's JWT authentication backend. The secret must have a key named `jwt` which holds the JWT token.
+	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
+	// provides the JWT token to authenticate to Vault's JWT authentication backend. The secret must
+	// have a key named `jwt` which holds the JWT token.
 	SecretRef string `json:"secretRef,omitempty"`
 	// ServiceAccount to use when creating a ServiceAccount token to authenticate to Vault's
 	// JWT authentication backend.
@@ -43,14 +44,15 @@ type VaultAuthConfigJWT struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
-// VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to Vault via an
-// AppRole AuthMethod.
+// VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to
+// Vault via an AppRole AuthMethod.
 type VaultAuthConfigAppRole struct {
 	// RoleID `role_id` of the AppRole Role to use for authenticating to Vault.
 	RoleID string `json:"roleId"`
 
-	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which provides the
-	// `secret_id` associated with the AppRole Role. The secret must have a key named `id` which holds the `secret_id`.
+	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
+	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
+	// ppRole Role's secretID.
 	SecretRef string `json:"secretRef"`
 }
 
@@ -79,8 +81,9 @@ type VaultAuthSpec struct {
 	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
-	// This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted
-	// Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have
+	// This is done by passing setting the manager's commandline argument
+	// --client-cache-persistence-model=direct-encrypted. Typically there should only ever
+	// be one VaultAuth configured with StorageEncryption in the Cluster, and it should have
 	// the label: cacheStorageEncryption=true
 	StorageEncryption *StorageEncryption `json:"storageEncryption,omitempty"`
 }
