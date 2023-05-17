@@ -105,19 +105,18 @@ func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	if err != nil {
 		return nil, err
 	}
-	jwtData := l.tokenSecret.Data[ProviderSecretKeyJWT]
-	if jwtData == nil {
+	if jwtData, ok := l.tokenSecret.Data[ProviderSecretKeyJWT]; !ok {
 		logger.Error(err, "Failed to get jwt token from secret, no key found", "secret_name",
 			l.authObj.Spec.JWT.SecretRef)
 		return nil, fmt.Errorf("no key %q found in secret", ProviderSecretKeyJWT)
-	}
-	if string(jwtData) == "" {
+	} else if len(jwtData) == 0 {
 		logger.Error(err, "Failed to get jwt token from secret, no data", "secret_name",
 			l.authObj.Spec.JWT.SecretRef)
 		return nil, fmt.Errorf("no data found in secret key %q", ProviderSecretKeyJWT)
+	} else {
+		return map[string]interface{}{
+			"role": l.authObj.Spec.JWT.Role,
+			"jwt":  string(jwtData),
+		}, nil
 	}
-	return map[string]interface{}{
-		"role": l.authObj.Spec.JWT.Role,
-		"jwt":  string(jwtData),
-	}, nil
 }

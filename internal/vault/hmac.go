@@ -11,12 +11,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 const (

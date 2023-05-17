@@ -63,20 +63,19 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return nil, err
 	}
-	secretID := secret.Data[ProviderSecretKeyAppRole]
-	if secretID == nil {
+	if secretID, ok := secret.Data[ProviderSecretKeyAppRole]; !ok {
 		logger.Error(err, "Failed to get secretID from secret, no key found", "secret_name",
 			l.authObj.Spec.AppRole.SecretRef)
 		return nil, fmt.Errorf("no key %q found in secret", ProviderSecretKeyAppRole)
-	}
-	if string(secretID) == "" {
+	} else if len(secretID) == 0 {
 		logger.Error(err, "Failed to get secretID from secret, no data", "secret_name",
 			l.authObj.Spec.AppRole.SecretRef)
 		return nil, fmt.Errorf("no data found in secret key %q", ProviderSecretKeyAppRole)
+	} else {
+		// credentials needed for AppRole auth
+		return map[string]interface{}{
+			"role_id":   l.authObj.Spec.AppRole.RoleID,
+			"secret_id": string(secretID),
+		}, nil
 	}
-	// credentials needed for AppRole auth
-	return map[string]interface{}{
-		"role_id":   l.authObj.Spec.AppRole.RoleID,
-		"secret_id": string(secretID),
-	}, nil
 }

@@ -52,7 +52,7 @@ type VaultAuthConfigAppRole struct {
 
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
-	// ppRole Role's secretID.
+	// AppRole Role's secretID.
 	SecretRef string `json:"secretRef"`
 }
 

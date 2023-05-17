@@ -19,8 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
-
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
@@ -42,6 +40,7 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 var (

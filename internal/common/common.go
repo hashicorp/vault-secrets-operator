@@ -21,8 +21,8 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
 
-// operatorNamespace of the current operator instance, set in init()
 var (
+	// OperatorNamespace of the current operator instance, set in init()
 	OperatorNamespace     string
 	InvalidObjectKeyError = fmt.Errorf("invalid objectKey")
 )
