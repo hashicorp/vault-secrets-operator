@@ -65,7 +65,7 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
     spec = {
       namespace = vault_auth_backend.default.namespace
       mount     = vault_database_secrets_mount.db.path
-      role      = local.db_role
+      path      = local.db_creds_path
       destination = {
         create : false
         name : kubernetes_secret.db.metadata[0].name
@@ -92,7 +92,7 @@ resource "kubernetes_manifest" "vault-dynamic-secret-create" {
     spec = {
       namespace = vault_auth_backend.default.namespace
       mount     = vault_database_secrets_mount.db.path
-      role      = local.db_role
+      path      = local.db_creds_path
       destination = {
         create : true
         name : "vso-db-demo-created"
