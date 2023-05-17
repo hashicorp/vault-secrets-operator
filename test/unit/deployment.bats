@@ -156,4 +156,67 @@ load _helpers
     [ "${actual}" = "true" ]
 }
 
+# kubernetesClusterDomain
+@test "controller/Deployment: controller.kubernetesClusterDomain not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
 
+   local actual=$(echo "$object" | yq '.containers[0].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "cluster.local" ]
+
+   actual=$(echo "$object" | yq '.containers[1].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "cluster.local" ]
+}
+
+@test "controller/Deployment: controller.kubernetesClusterDomain can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.kubernetesClusterDomain=foo.bar' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.containers[0].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "foo.bar" ]
+
+   actual=$(echo "$object" | yq '.containers[1].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
+    [ "${actual}" = "foo.bar" ]
+}
+
+#--------------------------------------------------------------------
+# annotations
+
+@test "controller/Deployment: annotations not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq '."kubectl.kubernetes.io/default-container"' | tee /dev/stderr)
+   [ "${actual}" = "manager" ]
+}
+
+@test "controller/Deployment: annotations can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.annotations.annot1=value1' \
+      --set 'controller.annotations.annot2=value2' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+   actual=$(echo "$object" | yq '."kubectl.kubernetes.io/default-container"' | tee /dev/stderr)
+   [ "${actual}" = 'manager' ]
+   actual=$(echo "$object" | yq '.annot1' | tee /dev/stderr)
+   [ "${actual}" = 'value1' ]
+   actual=$(echo "$object" | yq '.annot2'| tee /dev/stderr)
+   [ "${actual}" = 'value2' ]
+}

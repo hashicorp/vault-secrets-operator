@@ -222,7 +222,7 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.Va
 }
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
-	path := fmt.Sprintf("%s/creds/%s", o.Spec.Mount, o.Spec.Role)
+	path := fmt.Sprintf("%s/%s", o.Spec.Mount, o.Spec.Path)
 	resp, err := vClient.Read(ctx, path)
 	if err != nil {
 		return nil, err
