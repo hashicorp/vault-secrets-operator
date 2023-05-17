@@ -20,6 +20,8 @@ type VaultConnectionSpec struct {
 	TLSServerName string `json:"tlsServerName,omitempty"`
 	// CACertSecretRef containing the trusted PEM encoded CA certificate chain.
 	CACertSecretRef string `json:"caCertSecretRef,omitempty"`
+	// CACertConfigmapRef containing the trusted PEM encoded CA certificate chain.
+	CACertConfigmapRef string `json:"caCertConfigmapRef,omitempty"`
 	// SkipTLSVerify for TLS connections.
 	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
 }

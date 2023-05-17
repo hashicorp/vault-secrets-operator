@@ -72,11 +72,12 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	o.Status.Valid = false
 
 	vaultConfig := &vault.ClientConfig{
-		CACertSecretRef: o.Spec.CACertSecretRef,
-		K8sNamespace:    o.ObjectMeta.Namespace,
-		Address:         o.Spec.Address,
-		SkipTLSVerify:   o.Spec.SkipTLSVerify,
-		TLSServerName:   o.Spec.TLSServerName,
+		CACertSecretRef:    o.Spec.CACertSecretRef,
+		CACertConfigmapRef: o.Spec.CACertConfigmapRef,
+		K8sNamespace:       o.ObjectMeta.Namespace,
+		Address:            o.Spec.Address,
+		SkipTLSVerify:      o.Spec.SkipTLSVerify,
+		TLSServerName:      o.Spec.TLSServerName,
 	}
 
 	var errs error

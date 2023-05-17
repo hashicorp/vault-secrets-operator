@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -42,12 +43,22 @@ func TestMakeVaultClient(t *testing.T) {
 			CACert:        nil,
 			expectedError: fmt.Errorf(`secrets "missing" not found`),
 		},
-		"caCert specified": {
+		"caCert secret specified": {
 			vaultConfig: &ClientConfig{
 				CACertSecretRef: "vault-cert",
 				K8sNamespace:    "vault",
 				Address:         "localhost",
 				TLSServerName:   "vault-server",
+			},
+			CACert:        testCABytes,
+			expectedError: nil,
+		},
+		"caCert configmap specified": {
+			vaultConfig: &ClientConfig{
+				CACertConfigmapRef: "vault-cert",
+				K8sNamespace:       "vault",
+				Address:            "localhost",
+				TLSServerName:      "vault-server",
 			},
 			CACert:        testCABytes,
 			expectedError: nil,
@@ -76,17 +87,34 @@ func TestMakeVaultClient(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			clientBuilder := fake.NewClientBuilder()
 			if len(tc.CACert) != 0 {
-				caCertSecret := corev1.Secret{
-					ObjectMeta: v1.ObjectMeta{
-						Name:      tc.vaultConfig.CACertSecretRef,
-						Namespace: tc.vaultConfig.K8sNamespace,
-					},
-					Data: map[string][]byte{"ca.crt": tc.CACert},
+				var caCert client.Object
+				if tc.vaultConfig.CACertSecretRef != "" {
+					secret := corev1.Secret{
+						ObjectMeta: v1.ObjectMeta{
+							Name:      tc.vaultConfig.CACertSecretRef,
+							Namespace: tc.vaultConfig.K8sNamespace,
+						},
+						Data: map[string][]byte{"ca.crt": tc.CACert},
+					}
+					if tc.makeBlankSecret {
+						delete(secret.Data, "ca.crt")
+					}
+					caCert = &secret
+				} else {
+					configMap := &corev1.ConfigMap{
+						ObjectMeta: v1.ObjectMeta{
+							Name:      tc.vaultConfig.CACertConfigmapRef,
+							Namespace: tc.vaultConfig.K8sNamespace,
+						},
+						Data: map[string]string{"ca.crt": string(tc.CACert)},
+					}
+					if tc.makeBlankSecret {
+						delete(configMap.Data, "ca.crt")
+					}
+					caCert = configMap
 				}
-				if tc.makeBlankSecret {
-					delete(caCertSecret.Data, "ca.crt")
-				}
-				clientBuilder = clientBuilder.WithObjects(&caCertSecret)
+
+				clientBuilder = clientBuilder.WithObjects(caCert)
 			}
 			fakeClient := clientBuilder.Build()
 			vaultClient, err := MakeVaultClient(context.Background(), tc.vaultConfig, fakeClient)

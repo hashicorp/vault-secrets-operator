@@ -44,6 +44,10 @@ spec:
                 description: CACertSecretRef containing the trusted PEM encoded CA
                   certificate chain.
                 type: string
+              caCertConfigmapRef:
+                description: CACertConfigmapRef containing the trusted PEM encoded CA
+                  certificate chain.
+                type: string
               headers:
                 additionalProperties:
                   type: string

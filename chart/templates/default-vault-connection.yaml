@@ -20,6 +20,9 @@ spec:
   {{- if .Values.defaultVaultConnection.caCertSecret }}
   caCertSecretRef: {{ .Values.defaultVaultConnection.caCertSecret }}
   {{- end }}
+  {{- if .Values.defaultVaultConnection.caCertConfigmap }}
+  caCertConfigmapRef: {{ .Values.defaultVaultConnection.caCertConfigmap }}
+  {{- end }}
   {{- if .Values.defaultVaultConnection.tlsServerName }}
   tlsServerName: {{ .Values.defaultVaultConnection.tlsServerName }}
   {{- end }}
