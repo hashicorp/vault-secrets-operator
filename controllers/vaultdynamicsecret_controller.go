@@ -236,9 +236,6 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 		}
 	}
 
-	if params != nil && o.Spec.RequestHTTPMethod == http.MethodGet {
-	}
-
 	method := o.Spec.RequestHTTPMethod
 	if params != nil {
 		if method != http.MethodPut {
