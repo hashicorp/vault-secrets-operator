@@ -124,7 +124,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 		wantErr        assert.ErrorAssertionFunc
 	}{
 		{
-			name: "no-params",
+			name: "without-params",
 			fields: fields{
 				Client:        fake.NewClientBuilder().Build(),
 				runtimePodUID: "",
@@ -210,6 +210,223 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				},
 			},
 			wantErr: assert.NoError,
+		},
+		{
+			name: "with-method-put-and-params",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodPut,
+						Params: map[string]string{
+							"qux": "bar",
+						},
+						RenewalPercent:        0,
+						Revoke:                false,
+						RolloutRestartTargets: nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					method: http.MethodPut,
+					path:   "baz/foo",
+					params: map[string]any{
+						"qux": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "with-method-get-and-params",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodGet,
+						Params: map[string]string{
+							"qux": "bar",
+						},
+						RenewalPercent:        0,
+						Revoke:                false,
+						RolloutRestartTargets: nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					method: http.MethodPut,
+					path:   "baz/foo",
+					params: map[string]any{
+						"qux": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "without-params-and-method-get",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:                 "baz",
+						Path:                  "foo",
+						RequestHTTPMethod:     http.MethodGet,
+						Params:                nil,
+						RenewalPercent:        0,
+						Revoke:                false,
+						RolloutRestartTargets: nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					method: http.MethodGet,
+					path:   "baz/foo",
+					params: nil,
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "without-params-and-method-put",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:                 "baz",
+						Path:                  "foo",
+						RequestHTTPMethod:     http.MethodPut,
+						Params:                nil,
+						RenewalPercent:        0,
+						Revoke:                false,
+						RolloutRestartTargets: nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					method: http.MethodPut,
+					path:   "baz/foo",
+					params: nil,
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "with-unsupported-method",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:                 "baz",
+						Path:                  "foo",
+						RequestHTTPMethod:     http.MethodPost,
+						Params:                nil,
+						RenewalPercent:        0,
+						Revoke:                false,
+						RolloutRestartTargets: nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want:           nil,
+			expectRequests: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, fmt.Sprintf(
+					"unsupported HTTP method %q for sync", http.MethodPost), i...)
+			},
 		},
 	}
 	for _, tt := range tests {
