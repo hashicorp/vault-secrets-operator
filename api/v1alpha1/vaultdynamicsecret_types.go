@@ -24,11 +24,12 @@ type VaultDynamicSecretSpec struct {
 	// In the case where Params are specified the Operator will use the PUT method.
 	// Please consult https://developer.hashicorp.com/vault/docs/secrets if you are
 	// uncertain about what method to use.
-	// +kubebuilder:validation:Enum={GET,PUT}
+	// Of note, the Vault client treats PUT and POST as being equivalent.
+	// The underlying Vault client implementation will always use the PUT method.
+	// +kubebuilder:validation:Enum={GET,POST,PUT}
 	RequestHTTPMethod string `json:"requestHTTPMethod,omitempty"`
-	// uncertain about what 'path' should be set to.
 	// Path in Vault to get the credentials for, and is relative to Mount.
-	// Please consult https://developer.hashicorp.com/vault/docs/secrets if one is
+	// Please consult https://developer.hashicorp.com/vault/docs/secrets if you are
 	// uncertain about what 'path' should be set to.
 	Path string `json:"path"`
 	// Params that can be passed when requesting credentials/secrets.

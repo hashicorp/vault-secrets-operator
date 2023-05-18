@@ -138,12 +138,9 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-						Mount:                 "baz",
-						Path:                  "foo",
-						Params:                nil,
-						RenewalPercent:        0,
-						Revoke:                false,
-						RolloutRestartTargets: nil,
+						Mount:  "baz",
+						Path:   "foo",
+						Params: nil,
 						Destination: secretsv1alpha1.Destination{
 							Name:   "baz",
 							Create: true,
@@ -185,9 +182,6 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 						Params: map[string]string{
 							"qux": "bar",
 						},
-						RenewalPercent:        0,
-						Revoke:                false,
-						RolloutRestartTargets: nil,
 						Destination: secretsv1alpha1.Destination{
 							Name:   "baz",
 							Create: true,
@@ -232,9 +226,6 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 						Params: map[string]string{
 							"qux": "bar",
 						},
-						RenewalPercent:        0,
-						Revoke:                false,
-						RolloutRestartTargets: nil,
 						Destination: secretsv1alpha1.Destination{
 							Name:   "baz",
 							Create: true,
@@ -249,6 +240,51 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			expectRequests: []*mockRequest{
 				{
+					method: http.MethodPut,
+					path:   "baz/foo",
+					params: map[string]any{
+						"qux": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "with-method-post-and-params",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodPost,
+						Params: map[string]string{
+							"qux": "bar",
+						},
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					// the vault client API always translates POST to PUT
 					method: http.MethodPut,
 					path:   "baz/foo",
 					params: map[string]any{
@@ -279,9 +315,6 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 						Params: map[string]string{
 							"qux": "bar",
 						},
-						RenewalPercent:        0,
-						Revoke:                false,
-						RolloutRestartTargets: nil,
 						Destination: secretsv1alpha1.Destination{
 							Name:   "baz",
 							Create: true,
@@ -320,13 +353,10 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-						Mount:                 "baz",
-						Path:                  "foo",
-						RequestHTTPMethod:     http.MethodGet,
-						Params:                nil,
-						RenewalPercent:        0,
-						Revoke:                false,
-						RolloutRestartTargets: nil,
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodGet,
+						Params:            nil,
 						Destination: secretsv1alpha1.Destination{
 							Name:   "baz",
 							Create: true,
@@ -363,13 +393,10 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-						Mount:                 "baz",
-						Path:                  "foo",
-						RequestHTTPMethod:     http.MethodPut,
-						Params:                nil,
-						RenewalPercent:        0,
-						Revoke:                false,
-						RolloutRestartTargets: nil,
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodPut,
+						Params:            nil,
 						Destination: secretsv1alpha1.Destination{
 							Name:   "baz",
 							Create: true,
@@ -392,6 +419,47 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name: "without-params-and-method-post",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &mockRecordingVaultClient{},
+				o: &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodPost,
+						Params:            nil,
+						Destination: secretsv1alpha1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1alpha1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*mockRequest{
+				{
+					// the vault client API always translates POST to PUT
+					method: http.MethodPut,
+					path:   "baz/foo",
+					params: nil,
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name: "with-unsupported-method",
 			fields: fields{
 				Client:        fake.NewClientBuilder().Build(),
@@ -406,13 +474,10 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-						Mount:                 "baz",
-						Path:                  "foo",
-						RequestHTTPMethod:     http.MethodPost,
-						Params:                nil,
-						RenewalPercent:        0,
-						Revoke:                false,
-						RolloutRestartTargets: nil,
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodOptions,
+						Params:            nil,
 						Destination: secretsv1alpha1.Destination{
 							Name:   "baz",
 							Create: true,
@@ -425,7 +490,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			expectRequests: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err, fmt.Sprintf(
-					"unsupported HTTP method %q for sync", http.MethodPost), i...)
+					"unsupported HTTP method %q for sync", http.MethodOptions), i...)
 			},
 		},
 	}

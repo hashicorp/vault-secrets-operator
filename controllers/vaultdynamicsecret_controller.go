@@ -238,7 +238,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 
 	method := o.Spec.RequestHTTPMethod
 	if params != nil {
-		if method != http.MethodPut {
+		if !(method == http.MethodPost || method == http.MethodPut) {
 			log.FromContext(ctx).V(consts.LogLevelWarning).Info(
 				"Params provided, ignoring specified method",
 				"requestHTTPMethod", o.Spec.RequestHTTPMethod)
@@ -250,7 +250,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 	}
 
 	switch method {
-	case http.MethodPut:
+	case http.MethodPut, http.MethodPost:
 		resp, err = c.Write(ctx, path, params)
 	case http.MethodGet:
 		resp, err = c.Read(ctx, path)
