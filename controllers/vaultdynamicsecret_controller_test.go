@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -157,7 +158,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			expectRequests: []*mockRequest{
 				{
-					method: "GET",
+					method: http.MethodGet,
 					path:   "baz/foo",
 					params: nil,
 				},
@@ -201,7 +202,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			expectRequests: []*mockRequest{
 				{
-					method: "POST",
+					method: http.MethodPut,
 					path:   "baz/foo",
 					params: map[string]any{
 						"qux": "bar",
@@ -238,7 +239,8 @@ type mockRecordingVaultClient struct {
 
 func (m *mockRecordingVaultClient) Read(ctx context.Context, s string) (*api.Secret, error) {
 	m.requests = append(m.requests, &mockRequest{
-		method: "GET",
+		method: http.MethodGet,
+
 		path:   s,
 		params: nil,
 	})
@@ -249,7 +251,7 @@ func (m *mockRecordingVaultClient) Read(ctx context.Context, s string) (*api.Sec
 
 func (m *mockRecordingVaultClient) Write(ctx context.Context, s string, params map[string]any) (*api.Secret, error) {
 	m.requests = append(m.requests, &mockRequest{
-		method: "POST",
+		method: http.MethodPut,
 		path:   s,
 		params: params,
 	})
