@@ -542,8 +542,8 @@ bundle-build: ## Build the bundle image.
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
 
-.PHONY: azure
-AZURE = ./bin/azure
+.PHONY: az
+AZURE = ./bin/az
 azure: ## Download Azure cli locally if necessary.
 ifeq (,$(wildcard $(AZURE)))
 ifeq (,$(shell which $(notdir $(AZURE)) 2>/dev/null))
@@ -555,7 +555,7 @@ ifeq (,$(shell which $(notdir $(AZURE)) 2>/dev/null))
 	mv /usr/bin/az $(AZURE) ;
 	}
 else
-AZURE = $(shell which azure)
+AZURE = $(shell which az)
 endif
 endif
 

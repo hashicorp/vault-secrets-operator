@@ -7,6 +7,11 @@ resource "random_string" "suffix" {
   upper   = false
 }
 
+resource "azurerm_resource_group" "default" {
+  name     = var.rg
+  location = var.region
+}
+
 resource "azurerm_kubernetes_cluster" "default" {
   name                = "aks-${random_string.suffix.result}"
   location            = var.region
