@@ -383,7 +383,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			}
 
 			if !expectInitial && len(obj.Spec.RolloutRestartTargets) > 0 {
-				waitForRolloutRestartsAndAssertRollout(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
+				awaitRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
 			}
 		}
 	}
