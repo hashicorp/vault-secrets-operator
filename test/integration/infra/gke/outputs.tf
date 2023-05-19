@@ -28,7 +28,7 @@ output "oidc_discovery_url" {
 
 resource "local_file" "env_file" {
   filename = "${path.module}/output.env"
-  content = <<EOT
+  content  = <<EOT
 GKE_OIDC_URL=${format("https://container.googleapis.com/v1/projects/%s/locations/%s/clusters/%s", var.project_id, var.region, local.cluster_name)}
 GCP_GAR_NAME=${google_artifact_registry_repository.vault-secrets-operator.name}
 GKE_CLUSTER_NAME=${google_container_cluster.primary.name}
