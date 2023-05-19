@@ -14,8 +14,8 @@ resource "azurerm_resource_group" "default" {
 
 resource "azurerm_kubernetes_cluster" "default" {
   name                = "aks-${random_string.suffix.result}"
-  location            = var.region
-  resource_group_name = var.rg
+  location            = azurerm_resource_group.default.location
+  resource_group_name = azurerm_resource_group.default.name
 
   kubernetes_version = var.kubernetes_version
   dns_prefix         = "k8s-${random_string.suffix.result}"
@@ -42,8 +42,8 @@ resource "azurerm_kubernetes_cluster" "default" {
 
 resource "azurerm_container_registry" "default" {
   name                = var.container_repository_name
-  location            = var.region
-  resource_group_name = var.rg
+  location            = azurerm_resource_group.default.location
+  resource_group_name = azurerm_resource_group.default.name
   sku                 = "Premium"
 }
 
