@@ -311,7 +311,7 @@ func TestVaultPKISecret(t *testing.T) {
 						"VaultPKISecret", secret)
 
 					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
-						waitForRolloutRestartsAndAssertRollout(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
+						awaitRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
 					}
 				})
 			}
