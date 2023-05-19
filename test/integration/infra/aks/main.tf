@@ -7,11 +7,6 @@ resource "random_string" "suffix" {
   upper   = false
 }
 
-resource "azurerm_resource_group" "default" {
-  name     = "rg-${random_string.suffix.result}"
-  location = var.region
-}
-
 resource "azurerm_kubernetes_cluster" "default" {
   name                = "aks-${random_string.suffix.result}"
   location            = var.region
@@ -19,6 +14,8 @@ resource "azurerm_kubernetes_cluster" "default" {
 
   kubernetes_version = var.kubernetes_version
   dns_prefix         = "k8s-${random_string.suffix.result}"
+
+  oidc_issuer_enabled = true
 
   default_node_pool {
     name            = "default"

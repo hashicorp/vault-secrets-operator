@@ -408,9 +408,10 @@ ci-acr-build-push: ## Build the operator image and push it to the ACR repository
 integration-test-aks: ## Run integration tests in the AKS cluster
 	@$(eval ACR_NAME := $(shell $(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw container_repository_name))	
 	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw kubernetes_cluster_name))
+	@$(eval AZ_OIDC_URL := $(shell $(TERRAFORM) -chdir=$(TF_AKS_DIR) output -raw oidc_discovery_url))
 	@$(eval IMAGE_TAG_BASE := $(ACR_NAME).azurecr.io/$(IMAGE_TAG_BASE))
 	$(MAKE) port-forward &
-	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
+	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION) TF_VAR_vault_oidc_discovery_url=$(AZ_OIDC_URL) TF_VAR_vault_oidc_ca=false
 
 .PHONY: destroy-aks
 destroy-aks: ## Destroy the AKS cluster

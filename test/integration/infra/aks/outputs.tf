@@ -8,3 +8,8 @@ output "kubernetes_cluster_name" {
 output "container_repository_name" {
   value = azurerm_container_registry.default.name
 }
+
+output "oidc_discovery_url" {
+  value       = azurerm_kubernetes_cluster.default.oidc_issuer_url
+  description = "AKS OIDC discovery URL"
+}
