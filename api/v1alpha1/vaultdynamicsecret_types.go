@@ -18,10 +18,26 @@ type VaultDynamicSecretSpec struct {
 	Namespace string `json:"namespace,omitempty"`
 	// Mount path of the secret's engine in Vault.
 	Mount string `json:"mount"`
+	// RequestHTTPMethod to use when syncing Secrets from Vault.
+	// Setting a value here is not typically required.
+	// If left unset the Operator will make requests using the GET method.
+	// In the case where Params are specified the Operator will use the PUT method.
+	// Please consult https://developer.hashicorp.com/vault/docs/secrets if you are
+	// uncertain about what method to use.
+	// Of note, the Vault client treats PUT and POST as being equivalent.
+	// The underlying Vault client implementation will always use the PUT method.
+	// +kubebuilder:validation:Enum={GET,POST,PUT}
+	RequestHTTPMethod string `json:"requestHTTPMethod,omitempty"`
 	// Path in Vault to get the credentials for, and is relative to Mount.
-	// Please consult https://developer.hashicorp.com/vault/docs/secrets if one is
+	// Please consult https://developer.hashicorp.com/vault/docs/secrets if you are
 	// uncertain about what 'path' should be set to.
 	Path string `json:"path"`
+	// Params that can be passed when requesting credentials/secrets.
+	// When Params is set the configured RequestHTTPMethod will be
+	// ignored. See RequestHTTPMethod for more details.
+	// Please consult https://developer.hashicorp.com/vault/docs/secrets if you are
+	// uncertain about what 'params' should/can be set to.
+	Params map[string]string `json:"params,omitempty"`
 	// RenewalPercent is the percent out of 100 of the lease duration when the
 	// lease is renewed. Defaults to 67 percent plus jitter.
 	// +kubebuilder:default=67
