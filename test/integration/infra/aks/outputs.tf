@@ -13,3 +13,7 @@ output "oidc_discovery_url" {
   value       = azurerm_kubernetes_cluster.default.oidc_issuer_url
   description = "AKS OIDC discovery URL"
 }
+
+output "resource_group_name" {
+  value = azurerm_resource_group.default.name
+}

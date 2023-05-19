@@ -8,7 +8,7 @@ resource "random_string" "suffix" {
 }
 
 resource "azurerm_resource_group" "default" {
-  name     = var.rg
+  name     = "rg-${random_string.suffix.result}"
   location = var.region
 }
 

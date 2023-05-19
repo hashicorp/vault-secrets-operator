@@ -1,11 +1,6 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-variable "rg" {
-  default     = "rg-vso"
-  description = "Azure Resource Group attached to the region"
-}
-
 variable "region" {
   default     = "West US 2"
   description = "Azure region to deploy the resources"
