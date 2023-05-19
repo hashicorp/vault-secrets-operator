@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
@@ -79,7 +80,7 @@ func init() {
 		panic(err)
 	}
 
-	kustomizeConfigRoot, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "config"))
+	kustomizeConfigRoot, err = filepath.Abs(filepath.Join(testRoot, "..", "..", "build", "config"))
 	if err != nil {
 		panic(err)
 	}
@@ -442,7 +443,21 @@ func exportKindLogs(t *testing.T) {
 	}
 }
 
-func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget) {
+func waitForRolloutRestartsAndAssertRollout(t *testing.T, ctx context.Context,
+	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget,
+) {
+	t.Helper()
+	require.NoError(t, backoff.Retry(
+		func() error {
+			return assertRolloutRestarts(t, ctx, client, obj, targets)
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10),
+	))
+}
+
+func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget,
+) error {
 	t.Helper()
 
 	// see secretsv1alpha1.RolloutRestartTarget for supported target resources.
@@ -481,9 +496,8 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 		assert.Greater(t, tObj.GetGeneration(), int64(1))
 		expectedAnnotation := helpers.AnnotationRestartedAt
 		val, ok := annotations[expectedAnnotation]
-		if !assert.True(t, ok,
-			"expected annotation %q is not present", expectedAnnotation) {
-			continue
+		if !ok {
+			return fmt.Errorf("expected annotation %q is not present", expectedAnnotation)
 		}
 		ts, err := time.Parse(time.RFC3339, val)
 		if !assert.NoError(t, err,
@@ -493,6 +507,7 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
 	}
+	return nil
 }
 
 func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {

@@ -7,8 +7,15 @@ VERSION ?= 0.0.0-dev
 
 GO_VERSION = $(shell cat .go-version)
 
-CONFIG_MANAGER_DIR ?= config/manager
-KUSTOMIZE_BUILD_DIR ?= config/default
+CONFIG_SRC_DIR ?= config
+CONFIG_BUILD_DIR ?= build/config
+CONFIG_MANAGER_DIR ?= $(CONFIG_BUILD_DIR)/manager
+CONFIG_CRD_BASES_DIR ?= $(CONFIG_SRC_DIR)/crd/bases
+KUSTOMIZATION ?= default
+KUSTOMIZE_BUILD_DIR ?= $(CONFIG_BUILD_DIR)/$(KUSTOMIZATION)
+
+CHART_ROOT ?= chart
+CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
@@ -158,10 +165,17 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
+	$(MAKE) sync-crds
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: sync-crds
+sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DIR for Helm. Called from the manifests target.
+	@rm -rf $(CHART_CRDS_DIR)
+	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: fmt
@@ -246,9 +260,18 @@ ci-docker-build: ## Build docker image with the operator (without generating ass
 ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
 
-.PHONY: integration-test
-integration-test:  setup-vault ## Run integration tests for Vault OSS
+.PHONY: copy-config
+copy-config: ## Copy kustomize config to CONFIG_BUILD_DIR
+	@rm -rf $(CONFIG_BUILD_DIR)
+	@mkdir -p $(dir $(CONFIG_BUILD_DIR))
+	@cp -a $(CONFIG_SRC_DIR) $(CONFIG_BUILD_DIR)
+
+.PHONY: set-image
+set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_DIR
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+
+.PHONY: set-image integration-test
+integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
@@ -342,8 +365,7 @@ endif
 endif
 
 .PHONY: ci-deploy
-ci-deploy: kustomize ## Deploy controller to the K8s cluster (without generating assets)
-	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+ci-deploy: kustomize set-image ## Deploy controller to the K8s cluster (without generating assets)
 	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: ci-deploy-kind
@@ -432,12 +454,11 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
+deploy: manifests kustomize set-image ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl apply -f -
 
 .PHONY: undeploy
-undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+undeploy: set-image ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy-kind
@@ -488,10 +509,9 @@ $(ENVTEST): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 .PHONY: bundle
-bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize set-image ## Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q
-	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	operator-sdk bundle validate ./bundle
 
 .PHONY: bundle-build

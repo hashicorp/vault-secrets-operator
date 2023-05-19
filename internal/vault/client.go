@@ -10,17 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
-
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	"github.com/hashicorp/vault/api"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 type ClientOptions struct {
@@ -132,12 +130,18 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 	return c, nil
 }
 
+type ClientBase interface {
+	Read(context.Context, string) (*api.Secret, error)
+	Write(context.Context, string, map[string]any) (*api.Secret, error)
+	KVv1(string) (*api.KVv1, error)
+	KVv2(string) (*api.KVv2, error)
+}
+
 type Client interface {
+	ClientBase
 	Init(context.Context, ctrlclient.Client, *secretsv1alpha1.VaultAuth, *secretsv1alpha1.VaultConnection, string, *ClientOptions) error
 	Login(context.Context, ctrlclient.Client) error
-	Read(context.Context, string) (*api.Secret, error)
 	Restore(context.Context, *api.Secret) error
-	Write(context.Context, string, map[string]any) (*api.Secret, error)
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
 	Valid() error
@@ -145,8 +149,6 @@ type Client interface {
 	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
-	KVv1(string) (*api.KVv1, error)
-	KVv2(string) (*api.KVv2, error)
 	Close()
 	Clone(string) (Client, error)
 	IsClone() bool
