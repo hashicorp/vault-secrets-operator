@@ -56,7 +56,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}

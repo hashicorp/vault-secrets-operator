@@ -92,10 +92,10 @@ ENVTEST_K8S_VERSION = 1.24.1
 
 # Kind cluster name
 KIND_CLUSTER_NAME ?= vault-secrets-operator
-# Kind cluster context
-KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 # Kind config file
 KIND_CONFIG_FILE ?= $(INTEGRATION_TEST_ROOT)/kind/config.yaml
+# Kubernetes cluster context, defaults to the Kind cluster context
+K8S_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
 # Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
@@ -267,7 +267,7 @@ set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_D
 integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
-    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
@@ -295,7 +295,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
 		--config $(KIND_CONFIG_FILE)
-	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
+	kubectl config use-context $(K8S_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
@@ -325,7 +325,7 @@ endif
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
-		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_VAULT_STATE_DIR)/*.tfvars
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(VAULT_PATCH_ROOT)/patch-vault.sh
@@ -372,7 +372,7 @@ load-docker-image: kustomize ## Deploy controller to the K8s cluster (without ge
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
 	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) destroy -auto-approve \
-		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_license=ignored && \
 	rm -rf $(TF_VAULT_STATE_DIR)
@@ -399,26 +399,22 @@ create-gke: gcloud ## Create a new GKE cluster
 	$(GCLOUD) container clusters get-credentials $$($(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name) \
 	--region $$($(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw region)
 
+include $(TF_GKE_DIR)/output.env
+
 # Currently only supports amd64
 .PHONY: ci-gar-build-push
 ci-gar-build-push: gcloud ## Build the operator image and push it to the GAR repository
-	@$(eval GCP_REGION := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw region))
-	@$(eval GCP_PROJ_ID := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw project_id))
-	@$(eval GCP_GAR_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw gar_name))
-	@$(eval IMAGE_TAG_BASE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJ_ID)/$(GCP_GAR_NAME)/$(BIN_NAME))
-	@$(eval IMG := $(IMAGE_TAG_BASE):$(VERSION))
-	$(MAKE) ci-build ci-docker-build IMG=$(IMG)
+	# $(eval IMG := $(IMAGE_TAG_BASE):$(VERSION))
+	# $(MAKE) ci-build ci-docker-build IMG=$(IMG)
 	$(GCLOUD) auth configure-docker $(GCP_REGION)-docker.pkg.dev
 	docker push $(IMG)
 
 .PHONY: integration-test-gke
 integration-test-gke: ## Run integration tests in the GKE cluster
-	$(eval CLUSTER_NAME := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name))
-	$(eval GKE_OIDC_URL := $(shell $(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw oidc_discovery_url))
-	$(eval KIND_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(CLUSTER_NAME) | awk '{print $$2}'))
+	$(eval K8S_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(GKE_CLUSTER_NAME) | awk '{print $$2}'))
 	$(MAKE) port-forward &
-	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG) TF_VAR_vault_oidc_discovery_url=$(GKE_OIDC_URL) TF_VAR_vault_oidc_ca=false
-
+	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG) TF_VAR_vault_oidc_discovery_url=$(GKE_OIDC_URL) TF_VAR_vault_oidc_ca=false
+	
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
 	$(TERRAFORM) -chdir=$(TF_GKE_DIR) destroy -auto-approve
@@ -451,10 +447,10 @@ ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
 
 .PHONY: integration-test-eks
 integration-test-eks: ## Run integration tests in the EKS cluster
-	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
+	@$(eval K8S_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
 	@$(eval IMAGE_TAG_BASE := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url))
 	$(MAKE) port-forward &
-	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
+	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
 
 .PHONY: ci-ecr-delete
 ci-ecr-delete: ## Delete the ECR repository
@@ -554,14 +550,7 @@ GCLOUD = ./bin/gcloud
 gcloud: ## Download gcloud cli locally if necessary.
 ifeq (,$(wildcard $(GCLOUD)))
 ifeq (,$(shell which $(notdir $(GCLOUD)) 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(GCLOUD)) ;\
-	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sfSLo $(GCLOUD).tar.gz https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-$(GCLOUD_VERSION)-$${OS}-$${ARCH}.tar.gz ; \
-	tar -xvf $(GCLOUD).tar.gz -C $(dir $(GCLOUD)) --strip-components=1 google-cloud-sdk/bin/gcloud ;\
-	rm -f $(GCLOUD).tar.gz ; \
-	}
+	$(shell echo "gcloud cli is not installed on the machine, please install to proceed further")
 else
 GCLOUD = $(shell which gcloud)
 endif
