@@ -10,8 +10,12 @@ GO_VERSION = $(shell cat .go-version)
 CONFIG_SRC_DIR ?= config
 CONFIG_BUILD_DIR ?= build/config
 CONFIG_MANAGER_DIR ?= $(CONFIG_BUILD_DIR)/manager
+CONFIG_CRD_BASES_DIR ?= $(CONFIG_SRC_DIR)/crd/bases
 KUSTOMIZATION ?= default
 KUSTOMIZE_BUILD_DIR ?= $(CONFIG_BUILD_DIR)/$(KUSTOMIZATION)
+
+CHART_ROOT ?= chart
+CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
@@ -165,10 +169,17 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
+	$(MAKE) sync-crds
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: sync-crds
+sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DIR for Helm. Called from the manifests target.
+	@rm -rf $(CHART_CRDS_DIR)
+	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: fmt

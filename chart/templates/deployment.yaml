@@ -33,6 +33,9 @@ spec:
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
+      {{- if .Values.controller.annotations }}
+        {{- toYaml .Values.controller.annotations | nindent 8 }}
+      {{- end }}
     spec:
       containers:
       - name: kube-rbac-proxy
