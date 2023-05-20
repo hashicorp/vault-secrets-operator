@@ -393,28 +393,23 @@ unit-test: ## Run unit tests for the helm chart
 ##@ GKE
 
 .PHONY: create-gke
-create-gke: gcloud ## Create a new GKE cluster
+create-gke: ## Create a new GKE cluster
 	$(TERRAFORM) -chdir=$(TF_GKE_DIR) init -upgrade
 	$(TERRAFORM) -chdir=$(TF_GKE_DIR) apply -auto-approve
-	$(GCLOUD) container clusters get-credentials $$($(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw kubernetes_cluster_name) \
-	--region $$($(TERRAFORM) -chdir=$(TF_GKE_DIR) output -raw region)
-
-include $(TF_GKE_DIR)/output.env
+	export TF_GKE_DIR=$(TF_GKE_DIR); \
+    $(CURDIR)/scripts/cloudhelper.sh "$(TF_GKE_DIR)/outputs.env" "gcloud" "gcp-k8s"
 
 # Currently only supports amd64
 .PHONY: ci-gar-build-push
-ci-gar-build-push: gcloud ## Build the operator image and push it to the GAR repository
-	# $(eval IMG := $(IMAGE_TAG_BASE):$(VERSION))
-	# $(MAKE) ci-build ci-docker-build IMG=$(IMG)
-	$(GCLOUD) auth configure-docker $(GCP_REGION)-docker.pkg.dev
-	docker push $(IMG)
+ci-gar-build-push: ## Build the operator image and push it to the GAR repository
+	export TF_GKE_DIR=$(TF_GKE_DIR); \
+    $(CURDIR)/scripts/cloudhelper.sh "$(TF_GKE_DIR)/outputs.env" "gcloud" "gcp-push"
 
 .PHONY: integration-test-gke
 integration-test-gke: ## Run integration tests in the GKE cluster
-	$(eval K8S_CLUSTER_CONTEXT := $(shell kubectl config get-contexts --no-headers | grep $(GKE_CLUSTER_NAME) | awk '{print $$2}'))
-	$(MAKE) port-forward &
-	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG) TF_VAR_vault_oidc_discovery_url=$(GKE_OIDC_URL) TF_VAR_vault_oidc_ca=false
-	
+	export TF_GKE_DIR=$(TF_GKE_DIR); \
+    $(CURDIR)/scripts/cloudhelper.sh "$(TF_GKE_DIR)/outputs.env" "gcloud" "gcp-test"
+
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
 	$(TERRAFORM) -chdir=$(TF_GKE_DIR) destroy -auto-approve
@@ -544,17 +539,6 @@ bundle-build: ## Build the bundle image.
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
-
-.PHONY: gcloud
-GCLOUD = ./bin/gcloud
-gcloud: ## Download gcloud cli locally if necessary.
-ifeq (,$(wildcard $(GCLOUD)))
-ifeq (,$(shell which $(notdir $(GCLOUD)) 2>/dev/null))
-	$(shell echo "gcloud cli is not installed on the machine, please install to proceed further")
-else
-GCLOUD = $(shell which gcloud)
-endif
-endif
 
 .PHONY: aws
 AWS = ./bin/aws
