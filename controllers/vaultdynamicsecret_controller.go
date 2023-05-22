@@ -390,7 +390,6 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	}
 	if _, err = c.Write(ctx, "/sys/leases/revoke", map[string]interface{}{
 		"lease_id": leaseID,
-		"sync":     true,
 	}); err != nil {
 		msg := "Failed to revoke lease"
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoke, msg+": %s", err)

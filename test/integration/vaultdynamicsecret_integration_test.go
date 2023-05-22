@@ -363,6 +363,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		}
 		keys := resp.Data["keys"].([]interface{})
 		if len(keys) > 0 {
+			fmt.Printf("-----> Leases still found: %v", keys)
 			return "", fmt.Errorf("Leases still found: %d", len(keys))
 		}
 		return "", nil
