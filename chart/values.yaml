@@ -74,6 +74,11 @@ controller:
       # Typically there should only ever be one VaultAuth configured with
       # StorageEncryption in the Cluster.
       storageEncryption:
+        # Vault Connection Ref to be used by the VaultAuthMethod.
+        # Default setting will use the default VaultConnectionRef, which must also be configured.
+        # @type: string
+        vaultConnectionRef: ""
+
         # Vault namespace for the VaultAuthMethod
         # @type: string
         namespace: ""
