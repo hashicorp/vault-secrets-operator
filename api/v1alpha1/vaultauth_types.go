@@ -47,7 +47,7 @@ type VaultAuthConfigJWT struct {
 // VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to
 // Vault via an AppRole AuthMethod.
 type VaultAuthConfigAppRole struct {
-	// RoleID `role_id` of the AppRole Role to use for authenticating to Vault.
+	// RoleID of the AppRole Role to use for authenticating to Vault.
 	RoleID string `json:"roleId"`
 
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
