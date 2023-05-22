@@ -1,6 +1,10 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
+variable "test_serviceaccount_name" {
+  default = ""
+}
+
 variable "k8s_test_namespace" {
   default = "testing"
 }
