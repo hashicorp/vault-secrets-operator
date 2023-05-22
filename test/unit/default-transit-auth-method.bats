@@ -43,13 +43,6 @@ load _helpers
     local object=$(helm template \
         -s templates/default-transit-auth-method.yaml  \
         --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
-        --set 'controller.manager.clientCache.storageEncryption.namespace=foo-ns' \
-        --set 'controller.manager.clientCache.storageEncryption.serviceAccount=foo-sa' \
-        --set 'controller.manager.clientCache.storageEncryption.mount=foo-mount' \
-        --set 'controller.manager.clientCache.storageEncryption.role=foo-role' \
-        --set 'controller.manager.clientCache.storageEncryption.tokenAudiences={vault,foo}' \
-        --set 'controller.manager.clientCache.storageEncryption.keyName=foo-keyName' \
-        --set 'controller.manager.clientCache.storageEncryption.transitMount=foo-transit-mount' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.spec.vaultConnectionRef' | tee /dev/stderr)
