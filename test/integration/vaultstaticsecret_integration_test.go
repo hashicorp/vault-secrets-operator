@@ -429,7 +429,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						t.Parallel()
 
 						mount := kvType + testID
-						dest := fmt.Sprintf("create-%s-%d", kvType, idx)
+						dest := fmt.Sprintf("%s-%s-%d", tt.name, kvType, idx)
 						expected := expectedData{
 							initial: map[string]interface{}{"dest-initial": dest},
 							update:  map[string]interface{}{"dest-updated": dest},
