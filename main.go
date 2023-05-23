@@ -244,7 +244,7 @@ func main() {
 			<-handlerCtx.Done()
 
 			clientFactory.Disable(ctx)
-			clientFactory.RevokeAll(ctx)
+			clientFactory.RevokeAll(ctx, defaultClient)
 			cancel()
 		}()
 	}
