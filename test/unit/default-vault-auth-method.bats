@@ -146,9 +146,7 @@ load _helpers
      [ "${actual}" = "baz" ]
 
     # secret related specs should not exist
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.name' | tee /dev/stderr)
-     [ "${actual}" = null ]
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.key' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretRef' | tee /dev/stderr)
      [ "${actual}" = null ]
 }
 
@@ -161,8 +159,7 @@ load _helpers
         --set 'defaultAuthMethod.method=jwt' \
         --set 'defaultAuthMethod.mount=foo' \
         --set 'defaultAuthMethod.jwt.role=role-1' \
-        --set 'defaultAuthMethod.jwt.secretName=secret-1' \
-        --set 'defaultAuthMethod.jwt.secretKey=secret-key-1' \
+        --set 'defaultAuthMethod.jwt.secretRef=secret-1' \
         --set 'defaultAuthMethod.headers=foo: bar' \
         --set 'defaultAuthMethod.params=foo: baz' \
         . | tee /dev/stderr)
@@ -178,10 +175,8 @@ load _helpers
      [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.jwt.role' | tee /dev/stderr)
      [ "${actual}" = "role-1" ]
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.name' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.jwt.secretRef' | tee /dev/stderr)
      [ "${actual}" = "secret-1" ]
-    actual=$(echo "$object" | yq '.spec.jwt.secretKeyRef.key' | tee /dev/stderr)
-     [ "${actual}" = "secret-key-1" ]
     actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
      [ "${actual}" = "bar" ]
     actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
@@ -192,4 +187,31 @@ load _helpers
      [ "${actual}" = null ]
     actual=$(echo "$object" | yq '.spec.jwt.audiences' | tee /dev/stderr)
      [ "${actual}" = null ]
+}
+
+@test "defaultAuthMethod/CR: settings can be modified for appRole auth method" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.method=appRole' \
+        --set 'defaultAuthMethod.namespace=tenant-2' \
+        --set 'defaultAuthMethod.appRole.roleid=role-1' \
+        --set 'defaultAuthMethod.appRole.secretRef=secret-1' \
+        --set 'defaultAuthMethod.mount=foo' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+     [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+     [ "${actual}" = "tenant-2" ]
+
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+     [ "${actual}" = "appRole" ]
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+     [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.appRole.roleId' | tee /dev/stderr)
+     [ "${actual}" = "role-1" ]
+    actual=$(echo "$object" | yq '.spec.appRole.secretRef' | tee /dev/stderr)
+     [ "${actual}" = "secret-1" ]
 }
