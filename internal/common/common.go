@@ -14,14 +14,18 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
 
-// OperatorNamespace of the current operator instance, set in init()
-var OperatorNamespace string
+var (
+	// OperatorNamespace of the current operator instance, set in init()
+	OperatorNamespace     string
+	InvalidObjectKeyError = fmt.Errorf("invalid objectKey")
+)
 
 func init() {
 	var err error
@@ -244,4 +248,11 @@ func GetVaultNamespace(obj client.Object) (string, error) {
 		return "", fmt.Errorf("unsupported type %T", o)
 	}
 	return ns, nil
+}
+
+func ValidateObjectKey(key ctrlclient.ObjectKey) error {
+	if key.Name == "" || key.Namespace == "" {
+		return InvalidObjectKeyError
+	}
+	return nil
 }

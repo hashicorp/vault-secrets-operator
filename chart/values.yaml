@@ -257,13 +257,11 @@ defaultAuthMethod:
     # - K8s secret that contains the JWT
     # - K8s service account if a service account JWT is used as a Vault JWT auth token and needs generating by VSO
 
-    # Name of Kubernetes Secret that has the Vault JWT auth token. This is a required field if a JWT is provided
+    # Name of Kubernetes Secret that has the Vault JWT auth token.
+    # The Kubernetes Secret must contain a key named `jwt` which references the JWT token, and must exist in the namespace
+    # of any consuming VaultSecret CR. This is a required field if a JWT token is provided.
     # @type: string
     secretName: ""
-
-    # Key of Kubernetes Secret that has the Vault JWT auth token. This is a required field if JWT is provided
-    # @type: string
-    secretKey: ""
 
     # Kubernetes ServiceAccount to generate a service account JWT
     # @type: string
@@ -273,6 +271,21 @@ defaultAuthMethod:
     # of the Vault JWT auth role.
     # @type: array<string>
     tokenAudiences: [ ]
+
+  # AppRole auth method specific configuration
+  appRole:
+    # AppRole Role's RoleID to use for authenticating to Vault.
+    # This is a required field when using appRole and must be setup in Vault prior to deploying the
+    # helm chart.
+    # @type: string
+    roleId: ""
+    # Name of Kubernetes Secret that has the AppRole Role's SecretID used to authenticate with Vault.
+    # The Kubernetes Secret must contain a key named `id` which references the AppRole Role's
+    # SecretID, and must exist in the namespace of any consuming VaultSecret CR.
+    # This is a required field when using appRole and must be setup in Vault prior to deploying the
+    # helm chart.
+    # @type: string
+    secretName: ""
 
   # Params to use when authenticating to Vault
   # params: |

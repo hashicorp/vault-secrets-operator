@@ -41,6 +41,7 @@ import (
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 var (
@@ -282,7 +283,8 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 }
 
 type authMethodsK8sOutputs struct {
-	AuthRole string `json:"auth_role"`
+	AuthRole      string `json:"auth_role"`
+	AppRoleRoleID string `json:"role_id"`
 }
 
 type dynamicK8SOutputs struct {
@@ -528,7 +530,7 @@ func assertRolloutRestarts(
 	return errs
 }
 
-func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {
+func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName string) *corev1.Secret {
 	t.Helper()
 
 	serviceAccount := &corev1.ServiceAccount{
@@ -552,7 +554,7 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			secretKey: []byte(tokenReq.Status.Token),
+			credentials.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))
