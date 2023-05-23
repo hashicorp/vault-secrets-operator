@@ -93,7 +93,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		resp, err = w.Get(ctx, o.Spec.Name)
+		if o.Spec.Version == 0 {
+			resp, err = w.Get(ctx, o.Spec.Name)
+		} else {
+			resp, err = w.GetVersion(ctx, o.Spec.Name, o.Spec.Version)
+		}
 	default:
 		err = fmt.Errorf("unsupported secret type %q", o.Spec.Type)
 		logger.Error(err, "")
