@@ -117,3 +117,13 @@ func keyId(raw interface{}) ([]byte, error) {
 	kID := sha256.Sum256(bs)
 	return []byte(strings.Replace(fmt.Sprintf("% x", kID), " ", ":", -1)), nil
 }
+
+func getTestCertPool(t *testing.T, cert []byte) *x509.CertPool {
+	t.Helper()
+
+	pool := x509.NewCertPool()
+	if ok := pool.AppendCertsFromPEM(cert); !ok {
+		assert.Fail(t, "test certificate contains no valid certificates")
+	}
+	return pool
+}

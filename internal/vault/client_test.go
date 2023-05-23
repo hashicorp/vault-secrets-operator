@@ -5,7 +5,6 @@ package vault
 
 import (
 	"context"
-	"crypto/x509"
 	"fmt"
 	"testing"
 	"time"
@@ -396,14 +395,4 @@ func Test_defaultClient_Init(t *testing.T) {
 			}
 		})
 	}
-}
-
-func getTestCertPool(t *testing.T, cert []byte) *x509.CertPool {
-	t.Helper()
-
-	pool := x509.NewCertPool()
-	if ok := pool.AppendCertsFromPEM(cert); !ok {
-		assert.Fail(t, "test certificate contains no valid certificates")
-	}
-	return pool
 }
