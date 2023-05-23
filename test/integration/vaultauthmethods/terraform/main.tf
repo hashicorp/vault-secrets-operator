@@ -115,6 +115,54 @@ resource "vault_jwt_auth_backend_role" "dev" {
   token_policies  = [vault_policy.default.name]
 }
 
+# Create the Vault Auth Backend for AppRole
+resource "vault_auth_backend" "approle" {
+  namespace = local.namespace
+  type      = "approle"
+  path      = var.approle_mount_path
+}
+
+# Create the Vault Auth Backend Role for AppRole
+resource "vault_approle_auth_backend_role" "role" {
+  namespace = local.namespace
+  backend   = vault_auth_backend.approle.path
+  role_name = var.approle_role_name
+  # role_id is auto-generated, and we use this to do the Login
+  token_policies = [vault_policy.approle.name]
+}
+
+# Creates the Secret ID for the AppRole
+resource "vault_approle_auth_backend_role_secret_id" "id" {
+  namespace = local.namespace
+  backend   = vault_auth_backend.approle.path
+  role_name = vault_approle_auth_backend_role.role.role_name
+}
+
+# Kubernetes secret to hold the secretid
+resource "kubernetes_secret" "secretid" {
+  metadata {
+    name      = "secretid"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+  data = {
+    id = vault_approle_auth_backend_role_secret_id.id.secret_id
+  }
+}
+
+resource "vault_policy" "approle" {
+  name      = "approle"
+  namespace = local.namespace
+  policy    = <<EOT
+path "${vault_mount.kvv2.path}/*" {
+  capabilities = ["read","list","update"]
+}
+path "auth/${vault_auth_backend.approle.path}/login" {
+  capabilities = ["read","update"]
+}
+EOT
+}
+
+# VSO Helm chart
 resource "helm_release" "vault-secrets-operator" {
   name             = "test"
   namespace        = var.operator_namespace

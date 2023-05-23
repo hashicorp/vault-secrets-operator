@@ -35,6 +35,17 @@ variable "vault_test_namespace" {
   default = "tenant-1"
 }
 
+# AppRole specific variables
+variable "approle_role_name" {
+  type    = string
+  default = "approle"
+}
+
+variable "approle_mount_path" {
+  type    = string
+  default = "approle"
+}
+
 variable "vault_enterprise" {
   type    = bool
   default = false

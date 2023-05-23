@@ -25,21 +25,14 @@ type VaultAuthConfigKubernetes struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
-// SecretKeySelector selects a key of a Secret.
-type SecretKeySelector struct {
-	// Name of the secret in the referring object's namespace to select from.
-	Name string `json:"name"`
-	// Key of the secret to select from. Must be a valid secret key.
-	Key string `json:"key"`
-}
-
 // VaultAuthConfigJWT provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigJWT struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// SecretKeyRef to use when referencing the secret containing the JWT token
-	// to authenticate to Vault's JWT authentication backend.
-	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
+	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
+	// provides the JWT token to authenticate to Vault's JWT authentication backend. The secret must
+	// have a key named `jwt` which holds the JWT token.
+	SecretRef string `json:"secretRef,omitempty"`
 	// ServiceAccount to use when creating a ServiceAccount token to authenticate to Vault's
 	// JWT authentication backend.
 	ServiceAccount string `json:"serviceAccount,omitempty"`
@@ -51,6 +44,18 @@ type VaultAuthConfigJWT struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
+// VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to
+// Vault via an AppRole AuthMethod.
+type VaultAuthConfigAppRole struct {
+	// RoleID of the AppRole Role to use for authenticating to Vault.
+	RoleID string `json:"roleId"`
+
+	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
+	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
+	// AppRole Role's secretID.
+	SecretRef string `json:"secretRef"`
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
@@ -60,7 +65,7 @@ type VaultAuthSpec struct {
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.
-	// +kubebuilder:validation:Enum=kubernetes;jwt
+	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
@@ -68,14 +73,17 @@ type VaultAuthSpec struct {
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.
 	Headers map[string]string `json:"headers,omitempty"`
-	// Kubernetes specific auth configuration, requires that the Method be set to kubernetes.
+	// Kubernetes specific auth configuration, requires that the Method be set to `kubernetes`.
 	Kubernetes *VaultAuthConfigKubernetes `json:"kubernetes,omitempty"`
-	// JWT specific auth configuration, requires that the Method be set to jwt.
+	// AppRole specific auth configuration, requires that the Method be set to `appRole`.
+	AppRole *VaultAuthConfigAppRole `json:"appRole,omitempty"`
+	// JWT specific auth configuration, requires that the Method be set to `jwt`.
 	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
-	// This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted
-	// Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the
+	// This is done by passing setting the manager's commandline argument
+	// --client-cache-persistence-model=direct-encrypted. Typically there should only ever
+	// be one VaultAuth configured with StorageEncryption in the Cluster, and it should have
 	// the label: cacheStorageEncryption=true
 	StorageEncryption *StorageEncryption `json:"storageEncryption,omitempty"`
 }
