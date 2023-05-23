@@ -11,6 +11,7 @@ Features:
 Improvements:
 * VaultDynamicSecrets (VDS): Generate new credentials if lease renewal TTL is truncated [GH-170](https://github.com/hashicorp/vault-secrets-operator/pull/170)
 * VaultDynamicSecrets (VDS): Replace `Spec.Role` with `Spec.Path` (**breaking change**) [GH-172](https://github.com/hashicorp/vault-secrets-operator/pull/172)
+* VaultStaticSecrets (VSS): Add `Spec.Version` field to support fetching a specific kv-v2 secret version [GH-200](https://github.com/hashicorp/vault-secrets-operator/pull/200)
 
 ## 0.1.0-beta (March 29th, 2023)
 
