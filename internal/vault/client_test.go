@@ -23,27 +23,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
-const testCACertPEM = `-----BEGIN CERTIFICATE-----
-MIIDVDCCAjwCCQDFiyFY1M6afTANBgkqhkiG9w0BAQsFADBsMQswCQYDVQQGEwJV
-UzETMBEGA1UECAwKV2FzaGluZ3RvbjEQMA4GA1UEBwwHU2VhdHRsZTEgMB4GA1UE
-CgwXVmF1bHQgVGVzdGluZyBBdXRob3JpdHkxFDASBgNVBAMMC2V4YW1wbGUubmV0
-MB4XDTIwMDkxODAxMjkxM1oXDTQ1MDkxODAxMjkxM1owbDELMAkGA1UEBhMCVVMx
-EzARBgNVBAgMCldhc2hpbmd0b24xEDAOBgNVBAcMB1NlYXR0bGUxIDAeBgNVBAoM
-F1ZhdWx0IFRlc3RpbmcgQXV0aG9yaXR5MRQwEgYDVQQDDAtleGFtcGxlLm5ldDCC
-ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALCA9oKv+ESRHX2e/iq1PlGr
-zD23/MBS0V+fWQDY0hyEqY98CGwRtF6pEcLEYsreArj5/zznsIevLkNOD+beg43y
-WpEJlCPgDhGXI/Oima6ooHVEIMaIKLjK7GrSzAb3rNRGACwrR/u/IKaFl+XJG0qx
-g8mOZ3fByaAlIk+shVLUcIedNN1tNR+6/4ZpHg7PDjrZXP4XKrmKPTh4yqfu+BtZ
-9IY2oyregqEsGW1/3h1NM+LHGVakTV2d/mwMYHhwoq9Y8BD+PemT5z8TmhH/cIk5
-P8Q8ud5/q6YTIJg9TELKebLAeNtRNnNoHeUoRTjiW1MBwNHtgyTTY+H3W/9Dne0C
-AwEAATANBgkqhkiG9w0BAQsFAAOCAQEAXmygFkGIBnXxKlsTDiV8RW2iHLgFdZFJ
-hcU8UpxZhhaL5JbQl6byfbHjrX31q7ii8uC8FcbW0AEdnEQAb9Ui6a+if7HwXNmI
-DTlYl+lMlk9RtWvExw6AEEbg5nCpGaKexm7wJgzYGP9by9pQ7wX/CS7ofCzCK+Al
-uSIqjPkMC201ZXH39n1lxxq6BacdYjv8wo4mMzi8iTSQGVWPdjHZVYOClFgN6hoj
-8SkrrSe888a0H+i7EknRxC4sLRaMUK/FAvwtXaSZi2djruAtQzQGQ56m1phC2C/k
-k9aL00AQ9Y4KTfiJD7LK8YIZDnFKLOCJhYgKCLCOVwOHb7836SNCxA==
------END CERTIFICATE-----`
-
 func Test_defaultClient_CheckExpiry(t *testing.T) {
 	type fields struct {
 		lastResp    *api.Secret
@@ -191,6 +170,10 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 
 func Test_defaultClient_Init(t *testing.T) {
 	ctx := context.Background()
+
+	ca, err := generateCA()
+	require.NoError(t, err)
+
 	tests := []struct {
 		name              string
 		client            ctrlclient.Client
@@ -208,7 +191,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			createNamespaces: true,
 			createCASecret:   true,
 			caSecretData: map[string][]byte{
-				consts.TLSSecretCAKey: []byte(testCACertPEM),
+				consts.TLSSecretCAKey: ca,
 			},
 			client: fake.NewClientBuilder().Build(),
 			authObj: &secretsv1alpha1.VaultAuth{
