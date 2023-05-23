@@ -4,5 +4,7 @@
 package credentials
 
 const (
-	TokenGenerateName string = "vso-"
+	TokenGenerateName        = "vso-"
+	ProviderSecretKeyAppRole = "id"
+	ProviderSecretKeyJWT     = "jwt"
 )
