@@ -30,7 +30,7 @@ var (
 	OperatorDeploymentName string
 	// OperatorDeploymentUID of the current operator instance
 	OperatorDeploymentUID types.UID
-  
+
 	InvalidObjectKeyError = fmt.Errorf("invalid objectKey")
 )
 
@@ -39,7 +39,6 @@ const (
 	OperatorDeploymentKind        = "Deployment"
 	OperatorDeploymentAPIVersion  = "apps/v1"
 )
-
 
 func init() {
 	var err error
@@ -285,6 +284,7 @@ func GetOperatorDeploymentOwnerReference() metav1.OwnerReference {
 		Name:       OperatorDeploymentName,
 		UID:        OperatorDeploymentUID,
 	}
+}
 
 func ValidateObjectKey(key ctrlclient.ObjectKey) error {
 	if key.Name == "" || key.Namespace == "" {
