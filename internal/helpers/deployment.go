@@ -92,7 +92,7 @@ func AwaitDeletionTimestampReceived(ctx context.Context, logger logr.Logger, c c
 			if err := c.Get(ctx, key, &configMap); err != nil {
 				logger.Error(err, "failed to get object")
 			} else if value, ok := configMap.Data[DeploymentStatusDeletionTimestampReceived]; ok && value == StringTrue {
-				if err = SetManagerAcked(ctx, c); err != nil {
+				if err = setManagerAcked(ctx, c); err != nil {
 					logger.Error(err, "failed to set manager acked")
 				}
 				return
@@ -102,7 +102,7 @@ func AwaitDeletionTimestampReceived(ctx context.Context, logger logr.Logger, c c
 	}
 }
 
-func SetManagerAcked(ctx context.Context, c client.Client) error {
+func setManagerAcked(ctx context.Context, c client.Client) error {
 	return updateDeploymentStatusConfigMap(ctx, c, deploymentStatus{
 		DeploymentStatusDeletionTimestampReceived: StringTrue,
 		DeploymentStatusManagerAcked:              StringTrue,

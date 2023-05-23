@@ -133,6 +133,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if common.OperatorDeploymentUID, err = common.GetOperatorDeploymentUID(defaultClient); err != nil {
+		setupLog.Error(err, "failed to get operator deployment uid")
+		os.Exit(1)
+	}
+
 	// These flags are passed by the pre-delete hook on helm uninstall.
 	// cleanUp := finalizerCleanup || vaultClientCacheCleanup
 
@@ -228,11 +233,6 @@ func main() {
 
 	if vaultTokenRevocationRequired {
 		ctx, cancel = context.WithCancel(context.Background())
-
-		if common.OperatorDeploymentUID, err = common.GetOperatorDeploymentUID(defaultClient); err != nil {
-			setupLog.Error(err, "failed to get operator deployment uid")
-			os.Exit(1)
-		}
 
 		if err = helpers.CreateDeploymentStatusConfigMap(ctx, defaultClient); err != nil {
 			setupLog.Error(err, fmt.Sprintf("Failed to create %s ConfigMap", helpers.DeploymentStatusConfigMapName))
