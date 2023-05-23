@@ -28,16 +28,18 @@ spec:
   {{- else if eq .Values.defaultAuthMethod.method "jwt" }}
   jwt:
     role: {{ .Values.defaultAuthMethod.jwt.role }}
-    {{- if and .Values.defaultAuthMethod.jwt.secretName .Values.defaultAuthMethod.jwt.secretKey }}
-    secretKeyRef:
-        name: {{ .Values.defaultAuthMethod.jwt.secretName }}
-        key: {{ .Values.defaultAuthMethod.jwt.secretKey }}
+    {{- if .Values.defaultAuthMethod.jwt.secretRef }}
+    secretRef: {{ .Values.defaultAuthMethod.jwt.secretRef }}
     {{- else if .Values.defaultAuthMethod.jwt.serviceAccount }}
     serviceAccount: {{ .Values.defaultAuthMethod.jwt.serviceAccount }}
     {{- if .Values.defaultAuthMethod.jwt.tokenAudiences }}
     audiences: {{ .Values.defaultAuthMethod.jwt.tokenAudiences | toJson }}
     {{- end }}
     {{- end }}
+  {{- else if eq .Values.defaultAuthMethod.method "appRole" }}
+  appRole:
+    roleId: {{ .Values.defaultAuthMethod.appRole.roleid }}
+    secretRef: {{ .Values.defaultAuthMethod.appRole.secretRef }}
   {{- end }}
   {{- if .Values.defaultAuthMethod.headers }}
   headers:
