@@ -66,9 +66,9 @@ spec:
         {{- if .Values.controller.manager.clientCache.cacheSize }}
         - --client-cache-size={{ .Values.controller.manager.clientCache.cacheSize }}
         {{- end }}
-        {{ - if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
+        {{- if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
         - --vault-token-revocation-required
-        {{ - end }}
+        {{- end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles-vds={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
@@ -145,9 +145,9 @@ spec:
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
         - --finalizer-cleanup=true
-        {{ - if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
+        {{- if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
         - --vault-token-revocation-required
-        {{ - end }}
+        {{- end }}
         command:
         - /vault-secrets-operator
         env:
