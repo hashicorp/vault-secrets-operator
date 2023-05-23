@@ -339,12 +339,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
-	// Delete remaining CRDs which were created, and then validate that the leases are all revoked.
-	for _, c := range created {
-		// test that the custom resources can be deleted before tf destroy
-		// removes the k8s namespace
-		assert.Nil(t, crdClient.Delete(ctx, c))
-	}
 	// Get a Vault client so we can validate that all leases have been removed.
 	cfg := api.DefaultConfig()
 	cfg.Address = vaultAddr
@@ -363,10 +357,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 		}
 		keys := resp.Data["keys"].([]interface{})
 		if len(keys) > 0 {
-			return "", fmt.Errorf("Leases still found: %d", len(keys))
+			// Print out the lease ids that are still found to make debugging easier.
+			return "", fmt.Errorf("leases still found: %v", keys)
 		}
 		return "", nil
 	})
+	// Delete custom resources which were created before tf destroy removes the k8s namespace.
+	// This includes the VaultAuthMethods/Connections which are required for revocation to complete,
+	// so do it after we test for revocation.
+	for _, c := range created {
+		// test that the custom resources can be deleted before tf destroy
+		// removes the k8s namespace
+		assert.Nil(t, crdClient.Delete(ctx, c))
+	}
 }
 
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
