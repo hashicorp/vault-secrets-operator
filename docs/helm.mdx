@@ -1,16 +1,19 @@
 ---
 layout: docs
-page_title: Helm Chart Configuration
-description: Configuration for the Vault Secrets Operator Helm chart.
+page_title: Vault Secrets Operator Helm Chart Configuration
+description: >-
+  Configuration for the Vault Secrets Operator Helm chart.
 ---
 
-# Helm Chart Configuration
+@include 'vso-beta-note.mdx'
+
+# Vault Secrets Operator Helm Chart
 
 The chart is customizable using
 [Helm configuration values](https://helm.sh/docs/intro/using_helm/#customizing-the-chart-before-installing).
 
 <!-- DO NOT EDIT. The docs below are generated automatically. To change, edit
-                  the vault-secrets-operator repo's values.yaml file -->
+                  the vault-secrets-operator repo's values.yaml: file commit=7236932478761438b62db3f21634308b3baaf891 -->
 <!-- codegen: start -->
 
 ## Top-Level Stanzas
@@ -57,13 +60,15 @@ Use these links to navigate to a particular top-level stanza.
 
         - `memory` ((#v-controller-kuberbacproxy-resources-requests-memory)) (`string: 64Mi`)
 
+  - `annotations` ((#v-controller-annotations)) - This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
+
   - `manager` ((#v-controller-manager)) - Settings related to the vault-secrets-operator container.
 
     - `image` ((#v-controller-manager-image)) - Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
 
       - `repository` ((#v-controller-manager-image-repository)) (`string: hashicorp/vault-secrets-operator`)
 
-      - `tag` ((#v-controller-manager-image-tag)) (`string: 0.0.0-dev`)
+      - `tag` ((#v-controller-manager-image-tag)) (`string: 0.1.0-beta`)
 
     - `clientCache` ((#v-controller-manager-clientcache)) - Configures the client cache which is used by the controller to cache (and potentially persist) vault tokens that
       are the result of using the VaultAuthMethod. This enables re-use of Vault Tokens
@@ -230,6 +235,37 @@ Use these links to navigate to a particular top-level stanza.
 
     - `tokenAudiences` ((#v-defaultauthmethod-kubernetes-tokenaudiences)) (`array<string>: []`) - Token Audience should match the audience of the vault kubernetes auth role.
 
+  - `jwt` ((#v-defaultauthmethod-jwt)) - Vault JWT auth method specific configuration
+
+    - `role` ((#v-defaultauthmethod-jwt-role)) (`string: ""`) - Vault Auth Role to use
+      This is a required field and must be setup in Vault prior to deploying the helm chart
+      if `jwtAuthMethod.enabled=true`
+
+    - `secretName` ((#v-defaultauthmethod-jwt-secretname)) (`string: ""`) - One of the following is required prior to deploying the helm chart
+      - K8s secret that contains the JWT
+      - K8s service account if a service account JWT is used as a Vault JWT auth token and needs generating by VSO
+
+      Name of Kubernetes Secret that has the Vault JWT auth token.
+      The Kubernetes Secret must contain a key named `jwt` which references the JWT token, and must exist in the namespace
+      of any consuming VaultSecret CR. This is a required field if a JWT token is provided.
+
+    - `serviceAccount` ((#v-defaultauthmethod-jwt-serviceaccount)) (`string: default`) - Kubernetes ServiceAccount to generate a service account JWT
+
+    - `tokenAudiences` ((#v-defaultauthmethod-jwt-tokenaudiences)) (`array<string>: []`) - Token Audience should match the bound_audiences or the `aud` list in bound_claims if applicable
+      of the Vault JWT auth role.
+
+  - `appRole` ((#v-defaultauthmethod-approle)) - AppRole auth method specific configuration
+
+    - `roleId` ((#v-defaultauthmethod-approle-roleid)) (`string: ""`) - AppRole Role's RoleID to use for authenticating to Vault.
+      This is a required field when using appRole and must be setup in Vault prior to deploying the
+      helm chart.
+
+    - `secretName` ((#v-defaultauthmethod-approle-secretname)) (`string: ""`) - Name of Kubernetes Secret that has the AppRole Role's SecretID used to authenticate with Vault.
+      The Kubernetes Secret must contain a key named `id` which references the AppRole Role's
+      SecretID, and must exist in the namespace of any consuming VaultSecret CR.
+      This is a required field when using appRole and must be setup in Vault prior to deploying the
+      helm chart.
+
   - `params` ((#v-defaultauthmethod-params)) (`string: ""`) - Params to use when authenticating to Vault
     params: |
       "vault-something1": "foo"
@@ -252,7 +288,11 @@ Use these links to navigate to a particular top-level stanza.
 
 ## Helm Chart Examples
 
-The below `config.yaml` results in a single replica installation of the Vault Secrets Operator with a default vault connection and auth method custom resource deployed. It expects a local Vault installation within the kubernetes cluster accessible via `http://vault.default.svc.cluster.local:8200` with TLS disabled.
+The below `config.yaml` results in a single replica installation of the Vault Secrets Operator
+with a default vault connection and auth method custom resource deployed.
+It expects a local Vault installation within the kubernetes cluster
+accessible via `http://vault.default.svc.cluster.local:8200` with TLS disabled,
+and a [Vault Auth Method](/vault/docs/auth/kubernetes) to be setup against the `default` ServiceAccount.
 
 
 ```yaml
@@ -260,7 +300,7 @@ The below `config.yaml` results in a single replica installation of the Vault Se
 
 defaultVaultConnection:
   enabled: true
-defaultVaultAuthMethod:
+defaultAuthMethod:
   enabled: true
 
 ```
@@ -268,5 +308,5 @@ defaultVaultAuthMethod:
 ## Customizing the Helm Chart
 
 If you need to extend the Helm chart with additional options, we recommend using a third-party tool,
-such as [kustomize](https://github.com/kubernetes-sigs/kustomize) using the `configs/` path in the repository.
-
+such as [kustomize](https://github.com/kubernetes-sigs/kustomize) using the project repo `config/` path
+in the [vault-secrets-operator](https://github.com/hashicorp/vault-secrets-operator) project.
