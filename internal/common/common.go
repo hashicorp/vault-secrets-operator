@@ -16,6 +16,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -29,6 +30,8 @@ var (
 	OperatorDeploymentName string
 	// OperatorDeploymentUID of the current operator instance
 	OperatorDeploymentUID types.UID
+  
+	InvalidObjectKeyError = fmt.Errorf("invalid objectKey")
 )
 
 const (
@@ -36,6 +39,7 @@ const (
 	OperatorDeploymentKind        = "Deployment"
 	OperatorDeploymentAPIVersion  = "apps/v1"
 )
+
 
 func init() {
 	var err error
@@ -281,4 +285,10 @@ func GetOperatorDeploymentOwnerReference() metav1.OwnerReference {
 		Name:       OperatorDeploymentName,
 		UID:        OperatorDeploymentUID,
 	}
+
+func ValidateObjectKey(key ctrlclient.ObjectKey) error {
+	if key.Name == "" || key.Namespace == "" {
+		return InvalidObjectKeyError
+	}
+	return nil
 }

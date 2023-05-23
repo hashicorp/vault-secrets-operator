@@ -70,7 +70,7 @@ func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey c
 
 // getHMACKeySecret returns the Secret for objKey. The Secret.Data must contain a valid HMAC key for hmacKeyName.
 func getHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
-	if err := validateObjectKey(objKey); err != nil {
+	if err := common.ValidateObjectKey(objKey); err != nil {
 		return nil, err
 	}
 
