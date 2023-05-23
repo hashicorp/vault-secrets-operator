@@ -42,11 +42,13 @@ func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			return err
 		}
 		l.uid = sa.UID
-	} else if l.authObj.Spec.JWT.SecretKeyRef != nil &&
-		l.authObj.Spec.JWT.SecretKeyRef.Name != "" &&
-		l.authObj.Spec.JWT.SecretKeyRef.Key != "" {
+	} else if l.authObj.Spec.JWT.SecretRef != "" {
 		var err error
-		l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretKeyRef.Name)
+		key := ctrlclient.ObjectKey{
+			Namespace: l.providerNamespace,
+			Name:      l.authObj.Spec.JWT.SecretRef,
+		}
+		l.tokenSecret, err = getSecret(ctx, client, key)
 		if err != nil {
 			return err
 		}
@@ -95,13 +97,28 @@ func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	}
 
 	var err error
-	l.tokenSecret, err = getSecret(ctx, client, l.providerNamespace, l.authObj.Spec.JWT.SecretKeyRef.Name)
+	key := ctrlclient.ObjectKey{
+		Namespace: l.providerNamespace,
+		Name:      l.authObj.Spec.JWT.SecretRef,
+	}
+	l.tokenSecret, err = getSecret(ctx, client, key)
 	if err != nil {
 		return nil, err
 	}
-
-	return map[string]interface{}{
-		"role": l.authObj.Spec.JWT.Role,
-		"jwt":  string(l.tokenSecret.Data[l.authObj.Spec.JWT.SecretKeyRef.Key]),
-	}, nil
+	if jwtData, ok := l.tokenSecret.Data[ProviderSecretKeyJWT]; !ok {
+		err = fmt.Errorf("no key %q found in secret", ProviderSecretKeyJWT)
+		logger.Error(err, "Failed to get jwt token from secret", "secret_name",
+			l.authObj.Spec.JWT.SecretRef)
+		return nil, err
+	} else if len(jwtData) == 0 {
+		err = fmt.Errorf("no data found in secret key %q", ProviderSecretKeyJWT)
+		logger.Error(err, "Failed to get jwt token from secret", "secret_name",
+			l.authObj.Spec.JWT.SecretRef)
+		return nil, err
+	} else {
+		return map[string]interface{}{
+			"role": l.authObj.Spec.JWT.Role,
+			"jwt":  string(jwtData),
+		}, nil
+	}
 }
