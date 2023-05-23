@@ -275,6 +275,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		expectedExisting []expectedData
 		create           int
 		createTypes      []string
+		version          int
 	}{
 		{
 			name: "existing",
@@ -299,6 +300,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			name:        "create-kv-v2",
 			create:      2,
 			createTypes: []string{consts.KVSecretTypeV2},
+		},
+		{
+			name:        "create-kv-v2-fixed-version",
+			create:      2,
+			createTypes: []string{consts.KVSecretTypeV2},
+			version:     1,
 		},
 		{
 			name:        "create-both",
@@ -355,7 +362,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		} else {
 			putKV(t, obj, expected.update)
 
-			data = expected.update
+			if obj.Spec.Version == 1 {
+				data = expected.initial
+			} else {
+				data = expected.update
+			}
 		}
 
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
@@ -418,7 +429,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						t.Parallel()
 
 						mount := kvType + testID
-						dest := fmt.Sprintf("create-%s-%d", kvType, idx)
+						dest := fmt.Sprintf("%s-%s-%d", tt.name, kvType, idx)
 						expected := expectedData{
 							initial: map[string]interface{}{"dest-initial": dest},
 							update:  map[string]interface{}{"dest-updated": dest},
@@ -441,6 +452,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 								RefreshAfter:   "5s",
 								HMACSecretData: true,
 							},
+						}
+						if tt.version != 0 {
+							vssObj.Spec.Version = tt.version
 						}
 
 						if !skipCleanup {

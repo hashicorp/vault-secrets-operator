@@ -15,6 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 const (
@@ -67,7 +69,7 @@ func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey c
 
 // getHMACKeySecret returns the Secret for objKey. The Secret.Data must contain a valid HMAC key for hmacKeyName.
 func getHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
-	if err := validateObjectKey(objKey); err != nil {
+	if err := common.ValidateObjectKey(objKey); err != nil {
 		return nil, err
 	}
 

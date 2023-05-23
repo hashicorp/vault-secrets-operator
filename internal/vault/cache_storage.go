@@ -48,10 +48,7 @@ const (
 	labelProviderNamespace    = "provider/namespace"
 )
 
-var (
-	InvalidObjectKeyError   = fmt.Errorf("invalid objectKey")
-	EncryptionRequiredError = fmt.Errorf("encryption required")
-)
+var EncryptionRequiredError = fmt.Errorf("encryption required")
 
 type ClientCacheStorageStoreRequest struct {
 	OwnerReferences     []metav1.OwnerReference
@@ -292,7 +289,7 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 		c.incrementRequestCounter(metrics.OperationRestore, err)
 	}()
 
-	err = validateObjectKey(req.SecretObjKey)
+	err = common.ValidateObjectKey(req.SecretObjKey)
 	if err != nil {
 		return nil, err
 	}
@@ -609,7 +606,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		config = DefaultClientCacheStorageConfig()
 	}
 
-	if err := validateObjectKey(config.HMACSecretObjKey); err != nil {
+	if err := common.ValidateObjectKey(config.HMACSecretObjKey); err != nil {
 		return nil, err
 	}
 
@@ -687,11 +684,4 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	}
 
 	return cacheStorage, nil
-}
-
-func validateObjectKey(key ctrlclient.ObjectKey) error {
-	if key.Name == "" || key.Namespace == "" {
-		return InvalidObjectKeyError
-	}
-	return nil
 }
