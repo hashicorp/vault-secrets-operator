@@ -61,7 +61,7 @@ func TestMakeVaultClient(t *testing.T) {
 			},
 			CACert:          testCABytes,
 			makeBlankSecret: true,
-			expectedError:   fmt.Errorf(`"ca.crt" was empty in the CA secret vault/vault-cert`),
+			expectedError:   fmt.Errorf(`"ca.crt" not present in the CA secret "vault/vault-cert"`),
 		},
 		"vault namespace": {
 			vaultConfig: &ClientConfig{
