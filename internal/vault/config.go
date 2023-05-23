@@ -12,6 +12,8 @@ import (
 	"k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 // ClientConfig contains the connection and auth information to construct a
@@ -54,7 +56,7 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		}
 
 		var ok bool
-		key := "ca.crt"
+		key := consts.TLSSecretCAKey
 		if b, ok = s.Data[key]; !ok {
 			return nil, fmt.Errorf(`%q not present in the CA secret %q`, key, objKey)
 		}

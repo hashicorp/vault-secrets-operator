@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
@@ -207,7 +208,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			createNamespaces: true,
 			createCASecret:   true,
 			caSecretData: map[string][]byte{
-				"ca.crt": []byte(testCACertPEM),
+				consts.TLSSecretCAKey: []byte(testCACertPEM),
 			},
 			client: fake.NewClientBuilder().Build(),
 			authObj: &secretsv1alpha1.VaultAuth{
@@ -268,7 +269,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			providerNamespace: "vso",
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err, fmt.Sprintf(
-					`"ca.crt" not present in the CA secret "%s/%s"`, "vso", "baz"), i...)
+					`%q not present in the CA secret "%s/%s"`, consts.TLSSecretCAKey, "vso", "baz"), i...)
 			},
 		},
 		{
@@ -276,7 +277,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			createNamespaces: true,
 			createCASecret:   true,
 			caSecretData: map[string][]byte{
-				"ca.crt": {},
+				consts.TLSSecretCAKey: {},
 			},
 			client: fake.NewClientBuilder().Build(),
 			authObj: &secretsv1alpha1.VaultAuth{
@@ -306,7 +307,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			providerNamespace: "vso",
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err, fmt.Sprintf(
-					`no valid certificates found for key "ca.crt" in CA secret "%s/%s"`, "vso", "baz"))
+					`no valid certificates found for key %q in CA secret "%s/%s"`, consts.TLSSecretCAKey, "vso", "baz"))
 			},
 		},
 		{
@@ -314,7 +315,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			createNamespaces: true,
 			createCASecret:   true,
 			caSecretData: map[string][]byte{
-				"ca.crt": {},
+				consts.TLSSecretCAKey: {},
 			},
 			client: fake.NewClientBuilder().Build(),
 			authObj: &secretsv1alpha1.VaultAuth{
@@ -407,7 +408,7 @@ func Test_defaultClient_Init(t *testing.T) {
 				}
 
 				actualPool := c.client.CloneConfig().TLSConfig().RootCAs
-				expectedPool := getTestCertPool(t, tt.caSecretData["ca.crt"])
+				expectedPool := getTestCertPool(t, tt.caSecretData[consts.TLSSecretCAKey])
 				assert.True(t, expectedPool.Equal(actualPool))
 			}
 		})
