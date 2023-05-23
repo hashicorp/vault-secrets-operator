@@ -22,6 +22,10 @@ type VaultStaticSecretSpec struct {
 	Mount string `json:"mount"`
 	// Name of the secret in Vault
 	Name string `json:"name"`
+	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
+	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
+	// +kubebuilder:validation:Minimum=0
+	Version int `json:"version,omitempty"`
 	// Type of the Vault static secret
 	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
 	Type string `json:"type"`
