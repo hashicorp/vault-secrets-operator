@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
@@ -442,9 +443,33 @@ func exportKindLogs(t *testing.T) {
 	}
 }
 
-func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget) {
+func awaitRolloutRestarts(t *testing.T, ctx context.Context,
+	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget,
+) {
+	t.Helper()
+	require.NoError(t, backoff.Retry(
+		func() error {
+			err := assertRolloutRestarts(t, ctx, client, obj, targets, 2)
+			if t.Failed() {
+				e := fmt.Errorf("assertRolloutRestarts failed")
+				if err != nil {
+					e = fmt.Errorf("%s, err=%w", e.Error(), err)
+				}
+				return backoff.Permanent(e)
+			}
+			return err
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10),
+	))
+}
+
+func assertRolloutRestarts(
+	t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
+	targets []secretsv1alpha1.RolloutRestartTarget, minGeneration int64,
+) error {
 	t.Helper()
 
+	var errs error
 	// see secretsv1alpha1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
 	for _, target := range targets {
@@ -475,16 +500,23 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 			}
 		default:
 			assert.Fail(t,
-				"unsupported rollout-restart Kind %q for target %v", target.Kind, target)
+				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
 		}
 
-		assert.Greater(t, tObj.GetGeneration(), int64(1))
-		expectedAnnotation := helpers.AnnotationRestartedAt
-		val, ok := annotations[expectedAnnotation]
-		if !assert.True(t, ok,
-			"expected annotation %q is not present", expectedAnnotation) {
+		// expect the generation has been incremented
+		if !(tObj.GetGeneration() >= minGeneration) {
+			errs = errors.Join(errs, fmt.Errorf(
+				"expected min generation %d, actual %d", minGeneration, tObj.GetGeneration()))
 			continue
 		}
+
+		expectedAnnotation := helpers.AnnotationRestartedAt
+		val, ok := annotations[expectedAnnotation]
+		if !ok {
+			errs = errors.Join(errs, fmt.Errorf("expected annotation %q not present", expectedAnnotation))
+			continue
+		}
+
 		ts, err := time.Parse(time.RFC3339, val)
 		if !assert.NoError(t, err,
 			"invalid value for %q", expectedAnnotation) {
@@ -493,6 +525,7 @@ func assertRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
 	}
+	return errs
 }
 
 func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, namespace, secretName, secretKey string) *corev1.Secret {

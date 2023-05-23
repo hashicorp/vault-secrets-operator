@@ -6,7 +6,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-logr/logr v1.2.4
 	github.com/google/uuid v1.3.0
-	github.com/gruntwork-io/terratest v0.41.19
+	github.com/gruntwork-io/terratest v0.41.25
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hashicorp/vault/api v1.9.1
@@ -18,9 +18,9 @@ require (
 	github.com/prometheus/client_model v0.4.0
 	github.com/stretchr/testify v1.8.2
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.26.4
+	k8s.io/api v0.26.5
 	k8s.io/apimachinery v0.27.1
-	k8s.io/client-go v0.26.4
+	k8s.io/client-go v0.26.5
 	k8s.io/utils v0.0.0-20230209194617-a36077c30491
 	sigs.k8s.io/controller-runtime v0.14.6
 )

@@ -311,10 +311,7 @@ func TestVaultPKISecret(t *testing.T) {
 						"VaultPKISecret", secret)
 
 					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
-						// TODO(tech-debt): add method waiting for rollout-restart, for now we
-						//  can provide an artificial grace period.
-						time.Sleep(5 * time.Second)
-						assertRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
+						awaitRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
 					}
 				})
 			}

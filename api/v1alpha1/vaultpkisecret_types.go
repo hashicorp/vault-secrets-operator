@@ -74,7 +74,7 @@ type VaultPKISecretSpec struct {
 
 	// Requested other SANs, in an array with the format
 	// oid;type:value for each entry.
-	OtherSans string `json:"otherSans,omitempty"`
+	OtherSans []string `json:"otherSans,omitempty"`
 
 	// TTL for the certificate; sets the expiration date.
 	// If not specified the Vault role's default,
@@ -135,7 +135,7 @@ func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 		"alt_names":            strings.Join(v.Spec.AltNames, ","),
 		"ip_sans":              strings.Join(v.Spec.IPSans, ","),
 		"uri_sans":             strings.Join(v.Spec.URISans, ","),
-		"other_sans":           v.Spec.OtherSans,
+		"other_sans":           strings.Join(v.Spec.OtherSans, ","),
 		"ttl":                  v.Spec.TTL,
 		"not_after":            v.Spec.NotAfter,
 		"exclude_cn_from_sans": v.Spec.ExcludeCNFromSans,

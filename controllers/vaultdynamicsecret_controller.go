@@ -221,9 +221,43 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.Va
 	return true
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, vClient vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
-	path := fmt.Sprintf("%s/%s", o.Spec.Mount, o.Spec.Path)
-	resp, err := vClient.Read(ctx, path)
+func (r *VaultDynamicSecretReconciler) syncSecret(
+	ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret,
+) (*secretsv1alpha1.VaultSecretLease, error) {
+	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
+	var err error
+	var resp *api.Secret
+	var params map[string]any
+	paramsLen := len(o.Spec.Params)
+	if paramsLen > 0 {
+		params = make(map[string]any, paramsLen)
+		for k, v := range o.Spec.Params {
+			params[k] = v
+		}
+	}
+
+	method := o.Spec.RequestHTTPMethod
+	if params != nil {
+		if !(method == http.MethodPost || method == http.MethodPut) {
+			log.FromContext(ctx).V(consts.LogLevelWarning).Info(
+				"Params provided, ignoring specified method",
+				"requestHTTPMethod", o.Spec.RequestHTTPMethod)
+		}
+		method = http.MethodPut
+	}
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	switch method {
+	case http.MethodPut, http.MethodPost:
+		resp, err = c.Write(ctx, path, params)
+	case http.MethodGet:
+		resp, err = c.Read(ctx, path)
+	default:
+		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +298,9 @@ func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *se
 	}
 }
 
-func (r *VaultDynamicSecretReconciler) renewLease(ctx context.Context, c vault.Client, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) renewLease(
+	ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret,
+) (*secretsv1alpha1.VaultSecretLease, error) {
 	resp, err := c.Write(ctx, "/sys/leases/renew", map[string]interface{}{
 		"lease_id":  o.Status.SecretLease.ID,
 		"increment": o.Status.SecretLease.LeaseDuration,
