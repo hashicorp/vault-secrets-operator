@@ -55,7 +55,7 @@ type CachingClientFactory interface {
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
 	Disable(context.Context)
-	RevokeAll(context.Context)
+	RevokeAll(context.Context, ctrlclient.Client)
 }
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
