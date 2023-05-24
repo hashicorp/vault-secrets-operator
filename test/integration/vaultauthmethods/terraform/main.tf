@@ -36,19 +36,19 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
-resource "kubernetes_service_account" "jwt-sa" {
+resource "kubernetes_service_account" "test-sa" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
     name      = var.test_serviceaccount_name
   }
 }
 
-resource "kubernetes_secret" "jwt-sa-secret" {
+resource "kubernetes_secret" "test-sa-secret" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
-    name      = "jwt-sa-secret"
+    name      = "test-sa-secret"
     annotations = {
-      "kubernetes.io/service-account.name" = kubernetes_service_account.jwt-sa.metadata[0].name
+      "kubernetes.io/service-account.name" = kubernetes_service_account.test-sa.metadata[0].name
     }
   }
   type                           = "kubernetes.io/service-account-token"
@@ -98,7 +98,7 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
   role_name                        = var.auth_role
-  bound_service_account_names      = [kubernetes_service_account.jwt-sa.metadata[0].name]
+  bound_service_account_names      = [kubernetes_service_account.test-sa.metadata[0].name]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
   token_policies                   = [vault_policy.default.name]
@@ -110,7 +110,7 @@ resource "vault_jwt_auth_backend" "dev" {
   namespace             = local.namespace
   path                  = "jwt"
   oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
-  oidc_discovery_ca_pem = nonsensitive(kubernetes_secret.jwt-sa-secret.data["ca.crt"])
+  oidc_discovery_ca_pem = nonsensitive(kubernetes_secret.test-sa-secret.data["ca.crt"])
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {

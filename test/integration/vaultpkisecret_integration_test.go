@@ -100,13 +100,12 @@ func TestVaultPKISecret(t *testing.T) {
 	var created []ctrlclient.Object
 	// Clean up resources with "terraform destroy" at the end of the test.
 	t.Cleanup(func() {
-		exportKindLogs(t)
-
 		for _, c := range created {
 			// test that the custom resources can be deleted before tf destroy
 			// removes the k8s namespace
 			assert.Nil(t, crdClient.Delete(ctx, c))
 		}
+		exportKindLogs(t)
 
 		terraform.Destroy(t, terraformOptions)
 		os.RemoveAll(tempDir)
