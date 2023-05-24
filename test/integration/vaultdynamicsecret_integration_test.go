@@ -97,6 +97,13 @@ func TestVaultDynamicSecret(t *testing.T) {
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
+			// Deletes the VaultAuthMethods/Connections.
+			for _, c := range created {
+				// test that the custom resources can be deleted before tf destroy
+				// removes the k8s namespace
+				assert.Nil(t, crdClient.Delete(ctx, c))
+			}
+
 			exportKindLogs(t)
 
 			// Clean up resources with "terraform destroy" at the end of the test.
@@ -339,12 +346,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
-	// Delete remaining CRDs which were created, and then validate that the leases are all revoked.
-	for _, c := range created {
-		// test that the custom resources can be deleted before tf destroy
-		// removes the k8s namespace
-		assert.Nil(t, crdClient.Delete(ctx, c))
-	}
 	// Get a Vault client so we can validate that all leases have been removed.
 	cfg := api.DefaultConfig()
 	cfg.Address = vaultAddr
@@ -363,7 +364,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 		}
 		keys := resp.Data["keys"].([]interface{})
 		if len(keys) > 0 {
-			return "", fmt.Errorf("Leases still found: %d", len(keys))
+			// Print out the lease ids that are still found to make debugging easier.
+			return "", fmt.Errorf("leases still found: %v", keys)
 		}
 		return "", nil
 	})
