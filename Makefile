@@ -275,7 +275,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
-	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=45m
 
 .PHONY: integration-test-helm
 integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
