@@ -99,6 +99,13 @@ func TestVaultDynamicSecret(t *testing.T) {
 		if !skipCleanup {
 			exportKindLogs(t)
 
+			// Deletes the VaultAuthMethods/Connections.
+			for _, c := range created {
+				// test that the custom resources can be deleted before tf destroy
+				// removes the k8s namespace
+				assert.Nil(t, crdClient.Delete(ctx, c))
+			}
+
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
 			os.RemoveAll(tempDir)
@@ -362,14 +369,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		}
 		return "", nil
 	})
-	// Delete custom resources which were created before tf destroy removes the k8s namespace.
-	// This includes the VaultAuthMethods/Connections which are required for revocation to complete,
-	// so do it after we test for revocation.
-	for _, c := range created {
-		// test that the custom resources can be deleted before tf destroy
-		// removes the k8s namespace
-		assert.Nil(t, crdClient.Delete(ctx, c))
-	}
 }
 
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
