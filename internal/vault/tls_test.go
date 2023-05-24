@@ -16,7 +16,10 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Stashing functions here for generating a CA cert in the tests. Pulled mostly
