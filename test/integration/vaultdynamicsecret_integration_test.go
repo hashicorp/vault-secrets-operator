@@ -97,14 +97,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
-			exportKindLogs(t)
-
 			// Deletes the VaultAuthMethods/Connections.
 			for _, c := range created {
 				// test that the custom resources can be deleted before tf destroy
 				// removes the k8s namespace
 				assert.Nil(t, crdClient.Delete(ctx, c))
 			}
+
+			exportKindLogs(t)
 
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
