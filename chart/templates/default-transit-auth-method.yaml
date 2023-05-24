@@ -16,6 +16,7 @@ metadata:
     cacheStorageEncryption: "true"
   {{- include "chart.labels" . | nindent 4 }}
 spec:
+  vaultConnectionRef: {{ .Values.controller.manager.clientCache.storageEncryption.vaultConnectionRef }}
   namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
   method: "kubernetes"
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
