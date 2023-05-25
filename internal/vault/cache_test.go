@@ -49,8 +49,8 @@ func Test_clientCache_Prune(t *testing.T) {
 				mockClient := NewMockClient(ctrl)
 				if tt.filterFuncReturnsTrue {
 					mockClient.EXPECT().Close()
-					// for simplicity, client is not cloned. pruneClones() should be tested separately
-					mockClient.EXPECT().IsClone().Return(false)
+					// for simplicity, client is clone. pruneClones() should be tested separately
+					mockClient.EXPECT().IsClone().Return(true)
 				}
 				c.cache.Add(ClientCacheKey(fmt.Sprintf("key%d", i)), mockClient)
 			}

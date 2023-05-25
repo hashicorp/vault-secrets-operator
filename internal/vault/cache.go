@@ -135,7 +135,7 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCache
 
 func (c *clientCache) remove(key ClientCacheKey, client Client) bool {
 	client.Close()
-	if client.IsClone() {
+	if !client.IsClone() {
 		c.pruneClones(key)
 	}
 
