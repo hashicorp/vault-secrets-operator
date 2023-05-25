@@ -47,8 +47,8 @@ func Test_clientCache_Prune(t *testing.T) {
 
 			for i := 0; i < cacheLen; i++ {
 				mockClient := NewMockClient(ctrl)
-				mockClient.EXPECT().Close().AnyTimes()
 				if tt.filterFuncReturnsTrue {
+					mockClient.EXPECT().Close()
 					// for simplicity, client is not cloned. pruneClones() should be tested separately
 					mockClient.EXPECT().IsClone().Return(false)
 				}
