@@ -137,6 +137,7 @@ type ClientBase interface {
 	KVv2(string) (*api.KVv2, error)
 }
 
+//go:generate mockgen -destination=mock_client.go -package=vault -source=client.go Client
 type Client interface {
 	ClientBase
 	Init(context.Context, ctrlclient.Client, *secretsv1alpha1.VaultAuth, *secretsv1alpha1.VaultConnection, string, *ClientOptions) error
