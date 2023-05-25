@@ -1,8 +1,11 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-variable "test_serviceaccount_name" {
-  default = ""
+data "kubernetes_service_account" "default" {
+  metadata {
+    name      = "default"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
 }
 
 variable "k8s_test_namespace" {
