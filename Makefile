@@ -118,11 +118,7 @@ VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
-# cloud cli versions for cloud cloud hosted k8s testing
-GCLOUD_VERSION ?= 430.0.0
-
 # directories for cloud hosted k8s infrastructure for running tests
-TF_GKE_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/gke
 TF_EKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
 
 BUILD_DIR = dist
@@ -400,30 +396,6 @@ helm-chart: manifests kustomize helmify
 .PHONY: unit-test
 unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
-
-##@ GKE
-
-.PHONY: create-gke
-create-gke: ## Create a new GKE cluster
-	$(TERRAFORM) -chdir=$(TF_GKE_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_GKE_DIR) apply -auto-approve
-	export TF_GKE_DIR=$(TF_GKE_DIR); \
-    $(CURDIR)/scripts/cloudhelper.sh "$(TF_GKE_DIR)/outputs.env" "gcloud" "gcp-k8s"
-
-# Currently only supports amd64
-.PHONY: ci-gar-build-push
-ci-gar-build-push: ## Build the operator image and push it to the GAR repository
-	export TF_GKE_DIR=$(TF_GKE_DIR); \
-    $(CURDIR)/scripts/cloudhelper.sh "$(TF_GKE_DIR)/outputs.env" "gcloud" "gcp-push"
-
-.PHONY: integration-test-gke
-integration-test-gke: ## Run integration tests in the GKE cluster
-	export TF_GKE_DIR=$(TF_GKE_DIR); \
-    $(CURDIR)/scripts/cloudhelper.sh "$(TF_GKE_DIR)/outputs.env" "gcloud" "gcp-test"
-
-.PHONY: destroy-gke
-destroy-gke: ## Destroy the GKE cluster
-	$(TERRAFORM) -chdir=$(TF_GKE_DIR) destroy -auto-approve
 
 ##@ EKS
 
