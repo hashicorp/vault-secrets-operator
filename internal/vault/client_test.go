@@ -396,3 +396,128 @@ func Test_defaultClient_Init(t *testing.T) {
 		})
 	}
 }
+
+func Test_defaultClient_Validate(t *testing.T) {
+	tests := []struct {
+		name           string
+		authSecret     *api.Secret
+		skipRenewal    bool
+		lastRenewal    int64
+		watcher        *api.LifetimeWatcher
+		lastWatcherErr error
+		wantErr        assert.ErrorAssertionFunc
+	}{
+		{
+			name: "invalid-expired",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					LeaseDuration: 5,
+				},
+			},
+			skipRenewal:    false,
+			lastRenewal:    time.Now().Unix() - 5,
+			watcher:        &api.LifetimeWatcher{},
+			lastWatcherErr: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "client token expired", i...)
+			},
+		},
+		{
+			name: "valid-with-watcher",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    false,
+			lastRenewal:    time.Now().Unix() - 5,
+			watcher:        &api.LifetimeWatcher{},
+			lastWatcherErr: nil,
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "valid-with-watcher-skipRenewal",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    true,
+			lastRenewal:    time.Now().Unix() - 5,
+			watcher:        nil,
+			lastWatcherErr: nil,
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "valid-with-watcher",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    false,
+			lastRenewal:    time.Now().Unix() - 5,
+			watcher:        &api.LifetimeWatcher{},
+			lastWatcherErr: nil,
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "valid-with-watcher-error-skipRenewal",
+			authSecret: &api.Secret{
+				LeaseDuration: 30,
+				Renewable:     false,
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    true,
+			lastRenewal:    time.Now().Unix() - 5,
+			lastWatcherErr: fmt.Errorf("lifetime watcher error"),
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "invalid-with-watcher-nil",
+			authSecret: &api.Secret{
+				LeaseDuration: 30,
+				Renewable:     false,
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    false,
+			lastRenewal:    time.Now().Unix() - 5,
+			lastWatcherErr: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "lifetime watcher not set", i...)
+			},
+		},
+		{
+			name: "invalid-with-watcher-error",
+			authSecret: &api.Secret{
+				LeaseDuration: 30,
+				Renewable:     false,
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    false,
+			lastRenewal:    time.Now().Unix() - 5,
+			lastWatcherErr: fmt.Errorf("lifetime watcher error"),
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "lifetime watcher error", i...)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				authSecret:     tt.authSecret,
+				skipRenewal:    tt.skipRenewal,
+				lastRenewal:    tt.lastRenewal,
+				watcher:        tt.watcher,
+				lastWatcherErr: tt.lastWatcherErr,
+			}
+			tt.wantErr(t, c.Validate(), fmt.Sprintf("Validate()"))
+		})
+	}
+}
