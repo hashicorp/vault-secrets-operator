@@ -550,14 +550,17 @@ func (c *defaultClient) renew(ctx context.Context) error {
 	return nil
 }
 
-func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions) error {
+func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
+	authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection,
+	providerNamespace string, opts *ClientOptions,
+) error {
 	cfg := &ClientConfig{
 		Address:         connObj.Spec.Address,
 		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
 		TLSServerName:   connObj.Spec.TLSServerName,
 		VaultNamespace:  authObj.Spec.Namespace,
+		K8sNamespace:    connObj.Namespace,
 		CACertSecretRef: connObj.Spec.CACertSecretRef,
-		K8sNamespace:    providerNamespace,
 	}
 
 	vc, err := MakeVaultClient(ctx, cfg, client)

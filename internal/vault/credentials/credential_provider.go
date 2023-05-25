@@ -16,9 +16,10 @@ import (
 const (
 	ProviderMethodKubernetes string = "kubernetes"
 	ProviderMethodJWT        string = "jwt"
+	ProviderMethodAppRole    string = "appRole"
 )
 
-var ProviderMethodsSupported = []string{ProviderMethodKubernetes, ProviderMethodJWT}
+var ProviderMethodsSupported = []string{ProviderMethodKubernetes, ProviderMethodJWT, ProviderMethodAppRole}
 
 type CredentialProvider interface {
 	Init(ctx context.Context, client ctrlclient.Client, object *secretsv1alpha1.VaultAuth, providerNamespace string) error
@@ -35,6 +36,12 @@ func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authOb
 	switch authObj.Spec.Method {
 	case ProviderMethodJWT:
 		provider := &JWTCredentialProvider{}
+		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
+			return nil, err
+		}
+		return provider, nil
+	case ProviderMethodAppRole:
+		provider := &AppRoleCredentialProvider{}
 		if err := provider.Init(ctx, client, authObj, providerNamespace); err != nil {
 			return nil, err
 		}

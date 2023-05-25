@@ -10,12 +10,14 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-rootcerts"
-	"github.com/hashicorp/vault/sdk/helper/consts"
+	vconsts "github.com/hashicorp/vault/sdk/helper/consts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 func TestMakeVaultClient(t *testing.T) {
@@ -61,7 +63,7 @@ func TestMakeVaultClient(t *testing.T) {
 			},
 			CACert:          testCABytes,
 			makeBlankSecret: true,
-			expectedError:   fmt.Errorf(`"ca.crt" was empty in the CA secret vault/vault-cert`),
+			expectedError:   fmt.Errorf(`%q not present in the CA secret "vault/vault-cert"`, consts.TLSSecretCAKey),
 		},
 		"vault namespace": {
 			vaultConfig: &ClientConfig{
@@ -81,10 +83,10 @@ func TestMakeVaultClient(t *testing.T) {
 						Name:      tc.vaultConfig.CACertSecretRef,
 						Namespace: tc.vaultConfig.K8sNamespace,
 					},
-					Data: map[string][]byte{"ca.crt": tc.CACert},
+					Data: map[string][]byte{consts.TLSSecretCAKey: tc.CACert},
 				}
 				if tc.makeBlankSecret {
-					delete(caCertSecret.Data, "ca.crt")
+					delete(caCertSecret.Data, consts.TLSSecretCAKey)
 				}
 				clientBuilder = clientBuilder.WithObjects(&caCertSecret)
 			}
@@ -106,7 +108,7 @@ func TestMakeVaultClient(t *testing.T) {
 				assert.Equal(t, tc.vaultConfig.TLSServerName, tlsConfig.ServerName)
 
 				assert.Equal(t, tc.vaultConfig.VaultNamespace,
-					vaultClient.Headers().Get(consts.NamespaceHeaderName),
+					vaultClient.Headers().Get(vconsts.NamespaceHeaderName),
 				)
 				if len(tc.CACert) != 0 && tc.vaultConfig.CACertSecretRef != "" {
 					require.NotNil(t, tlsConfig.RootCAs)

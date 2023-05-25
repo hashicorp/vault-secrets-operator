@@ -11,6 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 // requestSAToken for the provided ServiceAccount, expirationSeconds, and audiences
@@ -34,10 +36,9 @@ func requestSAToken(ctx context.Context, client ctrlclient.Client, sa *corev1.Se
 }
 
 // getSecret for the provided namespace and name
-func getSecret(ctx context.Context, client ctrlclient.Client, namespace, name string) (*corev1.Secret, error) {
-	key := ctrlclient.ObjectKey{
-		Namespace: namespace,
-		Name:      name,
+func getSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
+	if err := common.ValidateObjectKey(key); err != nil {
+		return nil, err
 	}
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, key, secret); err != nil {
