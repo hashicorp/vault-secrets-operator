@@ -4,12 +4,22 @@
 package vault
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 func Test_defaultClient_CheckExpiry(t *testing.T) {
@@ -153,6 +163,236 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "CheckExpiry(%v)", tt.args.offset)
+		})
+	}
+}
+
+func Test_defaultClient_Init(t *testing.T) {
+	ctx := context.Background()
+
+	ca, err := generateCA()
+	require.NoError(t, err)
+
+	defaultAuthObj := &secretsv1alpha1.VaultAuth{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: "vso",
+		},
+		Spec: secretsv1alpha1.VaultAuthSpec{
+			VaultConnectionRef: consts.NameDefault,
+			Method:             credentials.ProviderMethodKubernetes,
+			Mount:              "kubernetes",
+			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				ServiceAccount: consts.NameDefault,
+			},
+		},
+	}
+
+	defaultConnObj := &secretsv1alpha1.VaultConnection{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: "vso",
+		},
+		Spec: secretsv1alpha1.VaultConnectionSpec{
+			CACertSecretRef: "baz",
+			SkipTLSVerify:   false,
+		},
+	}
+
+	connObjSkipTLSVerify := &secretsv1alpha1.VaultConnection{
+		ObjectMeta: defaultConnObj.ObjectMeta,
+		Spec: secretsv1alpha1.VaultConnectionSpec{
+			CACertSecretRef: "baz",
+			SkipTLSVerify:   true,
+		},
+	}
+
+	tests := []struct {
+		name                  string
+		client                ctrlclient.Client
+		authObj               *secretsv1alpha1.VaultAuth
+		connObj               *secretsv1alpha1.VaultConnection
+		withoutCASecret       bool
+		withoutServiceAccount bool
+		caSecretData          map[string][]byte
+		providerNamespace     string
+		opts                  *ClientOptions
+		wantErr               assert.ErrorAssertionFunc
+	}{
+		{
+			name: "valid-secret-ca-cert",
+			caSecretData: map[string][]byte{
+				consts.TLSSecretCAKey: ca,
+			},
+			client:            fake.NewClientBuilder().Build(),
+			authObj:           defaultAuthObj,
+			connObj:           defaultConnObj,
+			providerNamespace: defaultConnObj.Namespace,
+			wantErr:           assert.NoError,
+		},
+		{
+			name: "valid-secret-ca-cert-other-provider-ns",
+			caSecretData: map[string][]byte{
+				consts.TLSSecretCAKey: ca,
+			},
+			client:            fake.NewClientBuilder().Build(),
+			authObj:           defaultAuthObj,
+			connObj:           defaultConnObj,
+			providerNamespace: "vso-provider-ns",
+			wantErr:           assert.NoError,
+		},
+		{
+			name:    "error-secret-missing-ca-cert",
+			client:  fake.NewClientBuilder().Build(),
+			authObj: defaultAuthObj,
+			connObj: defaultConnObj,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, fmt.Sprintf(
+					`%q not present in the CA secret "%s/%s"`, consts.TLSSecretCAKey, "vso", "baz"), i...)
+			},
+		},
+		{
+			name: "valid-empty-ca-cert-without-tls-verify",
+			caSecretData: map[string][]byte{
+				consts.TLSSecretCAKey: {},
+			},
+			client:            fake.NewClientBuilder().Build(),
+			authObj:           defaultAuthObj,
+			connObj:           connObjSkipTLSVerify,
+			providerNamespace: "provider-vso",
+			wantErr:           assert.NoError,
+		},
+		{
+			name: "invalid-empty-ca-cert-with-tls-verify",
+			caSecretData: map[string][]byte{
+				consts.TLSSecretCAKey: {},
+			},
+			client:  fake.NewClientBuilder().Build(),
+			authObj: defaultAuthObj,
+			connObj: defaultConnObj,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, fmt.Sprintf(
+					`no valid certificates found for key %q in CA secret "%s/%s"`, consts.TLSSecretCAKey, "vso", "baz"))
+			},
+		},
+		{
+			name:                  "invalid-service-account-not-found",
+			withoutServiceAccount: true,
+			caSecretData: map[string][]byte{
+				consts.TLSSecretCAKey: {},
+			},
+			client:  fake.NewClientBuilder().Build(),
+			authObj: defaultAuthObj,
+			connObj: connObjSkipTLSVerify,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, fmt.Sprintf(
+					"serviceaccounts %q not found", consts.NameDefault))
+			},
+		},
+		{
+			name:            "invalid-missing-secret",
+			withoutCASecret: true,
+			authObj:         defaultAuthObj,
+			connObj:         defaultConnObj,
+			client:          fake.NewClientBuilder().Build(),
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, fmt.Sprintf(
+					`secrets %q not found`, "baz"))
+			},
+		},
+		{
+			name:            "invalid-nil-VaultConnection",
+			authObj:         defaultAuthObj,
+			connObj:         nil,
+			client:          fake.NewClientBuilder().Build(),
+			withoutCASecret: true,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "VaultConnection was nil")
+			},
+		},
+		{
+			name:                  "invalid-nil-VaultAuth",
+			authObj:               nil,
+			connObj:               defaultConnObj,
+			withoutServiceAccount: true,
+			client:                fake.NewClientBuilder().Build(),
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "VaultAuth was nil")
+			},
+		},
+		{
+			name:                  "invalid-nil-ctrl-client",
+			withoutCASecret:       true,
+			withoutServiceAccount: true,
+			authObj:               defaultAuthObj,
+			connObj:               defaultConnObj,
+			client:                nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "ctrl-runtime Client was nil")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !tt.withoutCASecret {
+				require.NotNil(t, tt.client)
+				require.NotNil(t, tt.connObj)
+
+				require.NoError(t, tt.client.Create(ctx, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: tt.connObj.Namespace,
+						Name:      tt.connObj.Spec.CACertSecretRef,
+					},
+					Data: tt.caSecretData,
+					Type: "kubernetes.io/tls",
+				}))
+			}
+
+			if !tt.withoutServiceAccount {
+				require.NotNil(t, tt.client)
+				require.NotNil(t, tt.authObj)
+
+				ns := tt.authObj.Namespace
+				if tt.providerNamespace != "" {
+					ns = tt.providerNamespace
+				}
+				require.NoError(t, tt.client.Create(ctx, &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      tt.authObj.Spec.Kubernetes.ServiceAccount,
+						Namespace: ns,
+					},
+				}))
+			}
+
+			c := &defaultClient{}
+
+			err := c.Init(ctx, tt.client, tt.authObj, tt.connObj, tt.providerNamespace, tt.opts)
+			tt.wantErr(t, err,
+				fmt.Sprintf("Init(%v, %v, %v, %v, %v, %v)",
+					ctx, tt.client, tt.authObj, tt.connObj, tt.providerNamespace, tt.opts))
+
+			opts := tt.opts
+			if opts == nil {
+				opts = defaultClientOptions()
+			}
+			assert.Equal(t, opts.SkipRenewal, c.skipRenewal)
+
+			if err != nil {
+				assert.Nil(t, c.authObj)
+				assert.Nil(t, c.connObj)
+				return
+			}
+
+			assert.Equal(t, tt.connObj, c.connObj)
+			assert.Equal(t, tt.authObj, c.authObj)
+
+			if assert.NotNil(t, c.client, "vault client not set from Init()") {
+				return
+			}
+
+			actualPool := c.client.CloneConfig().TLSConfig().RootCAs
+			expectedPool := getTestCertPool(t, tt.caSecretData[consts.TLSSecretCAKey])
+			assert.True(t, expectedPool.Equal(actualPool))
 		})
 	}
 }

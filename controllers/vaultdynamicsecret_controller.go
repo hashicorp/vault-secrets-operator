@@ -88,7 +88,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Error(err, "error getting resource from k8s", "obj", o)
 		return ctrl.Result{}, err
 	}
-	// Add a finalizer on the VDS resource if we intend to Revoke on cleanup path or lease renewal.
+	// Add a finalizer on the VDS resource if we intend to Revoke on cleanup path.
 	// Otherwise, there isn't a need for it since we are not managing anything on deletion.
 	if o.Spec.Revoke {
 		if o.GetDeletionTimestamp() == nil {
@@ -175,7 +175,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
 		return ctrl.Result{}, err
 	}
-	oldLease := o.Status.SecretLease
 
 	secretLease, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
@@ -186,10 +185,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	o.Status.LastRenewalTime = time.Now().Unix()
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
-	}
-	// Revoke the existing Lease if it did exist before and we just renewed it.
-	if o.Spec.Revoke && oldLease.ID != "" && oldLease.Renewable {
-		r.revokeLease(ctx, o, oldLease.ID)
 	}
 
 	reason := consts.ReasonSecretSynced
