@@ -22,16 +22,16 @@ create-gke: ## Create a new GKE cluster
 		-var region=$(GCP_REGION) \
 		-var project_id=$(GCP_PROJECT) || exit 1 \
 	rm -f $(TF_GKE_STATE_DIR)/*.tfvars
-	source $(TF_GKE_STATE_DIR)/outputs.env
+	$(MAKE) import-gcp-vars
 	gcloud container clusters get-credentials $(GKE_CLUSTER_NAME) --region $(GCP_REGION)
 
 .PHONY: import-gcp-vars
-import-gcp-vars: create-gke
+import-gcp-vars:
 -include $(TF_GKE_STATE_DIR)/outputs.env
 
 # Currently only supports amd64
 .PHONY: ci-gar-build-push
-ci-gar-build-push: import-gcp-vars ci-build ci-docker-build ## Build the operator image and push it to the GAR repository
+ci-gar-build-push: create-gke ci-build ci-docker-build ## Build the operator image and push it to the GAR repository
 	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev
 	docker tag $(IMG) $(IMAGE_TAG_BASE):$(VERSION)
 	docker push $(IMAGE_TAG_BASE):$(VERSION)
@@ -43,4 +43,6 @@ integration-test-gke: ci-gar-build-push ## Run integration tests in the GKE clus
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
-	$(TERRAFORM) -chdir=$(TF_GKE_STATE_DIR) destroy -auto-approve
+	$(TERRAFORM) -chdir=$(TF_GKE_STATE_DIR) destroy -auto-approve \
+		-var region=$(GCP_REGION) \
+		-var project_id=$(GCP_PROJECT) || exit 1
