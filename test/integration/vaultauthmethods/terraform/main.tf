@@ -36,6 +36,13 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
+data "kubernetes_service_account" "default" {
+  metadata {
+    name      = "default"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+}
+
 resource "kubernetes_secret" "default-sa-secret" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name

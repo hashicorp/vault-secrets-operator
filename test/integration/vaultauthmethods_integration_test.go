@@ -120,7 +120,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "kubernetes",
 				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
 					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
+					ServiceAccount: consts.NameDefault,
 					TokenAudiences: []string{"vault"},
 				},
 			},
@@ -136,7 +136,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "jwt",
 				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
 					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
+					ServiceAccount: consts.NameDefault,
 					TokenAudiences: []string{"vault"},
 				},
 			},
