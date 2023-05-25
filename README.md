@@ -149,6 +149,9 @@ make integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
 ### Integration Tests in GKE
 
 ```shell
+# Export the Google Cloud project id
+export GCP_PROJECT="<project_id>"
+
 # Create an GKE cluster and a GAR repository
 make -f gcp.mk create-gke
 

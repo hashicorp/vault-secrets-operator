@@ -22,6 +22,8 @@ create-gke: ## Create a new GKE cluster
 		-var region=$(GCP_REGION) \
 		-var project_id=$(GCP_PROJECT) || exit 1 \
 	rm -f $(TF_GKE_STATE_DIR)/*.tfvars
+	source $(TF_GKE_STATE_DIR)/outputs.env
+	gcloud container clusters get-credentials $(GKE_CLUSTER_NAME) --region $(GCP_REGION)
 
 .PHONY: import-gcp-vars
 import-gcp-vars: create-gke
@@ -35,11 +37,10 @@ ci-gar-build-push: import-gcp-vars ci-build ci-docker-build ## Build the operato
 	docker push $(IMAGE_TAG_BASE):$(VERSION)
 
 .PHONY: integration-test-gke
-integration-test-gke: import-gcp-vars ci-gar-build-push ## Run integration tests in the GKE cluster
-	gcloud container clusters get-credentials $(GKE_CLUSTER_NAME) --region $(GCP_REGION)
+integration-test-gke: ci-gar-build-push ## Run integration tests in the GKE cluster
 	$(MAKE) port-forward &
 	$(MAKE) integration-test IMG=$(IMAGE_TAG_BASE):$(VERSION)
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
-	$(TERRAFORM) -chdir=$(TF_GKE_SRC_DIR) destroy -auto-approve
+	$(TERRAFORM) -chdir=$(TF_GKE_STATE_DIR) destroy -auto-approve
