@@ -32,6 +32,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	testVaultNamespace := ""
 	k8sConfigContext := "kind-" + clusterName
 	appRoleMountPath := "approle"
+	testServiceAccount := "test-sa"
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -59,6 +60,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
 			"approle_mount_path":           appRoleMountPath,
+			"test_service_account":         testServiceAccount,
 		},
 	}
 	if operatorImageRepo != "" {
@@ -120,7 +122,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "kubernetes",
 				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
 					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
+					ServiceAccount: testServiceAccount,
 					TokenAudiences: []string{"vault"},
 				},
 			},
@@ -136,7 +138,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "jwt",
 				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
 					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
+					ServiceAccount: testServiceAccount,
 					TokenAudiences: []string{"vault"},
 				},
 			},

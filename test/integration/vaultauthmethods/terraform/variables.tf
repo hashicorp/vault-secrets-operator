@@ -5,6 +5,10 @@ variable "k8s_test_namespace" {
   default = "testing"
 }
 
+variable "test_service_account" {
+  default = ""
+}
+
 variable "k8s_vault_connection_address" {}
 
 variable "k8s_config_context" {
