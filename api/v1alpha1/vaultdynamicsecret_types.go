@@ -44,7 +44,7 @@ type VaultDynamicSecretSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=90
 	RenewalPercent int `json:"renewalPercent,omitempty"`
-	// Revoke the existing lease when a lease is rotated or on VDS resource deletion.
+	// Revoke the existing lease on VDS resource deletion.
 	Revoke bool `json:"revoke,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
