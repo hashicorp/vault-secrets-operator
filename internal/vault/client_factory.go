@@ -289,7 +289,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	c, ok := m.cache.Get(cacheKey)
 	if ok {
 		// return the Client from the cache if it is still Valid
-		if err := c.Valid(); err == nil {
+		if err := c.Validate(); err == nil {
 			return namespacedClient(c)
 		}
 
@@ -475,7 +475,7 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 		// ensure that the cached Vault Client is not expired, and if it is then call storageEncryptionClient() again.
 		// This operation should be safe since we are setting m.clientCacheKeyEncrypt to empty string,
 		// so there should be no risk of causing a maximum recursion error.
-		if reason := c.Valid(); reason != nil {
+		if reason := c.Validate(); reason != nil {
 			m.logger.V(consts.LogLevelWarning).Info("Restored Vault client is invalid, recreating it",
 				"cacheKey", m.clientCacheKeyEncrypt, "reason", reason)
 

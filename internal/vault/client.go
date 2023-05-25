@@ -144,7 +144,7 @@ type Client interface {
 	Restore(context.Context, *api.Secret) error
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
-	Valid() error
+	Validate() error
 	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
 	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
@@ -174,7 +174,10 @@ type defaultClient struct {
 	mu                 sync.RWMutex
 }
 
-func (c *defaultClient) Valid() error {
+// Validate the client, returning an error for any validation failures.
+// Typically, an invalid Client would be discarded and replaced with a new
+// instance.
+func (c *defaultClient) Validate() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
