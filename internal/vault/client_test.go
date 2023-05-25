@@ -175,22 +175,22 @@ func Test_defaultClient_Init(t *testing.T) {
 
 	defaultAuthObj := &secretsv1alpha1.VaultAuth{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default",
+			Name:      consts.NameDefault,
 			Namespace: "vso",
 		},
 		Spec: secretsv1alpha1.VaultAuthSpec{
-			VaultConnectionRef: "default",
+			VaultConnectionRef: consts.NameDefault,
 			Method:             credentials.ProviderMethodKubernetes,
 			Mount:              "kubernetes",
 			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
-				ServiceAccount: "default",
+				ServiceAccount: consts.NameDefault,
 			},
 		},
 	}
 
 	defaultConnObj := &secretsv1alpha1.VaultConnection{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default",
+			Name:      consts.NameDefault,
 			Namespace: "vso",
 		},
 		Spec: secretsv1alpha1.VaultConnectionSpec{
@@ -286,7 +286,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			connObj: connObjSkipTLSVerify,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err, fmt.Sprintf(
-					"serviceaccounts %q not found", "default"))
+					"serviceaccounts %q not found", consts.NameDefault))
 			},
 		},
 		{
