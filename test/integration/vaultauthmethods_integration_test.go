@@ -30,7 +30,18 @@ func TestVaultAuthMethods(t *testing.T) {
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
-	k8sConfigContext := "kind-" + clusterName
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
+	vault_oidc_discovery_url := os.Getenv("VAULT_OIDC_DISC_URL")
+	if vault_oidc_discovery_url == "" {
+		vault_oidc_discovery_url = "https://kubernetes.default.svc.cluster.local"
+	}
+	vault_oidc_ca := os.Getenv("VAULT_OIDC_CA")
+	if vault_oidc_ca == "" {
+		vault_oidc_ca = "true"
+	}
 	appRoleMountPath := "approle"
 	testServiceAccount := "test-sa"
 
@@ -61,6 +72,8 @@ func TestVaultAuthMethods(t *testing.T) {
 			"operator_helm_chart_path":     chartPath,
 			"approle_mount_path":           appRoleMountPath,
 			"test_service_account":         testServiceAccount,
+			"vault_oidc_discovery_url":     vault_oidc_discovery_url,
+			"vault_oidc_ca":                vault_oidc_ca,
 		},
 	}
 	if operatorImageRepo != "" {
