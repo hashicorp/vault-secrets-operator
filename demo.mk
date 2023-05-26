@@ -6,10 +6,10 @@
 DEMO_ROOT = ./demo
 # Kind cluster name (demo)
 KIND_CLUSTER_NAME ?= vso-demo
-# Kind cluster context (demo)
-KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 # Kind config file
 KIND_CONFIG_FILE ?= $(DEMO_ROOT)/kind/config.yaml
+# Kubernetes cluster context (demo), defaults to the Kind cluster
+K8S_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
 TF_INFRA_DEMO_ROOT ?= $(DEMO_ROOT)/infra
 TF_INFRA_DEMO_DIR_VAULT ?= $(DEMO_ROOT)/infra/vault
@@ -23,7 +23,7 @@ demo-setup-kind: ## create a kind cluster for running the acceptance tests local
 	$(MAKE) setup-kind load-docker-image \
 		KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) \
 		KIND_CONFIG_FILE=$(KIND_CONFIG_FILE) \
-		KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT)
+		K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT)
 
 .PHONY: demo-delete-kind
 demo-delete-kind: ## delete the kind cluster
@@ -38,7 +38,7 @@ demo-infra-vault: ## Deploy Vault for the demo
 	$(MAKE) setup-vault \
 		TF_VAULT_STATE_DIR=$(TF_VAULT_STATE_DIR) \
 		TF_INFRA_STATE_DIR=$(TF_VAULT_STATE_DIR) \
-		KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT)
+		K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT)
 
 .PHONY: demo-infra-app
 demo-infra-app: demo-setup-kind ## Deploy Postgres for the demo
@@ -50,7 +50,7 @@ demo-infra-app: demo-setup-kind ## Deploy Postgres for the demo
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_address=http://127.0.0.1:38302 \
 		-var vault_token=root \
-		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
 
 .PHONY: demo-deploy
