@@ -646,6 +646,6 @@ clean:
 # Usage: make gen-helm-docs
 # If no options are given, helm.mdx from a local copy of the vault repository will be used.
 # Adapted from https://github.com/hashicorp/consul-k8s/tree/main/hack/helm-reference-gen
-VAULT_DOCS_PATH ?= $(GOPATH)/src/github.com/hashicorp/vault/website/content/docs/platform/k8s/vso/helm.mdx
+VAULT_DOCS_PATH ?= ../vault/website/content/docs/platform/k8s/vso/helm.mdx
 gen-helm-docs:
 	@cd hack/helm-reference-gen; go run ./... --vault=$(VAULT_DOCS_PATH)
