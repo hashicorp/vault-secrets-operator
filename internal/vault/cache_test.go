@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,7 +14,6 @@ import (
 
 func Test_clientCache_Prune(t *testing.T) {
 	dummyCallbackFunc := func(key, value interface{}) {}
-	ctrl := gomock.NewController(t)
 
 	tests := []struct {
 		name                  string
@@ -46,15 +44,15 @@ func Test_clientCache_Prune(t *testing.T) {
 
 			var expectedKeys []ClientCacheKey
 			for i := 0; i < tt.cacheLen; i++ {
-				mockClient := NewMockClient(ctrl)
+				client := &defaultClient{
+					// for simplicity, client is clone. pruneClones() should be tested separately
+					isClone: true,
+				}
 				key := ClientCacheKey(fmt.Sprintf("key%d", i))
 				if tt.filterFuncReturnsTrue {
-					mockClient.EXPECT().Close()
-					// for simplicity, client is clone. pruneClones() should be tested separately
-					mockClient.EXPECT().IsClone().Return(true)
 					expectedKeys = append(expectedKeys, key)
 				}
-				c.cache.Add(key, mockClient)
+				c.cache.Add(key, client)
 			}
 			assert.Equal(t, tt.cacheLen, c.cache.Len(), "unexpected cache len before calling Prune()")
 			keys := c.Prune(func(Client) bool {
