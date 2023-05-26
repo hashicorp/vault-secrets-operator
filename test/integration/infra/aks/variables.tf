@@ -15,7 +15,7 @@ variable "kubernetes_version" {
 variable "container_repository_name" {
   description = "The Azure container repo name for storing the operator image, prefix to azurecr.io"
   type        = string
-  default     = "vaultsecretsoperator"
+  default     = "vso"
 }
 
 variable "image_tag_base" {
@@ -23,4 +23,3 @@ variable "image_tag_base" {
   type        = string
   default     = "vault-secrets-operator"
 }
-

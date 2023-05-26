@@ -4,7 +4,7 @@
 # Azure variables cloud hosted k8s testing
 AZURE_REGION ?= West US 2
 AKS_K8S_VERSION ?= 1.25.6
-ACR_REPO_NAME ?= vaultsecretsoperator # alphanumeric only, can't be < 5 chars
+ACR_REPO_NAME ?= vso
 
 # directories for cloud hosted k8s infrastructure for running tests
 TF_AKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/aks
