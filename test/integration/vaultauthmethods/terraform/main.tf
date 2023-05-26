@@ -113,12 +113,13 @@ resource "vault_jwt_auth_backend" "dev" {
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
-  namespace      = vault_jwt_auth_backend.dev.namespace
-  backend        = "jwt"
-  role_name      = var.auth_role
-  role_type      = "jwt"
-  user_claim     = "sub"
-  token_policies = [vault_policy.default.name]
+  namespace       = vault_jwt_auth_backend.dev.namespace
+  backend         = "jwt"
+  role_name       = var.auth_role
+  role_type       = "jwt"
+  bound_audiences = ["vault"]
+  user_claim      = "sub"
+  token_policies  = [vault_policy.default.name]
 }
 
 # Create the Vault Auth Backend for AppRole
