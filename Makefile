@@ -96,10 +96,10 @@ ENVTEST_K8S_VERSION = 1.24.1
 
 # Kind cluster name
 KIND_CLUSTER_NAME ?= vault-secrets-operator
-# Kind cluster context
-KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 # Kind config file
 KIND_CONFIG_FILE ?= $(INTEGRATION_TEST_ROOT)/kind/config.yaml
+# Kubernetes cluster context, defaults to the Kind cluster context
+K8S_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
 # Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
@@ -118,7 +118,7 @@ VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
-# directory for eks infrastructure for running tests
+# directories for cloud hosted k8s infrastructure for running tests
 TF_EKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
 
 BUILD_DIR = dist
@@ -274,7 +274,8 @@ set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_D
 integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
-    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
+    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
@@ -302,7 +303,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
 		--config $(KIND_CONFIG_FILE)
-	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
+	kubectl config use-context $(K8S_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
@@ -332,7 +333,7 @@ endif
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
-		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_VAULT_STATE_DIR)/*.tfvars
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(VAULT_PATCH_ROOT)/patch-vault.sh
@@ -379,7 +380,7 @@ load-docker-image: kustomize ## Deploy controller to the K8s cluster (without ge
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
 	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) destroy -auto-approve \
-		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_license=ignored && \
 	rm -rf $(TF_VAULT_STATE_DIR)
@@ -398,6 +399,7 @@ unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
 ##@ EKS
+
 .PHONY: create-eks
 create-eks: ## Create a new EKS cluster
 	$(TERRAFORM) -chdir=$(TF_EKS_DIR) init -upgrade
@@ -424,10 +426,10 @@ ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
 
 .PHONY: integration-test-eks
 integration-test-eks: ## Run integration tests in the EKS cluster
-	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
+	@$(eval K8S_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
 	@$(eval IMAGE_TAG_BASE := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url))
 	$(MAKE) port-forward &
-	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
+	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
 
 .PHONY: ci-ecr-delete
 ci-ecr-delete: ## Delete the ECR repository
