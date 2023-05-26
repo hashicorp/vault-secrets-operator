@@ -40,7 +40,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 	vault_oidc_ca := os.Getenv("VAULT_OIDC_CA")
 	if vault_oidc_ca == "" {
-		vault_oidc_ca = true
+		vault_oidc_ca = "true"
 	}
 	appRoleMountPath := "approle"
 	testServiceAccount := "test-sa"
@@ -73,7 +73,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"approle_mount_path":           appRoleMountPath,
 			"test_service_account":         testServiceAccount,
 			"vault_oidc_discovery_url":     vault_oidc_discovery_url,
-			"vault_oidc_ca":         		vault_oidc_ca,
+			"vault_oidc_ca":                vault_oidc_ca,
 		},
 	}
 	if operatorImageRepo != "" {
