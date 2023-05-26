@@ -32,13 +32,12 @@ import-gcp-vars:
 .PHONY: ci-gar-build-push
 ci-gar-build-push: import-gcp-vars ci-build ci-docker-build ## Build the operator image and push it to the GAR repository
 	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev
-	docker tag $(IMG) $(IMAGE_TAG_BASE):$(VERSION)
-	docker push $(IMAGE_TAG_BASE):$(VERSION)
+	docker push $(IMG)
 
 .PHONY: integration-test-gke
 integration-test-gke: ci-gar-build-push ## Run integration tests in the GKE cluster
 	$(MAKE) port-forward &
-	$(MAKE) integration-test IMG=$(IMAGE_TAG_BASE):$(VERSION)
+	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG)
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
