@@ -37,7 +37,7 @@ ci-gar-build-push: import-gcp-vars ci-build ci-docker-build ## Build the operato
 .PHONY: integration-test-gke
 integration-test-gke: ci-gar-build-push ## Run integration tests in the GKE cluster
 	$(MAKE) port-forward &
-	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG)
+	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG) VAULT_OIDC_DISC_URL=$(GKE_OIDC_URL) VAULT_OIDC_CA=false
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
