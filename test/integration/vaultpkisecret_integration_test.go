@@ -40,7 +40,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
-	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
