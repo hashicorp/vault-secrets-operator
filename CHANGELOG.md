@@ -1,5 +1,8 @@
 ## Unreleased
 
+Bugs:
+* Cache: Add removed client cache key to the returned pruned keys in Prune(): [GH-212](https://github.com/hashicorp/vault-secrets-operator/pull/212)
+
 ## 0.1.0-beta.1 (May 25th, 2023)
 
 Bugs:
