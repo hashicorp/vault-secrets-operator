@@ -36,15 +36,23 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
-resource "kubernetes_secret" "default-sa" {
+resource "kubernetes_service_account" "test-sa" {
+  metadata {
+    name      = var.test_service_account
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+}
+
+resource "kubernetes_secret" "test-sa-secret" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
-    name      = "default-sa-secret"
+    name      = "test-sa-secret"
     annotations = {
-      "kubernetes.io/service-account.name" = "default"
+      "kubernetes.io/service-account.name" = kubernetes_service_account.test-sa.metadata[0].name
     }
   }
-  type = "kubernetes.io/service-account-token"
+  type                           = "kubernetes.io/service-account-token"
+  wait_for_service_account_token = true
 }
 
 provider "vault" {
@@ -90,7 +98,7 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
   role_name                        = var.auth_role
-  bound_service_account_names      = ["default"]
+  bound_service_account_names      = [kubernetes_service_account.test-sa.metadata[0].name]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
   token_policies                   = [vault_policy.default.name]
@@ -101,8 +109,8 @@ resource "vault_kubernetes_auth_backend_role" "default" {
 resource "vault_jwt_auth_backend" "dev" {
   namespace             = local.namespace
   path                  = "jwt"
-  oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
-  oidc_discovery_ca_pem = nonsensitive(kubernetes_secret.default-sa.data["ca.crt"])
+  oidc_discovery_url    = var.vault_oidc_discovery_url
+  oidc_discovery_ca_pem = var.vault_oidc_ca ? nonsensitive(kubernetes_secret.test-sa-secret.data["ca.crt"]) : ""
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
