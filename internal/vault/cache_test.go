@@ -42,7 +42,7 @@ func Test_clientCache_Prune(t *testing.T) {
 			c.cache = cache
 			require.NoError(t, err)
 
-			var expectedKeys []ClientCacheKey
+			var expectedPrunedKeys []ClientCacheKey
 			for i := 0; i < tt.cacheLen; i++ {
 				client := &defaultClient{
 					// for simplicity, client is clone. pruneClones() should be tested separately
@@ -50,7 +50,7 @@ func Test_clientCache_Prune(t *testing.T) {
 				}
 				key := ClientCacheKey(fmt.Sprintf("key%d", i))
 				if tt.filterFuncReturnsTrue {
-					expectedKeys = append(expectedKeys, key)
+					expectedPrunedKeys = append(expectedPrunedKeys, key)
 				}
 				c.cache.Add(key, client)
 			}
@@ -58,8 +58,8 @@ func Test_clientCache_Prune(t *testing.T) {
 			keys := c.Prune(func(Client) bool {
 				return tt.filterFuncReturnsTrue
 			})
-			assert.EqualValues(t, expectedKeys, keys)
-			assert.Equal(t, tt.cacheLen-len(expectedKeys), c.cache.Len())
+			assert.EqualValues(t, expectedPrunedKeys, keys)
+			assert.Equal(t, tt.cacheLen-len(expectedPrunedKeys), c.cache.Len())
 		})
 	}
 }
