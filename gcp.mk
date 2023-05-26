@@ -22,8 +22,7 @@ create-gke: ## Create a new GKE cluster
 		-var region=$(GCP_REGION) \
 		-var project_id=$(GCP_PROJECT) || exit 1 \
 	rm -f $(TF_GKE_STATE_DIR)/*.tfvars
-	source $(TF_GKE_STATE_DIR)/outputs.env && \
-	gcloud container clusters get-credentials $(GKE_CLUSTER_NAME) --region $(GCP_REGION)
+	gcloud container clusters get-credentials $$($(TERRAFORM) -chdir=$(TF_GKE_STATE_DIR) output -raw kubernetes_cluster_name) --region $(GCP_REGION)
 
 .PHONY: import-gcp-vars
 import-gcp-vars: create-gke
