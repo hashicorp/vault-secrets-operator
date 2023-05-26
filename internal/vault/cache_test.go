@@ -45,19 +45,23 @@ func Test_clientCache_Prune(t *testing.T) {
 			c.cache, err = lru.NewWithEvict(size, dummyCallbackFunc)
 			require.NoError(t, err)
 
+			var expectedKeys []ClientCacheKey
 			for i := 0; i < cacheLen; i++ {
 				mockClient := NewMockClient(ctrl)
+				key := ClientCacheKey(fmt.Sprintf("key%d", i))
 				if tt.filterFuncReturnsTrue {
 					mockClient.EXPECT().Close()
 					// for simplicity, client is clone. pruneClones() should be tested separately
 					mockClient.EXPECT().IsClone().Return(true)
+					expectedKeys = append(expectedKeys, key)
 				}
-				c.cache.Add(ClientCacheKey(fmt.Sprintf("key%d", i)), mockClient)
+				c.cache.Add(key, mockClient)
 			}
 			assert.Equal(t, cacheLen, c.cache.Len(), "unexpected cache len before calling Prune()")
-			c.Prune(func(Client) bool {
+			keys := c.Prune(func(Client) bool {
 				return tt.filterFuncReturnsTrue
 			})
+			assert.EqualValues(t, expectedKeys, keys)
 			assert.Equal(t, tt.expectedCacheLen, c.cache.Len())
 		})
 	}

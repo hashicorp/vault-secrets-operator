@@ -168,7 +168,8 @@ manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRol
 	$(MAKE) sync-crds
 
 .PHONY: generate
-generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: copywrite controller-gen mockgen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations, and mocks.
+	find . -type d -regex "\.\/internal\/.*" -execdir go generate \;
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	@$(COPYWRITE) headers &> /dev/null
 
@@ -486,11 +487,13 @@ $(LOCALBIN):
 ## Tool Binaries
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+MOCKGEN ?= $(LOCALBIN)/mockgen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.11.1
+MOCK_VERSION ?= v1.6.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -502,6 +505,11 @@ $(KUSTOMIZE): $(LOCALBIN)
 controller-gen: $(CONTROLLER_GEN) go-version-check ## Download controller-gen locally if necessary.
 $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+
+.PHONY: mockgen
+mockgen: $(MOCKGEN) go-version-check ## Download mockgen locally if necessary.
+$(MOCKGEN): $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install github.com/golang/mock/mockgen@$(MOCK_VERSION)
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
