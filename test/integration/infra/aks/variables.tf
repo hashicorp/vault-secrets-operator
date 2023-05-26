@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 variable "region" {
-  default     = "West US 2"
+  default     = "westus2"
   description = "Azure region to deploy the resources"
 }
 

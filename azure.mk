@@ -2,7 +2,7 @@
 # make -f azure.mk <make rule>
 
 # Azure variables cloud hosted k8s testing
-AZURE_REGION ?= West US 2
+AZURE_REGION ?= westus2
 AKS_K8S_VERSION ?= 1.25.6
 ACR_REPO_NAME ?= vso
 
@@ -20,7 +20,7 @@ create-aks: ## Create a new AKS cluster
 	cp -v $(TF_AKS_SRC_DIR)/*.tf $(TF_AKS_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_AKS_STATE_DIR) init -upgrade
 	$(TERRAFORM) -chdir=$(TF_AKS_STATE_DIR) apply -auto-approve \
-		-var region="$(AZURE_REGION)" \
+		-var region=$(AZURE_REGION) \
 		-var kubernetes_version=$(AKS_K8S_VERSION) \
 		-var container_repository_name=$(ACR_REPO_NAME) || exit 1 \
 	rm -f $(TF_AKS_STATE_DIR)/*.tfvars
@@ -45,6 +45,6 @@ integration-test-aks: build-push ## Run integration tests in the AKS cluster
 .PHONY: destroy-aks
 destroy-aks: ## Destroy the AKS cluster
 	$(TERRAFORM) -chdir=$(TF_AKS_STATE_DIR) destroy -auto-approve \
-		-var region="$(AZURE_REGION)" \
+		-var region=$(AZURE_REGION) \
 		-var kubernetes_version=$(AKS_K8S_VERSION) \
 		-var container_repository_name=$(ACR_REPO_NAME) || exit 1
