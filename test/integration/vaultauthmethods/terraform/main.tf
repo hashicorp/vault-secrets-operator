@@ -36,18 +36,18 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
-resource "kubernetes_default_service_account" "default-sa" {
+resource "kubernetes_default_service_account" "default" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
   }
 }
 
-resource "kubernetes_secret" "default-sa-secret" {
+resource "kubernetes_secret" "default" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
     name      = "test-sa-secret"
     annotations = {
-      "kubernetes.io/service-account.name" = kubernetes_default_service_account.default-sa.metadata[0].name
+      "kubernetes.io/service-account.name" = kubernetes_default_service_account.default.metadata[0].name
     }
   }
   type                           = "kubernetes.io/service-account-token"
@@ -97,7 +97,7 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
   role_name                        = var.auth_role
-  bound_service_account_names      = [kubernetes_default_service_account.default-sa.metadata[0].name]
+  bound_service_account_names      = [kubernetes_default_service_account.default.metadata[0].name]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
   token_policies                   = [vault_policy.default.name]
@@ -109,17 +109,16 @@ resource "vault_jwt_auth_backend" "dev" {
   namespace             = local.namespace
   path                  = "jwt"
   oidc_discovery_url    = var.vault_oidc_discovery_url
-  oidc_discovery_ca_pem = var.vault_oidc_ca ? nonsensitive(kubernetes_secret.test-sa-secret.data["ca.crt"]) : ""
+  oidc_discovery_ca_pem = var.vault_oidc_ca ? nonsensitive(kubernetes_secret.default.data["ca.crt"]) : ""
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
-  namespace       = vault_jwt_auth_backend.dev.namespace
-  backend         = "jwt"
-  role_name       = var.auth_role
-  role_type       = "jwt"
-  bound_audiences = ["vault"]
-  user_claim      = "sub"
-  token_policies  = [vault_policy.default.name]
+  namespace      = vault_jwt_auth_backend.dev.namespace
+  backend        = "jwt"
+  role_name      = var.auth_role
+  role_type      = "jwt"
+  user_claim     = "sub"
+  token_policies = [vault_policy.default.name]
 }
 
 # Create the Vault Auth Backend for AppRole
