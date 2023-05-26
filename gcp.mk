@@ -25,7 +25,7 @@ create-gke: ## Create a new GKE cluster
 	gcloud container clusters get-credentials $$($(TERRAFORM) -chdir=$(TF_GKE_STATE_DIR) output -raw kubernetes_cluster_name) --region $(GCP_REGION)
 
 .PHONY: import-gcp-vars
-import-gcp-vars: create-gke
+import-gcp-vars:
 -include $(TF_GKE_STATE_DIR)/outputs.env
 
 # Currently only supports amd64
