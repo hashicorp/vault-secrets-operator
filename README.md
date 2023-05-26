@@ -156,8 +156,8 @@ export GCP_PROJECT="<project_id>"
 make -f gcp.mk create-gke
 
 # Build & operator image & run the integration tests (includes Vault OSS deployment)
-make -f gcp.mk ci-gar-build-push integration-test-gke
+make -f gcp.mk build-push integration-test-gke
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
-make -f gcp.mk ci-gar-build-push integration-test-gke VAULT_ENTERPRISE=true ENT_TESTS=true
+make -f gcp.mk build-push integration-test-gke VAULT_ENTERPRISE=true ENT_TESTS=true
 ```

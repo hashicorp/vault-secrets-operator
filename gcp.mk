@@ -29,13 +29,13 @@ import-gcp-vars:
 -include $(TF_GKE_STATE_DIR)/outputs.env
 
 # Currently only supports amd64
-.PHONY: ci-gar-build-push
-ci-gar-build-push: import-gcp-vars ci-build ci-docker-build ## Build the operator image and push it to the GAR repository
+.PHONY: build-push
+build-push: import-gcp-vars ci-build ci-docker-build ## Build the operator image and push it to the GAR repository
 	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev
 	docker push $(IMG)
 
 .PHONY: integration-test-gke
-integration-test-gke: ci-gar-build-push ## Run integration tests in the GKE cluster
+integration-test-gke: build-push ## Run integration tests in the GKE cluster
 	$(MAKE) port-forward &
 	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG) VAULT_OIDC_DISC_URL=$(GKE_OIDC_URL) VAULT_OIDC_CA=false
 
