@@ -1,0 +1,42 @@
+{{/*
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+*/}}
+
+{{- if .Values.telemetry.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ template "vault.fullname" . }}
+  labels:
+    helm.sh/chart: {{ include "chart.fullname" . }}
+    app.kubernetes.io/name: {{ include "chart.fullname" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- /* update the selectors docs in values.yaml whenever the defaults below change. */ -}}
+    {{- $selectors := .Values.telemetry.serviceMonitor.selectors }}
+    {{- if $selectors }}
+    {{- toYaml $selectors | nindent 4 }}
+    {{- else }}
+    release: prometheus
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  endpoints:
+    - port: {{ include "vault.scheme" . }}
+      interval: {{ .Values.telemetry.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.telemetry.serviceMonitor.scrapeTimeout }}
+      scheme: {{ include "vault.scheme" . | lower }}
+      path: /v1/sys/metrics
+      params:
+        format:
+          - prometheus
+      tlsConfig:
+        insecureSkipVerify: true
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+{{ end }}
