@@ -121,3 +121,16 @@ module "eks" {
 resource "aws_ecr_repository" "vault-secrets-operator" {
   name = "vault-secrets-operator-${random_string.suffix.result}"
 }
+
+resource "local_file" "env_file" {
+  filename = "${path.module}/outputs.env"
+  content  = <<EOT
+EKS_OIDC_URL=${module.eks.cluster_oidc_issuer_url}
+ECR_REPO_NAME=${aws_ecr_repository.vault-secrets-operator.name}
+ECR_URL=${aws_ecr_repository.vault-secrets-operator.repository_url}
+EKS_CLUSTER_NAME=${module.eks.cluster_name}
+AWS_REGION=${var.region}
+IMAGE_TAG_BASE=${aws_ecr_repository.vault-secrets-operator.repository_url}
+K8S_CLUSTER_CONTEXT=${module.eks.cluster_arn}
+EOT
+}

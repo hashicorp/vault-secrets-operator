@@ -118,9 +118,6 @@ VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
-# directories for cloud hosted k8s infrastructure for running tests
-TF_EKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
-
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
 GOOS ?= linux
@@ -398,15 +395,6 @@ helm-chart: manifests kustomize helmify
 unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
 
-##@ EKS
-
-.PHONY: create-eks
-create-eks: ## Create a new EKS cluster
-	$(TERRAFORM) -chdir=$(TF_EKS_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_EKS_DIR) apply -auto-approve
-	$(AWS) eks --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) update-kubeconfig \
-    --name $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_name)
-
 .PHONY: port-forward
 port-forward:
 	@if lsof -Pi :38300 -sTCP:LISTEN -t >/dev/null ; then \
@@ -415,31 +403,6 @@ port-forward:
 	    echo "Starting port forwarding..."; \
 	    bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n $(K8S_VAULT_NAMESPACE) statefulset/vault 38300:8200; done'; \
 	fi
-
-# Currently only supports amd64
-.PHONY: ci-ecr-build-push
-ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
-	@$(eval IMG := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url):$(VERSION))
-	$(MAKE) ci-build ci-docker-build IMG=$(IMG)
-	$(AWS) ecr get-login-password --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) | docker login --username AWS --password-stdin $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url)
-	docker push $(IMG)
-
-.PHONY: integration-test-eks
-integration-test-eks: ## Run integration tests in the EKS cluster
-	@$(eval K8S_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
-	@$(eval IMAGE_TAG_BASE := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url))
-	$(MAKE) port-forward &
-	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
-
-.PHONY: ci-ecr-delete
-ci-ecr-delete: ## Delete the ECR repository
-	@$(eval AWS_REGION := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region))
-	@$(eval ECR_REPO_NAME := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_name))
-	$(AWS) ecr batch-delete-image --region $(AWS_REGION) --repository-name $(ECR_REPO_NAME) --image-ids imageTag="$(VERSION)" || true;
-
-.PHONY: destroy-eks
-destroy-eks: ## Destroy the EKS cluster
-	$(TERRAFORM) -chdir=$(TF_EKS_DIR) destroy -auto-approve
 
 ##@ Deployment
 
@@ -523,24 +486,6 @@ bundle-build: ## Build the bundle image.
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
-
-.PHONY: aws
-AWS = ./bin/aws
-aws: ## Download aws cli locally if necessary.
-ifeq (,$(wildcard $(AWS)))
-ifeq (,$(shell which $(notdir $(AWS)) 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(AWS)) ;\
-	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sfSLo $(AWS).zip https://awscli.amazonaws.com/awscli-exe-$${OS}-$${ARCH}.zip -o "awscliv2.zip" ; \
-	unzip awscliv2.zip -d $(dir $(AWS)) $(notdir $(AWS)) ;\
-	rm -f awscliv2.zip ; \
-	}
-else
-AWS = $(shell which aws)
-endif
-endif
 
 .PHONY: opm
 OPM = ./bin/opm
