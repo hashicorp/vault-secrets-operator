@@ -63,6 +63,6 @@ AKS_CLUSTER_NAME=${azurerm_kubernetes_cluster.default.name}
 AZURE_RSG_NAME=${azurerm_resource_group.default.name}
 AZURE_REGION="${var.region}"
 IMAGE_TAG_BASE=${format("%s.azurecr.io/%s", azurerm_container_registry.default.name, var.image_tag_base)}
-K8S_CLUSTER_CONTEXT=${azurerm_kubernetes_cluster.default.name}
+K8S_CLUSTER_CONTEXT="${azurerm_kubernetes_cluster.default.name}-admin"
 EOT
 }

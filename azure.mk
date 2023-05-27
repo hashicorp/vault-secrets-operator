@@ -37,7 +37,7 @@ build-push: import-azure-vars ci-build ci-docker-build ## Build the operator ima
 
 .PHONY: integration-test-aks
 integration-test-aks: build-push ## Run integration tests in the AKS cluster
-	az aks get-credentials --resource-group $(AZURE_RSG_NAME) update-kubeconfig --name $(AKS_CLUSTER_NAME)
+	az aks get-credentials --admin --name $(AKS_CLUSTER_NAME) --overwrite-existing --resource-group $(AZURE_RSG_NAME)
 	$(MAKE) port-forward &
 	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
 	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(AZ_OIDC_URL) VAULT_OIDC_CA=false
