@@ -40,7 +40,7 @@ integration-test-aks: build-push ## Run integration tests in the AKS cluster
 	az aks get-credentials --admin --name $(AKS_CLUSTER_NAME) --overwrite-existing --resource-group $(AZURE_RSG_NAME)
 	$(MAKE) port-forward &
 	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
-	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(AZ_OIDC_URL) VAULT_OIDC_CA=false
+	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(AKS_OIDC_URL) VAULT_OIDC_CA=false
 
 .PHONY: destroy-aks
 destroy-aks: ## Destroy the AKS cluster
