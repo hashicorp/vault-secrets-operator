@@ -14,6 +14,7 @@ import (
 
 func Test_clientCache_Prune(t *testing.T) {
 	dummyCallbackFunc := func(key, value interface{}) {}
+	cacheSize := 10
 
 	tests := []struct {
 		name                  string
@@ -22,23 +23,31 @@ func Test_clientCache_Prune(t *testing.T) {
 		cacheLen              int
 	}{
 		{
-			name:                  "filterFunc returns true",
+			name:                  "cacheLen=1 and filterFunc returns true",
 			filterFuncReturnsTrue: true,
-			cacheSize:             256,
 			cacheLen:              1,
 		},
 		{
-			name:                  "filterFunc returns false",
+			name:                  "cacheLen=4 and filterFunc returns true",
+			filterFuncReturnsTrue: true,
+			cacheLen:              4,
+		},
+		{
+			name:                  "cacheLen=1 and filterFunc returns false",
 			filterFuncReturnsTrue: false,
-			cacheSize:             256,
 			cacheLen:              1,
+		},
+		{
+			name:                  "cacheLen=4 and filterFunc returns false",
+			filterFuncReturnsTrue: false,
+			cacheLen:              4,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &clientCache{}
-			cache, err := lru.NewWithEvict(tt.cacheSize, dummyCallbackFunc)
+			cache, err := lru.NewWithEvict(cacheSize, dummyCallbackFunc)
 			c.cache = cache
 			require.NoError(t, err)
 
