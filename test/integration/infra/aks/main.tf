@@ -41,7 +41,7 @@ resource "azurerm_kubernetes_cluster" "default" {
 }
 
 resource "azurerm_container_registry" "default" {
-  name                = "${var.container_repository_name}${random_string.suffix.result}"
+  name                = "${var.container_repository_prefix}${random_string.suffix.result}"
   location            = azurerm_resource_group.default.location
   resource_group_name = azurerm_resource_group.default.name
   sku                 = "Premium"

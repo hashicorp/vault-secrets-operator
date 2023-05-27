@@ -12,8 +12,8 @@ variable "kubernetes_version" {
   default     = "1.25.6"
 }
 
-variable "container_repository_name" {
-  description = "The Azure container repo name for storing the operator image, prefix to azurecr.io"
+variable "container_repository_prefix" {
+  description = "The Azure container repo prefix (.azurecr.io) for storing the operator image"
   type        = string
   default     = "vso"
 }

@@ -4,7 +4,7 @@
 # Azure variables cloud hosted k8s testing
 AZURE_REGION ?= westus2
 AKS_K8S_VERSION ?= 1.25.6
-ACR_REPO_NAME ?= vso
+ACR_REPO_PREFIX ?= vso
 
 # directories for cloud hosted k8s infrastructure for running tests
 TF_AKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/aks
@@ -22,7 +22,7 @@ create-aks: ## Create a new AKS cluster
 	$(TERRAFORM) -chdir=$(TF_AKS_STATE_DIR) apply -auto-approve \
 		-var region=$(AZURE_REGION) \
 		-var kubernetes_version=$(AKS_K8S_VERSION) \
-		-var container_repository_name=$(ACR_REPO_NAME) || exit 1 \
+		-var container_repository_prefix=$(ACR_REPO_PREFIX) || exit 1 \
 	rm -f $(TF_AKS_STATE_DIR)/*.tfvars
 
 .PHONY: import-azure-vars
@@ -47,4 +47,4 @@ destroy-aks: ## Destroy the AKS cluster
 	$(TERRAFORM) -chdir=$(TF_AKS_STATE_DIR) destroy -auto-approve \
 		-var region=$(AZURE_REGION) \
 		-var kubernetes_version=$(AKS_K8S_VERSION) \
-		-var container_repository_name=$(ACR_REPO_NAME) || exit 1
+		-var container_repository_prefix=$(ACR_REPO_PREFIX) || exit 1
