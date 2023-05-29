@@ -554,6 +554,13 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection,
 	providerNamespace string, opts *ClientOptions,
 ) error {
+	if connObj == nil {
+		return errors.New("VaultConnection was nil")
+	}
+	if authObj == nil {
+		return errors.New("VaultAuth was nil")
+	}
+
 	cfg := &ClientConfig{
 		Address:         connObj.Spec.Address,
 		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
