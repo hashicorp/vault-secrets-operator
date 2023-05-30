@@ -8,7 +8,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ template "vault.fullname" . }}
+  name: {{ include "chart.fullname" . }}
   labels:
     helm.sh/chart: {{ include "chart.fullname" . }}
     app.kubernetes.io/name: {{ include "chart.fullname" . }}
@@ -26,11 +26,11 @@ spec:
     matchLabels:
       control-plane: controller-manager
   endpoints:
-    - port: {{ include "vault.scheme" . }}
+    - port: {{ .Values.telemetry.serviceMonitor.port }}
+      scheme: {{ .Values.telemetry.serviceMonitor.scheme | lower }}
       interval: {{ .Values.telemetry.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.telemetry.serviceMonitor.scrapeTimeout }}
-      scheme: {{ include "vault.scheme" . | lower }}
-      path: /v1/sys/metrics
+      path: {{ .Values.telemetry.serviceMonitor.path }}
       params:
         format:
           - prometheus
