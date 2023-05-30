@@ -46,6 +46,11 @@ type VaultDynamicSecretSpec struct {
 	RenewalPercent int `json:"renewalPercent,omitempty"`
 	// Revoke the existing lease on VDS resource deletion.
 	Revoke bool `json:"revoke,omitempty"`
+	// StaticCreds should be set when syncing credentials that are periodically
+	// rotated by the Vault server, rather than created upon request. These secrets
+	// are sometimes referred to as "static roles", or "static credentials", with a
+	// request path that contains "static-creds".
+	StaticCreds bool `json:"staticCreds,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
@@ -64,6 +69,9 @@ type VaultDynamicSecretStatus struct {
 	LastGeneration int64 `json:"lastGeneration"`
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
+	// StaticMeta for the Vault secret.
+	// TODO: come up with a better name
+	StaticMeta VaultStaticMeta `json:"staticMeta,omitempty"`
 	// LastRuntimePodUID used for tracking the transition from one Pod to the next.
 	// It is used to mitigate the effects of a Vault lease renewal storm.
 	LastRuntimePodUID types.UID `json:"lastRuntimePodUID,omitempty"`
@@ -78,6 +86,17 @@ type VaultSecretLease struct {
 	Renewable bool `json:"renewable"`
 	// RequestID of the Vault secret request.
 	RequestID string `json:"requestID"`
+}
+
+type VaultStaticMeta struct {
+	// LastVaultRotation represents the last time Vault rotated the password
+	LastVaultRotation int64 `json:"lastVaultRotation"`
+	// RotationPeriod is number in seconds between each rotation, effectively a
+	// "time to live". This value is compared to the LastVaultRotation to
+	// determine if a password needs to be rotated
+	RotationPeriod int64 `json:"rotationPeriod"`
+	// TTL is the seconds remaining before the next rotation.
+	TTL int64 `json:"ttl"`
 }
 
 // +kubebuilder:object:root=true

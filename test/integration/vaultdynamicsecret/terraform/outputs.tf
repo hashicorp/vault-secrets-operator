@@ -19,6 +19,12 @@ output "auth_role" {
 output "db_role" {
   value = local.db_role
 }
+output "db_role_static" {
+  value = local.db_role_static
+}
+output "db_role_static_user" {
+  value = local.db_role_static_user
+}
 output "db_path" {
   value = vault_database_secrets_mount.db.path
 }

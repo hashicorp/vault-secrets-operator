@@ -297,6 +297,8 @@ type dynamicK8SOutputs struct {
 	AuthPolicy       string   `json:"auth_policy"`
 	AuthRole         string   `json:"auth_role"`
 	DBRole           string   `json:"db_role"`
+	DBRoleStatic     string   `json:"db_role_static"`
+	DBRoleStaticUser string   `json:"db_role_static_user"`
 	DBPath           string   `json:"db_path"`
 	TransitPath      string   `json:"transit_path"`
 	TransitKeyName   string   `json:"transit_key_name"`

@@ -41,6 +41,28 @@ resource "kubernetes_secret" "db" {
   }
 }
 
+data "kubernetes_pod" "postgres" {
+  metadata {
+    namespace = helm_release.postgres.namespace
+    name      = "${helm_release.postgres.name}-postgresql-0"
+  }
+}
+
+resource "null_resource" "create-pg-user" {
+  triggers = {
+    namespace = data.kubernetes_pod.postgres.metadata[0].namespace
+    pod       = data.kubernetes_pod.postgres.metadata[0].name
+    password  = data.kubernetes_secret.postgres.data["postgres-password"]
+  }
+  provisioner "local-exec" {
+    command = <<EOT
+kubectl exec -n ${self.triggers.namespace} ${self.triggers.pod} -- \
+psql postgresql://postgres:${self.triggers.password}@127.0.0.1:5432/postgres \
+-c 'CREATE ROLE "${local.db_role_static_user}"'
+EOT
+  }
+}
+
 resource "vault_database_secrets_mount" "db" {
   namespace                 = local.namespace
   path                      = "${local.name_prefix}-db"
@@ -54,6 +76,7 @@ resource "vault_database_secrets_mount" "db" {
     verify_connection = false
     allowed_roles = [
       local.db_role,
+      local.db_role_static,
     ]
   }
 }
@@ -69,11 +92,27 @@ resource "vault_database_secret_backend_role" "postgres" {
   ]
 }
 
+resource "vault_database_secret_backend_static_role" "postgres" {
+  namespace           = local.namespace
+  backend             = vault_database_secrets_mount.db.path
+  name                = local.db_role_static
+  db_name             = vault_database_secrets_mount.db.postgresql[0].name
+  username            = local.db_role_static_user
+  rotation_statements = ["ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
+  rotation_period     = 30
+  depends_on = [
+    null_resource.create-pg-user,
+  ]
+}
+
 resource "vault_policy" "db" {
   namespace = local.namespace
   name      = "${local.auth_policy}-db"
   policy    = <<EOT
 path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_backend_role.postgres.name}" {
+  capabilities = ["read"]
+}
+path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
   capabilities = ["read"]
 }
 path "sys/leases/revoke" {
