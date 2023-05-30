@@ -58,8 +58,10 @@ type VaultDynamicSecretSpec struct {
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret
 type VaultDynamicSecretStatus struct {
-	// LastRenewalTime of the last, successful, secret lease renewal,
+	// LastRenewalTime of the last successful secret lease renewal,
 	LastRenewalTime int64 `json:"lastRenewalTime"`
+	// LastGeneration is the Generation of the last reconciled resource.
+	LastGeneration int64 `json:"lastGeneration"`
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
 	// LastRuntimePodUID used for tracking the transition from one Pod to the next.

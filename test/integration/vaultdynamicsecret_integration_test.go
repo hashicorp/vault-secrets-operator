@@ -313,7 +313,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					}
 
 					objKey := ctrlclient.ObjectKeyFromObject(obj)
-					var vdsObjFinal secretsv1alpha1.VaultDynamicSecret
+					var vdsObjFinal *secretsv1alpha1.VaultDynamicSecret
 					require.NoError(t, backoff.Retry(
 						func() error {
 							var vdsObj secretsv1alpha1.VaultDynamicSecret
@@ -321,11 +321,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 							if vdsObj.Status.SecretLease.ID == "" {
 								return fmt.Errorf("expected lease ID to be set on %s", objKey)
 							}
-							vdsObjFinal = vdsObj
+							vdsObjFinal = &vdsObj
 							return nil
 						},
 						backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10),
 					))
+
+					expectedLastGeneration := vdsObjFinal.GetGeneration()
+					assert.Equal(t, expectedLastGeneration, vdsObjFinal.Status.LastGeneration, "expected Status.LastGeneration")
 
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
@@ -339,14 +342,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 					))
 					require.Equal(t, 1, len(pods.Items))
 					assert.Equal(t, pods.Items[0].UID, vdsObjFinal.Status.LastRuntimePodUID)
+					assert.Equal(t, vdsObjFinal.GetGeneration(), vdsObjFinal.Status.LastGeneration)
 
-					assertDynamicSecretRotation(t, ctx, crdClient, &vdsObjFinal)
+					assertDynamicSecretRotation(t, ctx, crdClient, vdsObjFinal)
+
+					if vdsObjFinal.Spec.Destination.Create && !t.Failed() {
+						assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
+					}
 				})
 			}
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
-	// Get a Vault client so we can validate that all leases have been removed.
+	// Get a Vault client, so we can validate that all leases have been removed.
 	cfg := api.DefaultConfig()
 	cfg.Address = vaultAddr
 	c, err := api.NewClient(cfg)
@@ -369,6 +377,32 @@ func TestVaultDynamicSecret(t *testing.T) {
 		}
 		return "", nil
 	})
+}
+
+// assertDynamicSecretNewGeneration tests that an update to vdsObjOrig results in a full secret rotation.
+func assertDynamicSecretNewGeneration(t *testing.T, ctx context.Context, client ctrlclient.Client, vdsObjOrig *secretsv1alpha1.VaultDynamicSecret) {
+	t.Helper()
+
+	objKey := ctrlclient.ObjectKeyFromObject(vdsObjOrig)
+	vdsObjLatest := &secretsv1alpha1.VaultDynamicSecret{}
+	if assert.NoError(t, client.Get(ctx, objKey, vdsObjLatest)) {
+		vdsObjLatest.Spec.Destination.Name += "-new"
+		if assert.NoError(t, client.Update(ctx, vdsObjLatest)) {
+			assertDynamicSecretRotation(t, ctx, client, vdsObjLatest)
+			if !t.Failed() {
+				vdsObjUpdated := &secretsv1alpha1.VaultDynamicSecret{}
+				if assert.NoError(t, client.Get(ctx, objKey, vdsObjUpdated)) {
+					// expect a new Generation
+					assert.Greater(t, vdsObjUpdated.GetGeneration(), vdsObjOrig.GetGeneration())
+					// expect a new lease ID
+					assert.Equal(t, vdsObjUpdated.GetGeneration(), vdsObjUpdated.Status.LastGeneration)
+					// expect a new, non-empty lease ID
+					assert.NotEmpty(t, vdsObjUpdated.Status.SecretLease.ID)
+					assert.NotEqual(t, vdsObjUpdated.Status.SecretLease.ID, vdsObjOrig.Status.SecretLease.ID)
+				}
+			}
+		}
+	}
 }
 
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
