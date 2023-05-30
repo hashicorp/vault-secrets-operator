@@ -338,37 +338,6 @@ telemetry:
     # Timeout for Prometheus scrapes
     scrapeTimeout: 10s
 
-  prometheusRules:
-    # The Prometheus operator *must* be installed before enabling this feature,
-    # if not the chart will fail to install due to missing CustomResourceDefinitions
-    # provided by the operator.
-
-    # Deploy the PrometheusRule custom resource for AlertManager based alerts.
-    # Requires that AlertManager is properly deployed.
-    enabled: false
-
-    # Selector labels to add to the PrometheusRules.
-    # When empty, defaults to:
-    #  release: prometheus
-    selectors: {}
-
-    # Some example rules.
-    rules: {}
-    #  - alert: vault-HighResponseTime
-    #    annotations:
-    #      message: The response time of Vault is over 500ms on average over the last 5 minutes.
-    #    expr: vault_core_handle_request{quantile="0.5", namespace="mynamespace"} > 500
-    #    for: 5m
-    #    labels:
-    #      severity: warning
-    #  - alert: vault-HighResponseTime
-    #    annotations:
-    #      message: The response time of Vault is over 1s on average over the last 5 minutes.
-    #    expr: vault_core_handle_request{quantile="0.5", namespace="mynamespace"} > 1000
-    #    for: 5m
-    #    labels:
-    #      severity: critical
-
 ## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored.
 tests:
   # @type: boolean

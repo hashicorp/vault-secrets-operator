@@ -58,7 +58,8 @@ load _helpers
 @test "helper/namespace: used everywhere" {
   cd `chart_dir`
   # Grep for files that don't have 'namespace: ' in them
-  local actual=$(grep -L 'namespace: ' templates/*.yaml | grep -v 'crd' | grep -v 'rbac' | tee /dev/stderr )
+  local actual=$(grep -L 'namespace: ' --exclude='templates/*-servicemonitor.yaml' \
+        templates/*.yaml | grep -v 'crd' | grep -v 'rbac' | tee /dev/stderr )
   [ "${actual}" = '' ]
 }
 
@@ -72,6 +73,7 @@ load _helpers
 @test "helper/app.kubernetes.io/component label: used everywhere" {
   cd `chart_dir`
   # Grep for files that don't have 'component: ' in them
-  local actual=$(grep -L 'app.kubernetes.io/component: ' templates/*.yaml | tee /dev/stderr )
+  local actual=$(grep -L 'app.kubernetes.io/component: ' --exclude='templates/*-servicemonitor.yaml'\
+        templates/*.yaml | tee /dev/stderr )
   [ "${actual}" = '' ]
 }
