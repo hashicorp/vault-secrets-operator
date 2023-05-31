@@ -45,7 +45,7 @@ demo-infra-app: demo-setup-kind ## Deploy Postgres for the demo
 	@mkdir -p $(TF_APP_STATE_DIR)
 	rm -f $(TF_APP_STATE_DIR)/*.tf
 	cp $(DEMO_ROOT)/infra/app/*.tf $(TF_APP_STATE_DIR)/.
-	 $(TERRAFORM) -chdir=$(TF_APP_STATE_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_APP_STATE_DIR) init -upgrade
 	$(TERRAFORM) -chdir=$(TF_APP_STATE_DIR) apply -auto-approve \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_address=http://127.0.0.1:38302 \
