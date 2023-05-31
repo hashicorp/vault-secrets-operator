@@ -81,8 +81,8 @@ load _helpers
         --set 'controller.manager.clientCache.storageEncryption.kubernetes.role=role-1' \
         --set 'controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount=tenant-1' \
         --set 'controller.manager.clientCache.storageEncryption.kubernetes.tokenAudiences={vault,foo}' \
-        --set 'controller.manager.clientCache.storageEncryption.headers=foo: bar' \
-        --set 'controller.manager.clientCache.storageEncryption.params=foo: baz' \
+        --set 'controller.manager.clientCache.storageEncryption.headers.foo=bar' \
+        --set 'controller.manager.clientCache.storageEncryption.params.foo=baz' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
@@ -100,9 +100,14 @@ load _helpers
       [ "${actual}" = "tenant-1" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.audiences' | tee /dev/stderr)
       [ "${actual}" = '["vault", "foo"]' ]
-    actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
+
+    actual=$(echo "$object" | yq '.spec.headers | length' | tee /dev/stderr)
+      [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.headers."foo"' | tee /dev/stderr)
       [ "${actual}" = "bar" ]
-    actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.params | length' | tee /dev/stderr)
+      [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.params."foo"' | tee /dev/stderr)
       [ "${actual}" = "baz" ]
 }
 
@@ -147,8 +152,8 @@ load _helpers
         --set 'controller.manager.clientCache.storageEncryption.jwt.role=role-1' \
         --set 'controller.manager.clientCache.storageEncryption.jwt.serviceAccount=tenant-1' \
         --set 'controller.manager.clientCache.storageEncryption.jwt.tokenAudiences={vault,foo}' \
-        --set 'controller.manager.clientCache.storageEncryption.headers=foo: bar' \
-        --set 'controller.manager.clientCache.storageEncryption.params=foo: baz' \
+        --set 'controller.manager.clientCache.storageEncryption.headers.foo=bar' \
+        --set 'controller.manager.clientCache.storageEncryption.params.foo=baz' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
@@ -166,9 +171,14 @@ load _helpers
       [ "${actual}" = "tenant-1" ]
     actual=$(echo "$object" | yq '.spec.jwt.audiences' | tee /dev/stderr)
       [ "${actual}" = '["vault", "foo"]' ]
-    actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
+
+    actual=$(echo "$object" | yq '.spec.headers | length' | tee /dev/stderr)
+      [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.headers."foo"' | tee /dev/stderr)
       [ "${actual}" = "bar" ]
-    actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.params | length' | tee /dev/stderr)
+      [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.params."foo"' | tee /dev/stderr)
       [ "${actual}" = "baz" ]
 
     # secret related specs should not exist
@@ -187,8 +197,8 @@ load _helpers
         --set 'controller.manager.clientCache.storageEncryption.mount=foo' \
         --set 'controller.manager.clientCache.storageEncryption.jwt.role=role-1' \
         --set 'controller.manager.clientCache.storageEncryption.jwt.secretRef=secret-1' \
-        --set 'controller.manager.clientCache.storageEncryption.headers=foo: bar' \
-        --set 'controller.manager.clientCache.storageEncryption.params=foo: baz' \
+        --set 'controller.manager.clientCache.storageEncryption.headers.foo=bar' \
+        --set 'controller.manager.clientCache.storageEncryption.params.foo=baz' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
@@ -204,9 +214,14 @@ load _helpers
       [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.jwt.secretRef' | tee /dev/stderr)
       [ "${actual}" = "secret-1" ]
-    actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
+
+    actual=$(echo "$object" | yq '.spec.headers | length' | tee /dev/stderr)
+      [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.headers."foo"' | tee /dev/stderr)
       [ "${actual}" = "bar" ]
-    actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.params | length' | tee /dev/stderr)
+      [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.params."foo"' | tee /dev/stderr)
       [ "${actual}" = "baz" ]
 
     # serviceAccount and audiences specs should not exist

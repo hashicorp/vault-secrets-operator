@@ -100,10 +100,10 @@ VaultAuthMethod Spec
   {{- end }}
   {{- if $cur.headers }}
   headers:
-    {{ tpl $cur.headers $root | trim }}
+    {{- toYaml $cur.headers | nindent 8 }}
   {{- end }}
   {{- if $cur.params }}
   params:
-    {{ tpl $cur.params $root | trim }}
+    {{- toYaml $cur.params | nindent 8 }}
   {{- end }}
 {{- end}}
