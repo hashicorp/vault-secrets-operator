@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # Top level configuration for the vault secrets operator deployment.
-# This is comprised of a controller and a kube rbac proxy container.
+# This consists of a controller and a kube rbac proxy container.
 controller:
 
   # Set the number of replicas for the operator.

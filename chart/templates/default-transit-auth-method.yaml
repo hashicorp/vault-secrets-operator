@@ -20,38 +20,8 @@ spec:
   namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
   method: {{ .Values.controller.manager.clientCache.storageEncryption.method }}
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
-  {{- if eq .Values.controller.manager.clientCache.storageEncryption.method "kubernetes" }}
-  kubernetes:
-    role: {{ .Values.controller.manager.clientCache.storageEncryption.kubernetes.role }}
-    serviceAccount: {{ .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname"
-     . )) }}
-    {{- if .Values.controller.manager.clientCache.storageEncryption.kubernetes.tokenAudiences }}
-    audiences: {{ .Values.controller.manager.clientCache.storageEncryption.kubernetes.tokenAudiences | toJson }}
-    {{- end }}
-  {{- else if eq .Values.controller.manager.clientCache.storageEncryption.method "jwt" }}
-  jwt:
-    role: {{ .Values.controller.manager.clientCache.storageEncryption.jwt.role }}
-    {{- if .Values.controller.manager.clientCache.storageEncryption.jwt.secretRef }}
-    secretRef: {{ .Values.controller.manager.clientCache.storageEncryption.jwt.secretRef }}
-    {{- else if .Values.controller.manager.clientCache.storageEncryption.jwt.serviceAccount }}
-    serviceAccount: {{ .Values.controller.manager.clientCache.storageEncryption.jwt.serviceAccount }}
-    {{- if .Values.controller.manager.clientCache.storageEncryption.jwt.tokenAudiences }}
-    audiences: {{ .Values.controller.manager.clientCache.storageEncryption.jwt.tokenAudiences | toJson }}
-    {{- end }}
-    {{- end }}
-  {{- else if eq .Values.controller.manager.clientCache.storageEncryption.method "appRole" }}
-  appRole:
-    roleId: {{ .Values.controller.manager.clientCache.storageEncryption.appRole.roleid }}
-    secretRef: {{ .Values.controller.manager.clientCache.storageEncryption.appRole.secretRef }}
-  {{- end }}
-  {{- if .Values.controller.manager.clientCache.storageEncryption.headers }}
-  headers:
-    {{ tpl .Values.controller.manager.clientCache.storageEncryption.headers . | trim }}
-  {{- end }}
-  {{- if .Values.controller.manager.clientCache.storageEncryption.params }}
-  params:
-    {{ tpl .Values.controller.manager.clientCache.storageEncryption.params . | trim }}
-  {{- end }}
+  {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname" .)) -}}
+  {{- include "operator.vaultAuthMethod" (list .Values.controller.manager.clientCache.storageEncryption $kubeServiceAccount . ) }}
   storageEncryption:
     keyName: {{ .Values.controller.manager.clientCache.storageEncryption.keyName }}
     mount: {{ .Values.controller.manager.clientCache.storageEncryption.transitMount }}

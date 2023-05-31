@@ -65,3 +65,45 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+
+{{/*
+VaultAuthMethod Spec
+** Keep this up to date when we make changes to the VaultAuthMethod Spec **
+*/}}
+{{- define "operator.vaultAuthMethod" -}}
+  {{- $cur := index . 0 }}
+  {{- $serviceAccount := index . 1 }}
+  {{- $root := index . 2 }}
+  {{- if eq $cur.method "kubernetes" }}
+  kubernetes:
+    role: {{ $cur.kubernetes.role }}
+    serviceAccount: {{ $serviceAccount }}
+    {{- if $cur.kubernetes.tokenAudiences }}
+    audiences: {{ $cur.kubernetes.tokenAudiences | toJson }}
+    {{- end }}
+  {{- else if eq $cur.method "jwt" }}
+  jwt:
+    role: {{ $cur.jwt.role }}
+    {{- if $cur.jwt.secretRef }}
+    secretRef: {{ $cur.jwt.secretRef }}
+    {{- else if $cur.jwt.serviceAccount }}
+    serviceAccount: {{ $cur.jwt.serviceAccount }}
+    {{- if $cur.jwt.tokenAudiences }}
+    audiences: {{ $cur.jwt.tokenAudiences | toJson }}
+    {{- end }}
+    {{- end }}
+  {{- else if eq $cur.method "appRole" }}
+  appRole:
+    roleId: {{ $cur.appRole.roleid }}
+    secretRef: {{ $cur.appRole.secretRef }}
+  {{- end }}
+  {{- if $cur.headers }}
+  headers:
+    {{ tpl $cur.headers $root | trim }}
+  {{- end }}
+  {{- if $cur.params }}
+  params:
+    {{ tpl $cur.params $root | trim }}
+  {{- end }}
+{{- end}}
