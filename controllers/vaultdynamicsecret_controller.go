@@ -101,13 +101,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	// forceSync indicates that the controller should perform the secret sync,
+	// doSync indicates that the controller should perform the secret sync,
 	// skipping any lease renewals.
-	forceSync := o.GetGeneration() != o.Status.LastGeneration
-	doRolloutRestart := forceSync && o.Status.LastGeneration > 1
+	doSync := o.GetGeneration() != o.Status.LastGeneration
+	doRolloutRestart := doSync && o.Status.LastGeneration > 1
 
 	leaseID := o.Status.SecretLease.ID
-	if !forceSync && leaseID != "" {
+	if !doSync && leaseID != "" {
 		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
@@ -193,9 +193,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	reason := consts.ReasonSecretSynced
-	var horizon time.Duration
 	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
+	horizon := computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 		"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
 
