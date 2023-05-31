@@ -1,8 +1,5 @@
 ## Unreleased
 
-Bugs:
-* Ensure ClientCacheKey is pruned when a filterFunc is used: [GH-212](https://github.com/hashicorp/vault-secrets-operator/pull/212)
- 
 Features:
 * Helm: **Breaking Change**: Adds support for additional Auth Methods in the Transit auth method template: [GH-226](https://github.com/hashicorp/vault-secrets-operator/pull/226)
   To migrate, set Kubernetes specific auth method configuration under `controller.manager.clientCache.storageEncryption`
@@ -10,6 +7,10 @@ Features:
 
 Improvements:
 * Extend vault Client validation checks to handle failed renewals: [GH-171](https://github.com/hashicorp/vault-secrets-operator/pull/171)
+
+Changes:
+* Helm chart: the Transit auth method kubernetes specific configuration in `controller.manager.clientCache.storageEncryption`
+  has been moved to `controller.manager.clientCache.storageEncryption.kubernetes`.
 
 
 ## 0.1.0-beta.1 (May 25th, 2023)
