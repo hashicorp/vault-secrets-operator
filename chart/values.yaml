@@ -30,12 +30,16 @@ controller:
         cpu: 5m
         memory: 64Mi
 
+  # This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
+  annotations: {}
+
   # Settings related to the vault-secrets-operator container.
   manager:
+
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       repository: hashicorp/vault-secrets-operator
-      tag: 0.1.0-beta
+      tag: 0.1.0-beta.1
 
     # Configures the client cache which is used by the controller to cache (and potentially persist) vault tokens that
     # are the result of using the VaultAuthMethod. This enables re-use of Vault Tokens
@@ -70,6 +74,11 @@ controller:
       # Typically there should only ever be one VaultAuth configured with
       # StorageEncryption in the Cluster.
       storageEncryption:
+        # Vault Connection Ref to be used by the VaultAuthMethod.
+        # Default setting will use the default VaultConnectionRef, which must also be configured.
+        # @type: string
+        vaultConnectionRef: default
+
         # Vault namespace for the VaultAuthMethod
         # @type: string
         namespace: ""
@@ -248,13 +257,11 @@ defaultAuthMethod:
     # - K8s secret that contains the JWT
     # - K8s service account if a service account JWT is used as a Vault JWT auth token and needs generating by VSO
 
-    # Name of Kubernetes Secret that has the Vault JWT auth token. This is a required field if a JWT is provided
+    # Name of Kubernetes Secret that has the Vault JWT auth token.
+    # The Kubernetes Secret must contain a key named `jwt` which references the JWT token, and must exist in the namespace
+    # of any consuming VaultSecret CR. This is a required field if a JWT token is provided.
     # @type: string
     secretName: ""
-
-    # Key of Kubernetes Secret that has the Vault JWT auth token. This is a required field if JWT is provided
-    # @type: string
-    secretKey: ""
 
     # Kubernetes ServiceAccount to generate a service account JWT
     # @type: string
@@ -264,6 +271,21 @@ defaultAuthMethod:
     # of the Vault JWT auth role.
     # @type: array<string>
     tokenAudiences: [ ]
+
+  # AppRole auth method specific configuration
+  appRole:
+    # AppRole Role's RoleID to use for authenticating to Vault.
+    # This is a required field when using appRole and must be setup in Vault prior to deploying the
+    # helm chart.
+    # @type: string
+    roleId: ""
+    # Name of Kubernetes Secret that has the AppRole Role's SecretID used to authenticate with Vault.
+    # The Kubernetes Secret must contain a key named `id` which references the AppRole Role's
+    # SecretID, and must exist in the namespace of any consuming VaultSecret CR.
+    # This is a required field when using appRole and must be setup in Vault prior to deploying the
+    # helm chart.
+    # @type: string
+    secretName: ""
 
   # Params to use when authenticating to Vault
   # params: |

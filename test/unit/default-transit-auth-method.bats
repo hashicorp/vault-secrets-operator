@@ -37,6 +37,18 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
      [ "${actual}" = "release-name-vault-secrets-operator-controller-manager" ]
 }
+
+@test "defaultTransitAuthMethod/CR: default vaultConnectionRef is used by default" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-transit-auth-method.yaml  \
+        --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.spec.vaultConnectionRef' | tee /dev/stderr)
+     [ "${actual}" = "default" ]
+}
+
 @test "defaultTransitAuthMethod/CR: settings can be modified" {
     cd `chart_dir`
     local object=$(helm template \
@@ -49,6 +61,7 @@ load _helpers
         --set 'controller.manager.clientCache.storageEncryption.tokenAudiences={vault,foo}' \
         --set 'controller.manager.clientCache.storageEncryption.keyName=foo-keyName' \
         --set 'controller.manager.clientCache.storageEncryption.transitMount=foo-transit-mount' \
+        --set 'controller.manager.clientCache.storageEncryption.vaultConnectionRef=foo' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
@@ -70,4 +83,6 @@ load _helpers
      [ "${actual}" = "foo-keyName" ]
     actual=$(echo "$object" | yq '.spec.storageEncryption.mount' | tee /dev/stderr)
      [ "${actual}" = "foo-transit-mount" ]
+    actual=$(echo "$object" | yq '.spec.vaultConnectionRef' | tee /dev/stderr)
+     [ "${actual}" = "foo" ]
 }

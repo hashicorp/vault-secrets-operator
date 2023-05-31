@@ -55,7 +55,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
@@ -97,6 +97,13 @@ func TestVaultDynamicSecret(t *testing.T) {
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
+			// Deletes the VaultAuthMethods/Connections.
+			for _, c := range created {
+				// test that the custom resources can be deleted before tf destroy
+				// removes the k8s namespace
+				assert.Nil(t, crdClient.Delete(ctx, c))
+			}
+
 			exportKindLogs(t)
 
 			// Clean up resources with "terraform destroy" at the end of the test.
@@ -238,7 +245,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
-						Role:      outputs.DBRole,
+						Path:      "creds/" + outputs.DBRole,
 						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
@@ -270,7 +277,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
-						Role:      outputs.DBRole,
+						Path:      "creds/" + outputs.DBRole,
 						Revoke:    true,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
@@ -306,7 +313,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					}
 
 					objKey := ctrlclient.ObjectKeyFromObject(obj)
-					var vdsObjFinal secretsv1alpha1.VaultDynamicSecret
+					var vdsObjFinal *secretsv1alpha1.VaultDynamicSecret
 					require.NoError(t, backoff.Retry(
 						func() error {
 							var vdsObj secretsv1alpha1.VaultDynamicSecret
@@ -314,38 +321,32 @@ func TestVaultDynamicSecret(t *testing.T) {
 							if vdsObj.Status.SecretLease.ID == "" {
 								return fmt.Errorf("expected lease ID to be set on %s", objKey)
 							}
-							vdsObjFinal = vdsObj
+							vdsObjFinal = &vdsObj
 							return nil
 						},
 						backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10),
 					))
 
+					assert.Equal(t,
+						vdsObjFinal.GetGeneration(), vdsObjFinal.Status.LastGeneration,
+						"expected Status.LastGeneration")
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
 					assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+					assertLastRuntimePodUID(t, ctx, crdClient, operatorNS, vdsObjFinal)
+					assertDynamicSecretRotation(t, ctx, crdClient, vdsObjFinal)
 
-					var pods corev1.PodList
-					assert.NoError(t, crdClient.List(ctx, &pods, ctrlclient.InNamespace(operatorNS),
-						ctrlclient.MatchingLabels{
-							"control-plane": "controller-manager",
-						},
-					))
-					require.Equal(t, 1, len(pods.Items))
-					assert.Equal(t, pods.Items[0].UID, vdsObjFinal.Status.LastRuntimePodUID)
-
-					assertDynamicSecretRotation(t, ctx, crdClient, &vdsObjFinal)
+					if vdsObjFinal.Spec.Destination.Create && !t.Failed() {
+						if !t.Failed() {
+							assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
+						}
+					}
 				})
 			}
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
-	// Delete remaining CRDs which were created, and then validate that the leases are all revoked.
-	for _, c := range created {
-		// test that the custom resources can be deleted before tf destroy
-		// removes the k8s namespace
-		assert.Nil(t, crdClient.Delete(ctx, c))
-	}
-	// Get a Vault client so we can validate that all leases have been removed.
+	// Get a Vault client, so we can validate that all leases have been removed.
 	cfg := api.DefaultConfig()
 	cfg.Address = vaultAddr
 	c, err := api.NewClient(cfg)
@@ -363,10 +364,74 @@ func TestVaultDynamicSecret(t *testing.T) {
 		}
 		keys := resp.Data["keys"].([]interface{})
 		if len(keys) > 0 {
-			return "", fmt.Errorf("Leases still found: %d", len(keys))
+			// Print out the lease ids that are still found to make debugging easier.
+			return "", fmt.Errorf("leases still found: %v", keys)
 		}
 		return "", nil
 	})
+}
+
+func assertLastRuntimePodUID(t *testing.T,
+	ctx context.Context, client ctrlclient.Client,
+	operatorNS string, vdsObj *secretsv1alpha1.VaultDynamicSecret,
+) {
+	var pods corev1.PodList
+	assert.NoError(t, client.List(ctx, &pods, ctrlclient.InNamespace(operatorNS),
+		ctrlclient.MatchingLabels{
+			"control-plane": "controller-manager",
+		},
+	))
+	if !assert.NotNil(t, pods) {
+		return
+	}
+	assert.Equal(t, 1, len(pods.Items))
+	assert.Equal(t, pods.Items[0].UID, vdsObj.Status.LastRuntimePodUID)
+}
+
+// assertDynamicSecretNewGeneration tests that an update to vdsObjOrig results in
+// a full secret rotation.
+func assertDynamicSecretNewGeneration(t *testing.T,
+	ctx context.Context, client ctrlclient.Client,
+	vdsObjOrig *secretsv1alpha1.VaultDynamicSecret,
+) {
+	t.Helper()
+
+	objKey := ctrlclient.ObjectKeyFromObject(vdsObjOrig)
+	vdsObjLatest := &secretsv1alpha1.VaultDynamicSecret{}
+	if assert.NoError(t, client.Get(ctx, objKey, vdsObjLatest)) {
+		vdsObjLatest.Spec.Destination.Name += "-new"
+		var vdsObjUpdated secretsv1alpha1.VaultDynamicSecret
+		if assert.NoError(t, client.Update(ctx, vdsObjLatest)) {
+			// await last generation updated after update
+			assert.NoError(t, backoff.Retry(func() error {
+				if err := client.Get(ctx, objKey, &vdsObjUpdated); err != nil {
+					return backoff.Permanent(err)
+				}
+
+				if vdsObjUpdated.GetGeneration() < vdsObjOrig.GetGeneration() {
+					return backoff.Permanent(fmt.Errorf(
+						"unexpected, the updated's generation was less than the original's"))
+				}
+
+				if vdsObjUpdated.GetGeneration() == vdsObjOrig.GetGeneration() {
+					return fmt.Errorf("generation has not been updated")
+				}
+
+				if vdsObjUpdated.GetGeneration() != vdsObjUpdated.Status.LastGeneration {
+					return fmt.Errorf("last generation %d, does match current %d",
+						vdsObjUpdated.Status.LastGeneration, vdsObjUpdated.GetGeneration())
+				}
+				return nil
+			},
+				backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10)),
+			)
+
+			if !t.Failed() {
+				assert.NotEmpty(t, vdsObjUpdated.Status.SecretLease.ID)
+				assert.NotEqual(t, vdsObjUpdated.Status.SecretLease.ID, vdsObjOrig.Status.SecretLease.ID)
+			}
+		}
+	}
 }
 
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
@@ -406,10 +471,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 
 	// check that all rollout-restarts completed successfully
 	if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
-		// TODO(tech-debt): add method waiting for rollout-restart, for now we
-		//  can provide an artificial grace period.
-		time.Sleep(5 * time.Second)
-		assertRolloutRestarts(t, ctx, client,
+		awaitRolloutRestarts(t, ctx, client,
 			vdsObj, vdsObj.Spec.RolloutRestartTargets)
 	}
 }

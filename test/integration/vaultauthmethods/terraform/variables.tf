@@ -5,6 +5,10 @@ variable "k8s_test_namespace" {
   default = "testing"
 }
 
+variable "test_service_account" {
+  default = ""
+}
+
 variable "k8s_vault_connection_address" {}
 
 variable "k8s_config_context" {
@@ -27,12 +31,31 @@ variable "k8s_token" {
   default = ""
 }
 
+variable "vault_oidc_discovery_url" {
+  default = "https://kubernetes.default.svc.cluster.local"
+}
+
+variable "vault_oidc_ca" {
+  default = true
+}
+
 variable "vault_kvv2_mount_path" {
   default = "kvv2"
 }
 
 variable "vault_test_namespace" {
   default = "tenant-1"
+}
+
+# AppRole specific variables
+variable "approle_role_name" {
+  type    = string
+  default = "approle"
+}
+
+variable "approle_mount_path" {
+  type    = string
+  default = "approle"
 }
 
 variable "vault_enterprise" {

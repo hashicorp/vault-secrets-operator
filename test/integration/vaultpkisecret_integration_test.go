@@ -40,7 +40,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
-	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
@@ -311,10 +311,7 @@ func TestVaultPKISecret(t *testing.T) {
 						"VaultPKISecret", secret)
 
 					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
-						// TODO(tech-debt): add method waiting for rollout-restart, for now we
-						//  can provide an artificial grace period.
-						time.Sleep(5 * time.Second)
-						assertRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
+						awaitRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
 					}
 				})
 			}

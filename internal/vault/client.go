@@ -130,20 +130,25 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 	return c, nil
 }
 
+type ClientBase interface {
+	Read(context.Context, string) (*api.Secret, error)
+	Write(context.Context, string, map[string]any) (*api.Secret, error)
+	KVv1(string) (*api.KVv1, error)
+	KVv2(string) (*api.KVv2, error)
+}
+
 type Client interface {
+	ClientBase
 	Init(context.Context, ctrlclient.Client, *secretsv1alpha1.VaultAuth, *secretsv1alpha1.VaultConnection, string, *ClientOptions) error
 	Login(context.Context, ctrlclient.Client) error
-	Read(context.Context, string) (*api.Secret, error)
 	Restore(context.Context, *api.Secret) error
-	Write(context.Context, string, map[string]any) (*api.Secret, error)
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
+	Validate() error
 	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
 	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
-	KVv1(string) (*api.KVv1, error)
-	KVv2(string) (*api.KVv2, error)
 	Close()
 	Clone(string) (Client, error)
 	IsClone() bool
@@ -167,6 +172,37 @@ type defaultClient struct {
 	lastWatcherErr     error
 	once               sync.Once
 	mu                 sync.RWMutex
+}
+
+// Validate the client, returning an error for any validation failures.
+// Typically, an invalid Client would be discarded and replaced with a new
+// instance.
+func (c *defaultClient) Validate() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.authSecret == nil {
+		return fmt.Errorf("auth secret not set, never logged in")
+	}
+
+	if !c.skipRenewal {
+		if c.lastWatcherErr != nil {
+			return c.lastWatcherErr
+		}
+		if c.watcher == nil {
+			return errors.New("lifetime watcher not set")
+		}
+	}
+
+	if expired, err := c.checkExpiry(0); expired || err != nil {
+		var errs error
+		if expired {
+			errs = errors.Join(errs, errors.New("client token expired"))
+		}
+		return errors.Join(errs, err)
+	}
+
+	return nil
 }
 
 func (c *defaultClient) IsClone() bool {
@@ -514,14 +550,24 @@ func (c *defaultClient) renew(ctx context.Context) error {
 	return nil
 }
 
-func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions) error {
+func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
+	authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection,
+	providerNamespace string, opts *ClientOptions,
+) error {
+	if connObj == nil {
+		return errors.New("VaultConnection was nil")
+	}
+	if authObj == nil {
+		return errors.New("VaultAuth was nil")
+	}
+
 	cfg := &ClientConfig{
 		Address:         connObj.Spec.Address,
 		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
 		TLSServerName:   connObj.Spec.TLSServerName,
 		VaultNamespace:  authObj.Spec.Namespace,
+		K8sNamespace:    connObj.Namespace,
 		CACertSecretRef: connObj.Spec.CACertSecretRef,
-		K8sNamespace:    providerNamespace,
 	}
 
 	vc, err := MakeVaultClient(ctx, cfg, client)

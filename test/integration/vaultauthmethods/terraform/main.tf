@@ -36,15 +36,22 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
-resource "kubernetes_secret" "default-sa" {
+resource "kubernetes_default_service_account" "default" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
-    name      = "default-sa-secret"
+  }
+}
+
+resource "kubernetes_secret" "default" {
+  metadata {
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    name      = "test-sa-secret"
     annotations = {
-      "kubernetes.io/service-account.name" = "default"
+      "kubernetes.io/service-account.name" = kubernetes_default_service_account.default.metadata[0].name
     }
   }
-  type = "kubernetes.io/service-account-token"
+  type                           = "kubernetes.io/service-account-token"
+  wait_for_service_account_token = true
 }
 
 provider "vault" {
@@ -90,7 +97,7 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
   role_name                        = var.auth_role
-  bound_service_account_names      = ["default"]
+  bound_service_account_names      = [kubernetes_default_service_account.default.metadata[0].name]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
   token_policies                   = [vault_policy.default.name]
@@ -101,8 +108,8 @@ resource "vault_kubernetes_auth_backend_role" "default" {
 resource "vault_jwt_auth_backend" "dev" {
   namespace             = local.namespace
   path                  = "jwt"
-  oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
-  oidc_discovery_ca_pem = nonsensitive(kubernetes_secret.default-sa.data["ca.crt"])
+  oidc_discovery_url    = var.vault_oidc_discovery_url
+  oidc_discovery_ca_pem = var.vault_oidc_ca ? nonsensitive(kubernetes_secret.default.data["ca.crt"]) : ""
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
@@ -115,6 +122,54 @@ resource "vault_jwt_auth_backend_role" "dev" {
   token_policies  = [vault_policy.default.name]
 }
 
+# Create the Vault Auth Backend for AppRole
+resource "vault_auth_backend" "approle" {
+  namespace = local.namespace
+  type      = "approle"
+  path      = var.approle_mount_path
+}
+
+# Create the Vault Auth Backend Role for AppRole
+resource "vault_approle_auth_backend_role" "role" {
+  namespace = local.namespace
+  backend   = vault_auth_backend.approle.path
+  role_name = var.approle_role_name
+  # role_id is auto-generated, and we use this to do the Login
+  token_policies = [vault_policy.approle.name]
+}
+
+# Creates the Secret ID for the AppRole
+resource "vault_approle_auth_backend_role_secret_id" "id" {
+  namespace = local.namespace
+  backend   = vault_auth_backend.approle.path
+  role_name = vault_approle_auth_backend_role.role.role_name
+}
+
+# Kubernetes secret to hold the secretid
+resource "kubernetes_secret" "secretid" {
+  metadata {
+    name      = "secretid"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+  }
+  data = {
+    id = vault_approle_auth_backend_role_secret_id.id.secret_id
+  }
+}
+
+resource "vault_policy" "approle" {
+  name      = "approle"
+  namespace = local.namespace
+  policy    = <<EOT
+path "${vault_mount.kvv2.path}/*" {
+  capabilities = ["read","list","update"]
+}
+path "auth/${vault_auth_backend.approle.path}/login" {
+  capabilities = ["read","update"]
+}
+EOT
+}
+
+# VSO Helm chart
 resource "helm_release" "vault-secrets-operator" {
   name             = "test"
   namespace        = var.operator_namespace

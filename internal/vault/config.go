@@ -5,13 +5,15 @@ package vault
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 
 	"github.com/hashicorp/vault/api"
 	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 // ClientConfig contains the connection and auth information to construct a
@@ -42,18 +44,33 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		return nil, fmt.Errorf("ClientConfig was nil")
 	}
 
+	if client == nil {
+		return nil, fmt.Errorf("ctrl-runtime Client was nil")
+	}
+
 	var b []byte
 	if cfg.CACertSecretRef != "" {
-		s := &v1.Secret{}
-		if err := client.Get(ctx, types.NamespacedName{
+		objKey := ctrlclient.ObjectKey{
 			Namespace: cfg.K8sNamespace,
 			Name:      cfg.CACertSecretRef,
-		}, s); err != nil {
+		}
+		s := &v1.Secret{}
+		if err := client.Get(ctx, objKey, s); err != nil {
 			return nil, err
 		}
+
 		var ok bool
-		if b, ok = s.Data["ca.crt"]; !ok {
-			return nil, fmt.Errorf(`"ca.crt" was empty in the CA secret %s/%s`, cfg.K8sNamespace, cfg.CACertSecretRef)
+		key := consts.TLSSecretCAKey
+		if b, ok = s.Data[key]; !ok {
+			return nil, fmt.Errorf(`%q not present in the CA secret %q`, key, objKey)
+		}
+
+		if !cfg.SkipTLSVerify {
+			// only validate CA cert chain when SkipTLSVerify is false.
+			certPool := x509.NewCertPool()
+			if ok := certPool.AppendCertsFromPEM(b); !ok {
+				return nil, fmt.Errorf("no valid certificates found for key %q in CA secret %q", key, objKey)
+			}
 		}
 	}
 

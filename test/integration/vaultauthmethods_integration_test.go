@@ -30,7 +30,19 @@ func TestVaultAuthMethods(t *testing.T) {
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
-	k8sConfigContext := "kind-" + clusterName
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
+	vault_oidc_discovery_url := os.Getenv("VAULT_OIDC_DISC_URL")
+	if vault_oidc_discovery_url == "" {
+		vault_oidc_discovery_url = "https://kubernetes.default.svc.cluster.local"
+	}
+	vault_oidc_ca := os.Getenv("VAULT_OIDC_CA")
+	if vault_oidc_ca == "" {
+		vault_oidc_ca = "true"
+	}
+	appRoleMountPath := "approle"
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -57,6 +69,9 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
+			"approle_mount_path":           appRoleMountPath,
+			"vault_oidc_discovery_url":     vault_oidc_discovery_url,
+			"vault_oidc_ca":                vault_oidc_ca,
 		},
 	}
 	if operatorImageRepo != "" {
@@ -102,8 +117,7 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	// Create a jwt auth token secret
 	secretName := "jwt-auth-secret"
-	secretKey := "token"
-	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName, secretKey)
+	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName)
 	created = append(created, secretObj)
 
 	auths := []*secretsv1alpha1.VaultAuth{
@@ -119,7 +133,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "kubernetes",
 				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
 					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
+					ServiceAccount: consts.NameDefault,
 					TokenAudiences: []string{"vault"},
 				},
 			},
@@ -135,7 +149,7 @@ func TestVaultAuthMethods(t *testing.T) {
 				Mount:     "jwt",
 				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
 					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
+					ServiceAccount: consts.NameDefault,
 					TokenAudiences: []string{"vault"},
 				},
 			},
@@ -150,21 +164,35 @@ func TestVaultAuthMethods(t *testing.T) {
 				Method:    "jwt",
 				Mount:     "jwt",
 				JWT: &secretsv1alpha1.VaultAuthConfigJWT{
-					Role: outputs.AuthRole,
-					SecretKeyRef: &secretsv1alpha1.SecretKeySelector{
-						Name: secretName,
-						Key:  secretKey,
-					},
+					Role:      outputs.AuthRole,
+					SecretRef: secretName,
+				},
+			},
+		},
+		{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "vaultauth-test-approle",
+				Namespace: testK8sNamespace,
+			},
+			Spec: secretsv1alpha1.VaultAuthSpec{
+				// No VaultConnectionRef - using the default.
+				Namespace: testVaultNamespace,
+				Method:    "appRole",
+				Mount:     appRoleMountPath,
+				AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
+					RoleID:    outputs.AppRoleRoleID,
+					SecretRef: "secretid",
 				},
 			},
 		},
 	}
+	expectedData := map[string]interface{}{"foo": "bar"}
+
 	// Apply all the Auth Methods
 	for _, a := range auths {
 		require.Nil(t, crdClient.Create(ctx, a))
 		created = append(created, a)
 	}
-
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
@@ -194,7 +222,6 @@ func TestVaultAuthMethods(t *testing.T) {
 		created = append(created, secret)
 	}
 
-	expectedData := map[string]interface{}{"foo": "bar"}
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
 		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, expectedData)
 		require.NoError(t, err)
@@ -217,8 +244,11 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	for idx, tt := range auths {
 		t.Run(tt.Spec.Method, func(t *testing.T) {
+			// Create the KV secret in Vault.
 			putKV(t, secrets[idx])
+			// Create the VSS object referencing the object in Vault.
 			require.Nil(t, crdClient.Create(ctx, secrets[idx]))
+			// Assert that the Kube secret exists + has correct Data.
 			assertSync(t, secrets[idx])
 			t.Cleanup(func() {
 				deleteKV(t, secrets[idx])
