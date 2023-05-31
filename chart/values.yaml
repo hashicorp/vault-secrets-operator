@@ -323,7 +323,7 @@ telemetry:
     #  release: prometheus
     selectors: {}
 
-    # Scheme of the service Prometheus scrape metrics from. This must match the scheme of the metrics service of VSO
+    # Scheme of the service Prometheus scrapes metrics from. This must match the scheme of the metrics service of VSO
     scheme: https
 
     # Port at which Prometheus scrapes metrics. This must match the port of the metrics service of VSO
