@@ -55,7 +55,7 @@ load _helpers
 
 @test "prometheus/ServiceMonitor-server: assertInterval update" {
   cd `chart_dir`
-  local output=$( (helm template \
+  local actual=$( (helm template \
       --show-only templates/prometheus-servicemonitor.yaml \
       --set 'telemetry.serviceMonitor.enabled=true' \
       --set 'telemetry.serviceMonitor.interval=60s' \
