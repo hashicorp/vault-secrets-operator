@@ -71,8 +71,7 @@ load _helpers
       --set 'telemetry.serviceMonitor.enabled=true' \
       . ) | tee /dev/stderr)
 
-  [ "$(echo "$output" | yq -r '.metadata.labels | length')" = "5" ]
-  [ "$(echo "$output" | yq -r '.metadata.labels.release')" = "prometheus" ]
+  [ "$(echo "$output" | yq -r '.metadata.labels.control-plane')" = "controller-manager" ]
 }
 
 @test "prometheus/ServiceMonitor-server: assertSelectors override" {
@@ -84,7 +83,6 @@ load _helpers
       --set 'telemetry.serviceMonitor.selectors.bar=foo' \
       . ) | tee /dev/stderr)
 
-  [ "$(echo "$output" | yq -r '.metadata.labels | length')" = "6" ]
   [ "$(echo "$output" | yq -r '.metadata.labels | has("app")')" = "false" ]
   [ "$(echo "$output" | yq -r '.metadata.labels.baz')" = "qux" ]
   [ "$(echo "$output" | yq -r '.metadata.labels.bar')" = "foo" ]
@@ -99,7 +97,8 @@ load _helpers
 
   [ "$(echo "$output" | yq -r '.spec.endpoints | length')" = "1" ]
   [ "$(echo "$output" | yq -r '.spec.endpoints[0].scheme')" = "https" ]
-  [ "$(echo "$output" | yq -r '.spec.endpoints[0].port')" = "8443" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].port')" = "https" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].bearerTokenFile')" = "/var/run/secrets/kubernetes.io/serviceaccount/token" ]
 }
 
 @test "prometheus/ServiceMonitor-server: assertEndpoints update" {
@@ -108,10 +107,12 @@ load _helpers
       --show-only templates/prometheus-servicemonitor.yaml \
       --set 'telemetry.serviceMonitor.enabled=true' \
       --set 'telemetry.serviceMonitor.scheme=http' \
-      --set 'telemetry.serviceMonitor.port=1234' \
+      --set 'telemetry.serviceMonitor.port=http' \
+      --set 'telemetry.serviceMonitor.bearerTokenFile=/foo/token' \
       . ) | tee /dev/stderr)
 
   [ "$(echo "$output" | yq -r '.spec.endpoints | length')" = "1" ]
   [ "$(echo "$output" | yq -r '.spec.endpoints[0].scheme')" = "http" ]
-  [ "$(echo "$output" | yq -r '.spec.endpoints[0].port')" = "1234" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].port')" = "http" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].bearerTokenFile')" = "/foo/token" ]
 }

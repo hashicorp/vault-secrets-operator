@@ -327,10 +327,13 @@ telemetry:
     scheme: https
 
     # Port at which Prometheus scrapes metrics. This must match the port of the metrics service of VSO
-    port: 8443
+    port: https
 
-    # Path at which Prometheus scraps metrics
-    path: /v1/sys/metrics
+    # Path at which Prometheus scrapes metrics
+    path: /metrics
+
+    # File Prometheus reads bearer token from for scraping metrics
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
 
     # Interval at which Prometheus scrapes metrics
     interval: 30s
