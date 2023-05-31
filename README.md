@@ -134,16 +134,13 @@ make integration-test
 
 ```shell
 # Create an EKS cluster and a ECR repository
-make create-eks
+make -f aws.mk create-eks
 
-# Build the operator binary, image, and deploy to the ECR repository
-make ci-ecr-build-push 
-
-# Run the integration tests (includes Vault OSS deployment)
-make integration-test-eks
+# Build the operator image and run the integration tests (includes Vault OSS deployment)
+make -f aws.mk build-push integration-test-eks
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
-make integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
+make -f aws.mk build-push integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```
 
 ### Integration Tests in GKE
