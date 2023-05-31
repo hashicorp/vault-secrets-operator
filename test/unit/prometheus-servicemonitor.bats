@@ -71,6 +71,7 @@ load _helpers
       --set 'telemetry.serviceMonitor.enabled=true' \
       . ) | tee /dev/stderr)
 
+  [ "$(echo "$output" | yq -r '.metadata.labels | length')" = "7" ]
   [ "$(echo "$output" | yq -r '.metadata.labels.control-plane')" = "controller-manager" ]
 }
 
@@ -83,6 +84,7 @@ load _helpers
       --set 'telemetry.serviceMonitor.selectors.bar=foo' \
       . ) | tee /dev/stderr)
 
+  [ "$(echo "$output" | yq -r '.metadata.labels | length')" = "9" ]
   [ "$(echo "$output" | yq -r '.metadata.labels | has("app")')" = "false" ]
   [ "$(echo "$output" | yq -r '.metadata.labels.baz')" = "qux" ]
   [ "$(echo "$output" | yq -r '.metadata.labels.bar')" = "foo" ]
