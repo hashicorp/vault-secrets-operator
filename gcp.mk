@@ -1,7 +1,7 @@
 # run the following from the project root:
 # make -f gcp.mk <make rule>
 
-# gCloud variables cloud hosted k8s testing
+# Google Cloud variables for cloud hosted k8s testing
 GCP_REGION ?= us-west1
 GCP_PROJECT ?=
 
@@ -22,7 +22,8 @@ create-gke: ## Create a new GKE cluster
 		-var region=$(GCP_REGION) \
 		-var project_id=$(GCP_PROJECT) || exit 1 \
 	rm -f $(TF_GKE_STATE_DIR)/*.tfvars
-	gcloud container clusters get-credentials $$($(TERRAFORM) -chdir=$(TF_GKE_STATE_DIR) output -raw kubernetes_cluster_name) --region $(GCP_REGION)
+	gcloud container clusters get-credentials \
+	$$($(TERRAFORM) -chdir=$(TF_GKE_STATE_DIR) output -raw kubernetes_cluster_name) --region $(GCP_REGION)
 
 .PHONY: import-gcp-vars
 import-gcp-vars:
@@ -37,7 +38,8 @@ build-push: import-gcp-vars ci-build ci-docker-build ## Build the operator image
 .PHONY: integration-test-gke
 integration-test-gke: build-push ## Run integration tests in the GKE cluster
 	$(MAKE) port-forward &
-	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMG) VAULT_OIDC_DISC_URL=$(GKE_OIDC_URL) VAULT_OIDC_CA=false
+	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
+	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(GKE_OIDC_URL) VAULT_OIDC_CA=false
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
