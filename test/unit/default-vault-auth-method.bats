@@ -35,16 +35,16 @@ load _helpers
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
 
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
-     [ "${actual}" = "kubernetes" ]
+    [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
-     [ "${actual}" = "kubernetes" ]
+    [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
 }
 
 @test "defaultAuthMethod/CR: settings can be modified for kubernetes auth method" {
@@ -57,29 +57,29 @@ load _helpers
         --set 'defaultAuthMethod.kubernetes.role=role-1' \
         --set 'defaultAuthMethod.kubernetes.serviceAccount=tenant-1' \
         --set 'defaultAuthMethod.kubernetes.tokenAudiences={vault,foo}' \
-        --set 'defaultAuthMethod.headers=foo: bar' \
-        --set 'defaultAuthMethod.params=foo: baz' \
+        --set 'defaultAuthMethod.headers.foo=bar' \
+        --set 'defaultAuthMethod.params.foo=baz' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
-     [ "${actual}" = "tenant-2" ]
+    [ "${actual}" = "tenant-2" ]
 
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
-     [ "${actual}" = "kubernetes" ]
+    [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
-     [ "${actual}" = "foo" ]
+    [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.role' | tee /dev/stderr)
-     [ "${actual}" = "role-1" ]
+    [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
-     [ "${actual}" = "tenant-1" ]
+    [ "${actual}" = "tenant-1" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.audiences' | tee /dev/stderr)
-     [ "${actual}" = '["vault", "foo"]' ]
+    [ "${actual}" = '["vault", "foo"]' ]
     actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
-     [ "${actual}" = "bar" ]
+    [ "${actual}" = "bar" ]
     actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
-     [ "${actual}" = "baz" ]
+    [ "${actual}" = "baz" ]
 }
 
 @test "defaultAuthMethod/CR: default settings for jwt auth method" {
@@ -92,22 +92,22 @@ load _helpers
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
 
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
-     [ "${actual}" = "jwt" ]
+    [ "${actual}" = "jwt" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
-     [ "${actual}" = "jwt" ]
+    [ "${actual}" = "jwt" ]
     actual=$(echo "$object" | yq '.spec.jwt.serviceAccount' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
 
     # secret related specs should not exist
     actual=$(echo "$object" | yq '.spec.jwt.secretName' | tee /dev/stderr)
-     [ "${actual}" = null ]
+    [ "${actual}" = null ]
     actual=$(echo "$object" | yq '.spec.jwt.secretKey' | tee /dev/stderr)
-     [ "${actual}" = null ]
+    [ "${actual}" = null ]
 }
 
 @test "defaultAuthMethod/CR: service account and token audiences settings can be modified for jwt auth method" {
@@ -121,33 +121,37 @@ load _helpers
         --set 'defaultAuthMethod.jwt.role=role-1' \
         --set 'defaultAuthMethod.jwt.serviceAccount=tenant-1' \
         --set 'defaultAuthMethod.jwt.tokenAudiences={vault,foo}' \
-        --set 'defaultAuthMethod.headers=foo: bar' \
-        --set 'defaultAuthMethod.params=foo: baz' \
+        --set 'defaultAuthMethod.headers.foo=bar' \
+        --set 'defaultAuthMethod.params.foo=baz' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
-     [ "${actual}" = "tenant-2" ]
+    [ "${actual}" = "tenant-2" ]
 
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
-     [ "${actual}" = "jwt" ]
+    [ "${actual}" = "jwt" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
-     [ "${actual}" = "foo" ]
+    [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.jwt.role' | tee /dev/stderr)
-     [ "${actual}" = "role-1" ]
+    [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.jwt.serviceAccount' | tee /dev/stderr)
-     [ "${actual}" = "tenant-1" ]
+    [ "${actual}" = "tenant-1" ]
     actual=$(echo "$object" | yq '.spec.jwt.audiences' | tee /dev/stderr)
-     [ "${actual}" = '["vault", "foo"]' ]
-    actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
-     [ "${actual}" = "bar" ]
-    actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
-     [ "${actual}" = "baz" ]
+    [ "${actual}" = '["vault", "foo"]' ]
+    actual=$(echo "$object" | yq '.spec.headers | length' | tee /dev/stderr)
+    [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.headers."foo"' | tee /dev/stderr)
+    [ "${actual}" = "bar" ]
+    actual=$(echo "$object" | yq '.spec.params | length' | tee /dev/stderr)
+    [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.params."foo"' | tee /dev/stderr)
+    [ "${actual}" = "baz" ]
 
     # secret related specs should not exist
     actual=$(echo "$object" | yq '.spec.jwt.secretRef' | tee /dev/stderr)
-     [ "${actual}" = null ]
+    [ "${actual}" = null ]
 }
 
 @test "defaultAuthMethod/CR: token secret settings can be modified for jwt auth method" {
@@ -160,33 +164,37 @@ load _helpers
         --set 'defaultAuthMethod.mount=foo' \
         --set 'defaultAuthMethod.jwt.role=role-1' \
         --set 'defaultAuthMethod.jwt.secretRef=secret-1' \
-        --set 'defaultAuthMethod.headers=foo: bar' \
-        --set 'defaultAuthMethod.params=foo: baz' \
+        --set 'defaultAuthMethod.headers.foo=bar' \
+        --set 'defaultAuthMethod.params.foo=baz' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
-     [ "${actual}" = "tenant-2" ]
+    [ "${actual}" = "tenant-2" ]
 
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
-     [ "${actual}" = "jwt" ]
+    [ "${actual}" = "jwt" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
-     [ "${actual}" = "foo" ]
+    [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.jwt.role' | tee /dev/stderr)
-     [ "${actual}" = "role-1" ]
+    [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.jwt.secretRef' | tee /dev/stderr)
-     [ "${actual}" = "secret-1" ]
-    actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
-     [ "${actual}" = "bar" ]
-    actual=$(echo "$object" | yq '.spec.params.foo' | tee /dev/stderr)
-     [ "${actual}" = "baz" ]
+    [ "${actual}" = "secret-1" ]
+    actual=$(echo "$object" | yq '.spec.headers | length' | tee /dev/stderr)
+    [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.headers."foo"' | tee /dev/stderr)
+    [ "${actual}" = "bar" ]
+    actual=$(echo "$object" | yq '.spec.params | length' | tee /dev/stderr)
+    [ "${actual}" = "1" ]
+    actual=$(echo "$object" | yq '.spec.params."foo"' | tee /dev/stderr)
+    [ "${actual}" = "baz" ]
 
     # serviceAccount and audiences specs should not exist
     actual=$(echo "$object" | yq '.spec.jwt.serviceAccount' | tee /dev/stderr)
-     [ "${actual}" = null ]
+    [ "${actual}" = null ]
     actual=$(echo "$object" | yq '.spec.jwt.audiences' | tee /dev/stderr)
-     [ "${actual}" = null ]
+    [ "${actual}" = null ]
 }
 
 @test "defaultAuthMethod/CR: settings can be modified for appRole auth method" {
@@ -202,16 +210,16 @@ load _helpers
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
-     [ "${actual}" = "default" ]
+    [ "${actual}" = "default" ]
     actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
-     [ "${actual}" = "tenant-2" ]
+    [ "${actual}" = "tenant-2" ]
 
     actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
-     [ "${actual}" = "appRole" ]
+    [ "${actual}" = "appRole" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
-     [ "${actual}" = "foo" ]
+    [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.appRole.roleId' | tee /dev/stderr)
-     [ "${actual}" = "role-1" ]
+    [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.appRole.secretRef' | tee /dev/stderr)
-     [ "${actual}" = "secret-1" ]
+    [ "${actual}" = "secret-1" ]
 }
