@@ -176,7 +176,7 @@ export AZURE_TENANT="<tenant_id>"
 # Create an AKS cluster and a ACR repository
 make -f azure.mk create-aks
 
-# Build & operator image & run the integration tests (includes Vault OSS deployment)
+# Build  the operator image and run the integration tests (includes Vault OSS deployment)
 make -f azure.mk build-push integration-test-aks
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
