@@ -140,7 +140,7 @@ make -f aws.mk create-eks
 make -f aws.mk build-push integration-test-eks
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
-make -f aws.mk integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
+make -f aws.mk build-push integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```
 
 ### Integration Tests in GKE
@@ -156,5 +156,26 @@ make -f gcp.mk create-gke
 make -f gcp.mk build-push integration-test-gke
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
-make -f gcp.mk integration-test-gke VAULT_ENTERPRISE=true ENT_TESTS=true
+make -f gcp.mk build-push integration-test-gke VAULT_ENTERPRISE=true ENT_TESTS=true
+```
+
+### Integration Tests in AKS
+
+```shell
+# Export the Azure credentials
+az config set core.allow_broker=true && az account clear && az login
+az account set --subscription "<subscription_id>"
+az ad sp create-for-rbac --name "vault-secrets-operator" --role "Owner" --scopes /subscriptions/<subscription_id> --output json
+export AZURE_APPID="<app_id>"
+export AZURE_PASSWORD="<password>"
+export AZURE_TENANT="<tenant_id>"
+
+# Create an AKS cluster and a ACR repository
+make -f azure.mk create-aks
+
+# Build  the operator image and run the integration tests (includes Vault OSS deployment)
+make -f azure.mk build-push integration-test-aks
+
+# Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
+make -f azure.mk build-push integration-test-aks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```

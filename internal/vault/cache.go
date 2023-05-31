@@ -124,7 +124,7 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCache
 			client := v.(Client)
 			if filterFunc(client) {
 				if c.remove(key, client) {
-					pruned = append(pruned)
+					pruned = append(pruned, key)
 				}
 			}
 		}

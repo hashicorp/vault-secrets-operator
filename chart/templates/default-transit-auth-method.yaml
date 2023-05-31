@@ -18,14 +18,10 @@ metadata:
 spec:
   vaultConnectionRef: {{ .Values.controller.manager.clientCache.storageEncryption.vaultConnectionRef }}
   namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
-  method: "kubernetes"
+  method: {{ .Values.controller.manager.clientCache.storageEncryption.method }}
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
-  kubernetes:
-    role: {{ .Values.controller.manager.clientCache.storageEncryption.role }}
-    serviceAccount: {{ .Values.controller.manager.clientCache.storageEncryption.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname" . )) }}
-    {{- if .Values.controller.manager.clientCache.storageEncryption.tokenAudiences }}
-    audiences: {{ .Values.controller.manager.clientCache.storageEncryption.tokenAudiences | toJson }}
-    {{- end }}
+  {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname" .)) -}}
+  {{- include "operator.vaultAuthMethod" (list .Values.controller.manager.clientCache.storageEncryption $kubeServiceAccount . ) }}
   storageEncryption:
     keyName: {{ .Values.controller.manager.clientCache.storageEncryption.keyName }}
     mount: {{ .Values.controller.manager.clientCache.storageEncryption.transitMount }}
