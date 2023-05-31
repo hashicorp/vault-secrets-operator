@@ -120,6 +120,7 @@ module "eks" {
 
 resource "aws_ecr_repository" "vault-secrets-operator" {
   name = "vault-secrets-operator-${random_string.suffix.result}"
+  force_delete = true
 }
 
 resource "local_file" "env_file" {
