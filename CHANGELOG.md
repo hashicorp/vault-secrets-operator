@@ -10,6 +10,7 @@ Improvements:
 * Extend vault Client validation checks to handle failed renewals: [GH-171](https://github.com/hashicorp/vault-secrets-operator/pull/171)
 
 Changes:
+* VaultPKISecret (VPS): **Breaking Change**: Replace `Spec.Name` with `Spec.Role`: [GH-233](https://github.com/hashicorp/vault-secrets-operator/pull/233)
 * Helm chart: the Transit auth method kubernetes specific configuration in `controller.manager.clientCache.storageEncryption`
   has been moved to `controller.manager.clientCache.storageEncryption.kubernetes`.
 
