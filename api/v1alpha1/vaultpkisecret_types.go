@@ -25,7 +25,7 @@ type VaultPKISecretSpec struct {
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
 
-	// Role in Vault to use for issuing credentials
+	// Role in Vault to use when issuing TLS certificates.
 	Role string `json:"role"`
 
 	// Revoke the certificate when the resource is deleted.
