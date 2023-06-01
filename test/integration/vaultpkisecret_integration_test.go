@@ -173,7 +173,7 @@ func TestVaultPKISecret(t *testing.T) {
 					VaultAuthRef: testVaultAuthMethodName,
 					Namespace:    testVaultNamespace,
 					Mount:        testPKIMountPath,
-					Name:         "secret",
+					Role:         "secret",
 					CommonName:   "test1.example.com",
 					Format:       "pem",
 					Revoke:       true,
@@ -241,7 +241,7 @@ func TestVaultPKISecret(t *testing.T) {
 						Namespace: testK8sNamespace,
 					},
 					Spec: secretsv1alpha1.VaultPKISecretSpec{
-						Name:         "secret",
+						Role:         "secret",
 						Namespace:    testVaultNamespace,
 						Mount:        testPKIMountPath,
 						CommonName:   fmt.Sprintf("%s.example.com", dest),

@@ -349,7 +349,7 @@ func (r *VaultPKISecretReconciler) getPath(spec secretsv1alpha1.VaultPKISecretSp
 	} else {
 		parts = append(parts, "issue")
 	}
-	parts = append(parts, spec.Name)
+	parts = append(parts, spec.Role)
 
 	return strings.Join(parts, "/")
 }
