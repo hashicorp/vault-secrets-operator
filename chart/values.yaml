@@ -376,6 +376,7 @@ defaultAuthMethod:
   # @type: map
   headers: {}
 
+# Configures a Prometheus ServiceMonitor
 telemetry:
   serviceMonitor:
     # The Prometheus operator *must* be installed before enabling this feature,
