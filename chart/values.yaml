@@ -376,6 +376,53 @@ defaultAuthMethod:
   # @type: map
   headers: {}
 
+# Configures a Prometheus ServiceMonitor
+telemetry:
+  serviceMonitor:
+    # The Prometheus operator *must* be installed before enabling this feature,
+    # if not the chart will fail to install due to missing CustomResourceDefinitions
+    # provided by the operator.
+    #
+    # Instructions on how to install the Helm chart can be found here:
+    #  https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+    # More information can be found here:
+    #  https://github.com/prometheus-operator/prometheus-operator
+    #  https://github.com/prometheus-operator/kube-prometheus
+
+    # Enable deployment of the Vault Secrets Operator ServiceMonitor CustomResource.
+    # @type: boolean
+    enabled: false
+
+    # Selector labels to add to the ServiceMonitor.
+    # When empty, defaults to:
+    #  release: prometheus
+    # @type: string
+    selectors: {}
+
+    # Scheme of the service Prometheus scrapes metrics from. This must match the scheme of the metrics service of VSO
+    # @type: string
+    scheme: https
+
+    # Port at which Prometheus scrapes metrics. This must match the port of the metrics service of VSO
+    # @type: string
+    port: https
+
+    # Path at which Prometheus scrapes metrics
+    # @type: string
+    path: /metrics
+
+    # File Prometheus reads bearer token from for scraping metrics
+    # @type: string
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+    # Interval at which Prometheus scrapes metrics
+    # @type: string
+    interval: 30s
+
+    # Timeout for Prometheus scrapes
+    # @type: string
+    scrapeTimeout: 10s
+
 ## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored.
 tests:
   # @type: boolean
