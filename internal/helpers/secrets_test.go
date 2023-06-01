@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 func TestFindSecretsOwnedByObj(t *testing.T) {
@@ -44,6 +45,12 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 		},
 	}
 
+	ownerLabels := make(map[string]string)
+	for k, v := range OwnerLabels {
+		ownerLabels[k] = v
+	}
+	ownerLabels[labelOwnerRefUID] = string(owner.GetUID())
+
 	notOwner := &secretsv1alpha1.VaultDynamicSecret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "VaultDynamicSecret",
@@ -61,7 +68,7 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ownedSec1",
 			Namespace: owner.Namespace,
-			Labels:    OwnerLabels,
+			Labels:    ownerLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: owner.APIVersion,
@@ -78,7 +85,7 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ownedSec2",
 			Namespace: owner.Namespace,
-			Labels:    OwnerLabels,
+			Labels:    ownerLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: owner.APIVersion,
@@ -96,9 +103,7 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "canarySec1",
 			Namespace: owner.Namespace,
-			Labels: map[string]string{
-				"other": "label",
-			},
+			Labels:    OwnerLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: owner.APIVersion,
@@ -116,6 +121,7 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "canarySec2",
 			Namespace: notOwner.Namespace,
+			Labels:    ownerLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: notOwner.APIVersion,
@@ -228,10 +234,12 @@ func TestSyncSecret(t *testing.T) {
 		wantErr            assert.ErrorAssertionFunc
 	}{
 		{
-			name:    "invalid-dest",
-			client:  clientBuilder.Build(),
-			obj:     invalidNoDest,
-			wantErr: assert.Error,
+			name:   "invalid-dest",
+			client: clientBuilder.Build(),
+			obj:    invalidNoDest,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorIs(t, err, common.InvalidObjectKeyError)
+			},
 		},
 		{
 			name:   "valid-dest",
@@ -360,6 +368,15 @@ func TestSyncSecret(t *testing.T) {
 				require.NoError(t, tt.client.Create(ctx, s))
 			}
 
+			ownerLabels := make(map[string]string)
+			for k, v := range OwnerLabels {
+				ownerLabels[k] = v
+			}
+
+			if tt.obj.GetUID() != "" {
+				ownerLabels[labelOwnerRefUID] = string(tt.obj.GetUID())
+			}
+
 			var orphans []ctrlclient.ObjectKey
 			// create some orphans that are owned by tt.obj
 			for i := 0; i < tt.orphans; i++ {
@@ -367,7 +384,7 @@ func TestSyncSecret(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      fmt.Sprintf("orphan-%d", i),
 						Namespace: tt.obj.GetNamespace(),
-						Labels:    OwnerLabels,
+						Labels:    ownerLabels,
 						OwnerReferences: []metav1.OwnerReference{
 							{
 								APIVersion: tt.obj.APIVersion,

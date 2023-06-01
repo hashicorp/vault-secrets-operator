@@ -22,6 +22,11 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
+// labelOwnerRefUID is used as the primary key when listing the Secrets owned by
+// a specific VSO object. It should be included in every Secret that is created
+// by VSO.
+var labelOwnerRefUID = fmt.Sprintf("%s/vso/ownerRefUID", secretsv1alpha1.GroupVersion.Group)
+
 // OwnerLabels will be applied to any k8s secret we create. They are used in Secret ownership checks.
 // There are similar labels in the vault package. It's important that component secret's value never
 // intersects with that of other components of the system, since this could lead to data loss.
@@ -98,22 +103,56 @@ func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1
 	return ownerRef, nil
 }
 
+func ownerLabelsForObj(obj ctrlclient.Object) (map[string]string, error) {
+	uid := string(obj.GetUID())
+	if uid == "" {
+		return nil, fmt.Errorf("object %q has an empty UID", ctrlclient.ObjectKeyFromObject(obj))
+	}
+
+	l := make(map[string]string)
+	for k, v := range OwnerLabels {
+		l[k] = v
+	}
+	l[labelOwnerRefUID] = uid
+
+	return l, nil
+}
+
+func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, error) {
+	m := ctrlclient.MatchingLabels{}
+	l, err := ownerLabelsForObj(obj)
+	if err != nil {
+		return m, err
+	}
+	if string(obj.GetUID()) == "" {
+		return m, fmt.Errorf("object %q has an empty UID", ctrlclient.ObjectKeyFromObject(obj))
+	}
+
+	for k, v := range l {
+		m[k] = v
+	}
+	m[labelOwnerRefUID] = string(obj.GetUID())
+
+	return m, nil
+}
+
 // FindSecretsOwnedByObj returns all corev1.Secrets that are owned by obj.
 // Those are secrets that have a copy of OwnerLabels, and exactly one metav1.OwnerReference
 // that matches obj.
 func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) ([]corev1.Secret, error) {
-	matchingLabels := ctrlclient.MatchingLabels{}
-	for k, v := range OwnerLabels {
-		matchingLabels[k] = v
-	}
-
 	ownerRef, err := getOwnerRefFromObj(obj, client.Scheme())
 	if err != nil {
 		return nil, err
 	}
 
+	matchingLabels, err := matchingLabelsForObj(obj)
+	if err != nil {
+		return nil, err
+	}
+
 	secrets := &corev1.SecretList{}
-	if err := client.List(ctx, secrets, matchingLabels, ctrlclient.InNamespace(obj.GetNamespace())); err != nil {
+	if err := client.List(ctx, secrets,
+		matchingLabels, ctrlclient.InNamespace(obj.GetNamespace())); err != nil {
 		return nil, err
 	}
 
@@ -160,7 +199,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	}
 
 	if err := common.ValidateObjectKey(key); err != nil {
-		return err
+		return fmt.Errorf("empty name for destination Secret, err=%w", err)
 	}
 
 	var dest corev1.Secret
@@ -249,8 +288,16 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	for k, v := range meta.Destination.Labels {
 		labels[k] = v
 	}
+
+	ownerLabels, err := ownerLabelsForObj(obj)
 	// always add the "owner" labels last to guard against intersections with meta.Destination.Labels
-	for k, v := range OwnerLabels {
+	for k, v := range ownerLabels {
+		_, ok := labels[k]
+		if ok {
+			logger.V(consts.LogLevelWarning).Info(
+				"Label conflicts with a default owner label, owner label takes precedence",
+				"label", k)
+		}
 		labels[k] = v
 	}
 	// add any annotations configured in meta.Destination.Labels
