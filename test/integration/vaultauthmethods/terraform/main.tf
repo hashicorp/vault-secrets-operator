@@ -181,18 +181,21 @@ resource "kubernetes_service_account" "irsa_assumable" {
 }
 
 resource "vault_auth_backend" "aws" {
-  type = "aws"
-  path = "aws"
+  count = var.run_aws_tests ? 1 : 0
+  type  = "aws"
+  path  = "aws"
 }
 
 resource "vault_aws_auth_backend_client" "aws" {
-  backend      = vault_auth_backend.aws.path
+  count        = var.run_aws_tests ? 1 : 0
+  backend      = one(vault_auth_backend.aws).path
   sts_region   = var.aws_region
   sts_endpoint = "https://sts.${var.aws_region}.amazonaws.com"
 }
 
 resource "vault_aws_auth_backend_role" "aws-irsa" {
-  backend                  = vault_auth_backend.aws.path
+  count                    = var.run_aws_tests ? 1 : 0
+  backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-irsa"
   auth_type                = "iam"
   bound_iam_principal_arns = ["${var.irsa_assumable_role_arn}"]
@@ -200,7 +203,8 @@ resource "vault_aws_auth_backend_role" "aws-irsa" {
 }
 
 resource "vault_aws_auth_backend_role" "aws-node" {
-  backend                  = vault_auth_backend.aws.path
+  count                    = var.run_aws_tests ? 1 : 0
+  backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-node"
   auth_type                = "iam"
   bound_iam_principal_arns = ["arn:aws:iam::${var.aws_account_id}:role/eks-nodes-eks-*"]
@@ -208,7 +212,8 @@ resource "vault_aws_auth_backend_role" "aws-node" {
 }
 
 resource "vault_aws_auth_backend_role" "aws-instance-profile" {
-  backend                         = vault_auth_backend.aws.path
+  count                           = var.run_aws_tests ? 1 : 0
+  backend                         = one(vault_auth_backend.aws).path
   role                            = "${var.auth_role}-aws-instance-profile"
   auth_type                       = "iam"
   inferred_entity_type            = "ec2_instance"
@@ -220,7 +225,7 @@ resource "vault_aws_auth_backend_role" "aws-instance-profile" {
 
 resource "vault_aws_auth_backend_role" "aws-static" {
   count                    = var.run_aws_static_creds_test ? 1 : 0
-  backend                  = vault_auth_backend.aws.path
+  backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-static"
   auth_type                = "iam"
   bound_iam_principal_arns = ["${var.aws_static_creds_role}"]
