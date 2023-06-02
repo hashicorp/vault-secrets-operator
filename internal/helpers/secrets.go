@@ -201,7 +201,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	}
 
 	if err := common.ValidateObjectKey(key); err != nil {
-		return fmt.Errorf("empty name for destination Secret, err=%w", err)
+		return fmt.Errorf("invalid Destination, err=%w", err)
 	}
 
 	var dest corev1.Secret

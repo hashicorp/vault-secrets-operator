@@ -219,6 +219,17 @@ func TestSyncSecret(t *testing.T) {
 		ObjectMeta: defaultOwner.ObjectMeta,
 	}
 
+	invalidEmptyNamespace := &secretsv1alpha1.VaultDynamicSecret{
+		TypeMeta:   defaultOwner.TypeMeta,
+		ObjectMeta: defaultOwner.ObjectMeta,
+		Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+			Destination: secretsv1alpha1.Destination{
+				Name: "baz",
+			},
+		},
+	}
+	invalidEmptyNamespace.Namespace = ""
+
 	defaultOpts := []SyncOptions{DefaultSyncOptions()}
 
 	tests := []struct {
@@ -234,11 +245,27 @@ func TestSyncSecret(t *testing.T) {
 		wantErr            assert.ErrorAssertionFunc
 	}{
 		{
-			name:   "invalid-dest",
+			name:   "invalid-no-dest",
 			client: clientBuilder.Build(),
 			obj:    invalidNoDest,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.ErrorIs(t, err, common.InvalidObjectKeyError)
+			},
+		},
+		{
+			name:   "invalid-dest-name-empty",
+			client: clientBuilder.Build(),
+			obj:    invalidNoDest,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorIs(t, err, common.InvalidObjectKeyErrorEmptyName)
+			},
+		},
+		{
+			name:   "invalid-namespace-empty",
+			client: clientBuilder.Build(),
+			obj:    invalidEmptyNamespace,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorIs(t, err, common.InvalidObjectKeyErrorEmptyNamespace)
 			},
 		},
 		{
