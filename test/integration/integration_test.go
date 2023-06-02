@@ -344,7 +344,12 @@ func assertSyncableSecret(t *testing.T, obj ctrlclient.Object, expectedAPIVersio
 	require.NoError(t, err)
 
 	if meta.Destination.Create {
-		assert.Equal(t, helpers.OwnerLabels, sec.Labels,
+		expectedOwnerLabels, err := helpers.OwnerLabelsForObj(obj)
+		if assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, expectedOwnerLabels, sec.Labels,
 			"expected owner labels not set on %s",
 			ctrlclient.ObjectKeyFromObject(sec))
 

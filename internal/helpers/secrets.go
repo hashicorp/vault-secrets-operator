@@ -25,7 +25,7 @@ import (
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by
 // a specific VSO object. It should be included in every Secret that is created
 // by VSO.
-var labelOwnerRefUID = fmt.Sprintf("%s/vso/ownerRefUID", secretsv1alpha1.GroupVersion.Group)
+var labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1alpha1.GroupVersion.Group)
 
 // OwnerLabels will be applied to any k8s secret we create. They are used in Secret ownership checks.
 // There are similar labels in the vault package. It's important that component secret's value never
@@ -103,7 +103,9 @@ func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1
 	return ownerRef, nil
 }
 
-func ownerLabelsForObj(obj ctrlclient.Object) (map[string]string, error) {
+// OwnerLabelsForObj returns the canonical set of labels that should be set on
+// all secrets created/owned by VSO.
+func OwnerLabelsForObj(obj ctrlclient.Object) (map[string]string, error) {
 	uid := string(obj.GetUID())
 	if uid == "" {
 		return nil, fmt.Errorf("object %q has an empty UID", ctrlclient.ObjectKeyFromObject(obj))
@@ -120,7 +122,7 @@ func ownerLabelsForObj(obj ctrlclient.Object) (map[string]string, error) {
 
 func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, error) {
 	m := ctrlclient.MatchingLabels{}
-	l, err := ownerLabelsForObj(obj)
+	l, err := OwnerLabelsForObj(obj)
 	if err != nil {
 		return m, err
 	}
@@ -289,7 +291,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		labels[k] = v
 	}
 
-	ownerLabels, err := ownerLabelsForObj(obj)
+	ownerLabels, err := OwnerLabelsForObj(obj)
 	// always add the "owner" labels last to guard against intersections with meta.Destination.Labels
 	for k, v := range ownerLabels {
 		_, ok := labels[k]
