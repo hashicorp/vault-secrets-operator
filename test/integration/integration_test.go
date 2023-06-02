@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
@@ -304,7 +305,9 @@ type dynamicK8SOutputs struct {
 	DeploymentName   string   `json:"deployment_name"`
 }
 
-func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int) {
+func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
+	delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int,
+) {
 	t.Helper()
 
 	namespace := vdsObj.GetNamespace()
@@ -329,35 +332,37 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 			}
 			assert.Equal(t, expected, actual)
 
-			assertSyncableSecret(t, vdsObj,
-				"secrets.hashicorp.com/v1alpha1",
-				"VaultDynamicSecret", sec)
+			assertSyncableSecret(t, client, vdsObj, sec)
 
 			return "", nil
 		})
 }
 
-func assertSyncableSecret(t *testing.T, obj ctrlclient.Object, expectedAPIVersion, expectedKind string, sec *corev1.Secret) {
+func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient.Object, sec *corev1.Secret) {
 	t.Helper()
 
 	meta, err := helpers.NewSyncableSecretMetaData(obj)
 	require.NoError(t, err)
 
 	if meta.Destination.Create {
-		assert.Equal(t, helpers.OwnerLabels, sec.Labels,
+		expectedOwnerLabels, err := helpers.OwnerLabelsForObj(obj)
+		if assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, expectedOwnerLabels, sec.Labels,
 			"expected owner labels not set on %s",
 			ctrlclient.ObjectKeyFromObject(sec))
 
+		gvk, err := apiutil.GVKForObject(obj, client.Scheme())
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		expectedAPIVersion, expectedKind := gvk.ToAPIVersionAndKind()
 		// check the OwnerReferences
 		expectedOwnerRefs := []v1.OwnerReference{
 			{
-				// For some reason TypeMeta is empty when using the ctrlclient.Client
-				// from within the tests. So we have to hard code APIVersion and Kind.
-				// There are numerous related GH issues for this:
-				// Normally it should be:
-				// APIVersion: meta.APIVersion,
-				// Kind:       meta.Kind,
-				// e.g. https://github.com/kubernetes/client-go/issues/541
 				APIVersion: expectedAPIVersion,
 				Kind:       expectedKind,
 				Name:       obj.GetName(),

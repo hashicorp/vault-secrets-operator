@@ -237,9 +237,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		if !assert.NoError(t, err) {
 			return
 		}
-		assertSyncableSecret(t, obj,
-			"secrets.hashicorp.com/v1alpha1",
-			"VaultStaticSecret", secret)
+		assertSyncableSecret(t, crdClient, obj, secret)
 	}
 
 	for idx, tt := range auths {
