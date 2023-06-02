@@ -94,6 +94,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"run_aws_static_creds_test":    runAWSStaticTest,
 			"irsa_assumable_role_arn":      os.Getenv("AWS_IRSA_ROLE"),
 			"aws_account_id":               os.Getenv("AWS_ACCOUNT_ID"),
+			"aws_region":                   awsRegion,
 		},
 	}
 	if operatorImageRepo != "" {

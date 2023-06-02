@@ -143,6 +143,14 @@ make -f aws.mk build-push integration-test-eks
 make -f aws.mk build-push integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```
 
+#### AWS auth test with static credentials
+
+```shell
+# Set SKIP_AWS_STATIC_CREDS_TEST=false and specify the terraform variables aws_access_key_id,
+# aws_secret_access_key, and aws_static_creds_role ARN for a user in AWS.
+make -f aws.mk integration-test-eks TESTARGS="-run TestVaultAuth" SKIP_AWS_STATIC_CREDS_TEST=false TF_VAR_aws_access_key_id=... TF_VAR_aws_secret_access_key="..." TF_VAR_aws_static_creds_role="arn:aws:iam::..."
+```
+
 ### Integration Tests in GKE
 
 ```shell
