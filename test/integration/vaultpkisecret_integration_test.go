@@ -286,9 +286,7 @@ func TestVaultPKISecret(t *testing.T) {
 					require.NoError(t, err)
 					assert.NotEmpty(t, serialNumber)
 
-					assertSyncableSecret(t, vpsObj,
-						"secrets.hashicorp.com/v1alpha1",
-						"VaultPKISecret", secret)
+					assertSyncableSecret(t, crdClient, vpsObj, secret)
 
 					if vpsObj.Spec.Destination.Create {
 						expectedType := vpsObj.Spec.Destination.Type
@@ -306,9 +304,7 @@ func TestVaultPKISecret(t *testing.T) {
 					require.NoError(t, err)
 					assert.NotEmpty(t, newSerialNumber)
 
-					assertSyncableSecret(t, vpsObj,
-						"secrets.hashicorp.com/v1alpha1",
-						"VaultPKISecret", secret)
+					assertSyncableSecret(t, crdClient, vpsObj, secret)
 
 					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
 						awaitRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
