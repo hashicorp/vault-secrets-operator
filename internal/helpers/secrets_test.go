@@ -219,6 +219,16 @@ func TestSyncSecret(t *testing.T) {
 		ObjectMeta: defaultOwner.ObjectMeta,
 	}
 
+	invalidEmptyDestName := &secretsv1alpha1.VaultDynamicSecret{
+		TypeMeta:   defaultOwner.TypeMeta,
+		ObjectMeta: defaultOwner.ObjectMeta,
+		Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+			Destination: secretsv1alpha1.Destination{
+				Create: true,
+			},
+		},
+	}
+
 	invalidEmptyNamespace := &secretsv1alpha1.VaultDynamicSecret{
 		TypeMeta:   defaultOwner.TypeMeta,
 		ObjectMeta: defaultOwner.ObjectMeta,
@@ -255,7 +265,7 @@ func TestSyncSecret(t *testing.T) {
 		{
 			name:   "invalid-dest-name-empty",
 			client: clientBuilder.Build(),
-			obj:    invalidNoDest,
+			obj:    invalidEmptyDestName,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.ErrorIs(t, err, common.InvalidObjectKeyErrorEmptyName)
 			},
