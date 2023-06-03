@@ -18,7 +18,10 @@ import (
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
@@ -362,6 +365,24 @@ func TestVaultAuthMethods(t *testing.T) {
 			"VaultStaticSecret", secret)
 	}
 
+	logEvents := func(t *testing.T, vss *secretsv1alpha1.VaultStaticSecret) {
+		eventList := &corev1.EventList{}
+		listOptions := &client.ListOptions{
+			Namespace:     vss.Namespace,
+			FieldSelector: fields.OneTermEqualSelector("involvedObject.name", vss.Name),
+		}
+		if err := crdClient.List(ctx, eventList, listOptions); err != nil {
+			t.Logf("event list error: %q", err)
+			t.Fail()
+		}
+		for _, event := range eventList.Items {
+			if event.Type != corev1.EventTypeNormal {
+				t.Logf("EVENT %q, name %q, reason %q, message %q", event.Type,
+					event.InvolvedObject.Name, event.Reason, event.Message)
+			}
+		}
+	}
+
 	for idx, tt := range auths {
 		t.Run(tt.vaultAuth.ObjectMeta.Name, func(t *testing.T) {
 			if run, why := tt.shouldRun(); !run {
@@ -373,6 +394,9 @@ func TestVaultAuthMethods(t *testing.T) {
 			require.Nil(t, crdClient.Create(ctx, secrets[idx]))
 			// Assert that the Kube secret exists + has correct Data.
 			assertSync(t, secrets[idx])
+			// Log events from the VaultStaticSecret to aid in debugging if the
+			// test case fails
+			logEvents(t, secrets[idx])
 			t.Cleanup(func() {
 				deleteKV(t, secrets[idx])
 			})

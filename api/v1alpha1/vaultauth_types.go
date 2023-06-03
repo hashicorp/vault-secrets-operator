@@ -59,11 +59,11 @@ type VaultAuthConfigAppRole struct {
 // VaultAuthConfigAWS provides VaultAuth configuration options needed for
 // authenticating to Vault via an AWS AuthMethod
 type VaultAuthConfigAWS struct {
-	// Role to use for authenticating to Vault.
+	// Vault role to use for authenticating
 	Role string `json:"role"`
-	// Region to use for signing the authentication request
+	// AWS Region to use for signing the authentication request
 	Region string `json:"region,omitempty"`
-	// HeaderValue - the Vault header value to include in the STS signing request
+	// The Vault header value to include in the STS signing request
 	HeaderValue string `json:"headerValue,omitempty"`
 
 	// The role session name to use when creating a webidentity provider

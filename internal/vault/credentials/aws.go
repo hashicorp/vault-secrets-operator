@@ -126,7 +126,7 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	// awsutil functions
 	// config.Logger = ...
 
-	creds, err := config.GenerateCredentialChain()
+	creds, err := config.GenerateCredentialChain(awsutil.WithSkipWebIdentityValidity(true))
 	if err != nil {
 		return nil, err
 	}
