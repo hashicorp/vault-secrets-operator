@@ -225,10 +225,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 				"password": 20,
 			},
 			expectedStatic: map[string]int{
-				"_raw":                158,
+				// the _raw and ttl keys are only tested for their presence in
+				// assertDynamicSecret, so no need to include them here.
 				"password":            20,
 				"rotation_period":     2,
-				"ttl":                 2,
 				"username":            24,
 				"last_vault_rotation": 30,
 			},
@@ -238,10 +238,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 			createStatic: 5,
 			authObj:      auths[0],
 			expectedStatic: map[string]int{
-				"_raw":                158,
+				// the _raw and ttl keys are only tested for their presence in
+				// assertDynamicSecret, so no need to include them here.
 				"password":            20,
 				"rotation_period":     2,
-				"ttl":                 2,
 				"username":            24,
 				"last_vault_rotation": 30,
 			},
@@ -400,9 +400,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					}
 
 					if vdsObjFinal.Spec.Destination.Create && !t.Failed() {
-						if !t.Failed() {
-							assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
-						}
+						assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
 					}
 				})
 			}

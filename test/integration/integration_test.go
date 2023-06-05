@@ -317,6 +317,15 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 	opts := &k8s.KubectlOptions{
 		Namespace: namespace,
 	}
+
+	expectedPresentOnly := make(map[string]int)
+	if vdsObj.Spec.StaticCreds {
+		// these keys typically have variable values that make them difficult to compare,
+		// we can ensure that they are at least present in the resulting Secret data.
+		expectedPresentOnly["_raw"] = 1
+		expectedPresentOnly["ttl"] = 1
+	}
+
 	retry.DoWithRetry(t,
 		"wait for dynamic secret sync", maxRetries, delay,
 		func() (string, error) {
@@ -328,11 +337,18 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 				return "", fmt.Errorf("empty data for secret %s: %#v", sec, sec)
 			}
 
+			actualPresentOnly := make(map[string]int)
 			actual := make(map[string]int)
 			for f, b := range sec.Data {
+				if v, ok := expectedPresentOnly[f]; ok {
+					actualPresentOnly[f] = v
+					continue
+				}
 				actual[f] = len(b)
 			}
-			assert.Equal(t, expected, actual)
+
+			assert.Equal(t, expectedPresentOnly, actualPresentOnly)
+			assert.Equal(t, expected, actual, "actual %#v, expected %#v", sec.Data, expected)
 
 			assertSyncableSecret(t, client, vdsObj, sec)
 
