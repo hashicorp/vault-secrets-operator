@@ -171,6 +171,7 @@ EOT
 
 # aws auth config
 resource "kubernetes_service_account" "irsa_assumable" {
+  count = var.run_aws_tests ? 1 : 0
   metadata {
     name      = "irsa-test"
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
