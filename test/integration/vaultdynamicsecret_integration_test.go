@@ -369,7 +369,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 							var vdsObj secretsv1alpha1.VaultDynamicSecret
 							require.NoError(t, crdClient.Get(ctx, objKey, &vdsObj))
 							if vdsObj.Spec.StaticCreds {
-								if vdsObj.Status.StaticMeta.TTL == 0 {
+								if vdsObj.Status.StaticCredsMetaData.TTL == 0 {
 									return fmt.Errorf("expected TTL be greater than 0 on %s", objKey)
 								}
 							} else {

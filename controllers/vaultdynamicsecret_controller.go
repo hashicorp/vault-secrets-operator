@@ -145,7 +145,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, err
 			}
 
-			o.Status.StaticMeta = secretsv1alpha1.VaultStaticMeta{}
+			o.Status.StaticCredsMetaData = secretsv1alpha1.VaultStaticMeta{}
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = time.Now().Unix()
 			if err := r.updateStatus(ctx, o); err != nil {
@@ -202,9 +202,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 			"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
 	} else if o.Spec.StaticCreds {
-		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticMeta.LastVaultRotation ?
-		if o.Status.StaticMeta.TTL > 0 {
-			horizon = time.Duration(o.Status.StaticMeta.TTL) * time.Second
+		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
+		if o.Status.StaticCredsMetaData.TTL > 0 {
+			horizon = time.Duration(o.Status.StaticCredsMetaData.TTL) * time.Second
 		} else {
 			horizon = time.Second * 1
 		}
@@ -213,7 +213,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		horizon += time.Duration(jitter)
 		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 			"Secret synced, staticCreds=%t, horizon=%s, ttl=%d",
-			o.Spec.StaticCreds, horizon, o.Status.StaticMeta.TTL)
+			o.Spec.StaticCreds, horizon, o.Status.StaticCredsMetaData.TTL)
 	}
 
 	if doRolloutRestart {
@@ -302,7 +302,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 		if v, ok := resp.Data["last_vault_rotation"]; ok && v != nil {
 			ts, err := time.Parse(time.RFC3339Nano, v.(string))
 			if err == nil {
-				o.Status.StaticMeta.LastVaultRotation = ts.Unix()
+				o.Status.StaticCredsMetaData.LastVaultRotation = ts.Unix()
 			}
 		}
 		if v, ok := resp.Data["rotation_period"]; ok && v != nil {
@@ -310,7 +310,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 			case json.Number:
 				period, err := t.Int64()
 				if err == nil {
-					o.Status.StaticMeta.RotationPeriod = period
+					o.Status.StaticCredsMetaData.RotationPeriod = period
 				}
 			}
 		}
@@ -319,7 +319,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 			case json.Number:
 				ttl, err := t.Int64()
 				if err == nil {
-					o.Status.StaticMeta.TTL = ttl
+					o.Status.StaticCredsMetaData.TTL = ttl
 				}
 			}
 		}

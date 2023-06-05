@@ -69,9 +69,8 @@ type VaultDynamicSecretStatus struct {
 	LastGeneration int64 `json:"lastGeneration"`
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
-	// StaticMeta for the Vault secret.
-	// TODO: come up with a better name
-	StaticMeta VaultStaticMeta `json:"staticMeta,omitempty"`
+	// StaticCredsMetaData contains the static creds response meta-data
+	StaticCredsMetaData VaultStaticMeta `json:"staticMeta,omitempty"`
 	// LastRuntimePodUID used for tracking the transition from one Pod to the next.
 	// It is used to mitigate the effects of a Vault lease renewal storm.
 	LastRuntimePodUID types.UID `json:"lastRuntimePodUID,omitempty"`
