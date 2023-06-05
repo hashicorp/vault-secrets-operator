@@ -39,8 +39,8 @@ integration-test-eks: build-push ## Run integration tests in the EKS cluster
 	aws eks --region $(AWS_REGION) update-kubeconfig --name $(EKS_CLUSTER_NAME)
 	$(MAKE) port-forward &
 	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
-	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(EKS_OIDC_URL) VAULT_OIDC_CA=false \
-	AWS_REGION=$(AWS_REGION) AWS_IRSA_ROLE=$(IRSA_ROLE) AWS_ACCOUNT_ID=$(ACCOUNT_ID)
+		IMG=$(IMG) VAULT_OIDC_DISC_URL=$(EKS_OIDC_URL) VAULT_OIDC_CA=false \
+		AWS_REGION=$(AWS_REGION) AWS_IRSA_ROLE=$(IRSA_ROLE) AWS_ACCOUNT_ID=$(ACCOUNT_ID)
 
 .PHONY: destroy-ecr
 destroy-ecr: ## Destroy the ECR repository
