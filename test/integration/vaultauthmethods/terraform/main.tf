@@ -182,13 +182,15 @@ resource "kubernetes_service_account" "irsa_assumable" {
 }
 
 resource "vault_auth_backend" "aws" {
-  count = var.run_aws_tests ? 1 : 0
-  type  = "aws"
-  path  = "aws"
+  count     = var.run_aws_tests ? 1 : 0
+  namespace = local.namespace
+  type      = "aws"
+  path      = "aws"
 }
 
 resource "vault_aws_auth_backend_client" "aws" {
   count        = var.run_aws_tests ? 1 : 0
+  namespace    = local.namespace
   backend      = one(vault_auth_backend.aws).path
   sts_region   = var.aws_region
   sts_endpoint = "https://sts.${var.aws_region}.amazonaws.com"
@@ -196,6 +198,7 @@ resource "vault_aws_auth_backend_client" "aws" {
 
 resource "vault_aws_auth_backend_role" "aws-irsa" {
   count                    = var.run_aws_tests ? 1 : 0
+  namespace                = local.namespace
   backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-irsa"
   auth_type                = "iam"
@@ -205,6 +208,7 @@ resource "vault_aws_auth_backend_role" "aws-irsa" {
 
 resource "vault_aws_auth_backend_role" "aws-node" {
   count                    = var.run_aws_tests ? 1 : 0
+  namespace                = local.namespace
   backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-node"
   auth_type                = "iam"
@@ -214,6 +218,7 @@ resource "vault_aws_auth_backend_role" "aws-node" {
 
 resource "vault_aws_auth_backend_role" "aws-instance-profile" {
   count                           = var.run_aws_tests ? 1 : 0
+  namespace                       = local.namespace
   backend                         = one(vault_auth_backend.aws).path
   role                            = "${var.auth_role}-aws-instance-profile"
   auth_type                       = "iam"
@@ -226,6 +231,7 @@ resource "vault_aws_auth_backend_role" "aws-instance-profile" {
 
 resource "vault_aws_auth_backend_role" "aws-static" {
   count                    = var.run_aws_static_creds_test ? 1 : 0
+  namespace                = local.namespace
   backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-static"
   auth_type                = "iam"
