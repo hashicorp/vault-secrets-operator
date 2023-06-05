@@ -57,7 +57,10 @@ type VaultAuthConfigAppRole struct {
 }
 
 // VaultAuthConfigAWS provides VaultAuth configuration options needed for
-// authenticating to Vault via an AWS AuthMethod
+// authenticating to Vault via an AWS AuthMethod. Will use creds from
+// `SecretRef` or `IRSAServiceAccount` if provided, in that order. If neither
+// are provided, the underlying node role or instance profile will be used to
+// authenticate to Vault.
 type VaultAuthConfigAWS struct {
 	// Vault role to use for authenticating
 	Role string `json:"role"`
@@ -75,10 +78,10 @@ type VaultAuthConfigAWS struct {
 	// The IAM endpoint to use; if not set will use the default
 	IAMEndpoint string `json:"iamEndpoint,omitempty"`
 
-	// AWSCredsRef is the name of a Kubernetes Secret which holds credentials
-	// for AWS. Expected keys include `access_key_id`, `secret_access_key`,
+	// SecretRef is the name of a Kubernetes Secret which holds credentials for
+	// AWS. Expected keys include `access_key_id`, `secret_access_key`,
 	// `session_token`
-	AWSCredsRef string `json:"awsCredsRef,omitempty"`
+	SecretRef string `json:"secretRef,omitempty"`
 
 	// IRSAServiceAccount name to use with IAM Roles for Service Accounts
 	// (IRSA), and should be annotated with "eks.amazonaws.com/role-arn". This

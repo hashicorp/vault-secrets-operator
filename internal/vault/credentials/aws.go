@@ -7,13 +7,14 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-secure-stdlib/awsutil"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/hashicorp/go-secure-stdlib/awsutil"
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
@@ -46,12 +47,12 @@ func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
-	if l.authObj.Spec.AWS.AWSCredsRef != "" {
-		// If AWSCredsRef is not empty, get the secret and read the creds from
+	if l.authObj.Spec.AWS.SecretRef != "" {
+		// If SecretRef is not empty, get the secret and read the creds from
 		// there, use the secret UID as l.uid
 		key := ctrlclient.ObjectKey{
 			Namespace: l.providerNamespace,
-			Name:      l.authObj.Spec.AWS.AWSCredsRef,
+			Name:      l.authObj.Spec.AWS.SecretRef,
 		}
 		credsSecret, err := getSecret(ctx, client, key)
 		if err != nil {
@@ -65,7 +66,7 @@ func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			Namespace: l.providerNamespace,
 			Name:      l.authObj.Spec.AWS.IRSAServiceAccount,
 		}
-		irsaServiceAccount, err := getSA(ctx, client, key)
+		irsaServiceAccount, err := getServiceAccount(ctx, client, key)
 		if err != nil {
 			return err
 		}
@@ -85,24 +86,23 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	irsaToken := ""
 	var irsaConfig *IRSAConfig
 
-	if l.authObj.Spec.AWS.AWSCredsRef != "" {
+	if l.authObj.Spec.AWS.SecretRef != "" {
 		var err error
 		key := ctrlclient.ObjectKey{
 			Namespace: l.providerNamespace,
-			Name:      l.authObj.Spec.AWS.AWSCredsRef,
+			Name:      l.authObj.Spec.AWS.SecretRef,
 		}
 		credsSecret, err = getSecret(ctx, client, key)
 		if err != nil {
-			logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AWS.AWSCredsRef)
+			logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AWS.SecretRef)
 			return nil, err
 		}
-	}
-	if l.authObj.Spec.AWS.IRSAServiceAccount != "" {
+	} else if l.authObj.Spec.AWS.IRSAServiceAccount != "" {
 		key := ctrlclient.ObjectKey{
 			Namespace: l.providerNamespace,
 			Name:      l.authObj.Spec.AWS.IRSAServiceAccount,
 		}
-		irsaServiceAccount, err := getSA(ctx, client, key)
+		irsaServiceAccount, err := getServiceAccount(ctx, client, key)
 		if err != nil {
 			logger.Error(err, "Failed to get IRSA service account", "service_account", l.authObj.Spec.AWS.IRSAServiceAccount)
 			return nil, err
@@ -124,7 +124,8 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 
 	// TODO: convert logr to something compatible with hclog for use in the
 	// awsutil functions
-	// config.Logger = ...
+	config.Logger = hclog.Default()
+	config.Logger.SetLevel(hclog.Debug)
 
 	creds, err := config.GenerateCredentialChain(awsutil.WithSkipWebIdentityValidity(true))
 	if err != nil {

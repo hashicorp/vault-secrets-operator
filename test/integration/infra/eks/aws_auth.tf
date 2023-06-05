@@ -8,7 +8,7 @@ module "iam_assumable_role" {
   role_name                      = "iam-irsa-role-${random_string.suffix.result}"
   provider_url                   = replace(module.eks.cluster_oidc_issuer_url, "https://", "")
   role_policy_arns               = ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
-  oidc_subjects_with_wildcards   = ["system:serviceaccount:*:iam-irsa"]
+  oidc_subjects_with_wildcards   = ["system:serviceaccount:*:irsa-test"]
   oidc_fully_qualified_audiences = ["sts.amazonaws.com"]
 }
 

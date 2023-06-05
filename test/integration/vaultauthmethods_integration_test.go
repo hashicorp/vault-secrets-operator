@@ -293,9 +293,9 @@ func TestVaultAuthMethods(t *testing.T) {
 					Method:    "aws",
 					Mount:     "aws",
 					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
-						Role:        outputs.AuthRole + "-aws-static",
-						Region:      awsRegion,
-						AWSCredsRef: "aws-static-creds",
+						Role:      outputs.AuthRole + "-aws-static",
+						Region:    awsRegion,
+						SecretRef: "aws-static-creds",
 					},
 				},
 			},
