@@ -5,13 +5,15 @@ package credentials
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-secure-stdlib/awsutil"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -73,8 +75,13 @@ func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 		l.uid = irsaServiceAccount.UID
 	} else {
 		// At this point either the node role or the instance profile will be
-		// used for credentials, so just generate a new UID
-		l.uid = uuid.NewUUID()
+		// used for credentials, so generate a new UID based on the spec, name,
+		// namespace, and UID
+		newUUID, err := makeVaultAuthUUID(l.authObj)
+		if err != nil {
+			return err
+		}
+		l.uid = newUUID
 	}
 
 	return nil
@@ -218,4 +225,21 @@ func getIRSAConfig(annotations map[string]string) *IRSAConfig {
 	}
 
 	return config
+}
+
+func makeVaultAuthUUID(vaultAuth *secretsv1alpha1.VaultAuth) (types.UID, error) {
+	hashCopy := &secretsv1alpha1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			UID:       vaultAuth.UID,
+			Name:      vaultAuth.Name,
+			Namespace: vaultAuth.Namespace,
+		},
+		Spec: *vaultAuth.Spec.DeepCopy(),
+	}
+	jBytes, err := json.Marshal(hashCopy)
+	if err != nil {
+		return "", err
+	}
+	newUUID := uuid.NewSHA1(uuid.NameSpaceOID, jBytes)
+	return types.UID(newUUID.String()), nil
 }
