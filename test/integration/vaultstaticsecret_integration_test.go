@@ -372,9 +372,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, data)
 		if assert.NoError(t, err) {
-			assertSyncableSecret(t, obj,
-				"secrets.hashicorp.com/v1alpha1",
-				"VaultStaticSecret", secret)
+			assertSyncableSecret(t, crdClient, obj, secret)
 			if obj.Spec.HMACSecretData {
 				assertHMAC(t, ctx, crdClient, obj, expectInitial)
 			} else {

@@ -301,12 +301,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					// capture obj for parallel test
 					obj := obj
 					t.Parallel()
-					assertDynamicSecret(t,
-						tfOptions.MaxRetries,
-						tfOptions.TimeBetweenRetries,
-						obj,
-						tt.expected,
-					)
+					assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expected)
 
 					if t.Failed() {
 						return
