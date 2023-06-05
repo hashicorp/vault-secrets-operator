@@ -145,7 +145,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, err
 			}
 
-			o.Status.StaticCredsMetaData = secretsv1alpha1.VaultStaticMeta{}
+			o.Status.StaticCredsMetaData = secretsv1alpha1.VaultStaticCredsMetaData{}
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = time.Now().Unix()
 			if err := r.updateStatus(ctx, o); err != nil {

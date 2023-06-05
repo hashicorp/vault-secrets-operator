@@ -70,7 +70,7 @@ type VaultDynamicSecretStatus struct {
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
 	// StaticCredsMetaData contains the static creds response meta-data
-	StaticCredsMetaData VaultStaticMeta `json:"staticMeta,omitempty"`
+	StaticCredsMetaData VaultStaticCredsMetaData `json:"staticMeta,omitempty"`
 	// LastRuntimePodUID used for tracking the transition from one Pod to the next.
 	// It is used to mitigate the effects of a Vault lease renewal storm.
 	LastRuntimePodUID types.UID `json:"lastRuntimePodUID,omitempty"`
@@ -87,7 +87,7 @@ type VaultSecretLease struct {
 	RequestID string `json:"requestID"`
 }
 
-type VaultStaticMeta struct {
+type VaultStaticCredsMetaData struct {
 	// LastVaultRotation represents the last time Vault rotated the password
 	LastVaultRotation int64 `json:"lastVaultRotation"`
 	// RotationPeriod is number in seconds between each rotation, effectively a
