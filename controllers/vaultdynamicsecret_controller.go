@@ -134,7 +134,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 		// Renew the lease and return from Reconcile if the lease is successfully renewed.
 		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
-			if !r.isRenewableLease(secretLease, o) {
+			if !r.isRenewableLease(secretLease, o, false) {
 				return ctrl.Result{}, nil
 			}
 
@@ -196,7 +196,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	reason := consts.ReasonSecretSynced
 	var horizon time.Duration
-	isRenewable := r.isRenewableLease(secretLease, o)
+	isRenewable := r.isRenewableLease(secretLease, o, false)
 	if isRenewable {
 		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
 		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
@@ -208,7 +208,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if !r.isStaticCreds(&staticCredsMeta) {
 			horizon = 0
 			logger.Info("Vault response data does not support static-creds semantics",
-				"allowStaticCreds", o.Spec.AllowStaticCreds, "horizon", horizon,
+				"allowStaticCreds", o.Spec.AllowStaticCreds,
+				"horizon", horizon,
+				"status", o.Status,
 			)
 		} else {
 			if staticCredsMeta.TTL > 0 {
@@ -232,24 +234,25 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	if (!r.isRenewableLease(secretLease, o) && !o.Spec.AllowStaticCreds) || horizon.Seconds() == 0 {
+	if (!r.isRenewableLease(secretLease, o, true) && !o.Spec.AllowStaticCreds) || horizon.Seconds() == 0 {
 		// no need to requeue
+		logger.Info("Vault secret does not support periodic renewal/refresh via reconciliation",
+			"requeue", false, "horizon", horizon)
 		return ctrl.Result{}, nil
 	}
 
 	return ctrl.Result{RequeueAfter: horizon}, nil
 }
 
-func (r *VaultDynamicSecretReconciler) isRenewableLease(secretLease *secretsv1alpha1.VaultSecretLease, o *secretsv1alpha1.VaultDynamicSecret) bool {
-	if !secretLease.Renewable {
-		if !o.Spec.AllowStaticCreds {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal,
-				"Lease is not renewable, staticCreds=%t, info=%#v",
-				o.Spec.AllowStaticCreds, secretLease)
-		}
-		return false
+func (r *VaultDynamicSecretReconciler) isRenewableLease(secretLease *secretsv1alpha1.VaultSecretLease, o *secretsv1alpha1.VaultDynamicSecret, skipEventRecording bool) bool {
+	renewable := secretLease.Renewable
+	if !renewable && !skipEventRecording && !o.Spec.AllowStaticCreds {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal,
+			"Lease is not renewable, staticCreds=%t, info=%#v",
+			o.Spec.AllowStaticCreds, secretLease)
 	}
-	return true
+
+	return renewable
 }
 
 func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1alpha1.VaultStaticCredsMetaData) bool {
