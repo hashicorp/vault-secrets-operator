@@ -368,6 +368,8 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 
 	logEvents := func(t *testing.T, vss *secretsv1alpha1.VaultStaticSecret) {
+		t.Helper()
+
 		eventList := &corev1.EventList{}
 		listOptions := &client.ListOptions{
 			Namespace:     vss.Namespace,
@@ -410,6 +412,8 @@ func alwaysRun(_ *testing.T) (bool, string) { return true, "" }
 
 // checks whether or not to run the aws tests
 func runAWS(t *testing.T) (bool, string) {
+	t.Helper()
+
 	if v := os.Getenv(envSkipAWS); v == "true" {
 		return false, envSkipAWS + " is set to 'true'"
 	}
@@ -418,6 +422,8 @@ func runAWS(t *testing.T) (bool, string) {
 
 // checks whether or not to run the static creds test
 func runAWSStaticCreds(t *testing.T) (bool, string) {
+	t.Helper()
+
 	if run, why := runAWS(t); !run {
 		return run, why
 	}
