@@ -246,8 +246,9 @@ resource "kubernetes_secret" "static-creds" {
     name      = "aws-static-creds"
   }
   data = {
-    "access_key_id"     = "${var.aws_access_key_id}"
-    "secret_access_key" = "${var.aws_secret_access_key}"
+    "access_key_id"     = "${var.test_aws_access_key_id}"
+    "secret_access_key" = "${var.test_aws_secret_access_key}"
+    "session_token"     = "${var.test_aws_session_token}"
   }
 }
 

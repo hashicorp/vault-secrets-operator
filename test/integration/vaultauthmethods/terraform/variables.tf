@@ -96,13 +96,19 @@ variable "aws_account_id" {
   default = ""
 }
 
-variable "aws_access_key_id" {
+variable "test_aws_access_key_id" {
   description = "AWS_ACCESS_KEY_ID for testing static creds with AWS auth"
   default     = ""
 }
 
-variable "aws_secret_access_key" {
+variable "test_aws_secret_access_key" {
   description = "AWS_SECRET_ACCESS_KEY for testing static creds with AWS auth"
+  default     = ""
+  sensitive   = true
+}
+
+variable "test_aws_session_token" {
+  description = "AWS_SESSION_TOKEN for testing static creds with AWS auth"
   default     = ""
   sensitive   = true
 }

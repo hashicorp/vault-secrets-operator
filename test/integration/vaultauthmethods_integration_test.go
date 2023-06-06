@@ -53,11 +53,11 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 	appRoleMountPath := "approle"
 	runAWSTests := true
-	if run, _ := runAWS(); !run {
+	if run, _ := runAWS(t); !run {
 		runAWSTests = false
 	}
 	runAWSStaticTest := true
-	if run, _ := runAWSStaticCreds(); !run {
+	if run, _ := runAWSStaticCreds(t); !run {
 		runAWSStaticTest = false
 	}
 	awsRegion := defaultAWSRegion
@@ -95,6 +95,10 @@ func TestVaultAuthMethods(t *testing.T) {
 			"vault_oidc_ca":                vault_oidc_ca,
 			"run_aws_tests":                runAWSTests,
 			"run_aws_static_creds_test":    runAWSStaticTest,
+			"test_aws_access_key_id":       os.Getenv("TEST_AWS_ACCESS_KEY_ID"),
+			"test_aws_secret_access_key":   os.Getenv("TEST_AWS_SECRET_ACCESS_KEY"),
+			"test_aws_session_token":       os.Getenv("TEST_AWS_SESSION_TOKEN"),
+			"aws_static_creds_role":        os.Getenv("AWS_STATIC_CREDS_ROLE"),
 			"irsa_assumable_role_arn":      os.Getenv("AWS_IRSA_ROLE"),
 			"aws_account_id":               os.Getenv("AWS_ACCOUNT_ID"),
 			"aws_region":                   awsRegion,
@@ -147,7 +151,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	created = append(created, secretObj)
 
 	auths := []struct {
-		shouldRun func() (bool, string)
+		shouldRun func(*testing.T) (bool, string)
 		vaultAuth *secretsv1alpha1.VaultAuth
 	}{
 		{
@@ -305,7 +309,7 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	// Apply all the Auth Methods
 	for _, a := range auths {
-		if run, why := a.shouldRun(); !run {
+		if run, why := a.shouldRun(t); !run {
 			t.Log(why)
 			continue
 		}
@@ -315,7 +319,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
-		if run, why := a.shouldRun(); !run {
+		if run, why := a.shouldRun(t); !run {
 			t.Log(why)
 			continue
 		}
@@ -383,7 +387,7 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	for idx, tt := range auths {
 		t.Run(tt.vaultAuth.ObjectMeta.Name, func(t *testing.T) {
-			if run, why := tt.shouldRun(); !run {
+			if run, why := tt.shouldRun(t); !run {
 				t.Skip(why)
 			}
 			// Create the KV secret in Vault.
@@ -402,10 +406,10 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 }
 
-func alwaysRun() (bool, string) { return true, "" }
+func alwaysRun(_ *testing.T) (bool, string) { return true, "" }
 
 // checks whether or not to run the aws tests
-func runAWS() (bool, string) {
+func runAWS(t *testing.T) (bool, string) {
 	if v := os.Getenv(envSkipAWS); v == "true" {
 		return false, envSkipAWS + " is set to 'true'"
 	}
@@ -413,20 +417,21 @@ func runAWS() (bool, string) {
 }
 
 // checks whether or not to run the static creds test
-func runAWSStaticCreds() (bool, string) {
-	if run, why := runAWS(); !run {
+func runAWSStaticCreds(t *testing.T) (bool, string) {
+	if run, why := runAWS(t); !run {
 		return run, why
 	}
 	if v := os.Getenv(envSkipAWSStaticCreds); v == "true" {
 		return false, envSkipAWSStaticCreds + " is set to 'true'"
 	}
 	tfVars := []string{
-		"TF_VAR_aws_access_key_id",
-		"TF_VAR_aws_secret_access_key",
-		"TF_VAR_aws_static_creds_role",
+		"TEST_AWS_ACCESS_KEY_ID",
+		"TEST_AWS_SECRET_ACCESS_KEY",
+		"AWS_STATIC_CREDS_ROLE",
 	}
 	for _, tfv := range tfVars {
 		if v := os.Getenv(tfv); v == "" {
+			t.Fail()
 			return false, tfv + " not set"
 		}
 	}
