@@ -185,11 +185,13 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		authObj  *secretsv1alpha1.VaultAuth
-		expected map[string]int
-		create   int
-		existing []string
+		name           string
+		authObj        *secretsv1alpha1.VaultAuth
+		expected       map[string]int
+		expectedStatic map[string]int
+		create         int
+		createStatic   int
+		existing       []string
 	}{
 		{
 			name:     "existing-only",
@@ -212,14 +214,34 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:     "mixed",
-			create:   5,
-			existing: outputs.K8sDBSecrets,
-			authObj:  auths[0],
+			name:         "mixed",
+			create:       5,
+			createStatic: 5,
+			existing:     outputs.K8sDBSecrets,
+			authObj:      auths[0],
 			expected: map[string]int{
 				"_raw":     100,
 				"username": 51,
 				"password": 20,
+			},
+			expectedStatic: map[string]int{
+				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
+				// assertDynamicSecret, so no need to include them here.
+				"password":        20,
+				"rotation_period": 2,
+				"username":        24,
+			},
+		},
+		{
+			name:         "create-static",
+			createStatic: 5,
+			authObj:      auths[0],
+			expectedStatic: map[string]int{
+				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
+				// assertDynamicSecret, so no need to include them here.
+				"password":        20,
+				"rotation_period": 2,
+				"username":        24,
 			},
 		},
 	}
@@ -290,18 +312,49 @@ func TestVaultDynamicSecret(t *testing.T) {
 				objsCreated = append(objsCreated, vdsObj)
 			}
 
+			for idx := 0; idx < tt.createStatic; idx++ {
+				dest := fmt.Sprintf("%s-create-static-creds-%d", tt.name, idx)
+				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+						Namespace:        outputs.Namespace,
+						Mount:            outputs.DBPath,
+						Path:             "static-creds/" + outputs.DBRoleStatic,
+						AllowStaticCreds: true,
+						Revoke:           false,
+						Destination: secretsv1alpha1.Destination{
+							Name:   dest,
+							Create: true,
+						},
+					},
+				}
+
+				assert.NoError(t, crdClient.Create(ctx, vdsObj))
+				objsCreated = append(objsCreated, vdsObj)
+			}
+
 			var count int
 			for idx, obj := range objsCreated {
 				nameFmt := "existing-dest-%d"
 				if obj.Spec.Destination.Create {
 					nameFmt = "create-dest-%d"
 				}
+				if obj.Spec.AllowStaticCreds {
+					nameFmt = "static-" + nameFmt
+				}
 				count++
 				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
 					// capture obj for parallel test
 					obj := obj
 					t.Parallel()
-					assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expected)
+					if obj.Spec.AllowStaticCreds {
+						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expectedStatic)
+					} else {
+						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expected)
+					}
 
 					if t.Failed() {
 						return
@@ -313,8 +366,15 @@ func TestVaultDynamicSecret(t *testing.T) {
 						func() error {
 							var vdsObj secretsv1alpha1.VaultDynamicSecret
 							require.NoError(t, crdClient.Get(ctx, objKey, &vdsObj))
-							if vdsObj.Status.SecretLease.ID == "" {
-								return fmt.Errorf("expected lease ID to be set on %s", objKey)
+							if vdsObj.Spec.AllowStaticCreds {
+								if vdsObj.Status.StaticCredsMetaData.LastVaultRotation < 1 {
+									return fmt.Errorf("expected LastVaultRotation to be greater than 0 on %s, actual=%d",
+										objKey, vdsObj.Status.StaticCredsMetaData.LastVaultRotation)
+								}
+							} else {
+								if vdsObj.Status.SecretLease.ID == "" {
+									return fmt.Errorf("expected lease ID to be set on %s", objKey)
+								}
 							}
 							vdsObjFinal = &vdsObj
 							return nil
@@ -327,14 +387,17 @@ func TestVaultDynamicSecret(t *testing.T) {
 						"expected Status.LastGeneration")
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
-					assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+					if vdsObjFinal.Spec.AllowStaticCreds {
+						assert.Empty(t, vdsObjFinal.Status.SecretLease.ID)
+					} else {
+						assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+					}
+
 					assertLastRuntimePodUID(t, ctx, crdClient, operatorNS, vdsObjFinal)
 					assertDynamicSecretRotation(t, ctx, crdClient, vdsObjFinal)
 
 					if vdsObjFinal.Spec.Destination.Create && !t.Failed() {
-						if !t.Failed() {
-							assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
-						}
+						assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
 					}
 				})
 			}
@@ -422,8 +485,12 @@ func assertDynamicSecretNewGeneration(t *testing.T,
 			)
 
 			if !t.Failed() {
-				assert.NotEmpty(t, vdsObjUpdated.Status.SecretLease.ID)
-				assert.NotEqual(t, vdsObjUpdated.Status.SecretLease.ID, vdsObjOrig.Status.SecretLease.ID)
+				if vdsObjUpdated.Spec.AllowStaticCreds {
+					assert.Empty(t, vdsObjUpdated.Status.SecretLease.ID)
+				} else {
+					assert.NotEmpty(t, vdsObjUpdated.Status.SecretLease.ID)
+					assert.NotEqual(t, vdsObjUpdated.Status.SecretLease.ID, vdsObjOrig.Status.SecretLease.ID)
+				}
 			}
 		}
 	}
@@ -434,6 +501,14 @@ func assertDynamicSecretNewGeneration(t *testing.T,
 func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 	client ctrlclient.Client, vdsObj *secretsv1alpha1.VaultDynamicSecret,
 ) {
+	bo := backoff.NewConstantBackOff(time.Millisecond * 500)
+	var maxTries uint64
+	if !vdsObj.Spec.AllowStaticCreds {
+		maxTries = uint64(vdsObj.Status.SecretLease.LeaseDuration * 2)
+	} else {
+		maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 2)
+	}
+
 	vClient, err := api.NewClient(api.DefaultConfig())
 	if vdsObj.Spec.Namespace != "" {
 		vClient.SetNamespace(vdsObj.Spec.Namespace)
@@ -442,8 +517,10 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 		return
 	}
 	// revoke the lease
-	if !assert.NoError(t, vClient.Sys().Revoke(vdsObj.Status.SecretLease.ID)) {
-		return
+	if !vdsObj.Spec.AllowStaticCreds {
+		if !assert.NoError(t, vClient.Sys().Revoke(vdsObj.Status.SecretLease.ID)) {
+			return
+		}
 	}
 
 	// wait for the rotation
@@ -453,13 +530,17 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 			ctrlclient.ObjectKeyFromObject(vdsObj), &o); err != nil {
 			return backoff.Permanent(err)
 		}
-		if o.Status.SecretLease.ID == vdsObj.Status.SecretLease.ID {
-			return fmt.Errorf("secret never rotated")
+		if !o.Spec.AllowStaticCreds {
+			if o.Status.SecretLease.ID == vdsObj.Status.SecretLease.ID {
+				return fmt.Errorf("leased secret never rotated")
+			}
+		} else {
+			if o.Status.StaticCredsMetaData.LastVaultRotation == vdsObj.Status.StaticCredsMetaData.LastVaultRotation {
+				return fmt.Errorf("static-creds secret never rotated")
+			}
 		}
 		return nil
-	}, backoff.WithMaxRetries(
-		backoff.NewConstantBackOff(time.Millisecond*500),
-		uint64(vdsObj.Status.SecretLease.LeaseDuration*2)),
+	}, backoff.WithMaxRetries(bo, maxTries),
 	)) {
 		return
 	}
