@@ -37,7 +37,13 @@ func (l *LeaseTruncatedError) Error() string {
 // computeMaxJitter with max as 10% of the duration, and jitter a random amount
 // between 0-10%
 func computeMaxJitter(duration time.Duration) (max float64, jitter uint64) {
-	max = 0.1 * float64(duration.Nanoseconds())
+	return computeMaxJitterWithPercent(duration, 0.1)
+}
+
+// computeMaxJitter with max as a percentage (percent) of the duration, and
+// jitter a random amount between 0 up to percent
+func computeMaxJitterWithPercent(duration time.Duration, percent float64) (max float64, jitter uint64) {
+	max = percent * float64(duration.Nanoseconds())
 	u := uint64(max)
 	if u == 0 {
 		jitter = 0

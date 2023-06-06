@@ -16,6 +16,8 @@ locals {
   auth_role_operator = "auth-role-operator"
 
   # db locals
-  postgres_host = "${data.kubernetes_service.postgres.metadata[0].name}.${helm_release.postgres.namespace}.svc.cluster.local:${data.kubernetes_service.postgres.spec[0].port[0].port}"
-  db_role       = "dev-postgres"
+  postgres_host       = "${data.kubernetes_service.postgres.metadata[0].name}.${helm_release.postgres.namespace}.svc.cluster.local:${data.kubernetes_service.postgres.spec[0].port[0].port}"
+  db_role             = "dev-postgres"
+  db_role_static      = "${local.db_role}-static"
+  db_role_static_user = "${local.db_role_static}-user"
 }

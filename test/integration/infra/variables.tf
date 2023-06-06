@@ -30,11 +30,11 @@ variable "vault_image_repo_ent" {
 }
 
 variable "vault_image_tag" {
-  default = "1.12"
+  default = "1.13"
 }
 
 variable "vault_image_tag_ent" {
-  default = "1.12-ent"
+  default = "1.13-ent"
 }
 
 variable "vault_enterprise" {
