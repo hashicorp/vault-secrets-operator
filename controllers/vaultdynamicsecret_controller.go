@@ -108,7 +108,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	doRolloutRestart := doSync && o.Status.LastGeneration > 1
 
 	leaseID := o.Status.SecretLease.ID
-	if !doSync && !o.Spec.StaticCreds && leaseID != "" {
+	if !doSync && !o.Spec.AllowStaticCreds && leaseID != "" {
 		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
@@ -196,24 +196,33 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	reason := consts.ReasonSecretSynced
 	var horizon time.Duration
-	if r.isRenewableLease(secretLease, o) {
+	isRenewable := r.isRenewableLease(secretLease, o)
+	if isRenewable {
 		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
 		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
 		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 			"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
-	} else if o.Spec.StaticCreds {
+	} else if o.Spec.AllowStaticCreds {
 		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
-		if o.Status.StaticCredsMetaData.TTL > 0 {
-			horizon = time.Duration(o.Status.StaticCredsMetaData.TTL) * time.Second
+		staticCredsMeta := o.Status.StaticCredsMetaData
+		if !r.isStaticCreds(&staticCredsMeta) {
+			horizon = 0
+			logger.Info("Vault response data does not support static-creds semantics",
+				"allowStaticCreds", o.Spec.AllowStaticCreds, "horizon", horizon,
+			)
 		} else {
-			horizon = time.Second * 1
-		}
+			if staticCredsMeta.TTL > 0 {
+				horizon = time.Duration(staticCredsMeta.TTL) * time.Second
+			} else {
+				horizon = time.Second * 1
+			}
 
-		_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
-		horizon += time.Duration(jitter)
-		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-			"Secret synced, staticCreds=%t, horizon=%s, ttl=%d",
-			o.Spec.StaticCreds, horizon, o.Status.StaticCredsMetaData.TTL)
+			_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
+			horizon += time.Duration(jitter)
+			r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
+				"Secret synced, isStaticCreds=%t, horizon=%s, ttl=%d",
+				true, horizon, o.Status.StaticCredsMetaData.TTL)
+		}
 	}
 
 	if doRolloutRestart {
@@ -223,7 +232,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	if (!r.isRenewableLease(secretLease, o) && !o.Spec.StaticCreds) || horizon.Seconds() == 0 {
+	if (!r.isRenewableLease(secretLease, o) && !o.Spec.AllowStaticCreds) || horizon.Seconds() == 0 {
 		// no need to requeue
 		return ctrl.Result{}, nil
 	}
@@ -233,14 +242,20 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 func (r *VaultDynamicSecretReconciler) isRenewableLease(secretLease *secretsv1alpha1.VaultSecretLease, o *secretsv1alpha1.VaultDynamicSecret) bool {
 	if !secretLease.Renewable {
-		if !o.Spec.StaticCreds {
+		if !o.Spec.AllowStaticCreds {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal,
 				"Lease is not renewable, staticCreds=%t, info=%#v",
-				o.Spec.StaticCreds, secretLease)
+				o.Spec.AllowStaticCreds, secretLease)
 		}
 		return false
 	}
 	return true
+}
+
+func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1alpha1.VaultStaticCredsMetaData) bool {
+	// the ldap and database engines have minimum rotation period of 5s, requiring a
+	// minimum of 1s should be okay here.
+	return meta.LastVaultRotation > 0 && meta.RotationPeriod > 1
 }
 
 func (r *VaultDynamicSecretReconciler) syncSecret(
@@ -298,7 +313,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 	}
 
 	secretLease := r.getVaultSecretLease(resp)
-	if !secretLease.Renewable && o.Spec.StaticCreds {
+	if !secretLease.Renewable && o.Spec.AllowStaticCreds {
 		if v, ok := resp.Data["last_vault_rotation"]; ok && v != nil {
 			ts, err := time.Parse(time.RFC3339Nano, v.(string))
 			if err == nil {

@@ -46,11 +46,11 @@ type VaultDynamicSecretSpec struct {
 	RenewalPercent int `json:"renewalPercent,omitempty"`
 	// Revoke the existing lease on VDS resource deletion.
 	Revoke bool `json:"revoke,omitempty"`
-	// StaticCreds should be set when syncing credentials that are periodically
+	// AllowStaticCreds should be set when syncing credentials that are periodically
 	// rotated by the Vault server, rather than created upon request. These secrets
 	// are sometimes referred to as "static roles", or "static credentials", with a
 	// request path that contains "static-creds".
-	StaticCreds bool `json:"staticCreds,omitempty"`
+	AllowStaticCreds bool `json:"allowStaticCreds,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will

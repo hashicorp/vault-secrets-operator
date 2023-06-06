@@ -319,7 +319,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 	}
 
 	expectedPresentOnly := make(map[string]int)
-	if vdsObj.Spec.StaticCreds {
+	if vdsObj.Spec.AllowStaticCreds {
 		// these keys typically have variable values that make them difficult to compare,
 		// we can ensure that they are at least present and have a length > 0 in the
 		// resulting Secret data.

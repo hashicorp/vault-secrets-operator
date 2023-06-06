@@ -320,11 +320,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Name:      dest,
 					},
 					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-						Namespace:   outputs.Namespace,
-						Mount:       outputs.DBPath,
-						Path:        "static-creds/" + outputs.DBRoleStatic,
-						StaticCreds: true,
-						Revoke:      false,
+						Namespace:        outputs.Namespace,
+						Mount:            outputs.DBPath,
+						Path:             "static-creds/" + outputs.DBRoleStatic,
+						AllowStaticCreds: true,
+						Revoke:           false,
 						Destination: secretsv1alpha1.Destination{
 							Name:   dest,
 							Create: true,
@@ -342,7 +342,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 				if obj.Spec.Destination.Create {
 					nameFmt = "create-dest-%d"
 				}
-				if obj.Spec.StaticCreds {
+				if obj.Spec.AllowStaticCreds {
 					nameFmt = "static-" + nameFmt
 				}
 				count++
@@ -350,7 +350,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					// capture obj for parallel test
 					obj := obj
 					t.Parallel()
-					if obj.Spec.StaticCreds {
+					if obj.Spec.AllowStaticCreds {
 						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expectedStatic)
 					} else {
 						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expected)
@@ -366,7 +366,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						func() error {
 							var vdsObj secretsv1alpha1.VaultDynamicSecret
 							require.NoError(t, crdClient.Get(ctx, objKey, &vdsObj))
-							if vdsObj.Spec.StaticCreds {
+							if vdsObj.Spec.AllowStaticCreds {
 								if vdsObj.Status.StaticCredsMetaData.TTL == 0 {
 									return fmt.Errorf("expected TTL be greater than 0 on %s", objKey)
 								}
@@ -386,14 +386,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 						"expected Status.LastGeneration")
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
-					if vdsObjFinal.Spec.StaticCreds {
+					if vdsObjFinal.Spec.AllowStaticCreds {
 						assert.Empty(t, vdsObjFinal.Status.SecretLease.ID)
 					} else {
 						assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
 					}
 
 					assertLastRuntimePodUID(t, ctx, crdClient, operatorNS, vdsObjFinal)
-					if !vdsObjFinal.Spec.StaticCreds {
+					if !vdsObjFinal.Spec.AllowStaticCreds {
 						assertDynamicSecretRotation(t, ctx, crdClient, vdsObjFinal)
 					}
 
@@ -486,7 +486,7 @@ func assertDynamicSecretNewGeneration(t *testing.T,
 			)
 
 			if !t.Failed() {
-				if vdsObjUpdated.Spec.StaticCreds {
+				if vdsObjUpdated.Spec.AllowStaticCreds {
 					assert.Empty(t, vdsObjUpdated.Status.SecretLease.ID)
 				} else {
 					assert.NotEmpty(t, vdsObjUpdated.Status.SecretLease.ID)
