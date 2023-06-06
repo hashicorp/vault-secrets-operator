@@ -321,8 +321,10 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 	expectedPresentOnly := make(map[string]int)
 	if vdsObj.Spec.StaticCreds {
 		// these keys typically have variable values that make them difficult to compare,
-		// we can ensure that they are at least present in the resulting Secret data.
+		// we can ensure that they are at least present and have a length > 0 in the
+		// resulting Secret data.
 		expectedPresentOnly["_raw"] = 1
+		expectedPresentOnly["last_vault_rotation"] = 1
 		expectedPresentOnly["ttl"] = 1
 	}
 
@@ -341,14 +343,16 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 			actual := make(map[string]int)
 			for f, b := range sec.Data {
 				if v, ok := expectedPresentOnly[f]; ok {
-					actualPresentOnly[f] = v
+					if len(b) > 0 {
+						actualPresentOnly[f] = v
+					}
 					continue
 				}
 				actual[f] = len(b)
 			}
 
 			assert.Equal(t, expectedPresentOnly, actualPresentOnly)
-			assert.Equal(t, expected, actual, "actual %#v, expected %#v", sec.Data, expected)
+			assert.Equal(t, expected, actual, "actual %#v, expected %#v", actual, expected)
 
 			assertSyncableSecret(t, client, vdsObj, sec)
 
