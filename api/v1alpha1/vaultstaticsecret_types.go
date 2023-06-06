@@ -21,7 +21,7 @@ type VaultStaticSecretSpec struct {
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
 	// Path of the secret in Vault
-	Path string `json:"name"`
+	Path string `json:"path"`
 	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
 	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
 	// +kubebuilder:validation:Minimum=0
