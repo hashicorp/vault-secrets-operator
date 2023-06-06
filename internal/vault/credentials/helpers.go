@@ -48,12 +48,12 @@ func getSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient.Obj
 	return secret, nil
 }
 
-func getServiceAccount(ctx context.Context, client ctrlclient.Client, saKey ctrlclient.ObjectKey) (*corev1.ServiceAccount, error) {
-	if err := common.ValidateObjectKey(saKey); err != nil {
+func getServiceAccount(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.ServiceAccount, error) {
+	if err := common.ValidateObjectKey(key); err != nil {
 		return nil, err
 	}
 	sa := &corev1.ServiceAccount{}
-	if err := client.Get(ctx, saKey, sa); err != nil {
+	if err := client.Get(ctx, key, sa); err != nil {
 		return nil, err
 	}
 

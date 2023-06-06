@@ -6,6 +6,7 @@ package credentials
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -114,7 +115,10 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 			logger.Error(err, "Failed to get IRSA service account", "service_account", l.authObj.Spec.AWS.IRSAServiceAccount)
 			return nil, err
 		}
-		irsaConfig = getIRSAConfig(irsaServiceAccount.Annotations)
+		irsaConfig, err = getIRSAConfig(irsaServiceAccount.Annotations)
+		if err != nil {
+			return nil, err
+		}
 
 		token, err := requestSAToken(ctx, client, irsaServiceAccount, irsaConfig.TokenExpiration, []string{irsaConfig.Audience})
 		if err != nil {
@@ -191,6 +195,7 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 	return config, nil
 }
 
+// IRSAConfig - supported annotations on an IRSA-enabled service account
 type IRSAConfig struct {
 	// eks.amazonaws.com/role-arn
 	RoleARN string
@@ -200,31 +205,34 @@ type IRSAConfig struct {
 	TokenExpiration int64
 }
 
-func getIRSAConfig(annotations map[string]string) *IRSAConfig {
+func getIRSAConfig(annotations map[string]string) (*IRSAConfig, error) {
 	// Set defaults
 	config := &IRSAConfig{
 		Audience:        AWSDefaultAudience,
 		TokenExpiration: AWSDefaultTokenExpiration,
 	}
 
-	// Set the role arn
+	// Set the role arn (required)
 	if v, ok := annotations[AWSAnnotationRole]; ok {
 		config.RoleARN = v
+	} else {
+		return nil, fmt.Errorf("missing %q annotation", AWSAnnotationRole)
 	}
 
-	// Override defaults from any annotations set
+	// Override defaults from any other annotations set
 	if v, ok := annotations[AWSAnnotationAudience]; ok {
 		config.Audience = v
 	}
 	if v, ok := annotations[AWSAnnotationTokenExpiration]; ok {
 		check, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
-			check = 86400
+			return nil, fmt.Errorf("failed to parse annotation %q: %q as int: %w",
+				AWSAnnotationTokenExpiration, annotations[AWSAnnotationTokenExpiration], err)
 		}
 		config.TokenExpiration = check
 	}
 
-	return config
+	return config, nil
 }
 
 func makeVaultAuthUUID(vaultAuth *secretsv1alpha1.VaultAuth) (types.UID, error) {
