@@ -7,55 +7,8 @@ import (
 	"fmt"
 	"testing"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-func Test_generateVaultAuthUUID(t *testing.T) {
-	realVaultAuth := &secretsv1alpha1.VaultAuth{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      "testname",
-			Namespace: "testnamespace",
-			UID:       "testuuid",
-			Labels: map[string]string{
-				"vault": "auth",
-			},
-		},
-		Spec: secretsv1alpha1.VaultAuthSpec{
-			VaultConnectionRef: "testconnection",
-			Namespace:          "testnamespace",
-			Method:             "aws",
-			Mount:              "testaws",
-			AWS: &secretsv1alpha1.VaultAuthConfigAWS{
-				Role:   "testrole",
-				Region: "us-test-1",
-			},
-		},
-	}
-	initialUUID, err := makeVaultAuthUUID(realVaultAuth)
-	require.NoError(t, err)
-
-	// change something outside the hashed fields - same generated UUID
-	realVaultAuth.ObjectMeta.Labels["test"] = "label"
-
-	checkUUID, err := makeVaultAuthUUID(realVaultAuth)
-	require.NoError(t, err)
-	assert.Equal(t, initialUUID, checkUUID)
-
-	// change the UID - different generated UUID
-	realVaultAuth.ObjectMeta.UID = "testuuidv2"
-	checkUUIDv2, err := makeVaultAuthUUID(realVaultAuth)
-	require.NoError(t, err)
-	assert.NotEqual(t, checkUUID, checkUUIDv2)
-
-	// change something in the spec - different generated UUID
-	realVaultAuth.Spec.AWS.Region = "us-test-2"
-	checkUUIDv3, err := makeVaultAuthUUID(realVaultAuth)
-	require.NoError(t, err)
-	assert.NotEqual(t, checkUUIDv2, checkUUIDv3)
-}
 
 func Test_getIRSAConfig(t *testing.T) {
 	tests := map[string]struct {

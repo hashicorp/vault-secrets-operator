@@ -59,3 +59,15 @@ func getServiceAccount(ctx context.Context, client ctrlclient.Client, key ctrlcl
 
 	return sa, nil
 }
+
+func getConfigMap(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.ConfigMap, error) {
+	if err := common.ValidateObjectKey(key); err != nil {
+		return nil, err
+	}
+	cm := &corev1.ConfigMap{}
+	if err := client.Get(ctx, key, cm); err != nil {
+		return nil, err
+	}
+
+	return cm, nil
+}

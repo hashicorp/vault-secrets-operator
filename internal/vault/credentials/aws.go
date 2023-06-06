@@ -5,20 +5,18 @@ package credentials
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 
-	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-secure-stdlib/awsutil"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
@@ -28,6 +26,7 @@ const (
 	AWSAnnotationTokenExpiration = "eks.amazonaws.com/token-expiration"
 	AWSDefaultAudience           = "sts.amazonaws.com"
 	AWSDefaultTokenExpiration    = int64(86400)
+	K8sRootCA                    = "kube-root-ca.crt"
 )
 
 var _ CredentialProvider = (*AWSCredentialProvider)(nil)
@@ -76,13 +75,17 @@ func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 		l.uid = irsaServiceAccount.UID
 	} else {
 		// At this point either the node role or the instance profile will be
-		// used for credentials, so generate a new UID based on the spec, name,
-		// namespace, and UID
-		newUUID, err := makeVaultAuthUUID(l.authObj)
+		// used for credentials, and since those are cluster-wide entities, just
+		// use the root CA UID
+		key := ctrlclient.ObjectKey{
+			Namespace: common.OperatorNamespace,
+			Name:      K8sRootCA,
+		}
+		kubeRootCA, err := getConfigMap(ctx, client, key)
 		if err != nil {
 			return err
 		}
-		l.uid = newUUID
+		l.uid = kubeRootCA.UID
 	}
 
 	return nil
@@ -233,21 +236,4 @@ func getIRSAConfig(annotations map[string]string) (*IRSAConfig, error) {
 	}
 
 	return config, nil
-}
-
-func makeVaultAuthUUID(vaultAuth *secretsv1alpha1.VaultAuth) (types.UID, error) {
-	hashCopy := &secretsv1alpha1.VaultAuth{
-		ObjectMeta: v1.ObjectMeta{
-			UID:       vaultAuth.UID,
-			Name:      vaultAuth.Name,
-			Namespace: vaultAuth.Namespace,
-		},
-		Spec: *vaultAuth.Spec.DeepCopy(),
-	}
-	jBytes, err := json.Marshal(hashCopy)
-	if err != nil {
-		return "", err
-	}
-	newUUID := uuid.NewSHA1(uuid.NameSpaceOID, jBytes)
-	return types.UID(newUUID.String()), nil
 }
