@@ -6,6 +6,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -59,6 +60,9 @@ func TestVaultAuthMethods(t *testing.T) {
 	runAWSStaticTest := true
 	if run, _ := runAWSStaticCreds(t); !run {
 		runAWSStaticTest = false
+	}
+	if ok, err := requiredAWSStaticCreds(t); runAWSStaticTest && !ok {
+		t.Logf("WARNING: Missing AWS static creds requirements: %s", err)
 	}
 	awsRegion := defaultAWSRegion
 	if r := os.Getenv("AWS_REGION"); r != "" {
@@ -152,10 +156,12 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	auths := []struct {
 		shouldRun func(*testing.T) (bool, string)
+		canRun    func(*testing.T) (bool, error)
 		vaultAuth *secretsv1alpha1.VaultAuth
 	}{
 		{
 			shouldRun: alwaysRun,
+			canRun:    noRequirements,
 			// Create a non-default VaultAuth CR
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
@@ -176,6 +182,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		{
 			shouldRun: alwaysRun,
+			canRun:    noRequirements,
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-jwt-serviceaccount",
@@ -195,6 +202,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		{
 			shouldRun: alwaysRun,
+			canRun:    noRequirements,
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-jwt-secret",
@@ -213,6 +221,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		{
 			shouldRun: alwaysRun,
+			canRun:    noRequirements,
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-approle",
@@ -232,6 +241,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		{
 			shouldRun: runAWS,
+			canRun:    noRequirements,
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-irsa",
@@ -251,6 +261,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		{
 			shouldRun: runAWS,
+			canRun:    noRequirements,
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-node",
@@ -269,6 +280,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		{
 			shouldRun: runAWS,
+			canRun:    noRequirements,
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-instance-profile",
@@ -287,6 +299,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 		{
 			shouldRun: runAWSStaticCreds,
+			canRun:    requiredAWSStaticCreds,
 			vaultAuth: &secretsv1alpha1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-static",
@@ -309,8 +322,7 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	// Apply all the Auth Methods
 	for _, a := range auths {
-		if run, why := a.shouldRun(t); !run {
-			t.Log(why)
+		if run, _ := a.shouldRun(t); !run {
 			continue
 		}
 		require.Nil(t, crdClient.Create(ctx, a.vaultAuth))
@@ -319,8 +331,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	secrets := []*secretsv1alpha1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
-		if run, why := a.shouldRun(t); !run {
-			t.Log(why)
+		if run, _ := a.shouldRun(t); !run {
 			continue
 		}
 		dest := fmt.Sprintf("kv-%s", a.vaultAuth.Name)
@@ -392,6 +403,10 @@ func TestVaultAuthMethods(t *testing.T) {
 			if run, why := tt.shouldRun(t); !run {
 				t.Skip(why)
 			}
+			if ok, err := tt.canRun(t); !ok {
+				t.Logf("missing requirements: %s", err)
+				t.Fail()
+			}
 			// Create the KV secret in Vault.
 			putKV(t, secrets[idx])
 			// Create the VSS object referencing the object in Vault.
@@ -408,14 +423,22 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 }
 
-func alwaysRun(_ *testing.T) (bool, string) { return true, "" }
+func alwaysRun(t *testing.T) (bool, string) {
+	t.Helper()
+	return true, ""
+}
+
+func noRequirements(t *testing.T) (bool, error) {
+	t.Helper()
+	return true, nil
+}
 
 // checks whether or not to run the aws tests
 func runAWS(t *testing.T) (bool, string) {
 	t.Helper()
 
 	if v := os.Getenv(envSkipAWS); v == "true" {
-		return false, envSkipAWS + " is set to 'true'"
+		return false, "skipping because " + envSkipAWS + " is set to 'true'"
 	}
 	return true, ""
 }
@@ -428,18 +451,27 @@ func runAWSStaticCreds(t *testing.T) (bool, string) {
 		return run, why
 	}
 	if v := os.Getenv(envSkipAWSStaticCreds); v == "true" {
-		return false, envSkipAWSStaticCreds + " is set to 'true'"
+		return false, "skipping because " + envSkipAWSStaticCreds + " is set to 'true'"
 	}
+	return true, ""
+}
+
+func requiredAWSStaticCreds(t *testing.T) (bool, error) {
+	t.Helper()
+
 	tfVars := []string{
 		"TEST_AWS_ACCESS_KEY_ID",
 		"TEST_AWS_SECRET_ACCESS_KEY",
 		"AWS_STATIC_CREDS_ROLE",
 	}
+	var errs error
 	for _, tfv := range tfVars {
 		if v := os.Getenv(tfv); v == "" {
-			t.Fail()
-			return false, tfv + " not set"
+			errs = errors.Join(errs, fmt.Errorf("%q not set", tfv))
 		}
 	}
-	return true, ""
+	if errs != nil {
+		return false, errs
+	}
+	return true, nil
 }
