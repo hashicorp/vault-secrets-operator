@@ -2,6 +2,8 @@ name: build
 
 on:
   push:
+    branches-ignore:
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       version:
