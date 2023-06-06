@@ -61,7 +61,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	if run, _ := runAWSStaticCreds(t); !run {
 		runAWSStaticTest = false
 	}
-	if ok, err := requiredAWSStaticCreds(t); runAWSStaticTest && !ok {
+	if ok, err := requiredAWSStaticCreds(); runAWSStaticTest && !ok {
 		t.Logf("WARNING: Missing AWS static creds requirements: %s", err)
 	}
 	awsRegion := defaultAWSRegion
@@ -156,7 +156,7 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	auths := []struct {
 		shouldRun func(*testing.T) (bool, string)
-		canRun    func(*testing.T) (bool, error)
+		canRun    func() (bool, error)
 		vaultAuth *secretsv1alpha1.VaultAuth
 	}{
 		{
@@ -388,7 +388,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		}
 		if err := crdClient.List(ctx, eventList, listOptions); err != nil {
 			t.Logf("event list error: %q", err)
-			t.Fail()
+			return
 		}
 		for _, event := range eventList.Items {
 			if event.Type != corev1.EventTypeNormal {
@@ -403,9 +403,8 @@ func TestVaultAuthMethods(t *testing.T) {
 			if run, why := tt.shouldRun(t); !run {
 				t.Skip(why)
 			}
-			if ok, err := tt.canRun(t); !ok {
-				t.Logf("missing requirements: %s", err)
-				t.Fail()
+			if ok, err := tt.canRun(); !ok {
+				assert.FailNow(t, "missing requirements: %s", err)
 			}
 			// Create the KV secret in Vault.
 			putKV(t, secrets[idx])
@@ -428,8 +427,7 @@ func alwaysRun(t *testing.T) (bool, string) {
 	return true, ""
 }
 
-func noRequirements(t *testing.T) (bool, error) {
-	t.Helper()
+func noRequirements() (bool, error) {
 	return true, nil
 }
 
@@ -456,9 +454,7 @@ func runAWSStaticCreds(t *testing.T) (bool, string) {
 	return true, ""
 }
 
-func requiredAWSStaticCreds(t *testing.T) (bool, error) {
-	t.Helper()
-
+func requiredAWSStaticCreds() (bool, error) {
 	tfVars := []string{
 		"TEST_AWS_ACCESS_KEY_ID",
 		"TEST_AWS_SECRET_ACCESS_KEY",
