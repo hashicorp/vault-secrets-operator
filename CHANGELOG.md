@@ -8,6 +8,7 @@ Features:
 
 Improvements:
 * Extend vault Client validation checks to handle failed renewals: [GH-171](https://github.com/hashicorp/vault-secrets-operator/pull/171)
+* VaultDynamicSecrets: Add support for synchronizing static-creds: [GH-239](https://github.com/hashicorp/vault-secrets-operator/pull/239)
 
 Changes:
 * VaultStaticSecrets (VSS): **Breaking Change**: Replace `Spec.Name` with `Spec.Path`: [GH-240](https://github.com/hashicorp/vault-secrets-operator/pull/240)
