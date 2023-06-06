@@ -20,7 +20,9 @@ type VaultStaticSecretSpec struct {
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
-	// Path of the secret in Vault
+	// Path of the secret in Vault, corresponds to the `path` parameter for,
+	// kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+	// kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version
 	Path string `json:"path"`
 	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
 	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
