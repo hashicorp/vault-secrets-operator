@@ -18,7 +18,7 @@ type VaultConnectionSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// TLSServerName to use as the SNI host for TLS connections.
 	TLSServerName string `json:"tlsServerName,omitempty"`
-	// CACertSecretRef containing the trusted PEM encoded CA certificate chain.
+	// CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`.
 	CACertSecretRef string `json:"caCertSecretRef,omitempty"`
 	// SkipTLSVerify for TLS connections.
 	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
