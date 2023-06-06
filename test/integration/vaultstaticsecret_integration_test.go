@@ -225,7 +225,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace:    testVaultNamespace,
 					Mount:        testKvMountPath,
 					Type:         consts.KVSecretTypeV1,
-					Name:         "secret",
+					Path:         "secret",
 					Destination: secretsv1alpha1.Destination{
 						Name:   "secretkv",
 						Create: false,
@@ -250,7 +250,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace: testVaultNamespace,
 					Mount:     testKvv2MountPath,
 					Type:      consts.KVSecretTypeV2,
-					Name:      "secret",
+					Path:      "secret",
 					Destination: secretsv1alpha1.Destination{
 						Name:   "secretkvv2",
 						Create: false,
@@ -333,9 +333,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret, data map[string]interface{}) {
 		switch vssObj.Spec.Type {
 		case consts.KVSecretTypeV1:
-			require.NoError(t, vClient.KVv1(testKvMountPath).Put(ctx, vssObj.Spec.Name, data))
+			require.NoError(t, vClient.KVv1(testKvMountPath).Put(ctx, vssObj.Spec.Path, data))
 		case consts.KVSecretTypeV2:
-			_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, data)
+			_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Path, data)
 			require.NoError(t, err)
 		default:
 			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
@@ -345,9 +345,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	deleteKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
 		switch vssObj.Spec.Type {
 		case consts.KVSecretTypeV1:
-			require.NoError(t, vClient.KVv1(testKvMountPath).Delete(ctx, vssObj.Spec.Name))
+			require.NoError(t, vClient.KVv1(testKvMountPath).Delete(ctx, vssObj.Spec.Path))
 		case consts.KVSecretTypeV2:
-			require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Name))
+			require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Path))
 		default:
 			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
 		}
@@ -442,7 +442,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 								Namespace:    testVaultNamespace,
 								Mount:        mount,
 								Type:         kvType,
-								Name:         dest,
+								Path:         dest,
 								Destination: secretsv1alpha1.Destination{
 									Name:   dest,
 									Create: true,
