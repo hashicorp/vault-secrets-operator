@@ -209,7 +209,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
 					Type:         consts.KVSecretTypeV2,
-					Name:         dest,
+					Path:         dest,
 					Destination: secretsv1alpha1.Destination{
 						Name:   dest,
 						Create: true,
@@ -223,12 +223,12 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 
 	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
-		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, expectedData)
+		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Path, expectedData)
 		require.NoError(t, err)
 	}
 
 	deleteKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
-		require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Name))
+		require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Path))
 	}
 
 	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret) {

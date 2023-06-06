@@ -87,16 +87,16 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		resp, err = w.Get(ctx, o.Spec.Name)
+		resp, err = w.Get(ctx, o.Spec.Path)
 	case consts.KVSecretTypeV2:
 		w, err := c.KVv2(o.Spec.Mount)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		if o.Spec.Version == 0 {
-			resp, err = w.Get(ctx, o.Spec.Name)
+			resp, err = w.Get(ctx, o.Spec.Path)
 		} else {
-			resp, err = w.GetVersion(ctx, o.Spec.Name, o.Spec.Version)
+			resp, err = w.GetVersion(ctx, o.Spec.Path, o.Spec.Version)
 		}
 	default:
 		err = fmt.Errorf("unsupported secret type %q", o.Spec.Type)
@@ -113,9 +113,9 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	if resp == nil {
-		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "name", o.Spec.Name)
+		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "path", o.Spec.Path)
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Vault secret was empty, mount %s, name %s", o.Spec.Mount, o.Spec.Name)
+			"Vault secret was empty, mount %s, path %s", o.Spec.Mount, o.Spec.Path)
 		return ctrl.Result{
 			RequeueAfter: requeueAfter,
 		}, nil

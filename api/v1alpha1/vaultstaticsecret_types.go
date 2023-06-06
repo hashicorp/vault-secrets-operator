@@ -20,8 +20,8 @@ type VaultStaticSecretSpec struct {
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
-	// Name of the secret in Vault
-	Name string `json:"name"`
+	// Path of the secret in Vault
+	Path string `json:"name"`
 	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
 	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
 	// +kubebuilder:validation:Minimum=0
