@@ -105,5 +105,29 @@ VaultAuthMethod Spec
   {{- if $cur.params }}
   params:
     {{- toYaml $cur.params | nindent 8 }}
+  {{- else if eq $cur.method "aws" }}
+  aws:
+    role: {{ $cur.aws.role }}
+    {{- if $cur.aws.region }}
+    region: {{ $cur.aws.region }}
+    {{- end }}
+    {{- if $cur.aws.headerValue }}
+    headerValue: {{ $cur.aws.headerValue }}
+    {{- end }}
+    {{- if $cur.aws.sessionName }}
+    sessionName: {{ $cur.aws.sessionName }}
+    {{- end }}
+    {{- if $cur.aws.stsEndpoint }}
+    stsEndpoint: {{ $cur.aws.stsEndpoint }}
+    {{- end }}
+    {{- if $cur.aws.iamEndpoint }}
+    iamEndpoint: {{ $cur.aws.iamEndpoint }}
+    {{- end }}
+    {{- if $cur.aws.secretRef }}
+    secretRef: {{ $cur.aws.secretRef }}
+    {{- end }}
+    {{- if $cur.aws.irsaServiceAccount }}
+    irsaServiceAccount: {{ $cur.aws.irsaServiceAccount }}
+    {{- end }}
   {{- end }}
 {{- end}}
