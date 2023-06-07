@@ -25,8 +25,8 @@ const (
 )
 
 type (
-	HMACFromSecretFunc        func(ctx context.Context, client ctrlclient.Client, message []byte) ([]byte, error)
-	ValidateMACFromSecretFunc func(ctx context.Context, client ctrlclient.Client, message, messageMAC []byte) (bool, []byte, error)
+	hmacFromSecretFunc        func(ctx context.Context, client ctrlclient.Client, message []byte) ([]byte, error)
+	validateMACFromSecretFunc func(ctx context.Context, client ctrlclient.Client, message, messageMAC []byte) (bool, []byte, error)
 )
 
 // used for monkey-patching unit tests
@@ -35,6 +35,26 @@ var (
 	randRead  = rand.Read
 	EqualMACS = hmac.Equal
 )
+
+type HMACValidator interface {
+	HMAC(context.Context, ctrlclient.Client, []byte) ([]byte, error)
+	Validate(context.Context, ctrlclient.Client, []byte, []byte) (bool, []byte, error)
+}
+
+var _ HMACValidator = (*defaultHMACValidator)(nil)
+
+type defaultHMACValidator struct {
+	v validateMACFromSecretFunc
+	h hmacFromSecretFunc
+}
+
+func (v *defaultHMACValidator) Validate(ctx context.Context, client ctrlclient.Client, message, messageMAC []byte) (bool, []byte, error) {
+	return v.v(ctx, client, message, messageMAC)
+}
+
+func (v *defaultHMACValidator) HMAC(ctx context.Context, client ctrlclient.Client, bytes []byte) ([]byte, error) {
+	return v.h(ctx, client, bytes)
+}
 
 // createHMACKeySecret with a generated HMAC key stored in Secret.Data with hmacKeyName.
 // If the Secret already exist, or if the HMAC key could not be generated, an error will be returned.
@@ -96,19 +116,26 @@ func getHMACKeyFromSecret(ctx context.Context, client ctrlclient.Client, objKey 
 	return validateHMACKeySecret(s)
 }
 
-// NewHMACFromSecretFunc returns an HMACFromSecretFunc that can be used to compute a message MAC.
+// newHMACFromSecretFunc returns an hmacFromSecretFunc that can be used to compute a message MAC.
 // The objKey must point to a corev1.Secret that holds the HMAC private key.
-func NewHMACFromSecretFunc(objKey ctrlclient.ObjectKey) HMACFromSecretFunc {
+func newHMACFromSecretFunc(objKey ctrlclient.ObjectKey) hmacFromSecretFunc {
 	return func(ctx context.Context, client ctrlclient.Client, message []byte) ([]byte, error) {
 		return hmacFromSecret(ctx, client, objKey, message)
 	}
 }
 
-// NewMACValidateFromSecretFunc returns a ValidateMACFromSecretFunc that can be used to validate the message MAC.
+// newMACValidateFromSecretFunc returns a validateMACFromSecretFunc that can be used to validate the message MAC.
 // The objKey must point to a corev1.Secret that holds the HMAC private key.
-func NewMACValidateFromSecretFunc(objKey ctrlclient.ObjectKey) ValidateMACFromSecretFunc {
+func newMACValidateFromSecretFunc(objKey ctrlclient.ObjectKey) validateMACFromSecretFunc {
 	return func(ctx context.Context, client ctrlclient.Client, message, messageMAC []byte) (bool, []byte, error) {
 		return validateMACFromSecret(ctx, client, objKey, message, messageMAC)
+	}
+}
+
+func NewHMACValidator(objKey ctrlclient.ObjectKey) HMACValidator {
+	return &defaultHMACValidator{
+		v: newMACValidateFromSecretFunc(objKey),
+		h: newHMACFromSecretFunc(objKey),
 	}
 }
 
