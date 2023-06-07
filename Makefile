@@ -27,7 +27,6 @@ EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
-HELMIFY_VERSION ?= v0.3.22
 COPYWRITE_VERSION ?= 0.16.3
 
 TESTCOUNT ?= 1
@@ -385,15 +384,6 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 		-var vault_license=ignored && \
 	rm -rf $(TF_VAULT_STATE_DIR)
 
-##@ Generate Helm Chart
-### Helmify regenerates the CRDs and copies them into the chart dir.
-### NOTE: It will overwrite the existing templates dir so we have a TODO to figure out if there
-### is a way to track diffs, or just do not commit the changes to the templates directory when
-### regenerating the CRDs from the config directory.
-.PHONY: helm-chart
-helm-chart: manifests kustomize helmify
-	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | $(HELMIFY) -crd-dir
-
 .PHONY: unit-test
 unit-test: ## Run unit tests for the helm chart
 	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
@@ -539,18 +529,6 @@ ifeq (,$(shell which $(notdir $(GOFUMPT)) 2>/dev/null))
 	}
 else
 GOFUMPT = $(shell which gofumpt)
-endif
-endif
-
-HELMIFY = ./bin/helmify
-helmify: ## Download helmify locally if necessary.
-ifeq (,$(wildcard $(HELMIFY)))
-ifeq (,$(shell which $(notdir $(HELMIFY)) 2>/dev/null))
-	@{ \
-	GOBIN=${LOCALBIN} go install github.com/arttor/helmify/cmd/helmify@${HELMIFY_VERSION} ;\
-	}
-else
-HELMIFY = $(shell which helmify)
 endif
 endif
 
