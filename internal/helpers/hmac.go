@@ -12,7 +12,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
@@ -27,9 +27,9 @@ func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 ) (bool, []byte, error) {
 	var cur string
 	switch t := obj.(type) {
-	case *v1alpha1.VaultDynamicSecret:
+	case *v1beta1.VaultDynamicSecret:
 		cur = t.Status.SecretMAC
-	case *v1alpha1.VaultStaticSecret:
+	case *v1beta1.VaultStaticSecret:
 		cur = t.Status.SecretMAC
 	default:
 		return false, nil, fmt.Errorf("unsupported object type %T", t)

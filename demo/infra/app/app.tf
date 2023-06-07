@@ -9,7 +9,7 @@ data "kubernetes_namespace" "operator" {
 
 resource "kubernetes_manifest" "vault-connection-default" {
   manifest = {
-    apiVersion = "secrets.hashicorp.com/v1alpha1"
+    apiVersion = "secrets.hashicorp.com/v1beta1"
     kind       = "VaultConnection"
     metadata = {
       name      = "default"
@@ -28,7 +28,7 @@ resource "kubernetes_manifest" "vault-connection-default" {
 
 resource "kubernetes_manifest" "vault-auth-default" {
   manifest = {
-    apiVersion = "secrets.hashicorp.com/v1alpha1"
+    apiVersion = "secrets.hashicorp.com/v1beta1"
     kind       = "VaultAuth"
     metadata = {
       name      = "default"
@@ -56,7 +56,7 @@ resource "kubernetes_manifest" "vault-auth-default" {
 
 resource "kubernetes_manifest" "vault-dynamic-secret" {
   manifest = {
-    apiVersion = "secrets.hashicorp.com/v1alpha1"
+    apiVersion = "secrets.hashicorp.com/v1beta1"
     kind       = "VaultDynamicSecret"
     metadata = {
       name      = "vso-db-demo"
@@ -83,7 +83,7 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
 
 resource "kubernetes_manifest" "vault-dynamic-secret-create" {
   manifest = {
-    apiVersion = "secrets.hashicorp.com/v1alpha1"
+    apiVersion = "secrets.hashicorp.com/v1beta1"
     kind       = "VaultDynamicSecret"
     metadata = {
       name      = "vso-db-demo-create"

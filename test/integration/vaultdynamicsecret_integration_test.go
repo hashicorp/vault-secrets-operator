@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
@@ -142,29 +142,29 @@ func TestVaultDynamicSecret(t *testing.T) {
 	// Set the secrets in vault to be synced to kubernetes
 	// vClient := getVaultClient(t, testVaultNamespace)
 	// Create a VaultConnection CR
-	conns := []*secretsv1alpha1.VaultConnection{
+	conns := []*secretsv1beta1.VaultConnection{
 		// Create the default VaultConnection CR in the Operator's namespace
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      consts.NameDefault,
 				Namespace: operatorNS,
 			},
-			Spec: secretsv1alpha1.VaultConnectionSpec{
+			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
 			},
 		},
 	}
-	auths := []*secretsv1alpha1.VaultAuth{
+	auths := []*secretsv1beta1.VaultAuth{
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      consts.NameDefault,
 				Namespace: operatorNS,
 			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
+			Spec: secretsv1beta1.VaultAuthSpec{
 				Namespace: outputs.Namespace,
 				Method:    "kubernetes",
 				Mount:     outputs.AuthMount,
-				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 					Role:           outputs.AuthRole,
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
@@ -187,7 +187,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		authObj        *secretsv1alpha1.VaultAuth
+		authObj        *secretsv1beta1.VaultAuth
 		expected       map[string]int
 		expectedStatic map[string]int
 		create         int
@@ -249,7 +249,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var objsCreated []*secretsv1alpha1.VaultDynamicSecret
+			var objsCreated []*secretsv1beta1.VaultDynamicSecret
 
 			t.Cleanup(func() {
 				if !skipCleanup {
@@ -260,24 +260,24 @@ func TestVaultDynamicSecret(t *testing.T) {
 			})
 			// pre-created secrets test
 			for idx, dest := range tt.existing {
-				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+				vdsObj := &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
 						Name:      dest,
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Path:      "creds/" + outputs.DBRole,
 						Revoke:    true,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   dest,
 							Create: false,
 						},
 					},
 				}
 				if idx == 0 {
-					vdsObj.Spec.RolloutRestartTargets = []secretsv1alpha1.RolloutRestartTarget{
+					vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
 						{
 							Kind: "Deployment",
 							Name: outputs.DeploymentName,
@@ -292,17 +292,17 @@ func TestVaultDynamicSecret(t *testing.T) {
 			// create secrets tests
 			for idx := 0; idx < tt.create; idx++ {
 				dest := fmt.Sprintf("%s-create-%d", tt.name, idx)
-				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+				vdsObj := &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
 						Name:      dest,
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Namespace: outputs.Namespace,
 						Mount:     outputs.DBPath,
 						Path:      "creds/" + outputs.DBRole,
 						Revoke:    true,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   dest,
 							Create: true,
 						},
@@ -315,18 +315,18 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			for idx := 0; idx < tt.createStatic; idx++ {
 				dest := fmt.Sprintf("%s-create-static-creds-%d", tt.name, idx)
-				vdsObj := &secretsv1alpha1.VaultDynamicSecret{
+				vdsObj := &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
 						Name:      dest,
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Namespace:        outputs.Namespace,
 						Mount:            outputs.DBPath,
 						Path:             "static-creds/" + outputs.DBRoleStatic,
 						AllowStaticCreds: true,
 						Revoke:           false,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   dest,
 							Create: true,
 						},
@@ -362,10 +362,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 					}
 
 					objKey := ctrlclient.ObjectKeyFromObject(obj)
-					var vdsObjFinal *secretsv1alpha1.VaultDynamicSecret
+					var vdsObjFinal *secretsv1beta1.VaultDynamicSecret
 					require.NoError(t, backoff.Retry(
 						func() error {
-							var vdsObj secretsv1alpha1.VaultDynamicSecret
+							var vdsObj secretsv1beta1.VaultDynamicSecret
 							require.NoError(t, crdClient.Get(ctx, objKey, &vdsObj))
 							if vdsObj.Spec.AllowStaticCreds {
 								if vdsObj.Status.StaticCredsMetaData.LastVaultRotation < 1 {
@@ -432,7 +432,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 func assertLastRuntimePodUID(t *testing.T,
 	ctx context.Context, client ctrlclient.Client,
-	operatorNS string, vdsObj *secretsv1alpha1.VaultDynamicSecret,
+	operatorNS string, vdsObj *secretsv1beta1.VaultDynamicSecret,
 ) {
 	var pods corev1.PodList
 	assert.NoError(t, client.List(ctx, &pods, ctrlclient.InNamespace(operatorNS),
@@ -451,15 +451,15 @@ func assertLastRuntimePodUID(t *testing.T,
 // a full secret rotation.
 func assertDynamicSecretNewGeneration(t *testing.T,
 	ctx context.Context, client ctrlclient.Client,
-	vdsObjOrig *secretsv1alpha1.VaultDynamicSecret,
+	vdsObjOrig *secretsv1beta1.VaultDynamicSecret,
 ) {
 	t.Helper()
 
 	objKey := ctrlclient.ObjectKeyFromObject(vdsObjOrig)
-	vdsObjLatest := &secretsv1alpha1.VaultDynamicSecret{}
+	vdsObjLatest := &secretsv1beta1.VaultDynamicSecret{}
 	if assert.NoError(t, client.Get(ctx, objKey, vdsObjLatest)) {
 		vdsObjLatest.Spec.Destination.Name += "-new"
-		var vdsObjUpdated secretsv1alpha1.VaultDynamicSecret
+		var vdsObjUpdated secretsv1beta1.VaultDynamicSecret
 		if assert.NoError(t, client.Update(ctx, vdsObjLatest)) {
 			// await last generation updated after update
 			assert.NoError(t, backoff.Retry(func() error {
@@ -500,7 +500,7 @@ func assertDynamicSecretNewGeneration(t *testing.T,
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
 // then waits for the controller to rotate the secret..
 func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
-	client ctrlclient.Client, vdsObj *secretsv1alpha1.VaultDynamicSecret,
+	client ctrlclient.Client, vdsObj *secretsv1beta1.VaultDynamicSecret,
 ) {
 	bo := backoff.NewConstantBackOff(time.Millisecond * 500)
 	var maxTries uint64
@@ -532,7 +532,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 
 	// wait for the rotation
 	if !assert.NoError(t, backoff.Retry(func() error {
-		var o secretsv1alpha1.VaultDynamicSecret
+		var o secretsv1beta1.VaultDynamicSecret
 		if err := client.Get(ctx,
 			ctrlclient.ObjectKeyFromObject(vdsObj), &o); err != nil {
 			return backoff.Permanent(err)

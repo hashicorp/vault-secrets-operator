@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
@@ -59,7 +59,7 @@ type VaultPKISecretReconciler struct {
 func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	o := &secretsv1alpha1.VaultPKISecret{}
+	o := &secretsv1beta1.VaultPKISecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -258,7 +258,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}, nil
 }
 
-func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
 	l.Info("In deletion")
 	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		if err := r.finalizePKI(ctx, l, s); err != nil {
@@ -281,7 +281,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Lo
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
 	if !controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		controllerutil.AddFinalizer(s, vaultPKIFinalizer)
 		if err := r.Client.Update(ctx, s); err != nil {
@@ -296,15 +296,15 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, l logr.Logg
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultPKISecret{}).
+		For(&secretsv1beta1.VaultPKISecret{}).
 		// Add metrics for create/update/delete of the resource
-		Watches(&source.Kind{Type: &secretsv1alpha1.VaultPKISecret{}},
+		Watches(&source.Kind{Type: &secretsv1beta1.VaultPKISecret{}},
 			&handler.InstrumentedEnqueueRequestForObject{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
 
-func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
 	l.Info("Finalizing VaultPKISecret")
 	if s.Spec.Revoke {
 		if err := r.revokeCertificate(ctx, l, s); err != nil {
@@ -320,11 +320,11 @@ func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logge
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
 	return helpers.SyncSecret(ctx, r.Client, s, nil)
 }
 
-func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1alpha1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
 	c, err := r.ClientFactory.Get(ctx, r.Client, s)
 	if err != nil {
 		return err
@@ -342,7 +342,7 @@ func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) getPath(spec secretsv1alpha1.VaultPKISecretSpec) string {
+func (r *VaultPKISecretReconciler) getPath(spec secretsv1beta1.VaultPKISecretSpec) string {
 	parts := []string{spec.Mount}
 	if spec.IssuerRef != "" {
 		parts = append(parts, "issuer", spec.IssuerRef)
@@ -354,7 +354,7 @@ func (r *VaultPKISecretReconciler) getPath(spec secretsv1alpha1.VaultPKISecretSp
 	return strings.Join(parts, "/")
 }
 
-func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1alpha1.VaultPKISecret, reason, msg string, i ...interface{}) {
+func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1beta1.VaultPKISecret, reason, msg string, i ...interface{}) {
 	eventType := corev1.EventTypeNormal
 	if !p.Status.Valid {
 		eventType = corev1.EventTypeWarning
@@ -363,7 +363,7 @@ func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1alpha1.VaultPKISecret
 	r.Recorder.Eventf(p, eventType, reason, msg, i...)
 }
 
-func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, p *secretsv1alpha1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, p *secretsv1beta1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
 	metrics.SetResourceStatus("vaultpkisecret", p, p.Status.Valid)
 	if err := r.Status().Update(ctx, p); err != nil {

@@ -40,7 +40,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
@@ -119,7 +119,7 @@ func TestMain(m *testing.M) {
 		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
+		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 		restConfig = *ctrl.GetConfigOrDie()
 
 		os.Setenv("VAULT_ADDR", vaultAddr)
@@ -212,7 +212,7 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 	return &validSecret, err
 }
 
-func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *secretsv1alpha1.VaultPKISecret, previousSerialNumber string) (string, *corev1.Secret, error) {
+func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *secretsv1beta1.VaultPKISecret, previousSerialNumber string) (string, *corev1.Secret, error) {
 	t.Helper()
 	destSecret := &corev1.Secret{}
 	newSerialNumber, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
@@ -308,7 +308,7 @@ type dynamicK8SOutputs struct {
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
-	delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int,
+	delay time.Duration, vdsObj *secretsv1beta1.VaultDynamicSecret, expected map[string]int,
 ) {
 	t.Helper()
 
@@ -473,7 +473,7 @@ func exportKindLogs(t *testing.T) {
 }
 
 func awaitRolloutRestarts(t *testing.T, ctx context.Context,
-	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget,
+	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1beta1.RolloutRestartTarget,
 ) {
 	t.Helper()
 	require.NoError(t, backoff.Retry(
@@ -494,12 +494,12 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 
 func assertRolloutRestarts(
 	t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
-	targets []secretsv1alpha1.RolloutRestartTarget, minGeneration int64,
+	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
 ) error {
 	t.Helper()
 
 	var errs error
-	// see secretsv1alpha1.RolloutRestartTarget for supported target resources.
+	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
 	for _, target := range targets {
 		var tObj ctrlclient.Object

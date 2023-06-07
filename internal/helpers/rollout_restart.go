@@ -16,17 +16,17 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 // AnnotationRestartedAt is updated to trigger a rollout-restart
 const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
 
-// HandleRolloutRestarts for all v1alpha1.RolloutRestartTarget(s) configured for obj.
-// Supported objs are: v1alpha1.VaultDynamicSecret, v1alpha1.VaultStaticSecret, v1alpha1.VaultPKISecret
+// HandleRolloutRestarts for all v1beta1.RolloutRestartTarget(s) configured for obj.
+// Supported objs are: v1beta1.VaultDynamicSecret, v1beta1.VaultStaticSecret, v1beta1.VaultPKISecret
 // Please note the following:
-// - a rollout-restart will be triggered for each configured v1alpha1.RolloutRestartTarget
+// - a rollout-restart will be triggered for each configured v1beta1.RolloutRestartTarget
 // - the rollout-restart action has no support for roll-back
 // - does not wait for the action to complete
 //
@@ -34,13 +34,13 @@ const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
 func HandleRolloutRestarts(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, recorder record.EventRecorder) error {
 	logger := log.FromContext(ctx)
 
-	var targets []v1alpha1.RolloutRestartTarget
+	var targets []v1beta1.RolloutRestartTarget
 	switch t := obj.(type) {
-	case *v1alpha1.VaultDynamicSecret:
+	case *v1beta1.VaultDynamicSecret:
 		targets = t.Spec.RolloutRestartTargets
-	case *v1alpha1.VaultStaticSecret:
+	case *v1beta1.VaultStaticSecret:
 		targets = t.Spec.RolloutRestartTargets
-	case *v1alpha1.VaultPKISecret:
+	case *v1beta1.VaultPKISecret:
 		targets = t.Spec.RolloutRestartTargets
 	default:
 		return fmt.Errorf("unsupported type %T", t)
@@ -68,7 +68,7 @@ func HandleRolloutRestarts(ctx context.Context, client ctrlclient.Client, obj ct
 
 // RolloutRestart patches the target in namespace for rollout-restart.
 // Supported target Kinds are: DaemonSet, Deployment, StatefulSet
-func RolloutRestart(ctx context.Context, namespace string, target v1alpha1.RolloutRestartTarget, client ctrlclient.Client) error {
+func RolloutRestart(ctx context.Context, namespace string, target v1beta1.RolloutRestartTarget, client ctrlclient.Client) error {
 	if namespace == "" {
 		return fmt.Errorf("namespace cannot be empty")
 	}

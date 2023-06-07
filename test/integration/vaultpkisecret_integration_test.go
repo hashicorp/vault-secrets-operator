@@ -23,7 +23,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 func TestVaultPKISecret(t *testing.T) {
@@ -125,12 +125,12 @@ func TestVaultPKISecret(t *testing.T) {
 	// the target secret so that the controller uses the default AuthMethod.
 	if !testWithHelm {
 		// Create a VaultConnection CR
-		testVaultConnection := &secretsv1alpha1.VaultConnection{
+		testVaultConnection := &secretsv1beta1.VaultConnection{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      testVaultConnectionName,
 				Namespace: testK8sNamespace,
 			},
-			Spec: secretsv1alpha1.VaultConnectionSpec{
+			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
 			},
 		}
@@ -139,17 +139,17 @@ func TestVaultPKISecret(t *testing.T) {
 		created = append(created, testVaultConnection)
 
 		// Create a VaultAuth CR
-		testVaultAuth := &secretsv1alpha1.VaultAuth{
+		testVaultAuth := &secretsv1beta1.VaultAuth{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      testVaultAuthMethodName,
 				Namespace: testK8sNamespace,
 			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
+			Spec: secretsv1beta1.VaultAuthSpec{
 				VaultConnectionRef: testVaultConnectionName,
 				Namespace:          testVaultNamespace,
 				Method:             "kubernetes",
 				Mount:              "kubernetes",
-				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 					Role:           testVaultAuthMethodRole,
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
@@ -162,14 +162,14 @@ func TestVaultPKISecret(t *testing.T) {
 	}
 
 	// Create a VaultPKI CR to trigger the sync
-	getExisting := func() []*secretsv1alpha1.VaultPKISecret {
-		return []*secretsv1alpha1.VaultPKISecret{
+	getExisting := func() []*secretsv1beta1.VaultPKISecret {
+		return []*secretsv1beta1.VaultPKISecret{
 			{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultpki-test-tenant-1",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultPKISecretSpec{
+				Spec: secretsv1beta1.VaultPKISecretSpec{
 					VaultAuthRef: testVaultAuthMethodName,
 					Namespace:    testVaultNamespace,
 					Mount:        testPKIMountPath,
@@ -183,11 +183,11 @@ func TestVaultPKISecret(t *testing.T) {
 					AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 					URISans:      []string{"uri1.example.com", "uri2.example.com"},
 					IPSans:       []string{"127.1.1.1", "127.0.0.1"},
-					Destination: secretsv1alpha1.Destination{
+					Destination: secretsv1beta1.Destination{
 						Name:   "pki1",
 						Create: false,
 					},
-					RolloutRestartTargets: []secretsv1alpha1.RolloutRestartTarget{
+					RolloutRestartTargets: []secretsv1beta1.RolloutRestartTarget{
 						{
 							Kind: "Deployment",
 							Name: "vso",
@@ -200,7 +200,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		existing   []*secretsv1alpha1.VaultPKISecret
+		existing   []*secretsv1beta1.VaultPKISecret
 		create     int
 		secretType corev1.SecretType
 	}{
@@ -226,7 +226,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var toTest []*secretsv1alpha1.VaultPKISecret
+			var toTest []*secretsv1beta1.VaultPKISecret
 			for idx, obj := range tt.existing {
 				name := fmt.Sprintf("%s-existing-%d", tt.name, idx)
 				obj.Name = name
@@ -235,12 +235,12 @@ func TestVaultPKISecret(t *testing.T) {
 
 			for idx := 0; idx < tt.create; idx++ {
 				dest := fmt.Sprintf("%s-create-%d", tt.name, idx)
-				toTest = append(toTest, &secretsv1alpha1.VaultPKISecret{
+				toTest = append(toTest, &secretsv1beta1.VaultPKISecret{
 					ObjectMeta: v1.ObjectMeta{
 						Name:      dest,
 						Namespace: testK8sNamespace,
 					},
-					Spec: secretsv1alpha1.VaultPKISecretSpec{
+					Spec: secretsv1beta1.VaultPKISecretSpec{
 						Role:         "secret",
 						Namespace:    testVaultNamespace,
 						Mount:        testPKIMountPath,
@@ -253,7 +253,7 @@ func TestVaultPKISecret(t *testing.T) {
 						AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 						URISans:      []string{"uri1.example.com", "uri2.example.com"},
 						IPSans:       []string{"127.1.1.1", "127.0.0.1"},
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   dest,
 							Create: true,
 							Type:   tt.secretType,

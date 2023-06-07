@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
@@ -25,7 +25,7 @@ import (
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by
 // a specific VSO object. It should be included in every Secret that is created
 // by VSO.
-var labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1alpha1.GroupVersion.Group)
+var labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1beta1.GroupVersion.Group)
 
 // OwnerLabels will be applied to any k8s secret we create. They are used in Secret ownership checks.
 // There are similar labels in the vault package. It's important that component secret's value never
@@ -54,7 +54,7 @@ type SyncableSecretMetaData struct {
 	// Kind of the syncable-secret object. Maps to obj.Kind.
 	Kind string
 	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
-	Destination *secretsv1alpha1.Destination
+	Destination *secretsv1beta1.Destination
 }
 
 // NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
@@ -63,19 +63,19 @@ type SyncableSecretMetaData struct {
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
 	switch t := obj.(type) {
-	case *secretsv1alpha1.VaultDynamicSecret:
+	case *secretsv1beta1.VaultDynamicSecret:
 		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 		}, nil
-	case *secretsv1alpha1.VaultStaticSecret:
+	case *secretsv1beta1.VaultStaticSecret:
 		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 		}, nil
-	case *secretsv1alpha1.VaultPKISecret:
+	case *secretsv1beta1.VaultPKISecret:
 		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
@@ -326,7 +326,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	return nil
 }
 
-func pruneOrphanSecrets(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, dest *secretsv1alpha1.Destination) error {
+func pruneOrphanSecrets(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, dest *secretsv1beta1.Destination) error {
 	owned, err := FindSecretsOwnedByObj(ctx, client, obj)
 	if err != nil {
 		return err

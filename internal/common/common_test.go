@@ -11,26 +11,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 func Test_GetConnectionNamespacedName(t *testing.T) {
 	tests := []struct {
 		name            string
-		a               *secretsv1alpha1.VaultAuth
+		a               *secretsv1beta1.VaultAuth
 		want            types.NamespacedName
 		wantErr         assert.ErrorAssertionFunc
 		unsetDefaultsNS bool
 	}{
 		{
 			name: "empty-connection-ref",
-			a: &secretsv1alpha1.VaultAuth{
+			a: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "qux",
 					Namespace: "baz",
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "",
 				},
 			},
@@ -42,12 +42,12 @@ func Test_GetConnectionNamespacedName(t *testing.T) {
 		},
 		{
 			name: "empty-connection-ref-expect-error",
-			a: &secretsv1alpha1.VaultAuth{
+			a: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "qux",
 					Namespace: "baz",
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "",
 				},
 			},
@@ -60,12 +60,12 @@ func Test_GetConnectionNamespacedName(t *testing.T) {
 		},
 		{
 			name: "with-connection-ref",
-			a: &secretsv1alpha1.VaultAuth{
+			a: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "qux",
 					Namespace: "baz",
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "foo",
 				},
 			},

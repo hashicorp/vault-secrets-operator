@@ -11,18 +11,18 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 var _ CredentialProvider = (*KubernetesCredentialProvider)(nil)
 
 type KubernetesCredentialProvider struct {
-	authObj           *secretsv1alpha1.VaultAuth
+	authObj           *secretsv1beta1.VaultAuth
 	providerNamespace string
 	uid               types.UID
 }
 
-func NewKubernetesCredentialProvider(authObj *secretsv1alpha1.VaultAuth, providerNamespace string,
+func NewKubernetesCredentialProvider(authObj *secretsv1beta1.VaultAuth, providerNamespace string,
 	uid types.UID,
 ) *KubernetesCredentialProvider {
 	return &KubernetesCredentialProvider{
@@ -40,7 +40,7 @@ func (l *KubernetesCredentialProvider) GetUID() types.UID {
 	return l.uid
 }
 
-func (l *KubernetesCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) error {
+func (l *KubernetesCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 

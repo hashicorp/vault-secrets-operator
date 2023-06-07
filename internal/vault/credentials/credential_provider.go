@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 const (
@@ -28,13 +28,13 @@ var ProviderMethodsSupported = []string{
 }
 
 type CredentialProvider interface {
-	Init(ctx context.Context, client ctrlclient.Client, object *secretsv1alpha1.VaultAuth, providerNamespace string) error
+	Init(ctx context.Context, client ctrlclient.Client, object *secretsv1beta1.VaultAuth, providerNamespace string) error
 	GetUID() types.UID
 	GetNamespace() string
 	GetCreds(context.Context, ctrlclient.Client) (map[string]interface{}, error)
 }
 
-func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) (CredentialProvider, error) {
+func NewCredentialProvider(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) (CredentialProvider, error) {
 	if authObj == nil {
 		return nil, fmt.Errorf("non-nil VaultAuth pointer is required to create a credential provider")
 	}

@@ -4,7 +4,7 @@
 */ -}}
 
 {{- if eq .Values.controller.manager.clientCache.persistenceModel "direct-encrypted" }}
-apiVersion: secrets.hashicorp.com/v1alpha1
+apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: {{ include "chart.fullname" . }}-default-transit-auth
