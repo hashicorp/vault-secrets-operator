@@ -164,7 +164,7 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
-	$(MAKE) sync-crds
+	$(MAKE) sync-crds gen-api-ref-docs
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -176,6 +176,12 @@ sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DI
 	@rm -rf $(CHART_CRDS_DIR)
 	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: gen-api-ref-docs
+gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
+	@rm -f docs/api/api-reference.md
+	@$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
+	--renderer=markdown --output-path docs/api/api-reference.md 2>&1 > /dev/null
 
 .PHONY: fmt
 fmt: gofumpt ## Run gofumpt against code.
@@ -536,6 +542,19 @@ endif
 copywrite: ## Download copywrite locally if necessary.
 	@./hack/install_copywrite.sh
 	$(eval COPYWRITE=./bin/copywrite)
+
+.PHONY: crd-ref-docs
+CRD_REF_DOCS = ./bin/crd-ref-docs
+crd-ref-docs: ## Install crd-ref-docs locally if necessary.
+ifeq (,$(wildcard $(CRD_REF_DOCS)))
+ifeq (,$(shell which $(notdir $(CRD_REF_DOCS)) 2>/dev/null))
+	@{ \
+	GOBIN=${LOCALBIN} go install github.com/elastic/crd-ref-docs@v0.0.9 ;\
+	}
+else
+CRD_REF_DOCS = $(shell which crd-ref-docs)
+endif
+endif
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
