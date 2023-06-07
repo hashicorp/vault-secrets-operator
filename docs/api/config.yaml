@@ -1,0 +1,20 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+#
+# This is the crd-ref-docs tool configuration file which is used to
+# generate the VSO CRD reference docs.
+# More info on the tool can be found here: https://github.com/elastic/crd-ref-docs
+#
+# See the gen-api-ref-docs make target for more info on how to generate the docs.
+
+processor:
+  # RE2 regular expressions describing types that should be excluded from the generated documentation.
+  ignoreTypes: []
+  # RE2 regular expressions describing type fields that should be excluded from the generated documentation.
+  ignoreFields:
+    - "status$"
+    - "TypeMeta$"
+
+render:
+  # Version of Kubernetes to use when generating links to Kubernetes API documentation.
+  kubernetesVersion: 1.24
