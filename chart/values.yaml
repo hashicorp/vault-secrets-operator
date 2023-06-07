@@ -167,6 +167,45 @@ controller:
           # @type: string
           secretName: ""
 
+        # AWS auth method specific configuration
+        aws:
+          # Vault Auth Role to use
+          # This is a required field and must be setup in Vault prior to deploying the helm chart
+          # if using the AWS for the Transit auth method.
+          # @type: string
+          role: ""
+
+          # AWS region to use for signing the authentication request
+          # Optional, but most commonly will be the EKS cluster region.
+          # @type: string
+          region: ""
+
+          # Vault header value to include in the STS signing request
+          # @type: string
+          headerValue: ""
+
+          # The role session name to use when creating a WebIdentity provider
+          # @type: string
+          sessionName: ""
+
+          # The STS endpoint to use; if not set will use the default
+          # @type: string
+          stsEndpoint: ""
+
+          # The IAM endpoint to use; if not set will use the default
+          # @type: string
+          iamEndpoint: ""
+
+          # The name of a Kubernetes Secret which holds credentials for AWS. Supported keys
+          # include `access_key_id`, `secret_access_key`, `session_token`
+          # @type: string
+          secretRef: ""
+
+          # Name of a Kubernetes service account that is configured with IAM Roles
+          # for Service Accounts (IRSA). Should be annotated with "eks.amazonaws.com/role-arn".
+          # @type: string
+          irsaServiceAccount: ""
+
         # Params to use when authenticating to Vault using this auth method.
         # params:
         #   vault-something1: "foo"
@@ -359,6 +398,45 @@ defaultAuthMethod:
     # helm chart.
     # @type: string
     secretName: ""
+
+  # AWS auth method specific configuration
+  aws:
+    # Vault Auth Role to use
+    # This is a required field and must be setup in Vault prior to deploying the helm chart
+    # if using the AWS for the default auth method.
+    # @type: string
+    role: ""
+
+    # AWS region to use for signing the authentication request
+    # Optional, but most commonly will be the region where the EKS cluster is running
+    # @type: string
+    region: ""
+
+    # Vault header value to include in the STS signing request
+    # @type: string
+    headerValue: ""
+
+    # The role session name to use when creating a WebIdentity provider
+    # @type: string
+    sessionName: ""
+
+    # The STS endpoint to use; if not set will use the default
+    # @type: string
+    stsEndpoint: ""
+
+    # The IAM endpoint to use; if not set will use the default
+    # @type: string
+    iamEndpoint: ""
+
+    # The name of a Kubernetes Secret which holds credentials for AWS. Supported keys include
+    # `access_key_id`, `secret_access_key`, `session_token`
+    # @type: string
+    secretRef: ""
+
+    # Name of a Kubernetes service account that is configured with IAM Roles
+    # for Service Accounts (IRSA). Should be annotated with "eks.amazonaws.com/role-arn".
+    # @type: string
+    irsaServiceAccount: ""
 
   # Params to use when authenticating to Vault
   # params:
