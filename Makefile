@@ -45,6 +45,8 @@ K8S_DB_SECRET_COUNT ?=
 # Cloud test options
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
+# filter bats unit tests to run.
+BATS_TESTS_FILTER ?= .\*
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -386,7 +388,7 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 
 .PHONY: unit-test
 unit-test: ## Run unit tests for the helm chart
-	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
+	PATH="$(CURDIR)/scripts:$(PATH)" bats -f $(BATS_TESTS_FILTER) test/unit/
 
 .PHONY: port-forward
 port-forward:
