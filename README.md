@@ -143,6 +143,19 @@ make -f aws.mk build-push integration-test-eks
 make -f aws.mk build-push integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```
 
+#### AWS auth test with static credentials
+
+```shell
+# Set SKIP_AWS_STATIC_CREDS_TEST=false and set the credentials for the static creds user via the environment variables TEST_AWS_ACCESS_KEY_ID,
+# TEST_AWS_SECRET_ACCESS_KEY, TEST_AWS_STATIC_CREDS_ROLE (and TEST_AWS_SESSION_TOKEN if applicable) for a user in AWS.
+# Note: these credentials will be set in a Kubernetes secret.
+export TEST_AWS_ACCESS_KEY_ID="..."
+export TEST_AWS_SECRET_ACCESS_KEY="..."
+export TEST_AWS_SESSION_TOKEN="..."
+export AWS_STATIC_CREDS_ROLE="arn:aws:iam::..."
+make -f aws.mk integration-test-eks TESTARGS="-run TestVaultAuth" SKIP_AWS_STATIC_CREDS_TEST=false
+```
+
 ### Integration Tests in GKE
 
 ```shell

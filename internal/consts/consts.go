@@ -15,4 +15,10 @@ const (
 	// Alias to v1.ServiceAccountRootCAKey, since that seems to be only API
 	// constant that shares the expected key name.
 	TLSSecretCAKey = v1.ServiceAccountRootCAKey
+
+	AWSAccessKeyID     = "access_key_id"
+	AWSSecretAccessKey = "secret_access_key"
+	AWSRoleARN         = "role_arn"
+	AWSSessionName     = "session_name"
+	AWSSessionToken    = "session_token"
 )
