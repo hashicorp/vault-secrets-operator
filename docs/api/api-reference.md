@@ -92,6 +92,27 @@ _Appears in:_
 | `spec` _[VaultAuthSpec](#vaultauthspec)_ |  |
 
 
+#### VaultAuthConfigAWS
+
+
+
+VaultAuthConfigAWS provides VaultAuth configuration options needed for authenticating to Vault via an AWS AuthMethod. Will use creds from `SecretRef` or `IRSAServiceAccount` if provided, in that order. If neither are provided, the underlying node role or instance profile will be used to authenticate to Vault.
+
+_Appears in:_
+- [VaultAuthSpec](#vaultauthspec)
+
+| Field | Description |
+| --- | --- |
+| `role` _string_ | Vault role to use for authenticating |
+| `region` _string_ | AWS Region to use for signing the authentication request |
+| `headerValue` _string_ | The Vault header value to include in the STS signing request |
+| `sessionName` _string_ | The role session name to use when creating a webidentity provider |
+| `stsEndpoint` _string_ | The STS endpoint to use; if not set will use the default |
+| `iamEndpoint` _string_ | The IAM endpoint to use; if not set will use the default |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes Secret which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`, `session_token` |
+| `irsaServiceAccount` _string_ | IRSAServiceAccount name to use with IAM Roles for Service Accounts (IRSA), and should be annotated with "eks.amazonaws.com/role-arn". This ServiceAccount will be checked for other EKS annotations: eks.amazonaws.com/audience and eks.amazonaws.com/token-expiration |
+
+
 #### VaultAuthConfigAppRole
 
 
@@ -178,6 +199,7 @@ _Appears in:_
 | `kubernetes` _[VaultAuthConfigKubernetes](#vaultauthconfigkubernetes)_ | Kubernetes specific auth configuration, requires that the Method be set to `kubernetes`. |
 | `appRole` _[VaultAuthConfigAppRole](#vaultauthconfigapprole)_ | AppRole specific auth configuration, requires that the Method be set to `appRole`. |
 | `jwt` _[VaultAuthConfigJWT](#vaultauthconfigjwt)_ | JWT specific auth configuration, requires that the Method be set to `jwt`. |
+| `aws` _[VaultAuthConfigAWS](#vaultauthconfigaws)_ | AWS specific auth configuration, requires that Method be set to `aws`. |
 | `storageEncryption` _[StorageEncryption](#storageencryption)_ | StorageEncryption provides the necessary configuration to encrypt the client storage cache. This should only be configured when client cache persistence with encryption is enabled. This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted. Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the label: cacheStorageEncryption=true |
 
 
