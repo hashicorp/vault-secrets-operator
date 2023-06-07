@@ -258,3 +258,90 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.appRole.secretRef' | tee /dev/stderr)
     [ "${actual}" = "secret-1" ]
 }
+
+@test "defaultTransitAuthMethod/CR: settings can be modified for aws auth method - minimum" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-transit-auth-method.yaml \
+        --set 'controller.manager.clientCache.storageEncryption.enabled=true' \
+        --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+        --set 'controller.manager.clientCache.storageEncryption.namespace=tenant-2' \
+        --set 'controller.manager.clientCache.storageEncryption.method=aws' \
+        --set 'controller.manager.clientCache.storageEncryption.mount=foo' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.role=role-1' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+    [ "${actual}" = "tenant-2" ]
+
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    [ "${actual}" = "aws" ]
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.aws.role' | tee /dev/stderr)
+    [ "${actual}" = "role-1" ]
+
+    # the rest should not be set
+    actual=$(echo "$object" | yq '.spec.aws.region' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.aws.headerValue' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.aws.sessionName' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.aws.stsEndpoint' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.aws.iamEndpoint' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.aws.secretRef' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.aws.irsaServiceAccount' | tee /dev/stderr)
+    [ "${actual}" = null ]
+}
+
+@test "defaultTransitAuthMethod/CR: settings can be modified for aws auth method - everything" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-transit-auth-method.yaml  \
+        --set 'controller.manager.clientCache.storageEncryption.enabled=true' \
+        --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+        --set 'controller.manager.clientCache.storageEncryption.namespace=tenant-2' \
+        --set 'controller.manager.clientCache.storageEncryption.method=aws' \
+        --set 'controller.manager.clientCache.storageEncryption.mount=foo' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.role=role-1' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.region=us-test-2' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.headerValue=test-value' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.sessionName=new-session' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.stsEndpoint=www.sts' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.iamEndpoint=www.iam' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.secretRef=aws-creds' \
+        --set 'controller.manager.clientCache.storageEncryption.aws.irsaServiceAccount=iam-irsa-acct' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+    [ "${actual}" = "tenant-2" ]
+
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    [ "${actual}" = "aws" ]
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.aws.role' | tee /dev/stderr)
+    [ "${actual}" = "role-1" ]
+    actual=$(echo "$object" | yq '.spec.aws.region' | tee /dev/stderr)
+    [ "${actual}" = "us-test-2" ]
+    actual=$(echo "$object" | yq '.spec.aws.headerValue' | tee /dev/stderr)
+    [ "${actual}" = "test-value" ]
+    actual=$(echo "$object" | yq '.spec.aws.sessionName' | tee /dev/stderr)
+    [ "${actual}" = "new-session" ]
+    actual=$(echo "$object" | yq '.spec.aws.stsEndpoint' | tee /dev/stderr)
+    [ "${actual}" = "www.sts" ]
+    actual=$(echo "$object" | yq '.spec.aws.iamEndpoint' | tee /dev/stderr)
+    [ "${actual}" = "www.iam" ]
+    actual=$(echo "$object" | yq '.spec.aws.secretRef' | tee /dev/stderr)
+    [ "${actual}" = "aws-creds" ]
+    actual=$(echo "$object" | yq '.spec.aws.irsaServiceAccount' | tee /dev/stderr)
+    [ "${actual}" = "iam-irsa-acct" ]
+}

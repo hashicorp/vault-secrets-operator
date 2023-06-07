@@ -499,7 +499,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client: tt.fields.Client,
 			}
-			got, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o)
+			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o)
 			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)) {
 				return
 			}
