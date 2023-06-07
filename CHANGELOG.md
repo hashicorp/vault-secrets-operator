@@ -1,4 +1,4 @@
-## Unreleased
+## 0.1.0-rc.1 (June 7th, 2023)
 
 Features:
 * Helm: Support optionally deploying the Prometheus ServiceMonitor: [GH-227](https://github.com/hashicorp/vault-secrets-operator/pull/227)
