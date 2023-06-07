@@ -5,6 +5,7 @@ Features:
 * Helm: **Breaking Change**: Adds support for additional Auth Methods in the Transit auth method template: [GH-226](https://github.com/hashicorp/vault-secrets-operator/pull/226)
   To migrate, set Kubernetes specific auth method configuration under `controller.manager.clientCache.storageEncryption`
   using the new stanza `controller.manager.clientCache.storageEncryption.kubernetes`.
+* VaultAuth: Adds support for the AWS authentication method, which can use an IRSA service account, static credentials in a Kubernetes secret, or the underlying node role/instance profile for authentication: [GH-234](https://github.com/hashicorp/vault-secrets-operator/pull/234)
 
 Improvements:
 * Extend vault Client validation checks to handle failed renewals: [GH-171](https://github.com/hashicorp/vault-secrets-operator/pull/171)

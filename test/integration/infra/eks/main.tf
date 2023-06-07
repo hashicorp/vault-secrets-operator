@@ -51,6 +51,8 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
+  enable_irsa = true
+
   eks_managed_node_group_defaults = {
     ami_type                   = "AL2_x86_64"
     instance_types             = ["t3.medium", "t3a.medium"]
@@ -133,5 +135,9 @@ EKS_CLUSTER_NAME=${module.eks.cluster_name}
 AWS_REGION=${var.region}
 IMAGE_TAG_BASE=${aws_ecr_repository.vault-secrets-operator.repository_url}
 K8S_CLUSTER_CONTEXT=${module.eks.cluster_arn}
+IRSA_ROLE=${module.iam_assumable_role.iam_role_arn}
+ACCOUNT_ID=${data.aws_caller_identity.current.account_id}
 EOT
 }
+
+data "aws_caller_identity" "current" {}
