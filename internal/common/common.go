@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
@@ -41,23 +41,23 @@ func init() {
 	}
 }
 
-func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1alpha1.VaultAuth, types.NamespacedName, error) {
+func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, types.NamespacedName, error) {
 	var authRef string
 	var target types.NamespacedName
 	switch o := obj.(type) {
-	case *secretsv1alpha1.VaultPKISecret:
+	case *secretsv1beta1.VaultPKISecret:
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
-	case *secretsv1alpha1.VaultStaticSecret:
+	case *secretsv1beta1.VaultStaticSecret:
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
-	case *secretsv1alpha1.VaultDynamicSecret:
+	case *secretsv1beta1.VaultDynamicSecret:
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
@@ -88,16 +88,16 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 	return authObj, target, nil
 }
 
-func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultConnection, error) {
-	var obj secretsv1alpha1.VaultConnection
+func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.VaultConnection, error) {
+	var obj secretsv1beta1.VaultConnection
 	if err := c.Get(ctx, key, &obj); err != nil {
 		return nil, err
 	}
 	return &obj, nil
 }
 
-func GetVaultConnectionWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1alpha1.VaultConnection, error) {
-	var obj secretsv1alpha1.VaultConnection
+func GetVaultConnectionWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1beta1.VaultConnection, error) {
+	var obj secretsv1beta1.VaultConnection
 	if err := getWithRetry(ctx, c, key, &obj, delay, max); err != nil {
 		return nil, err
 	}
@@ -105,8 +105,8 @@ func GetVaultConnectionWithRetry(ctx context.Context, c client.Client, key types
 	return &obj, nil
 }
 
-func GetVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1alpha1.VaultAuth, error) {
-	var obj secretsv1alpha1.VaultAuth
+func GetVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.VaultAuth, error) {
+	var obj secretsv1beta1.VaultAuth
 	if err := c.Get(ctx, key, &obj); err != nil {
 		return nil, err
 	}
@@ -115,8 +115,8 @@ func GetVaultAuth(ctx context.Context, c client.Client, key types.NamespacedName
 	return &obj, nil
 }
 
-func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1alpha1.VaultAuth, error) {
-	var obj secretsv1alpha1.VaultAuth
+func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1beta1.VaultAuth, error) {
+	var obj secretsv1beta1.VaultAuth
 	if err := getWithRetry(ctx, c, key, &obj, delay, max); err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.Names
 	return &obj, nil
 }
 
-func setVaultConnectionRef(obj *secretsv1alpha1.VaultAuth) {
+func setVaultConnectionRef(obj *secretsv1beta1.VaultAuth) {
 	if obj.Namespace == OperatorNamespace && obj.Name == consts.NameDefault && obj.Spec.VaultConnectionRef == "" {
 		obj.Spec.VaultConnectionRef = consts.NameDefault
 	}
@@ -149,7 +149,7 @@ func getWithRetry(ctx context.Context, c client.Client, key types.NamespacedName
 // GetConnectionNamespacedName returns the NamespacedName for the VaultAuth's configured
 // vaultConnectionRef.
 // If the vaultConnectionRef is empty then defaults Namespace and Name will be returned.
-func GetConnectionNamespacedName(a *secretsv1alpha1.VaultAuth) (types.NamespacedName, error) {
+func GetConnectionNamespacedName(a *secretsv1beta1.VaultAuth) (types.NamespacedName, error) {
 	if a.Spec.VaultConnectionRef == "" {
 		if OperatorNamespace == "" {
 			return types.NamespacedName{}, fmt.Errorf("operator's default namespace is not set, this is a bug")
@@ -167,8 +167,8 @@ func GetConnectionNamespacedName(a *secretsv1alpha1.VaultAuth) (types.Namespaced
 	}, nil
 }
 
-func FindVaultAuthByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1alpha1.VaultAuth, error) {
-	var auths secretsv1alpha1.VaultAuthList
+func FindVaultAuthByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1beta1.VaultAuth, error) {
+	var auths secretsv1beta1.VaultAuthList
 	var opts []client.ListOption
 	if namespace != "" {
 		opts = append(opts, client.InNamespace(namespace))
@@ -187,8 +187,8 @@ func FindVaultAuthByUID(ctx context.Context, c client.Client, namespace string, 
 	return nil, fmt.Errorf("object not found")
 }
 
-func FindVaultConnectionByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1alpha1.VaultConnection, error) {
-	var auths secretsv1alpha1.VaultConnectionList
+func FindVaultConnectionByUID(ctx context.Context, c client.Client, namespace string, uid types.UID, generation int64) (*secretsv1beta1.VaultConnection, error) {
+	var auths secretsv1beta1.VaultConnectionList
 	var opts []client.ListOption
 	if namespace != "" {
 		opts = append(opts, client.InNamespace(namespace))
@@ -209,14 +209,14 @@ func FindVaultConnectionByUID(ctx context.Context, c client.Client, namespace st
 // FindVaultAuthForStorageEncryption returns VaultAuth resource labeled with `cacheEncryption=true`, and is found in the Operator's namespace.
 // If none or more than one resource is found, an error will be returned.
 // The resulting resource must have a valid StorageEncryption configured.
-func FindVaultAuthForStorageEncryption(ctx context.Context, c client.Client) (*secretsv1alpha1.VaultAuth, error) {
+func FindVaultAuthForStorageEncryption(ctx context.Context, c client.Client) (*secretsv1beta1.VaultAuth, error) {
 	opts := []client.ListOption{
 		client.InNamespace(OperatorNamespace),
 		client.MatchingLabels{
 			"cacheStorageEncryption": "true",
 		},
 	}
-	var auths secretsv1alpha1.VaultAuthList
+	var auths secretsv1beta1.VaultAuthList
 	if err := c.List(ctx, &auths, opts...); err != nil {
 		return nil, err
 	}
@@ -240,11 +240,11 @@ func FindVaultAuthForStorageEncryption(ctx context.Context, c client.Client) (*s
 func GetVaultNamespace(obj client.Object) (string, error) {
 	var ns string
 	switch o := obj.(type) {
-	case *secretsv1alpha1.VaultPKISecret:
+	case *secretsv1beta1.VaultPKISecret:
 		ns = o.Spec.Namespace
-	case *secretsv1alpha1.VaultStaticSecret:
+	case *secretsv1beta1.VaultStaticSecret:
 		ns = o.Spec.Namespace
-	case *secretsv1alpha1.VaultDynamicSecret:
+	case *secretsv1beta1.VaultDynamicSecret:
 		ns = o.Spec.Namespace
 	default:
 		return "", fmt.Errorf("unsupported type %T", o)

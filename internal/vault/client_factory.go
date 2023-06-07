@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
@@ -67,19 +67,19 @@ type cachingClientFactory struct {
 }
 
 // Prune the storage for the requesting object and CachingClientFactoryPruneRequest.
-// Supported, requesting client.Object(s), are: v1alpha1.VaultAuth, v1alpha1.VaultConnection.
+// Supported, requesting client.Object(s), are: v1beta1.VaultAuth, v1beta1.VaultConnection.
 // Then number of pruned storage Secrets will be returned, along with any errors encountered.
 // Pruning continues on error, so there is a possibility that only a subset of the requested Secrets will be removed
 // from the ClientCacheStorage.
 func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, req CachingClientFactoryPruneRequest) (int, error) {
 	var filter ClientCachePruneFilterFunc
 	switch cur := obj.(type) {
-	case *secretsv1alpha1.VaultAuth:
+	case *secretsv1beta1.VaultAuth:
 		filter = func(c Client) bool {
 			other := c.GetVaultAuthObj()
 			return req.FilterFunc(cur, other)
 		}
-	case *secretsv1alpha1.VaultConnection:
+	case *secretsv1beta1.VaultConnection:
 		filter = func(c Client) bool {
 			other := c.GetVaultConnectionObj()
 			return req.FilterFunc(cur, other)

@@ -67,7 +67,7 @@ kubectl delete -k config/samples
 
 ### Ingress TLS with VaultPKISecret
 
-The file `config/samples/secrets_v1alpha1_vaultpkisecret_tls.yaml` contains an
+The file `config/samples/secrets_v1beta1_vaultpkisecret_tls.yaml` contains an
 example of using VaultPKISecret to populate a TLS secret for use with an
 Ingress. This sample takes a little more setup to test it out (derived from the
 [kind docs](https://kind.sigs.k8s.io/docs/user/ingress/)).

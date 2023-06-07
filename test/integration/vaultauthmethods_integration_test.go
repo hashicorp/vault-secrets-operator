@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
@@ -157,22 +157,22 @@ func TestVaultAuthMethods(t *testing.T) {
 	auths := []struct {
 		shouldRun func(*testing.T) (bool, string)
 		canRun    func() (bool, error)
-		vaultAuth *secretsv1alpha1.VaultAuth
+		vaultAuth *secretsv1beta1.VaultAuth
 	}{
 		{
 			shouldRun: alwaysRun,
 			canRun:    noRequirements,
 			// Create a non-default VaultAuth CR
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-kubernetes",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Namespace: testVaultNamespace,
 					Method:    "kubernetes",
 					Mount:     "kubernetes",
-					Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 						Role:           outputs.AuthRole,
 						ServiceAccount: consts.NameDefault,
 						TokenAudiences: []string{"vault"},
@@ -183,16 +183,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		{
 			shouldRun: alwaysRun,
 			canRun:    noRequirements,
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-jwt-serviceaccount",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Namespace: testVaultNamespace,
 					Method:    "jwt",
 					Mount:     "jwt",
-					JWT: &secretsv1alpha1.VaultAuthConfigJWT{
+					JWT: &secretsv1beta1.VaultAuthConfigJWT{
 						Role:           outputs.AuthRole,
 						ServiceAccount: consts.NameDefault,
 						TokenAudiences: []string{"vault"},
@@ -203,16 +203,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		{
 			shouldRun: alwaysRun,
 			canRun:    noRequirements,
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-jwt-secret",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Namespace: testVaultNamespace,
 					Method:    "jwt",
 					Mount:     "jwt",
-					JWT: &secretsv1alpha1.VaultAuthConfigJWT{
+					JWT: &secretsv1beta1.VaultAuthConfigJWT{
 						Role:      outputs.AuthRole,
 						SecretRef: secretName,
 					},
@@ -222,17 +222,17 @@ func TestVaultAuthMethods(t *testing.T) {
 		{
 			shouldRun: alwaysRun,
 			canRun:    noRequirements,
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-approle",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					// No VaultConnectionRef - using the default.
 					Namespace: testVaultNamespace,
 					Method:    "appRole",
 					Mount:     appRoleMountPath,
-					AppRole: &secretsv1alpha1.VaultAuthConfigAppRole{
+					AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
 						RoleID:    outputs.AppRoleRoleID,
 						SecretRef: "secretid",
 					},
@@ -242,16 +242,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		{
 			shouldRun: runAWS,
 			canRun:    noRequirements,
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-irsa",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Namespace: testVaultNamespace,
 					Method:    "aws",
 					Mount:     "aws",
-					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
 						Role:               outputs.AuthRole + "-aws-irsa",
 						Region:             awsRegion,
 						IRSAServiceAccount: "irsa-test",
@@ -262,16 +262,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		{
 			shouldRun: runAWS,
 			canRun:    noRequirements,
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-node",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Namespace: testVaultNamespace,
 					Method:    "aws",
 					Mount:     "aws",
-					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
 						Role:   outputs.AuthRole + "-aws-node",
 						Region: awsRegion,
 					},
@@ -281,16 +281,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		{
 			shouldRun: runAWS,
 			canRun:    noRequirements,
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-instance-profile",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Namespace: testVaultNamespace,
 					Method:    "aws",
 					Mount:     "aws",
-					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
 						Role:   outputs.AuthRole + "-aws-instance-profile",
 						Region: awsRegion,
 					},
@@ -300,16 +300,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		{
 			shouldRun: runAWSStaticCreds,
 			canRun:    requiredAWSStaticCreds,
-			vaultAuth: &secretsv1alpha1.VaultAuth{
+			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultauth-test-aws-static",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Namespace: testVaultNamespace,
 					Method:    "aws",
 					Mount:     "aws",
-					AWS: &secretsv1alpha1.VaultAuthConfigAWS{
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
 						Role:      outputs.AuthRole + "-aws-static",
 						Region:    awsRegion,
 						SecretRef: "aws-static-creds",
@@ -328,7 +328,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		require.Nil(t, crdClient.Create(ctx, a.vaultAuth))
 		created = append(created, a.vaultAuth)
 	}
-	secrets := []*secretsv1alpha1.VaultStaticSecret{}
+	secrets := []*secretsv1beta1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
 		if run, _ := a.shouldRun(t); !run {
@@ -337,18 +337,18 @@ func TestVaultAuthMethods(t *testing.T) {
 		dest := fmt.Sprintf("kv-%s", a.vaultAuth.Name)
 		secretName := fmt.Sprintf("test-secret-%s", a.vaultAuth.Name)
 		secrets = append(secrets,
-			&secretsv1alpha1.VaultStaticSecret{
+			&secretsv1beta1.VaultStaticSecret{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      secretName,
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultStaticSecretSpec{
+				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					VaultAuthRef: a.vaultAuth.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvv2MountPath,
 					Type:         consts.KVSecretTypeV2,
 					Path:         dest,
-					Destination: secretsv1alpha1.Destination{
+					Destination: secretsv1beta1.Destination{
 						Name:   dest,
 						Create: true,
 					},
@@ -360,16 +360,16 @@ func TestVaultAuthMethods(t *testing.T) {
 		created = append(created, secret)
 	}
 
-	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
+	putKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret) {
 		_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Path, expectedData)
 		require.NoError(t, err)
 	}
 
-	deleteKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
+	deleteKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret) {
 		require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Path))
 	}
 
-	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret) {
+	assertSync := func(t *testing.T, obj *secretsv1beta1.VaultStaticSecret) {
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, expectedData)
 		if !assert.NoError(t, err) {
@@ -378,7 +378,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		assertSyncableSecret(t, crdClient, obj, secret)
 	}
 
-	logEvents := func(t *testing.T, vss *secretsv1alpha1.VaultStaticSecret) {
+	logEvents := func(t *testing.T, vss *secretsv1beta1.VaultStaticSecret) {
 		t.Helper()
 
 		eventList := &corev1.EventList{}

@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
@@ -46,7 +46,7 @@ type VaultAuthReconciler struct {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch;deletecollection
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
-// Reconcile reconciles the secretsv1alpha1.VaultAuth resource.
+// Reconcile reconciles the secretsv1beta1.VaultAuth resource.
 // Each reconciliation will validate the resource's configuration
 //
 // Upon deletion of the resource, it will prune all referent Vault Client(s).
@@ -122,7 +122,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, nil
 }
 
-func (r *VaultAuthReconciler) recordEvent(a *secretsv1alpha1.VaultAuth, reason, msg string, i ...interface{}) {
+func (r *VaultAuthReconciler) recordEvent(a *secretsv1beta1.VaultAuth, reason, msg string, i ...interface{}) {
 	eventType := corev1.EventTypeNormal
 	if !a.Status.Valid {
 		eventType = corev1.EventTypeWarning
@@ -131,7 +131,7 @@ func (r *VaultAuthReconciler) recordEvent(a *secretsv1alpha1.VaultAuth, reason, 
 	r.Recorder.Eventf(a, eventType, reason, msg, i...)
 }
 
-func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alpha1.VaultAuth) error {
+func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1beta1.VaultAuth) error {
 	logger := log.FromContext(ctx)
 	metrics.SetResourceStatus("vaultauth", a, a.Status.Valid)
 	if err := r.Status().Update(ctx, a); err != nil {
@@ -141,7 +141,7 @@ func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1alph
 	return nil
 }
 
-func (r *VaultAuthReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultAuth) error {
+func (r *VaultAuthReconciler) addFinalizer(ctx context.Context, o *secretsv1beta1.VaultAuth) error {
 	if !controllerutil.ContainsFinalizer(o, vaultAuthFinalizer) {
 		controllerutil.AddFinalizer(o, vaultAuthFinalizer)
 		if err := r.Client.Update(ctx, o); err != nil {
@@ -152,7 +152,7 @@ func (r *VaultAuthReconciler) addFinalizer(ctx context.Context, o *secretsv1alph
 	return nil
 }
 
-func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultAuth) (ctrl.Result, error) {
+func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1beta1.VaultAuth) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultAuthFinalizer) {
 		if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
 			FilterFunc:   filterAllCacheRefs,
@@ -173,7 +173,7 @@ func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1a
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultAuth{}).
+		For(&secretsv1beta1.VaultAuth{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
