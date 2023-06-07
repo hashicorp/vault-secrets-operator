@@ -150,7 +150,7 @@ controller:
           # Token Audience should match the bound_audiences or the `aud` list in bound_claims if
           # applicable of the Vault JWT auth role.
           # @type: array<string>
-          tokenAudiences: [ ]
+          tokenAudiences: []
 
         # AppRole auth method specific configuration
         appRole:
@@ -208,17 +208,13 @@ controller:
 
         # Params to use when authenticating to Vault using this auth method.
         # params:
-        #   vault-something1: "foo"
-        #   vault-something2: "bar"
-        #   vault-something3: "baz"
+        #   param-something1: "foo"
         # @type: map
         params: {}
 
         # Headers to be included in all Vault requests.
         # headers:
-        #   vault-something1: "foo"
-        #   vault-something2: "bar"
-        #   vault-something3: "baz"
+        #   X-vault-something1: "foo"
         # @type:  map
         headers: {}
 
@@ -310,12 +306,10 @@ defaultVaultConnection:
   skipTLSVerify: false
 
   # Headers to be included in all Vault requests.
-  # headers: |
-  #   "vault-something1": "foo"
-  #   "vault-something2": "bar"
-  #   "vault-something3": "baz"
-  # @type: string
-  headers: ""
+  # headers:
+  #   X-vault-something: "foo"
+  # @type: map
+  headers: {}
 
 
 # Configures and deploys the default VaultAuthMethod CR which will be used by resources
@@ -382,7 +376,7 @@ defaultAuthMethod:
     # Token Audience should match the bound_audiences or the `aud` list in bound_claims if applicable
     # of the Vault JWT auth role.
     # @type: array<string>
-    tokenAudiences: [ ]
+    tokenAudiences: []
 
   # AppRole auth method specific configuration
   appRole:
@@ -440,17 +434,13 @@ defaultAuthMethod:
 
   # Params to use when authenticating to Vault
   # params:
-  #   vault-something1: "foo"
-  #   vault-something2: "bar"
-  #   vault-something3: "baz"
+  #   param-something1: "foo"
   # @type: map
   params: {}
 
   # Headers to be included in all Vault requests.
   # headers:
-  #   vault-something1: "foo"
-  #   vault-something2: "bar"
-  #   vault-something3: "baz"
+  #   X-vault-something1: "foo"
   # @type: map
   headers: {}
 
