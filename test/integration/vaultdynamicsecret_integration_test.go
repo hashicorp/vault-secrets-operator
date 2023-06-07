@@ -6,6 +6,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -506,6 +507,12 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 	if !vdsObj.Spec.AllowStaticCreds {
 		maxTries = uint64(vdsObj.Status.SecretLease.LeaseDuration * 2)
 	} else {
+		if !assert.Greater(t, vdsObj.Status.StaticCredsMetaData.RotationPeriod, int64(0)) {
+			return
+		}
+		if !assert.NotEmpty(t, vdsObj.Status.SecretMAC) {
+			return
+		}
 		maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 2)
 	}
 
@@ -535,9 +542,14 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 				return fmt.Errorf("leased secret never rotated")
 			}
 		} else {
+			var errs error
 			if o.Status.StaticCredsMetaData.LastVaultRotation == vdsObj.Status.StaticCredsMetaData.LastVaultRotation {
-				return fmt.Errorf("static-creds secret never rotated")
+				errs = errors.Join(errs, fmt.Errorf("static-creds LastVaultRotation not updated"))
 			}
+			if o.Status.SecretMAC == vdsObj.Status.SecretMAC {
+				errs = errors.Join(errs, fmt.Errorf("static-creds SecretMAC not updated"))
+			}
+			return errs
 		}
 		return nil
 	}, backoff.WithMaxRetries(bo, maxTries),
