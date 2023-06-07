@@ -25,6 +25,6 @@ spec:
   {{- end }}
   {{- if .Values.defaultVaultConnection.headers }}
   headers:
-    {{ tpl .Values.defaultVaultConnection.headers . | trim }}
+    {{- toYaml .Values.defaultVaultConnection.headers | nindent 4 }}
   {{- end }}
 {{- end }}
