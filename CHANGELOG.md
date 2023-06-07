@@ -5,13 +5,23 @@ Features:
 * Helm: **Breaking Change**: Adds support for additional Auth Methods in the Transit auth method template: [GH-226](https://github.com/hashicorp/vault-secrets-operator/pull/226)
   To migrate, set Kubernetes specific auth method configuration under `controller.manager.clientCache.storageEncryption`
   using the new stanza `controller.manager.clientCache.storageEncryption.kubernetes`.
-* VaultAuth: Adds support for the AWS authentication method, which can use an IRSA service account, static credentials in a Kubernetes secret, or the underlying node role/instance profile for authentication: [GH-234](https://github.com/hashicorp/vault-secrets-operator/pull/234)
+* VaultAuth: Adds support for the AWS authentication method, which can use an IRSA service account, static credentials in a 
+  Kubernetes secret, or the underlying node role/instance profile for authentication: [GH-235](https://github.com/hashicorp/vault-secrets-operator/pull/235)
+* Helm: Add AWS to defaultAuth and storageEncryption auth: [GH-247](https://github.com/hashicorp/vault-secrets-operator/pull/247)
 
 Improvements:
-* Extend vault Client validation checks to handle failed renewals: [GH-171](https://github.com/hashicorp/vault-secrets-operator/pull/171)
+* Core: Extend vault Client validation checks to handle failed renewals: [GH-171](https://github.com/hashicorp/vault-secrets-operator/pull/171)
 * VaultDynamicSecrets: Add support for synchronizing static-creds: [GH-239](https://github.com/hashicorp/vault-secrets-operator/pull/239)
+* VDS: add support for drift detection for static-creds: [GH-244](https://github.com/hashicorp/vault-secrets-operator/pull/244)
+* Helm: Make defaultVaultConnection.headers a map: [GH-249](https://github.com/hashicorp/vault-secrets-operator/pull/249)
+
+Build:
+* Update to go 1.20.5: [GH-248](https://github.com/hashicorp/vault-secrets-operator/pull/248)
+* CI: Testing VSO in Azure K8s Service (AKS): [GH-218](https://github.com/hashicorp/vault-secrets-operator/pull/218)
+* CI: Updating tests for VSO in EKS: [GH-219](https://github.com/hashicorp/vault-secrets-operator/pull/219)
 
 Changes:
+* API: Bump version from v1alpha1 to v1beta1 **Breaking Change**: [GH-251](https://github.com/hashicorp/vault-secrets-operator/pull/251)
 * VaultStaticSecrets (VSS): **Breaking Change**: Replace `Spec.Name` with `Spec.Path`: [GH-240](https://github.com/hashicorp/vault-secrets-operator/pull/240)
 * VaultPKISecrets (VPS): **Breaking Change**: Replace `Spec.Name` with `Spec.Role`: [GH-233](https://github.com/hashicorp/vault-secrets-operator/pull/233)
 * Helm chart: the Transit auth method kubernetes specific configuration in `controller.manager.clientCache.storageEncryption`
