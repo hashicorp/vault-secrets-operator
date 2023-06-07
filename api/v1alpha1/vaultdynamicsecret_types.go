@@ -74,6 +74,15 @@ type VaultDynamicSecretStatus struct {
 	// LastRuntimePodUID used for tracking the transition from one Pod to the next.
 	// It is used to mitigate the effects of a Vault lease renewal storm.
 	LastRuntimePodUID types.UID `json:"lastRuntimePodUID,omitempty"`
+	// SecretMAC used when deciding whether new Vault secret data should be synced.
+	//
+	// The controller will compare the "new" Vault secret data to this value using HMAC,
+	// if they are different, then the data will be synced to the Destination.
+	//
+	// The SecretMac is also used to detect drift in the Destination Secret's Data.
+	// If drift is detected the data will be synced to the Destination.
+	// SecretMAC will only be stored when VaultDynamicSecretSpec.AllowStaticCreds is true.
+	SecretMAC string `json:"secretMAC,omitempty"`
 }
 
 type VaultSecretLease struct {

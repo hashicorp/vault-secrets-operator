@@ -207,13 +207,13 @@ func main() {
 		}
 	}
 
+	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Recorder:        mgr.GetEventRecorderFor("VaultStaticSecret"),
-		HMACFunc:        vclient.NewHMACFromSecretFunc(cfc.StorageConfig.HMACSecretObjKey),
-		ValidateMACFunc: vclient.NewMACValidateFromSecretFunc(cfc.StorageConfig.HMACSecretObjKey),
-		ClientFactory:   clientFactory,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Recorder:      mgr.GetEventRecorderFor("VaultStaticSecret"),
+		HMACValidator: hmacValidator,
+		ClientFactory: clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
@@ -250,6 +250,7 @@ func main() {
 		Scheme:        mgr.GetScheme(),
 		Recorder:      mgr.GetEventRecorderFor("VaultDynamicSecret"),
 		ClientFactory: clientFactory,
+		HMACValidator: hmacValidator,
 	}).SetupWithManager(mgr, vdsOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)

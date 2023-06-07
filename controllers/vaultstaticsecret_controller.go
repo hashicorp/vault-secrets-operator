@@ -29,11 +29,10 @@ import (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	ClientFactory   vault.ClientFactory
-	HMACFunc        vault.HMACFromSecretFunc
-	ValidateMACFunc vault.ValidateMACFromSecretFunc
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.ClientFactory
+	HMACValidator vault.HMACValidator
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -142,7 +141,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// doRolloutRestart only if this is not the first time this secret has been synced
 		doRolloutRestart = o.Status.SecretMAC != ""
 
-		macsEqual, messageMAC, err := r.handleSecretHMAC(ctx, o, data)
+		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -181,66 +180,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
-}
-
-// handleSecretHMAC compares the HMAC of data to its previously computed value stored in o.Status.SecretHMAC,
-// returning true if they are equal. The computed new-MAC will be returned so that o.Status.SecretHMAC can be updated.
-func (r *VaultStaticSecretReconciler) handleSecretHMAC(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret, data map[string][]byte) (bool, []byte, error) {
-	logger := log.FromContext(ctx)
-
-	// HMAC the Vault secret data so that it can be compared to the what's in the destination Secret.
-	message, err := json.Marshal(data)
-	if err != nil {
-		return false, nil, err
-	}
-
-	newMAC, err := r.HMACFunc(ctx, r.Client, message)
-	if err != nil {
-		return false, nil, err
-	}
-
-	// we have never computed the Vault secret data HMAC,
-	// so there is no need to perform Secret data drift detection.
-	if o.Status.SecretMAC == "" {
-		return false, newMAC, nil
-	}
-
-	lastMAC, err := base64.StdEncoding.DecodeString(o.Status.SecretMAC)
-	if err != nil {
-		return false, nil, err
-	}
-
-	macsEqual := vault.EqualMACS(lastMAC, newMAC)
-	if macsEqual {
-		// check to see if the Secret.Data has drifted since the last sync,
-		// if it has then it will be overwritten with the Vault secret data
-		// this would indicate an out-of-band change made to the Secret's data
-		// in this case the controller should do the sync.
-		if cur, ok, _ := helpers.GetSecret(ctx, r.Client, o); ok {
-			curMessage, err := json.Marshal(cur.Data)
-			if err != nil {
-				return false, nil, err
-			}
-
-			logger.V(consts.LogLevelDebug).Info("Doing Secret data drift detection", "lastMAC", lastMAC)
-			// we only care of the MAC has changed, it's new value is not important here.
-			valid, foundMAC, err := r.ValidateMACFunc(ctx, r.Client, curMessage, lastMAC)
-			if err != nil {
-				return false, nil, err
-			}
-			if !valid {
-				logger.V(consts.LogLevelDebug).Info("Secret data drift detected",
-					"lastMAC", lastMAC, "foundMAC", foundMAC, "curMessage", curMessage, "message", message)
-			}
-
-			macsEqual = valid
-		} else {
-			// assume MACs are not equal if the secret does not exist or an error (ignored) has occurred
-			macsEqual = false
-		}
-	}
-
-	return macsEqual, newMAC, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

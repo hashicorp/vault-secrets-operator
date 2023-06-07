@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,6 +42,7 @@ type VaultDynamicSecretReconciler struct {
 	Scheme        *runtime.Scheme
 	Recorder      record.EventRecorder
 	ClientFactory vault.ClientFactory
+	HMACValidator vault.HMACValidator
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
@@ -182,10 +184,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	secretLease, err := r.syncSecret(ctx, vClient, o)
+	secretLease, updated, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	doRolloutRestart = updated
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
@@ -261,9 +265,7 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1alpha1.Vault
 	return meta.LastVaultRotation > 0 && meta.RotationPeriod > 1
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(
-	ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret,
-) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret) (*secretsv1alpha1.VaultSecretLease, bool, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp *api.Secret
@@ -295,24 +297,20 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 	case http.MethodGet:
 		resp, err = c.Read(ctx, path)
 	default:
-		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
+		return nil, false, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if resp == nil {
-		return nil, fmt.Errorf("nil response from vault for path %s", path)
+		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
 	data, err := vault.MarshalSecretData(resp)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	secretLease := r.getVaultSecretLease(resp)
@@ -341,9 +339,25 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 				}
 			}
 		}
+
+		if r.isStaticCreds(&o.Status.StaticCredsMetaData) {
+			macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
+			if err != nil {
+				return nil, false, err
+			}
+
+			o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+			if macsEqual {
+				return secretLease, false, nil
+			}
+		}
 	}
 
-	return secretLease, nil
+	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
+		return nil, false, err
+	}
+
+	return secretLease, true, nil
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
