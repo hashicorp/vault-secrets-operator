@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
@@ -54,7 +54,7 @@ type ClientCacheStorageStoreRequest struct {
 	OwnerReferences     []metav1.OwnerReference
 	Client              Client
 	EncryptionClient    Client
-	EncryptionVaultAuth *secretsv1alpha1.VaultAuth
+	EncryptionVaultAuth *secretsv1beta1.VaultAuth
 }
 
 type ClientCacheStoragePruneRequest struct {
@@ -66,12 +66,12 @@ type ClientCacheStorageRestoreRequest struct {
 	SecretObjKey        ctrlclient.ObjectKey
 	CacheKey            ClientCacheKey
 	DecryptionClient    Client
-	DecryptionVaultAuth *secretsv1alpha1.VaultAuth
+	DecryptionVaultAuth *secretsv1beta1.VaultAuth
 }
 
 type ClientCacheStorageRestoreAllRequest struct {
 	DecryptionClient    Client
-	DecryptionVaultAuth *secretsv1alpha1.VaultAuth
+	DecryptionVaultAuth *secretsv1beta1.VaultAuth
 }
 
 // clientCacheStorageEntry represents a single Vault Client.

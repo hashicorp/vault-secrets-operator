@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package v1alpha1
+package v1beta1
 
 import (
 	"testing"

@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
@@ -25,8 +25,8 @@ const (
 
 type computeClientCacheKeyTest struct {
 	name        string
-	authObj     *secretsv1alpha1.VaultAuth
-	connObj     *secretsv1alpha1.VaultConnection
+	authObj     *secretsv1beta1.VaultAuth
+	connObj     *secretsv1beta1.VaultConnection
 	providerUID types.UID
 	want        ClientCacheKey
 	wantErr     assert.ErrorAssertionFunc
@@ -37,16 +37,16 @@ func Test_computeClientCacheKey(t *testing.T) {
 	tests := []computeClientCacheKeyTest{
 		{
 			name: "valid",
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "ical",
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        connUID,
 					Generation: 0,
@@ -58,16 +58,16 @@ func Test_computeClientCacheKey(t *testing.T) {
 		},
 		{
 			name: "valid-key-at-max-length",
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "ical" + strings.Repeat("x", 36),
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        connUID,
 					Generation: 0,
@@ -79,16 +79,16 @@ func Test_computeClientCacheKey(t *testing.T) {
 		},
 		{
 			name: "invalid-key-max-length-exceeded",
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "ical" + strings.Repeat("x", 37),
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        connUID,
 					Generation: 0,
@@ -101,16 +101,16 @@ func Test_computeClientCacheKey(t *testing.T) {
 		},
 		{
 			name: "invalid-duplicate-uid",
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "ical",
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
@@ -123,16 +123,16 @@ func Test_computeClientCacheKey(t *testing.T) {
 		},
 		{
 			name: "invalid-uid-length-above",
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID + "1",
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "ical",
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
@@ -145,16 +145,16 @@ func Test_computeClientCacheKey(t *testing.T) {
 		},
 		{
 			name: "invalid-uid-length-below",
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID[0 : len(authUID)-1],
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "ical",
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
@@ -182,16 +182,16 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 	tests := []computeClientCacheKeyTest{
 		{
 			name: "valid",
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        authUID,
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "ical",
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:        connUID,
 					Generation: 0,

@@ -17,7 +17,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
@@ -173,35 +173,35 @@ func Test_defaultClient_Init(t *testing.T) {
 	ca, err := generateCA()
 	require.NoError(t, err)
 
-	defaultAuthObj := &secretsv1alpha1.VaultAuth{
+	defaultAuthObj := &secretsv1beta1.VaultAuth{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      consts.NameDefault,
 			Namespace: "vso",
 		},
-		Spec: secretsv1alpha1.VaultAuthSpec{
+		Spec: secretsv1beta1.VaultAuthSpec{
 			VaultConnectionRef: consts.NameDefault,
 			Method:             credentials.ProviderMethodKubernetes,
 			Mount:              "kubernetes",
-			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 				ServiceAccount: consts.NameDefault,
 			},
 		},
 	}
 
-	defaultConnObj := &secretsv1alpha1.VaultConnection{
+	defaultConnObj := &secretsv1beta1.VaultConnection{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      consts.NameDefault,
 			Namespace: "vso",
 		},
-		Spec: secretsv1alpha1.VaultConnectionSpec{
+		Spec: secretsv1beta1.VaultConnectionSpec{
 			CACertSecretRef: "baz",
 			SkipTLSVerify:   false,
 		},
 	}
 
-	connObjSkipTLSVerify := &secretsv1alpha1.VaultConnection{
+	connObjSkipTLSVerify := &secretsv1beta1.VaultConnection{
 		ObjectMeta: defaultConnObj.ObjectMeta,
-		Spec: secretsv1alpha1.VaultConnectionSpec{
+		Spec: secretsv1beta1.VaultConnectionSpec{
 			CACertSecretRef: "baz",
 			SkipTLSVerify:   true,
 		},
@@ -210,8 +210,8 @@ func Test_defaultClient_Init(t *testing.T) {
 	tests := []struct {
 		name                  string
 		client                ctrlclient.Client
-		authObj               *secretsv1alpha1.VaultAuth
-		connObj               *secretsv1alpha1.VaultConnection
+		authObj               *secretsv1beta1.VaultAuth
+		connObj               *secretsv1beta1.VaultConnection
 		withoutCASecret       bool
 		withoutServiceAccount bool
 		caSecretData          map[string][]byte

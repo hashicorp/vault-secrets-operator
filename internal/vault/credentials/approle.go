@@ -11,13 +11,13 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 var _ CredentialProvider = (*AppRoleCredentialProvider)(nil)
 
 type AppRoleCredentialProvider struct {
-	authObj           *secretsv1alpha1.VaultAuth
+	authObj           *secretsv1beta1.VaultAuth
 	providerNamespace string
 	uid               types.UID
 }
@@ -30,7 +30,7 @@ func (l *AppRoleCredentialProvider) GetUID() types.UID {
 	return l.uid
 }
 
-func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth, providerNamespace string) error {
+func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
 	logger := log.FromContext(ctx)
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace

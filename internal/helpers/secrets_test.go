@@ -20,7 +20,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
@@ -28,14 +28,14 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 	clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
 	defaultClient := clientBuilder.Build()
 
-	owner := &secretsv1alpha1.VaultDynamicSecret{
+	owner := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "VaultDynamicSecret",
-			APIVersion: "secrets.hashicorp.com/v1alpha1",
+			APIVersion: "secrets.hashicorp.com/v1beta1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "baz",
@@ -51,10 +51,10 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 	}
 	ownerLabels[labelOwnerRefUID] = string(owner.GetUID())
 
-	notOwner := &secretsv1alpha1.VaultDynamicSecret{
+	notOwner := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "VaultDynamicSecret",
-			APIVersion: "secrets.hashicorp.com/v1alpha1",
+			APIVersion: "secrets.hashicorp.com/v1beta1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "qux",
@@ -183,13 +183,13 @@ func TestSyncSecret(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 	clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
 
-	defaultOwner := &secretsv1alpha1.VaultDynamicSecret{
+	defaultOwner := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "VaultDynamicSecret",
-			APIVersion: "secrets.hashicorp.com/v1alpha1",
+			APIVersion: "secrets.hashicorp.com/v1beta1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "baz",
@@ -199,41 +199,41 @@ func TestSyncSecret(t *testing.T) {
 		},
 	}
 
-	ownerWithDest := &secretsv1alpha1.VaultDynamicSecret{
+	ownerWithDest := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta:   defaultOwner.TypeMeta,
 		ObjectMeta: defaultOwner.ObjectMeta,
-		Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-			Destination: secretsv1alpha1.Destination{
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Destination: secretsv1beta1.Destination{
 				Name:   "baz",
 				Create: true,
 			},
 		},
 	}
 
-	ownerWithDestNoCreate := &secretsv1alpha1.VaultDynamicSecret{}
+	ownerWithDestNoCreate := &secretsv1beta1.VaultDynamicSecret{}
 	ownerWithDest.DeepCopyInto(ownerWithDestNoCreate)
 	ownerWithDestNoCreate.Spec.Destination.Create = false
 
-	invalidNoDest := &secretsv1alpha1.VaultDynamicSecret{
+	invalidNoDest := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta:   defaultOwner.TypeMeta,
 		ObjectMeta: defaultOwner.ObjectMeta,
 	}
 
-	invalidEmptyDestName := &secretsv1alpha1.VaultDynamicSecret{
+	invalidEmptyDestName := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta:   defaultOwner.TypeMeta,
 		ObjectMeta: defaultOwner.ObjectMeta,
-		Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-			Destination: secretsv1alpha1.Destination{
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Destination: secretsv1beta1.Destination{
 				Create: true,
 			},
 		},
 	}
 
-	invalidEmptyNamespace := &secretsv1alpha1.VaultDynamicSecret{
+	invalidEmptyNamespace := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta:   defaultOwner.TypeMeta,
 		ObjectMeta: defaultOwner.ObjectMeta,
-		Spec: secretsv1alpha1.VaultDynamicSecretSpec{
-			Destination: secretsv1alpha1.Destination{
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Destination: secretsv1beta1.Destination{
 				Name: "baz",
 			},
 		},
@@ -246,7 +246,7 @@ func TestSyncSecret(t *testing.T) {
 		name   string
 		client ctrlclient.Client
 		// this could be any syncable secret type VSS, VPS, etc.
-		obj                *secretsv1alpha1.VaultDynamicSecret
+		obj                *secretsv1beta1.VaultDynamicSecret
 		data               map[string][]byte
 		orphans            int
 		createDest         bool

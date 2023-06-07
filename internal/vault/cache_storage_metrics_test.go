@@ -21,7 +21,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
@@ -517,17 +517,17 @@ func storeSecret(t *testing.T, ctx context.Context, client ctrlclient.Client, st
 	t.Helper()
 	req := ClientCacheStorageStoreRequest{
 		Client: &defaultClient{
-			authObj: &secretsv1alpha1.VaultAuth{
+			authObj: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       fmt.Sprintf("auth-%d", i),
 					UID:        types.UID(uuid.New().String()),
 					Generation: 0,
 				},
-				Spec: secretsv1alpha1.VaultAuthSpec{
+				Spec: secretsv1beta1.VaultAuthSpec{
 					Method: "kubernetes",
 				},
 			},
-			connObj: &secretsv1alpha1.VaultConnection{
+			connObj: &secretsv1beta1.VaultConnection{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       fmt.Sprintf("conn-%d", i),
 					UID:        types.UID(uuid.New().String()),

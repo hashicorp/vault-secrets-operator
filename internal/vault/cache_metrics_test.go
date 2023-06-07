@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
@@ -45,17 +45,17 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 
 			for i := 0; i < tt.clientCount; i++ {
 				_, err := cache.Add(&defaultClient{
-					authObj: &secretsv1alpha1.VaultAuth{
+					authObj: &secretsv1beta1.VaultAuth{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:       fmt.Sprintf("auth-%d", i),
 							UID:        types.UID(uuid.New().String()),
 							Generation: 0,
 						},
-						Spec: secretsv1alpha1.VaultAuthSpec{
+						Spec: secretsv1beta1.VaultAuthSpec{
 							Method: "kubernetes",
 						},
 					},
-					connObj: &secretsv1alpha1.VaultConnection{
+					connObj: &secretsv1beta1.VaultConnection{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:       fmt.Sprintf("conn-%d", i),
 							UID:        types.UID(uuid.New().String()),
@@ -186,17 +186,17 @@ func Test_clientCache_Metrics(t *testing.T) {
 				require.NoError(t, err)
 				c := &defaultClient{
 					client: client,
-					authObj: &secretsv1alpha1.VaultAuth{
+					authObj: &secretsv1beta1.VaultAuth{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:       fmt.Sprintf("auth-%d", i),
 							UID:        types.UID(uuid.New().String()),
 							Generation: 0,
 						},
-						Spec: secretsv1alpha1.VaultAuthSpec{
+						Spec: secretsv1beta1.VaultAuthSpec{
 							Method: credentials.ProviderMethodKubernetes,
 						},
 					},
-					connObj: &secretsv1alpha1.VaultConnection{
+					connObj: &secretsv1beta1.VaultConnection{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:       fmt.Sprintf("conn-%d", i),
 							UID:        types.UID(uuid.New().String()),

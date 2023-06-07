@@ -14,7 +14,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
@@ -35,10 +35,10 @@ func defaultClientOptions() *ClientOptions {
 // Supported objects can be found in common.GetVaultAuthAndTarget.
 // An error will be returned if obj is deemed to be invalid.
 func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error) {
-	var authObj *secretsv1alpha1.VaultAuth
+	var authObj *secretsv1beta1.VaultAuth
 	var providerNamespace string
 	switch t := obj.(type) {
-	case *secretsv1alpha1.VaultAuth:
+	case *secretsv1beta1.VaultAuth:
 		// setting up a new Client is allowed in the case where the VaultAuth has StorageEncryption enabled.
 		// The object must also be in the Operator's Namespace.
 		authObj = t
@@ -139,14 +139,14 @@ type ClientBase interface {
 
 type Client interface {
 	ClientBase
-	Init(context.Context, ctrlclient.Client, *secretsv1alpha1.VaultAuth, *secretsv1alpha1.VaultConnection, string, *ClientOptions) error
+	Init(context.Context, ctrlclient.Client, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection, string, *ClientOptions) error
 	Login(context.Context, ctrlclient.Client) error
 	Restore(context.Context, *api.Secret) error
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
 	Validate() error
-	GetVaultAuthObj() *secretsv1alpha1.VaultAuth
-	GetVaultConnectionObj() *secretsv1alpha1.VaultConnection
+	GetVaultAuthObj() *secretsv1beta1.VaultAuth
+	GetVaultConnectionObj() *secretsv1beta1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
 	Close()
@@ -161,8 +161,8 @@ var _ Client = (*defaultClient)(nil)
 type defaultClient struct {
 	client             *api.Client
 	isClone            bool
-	authObj            *secretsv1alpha1.VaultAuth
-	connObj            *secretsv1alpha1.VaultConnection
+	authObj            *secretsv1beta1.VaultAuth
+	connObj            *secretsv1beta1.VaultConnection
 	authSecret         *api.Secret
 	skipRenewal        bool
 	lastRenewal        int64
@@ -306,8 +306,8 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	return nil
 }
 
-func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1alpha1.VaultAuth,
-	connObj *secretsv1alpha1.VaultConnection, providerNamespace string, opts *ClientOptions,
+func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth,
+	connObj *secretsv1beta1.VaultConnection, providerNamespace string, opts *ClientOptions,
 ) error {
 	var err error
 	c.once.Do(func() {
@@ -482,11 +482,11 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	return nil
 }
 
-func (c *defaultClient) GetVaultAuthObj() *secretsv1alpha1.VaultAuth {
+func (c *defaultClient) GetVaultAuthObj() *secretsv1beta1.VaultAuth {
 	return c.authObj
 }
 
-func (c *defaultClient) GetVaultConnectionObj() *secretsv1alpha1.VaultConnection {
+func (c *defaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection {
 	return c.connObj
 }
 
@@ -551,7 +551,7 @@ func (c *defaultClient) renew(ctx context.Context) error {
 }
 
 func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
-	authObj *secretsv1alpha1.VaultAuth, connObj *secretsv1alpha1.VaultConnection,
+	authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection,
 	providerNamespace string, opts *ClientOptions,
 ) error {
 	if connObj == nil {
