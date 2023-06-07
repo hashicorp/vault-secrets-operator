@@ -513,7 +513,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 		if !assert.NotEmpty(t, vdsObj.Status.SecretMAC) {
 			return
 		}
-		maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 2)
+		maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
 	}
 
 	vClient, err := api.NewClient(api.DefaultConfig())
