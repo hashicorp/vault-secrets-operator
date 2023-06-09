@@ -1,3 +1,8 @@
+## Unreleased
+
+Changes:
+* Helm: Fix typos in values.yaml that incorrectly referenced `approle` `roleid` and `secretName` which should be `appRole` `roleId` and `secretRef` respectively under `defaultAuthMethod` and `controller.manager.clientCache.storageEncryption`: [GH-257](https://github.com/hashicorp/vault-secrets-operator/pull/257)
+
 ## 0.1.0-rc.1 (June 7th, 2023)
 
 Features:
