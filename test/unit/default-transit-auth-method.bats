@@ -239,7 +239,7 @@ load _helpers
         --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
         --set 'controller.manager.clientCache.storageEncryption.method=appRole' \
         --set 'controller.manager.clientCache.storageEncryption.namespace=tenant-2' \
-        --set 'controller.manager.clientCache.storageEncryption.appRole.roleid=role-1' \
+        --set 'controller.manager.clientCache.storageEncryption.appRole.roleId=role-1' \
         --set 'controller.manager.clientCache.storageEncryption.appRole.secretRef=secret-1' \
         --set 'controller.manager.clientCache.storageEncryption.mount=foo' \
         . | tee /dev/stderr)

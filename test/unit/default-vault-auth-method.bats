@@ -204,7 +204,7 @@ load _helpers
         --set 'defaultAuthMethod.enabled=true' \
         --set 'defaultAuthMethod.method=appRole' \
         --set 'defaultAuthMethod.namespace=tenant-2' \
-        --set 'defaultAuthMethod.appRole.roleid=role-1' \
+        --set 'defaultAuthMethod.appRole.roleId=role-1' \
         --set 'defaultAuthMethod.appRole.secretRef=secret-1' \
         --set 'defaultAuthMethod.mount=foo' \
         . | tee /dev/stderr)
