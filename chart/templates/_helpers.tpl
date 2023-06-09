@@ -95,7 +95,7 @@ VaultAuthMethod Spec
     {{- end }}
   {{- else if eq $cur.method "appRole" }}
   appRole:
-    roleId: {{ $cur.appRole.roleid }}
+    roleId: {{ $cur.appRole.roleId }}
     secretRef: {{ $cur.appRole.secretRef }}
   {{- end }}
   {{- if $cur.headers }}
