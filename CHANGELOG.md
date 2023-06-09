@@ -1,3 +1,8 @@
+## Unreleased
+
+Changes:
+* VaultPKISecrets (VPS): Include the CA chain (sans root) in 'tls.crt' when the destination secret type is "kubernetes.io/tls": [GH-256](https://github.com/hashicorp/vault-secrets-operator/pull/256)
+
 ## 0.1.0-rc.1 (June 7th, 2023)
 
 Features:
