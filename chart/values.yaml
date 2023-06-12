@@ -72,8 +72,8 @@ controller:
       # This should only be configured when client cache persistence with encryption is enabled and
       # will deploy an additional VaultAuthMethod to be used by the Vault Transit Engine.
       # E.g. when `controller.manager.clientCache.persistenceModel=direct-encrypted`
-      # Supported Vault authentication methods for the Transit Auth method are: jwt, approle,
-      # and kubernetes.
+      # Supported Vault authentication methods for the Transit Auth method are: jwt, appRole,
+      # aws, and kubernetes.
       # Typically, there should only ever be one VaultAuth configured with
       # StorageEncryption in the Cluster.
       storageEncryption:
@@ -141,7 +141,7 @@ controller:
           # must exist in the namespace of any consuming VaultSecret CR. This is a required field if
           # a JWT token is provided.
           # @type: string
-          secretName: ""
+          secretRef: ""
 
           # Kubernetes ServiceAccount to generate a service account JWT
           # @type: string
@@ -165,7 +165,7 @@ controller:
           # This is a required field when using appRole and must be setup in Vault prior to
           # deploying the helm chart.
           # @type: string
-          secretName: ""
+          secretRef: ""
 
         # AWS auth method specific configuration
         aws:
@@ -367,7 +367,7 @@ defaultAuthMethod:
     # The Kubernetes Secret must contain a key named `jwt` which references the JWT token, and must exist in the namespace
     # of any consuming VaultSecret CR. This is a required field if a JWT token is provided.
     # @type: string
-    secretName: ""
+    secretRef: ""
 
     # Kubernetes ServiceAccount to generate a service account JWT
     # @type: string
@@ -391,7 +391,7 @@ defaultAuthMethod:
     # This is a required field when using appRole and must be setup in Vault prior to deploying the
     # helm chart.
     # @type: string
-    secretName: ""
+    secretRef: ""
 
   # AWS auth method specific configuration
   aws:
