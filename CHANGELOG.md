@@ -1,8 +1,10 @@
-## Unreleased
+## 0.1.0 (June 12th, 2023)
+
+Improvements:
+* VaultPKISecrets (VPS): Include the CA chain (sans root) in 'tls.crt' when the destination secret type is "kubernetes.io/tls": [GH-256](https://github.com/hashicorp/vault-secrets-operator/pull/256)
 
 Changes:
-* Helm: Fix typos in values.yaml that incorrectly referenced `approle` `roleid` and `secretName` which should be `appRole` `roleId` and `secretRef` respectively under `defaultAuthMethod` and `controller.manager.clientCache.storageEncryption`: [GH-257](https://github.com/hashicorp/vault-secrets-operator/pull/257)
-* VaultPKISecrets (VPS): Include the CA chain (sans root) in 'tls.crt' when the destination secret type is "kubernetes.io/tls": [GH-256](https://github.com/hashicorp/vault-secrets-operator/pull/256)
+* Helm: **Breaking Change** Fix typos in values.yaml that incorrectly referenced `approle` `roleid` and `secretName` which should be `appRole` `roleId` and `secretRef` respectively under `defaultAuthMethod` and `controller.manager.clientCache.storageEncryption`: [GH-257](https://github.com/hashicorp/vault-secrets-operator/pull/257)
 
 ## 0.1.0-rc.1 (June 7th, 2023)
 
