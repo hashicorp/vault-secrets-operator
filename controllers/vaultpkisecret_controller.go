@@ -214,8 +214,20 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		return ctrl.Result{}, err
 	}
+	// Fix ca_chain formatting since it's a slice
+	if len(data["ca_chain"]) > 0 {
+		data["ca_chain"] = []byte(strings.Join(certResp.CAChain, "\n"))
+	}
 	if o.Spec.Destination.Type == corev1.SecretTypeTLS {
 		data[corev1.TLSCertKey] = data["certificate"]
+		// the ca_chain includes the issuing ca
+		if len(data["ca_chain"]) > 0 {
+			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte("\n")...)
+			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte(data["ca_chain"])...)
+		} else if len(data["issuing_ca"]) > 0 {
+			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte("\n")...)
+			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], data["issuing_ca"]...)
+		}
 		data[corev1.TLSPrivateKeyKey] = data["private_key"]
 	}
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {

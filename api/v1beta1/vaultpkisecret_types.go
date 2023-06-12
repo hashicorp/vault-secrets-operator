@@ -131,14 +131,15 @@ type VaultPKISecret struct {
 
 func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 	m := map[string]interface{}{
-		"common_name":          v.Spec.CommonName,
-		"alt_names":            strings.Join(v.Spec.AltNames, ","),
-		"ip_sans":              strings.Join(v.Spec.IPSans, ","),
-		"uri_sans":             strings.Join(v.Spec.URISans, ","),
-		"other_sans":           strings.Join(v.Spec.OtherSans, ","),
-		"ttl":                  v.Spec.TTL,
-		"not_after":            v.Spec.NotAfter,
-		"exclude_cn_from_sans": v.Spec.ExcludeCNFromSans,
+		"common_name":             v.Spec.CommonName,
+		"alt_names":               strings.Join(v.Spec.AltNames, ","),
+		"ip_sans":                 strings.Join(v.Spec.IPSans, ","),
+		"uri_sans":                strings.Join(v.Spec.URISans, ","),
+		"other_sans":              strings.Join(v.Spec.OtherSans, ","),
+		"ttl":                     v.Spec.TTL,
+		"not_after":               v.Spec.NotAfter,
+		"exclude_cn_from_sans":    v.Spec.ExcludeCNFromSans,
+		"remove_roots_from_chain": true,
 	}
 
 	if v.Spec.Format != "" {

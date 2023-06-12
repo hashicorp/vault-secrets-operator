@@ -272,7 +272,16 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 		return false, fmt.Errorf("%s is missing", corev1.TLSPrivateKeyKey)
 	}
 
-	if !bytes.Equal(tlsCert, secret.Data["certificate"]) {
+	certificate := secret.Data["certificate"]
+	if caChain, ok := secret.Data["ca_chain"]; ok {
+		certificate = append(certificate, []byte("\n")...)
+		certificate = append(certificate, caChain...)
+	} else if issuingCA, ok := secret.Data["issuing_ca"]; ok {
+		certificate = append(certificate, []byte("\n")...)
+		certificate = append(certificate, issuingCA...)
+	}
+
+	if !bytes.Equal(tlsCert, certificate) {
 		return false, fmt.Errorf("%s did not equal certificate: %s, %s",
 			corev1.TLSCertKey, tlsCert, secret.Data["certificate"])
 	}
