@@ -54,9 +54,11 @@ type VaultPKISecretSpec struct {
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 
 	// Destination provides configuration necessary for syncing the Vault secret
-	// to Kubernetes. If the type is set to "kubernetes.io/tls", the Vault
-	// response fields "certificate" and "private_key" will be copied to fields
-	// "tls.crt" and "tls.key", respectively, in the Kubernetes secret.
+	// to Kubernetes. If the type is set to "kubernetes.io/tls", "tls.key" will
+	// be set to the "private_key" response from Vault, and "tls.crt" will be
+	// set to "certificate" + "ca_chain" from the Vault response ("issuing_ca"
+	// is used when "ca_chain" is empty). The "remove_roots_from_chain=true"
+	// option is used with Vault to exclude the root CA from the Vault response.
 	Destination Destination `json:"destination"`
 
 	// CommonName to include in the request.
