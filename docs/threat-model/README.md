@@ -1,6 +1,6 @@
 # Vault Secrets Operator Threat Model
 
-The Vault Secrets Operator synchronizes secrets from Vault to [Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/). This threat model highlights how using the Vault Secrets Operator affects users' security posture.
+The Vault Secrets Operator synchronizes secrets from Vault to [Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/). This threat model highlights how using the Vault Secrets Operator affects users' security posture and provides some recommendations for running it securely.
 
 ## Executive summary and recommendations
 
