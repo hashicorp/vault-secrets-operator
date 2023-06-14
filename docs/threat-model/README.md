@@ -8,7 +8,7 @@ The Operator occupies a privileged position in a Kubernetes cluster, with unencr
 
 * Deploy the Operator [in its own dedicated namespace](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#installation-using-helm), with access limited via RBAC to a small set of operators.
 * RBAC permissions must be tightly controlled within each namespace, both for explicit and implicit access to Kubernetes Secrets.
-* Enable and monitor both Vault and Kubernetes audit logging for unusual access patterns.
+* Enable both Vault and Kubernetes audit logging and monitor for unusual access patterns.
 * Configure the Operator to [encrypt the client cache secret contents](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/helm#v-controller-manager-clientcache-storageencryption) (if enabled) at the application level using the Transit engine.
 * Define VaultAuth objects per unit of trust (e.g. an application, or a namespace) with distinct, granular Vault roles and policies to ensure auditability and principle of least privilege.
 * Encrypt the Kubernetes etcd database at rest using a KMS provider. Kubernetes Secrets stored in etcd are [not encrypted at rest by default](https://kubernetes.io/docs/concepts/security/secrets-good-practices/).
