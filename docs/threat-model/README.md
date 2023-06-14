@@ -13,7 +13,7 @@ The Operator occupies a privileged position in a Kubernetes cluster, with unencr
 * Define VaultAuth objects per unit of trust (e.g. an application, or a namespace) with distinct, granular Vault roles and policies to ensure auditability and principle of least privilege.
 * Encrypt the Kubernetes etcd database at rest using a KMS provider. Kubernetes Secrets stored in etcd are [not encrypted at rest by default](https://kubernetes.io/docs/concepts/security/secrets-good-practices/).
 * Use TLS negotiated by a well-secured certificate authority for all networked communication, especially for Vault and the Kubernetes API.
-* Update Vault operator, Vault, and other systems regularly to guard against known vulnerabilities.
+* Update the Operator, Vault, and other systems regularly to guard against known vulnerabilities.
 
 ## Terminology
 
