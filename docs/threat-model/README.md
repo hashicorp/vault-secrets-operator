@@ -49,7 +49,7 @@ Links in blue represent the flow of secret data:
 
 * The Operator can optionally store and retrieve Vault tokens and secrets in Kubernetes Secrets (the Client Cache) within its own namespace.
 
-* The Operator may request Kubernetes service account tokens or other authentication data (stored in Kubernetes Secrets) from the API Server. It sends Vault secrets to the API Server for storage as Kubernetes Secrets. to be used by workload applications.
+* The Operator may request Kubernetes service account tokens or other authentication data (stored in Kubernetes Secrets) from the API Server. It sends Vault secrets to the API Server for storage as Kubernetes Secrets to be used by workload applications.
 
 * The API Server stores and retrieves those Vault secrets as Kubernetes Secrets in etcd.
 
