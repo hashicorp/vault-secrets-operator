@@ -212,7 +212,7 @@ Attackers with access to this information can use it to access other systems, de
    <td>
 <ul>
 
-<li>Configure the Operator with [storage encryption](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/helm#v-controller-manager-clientcache-storageencryption) to encrypt the client cache secret contents
+<li>Configure the Operator with <a href="https://developer.hashicorp.com/vault/docs/platform/k8s/vso/helm#v-controller-manager-clientcache-storageencryption">storage encryption</a> to encrypt the client cache secret contents
 
 <li>Encrypt the Kubernetes etcd database at rest using a KMS provider
 
