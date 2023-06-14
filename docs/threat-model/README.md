@@ -204,6 +204,8 @@ Each namespace can also deploy its own VaultAuth objects for use only within tha
    <td>The Operator can store cached Vault tokens and secrets in Kubernetes Secrets within its own namespace in order to reduce unnecessary secret churn when the Operator is rolled out or a new leader is elected.
 <p>
 Attackers with access to this information can use it to access other systems, degrade the Operator’s operation, or spoof other clients.
+<p>
+Pods have read-only access to secrets.
    </td>
    <td><strong>Likelihood:</strong> Moderate
 <p>
@@ -216,7 +218,7 @@ Attackers with access to this information can use it to access other systems, de
 
 <li>Encrypt the Kubernetes etcd database at rest using a KMS provider
 
-<li>Deploy the Operator in its own dedicated namespace, with access limited via RBAC to a small set of operators
+<li>Deploy the Operator <a href="https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#installation-using-helm">in its own dedicated namespace</a>, with access limited via RBAC to a small set of operators
 
 <li>Enable and monitor Kubernetes audit logging for unusual access patterns
 </li>
@@ -241,7 +243,7 @@ With access to the compute environment inside the pod, attackers can read unencr
    <td>
 <ul>
 
-<li>Deploy the Operator in its own dedicated namespace, with access limited via RBAC to a small set of operators
+<li>Deploy the Operator <a href="https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#installation-using-helm">in its own dedicated namespace</a>, with access limited via RBAC to a small set of operators
 
 <li>Enable and monitor Kubernetes audit logging for unusual access patterns
 </li>
@@ -266,7 +268,7 @@ If an attacker either has access to create tokens for the Operator’s service a
    <td>
 <ul>
 
-<li>Deploy the Operator in its own dedicated namespace, with access limited via RBAC to a small set of operators
+<li>Deploy the Operator <a href="https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#installation-using-helm">in its own dedicated namespace</a>, with access limited via RBAC to a small set of operators
 
 <li>Enable and monitor both Vault and Kubernetes audit logging for unusual access patterns
 </li>
@@ -276,7 +278,7 @@ If an attacker either has access to create tokens for the Operator’s service a
   <tr>
    <td>7
    </td>
-   <td>The Operator is affected by a CVE that can be exploited by attackers through a previously unknown process
+   <td>The Operator is affected by a vulnerability that can be exploited by attackers through a previously unknown process
    </td>
    <td>Information disclosure, tampering, integrity, spoofing
    </td>
@@ -289,7 +291,7 @@ If an attacker either has access to create tokens for the Operator’s service a
    <td>
 <ul>
 
-<li>HashiCorp will address CVEs identified in the Operator’s code or its dependencies in a timely manner and release an updated version
+<li>HashiCorp will address vulnerabilities identified in the Operator’s code or its dependencies in a timely manner and release an updated version
 
 <li>Clusters should run the most recent version of the Operator at all times, and have processes in place to respond to new versions
 </li>
@@ -405,12 +407,14 @@ While none of this should be considered secret information, it can be sensitive 
 
 The Operator occupies a privileged position in a Kubernetes cluster, with unencrypted access to all secrets being synced, and extra care must be taken to secure and monitor it via both Vault and Kubernetes permissions and auditing. In particular:
 
-* Deploy the Operator in its own dedicated namespace, with access limited via RBAC to a small set of operators.
+* Deploy the Operator [in its own dedicated namespace](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#installation-using-helm), with access limited via RBAC to a small set of operators.
+* RBAC permissions must be tightly controlled within each namespace, both for explicit and implicit access to Kubernetes Secrets.
 * Enable and monitor both Vault and Kubernetes audit logging for unusual access patterns.
 * Configure the Operator to [encrypt the client cache secret contents](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/helm#v-controller-manager-clientcache-storageencryption) (if enabled) at the application level using the Transit engine.
 * Define VaultAuth objects per unit of trust (e.g. an application, or a namespace) with distinct, granular Vault roles and policies to ensure auditability and principle of least privilege.
 * Encrypt the Kubernetes etcd database at rest using a KMS provider.
 * Use TLS negotiated by a well-secured certificate authority for all networked communication, especially for Vault and the Kubernetes API.
+* Update Vault operator, Vault, and other systems regularly to guard against known vulnerabilities.
 
 ## References
 
@@ -421,3 +425,4 @@ The Operator occupies a privileged position in a Kubernetes cluster, with unencr
     * [NSA/CISA Kubernetes Hardening Guide](https://kubernetes.io/blog/2021/10/05/nsa-cisa-kubernetes-hardening-guidance/)
     * [OWASP Kubernetes Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Kubernetes_Security_Cheat_Sheet.html)
     * [Trail of Bits Kubernetes audit](https://github.com/trailofbits/audit-kubernetes/blob/master/reports/Kubernetes%20Threat%20Model.pdf)
+* [Vault Production Hardening Guidelines](https://developer.hashicorp.com/vault/tutorials/operations/production-hardening)
