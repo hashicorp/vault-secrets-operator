@@ -35,12 +35,12 @@ flowchart LR
     subgraph k8s-sg[Kubernetes Cluster]
         subgraph vso-sg[Vault Secrets Operator namespace]
             vso["Vault Secrets Operator"]
-            vso-cache["VSO Cache Secrets"]
-            vaultconn-default["Default VaultConnection"]
+            vso-cache["Client Cache Secrets"]
+            vaultconn-default["Default VaultConnection (External)"]
             vaultauth-default["Default VaultAuth"]
         end
         subgraph workload-sg[Workload namespace]
-            vaultconn-server2["Server2 VaultConnection"]
+            vaultconn-server2["VaultConnection (In-Cluster)"]
             vaultauth-app1["App1 ServiceAccount VaultAuth"]
             vaultauth-approle["AppRole VaultAuth"]
 
@@ -212,7 +212,7 @@ Attackers with access to this information can use it to access other systems, de
    <td>
 <ul>
 
-<li>Configure VaultAuth for the Operator to use `StorageEncryption` to encrypt the cache secret contents using a Vault Transit engine
+<li>Configure the Operator with [storage encryption](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/helm#v-controller-manager-clientcache-storageencryption) to encrypt the client cache secret contents
 
 <li>Encrypt the Kubernetes etcd database at rest using a KMS provider
 
@@ -407,7 +407,7 @@ The Operator occupies a privileged position in a Kubernetes cluster, with unencr
 
 * Deploy the Operator in its own dedicated namespace, with access limited via RBAC to a small set of operators.
 * Enable and monitor both Vault and Kubernetes audit logging for unusual access patterns.
-* The Operator should be configured to encrypt the cache secret contents (if enabled) at the application level using the Transit engine.
+* Configure the Operator to [encrypt the client cache secret contents](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/helm#v-controller-manager-clientcache-storageencryption) (if enabled) at the application level using the Transit engine.
 * Define VaultAuth objects per unit of trust (e.g. an application, or a namespace) with distinct, granular Vault roles and policies to ensure auditability and principle of least privilege.
 * Encrypt the Kubernetes etcd database at rest using a KMS provider.
 * Use TLS negotiated by a well-secured certificate authority for all networked communication, especially for Vault and the Kubernetes API.
