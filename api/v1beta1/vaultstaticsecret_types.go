@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package v1alpha1
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,8 +20,10 @@ type VaultStaticSecretSpec struct {
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
-	// Name of the secret in Vault
-	Name string `json:"name"`
+	// Path of the secret in Vault, corresponds to the `path` parameter for,
+	// kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+	// kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version
+	Path string `json:"path"`
 	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
 	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
 	// +kubebuilder:validation:Minimum=0

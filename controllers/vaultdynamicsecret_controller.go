@@ -5,6 +5,8 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -24,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
@@ -40,6 +42,7 @@ type VaultDynamicSecretReconciler struct {
 	Scheme        *runtime.Scheme
 	Recorder      record.EventRecorder
 	ClientFactory vault.ClientFactory
+	HMACValidator vault.HMACValidator
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
@@ -80,7 +83,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	o := &secretsv1alpha1.VaultDynamicSecret{}
+	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -88,7 +91,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Error(err, "error getting resource from k8s", "obj", o)
 		return ctrl.Result{}, err
 	}
-	// Add a finalizer on the VDS resource if we intend to Revoke on cleanup path or lease renewal.
+	// Add a finalizer on the VDS resource if we intend to Revoke on cleanup path.
 	// Otherwise, there isn't a need for it since we are not managing anything on deletion.
 	if o.Spec.Revoke {
 		if o.GetDeletionTimestamp() == nil {
@@ -101,9 +104,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	var doRolloutRestart bool
+	// doSync indicates that the controller should perform the secret sync,
+	// skipping any lease renewals.
+	doSync := o.GetGeneration() != o.Status.LastGeneration
+	doRolloutRestart := doSync && o.Status.LastGeneration > 1
+
 	leaseID := o.Status.SecretLease.ID
-	if leaseID != "" {
+	if !doSync && !o.Spec.AllowStaticCreds && leaseID != "" {
 		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 			// don't take part in the thundering herd on start up,
 			// and the lease is still within the renewal window.
@@ -127,9 +134,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, err
 		}
 
-		// Renew the lease and return from Reconcile if the lease is succesfully renewed.
+		// Renew the lease and return from Reconcile if the lease is successfully renewed.
 		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
-			if !r.isRenewableLease(secretLease, o) {
+			if !r.isRenewableLease(secretLease, o, false) {
 				return ctrl.Result{}, nil
 			}
 
@@ -140,6 +147,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, err
 			}
 
+			o.Status.StaticCredsMetaData = secretsv1beta1.VaultStaticCredsMetaData{}
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = time.Now().Unix()
 			if err := r.updateStatus(ctx, o); err != nil {
@@ -175,28 +183,53 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
 		return ctrl.Result{}, err
 	}
-	oldLease := o.Status.SecretLease
 
-	secretLease, err := r.syncSecret(ctx, vClient, o)
+	secretLease, updated, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
+	doRolloutRestart = updated
+
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
-	// Revoke the existing Lease if it did exist before and we just renewed it.
-	if o.Spec.Revoke && oldLease.ID != "" && oldLease.Renewable {
-		r.revokeLease(ctx, o, oldLease.ID)
-	}
 
 	reason := consts.ReasonSecretSynced
-	leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-	horizon := computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Secret synced, lease_id=%s, horizon=%s", secretLease.ID, horizon)
+	var horizon time.Duration
+	isRenewable := r.isRenewableLease(secretLease, o, false)
+	if isRenewable {
+		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
+		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
+		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
+			"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
+	} else if o.Spec.AllowStaticCreds {
+		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
+		staticCredsMeta := o.Status.StaticCredsMetaData
+		if !r.isStaticCreds(&staticCredsMeta) {
+			horizon = 0
+			logger.Info("Vault response data does not support static-creds semantics",
+				"allowStaticCreds", o.Spec.AllowStaticCreds,
+				"horizon", horizon,
+				"status", o.Status,
+			)
+		} else {
+			if staticCredsMeta.TTL > 0 {
+				horizon = time.Duration(staticCredsMeta.TTL) * time.Second
+			} else {
+				horizon = time.Second * 1
+			}
+
+			_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
+			horizon += time.Duration(jitter)
+			r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
+				"Secret synced, isStaticCreds=%t, horizon=%s, ttl=%d",
+				true, horizon, o.Status.StaticCredsMetaData.TTL)
+		}
+	}
 
 	if doRolloutRestart {
 		reason = consts.ReasonSecretRotated
@@ -205,25 +238,34 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	if !r.isRenewableLease(secretLease, o) {
+	if (!r.isRenewableLease(secretLease, o, true) && !o.Spec.AllowStaticCreds) || horizon.Seconds() == 0 {
+		// no need to requeue
+		logger.Info("Vault secret does not support periodic renewal/refresh via reconciliation",
+			"requeue", false, "horizon", horizon)
 		return ctrl.Result{}, nil
 	}
 
 	return ctrl.Result{RequeueAfter: horizon}, nil
 }
 
-func (r *VaultDynamicSecretReconciler) isRenewableLease(resp *secretsv1alpha1.VaultSecretLease, o *secretsv1alpha1.VaultDynamicSecret) bool {
-	if !resp.Renewable {
+func (r *VaultDynamicSecretReconciler) isRenewableLease(secretLease *secretsv1beta1.VaultSecretLease, o *secretsv1beta1.VaultDynamicSecret, skipEventRecording bool) bool {
+	renewable := secretLease.Renewable
+	if !renewable && !skipEventRecording && !o.Spec.AllowStaticCreds {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal,
-			"Lease is not renewable, info=%#v", resp)
-		return false
+			"Lease is not renewable, staticCreds=%t, info=%#v",
+			o.Spec.AllowStaticCreds, secretLease)
 	}
-	return true
+
+	return renewable
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(
-	ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret,
-) (*secretsv1alpha1.VaultSecretLease, error) {
+func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultStaticCredsMetaData) bool {
+	// the ldap and database engines have minimum rotation period of 5s, requiring a
+	// minimum of 1s should be okay here.
+	return meta.LastVaultRotation > 0 && meta.RotationPeriod > 1
+}
+
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp *api.Secret
@@ -255,30 +297,70 @@ func (r *VaultDynamicSecretReconciler) syncSecret(
 	case http.MethodGet:
 		resp, err = c.Read(ctx, path)
 	default:
-		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
+		return nil, false, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if resp == nil {
-		return nil, fmt.Errorf("nil response from vault for path %s", path)
+		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
 	data, err := vault.MarshalSecretData(resp)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+
+	secretLease := r.getVaultSecretLease(resp)
+	if !secretLease.Renewable && o.Spec.AllowStaticCreds {
+		if v, ok := resp.Data["last_vault_rotation"]; ok && v != nil {
+			ts, err := time.Parse(time.RFC3339Nano, v.(string))
+			if err == nil {
+				o.Status.StaticCredsMetaData.LastVaultRotation = ts.Unix()
+			}
+		}
+		if v, ok := resp.Data["rotation_period"]; ok && v != nil {
+			switch t := v.(type) {
+			case json.Number:
+				period, err := t.Int64()
+				if err == nil {
+					o.Status.StaticCredsMetaData.RotationPeriod = period
+				}
+			}
+		}
+		if v, ok := resp.Data["ttl"]; ok && v != nil {
+			switch t := v.(type) {
+			case json.Number:
+				ttl, err := t.Int64()
+				if err == nil {
+					o.Status.StaticCredsMetaData.TTL = ttl
+				}
+			}
+		}
+
+		if r.isStaticCreds(&o.Status.StaticCredsMetaData) {
+			macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
+			if err != nil {
+				return nil, false, err
+			}
+
+			o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+			if macsEqual {
+				return secretLease, false, nil
+			}
+		}
 	}
 
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return r.getVaultSecretLease(resp), nil
+	return secretLease, true, nil
 }
 
-func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
 	if r.runtimePodUID != "" {
 		o.Status.LastRuntimePodUID = r.runtimePodUID
 	}
@@ -286,11 +368,12 @@ func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secr
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)
 	}
+
 	return nil
 }
 
-func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *secretsv1alpha1.VaultSecretLease {
-	return &secretsv1alpha1.VaultSecretLease{
+func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *secretsv1beta1.VaultSecretLease {
+	return &secretsv1beta1.VaultSecretLease{
 		ID:            resp.LeaseID,
 		LeaseDuration: resp.LeaseDuration,
 		Renewable:     resp.Renewable,
@@ -299,8 +382,8 @@ func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *se
 }
 
 func (r *VaultDynamicSecretReconciler) renewLease(
-	ctx context.Context, c vault.ClientBase, o *secretsv1alpha1.VaultDynamicSecret,
-) (*secretsv1alpha1.VaultSecretLease, error) {
+	ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret,
+) (*secretsv1beta1.VaultSecretLease, error) {
 	resp, err := c.Write(ctx, "/sys/leases/renew", map[string]interface{}{
 		"lease_id":  o.Status.SecretLease.ID,
 		"increment": o.Status.SecretLease.LeaseDuration,
@@ -321,7 +404,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 	return r.getVaultSecretLease(resp), nil
 }
 
-func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
 	if !controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		controllerutil.AddFinalizer(o, vaultDynamicSecretFinalizer)
 		if err := r.Client.Update(ctx, o); err != nil {
@@ -334,7 +417,7 @@ func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secr
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultDynamicSecret{}).
+		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
@@ -352,7 +435,7 @@ func isLeaseNotfoundError(err error) bool {
 // handleDeletion will handle the deletion path of the VDS secret:
 // * revoking any associated outstanding leases
 // * removing our finalizer
-func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret) error {
+func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
 	logger := log.FromContext(ctx)
 	// We are ignoring errors inside `revokeLease`, otherwise we may fail to remove the finalizer.
 	// Worst case at this point we will leave a dangling lease instead of a secret which
@@ -375,7 +458,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 // NOTE: Enabling revocation requires the VaultAuthMethod referenced by `o.Spec.VaultAuthRef` to have a policy
 // that includes `path "sys/leases/revoke" { capabilities = ["update"] }`, otherwise this will fail with permission
 // errors.
-func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1alpha1.VaultDynamicSecret, id string) {
+func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, id string) {
 	logger := log.FromContext(ctx)
 	// Allow us to override the SecretLease in the event that we want to revoke an old lease.
 	leaseID := id
@@ -403,7 +486,7 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 
 // inRenewalWindow checks if the specified percentage of the VDS lease duration
 // has elapsed
-func inRenewalWindow(vds *secretsv1alpha1.VaultDynamicSecret) bool {
+func inRenewalWindow(vds *secretsv1beta1.VaultDynamicSecret) bool {
 	renewalPercent := capRenewalPercent(vds.Spec.RenewalPercent)
 	leaseDuration := time.Duration(vds.Status.SecretLease.LeaseDuration) * time.Second
 	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(renewalPercent) / 100)

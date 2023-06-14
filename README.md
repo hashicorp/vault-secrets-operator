@@ -12,10 +12,6 @@ to have access to the *destination* secret in order to make use of the secret da
 
 See the developer docs for more info [here](https://developer.hashicorp.com/vault/docs/platform/k8s/vso)
 
-*Please note that The Vault Secrets Operator is in public beta. Please provide your feedback by opening a GitHub issue
-[here](https://github.com/hashicorp/vault-secrets-operator/issues). We will be reviewing PR contributions after the beta period has elapsed.<br />
-Thanks!*
-
 ### Features
 
 The following features are supported by the Vault Secrets Operator:
@@ -67,7 +63,7 @@ kubectl delete -k config/samples
 
 ### Ingress TLS with VaultPKISecret
 
-The file `config/samples/secrets_v1alpha1_vaultpkisecret_tls.yaml` contains an
+The file `config/samples/secrets_v1beta1_vaultpkisecret_tls.yaml` contains an
 example of using VaultPKISecret to populate a TLS secret for use with an
 Ingress. This sample takes a little more setup to test it out (derived from the
 [kind docs](https://kind.sigs.k8s.io/docs/user/ingress/)).
@@ -134,14 +130,61 @@ make integration-test
 
 ```shell
 # Create an EKS cluster and a ECR repository
-make create-eks
+make -f aws.mk create-eks
 
-# Build the operator binary, image, and deploy to the ECR repository
-make ci-ecr-build-push 
-
-# Run the integration tests (includes Vault OSS deployment)
-make integration-test-eks
+# Build the operator image and run the integration tests (includes Vault OSS deployment)
+make -f aws.mk build-push integration-test-eks
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
-make integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
+make -f aws.mk build-push integration-test-eks VAULT_ENTERPRISE=true ENT_TESTS=true
+```
+
+#### AWS auth test with static credentials
+
+```shell
+# Set SKIP_AWS_STATIC_CREDS_TEST=false and set the credentials for the static creds user via the environment variables TEST_AWS_ACCESS_KEY_ID,
+# TEST_AWS_SECRET_ACCESS_KEY, TEST_AWS_STATIC_CREDS_ROLE (and TEST_AWS_SESSION_TOKEN if applicable) for a user in AWS.
+# Note: these credentials will be set in a Kubernetes secret.
+export TEST_AWS_ACCESS_KEY_ID="..."
+export TEST_AWS_SECRET_ACCESS_KEY="..."
+export TEST_AWS_SESSION_TOKEN="..."
+export AWS_STATIC_CREDS_ROLE="arn:aws:iam::..."
+make -f aws.mk integration-test-eks TESTARGS="-run TestVaultAuth" SKIP_AWS_STATIC_CREDS_TEST=false
+```
+
+### Integration Tests in GKE
+
+```shell
+# Export the Google Cloud project id
+export GCP_PROJECT="<project_id>"
+
+# Create an GKE cluster and a GAR repository
+make -f gcp.mk create-gke
+
+# Build & operator image & run the integration tests (includes Vault OSS deployment)
+make -f gcp.mk build-push integration-test-gke
+
+# Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
+make -f gcp.mk build-push integration-test-gke VAULT_ENTERPRISE=true ENT_TESTS=true
+```
+
+### Integration Tests in AKS
+
+```shell
+# Export the Azure credentials
+az config set core.allow_broker=true && az account clear && az login
+az account set --subscription "<subscription_id>"
+az ad sp create-for-rbac --name "vault-secrets-operator" --role "Owner" --scopes /subscriptions/<subscription_id> --output json
+export AZURE_APPID="<app_id>"
+export AZURE_PASSWORD="<password>"
+export AZURE_TENANT="<tenant_id>"
+
+# Create an AKS cluster and a ACR repository
+make -f azure.mk create-aks
+
+# Build  the operator image and run the integration tests (includes Vault OSS deployment)
+make -f azure.mk build-push integration-test-aks
+
+# Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
+make -f azure.mk build-push integration-test-aks VAULT_ENTERPRISE=true ENT_TESTS=true
 ```

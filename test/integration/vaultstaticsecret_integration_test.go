@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/json"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
@@ -56,7 +56,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	k8sConfigContext := os.Getenv("KIND_CLUSTER_CONTEXT")
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
@@ -132,42 +132,42 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
 	// Create a VaultConnection CR
-	conns := []*secretsv1alpha1.VaultConnection{
+	conns := []*secretsv1beta1.VaultConnection{
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultconnection-test-tenant-1",
 				Namespace: testK8sNamespace,
 			},
-			Spec: secretsv1alpha1.VaultConnectionSpec{
+			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
 			},
 		},
 	}
 
 	// Creates a default VaultConnection CR
-	defaultConnection := &secretsv1alpha1.VaultConnection{
+	defaultConnection := &secretsv1beta1.VaultConnection{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      consts.NameDefault,
 			Namespace: operatorNS,
 		},
-		Spec: secretsv1alpha1.VaultConnectionSpec{
+		Spec: secretsv1beta1.VaultConnectionSpec{
 			Address: testVaultAddress,
 		},
 	}
 
-	auths := []*secretsv1alpha1.VaultAuth{
+	auths := []*secretsv1beta1.VaultAuth{
 		// Create a non-default VaultAuth CR
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultauth-test-tenant-1",
 				Namespace: testK8sNamespace,
 			},
-			Spec: secretsv1alpha1.VaultAuthSpec{
+			Spec: secretsv1beta1.VaultAuthSpec{
 				VaultConnectionRef: "vaultconnection-test-tenant-1",
 				Namespace:          testVaultNamespace,
 				Method:             "kubernetes",
 				Mount:              "kubernetes",
-				Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 					Role:           "role1",
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
@@ -176,17 +176,17 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 	}
 	// Create the default VaultAuth CR in the Operator's namespace
-	defaultAuthMethod := &secretsv1alpha1.VaultAuth{
+	defaultAuthMethod := &secretsv1beta1.VaultAuth{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      consts.NameDefault,
 			Namespace: operatorNS,
 		},
-		Spec: secretsv1alpha1.VaultAuthSpec{
+		Spec: secretsv1beta1.VaultAuthSpec{
 			VaultConnectionRef: consts.NameDefault,
 			Namespace:          testVaultNamespace,
 			Method:             "kubernetes",
 			Mount:              "kubernetes",
-			Kubernetes: &secretsv1alpha1.VaultAuthConfigKubernetes{
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 				Role:           "role1",
 				ServiceAccount: "default",
 				TokenAudiences: []string{"vault"},
@@ -212,27 +212,27 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 	// since each test case mutates the VSS object, we use this function to pass
 	// it a new slice for the expected, existing tests.
-	getExisting := func() []*secretsv1alpha1.VaultStaticSecret {
-		return []*secretsv1alpha1.VaultStaticSecret{
+	getExisting := func() []*secretsv1beta1.VaultStaticSecret {
+		return []*secretsv1beta1.VaultStaticSecret{
 			// Create a VaultStaticSecret CR to trigger the sync for kv
 			{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultstaticsecret-test-kv",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultStaticSecretSpec{
+				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					VaultAuthRef: auths[0].ObjectMeta.Name,
 					Namespace:    testVaultNamespace,
 					Mount:        testKvMountPath,
 					Type:         consts.KVSecretTypeV1,
-					Name:         "secret",
-					Destination: secretsv1alpha1.Destination{
+					Path:         "secret",
+					Destination: secretsv1beta1.Destination{
 						Name:   "secretkv",
 						Create: false,
 					},
 					HMACSecretData: true,
 					RefreshAfter:   "5s",
-					RolloutRestartTargets: []secretsv1alpha1.RolloutRestartTarget{
+					RolloutRestartTargets: []secretsv1beta1.RolloutRestartTarget{
 						{
 							Kind: "Deployment",
 							Name: "vso",
@@ -246,12 +246,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Name:      "vaultstaticsecret-test-kvv2",
 					Namespace: testK8sNamespace,
 				},
-				Spec: secretsv1alpha1.VaultStaticSecretSpec{
+				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Namespace: testVaultNamespace,
 					Mount:     testKvv2MountPath,
 					Type:      consts.KVSecretTypeV2,
-					Name:      "secret",
-					Destination: secretsv1alpha1.Destination{
+					Path:      "secret",
+					Destination: secretsv1beta1.Destination{
 						Name:   "secretkvv2",
 						Create: false,
 					},
@@ -270,7 +270,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		existing []*secretsv1alpha1.VaultStaticSecret
+		existing []*secretsv1beta1.VaultStaticSecret
 		// expectedData maps to each vssObj in existing, so they need to be equal in length
 		expectedExisting []expectedData
 		create           int
@@ -330,30 +330,30 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 	}
 
-	putKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret, data map[string]interface{}) {
+	putKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret, data map[string]interface{}) {
 		switch vssObj.Spec.Type {
 		case consts.KVSecretTypeV1:
-			require.NoError(t, vClient.KVv1(testKvMountPath).Put(ctx, vssObj.Spec.Name, data))
+			require.NoError(t, vClient.KVv1(testKvMountPath).Put(ctx, vssObj.Spec.Path, data))
 		case consts.KVSecretTypeV2:
-			_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Name, data)
+			_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Path, data)
 			require.NoError(t, err)
 		default:
 			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
 		}
 	}
 
-	deleteKV := func(t *testing.T, vssObj *secretsv1alpha1.VaultStaticSecret) {
+	deleteKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret) {
 		switch vssObj.Spec.Type {
 		case consts.KVSecretTypeV1:
-			require.NoError(t, vClient.KVv1(testKvMountPath).Delete(ctx, vssObj.Spec.Name))
+			require.NoError(t, vClient.KVv1(testKvMountPath).Delete(ctx, vssObj.Spec.Path))
 		case consts.KVSecretTypeV2:
-			require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Name))
+			require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Path))
 		default:
 			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
 		}
 	}
 
-	assertSync := func(t *testing.T, obj *secretsv1alpha1.VaultStaticSecret, expected expectedData, expectInitial bool) {
+	assertSync := func(t *testing.T, obj *secretsv1beta1.VaultStaticSecret, expected expectedData, expectInitial bool) {
 		var data map[string]interface{}
 		if expectInitial {
 			putKV(t, obj, expected.initial)
@@ -372,9 +372,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, data)
 		if assert.NoError(t, err) {
-			assertSyncableSecret(t, obj,
-				"secrets.hashicorp.com/v1alpha1",
-				"VaultStaticSecret", secret)
+			assertSyncableSecret(t, crdClient, obj, secret)
 			if obj.Spec.HMACSecretData {
 				assertHMAC(t, ctx, crdClient, obj, expectInitial)
 			} else {
@@ -434,18 +432,18 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 							initial: map[string]interface{}{"dest-initial": dest},
 							update:  map[string]interface{}{"dest-updated": dest},
 						}
-						vssObj := &secretsv1alpha1.VaultStaticSecret{
+						vssObj := &secretsv1beta1.VaultStaticSecret{
 							ObjectMeta: v1.ObjectMeta{
 								Name:      dest,
 								Namespace: testK8sNamespace,
 							},
-							Spec: secretsv1alpha1.VaultStaticSecretSpec{
+							Spec: secretsv1beta1.VaultStaticSecretSpec{
 								VaultAuthRef: auths[0].ObjectMeta.Name,
 								Namespace:    testVaultNamespace,
 								Mount:        mount,
 								Type:         kvType,
-								Name:         dest,
-								Destination: secretsv1alpha1.Destination{
+								Path:         dest,
+								Destination: secretsv1beta1.Destination{
 									Name:   dest,
 									Create: true,
 								},
@@ -475,11 +473,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	}
 }
 
-func assertNoHMAC(t *testing.T, origVSSObj *secretsv1alpha1.VaultStaticSecret) {
+func assertNoHMAC(t *testing.T, origVSSObj *secretsv1beta1.VaultStaticSecret) {
 	assert.Empty(t, origVSSObj.Status.SecretMAC, "expected vssObj.Status.SecretMAC to be empty")
 }
 
-func assertHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, origVSSObj *secretsv1alpha1.VaultStaticSecret,
+func assertHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, origVSSObj *secretsv1beta1.VaultStaticSecret,
 	expectInitial bool,
 ) {
 	t.Helper()
@@ -502,7 +500,7 @@ func assertHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, ori
 	if !expectInitial && origVSSObj.Status.SecretMAC == vssObj.Status.SecretMAC {
 		// wait for the Status update to complete.
 		assert.NoError(t, backoff.Retry(func() error {
-			var v secretsv1alpha1.VaultStaticSecret
+			var v secretsv1beta1.VaultStaticSecret
 			err := client.Get(ctx, vssObjKey, &v)
 			if t.Failed() {
 				return backoff.Permanent(err)
@@ -532,11 +530,11 @@ func assertHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, ori
 
 func awaitSecretHMACStatus(t *testing.T, ctx context.Context, client ctrlclient.Client,
 	objKey ctrlclient.ObjectKey,
-) (*secretsv1alpha1.VaultStaticSecret, error) {
+) (*secretsv1beta1.VaultStaticSecret, error) {
 	t.Helper()
-	var vssObj secretsv1alpha1.VaultStaticSecret
+	var vssObj secretsv1beta1.VaultStaticSecret
 	err := backoff.Retry(func() error {
-		var v secretsv1alpha1.VaultStaticSecret
+		var v secretsv1beta1.VaultStaticSecret
 		if err := client.Get(ctx, objKey, &v); err != nil {
 			return backoff.Permanent(err)
 		}
@@ -551,7 +549,7 @@ func awaitSecretHMACStatus(t *testing.T, ctx context.Context, client ctrlclient.
 	return &vssObj, err
 }
 
-func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, vssObj *secretsv1alpha1.VaultStaticSecret,
+func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, vssObj *secretsv1beta1.VaultStaticSecret,
 ) {
 	t.Helper()
 
@@ -576,8 +574,8 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.C
 			return backoff.Permanent(fmt.Errorf("could not marshal Secret.Data, should never happen: %w", err))
 		}
 
-		validateFunc := vault.NewMACValidateFromSecretFunc(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
-		valid, actualMAC, err := validateFunc(ctx, client, message, expectedMAC)
+		validator := vault.NewHMACValidator(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
+		valid, actualMAC, err := validator.Validate(ctx, client, message, expectedMAC)
 		if err != nil {
 			return backoff.Permanent(err)
 		}
@@ -597,7 +595,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.C
 }
 
 func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, client ctrlclient.Client,
-	vssObj *secretsv1alpha1.VaultStaticSecret,
+	vssObj *secretsv1beta1.VaultStaticSecret,
 ) {
 	t.Helper()
 

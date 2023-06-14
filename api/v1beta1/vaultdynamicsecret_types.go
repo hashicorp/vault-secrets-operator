@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package v1alpha1
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,8 +44,13 @@ type VaultDynamicSecretSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=90
 	RenewalPercent int `json:"renewalPercent,omitempty"`
-	// Revoke the existing lease when a lease is rotated or on VDS resource deletion.
+	// Revoke the existing lease on VDS resource deletion.
 	Revoke bool `json:"revoke,omitempty"`
+	// AllowStaticCreds should be set when syncing credentials that are periodically
+	// rotated by the Vault server, rather than created upon request. These secrets
+	// are sometimes referred to as "static roles", or "static credentials", with a
+	// request path that contains "static-creds".
+	AllowStaticCreds bool `json:"allowStaticCreds,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
@@ -58,13 +63,26 @@ type VaultDynamicSecretSpec struct {
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret
 type VaultDynamicSecretStatus struct {
-	// LastRenewalTime of the last, successful, secret lease renewal,
+	// LastRenewalTime of the last successful secret lease renewal.
 	LastRenewalTime int64 `json:"lastRenewalTime"`
+	// LastGeneration is the Generation of the last reconciled resource.
+	LastGeneration int64 `json:"lastGeneration"`
 	// SecretLease for the Vault secret.
 	SecretLease VaultSecretLease `json:"secretLease"`
+	// StaticCredsMetaData contains the static creds response meta-data
+	StaticCredsMetaData VaultStaticCredsMetaData `json:"staticCredsMetaData,omitempty"`
 	// LastRuntimePodUID used for tracking the transition from one Pod to the next.
 	// It is used to mitigate the effects of a Vault lease renewal storm.
 	LastRuntimePodUID types.UID `json:"lastRuntimePodUID,omitempty"`
+	// SecretMAC used when deciding whether new Vault secret data should be synced.
+	//
+	// The controller will compare the "new" Vault secret data to this value using HMAC,
+	// if they are different, then the data will be synced to the Destination.
+	//
+	// The SecretMac is also used to detect drift in the Destination Secret's Data.
+	// If drift is detected the data will be synced to the Destination.
+	// SecretMAC will only be stored when VaultDynamicSecretSpec.AllowStaticCreds is true.
+	SecretMAC string `json:"secretMAC,omitempty"`
 }
 
 type VaultSecretLease struct {
@@ -76,6 +94,17 @@ type VaultSecretLease struct {
 	Renewable bool `json:"renewable"`
 	// RequestID of the Vault secret request.
 	RequestID string `json:"requestID"`
+}
+
+type VaultStaticCredsMetaData struct {
+	// LastVaultRotation represents the last time Vault rotated the password
+	LastVaultRotation int64 `json:"lastVaultRotation"`
+	// RotationPeriod is number in seconds between each rotation, effectively a
+	// "time to live". This value is compared to the LastVaultRotation to
+	// determine if a password needs to be rotated
+	RotationPeriod int64 `json:"rotationPeriod"`
+	// TTL is the seconds remaining before the next rotation.
+	TTL int64 `json:"ttl"`
 }
 
 // +kubebuilder:object:root=true

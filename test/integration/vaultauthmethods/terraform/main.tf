@@ -36,15 +36,22 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
-resource "kubernetes_secret" "default-sa" {
+resource "kubernetes_default_service_account" "default" {
   metadata {
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
-    name      = "default-sa-secret"
+  }
+}
+
+resource "kubernetes_secret" "default" {
+  metadata {
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    name      = "test-sa-secret"
     annotations = {
-      "kubernetes.io/service-account.name" = "default"
+      "kubernetes.io/service-account.name" = kubernetes_default_service_account.default.metadata[0].name
     }
   }
-  type = "kubernetes.io/service-account-token"
+  type                           = "kubernetes.io/service-account-token"
+  wait_for_service_account_token = true
 }
 
 provider "vault" {
@@ -90,7 +97,7 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
   role_name                        = var.auth_role
-  bound_service_account_names      = ["default"]
+  bound_service_account_names      = [kubernetes_default_service_account.default.metadata[0].name]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
   token_ttl                        = 3600
   token_policies                   = [vault_policy.default.name]
@@ -101,8 +108,8 @@ resource "vault_kubernetes_auth_backend_role" "default" {
 resource "vault_jwt_auth_backend" "dev" {
   namespace             = local.namespace
   path                  = "jwt"
-  oidc_discovery_url    = "https://kubernetes.default.svc.cluster.local"
-  oidc_discovery_ca_pem = nonsensitive(kubernetes_secret.default-sa.data["ca.crt"])
+  oidc_discovery_url    = var.vault_oidc_discovery_url
+  oidc_discovery_ca_pem = var.vault_oidc_ca ? nonsensitive(kubernetes_secret.default.data["ca.crt"]) : ""
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
@@ -160,6 +167,89 @@ path "auth/${vault_auth_backend.approle.path}/login" {
   capabilities = ["read","update"]
 }
 EOT
+}
+
+# aws auth config
+resource "kubernetes_service_account" "irsa_assumable" {
+  count = var.run_aws_tests ? 1 : 0
+  metadata {
+    name      = "irsa-test"
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    annotations = {
+      "eks.amazonaws.com/role-arn" : "${var.irsa_assumable_role_arn}",
+    }
+  }
+}
+
+resource "vault_auth_backend" "aws" {
+  count     = var.run_aws_tests ? 1 : 0
+  namespace = local.namespace
+  type      = "aws"
+  path      = "aws"
+}
+
+resource "vault_aws_auth_backend_client" "aws" {
+  count        = var.run_aws_tests ? 1 : 0
+  namespace    = local.namespace
+  backend      = one(vault_auth_backend.aws).path
+  sts_region   = var.aws_region
+  sts_endpoint = "https://sts.${var.aws_region}.amazonaws.com"
+}
+
+resource "vault_aws_auth_backend_role" "aws-irsa" {
+  count                    = var.run_aws_tests ? 1 : 0
+  namespace                = local.namespace
+  backend                  = one(vault_auth_backend.aws).path
+  role                     = "${var.auth_role}-aws-irsa"
+  auth_type                = "iam"
+  bound_iam_principal_arns = ["${var.irsa_assumable_role_arn}"]
+  token_policies           = [vault_policy.default.name]
+}
+
+resource "vault_aws_auth_backend_role" "aws-node" {
+  count                    = var.run_aws_tests ? 1 : 0
+  namespace                = local.namespace
+  backend                  = one(vault_auth_backend.aws).path
+  role                     = "${var.auth_role}-aws-node"
+  auth_type                = "iam"
+  bound_iam_principal_arns = ["arn:aws:iam::${var.aws_account_id}:role/eks-nodes-eks-*"]
+  token_policies           = [vault_policy.default.name]
+}
+
+resource "vault_aws_auth_backend_role" "aws-instance-profile" {
+  count                           = var.run_aws_tests ? 1 : 0
+  namespace                       = local.namespace
+  backend                         = one(vault_auth_backend.aws).path
+  role                            = "${var.auth_role}-aws-instance-profile"
+  auth_type                       = "iam"
+  inferred_entity_type            = "ec2_instance"
+  inferred_aws_region             = var.aws_region
+  bound_account_ids               = ["${var.aws_account_id}"]
+  bound_iam_instance_profile_arns = ["arn:aws:iam::${var.aws_account_id}:instance-profile/eks-*"]
+  token_policies                  = [vault_policy.default.name]
+}
+
+resource "vault_aws_auth_backend_role" "aws-static" {
+  count                    = var.run_aws_static_creds_test ? 1 : 0
+  namespace                = local.namespace
+  backend                  = one(vault_auth_backend.aws).path
+  role                     = "${var.auth_role}-aws-static"
+  auth_type                = "iam"
+  bound_iam_principal_arns = ["${var.aws_static_creds_role}"]
+  token_policies           = [vault_policy.default.name]
+}
+
+resource "kubernetes_secret" "static-creds" {
+  count = var.run_aws_static_creds_test ? 1 : 0
+  metadata {
+    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    name      = "aws-static-creds"
+  }
+  data = {
+    "access_key_id"     = "${var.test_aws_access_key_id}"
+    "secret_access_key" = "${var.test_aws_secret_access_key}"
+    "session_token"     = "${var.test_aws_session_token}"
+  }
 }
 
 # VSO Helm chart

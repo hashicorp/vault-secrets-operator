@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
@@ -77,7 +77,7 @@ type cachingClientFactory struct {
 }
 
 // Prune the storage for the requesting object and CachingClientFactoryPruneRequest.
-// Supported, requesting client.Object(s), are: v1alpha1.VaultAuth, v1alpha1.VaultConnection.
+// Supported, requesting client.Object(s), are: v1beta1.VaultAuth, v1beta1.VaultConnection.
 // Then number of pruned storage Secrets will be returned, along with any errors encountered.
 // Pruning continues on error, so there is a possibility that only a subset of the requested Secrets will be removed
 // from the ClientCacheStorage.
@@ -88,12 +88,12 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 
 	var filter ClientCachePruneFilterFunc
 	switch cur := obj.(type) {
-	case *secretsv1alpha1.VaultAuth:
+	case *secretsv1beta1.VaultAuth:
 		filter = func(c Client) bool {
 			other := c.GetVaultAuthObj()
 			return req.FilterFunc(cur, other)
 		}
-	case *secretsv1alpha1.VaultConnection:
+	case *secretsv1beta1.VaultConnection:
 		filter = func(c Client) bool {
 			other := c.GetVaultConnectionObj()
 			return req.FilterFunc(cur, other)
@@ -382,8 +382,8 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	// try and fetch the client from the in-memory Client cache
 	c, ok := m.cache.Get(cacheKey)
 	if ok {
-		// return the Client from the cache if it is not expired.
-		if expired, err := c.CheckExpiry(0); !expired && err == nil {
+		// return the Client from the cache if it is still Valid
+		if err := c.Validate(); err == nil {
 			return namespacedClient(c)
 		}
 
@@ -395,9 +395,12 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	defer m.mu.Unlock()
 	if !ok && (m.persist && m.storage != nil) {
 		// try and restore from Client storage cache, if properly configured to do so.
-		if restored, err := m.restoreClientFromCacheKey(ctx, client, cacheKey); err == nil {
+		restored, err := m.restoreClientFromCacheKey(ctx, client, cacheKey)
+		if err == nil {
 			return namespacedClient(restored)
 		}
+
+		logger.Error(err, "Failed to restore client from storage")
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
@@ -570,15 +573,10 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 		// ensure that the cached Vault Client is not expired, and if it is then call storageEncryptionClient() again.
 		// This operation should be safe since we are setting m.clientCacheKeyEncrypt to empty string,
 		// so there should be no risk of causing a maximum recursion error.
-		if expired, err := c.CheckExpiry(0); expired || err != nil {
-			if err != nil {
-				m.logger.Error(err, "Failed to check the Vault client expiry, recreating it",
-					"cacheKey", m.clientCacheKeyEncrypt)
-			}
-			if expired {
-				m.logger.Info("Vault Client for storage encryption has expired, recreating it",
-					"cacheKey", m.clientCacheKeyEncrypt)
-			}
+		if reason := c.Validate(); reason != nil {
+			m.logger.V(consts.LogLevelWarning).Info("Restored Vault client is invalid, recreating it",
+				"cacheKey", m.clientCacheKeyEncrypt, "reason", reason)
+
 			m.cache.Remove(m.clientCacheKeyEncrypt)
 			m.clientCacheKeyEncrypt = ""
 			return m.storageEncryptionClient(ctx, client)

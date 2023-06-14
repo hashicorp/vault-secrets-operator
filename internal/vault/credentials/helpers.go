@@ -47,3 +47,27 @@ func getSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient.Obj
 
 	return secret, nil
 }
+
+func getServiceAccount(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.ServiceAccount, error) {
+	if err := common.ValidateObjectKey(key); err != nil {
+		return nil, err
+	}
+	sa := &corev1.ServiceAccount{}
+	if err := client.Get(ctx, key, sa); err != nil {
+		return nil, err
+	}
+
+	return sa, nil
+}
+
+func getConfigMap(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.ConfigMap, error) {
+	if err := common.ValidateObjectKey(key); err != nil {
+		return nil, err
+	}
+	cm := &corev1.ConfigMap{}
+	if err := client.Get(ctx, key, cm); err != nil {
+		return nil, err
+	}
+
+	return cm, nil
+}

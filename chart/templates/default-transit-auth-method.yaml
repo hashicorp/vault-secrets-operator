@@ -4,7 +4,7 @@
 */ -}}
 
 {{- if eq .Values.controller.manager.clientCache.persistenceModel "direct-encrypted" }}
-apiVersion: secrets.hashicorp.com/v1alpha1
+apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: {{ include "chart.fullname" . }}-default-transit-auth
@@ -16,15 +16,12 @@ metadata:
     cacheStorageEncryption: "true"
   {{- include "chart.labels" . | nindent 4 }}
 spec:
+  vaultConnectionRef: {{ .Values.controller.manager.clientCache.storageEncryption.vaultConnectionRef }}
   namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
-  method: "kubernetes"
+  method: {{ .Values.controller.manager.clientCache.storageEncryption.method }}
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
-  kubernetes:
-    role: {{ .Values.controller.manager.clientCache.storageEncryption.role }}
-    serviceAccount: {{ .Values.controller.manager.clientCache.storageEncryption.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname" . )) }}
-    {{- if .Values.controller.manager.clientCache.storageEncryption.tokenAudiences }}
-    audiences: {{ .Values.controller.manager.clientCache.storageEncryption.tokenAudiences | toJson }}
-    {{- end }}
+  {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname" .)) -}}
+  {{- include "operator.vaultAuthMethod" (list .Values.controller.manager.clientCache.storageEncryption $kubeServiceAccount . ) }}
   storageEncryption:
     keyName: {{ .Values.controller.manager.clientCache.storageEncryption.keyName }}
     mount: {{ .Values.controller.manager.clientCache.storageEncryption.transitMount }}

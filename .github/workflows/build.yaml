@@ -2,6 +2,8 @@ name: build
 
 on:
   push:
+    branches-ignore:
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       version:
@@ -33,10 +35,9 @@ jobs:
     steps:
       - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - id: setup-go
-        uses: actions/setup-go@4d34df0c2316fe8122ab82dc22947d607c0c91f9 # v4.0.0
+        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4.0.1
         with:
           go-version-file: .go-version
-          cache: true
       - name: go fmt
         run: |
           make check-fmt
@@ -87,10 +88,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - name: Setup go
-        uses: actions/setup-go@4d34df0c2316fe8122ab82dc22947d607c0c91f9 # v4.0.0
+        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4.0.1
         with:
           go-version-file: .go-version
-          cache: true
       - name: Build
         env:
           GOOS: "linux"
@@ -156,30 +156,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kind-k8s-version: [1.22.17, 1.23.17, 1.24.12, 1.25.8, 1.26.3]
-        vault-version: [1.11.9, 1.12.5, 1.13.1]
+        kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4, 1.27.2]
+        vault-version: [1.11.10, 1.12.6, 1.13.2]
         # Note: The below exclude and includes are a bit awkward, but they
         # allow us to exclude the combos we don't really need. We want to test
         # the operator with the different k8s versions, and with the different
         # vault versions, but we don't care about testing all the k8s versions
         # against all the vault versions.
         # Combos to exclude:
-        #   kind-k8s-version: [1.22.17, 1.23.17, 1.24.12, 1.25.8]
-        #   vault-version: [1.11.9, 1.12.5]
+        #   kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4]
+        #   vault-version: [1.11.10, 1.12.6]
         exclude:
-          - kind-k8s-version: 1.25.8
-          - kind-k8s-version: 1.24.12
+          - kind-k8s-version: 1.26.4
+          - kind-k8s-version: 1.25.9
+          - kind-k8s-version: 1.24.13
           - kind-k8s-version: 1.23.17
           - kind-k8s-version: 1.22.17
         include:
-          - kind-k8s-version: 1.25.8
-            vault-version: 1.13.1
-          - kind-k8s-version: 1.24.7
-            vault-version: 1.13.1
-          - kind-k8s-version: 1.23.13
-            vault-version: 1.13.1
-          - kind-k8s-version: 1.22.15
-            vault-version: 1.13.1
+          - kind-k8s-version: 1.26.4
+            vault-version: 1.13.2
+          - kind-k8s-version: 1.25.9
+            vault-version: 1.13.2
+          - kind-k8s-version: 1.24.13
+            vault-version: 1.13.2
+          - kind-k8s-version: 1.23.17
+            vault-version: 1.13.2
+          - kind-k8s-version: 1.22.17
+            vault-version: 1.13.2
 
     name: Integration vault:${{ matrix.vault-version }} kind ${{ matrix.kind-k8s-version }}
     steps:
@@ -189,9 +192,9 @@ jobs:
           name: ${{ env.OPERATOR_IMAGE }}
           path: dist
       - name: Create K8s Kind Cluster
-        uses: helm/kind-action@d8ccf8fb623ce1bb360ae2f45f323d9d5c5e9f00 # v1.5.0
+        uses: helm/kind-action@fa81e57adff234b2908110485695db0f181f3c67 # v1.7.0
         with:
-          version: v0.18.0
+          version: v0.19.0
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
           config: test/integration/kind/config.yaml
           node_image: kindest/node:v${{ matrix.kind-k8s-version }}
@@ -207,13 +210,12 @@ jobs:
         # Load the amd64 docker image from the build-docker job
         run:
           make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE=dist/${{ env.OPERATOR_IMAGE }}
-      - uses: actions/setup-go@4d34df0c2316fe8122ab82dc22947d607c0c91f9 # v4.0.0
+      - uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4.0.1
         with:
           go-version-file: .go-version
-          cache: true
       - name: OSS tests using Helm
         # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.vault-version == '1.13.1' }}
+        if: ${{ matrix.vault-version == '1.13.2' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
@@ -221,7 +223,7 @@ jobs:
           make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: OSS tests using Kustomize
         # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.vault-version == '1.13.1' }}
+        if: ${{ matrix.vault-version == '1.13.2' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
@@ -229,7 +231,7 @@ jobs:
           make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Kustomize
         # TODO: When the VDS integration test supports Helm we test against one version of (ENT) Vault like the other tests.
-        # if: ${{ matrix.vault-version == '1.13.1' }}
+        # if: ${{ matrix.vault-version == '1.13.2' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
@@ -238,7 +240,7 @@ jobs:
           make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: ENT tests using Helm
         # TODO: When the VDS integration test supports Helm swap the matrix filter so this test runs the full matrix.
-        if: ${{ matrix.vault-version == '1.13.1' }}
+        if: ${{ matrix.vault-version == '1.13.2' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}

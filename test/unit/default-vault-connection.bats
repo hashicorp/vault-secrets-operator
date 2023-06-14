@@ -4,7 +4,7 @@ load _helpers
 
 #--------------------------------------------------------------------
 # enabled/disabled
-  
+
 @test "defaultConnection/CR: disabled by default" {
     cd `chart_dir`
     local actual=$(helm template \
@@ -52,7 +52,8 @@ load _helpers
         --set 'defaultVaultConnection.skipTLSVerify=true' \
         --set 'defaultVaultConnection.caCertSecret=foo' \
         --set 'defaultVaultConnection.tlsServerName=foo.com' \
-        --set 'defaultVaultConnection.headers=foo: bar' \
+        --set 'defaultVaultConnection.headers.foo=bar' \
+        --set 'defaultVaultConnection.headers.baz=qux' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
@@ -67,9 +68,10 @@ load _helpers
      [ "${actual}" = "foo" ]
     actual=$(echo "$object" | yq '.spec.tlsServerName' | tee /dev/stderr)
      [ "${actual}" = "foo.com" ]
+    actual=$(echo "$object" | yq '.spec.headers | length' | tee /dev/stderr)
+     [ "${actual}" = "2" ]
     actual=$(echo "$object" | yq '.spec.headers.foo' | tee /dev/stderr)
      [ "${actual}" = "bar" ]
+    actual=$(echo "$object" | yq '.spec.headers.baz' | tee /dev/stderr)
+     [ "${actual}" = "qux" ]
 }
-
-
-

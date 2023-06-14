@@ -76,9 +76,10 @@ var (
 func main() {
 	validateFlag := flag.Bool("validate", false, "only validate that the markdown can be generated, don't actually generate anything")
 	vaultMdxFlag := flag.String("vault", "", "path to the helm reference documentation file")
-	chartDocsPath := "../../"
+	chartDocsPath := ""
 	flag.Parse()
 
+	// Fallback to the local copy of docs/helm.mdx, should not really be used anymore.
 	if *vaultMdxFlag == "" {
 		*vaultMdxFlag = "docs/helm.mdx"
 	}
@@ -90,19 +91,14 @@ func main() {
 
 	if !*validateFlag {
 		// Only argument is path to Vault repo. If not set then we default.
-		if len(os.Args) < 2 {
-			abs, _ := filepath.Abs(chartDocsPath)
-			fmt.Printf("Defaulting to Vault repo path: %s\n", abs)
+		// Support absolute and relative paths to the Vault repo.
+		if filepath.IsAbs(*vaultMdxFlag) {
+			chartDocsPath = *vaultMdxFlag
 		} else {
-			// Support absolute and relative paths to the Vault repo.
-			if filepath.IsAbs(os.Args[1]) {
-				chartDocsPath = os.Args[1]
-			} else {
-				chartDocsPath = filepath.Join("../..", *vaultMdxFlag)
-			}
-			abs, _ := filepath.Abs(chartDocsPath)
-			fmt.Printf("Using Vault repo path: %s\n", abs)
+			chartDocsPath = filepath.Join("../..", *vaultMdxFlag)
 		}
+		abs, _ := filepath.Abs(chartDocsPath)
+		fmt.Printf("Using Vault repo path: %s\n", abs)
 	}
 
 	// Parse the values.yaml file.

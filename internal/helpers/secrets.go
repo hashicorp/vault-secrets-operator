@@ -12,12 +12,20 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
+
+// labelOwnerRefUID is used as the primary key when listing the Secrets owned by
+// a specific VSO object. It should be included in every Secret that is created
+// by VSO.
+var labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1beta1.GroupVersion.Group)
 
 // OwnerLabels will be applied to any k8s secret we create. They are used in Secret ownership checks.
 // There are similar labels in the vault package. It's important that component secret's value never
@@ -30,6 +38,12 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/component":  "secret-sync",
 }
 
+// SyncOptions to provide to SyncSecret().
+type SyncOptions struct {
+	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
+	PruneOrphans bool
+}
+
 // SyncableSecretMetaData provides common data structure that extracts the bits pertinent
 // when handling any of the sync-able secret custom resource types.
 //
@@ -40,7 +54,7 @@ type SyncableSecretMetaData struct {
 	// Kind of the syncable-secret object. Maps to obj.Kind.
 	Kind string
 	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
-	Destination *secretsv1alpha1.Destination
+	Destination *secretsv1beta1.Destination
 }
 
 // NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
@@ -49,19 +63,19 @@ type SyncableSecretMetaData struct {
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
 	switch t := obj.(type) {
-	case *secretsv1alpha1.VaultDynamicSecret:
+	case *secretsv1beta1.VaultDynamicSecret:
 		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 		}, nil
-	case *secretsv1alpha1.VaultStaticSecret:
+	case *secretsv1beta1.VaultStaticSecret:
 		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 		}, nil
-	case *secretsv1alpha1.VaultPKISecret:
+	case *secretsv1beta1.VaultPKISecret:
 		return &SyncableSecretMetaData{
 			Destination: &t.Spec.Destination,
 			APIVersion:  t.APIVersion,
@@ -72,11 +86,108 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 	}
 }
 
-// SyncSecret writes data to a Kubernetes Secret for obj. All configuring is derived from the object's
-// Spec.Destination configuration.
+func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
+	ownerRef := metav1.OwnerReference{
+		Name: owner.GetName(),
+		UID:  owner.GetUID(),
+	}
+
+	gvk, err := apiutil.GVKForObject(owner, scheme)
+	if err != nil {
+		return ownerRef, err
+	}
+
+	apiVersion, kind := gvk.ToAPIVersionAndKind()
+	ownerRef.APIVersion = apiVersion
+	ownerRef.Kind = kind
+	return ownerRef, nil
+}
+
+// OwnerLabelsForObj returns the canonical set of labels that should be set on
+// all secrets created/owned by VSO.
+func OwnerLabelsForObj(obj ctrlclient.Object) (map[string]string, error) {
+	uid := string(obj.GetUID())
+	if uid == "" {
+		return nil, fmt.Errorf("object %q has an empty UID", ctrlclient.ObjectKeyFromObject(obj))
+	}
+
+	l := make(map[string]string)
+	for k, v := range OwnerLabels {
+		l[k] = v
+	}
+	l[labelOwnerRefUID] = uid
+
+	return l, nil
+}
+
+func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, error) {
+	m := ctrlclient.MatchingLabels{}
+	l, err := OwnerLabelsForObj(obj)
+	if err != nil {
+		return m, err
+	}
+	if string(obj.GetUID()) == "" {
+		return m, fmt.Errorf("object %q has an empty UID", ctrlclient.ObjectKeyFromObject(obj))
+	}
+
+	for k, v := range l {
+		m[k] = v
+	}
+	m[labelOwnerRefUID] = string(obj.GetUID())
+
+	return m, nil
+}
+
+// FindSecretsOwnedByObj returns all corev1.Secrets that are owned by obj.
+// Those are secrets that have a copy of OwnerLabels, and exactly one metav1.OwnerReference
+// that matches obj.
+func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) ([]corev1.Secret, error) {
+	ownerRef, err := getOwnerRefFromObj(obj, client.Scheme())
+	if err != nil {
+		return nil, err
+	}
+
+	matchingLabels, err := matchingLabelsForObj(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	secrets := &corev1.SecretList{}
+	if err := client.List(ctx, secrets,
+		matchingLabels, ctrlclient.InNamespace(obj.GetNamespace())); err != nil {
+		return nil, err
+	}
+
+	var result []corev1.Secret
+	for _, s := range secrets.Items {
+		if err := checkSecretIsOwnedByObj(&s, []metav1.OwnerReference{ownerRef}); err == nil {
+			result = append(result, s)
+		}
+	}
+
+	return result, nil
+}
+
+func DefaultSyncOptions() SyncOptions {
+	return SyncOptions{
+		PruneOrphans: true,
+	}
+}
+
+// SyncSecret writes data to a Kubernetes Secret for obj. All configuring is
+// derived from the object's Spec.Destination configuration. Note: in order to
+// keep the interface simpler opts is a variadic argument, only the first element
+// of opts will ever be used.
 //
 // See NewSyncableSecretMetaData for the supported types for obj.
-func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, data map[string][]byte) error {
+func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, data map[string][]byte, opts ...SyncOptions) error {
+	var options SyncOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	} else {
+		options = DefaultSyncOptions()
+	}
+
 	meta, err := NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return err
@@ -89,6 +200,10 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		Name:      meta.Destination.Name,
 	}
 
+	if err := common.ValidateObjectKey(key); err != nil {
+		return fmt.Errorf("invalid Destination, err=%w", err)
+	}
+
 	var dest corev1.Secret
 	exists := true
 	if err := client.Get(ctx, key, &dest); err != nil {
@@ -96,6 +211,19 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 			exists = false
 		} else {
 			return err
+		}
+	}
+
+	pruneOrphans := func() {
+		if options.PruneOrphans {
+			// for now we treat orphan pruning errors as being non-fatal.
+			if err := pruneOrphanSecrets(ctx, client, obj, meta.Destination); err != nil {
+				logger.V(consts.LogLevelWarning).Error(err, "Failed to prune orphan secrets",
+					"owner", ctrlclient.ObjectKeyFromObject(obj).String())
+			} else {
+				logger.V(consts.LogLevelDebug).Info("Successfully pruned all orphan secrets",
+					"owner", ctrlclient.ObjectKeyFromObject(obj).String())
+			}
 		}
 	}
 
@@ -112,7 +240,13 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		// syncable-secret's Status, but...
 		dest.Data = data
 		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		return client.Update(ctx, &dest)
+		if err := client.Update(ctx, &dest); err != nil {
+			return err
+		}
+
+		pruneOrphans()
+
+		return nil
 	}
 
 	// we are responsible for the Secret's complete lifecycle
@@ -156,8 +290,16 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	for k, v := range meta.Destination.Labels {
 		labels[k] = v
 	}
+
+	ownerLabels, err := OwnerLabelsForObj(obj)
 	// always add the "owner" labels last to guard against intersections with meta.Destination.Labels
-	for k, v := range OwnerLabels {
+	for k, v := range ownerLabels {
+		_, ok := labels[k]
+		if ok {
+			logger.V(consts.LogLevelWarning).Info(
+				"Label conflicts with a default owner label, owner label takes precedence",
+				"label", k)
+		}
 		labels[k] = v
 	}
 	// add any annotations configured in meta.Destination.Labels
@@ -169,11 +311,38 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 
 	if exists {
 		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		return client.Update(ctx, &dest)
+		if err := client.Update(ctx, &dest); err != nil {
+			return err
+		}
+	} else {
+		logger.V(consts.LogLevelDebug).Info("Creating secret")
+		if err := client.Create(ctx, &dest); err != nil {
+			return err
+		}
 	}
 
-	logger.V(consts.LogLevelDebug).Info("Creating secret")
-	return client.Create(ctx, &dest)
+	pruneOrphans()
+
+	return nil
+}
+
+func pruneOrphanSecrets(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, dest *secretsv1beta1.Destination) error {
+	owned, err := FindSecretsOwnedByObj(ctx, client, obj)
+	if err != nil {
+		return err
+	}
+
+	var errs error
+	for _, s := range owned {
+		if s.Name == dest.Name {
+			continue
+		}
+		if err := client.Delete(ctx, &s); err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+
+	return errs
 }
 
 // CheckSecretExists checks if the Secret configured on obj exists.
@@ -200,9 +369,9 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
 		"secretName", meta.Destination.Name, "create", meta.Destination.Create)
-	key := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.Destination.Name}
-	var s corev1.Secret
-	if err := client.Get(ctx, key, &s); err != nil {
+	objKey := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.Destination.Name}
+	s, err := getSecret(ctx, client, objKey)
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
 			return nil, false, nil
@@ -212,7 +381,14 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	}
 
 	logger.V(consts.LogLevelDebug).Info("Secret exists")
-	return &s, true, nil
+	return s, true, nil
+}
+
+func getSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
+	var s corev1.Secret
+	err := client.Get(ctx, objKey, &s)
+
+	return &s, err
 }
 
 // checkSecretIsOwnedByObj validates the Secret is owned by obj by checking its Labels and OwnerReferences.
@@ -226,13 +402,18 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 	key := ctrlclient.ObjectKeyFromObject(dest)
 	for k, v := range OwnerLabels {
 		if o, ok := dest.Labels[k]; o != v || !ok {
-			errs = errors.Join(errs, fmt.Errorf("invalid owner label, key=%s, present=%t", key, ok))
+			errs = errors.Join(errs, fmt.Errorf(
+				"invalid owner label, key=%s, present=%t", k, ok))
 		}
 	}
 	// check that obj is the Secret's true Owner
-	if len(dest.OwnerReferences) > 0 && !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {
-		// we are not the owner, perhaps another syncable-secret resource owns this secret?
-		errs = errors.Join(errs, fmt.Errorf("invalid ownerReferences, refs=%#v", dest.OwnerReferences))
+	if len(dest.OwnerReferences) > 0 {
+		if !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {
+			// we are not the owner, perhaps another syncable-secret resource owns this secret?
+			errs = errors.Join(errs, fmt.Errorf("invalid ownerReferences, refs=%#v", dest.OwnerReferences))
+		}
+	} else {
+		errs = errors.Join(errs, fmt.Errorf("secret %s has no ownerReferences", key))
 	}
 	if errs != nil {
 		errs = errors.Join(errs, fmt.Errorf("not the owner of the destination Secret %s", key))

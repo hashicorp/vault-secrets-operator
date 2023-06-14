@@ -5,6 +5,10 @@ variable "k8s_test_namespace" {
   default = "testing"
 }
 
+variable "test_service_account" {
+  default = ""
+}
+
 variable "k8s_vault_connection_address" {}
 
 variable "k8s_config_context" {
@@ -25,6 +29,14 @@ variable "k8s_ca_pem" {
 
 variable "k8s_token" {
   default = ""
+}
+
+variable "vault_oidc_discovery_url" {
+  default = "https://kubernetes.default.svc.cluster.local"
+}
+
+variable "vault_oidc_ca" {
+  default = true
 }
 
 variable "vault_kvv2_mount_path" {
@@ -70,4 +82,48 @@ variable "operator_image_tag" {
 
 variable "auth_role" {
   default = "role1"
+}
+
+variable "irsa_assumable_role_arn" {
+  default = ""
+}
+
+variable "aws_region" {
+  default = "us-east-2"
+}
+
+variable "aws_account_id" {
+  default = ""
+}
+
+variable "test_aws_access_key_id" {
+  description = "AWS_ACCESS_KEY_ID for testing static creds with AWS auth"
+  default     = ""
+}
+
+variable "test_aws_secret_access_key" {
+  description = "AWS_SECRET_ACCESS_KEY for testing static creds with AWS auth"
+  default     = ""
+  sensitive   = true
+}
+
+variable "test_aws_session_token" {
+  description = "AWS_SESSION_TOKEN for testing static creds with AWS auth"
+  default     = ""
+  sensitive   = true
+}
+
+variable "aws_static_creds_role" {
+  description = "AWS role ARN for the static creds"
+  default     = ""
+}
+
+variable "run_aws_tests" {
+  type    = bool
+  default = false
+}
+
+variable "run_aws_static_creds_test" {
+  type    = bool
+  default = false
 }

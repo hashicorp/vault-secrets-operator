@@ -14,8 +14,8 @@ resources:
   domain: hashicorp.com
   group: secrets
   kind: VaultStaticSecret
-  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 - api:
     crdVersion: v1
     namespaced: true
@@ -23,8 +23,8 @@ resources:
   domain: hashicorp.com
   group: secrets
   kind: VaultPKISecret
-  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 - api:
     crdVersion: v1
     namespaced: true
@@ -32,8 +32,8 @@ resources:
   domain: hashicorp.com
   group: secrets
   kind: VaultAuth
-  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 - api:
     crdVersion: v1
     namespaced: true
@@ -41,8 +41,8 @@ resources:
   domain: hashicorp.com
   group: secrets
   kind: VaultConnection
-  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 - api:
     crdVersion: v1
     namespaced: true
@@ -50,8 +50,8 @@ resources:
   domain: hashicorp.com
   group: secrets
   kind: VaultDynamicSecret
-  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 - api:
     crdVersion: v1
     namespaced: true
@@ -59,8 +59,8 @@ resources:
   domain: hashicorp.com
   group: secrets
   kind: VaultClientCache
-  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 - api:
     crdVersion: v1
     namespaced: true
@@ -68,6 +68,6 @@ resources:
   domain: hashicorp.com
   group: secrets
   kind: VaultTransit
-  path: github.com/hashicorp/vault-secrets-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 version: "3"

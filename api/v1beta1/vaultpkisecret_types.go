@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package v1alpha1
+package v1beta1
 
 import (
 	"strings"
@@ -25,8 +25,8 @@ type VaultPKISecretSpec struct {
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
 
-	// Name of the secret in Vault
-	Name string `json:"name"`
+	// Role in Vault to use when issuing TLS certificates.
+	Role string `json:"role"`
 
 	// Revoke the certificate when the resource is deleted.
 	Revoke bool `json:"revoke,omitempty"`
@@ -54,9 +54,11 @@ type VaultPKISecretSpec struct {
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 
 	// Destination provides configuration necessary for syncing the Vault secret
-	// to Kubernetes. If the type is set to "kubernetes.io/tls", the Vault
-	// response fields "certificate" and "private_key" will be copied to fields
-	// "tls.crt" and "tls.key", respectively, in the Kubernetes secret.
+	// to Kubernetes. If the type is set to "kubernetes.io/tls", "tls.key" will
+	// be set to the "private_key" response from Vault, and "tls.crt" will be
+	// set to "certificate" + "ca_chain" from the Vault response ("issuing_ca"
+	// is used when "ca_chain" is empty). The "remove_roots_from_chain=true"
+	// option is used with Vault to exclude the root CA from the Vault response.
 	Destination Destination `json:"destination"`
 
 	// CommonName to include in the request.
@@ -131,14 +133,15 @@ type VaultPKISecret struct {
 
 func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 	m := map[string]interface{}{
-		"common_name":          v.Spec.CommonName,
-		"alt_names":            strings.Join(v.Spec.AltNames, ","),
-		"ip_sans":              strings.Join(v.Spec.IPSans, ","),
-		"uri_sans":             strings.Join(v.Spec.URISans, ","),
-		"other_sans":           strings.Join(v.Spec.OtherSans, ","),
-		"ttl":                  v.Spec.TTL,
-		"not_after":            v.Spec.NotAfter,
-		"exclude_cn_from_sans": v.Spec.ExcludeCNFromSans,
+		"common_name":             v.Spec.CommonName,
+		"alt_names":               strings.Join(v.Spec.AltNames, ","),
+		"ip_sans":                 strings.Join(v.Spec.IPSans, ","),
+		"uri_sans":                strings.Join(v.Spec.URISans, ","),
+		"other_sans":              strings.Join(v.Spec.OtherSans, ","),
+		"ttl":                     v.Spec.TTL,
+		"not_after":               v.Spec.NotAfter,
+		"exclude_cn_from_sans":    v.Spec.ExcludeCNFromSans,
+		"remove_roots_from_chain": true,
 	}
 
 	if v.Spec.Format != "" {

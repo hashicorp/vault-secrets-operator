@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
@@ -42,14 +42,14 @@ type VaultConnectionReconciler struct {
 // needed for managing cached Clients, duplicated in vaultauth_controller.go
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch;deletecollection
 
-// Reconcile reconciles the secretsv1alpha1.VaultConnection resource.
+// Reconcile reconciles the secretsv1beta1.VaultConnection resource.
 // Upon a reconciliation it will verify that the configured Vault connection is valid.
 //
 // Upon deletion of the resource, it will prune all referent Vault Client(s).
 func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	logger := log.FromContext(ctx)
 
-	o := &secretsv1alpha1.VaultConnection{}
+	o := &secretsv1beta1.VaultConnection{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -124,7 +124,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *VaultConnectionReconciler) addFinalizer(ctx context.Context, o *secretsv1alpha1.VaultConnection) error {
+func (r *VaultConnectionReconciler) addFinalizer(ctx context.Context, o *secretsv1beta1.VaultConnection) error {
 	if !controllerutil.ContainsFinalizer(o, vaultConnectionFinalizer) {
 		controllerutil.AddFinalizer(o, vaultConnectionFinalizer)
 		if err := r.Client.Update(ctx, o); err != nil {
@@ -135,7 +135,7 @@ func (r *VaultConnectionReconciler) addFinalizer(ctx context.Context, o *secrets
 	return nil
 }
 
-func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1alpha1.VaultConnection) error {
+func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultConnection) error {
 	logger := log.FromContext(ctx)
 	metrics.SetResourceStatus("vaultconnection", o, o.Status.Valid)
 	if err := r.Status().Update(ctx, o); err != nil {
@@ -145,7 +145,7 @@ func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secrets
 	return nil
 }
 
-func (r *VaultConnectionReconciler) handleFinalizer(ctx context.Context, o *secretsv1alpha1.VaultConnection) (ctrl.Result, error) {
+func (r *VaultConnectionReconciler) handleFinalizer(ctx context.Context, o *secretsv1beta1.VaultConnection) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultConnectionFinalizer) {
 		if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
 			FilterFunc:   filterAllCacheRefs,
@@ -166,7 +166,7 @@ func (r *VaultConnectionReconciler) handleFinalizer(ctx context.Context, o *secr
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultConnectionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultConnection{}).
+		For(&secretsv1beta1.VaultConnection{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }

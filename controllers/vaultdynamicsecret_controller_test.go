@@ -18,79 +18,79 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 func Test_inRenewalWindow(t *testing.T) {
 	tests := map[string]struct {
-		vds              *secretsv1alpha1.VaultDynamicSecret
+		vds              *secretsv1beta1.VaultDynamicSecret
 		expectedInWindow bool
 	}{
 		"full lease elapsed": {
-			vds: &secretsv1alpha1.VaultDynamicSecret{
-				Status: secretsv1alpha1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1alpha1.VaultSecretLease{
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
 					LastRenewalTime: time.Now().Unix() - 600,
 				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
 		},
 		"two thirds elapsed": {
-			vds: &secretsv1alpha1.VaultDynamicSecret{
-				Status: secretsv1alpha1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1alpha1.VaultSecretLease{
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
 					LastRenewalTime: time.Now().Unix() - 450,
 				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
 		},
 		"one third elapsed": {
-			vds: &secretsv1alpha1.VaultDynamicSecret{
-				Status: secretsv1alpha1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1alpha1.VaultSecretLease{
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
 					LastRenewalTime: time.Now().Unix() - 200,
 				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: false,
 		},
 		"past end of lease": {
-			vds: &secretsv1alpha1.VaultDynamicSecret{
-				Status: secretsv1alpha1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1alpha1.VaultSecretLease{
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
 					LastRenewalTime: time.Now().Unix() - 800,
 				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
 		},
 		"renewalPercent is 0": {
-			vds: &secretsv1alpha1.VaultDynamicSecret{
-				Status: secretsv1alpha1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1alpha1.VaultSecretLease{
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
 					LastRenewalTime: time.Now().Unix() - 400,
 				},
-				Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 0,
 				},
 			},
@@ -113,13 +113,13 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 	type args struct {
 		ctx     context.Context
 		vClient *mockRecordingVaultClient
-		o       *secretsv1alpha1.VaultDynamicSecret
+		o       *secretsv1beta1.VaultDynamicSecret
 	}
 	tests := []struct {
 		name           string
 		fields         fields
 		args           args
-		want           *secretsv1alpha1.VaultSecretLease
+		want           *secretsv1beta1.VaultSecretLease
 		expectRequests []*mockRequest
 		wantErr        assert.ErrorAssertionFunc
 	}{
@@ -132,24 +132,24 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:  "baz",
 						Path:   "foo",
 						Params: nil,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -171,26 +171,26 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount: "baz",
 						Path:  "foo",
 						Params: map[string]string{
 							"qux": "bar",
 						},
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -214,27 +214,27 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:             "baz",
 						Path:              "foo",
 						RequestHTTPMethod: http.MethodPut,
 						Params: map[string]string{
 							"qux": "bar",
 						},
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -258,27 +258,27 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:             "baz",
 						Path:              "foo",
 						RequestHTTPMethod: http.MethodPost,
 						Params: map[string]string{
 							"qux": "bar",
 						},
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -303,27 +303,27 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:             "baz",
 						Path:              "foo",
 						RequestHTTPMethod: http.MethodGet,
 						Params: map[string]string{
 							"qux": "bar",
 						},
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -347,25 +347,25 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:             "baz",
 						Path:              "foo",
 						RequestHTTPMethod: http.MethodGet,
 						Params:            nil,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -387,25 +387,25 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:             "baz",
 						Path:              "foo",
 						RequestHTTPMethod: http.MethodPut,
 						Params:            nil,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -427,25 +427,25 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:             "baz",
 						Path:              "foo",
 						RequestHTTPMethod: http.MethodPost,
 						Params:            nil,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
-			want: &secretsv1alpha1.VaultSecretLease{
+			want: &secretsv1beta1.VaultSecretLease{
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
@@ -468,22 +468,22 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			args: args{
 				ctx:     nil,
 				vClient: &mockRecordingVaultClient{},
-				o: &secretsv1alpha1.VaultDynamicSecret{
+				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
 						Namespace: "default",
 					},
-					Spec: secretsv1alpha1.VaultDynamicSecretSpec{
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Mount:             "baz",
 						Path:              "foo",
 						RequestHTTPMethod: http.MethodOptions,
 						Params:            nil,
-						Destination: secretsv1alpha1.Destination{
+						Destination: secretsv1beta1.Destination{
 							Name:   "baz",
 							Create: true,
 						},
 					},
-					Status: secretsv1alpha1.VaultDynamicSecretStatus{},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
 				},
 			},
 			want:           nil,
@@ -499,7 +499,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client: tt.fields.Client,
 			}
-			got, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o)
+			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o)
 			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)) {
 				return
 			}

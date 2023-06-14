@@ -9,7 +9,7 @@ import (
 	"math/rand"
 	"time"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 
 	"github.com/go-logr/logr"
@@ -37,7 +37,13 @@ func (l *LeaseTruncatedError) Error() string {
 // computeMaxJitter with max as 10% of the duration, and jitter a random amount
 // between 0-10%
 func computeMaxJitter(duration time.Duration) (max float64, jitter uint64) {
-	max = 0.1 * float64(duration.Nanoseconds())
+	return computeMaxJitterWithPercent(duration, 0.1)
+}
+
+// computeMaxJitter with max as a percentage (percent) of the duration, and
+// jitter a random amount between 0 up to percent
+func computeMaxJitterWithPercent(duration time.Duration, percent float64) (max float64, jitter uint64) {
+	max = percent * float64(duration.Nanoseconds())
 	u := uint64(max)
 	if u == 0 {
 		jitter = 0
@@ -98,28 +104,28 @@ func RemoveAllFinalizers(ctx context.Context, c client.Client, log logr.Logger) 
 	// * VaultStaticSecret <- not currently implemented
 	// * VaultPKISecret
 
-	vamList := &secretsv1alpha1.VaultAuthList{}
+	vamList := &secretsv1beta1.VaultAuthList{}
 	err := c.List(ctx, vamList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultAuth resources")
 	}
 	removeFinalizers(ctx, c, log, vamList)
 
-	vcList := &secretsv1alpha1.VaultConnectionList{}
+	vcList := &secretsv1beta1.VaultConnectionList{}
 	err = c.List(ctx, vcList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultConnection resources")
 	}
 	removeFinalizers(ctx, c, log, vcList)
 
-	vdsList := &secretsv1alpha1.VaultDynamicSecretList{}
+	vdsList := &secretsv1beta1.VaultDynamicSecretList{}
 	err = c.List(ctx, vdsList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultDynamicSecret resources")
 	}
 	removeFinalizers(ctx, c, log, vdsList)
 
-	vpkiList := &secretsv1alpha1.VaultPKISecretList{}
+	vpkiList := &secretsv1beta1.VaultPKISecretList{}
 	err = c.List(ctx, vpkiList, opts...)
 	if err != nil {
 		log.Error(err, "Unable to list VaultPKISecret resources")
@@ -134,7 +140,7 @@ func RemoveAllFinalizers(ctx context.Context, c client.Client, log logr.Logger) 
 func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, objs client.ObjectList) {
 	cnt := 0
 	switch t := objs.(type) {
-	case *secretsv1alpha1.VaultAuthList:
+	case *secretsv1beta1.VaultAuthList:
 		for _, x := range t.Items {
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, vaultAuthFinalizer) {
@@ -144,7 +150,7 @@ func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, obj
 				}
 			}
 		}
-	case *secretsv1alpha1.VaultPKISecretList:
+	case *secretsv1beta1.VaultPKISecretList:
 		for _, x := range t.Items {
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, vaultPKIFinalizer) {
@@ -154,7 +160,7 @@ func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, obj
 				}
 			}
 		}
-	case *secretsv1alpha1.VaultConnectionList:
+	case *secretsv1beta1.VaultConnectionList:
 		for _, x := range t.Items {
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, vaultConnectionFinalizer) {
@@ -164,7 +170,7 @@ func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, obj
 				}
 			}
 		}
-	case *secretsv1alpha1.VaultDynamicSecretList:
+	case *secretsv1beta1.VaultDynamicSecretList:
 		for _, x := range t.Items {
 			cnt++
 			if controllerutil.RemoveFinalizer(&x, vaultDynamicSecretFinalizer) {

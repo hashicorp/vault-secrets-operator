@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
@@ -29,11 +29,10 @@ import (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	ClientFactory   vault.ClientFactory
-	HMACFunc        vault.HMACFromSecretFunc
-	ValidateMACFunc vault.ValidateMACFromSecretFunc
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	ClientFactory vault.ClientFactory
+	HMACValidator vault.HMACValidator
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -51,7 +50,7 @@ type VaultStaticSecretReconciler struct {
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	o := &secretsv1alpha1.VaultStaticSecret{}
+	o := &secretsv1beta1.VaultStaticSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -87,16 +86,16 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		resp, err = w.Get(ctx, o.Spec.Name)
+		resp, err = w.Get(ctx, o.Spec.Path)
 	case consts.KVSecretTypeV2:
 		w, err := c.KVv2(o.Spec.Mount)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		if o.Spec.Version == 0 {
-			resp, err = w.Get(ctx, o.Spec.Name)
+			resp, err = w.Get(ctx, o.Spec.Path)
 		} else {
-			resp, err = w.GetVersion(ctx, o.Spec.Name, o.Spec.Version)
+			resp, err = w.GetVersion(ctx, o.Spec.Path, o.Spec.Version)
 		}
 	default:
 		err = fmt.Errorf("unsupported secret type %q", o.Spec.Type)
@@ -113,9 +112,9 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	if resp == nil {
-		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "name", o.Spec.Name)
+		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "path", o.Spec.Path)
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Vault secret was empty, mount %s, name %s", o.Spec.Mount, o.Spec.Name)
+			"Vault secret was empty, mount %s, path %s", o.Spec.Mount, o.Spec.Path)
 		return ctrl.Result{
 			RequeueAfter: requeueAfter,
 		}, nil
@@ -142,7 +141,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// doRolloutRestart only if this is not the first time this secret has been synced
 		doRolloutRestart = o.Status.SecretMAC != ""
 
-		macsEqual, messageMAC, err := r.handleSecretHMAC(ctx, o, data)
+		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -183,66 +182,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
-// handleSecretHMAC compares the HMAC of data to its previously computed value stored in o.Status.SecretHMAC,
-// returning true if they are equal. The computed new-MAC will be returned so that o.Status.SecretHMAC can be updated.
-func (r *VaultStaticSecretReconciler) handleSecretHMAC(ctx context.Context, o *secretsv1alpha1.VaultStaticSecret, data map[string][]byte) (bool, []byte, error) {
-	logger := log.FromContext(ctx)
-
-	// HMAC the Vault secret data so that it can be compared to the what's in the destination Secret.
-	message, err := json.Marshal(data)
-	if err != nil {
-		return false, nil, err
-	}
-
-	newMAC, err := r.HMACFunc(ctx, r.Client, message)
-	if err != nil {
-		return false, nil, err
-	}
-
-	// we have never computed the Vault secret data HMAC,
-	// so there is no need to perform Secret data drift detection.
-	if o.Status.SecretMAC == "" {
-		return false, newMAC, nil
-	}
-
-	lastMAC, err := base64.StdEncoding.DecodeString(o.Status.SecretMAC)
-	if err != nil {
-		return false, nil, err
-	}
-
-	macsEqual := vault.EqualMACS(lastMAC, newMAC)
-	if macsEqual {
-		// check to see if the Secret.Data has drifted since the last sync,
-		// if it has then it will be overwritten with the Vault secret data
-		// this would indicate an out-of-band change made to the Secret's data
-		// in this case the controller should do the sync.
-		if cur, ok, _ := helpers.GetSecret(ctx, r.Client, o); ok {
-			curMessage, err := json.Marshal(cur.Data)
-			if err != nil {
-				return false, nil, err
-			}
-
-			logger.V(consts.LogLevelDebug).Info("Doing Secret data drift detection", "lastMAC", lastMAC)
-			// we only care of the MAC has changed, it's new value is not important here.
-			valid, foundMAC, err := r.ValidateMACFunc(ctx, r.Client, curMessage, lastMAC)
-			if err != nil {
-				return false, nil, err
-			}
-			if !valid {
-				logger.V(consts.LogLevelDebug).Info("Secret data drift detected",
-					"lastMAC", lastMAC, "foundMAC", foundMAC, "curMessage", curMessage, "message", message)
-			}
-
-			macsEqual = valid
-		} else {
-			// assume MACs are not equal if the secret does not exist or an error (ignored) has occurred
-			macsEqual = false
-		}
-	}
-
-	return macsEqual, newMAC, nil
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
 	if vaultSecret.Raw == nil {
@@ -277,7 +216,7 @@ func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretsv1alpha1.VaultStaticSecret{}).
+		For(&secretsv1beta1.VaultStaticSecret{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }

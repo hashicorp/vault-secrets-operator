@@ -27,7 +27,6 @@ EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
-HELMIFY_VERSION ?= v0.3.22
 COPYWRITE_VERSION ?= 0.16.3
 
 TESTCOUNT ?= 1
@@ -43,6 +42,11 @@ SKIP_CLEANUP ?=
 # The number of k8s secrets to create in the VaultDynamicSecret's integration tests.
 K8S_DB_SECRET_COUNT ?=
 
+# Cloud test options
+SKIP_AWS_TESTS ?= true
+SKIP_AWS_STATIC_CREDS_TEST ?= true
+# filter bats unit tests to run.
+BATS_TESTS_FILTER ?= .\*
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -96,10 +100,10 @@ ENVTEST_K8S_VERSION = 1.24.1
 
 # Kind cluster name
 KIND_CLUSTER_NAME ?= vault-secrets-operator
-# Kind cluster context
-KIND_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 # Kind config file
 KIND_CONFIG_FILE ?= $(INTEGRATION_TEST_ROOT)/kind/config.yaml
+# Kubernetes cluster context, defaults to the Kind cluster context
+K8S_CLUSTER_CONTEXT ?= kind-$(KIND_CLUSTER_NAME)
 
 # Operator namespace as configured in $(KUSTOMIZE_BUILD_DIR)/kustomization.yaml
 OPERATOR_NAMESPACE ?= vault-secrets-operator-system
@@ -117,9 +121,6 @@ VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
-
-# directory for eks infrastructure for running tests
-TF_EKS_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
 
 BUILD_DIR = dist
 BIN_NAME = vault-secrets-operator
@@ -165,7 +166,7 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
-	$(MAKE) sync-crds
+	$(MAKE) sync-crds gen-api-ref-docs
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -177,6 +178,12 @@ sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DI
 	@rm -rf $(CHART_CRDS_DIR)
 	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: gen-api-ref-docs
+gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
+	@rm -f docs/api/api-reference.md
+	@$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
+	--renderer=markdown --output-path docs/api/api-reference.md 2>&1 > /dev/null
 
 .PHONY: fmt
 fmt: gofumpt ## Run gofumpt against code.
@@ -212,7 +219,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 .PHONY: build
 build: generate fmt vet ## Build manager binary.
 	go build \
-    	-ldflags "${LD_FLAGS} $(shell ./scripts/ldflags-version.sh)" \
+		-ldflags "${LD_FLAGS} $(shell ./scripts/ldflags-version.sh)" \
 		-o bin/vault-secrets-operator main.go
 
 .PHONY: run
@@ -249,12 +256,11 @@ ci-build: ## Build operator binary (without generating assets).
 		-o $(BUILD_DIR)/$(BIN_NAME) \
 		.
 
-# TODO: this does not work on arm64 build machines.
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
 	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
 	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
-	docker build -t $(IMG) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
@@ -274,7 +280,9 @@ set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_D
 integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
-    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
+    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
@@ -302,7 +310,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 		--image kindest/node:$(KIND_K8S_VERSION) \
 		--name $(KIND_CLUSTER_NAME)  \
 		--config $(KIND_CONFIG_FILE)
-	kubectl config use-context $(KIND_CLUSTER_CONTEXT)
+	kubectl config use-context $(K8S_CLUSTER_CONTEXT)
 
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
@@ -332,7 +340,7 @@ endif
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
-		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_VAULT_STATE_DIR)/*.tfvars
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(VAULT_PATCH_ROOT)/patch-vault.sh
@@ -379,31 +387,14 @@ load-docker-image: kustomize ## Deploy controller to the K8s cluster (without ge
 teardown-integration-test: ignore-not-found = true
 teardown-integration-test: undeploy ## Teardown the integration test setup
 	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) destroy -auto-approve \
-		-var k8s_config_context=$(KIND_CLUSTER_CONTEXT) \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_license=ignored && \
 	rm -rf $(TF_VAULT_STATE_DIR)
 
-##@ Generate Helm Chart
-### Helmify regenerates the CRDs and copies them into the chart dir.
-### NOTE: It will overwrite the existing templates dir so we have a TODO to figure out if there
-### is a way to track diffs, or just do not commit the changes to the templates directory when
-### regenerating the CRDs from the config directory.
-.PHONY: helm-chart
-helm-chart: manifests kustomize helmify
-	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR) | $(HELMIFY) -crd-dir
-
 .PHONY: unit-test
 unit-test: ## Run unit tests for the helm chart
-	PATH="$(CURDIR)/scripts:$(PATH)" bats test/unit/
-
-##@ EKS
-.PHONY: create-eks
-create-eks: ## Create a new EKS cluster
-	$(TERRAFORM) -chdir=$(TF_EKS_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_EKS_DIR) apply -auto-approve
-	$(AWS) eks --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) update-kubeconfig \
-    --name $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_name)
+	PATH="$(CURDIR)/scripts:$(PATH)" bats -f $(BATS_TESTS_FILTER) test/unit/
 
 .PHONY: port-forward
 port-forward:
@@ -413,31 +404,6 @@ port-forward:
 	    echo "Starting port forwarding..."; \
 	    bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n $(K8S_VAULT_NAMESPACE) statefulset/vault 38300:8200; done'; \
 	fi
-
-# Currently only supports amd64
-.PHONY: ci-ecr-build-push
-ci-ecr-build-push: ## Build the operator image and push it to the ECR repository
-	@$(eval IMG := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url):$(VERSION))
-	$(MAKE) ci-build ci-docker-build IMG=$(IMG)
-	$(AWS) ecr get-login-password --region $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region) | docker login --username AWS --password-stdin $$($(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url)
-	docker push $(IMG)
-
-.PHONY: integration-test-eks
-integration-test-eks: ## Run integration tests in the EKS cluster
-	@$(eval KIND_CLUSTER_CONTEXT := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw cluster_arn))
-	@$(eval IMAGE_TAG_BASE := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_url))
-	$(MAKE) port-forward &
-	$(MAKE) integration-test KIND_CLUSTER_CONTEXT=$(KIND_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) IMG=$(IMAGE_TAG_BASE):$(VERSION)
-
-.PHONY: ci-ecr-delete
-ci-ecr-delete: ## Delete the ECR repository
-	@$(eval AWS_REGION := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw region))
-	@$(eval ECR_REPO_NAME := $(shell $(TERRAFORM) -chdir=$(TF_EKS_DIR) output -raw ecr_name))
-	$(AWS) ecr batch-delete-image --region $(AWS_REGION) --repository-name $(ECR_REPO_NAME) --image-ids imageTag="$(VERSION)" || true;
-
-.PHONY: destroy-eks
-destroy-eks: ## Destroy the EKS cluster
-	$(TERRAFORM) -chdir=$(TF_EKS_DIR) destroy -auto-approve
 
 ##@ Deployment
 
@@ -522,24 +488,6 @@ bundle-build: ## Build the bundle image.
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
 
-.PHONY: aws
-AWS = ./bin/aws
-aws: ## Download aws cli locally if necessary.
-ifeq (,$(wildcard $(AWS)))
-ifeq (,$(shell which $(notdir $(AWS)) 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(AWS)) ;\
-	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sfSLo $(AWS).zip https://awscli.amazonaws.com/awscli-exe-$${OS}-$${ARCH}.zip -o "awscliv2.zip" ; \
-	unzip awscliv2.zip -d $(dir $(AWS)) $(notdir $(AWS)) ;\
-	rm -f awscliv2.zip ; \
-	}
-else
-AWS = $(shell which aws)
-endif
-endif
-
 .PHONY: opm
 OPM = ./bin/opm
 opm: ## Download opm locally if necessary.
@@ -592,22 +540,23 @@ GOFUMPT = $(shell which gofumpt)
 endif
 endif
 
-HELMIFY = ./bin/helmify
-helmify: ## Download helmify locally if necessary.
-ifeq (,$(wildcard $(HELMIFY)))
-ifeq (,$(shell which $(notdir $(HELMIFY)) 2>/dev/null))
-	@{ \
-	GOBIN=${LOCALBIN} go install github.com/arttor/helmify/cmd/helmify@${HELMIFY_VERSION} ;\
-	}
-else
-HELMIFY = $(shell which helmify)
-endif
-endif
-
 .PHONY: copywrite
 copywrite: ## Download copywrite locally if necessary.
 	@./hack/install_copywrite.sh
 	$(eval COPYWRITE=./bin/copywrite)
+
+.PHONY: crd-ref-docs
+CRD_REF_DOCS = ./bin/crd-ref-docs
+crd-ref-docs: ## Install crd-ref-docs locally if necessary.
+ifeq (,$(wildcard $(CRD_REF_DOCS)))
+ifeq (,$(shell which $(notdir $(CRD_REF_DOCS)) 2>/dev/null))
+	@{ \
+	GOBIN=${LOCALBIN} go install github.com/elastic/crd-ref-docs@v0.0.9 ;\
+	}
+else
+CRD_REF_DOCS = $(shell which crd-ref-docs)
+endif
+endif
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
@@ -643,9 +592,9 @@ clean:
 
 
 # Generate Helm reference docs from values.yaml and update Vault website.
-# Usage: make gen-helm-docs vault=<path-to-vault-repo>.
-# If not options are given, the local copy of docs/helm.mdx will be updated, which can
-# be used to submit a PR to vault docs.
+# Usage: make gen-helm-docs
+# If no options are given, helm.mdx from a local copy of the vault repository will be used.
 # Adapted from https://github.com/hashicorp/consul-k8s/tree/main/hack/helm-reference-gen
+VAULT_DOCS_PATH ?= ../vault/website/content/docs/platform/k8s/vso/helm.mdx
 gen-helm-docs:
-	@cd hack/helm-reference-gen; go run ./... --vault=$(vault)
+	@cd hack/helm-reference-gen; go run ./... --vault=$(VAULT_DOCS_PATH)

@@ -38,8 +38,9 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	secretsv1alpha1 "github.com/hashicorp/vault-secrets-operator/api/v1alpha1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
@@ -118,7 +119,7 @@ func TestMain(m *testing.M) {
 		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-		utilruntime.Must(secretsv1alpha1.AddToScheme(scheme))
+		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 		restConfig = *ctrl.GetConfigOrDie()
 
 		os.Setenv("VAULT_ADDR", vaultAddr)
@@ -211,7 +212,7 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 	return &validSecret, err
 }
 
-func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *secretsv1alpha1.VaultPKISecret, previousSerialNumber string) (string, *corev1.Secret, error) {
+func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *secretsv1beta1.VaultPKISecret, previousSerialNumber string) (string, *corev1.Secret, error) {
 	t.Helper()
 	destSecret := &corev1.Secret{}
 	newSerialNumber, err := retry.DoWithRetryE(t, "wait for k8s Secret data to be synced by the operator", maxRetries, delay, func() (string, error) {
@@ -271,7 +272,16 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 		return false, fmt.Errorf("%s is missing", corev1.TLSPrivateKeyKey)
 	}
 
-	if !bytes.Equal(tlsCert, secret.Data["certificate"]) {
+	certificate := secret.Data["certificate"]
+	if caChain, ok := secret.Data["ca_chain"]; ok {
+		certificate = append(certificate, []byte("\n")...)
+		certificate = append(certificate, caChain...)
+	} else if issuingCA, ok := secret.Data["issuing_ca"]; ok {
+		certificate = append(certificate, []byte("\n")...)
+		certificate = append(certificate, issuingCA...)
+	}
+
+	if !bytes.Equal(tlsCert, certificate) {
 		return false, fmt.Errorf("%s did not equal certificate: %s, %s",
 			corev1.TLSCertKey, tlsCert, secret.Data["certificate"])
 	}
@@ -296,6 +306,8 @@ type dynamicK8SOutputs struct {
 	AuthPolicy       string   `json:"auth_policy"`
 	AuthRole         string   `json:"auth_role"`
 	DBRole           string   `json:"db_role"`
+	DBRoleStatic     string   `json:"db_role_static"`
+	DBRoleStaticUser string   `json:"db_role_static_user"`
 	DBPath           string   `json:"db_path"`
 	TransitPath      string   `json:"transit_path"`
 	TransitKeyName   string   `json:"transit_key_name"`
@@ -304,7 +316,9 @@ type dynamicK8SOutputs struct {
 	DeploymentName   string   `json:"deployment_name"`
 }
 
-func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsObj *secretsv1alpha1.VaultDynamicSecret, expected map[string]int) {
+func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
+	delay time.Duration, vdsObj *secretsv1beta1.VaultDynamicSecret, expected map[string]int,
+) {
 	t.Helper()
 
 	namespace := vdsObj.GetNamespace()
@@ -312,6 +326,17 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 	opts := &k8s.KubectlOptions{
 		Namespace: namespace,
 	}
+
+	expectedPresentOnly := make(map[string]int)
+	if vdsObj.Spec.AllowStaticCreds {
+		// these keys typically have variable values that make them difficult to compare,
+		// we can ensure that they are at least present and have a length > 0 in the
+		// resulting Secret data.
+		expectedPresentOnly["_raw"] = 1
+		expectedPresentOnly["last_vault_rotation"] = 1
+		expectedPresentOnly["ttl"] = 1
+	}
+
 	retry.DoWithRetry(t,
 		"wait for dynamic secret sync", maxRetries, delay,
 		func() (string, error) {
@@ -323,41 +348,52 @@ func assertDynamicSecret(t *testing.T, maxRetries int, delay time.Duration, vdsO
 				return "", fmt.Errorf("empty data for secret %s: %#v", sec, sec)
 			}
 
+			actualPresentOnly := make(map[string]int)
 			actual := make(map[string]int)
 			for f, b := range sec.Data {
+				if v, ok := expectedPresentOnly[f]; ok {
+					if len(b) > 0 {
+						actualPresentOnly[f] = v
+					}
+					continue
+				}
 				actual[f] = len(b)
 			}
-			assert.Equal(t, expected, actual)
 
-			assertSyncableSecret(t, vdsObj,
-				"secrets.hashicorp.com/v1alpha1",
-				"VaultDynamicSecret", sec)
+			assert.Equal(t, expectedPresentOnly, actualPresentOnly)
+			assert.Equal(t, expected, actual, "actual %#v, expected %#v", actual, expected)
+
+			assertSyncableSecret(t, client, vdsObj, sec)
 
 			return "", nil
 		})
 }
 
-func assertSyncableSecret(t *testing.T, obj ctrlclient.Object, expectedAPIVersion, expectedKind string, sec *corev1.Secret) {
+func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient.Object, sec *corev1.Secret) {
 	t.Helper()
 
 	meta, err := helpers.NewSyncableSecretMetaData(obj)
 	require.NoError(t, err)
 
 	if meta.Destination.Create {
-		assert.Equal(t, helpers.OwnerLabels, sec.Labels,
+		expectedOwnerLabels, err := helpers.OwnerLabelsForObj(obj)
+		if assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, expectedOwnerLabels, sec.Labels,
 			"expected owner labels not set on %s",
 			ctrlclient.ObjectKeyFromObject(sec))
 
+		gvk, err := apiutil.GVKForObject(obj, client.Scheme())
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		expectedAPIVersion, expectedKind := gvk.ToAPIVersionAndKind()
 		// check the OwnerReferences
 		expectedOwnerRefs := []v1.OwnerReference{
 			{
-				// For some reason TypeMeta is empty when using the ctrlclient.Client
-				// from within the tests. So we have to hard code APIVersion and Kind.
-				// There are numerous related GH issues for this:
-				// Normally it should be:
-				// APIVersion: meta.APIVersion,
-				// Kind:       meta.Kind,
-				// e.g. https://github.com/kubernetes/client-go/issues/541
 				APIVersion: expectedAPIVersion,
 				Kind:       expectedKind,
 				Name:       obj.GetName(),
@@ -446,7 +482,7 @@ func exportKindLogs(t *testing.T) {
 }
 
 func awaitRolloutRestarts(t *testing.T, ctx context.Context,
-	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1alpha1.RolloutRestartTarget,
+	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1beta1.RolloutRestartTarget,
 ) {
 	t.Helper()
 	require.NoError(t, backoff.Retry(
@@ -467,12 +503,12 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 
 func assertRolloutRestarts(
 	t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
-	targets []secretsv1alpha1.RolloutRestartTarget, minGeneration int64,
+	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
 ) error {
 	t.Helper()
 
 	var errs error
-	// see secretsv1alpha1.RolloutRestartTarget for supported target resources.
+	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
 	for _, target := range targets {
 		var tObj ctrlclient.Object

@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package v1alpha1
+package v1beta1
 
 import (
 	"testing"
@@ -29,16 +29,17 @@ func TestVaultPKISecret_GetIssuerAPIData(t *testing.T) {
 				PrivateKeyFormat: "rsa",
 			},
 			want: map[string]interface{}{
-				"common_name":          "qux",
-				"alt_names":            "foo,baz",
-				"ip_sans":              "buz,qux",
-				"uri_sans":             "*.foo.net,*.baz.net",
-				"other_sans":           "other1,other2",
-				"ttl":                  "30s",
-				"not_after":            "2026-05-01T00:00:00Z",
-				"exclude_cn_from_sans": false,
-				"format":               "pem",
-				"private_key_format":   "rsa",
+				"common_name":             "qux",
+				"alt_names":               "foo,baz",
+				"ip_sans":                 "buz,qux",
+				"uri_sans":                "*.foo.net,*.baz.net",
+				"other_sans":              "other1,other2",
+				"ttl":                     "30s",
+				"not_after":               "2026-05-01T00:00:00Z",
+				"exclude_cn_from_sans":    false,
+				"format":                  "pem",
+				"private_key_format":      "rsa",
+				"remove_roots_from_chain": true,
 			},
 		},
 		{
@@ -54,15 +55,16 @@ func TestVaultPKISecret_GetIssuerAPIData(t *testing.T) {
 				PrivateKeyFormat: "rsa",
 			},
 			want: map[string]interface{}{
-				"common_name":          "qux",
-				"alt_names":            "foo,baz",
-				"ip_sans":              "buz,qux",
-				"uri_sans":             "*.foo.net,*.baz.net",
-				"other_sans":           "other1,other2",
-				"ttl":                  "30s",
-				"not_after":            "2026-05-01T00:00:00Z",
-				"exclude_cn_from_sans": false,
-				"private_key_format":   "rsa",
+				"common_name":             "qux",
+				"alt_names":               "foo,baz",
+				"ip_sans":                 "buz,qux",
+				"uri_sans":                "*.foo.net,*.baz.net",
+				"other_sans":              "other1,other2",
+				"ttl":                     "30s",
+				"not_after":               "2026-05-01T00:00:00Z",
+				"exclude_cn_from_sans":    false,
+				"private_key_format":      "rsa",
+				"remove_roots_from_chain": true,
 			},
 		},
 		{
@@ -78,15 +80,16 @@ func TestVaultPKISecret_GetIssuerAPIData(t *testing.T) {
 				Format:     "pem",
 			},
 			want: map[string]interface{}{
-				"common_name":          "qux",
-				"alt_names":            "foo,baz",
-				"ip_sans":              "buz,qux",
-				"uri_sans":             "*.foo.net,*.baz.net",
-				"other_sans":           "other1,other2",
-				"ttl":                  "30s",
-				"not_after":            "2026-05-01T00:00:00Z",
-				"exclude_cn_from_sans": false,
-				"format":               "pem",
+				"common_name":             "qux",
+				"alt_names":               "foo,baz",
+				"ip_sans":                 "buz,qux",
+				"uri_sans":                "*.foo.net,*.baz.net",
+				"other_sans":              "other1,other2",
+				"ttl":                     "30s",
+				"not_after":               "2026-05-01T00:00:00Z",
+				"exclude_cn_from_sans":    false,
+				"format":                  "pem",
+				"remove_roots_from_chain": true,
 			},
 		},
 	}

@@ -45,7 +45,7 @@ EOT
 
 resource "kubernetes_manifest" "vault-auth-operator" {
   manifest = {
-    apiVersion = "secrets.hashicorp.com/v1alpha1"
+    apiVersion = "secrets.hashicorp.com/v1beta1"
     kind       = "VaultAuth"
     metadata = {
       name      = "${local.name_prefix}-operator"

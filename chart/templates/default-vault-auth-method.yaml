@@ -4,7 +4,7 @@
 */ -}}
 
 {{- if .Values.defaultAuthMethod.enabled }}
-apiVersion: secrets.hashicorp.com/v1alpha1
+apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: default
@@ -18,35 +18,6 @@ spec:
   namespace: {{ .Values.defaultAuthMethod.namespace }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
-  {{- if eq .Values.defaultAuthMethod.method "kubernetes" }}
-  kubernetes:
-    role: {{ .Values.defaultAuthMethod.kubernetes.role }}
-    serviceAccount: {{ .Values.defaultAuthMethod.kubernetes.serviceAccount }}
-    {{- if .Values.defaultAuthMethod.kubernetes.tokenAudiences }}
-    audiences: {{ .Values.defaultAuthMethod.kubernetes.tokenAudiences | toJson }}
-    {{- end }}
-  {{- else if eq .Values.defaultAuthMethod.method "jwt" }}
-  jwt:
-    role: {{ .Values.defaultAuthMethod.jwt.role }}
-    {{- if .Values.defaultAuthMethod.jwt.secretRef }}
-    secretRef: {{ .Values.defaultAuthMethod.jwt.secretRef }}
-    {{- else if .Values.defaultAuthMethod.jwt.serviceAccount }}
-    serviceAccount: {{ .Values.defaultAuthMethod.jwt.serviceAccount }}
-    {{- if .Values.defaultAuthMethod.jwt.tokenAudiences }}
-    audiences: {{ .Values.defaultAuthMethod.jwt.tokenAudiences | toJson }}
-    {{- end }}
-    {{- end }}
-  {{- else if eq .Values.defaultAuthMethod.method "appRole" }}
-  appRole:
-    roleId: {{ .Values.defaultAuthMethod.appRole.roleid }}
-    secretRef: {{ .Values.defaultAuthMethod.appRole.secretRef }}
-  {{- end }}
-  {{- if .Values.defaultAuthMethod.headers }}
-  headers:
-    {{ tpl .Values.defaultAuthMethod.headers . | trim }}
-  {{- end }}
-  {{- if .Values.defaultAuthMethod.params }}
-  params:
-    {{ tpl .Values.defaultAuthMethod.params . | trim }}
-  {{- end }}
+  {{- $kubeServiceAccount := .Values.defaultAuthMethod.kubernetes.serviceAccount }}
+  {{- include "operator.vaultAuthMethod" (list .Values.defaultAuthMethod $kubeServiceAccount . ) }}
 {{- end }}

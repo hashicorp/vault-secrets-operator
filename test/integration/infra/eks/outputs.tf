@@ -35,3 +35,23 @@ output "ecr_name" {
   description = "ECR repository name"
   value       = aws_ecr_repository.vault-secrets-operator.name
 }
+
+output "oidc_discovery_url" {
+  description = "EKS OIDC discovery URL"
+  value       = module.eks.cluster_oidc_issuer_url
+}
+
+output "irsa_role" {
+  description = "IRSA assumable AWS role"
+  value       = module.iam_assumable_role.iam_role_arn
+}
+
+output "eks_node_role_arn" {
+  description = "IAM role for the EKS nodes"
+  value       = module.eks.eks_managed_node_groups["default_node_group"]["iam_role_arn"]
+}
+
+output "account_id" {
+  description = "AWS account id for setting up auth with the instance profile"
+  value       = data.aws_caller_identity.current.account_id
+}
