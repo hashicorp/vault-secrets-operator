@@ -334,6 +334,8 @@ While none of this should be considered secret information, it can be sensitive 
 
 ### Threats specific to Kubernetes and Kubernetes Secrets
 
+These threats are included because using Kubernetes Secrets is a fundamental requirement to using the Operator, but their applicability is not affected by whether or not the Secrets are maintained by the Operator. All usages of Kubernetes Secrets should consider the following in their threat model.
+
 <table>
   <tr>
    <td>
