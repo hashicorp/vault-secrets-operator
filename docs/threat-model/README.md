@@ -2,7 +2,7 @@
 
 The Vault Secrets Operator synchronizes secrets from Vault to [Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/). This threat model highlights how using the Vault Secrets Operator affects users' security posture and provides some recommendations for running it securely.
 
-## Executive summary and recommendations
+## Executive summary and recommendations for secure use
 
 The Operator occupies a privileged position in a Kubernetes cluster, with unencrypted access to all secrets being synced, and extra care must be taken to secure and monitor it via both Vault and Kubernetes permissions and auditing. In particular:
 
@@ -298,6 +298,8 @@ If an attacker either has access to create tokens for the Operator’s service a
    <td>Information disclosure, tampering, integrity, spoofing
    </td>
    <td>The Operator is built using a large collection of open source libraries, and is itself open source and available for inspection. From time to time, it is expected that CVEs will be published for vulnerabilities affecting the Operator and its dependencies, sometimes with the potential to exploit the Operator in previously undiscovered ways.
+<p>
+Any external parties discovering such vulnerabilities should refer to the <a href="https://github.com/hashicorp/vault-secrets-operator/security/policy">repo</a> and <a href="https://www.hashicorp.com/security">HashiCorp</a> security policies.
    </td>
    <td>
 <ul>
