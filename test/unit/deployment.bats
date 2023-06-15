@@ -236,20 +236,36 @@ load _helpers
   [ "${actual}" = "false" ]
 }
 
-@test "controller/Deployment: can set image pull secrets" {
+@test "controller/Deployment: Custom imagePullSecrets - string array" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controller.imagePullSecrets[0].name=my-secret' \
-      --set 'controller.imagePullSecrets[1].name=my-secret2' \
+      --set 'controller.imagePullSecrets[0]=foo' \
+      --set 'controller.imagePullSecrets[1]=bar' \
       . | tee /dev/stderr |
       yq '. | select(documentIndex == 0)' | tee /dev/stderr)
 
   local actual=$(echo "$object" |
-      yq -r '.imagePullSecrets[0].name' | tee /dev/stderr)
-  [ "${actual}" = "my-secret" ]
+     yq -r '.imagePullSecrets[0].name' | tee /dev/stderr)
+  [ "${actual}" = "foo" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[1].name' | tee /dev/stderr)
+  [ "${actual}" = "bar" ]
+}
+
+@test "controller/Deployment: Custom imagePullSecrets - map" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.imagePullSecrets[0].name=foo' \
+      --set 'controller.imagePullSecrets[1].name=bar' \
+      . | tee /dev/stderr |
+      yq '. | select(documentIndex == 0)' | tee /dev/stderr)
 
   local actual=$(echo "$object" |
+     yq -r '.imagePullSecrets[0].name' | tee /dev/stderr)
+  [ "${actual}" = "foo" ]
+  actual=$(echo "$object" |
       yq -r '.imagePullSecrets[1].name' | tee /dev/stderr)
-  [ "${actual}" = "my-secret2" ]
+  [ "${actual}" = "bar" ]
 }

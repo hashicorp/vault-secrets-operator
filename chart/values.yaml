@@ -30,14 +30,15 @@ controller:
         cpu: 5m
         memory: 64Mi
 
-  # Array of objects containing image pull secret names that will be applied to the controllers service account.
-  # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
+  # Image pull secret to use for private container registry authentication which will be applied to the controllers
+  # service account. Alternatively, the value may be specified as an array of strings.
   # Example:
   # ```yaml
   # imagePullSecrets:
-  #   - name: pull-secret-name
+  #   - name: pull-secret-name-1
   #   - name: pull-secret-name-2
   # ```
+  # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
   # @type: array<map>
   imagePullSecrets: []
 

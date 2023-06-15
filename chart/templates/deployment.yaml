@@ -10,12 +10,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "chart.labels" . | nindent 4 }}
-{{- with .Values.controller.imagePullSecrets }}
-imagePullSecrets:
-{{- range . }}
-  - name: {{ .name }}
-{{- end }}
-{{- end }}
+{{ include "imagePullSecrets" .}}
 ---
 apiVersion: apps/v1
 kind: Deployment
