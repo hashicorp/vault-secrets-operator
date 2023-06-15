@@ -209,6 +209,7 @@ The following threats and assets were enumerated while considering several types
    </td>
    <td>All workload namespaces can use the default VaultAuth CR, which defines the role the Operator will authenticate to Vault as, and also the policies it will receive. As such, the default VaultAuth defines Vault secrets that are available to the whole cluster.
 <p>
+<p>
 Each namespace can also deploy its own VaultAuth objects for use only within that namespace. There are no restrictions over which Secret CR can reference which VaultAuth within one namespace, so a Kubernetes namespace is an important trust boundary when considering which namespaces should have access to which Vault roles and policies.
    </td>
    <td>
@@ -230,7 +231,9 @@ Each namespace can also deploy its own VaultAuth objects for use only within tha
    </td>
    <td>The Operator can store cached Vault tokens and secrets in Kubernetes Secrets within its own namespace in order to reduce unnecessary secret churn when the Operator is rolled out or a new leader is elected.
 <p>
+<p>
 Attackers with access to this information can use it to access other systems, degrade the Operator’s operation, or spoof other clients.
+<p>
 <p>
 Pods have read-only access to secrets.
    </td>
@@ -257,6 +260,7 @@ Pods have read-only access to secrets.
    </td>
    <td>Kubernetes provides the “exec” capability to allow users to run arbitrary commands within a pod for debugging purposes. The Operator manifest could also be modified to include a modified version of the Operator.
 <p>
+<p>
 With access to the compute environment inside the pod, attackers can read unencrypted secrets from the process’ memory, as well as assume the Operator’s identity using the service account token mounted in the pod.
    </td>
    <td>
@@ -277,6 +281,7 @@ With access to the compute environment inside the pod, attackers can read unencr
    <td>Information disclosure, tampering, integrity, spoofing
    </td>
    <td>The Operator’s service account token is its Kubernetes-native identity, and gives it access to a wide range of Kubernetes APIs as defined in the RBAC deployed by the Operator helm chart. Depending on the Vault auth method chosen, it will also be exchanged with Vault for a Vault token in many deployments.
+<p>
 <p>
 If an attacker either has access to create tokens for the Operator’s service account or access to exfiltrate the Operator’s service account token from one of its pods, they can potentially access anything the Operator can in both Kubernetes and Vault.
    </td>
@@ -299,6 +304,7 @@ If an attacker either has access to create tokens for the Operator’s service a
    </td>
    <td>The Operator is built using a large collection of open source libraries, and is itself open source and available for inspection. From time to time, it is expected that CVEs will be published for vulnerabilities affecting the Operator and its dependencies, sometimes with the potential to exploit the Operator in previously undiscovered ways.
 <p>
+<p>
 Any external parties discovering vulnerabilities should refer to the <a href="https://github.com/hashicorp/vault-secrets-operator/security/policy">repo</a> and <a href="https://www.hashicorp.com/security">HashiCorp</a> security policies.
    </td>
    <td>
@@ -319,6 +325,7 @@ Any external parties discovering vulnerabilities should refer to the <a href="ht
    <td>Information disclosure
    </td>
    <td>The custom resources (VaultConnection, VaultAuth, VaultStaticSecret, etc.) that the Operator consumes contain metadata about the Vault cluster and its secrets including Vault address, CA certificate, expected headers, role names, secret paths, etc.
+<p>
 <p>
 While none of this should be considered secret information, it can be sensitive as it could be combined with another information disclosure to successfully authenticate to Vault and retrieve secrets.
    </td>
@@ -377,6 +384,7 @@ These threats are included because using Kubernetes Secrets is a fundamental req
    <td>Information disclosure, tampering, integrity
    </td>
    <td>Kubernetes uses etcd to store all the objects created in a cluster, including Secrets. By default, etcd is unencrypted, and Secrets can be accessed in plaintext from disk.
+<p>
 <p>
 When etcd is encrypted by a KMS provider all objects are encrypted on disk, but they are still available in plaintext from the API, as controlled by Kubernetes RBAC.
    </td>
