@@ -299,7 +299,7 @@ If an attacker either has access to create tokens for the Operator’s service a
    </td>
    <td>The Operator is built using a large collection of open source libraries, and is itself open source and available for inspection. From time to time, it is expected that CVEs will be published for vulnerabilities affecting the Operator and its dependencies, sometimes with the potential to exploit the Operator in previously undiscovered ways.
 <p>
-Any external parties discovering such vulnerabilities should refer to the <a href="https://github.com/hashicorp/vault-secrets-operator/security/policy">repo</a> and <a href="https://www.hashicorp.com/security">HashiCorp</a> security policies.
+Any external parties discovering vulnerabilities should refer to the <a href="https://github.com/hashicorp/vault-secrets-operator/security/policy">repo</a> and <a href="https://www.hashicorp.com/security">HashiCorp</a> security policies.
    </td>
    <td>
 <ul>
