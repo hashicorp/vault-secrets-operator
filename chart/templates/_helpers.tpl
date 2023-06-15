@@ -141,9 +141,9 @@ A map value must be indexable by the key 'name'.
 imagePullSecrets:
 {{- range . -}}
 {{- if typeIs "string" . }}
-- name: {{ . }}
+ - name: {{ . }}
 {{- else if index . "name" }}
-- name: {{ .name }}
+ - name: {{ .name }}
 {{- end }}
 {{- end }}
 {{- end }}
