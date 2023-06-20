@@ -106,6 +106,12 @@ spec:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
+      {{- if .Values.controller.nodeSelector }}
+        {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controller.tolerations }}
+        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      {{- end }}
       volumes:
       - downwardAPI:
           items:
@@ -143,3 +149,9 @@ spec:
         command:
         - /vault-secrets-operator
       restartPolicy: Never
+      {{- if .Values.controller.nodeSelector }}
+        {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controller.tolerations }}
+        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      {{- end }}
