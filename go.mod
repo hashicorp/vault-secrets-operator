@@ -14,15 +14,15 @@ require (
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.1
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.27.7
+	github.com/onsi/gomega v1.27.8
 	github.com/operator-framework/operator-lib v0.11.0
-	github.com/prometheus/client_golang v1.15.1
+	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/client_model v0.4.0
 	github.com/stretchr/testify v1.8.4
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.26.5
-	k8s.io/apimachinery v0.27.2
-	k8s.io/client-go v0.26.5
+	k8s.io/api v0.26.6
+	k8s.io/apimachinery v0.27.3
+	k8s.io/client-go v0.26.6
 	k8s.io/utils v0.0.0-20230209194617-a36077c30491
 	sigs.k8s.io/controller-runtime v0.14.6
 )
@@ -101,7 +101,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pquerna/otp v1.2.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
-	github.com/prometheus/procfs v0.9.0 // indirect
+	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
