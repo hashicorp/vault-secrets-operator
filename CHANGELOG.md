@@ -1,3 +1,8 @@
+## Unreleased
+
+Improvements:
+* Helm: `controller.imagePullSecrets` stanza is added to provide imagePullSecrets to the controller's containers via the serviceAccount: [GH-266](https://github.com/hashicorp/vault-secrets-operator/pull/266)
+
 ## 0.1.0 (June 12th, 2023)
 
 Improvements:
