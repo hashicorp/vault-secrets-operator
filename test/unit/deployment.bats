@@ -246,6 +246,15 @@ load _helpers
       yq '. | select(documentIndex == 0)' | tee /dev/stderr)
 
   local actual=$(echo "$object" |
+      yq -r '.imagePullSecrets | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[0] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[1] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
      yq -r '.imagePullSecrets[0].name' | tee /dev/stderr)
   [ "${actual}" = "foo" ]
   actual=$(echo "$object" |
@@ -263,6 +272,15 @@ load _helpers
       yq '. | select(documentIndex == 0)' | tee /dev/stderr)
 
   local actual=$(echo "$object" |
+      yq -r '.imagePullSecrets | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[0] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[1] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
      yq -r '.imagePullSecrets[0].name' | tee /dev/stderr)
   [ "${actual}" = "foo" ]
   actual=$(echo "$object" |
