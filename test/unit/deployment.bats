@@ -220,3 +220,70 @@ load _helpers
    actual=$(echo "$object" | yq '.annot2'| tee /dev/stderr)
    [ "${actual}" = 'value2' ]
 }
+
+#--------------------------------------------------------------------
+# controller.imagePullSecrets
+
+@test "controller/Deployment: no image pull secrets by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '. | select(documentIndex == 0)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" |
+      yq -r '.imagePullSecrets | length > 0' | tee /dev/stderr)
+  [ "${actual}" = "false" ]
+}
+
+@test "controller/Deployment: Custom imagePullSecrets - string array" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.imagePullSecrets[0]=foo' \
+      --set 'controller.imagePullSecrets[1]=bar' \
+      . | tee /dev/stderr |
+      yq '. | select(documentIndex == 0)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" |
+      yq -r '.imagePullSecrets | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[0] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[1] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
+     yq -r '.imagePullSecrets[0].name' | tee /dev/stderr)
+  [ "${actual}" = "foo" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[1].name' | tee /dev/stderr)
+  [ "${actual}" = "bar" ]
+}
+
+@test "controller/Deployment: Custom imagePullSecrets - map" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.imagePullSecrets[0].name=foo' \
+      --set 'controller.imagePullSecrets[1].name=bar' \
+      . | tee /dev/stderr |
+      yq '. | select(documentIndex == 0)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" |
+      yq -r '.imagePullSecrets | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[0] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[1] | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" |
+     yq -r '.imagePullSecrets[0].name' | tee /dev/stderr)
+  [ "${actual}" = "foo" ]
+  actual=$(echo "$object" |
+      yq -r '.imagePullSecrets[1].name' | tee /dev/stderr)
+  [ "${actual}" = "bar" ]
+}
