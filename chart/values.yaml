@@ -15,7 +15,7 @@ controller:
     # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
     image:
       repository: gcr.io/kubebuilder/kube-rbac-proxy
-      tag: v0.11.0
+      tag: v0.14.1
 
     # Configures the default resources for the kube rbac proxy container.
     # For more information on configuring resources, see the K8s documentation:
