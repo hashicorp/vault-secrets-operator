@@ -10,6 +10,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "chart.labels" . | nindent 4 }}
+{{ include "imagePullSecrets" .}}
 ---
 apiVersion: apps/v1
 kind: Deployment
