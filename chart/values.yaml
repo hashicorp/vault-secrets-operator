@@ -9,7 +9,8 @@ controller:
   # @type: integer
   replicas: 1
 
-  # nodeSelector labels for vault-secrets-operator pod assignment, formatted as a multi-line string or YAML map.
+  # nodeSelector labels for vault-secrets-operator pod assignment.
+  # @type: map
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
   # Example:
   # nodeSelector:
