@@ -16,7 +16,7 @@ controller:
   # nodeSelector:
   #   beta.kubernetes.io/arch: amd64
   nodeSelector: {}
-  # Toleration Settings for vault-secrets-operator pod
+  # Toleration Settings for vault-secrets-operator pod.
   # This should be either a multi-line string or YAML matching the Toleration array
   # in a PodSpec.
   # Example:
