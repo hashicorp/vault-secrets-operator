@@ -152,8 +152,10 @@ spec:
         - /vault-secrets-operator
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}
-        {{- toYaml .Values.controller.nodeSelector | nindent 6 }}
+      nodeSelector:
+      {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
       {{- end }}
       {{- if .Values.controller.tolerations }}
-        {{- toYaml .Values.controller.tolerations | nindent 6 }}
+      tolerations:
+      {{- toYaml .Values.controller.tolerations | nindent 8 }}
       {{- end }}
