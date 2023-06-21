@@ -229,9 +229,9 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.nodeSelector' | tee /dev/stderr)
+      yq '.spec.template.spec.nodeSelector | select(documentIndex == 1)' | tee /dev/stderr)
 
-   [ -z "$object" ]
+   [ "${object}" = null ]
 }
 
 @test "controller/Deployment: nodeSelector can be set" {
@@ -241,7 +241,7 @@ load _helpers
       --set 'controller.nodeSelector.key1=value1' \
       --set 'controller.nodeSelector.key2=value2' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.nodeSelector' | tee /dev/stderr)
+      yq '.spec.template.spec.nodeSelector | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
    [ "${actual}" = "2" ]
@@ -259,9 +259,9 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.tolerations' | tee /dev/stderr)
+      yq '.spec.template.spec.tolerations | select(documentIndex == 1)' | tee /dev/stderr)
 
-   [ -z "$object" ]
+  [ "${object}" = null ]
 }
 
 @test "controller/Deployment: tolerations can be set" {
@@ -272,10 +272,12 @@ load _helpers
       --set 'controller.tolerations[0].operator=Equal' \
       --set 'controller.tolerations[0].value=value1' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.tolerations' | tee /dev/stderr)
+      yq '.spec.template.spec.tolerations | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "1" ]
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '3' ]
    actual=$(echo "$object" | yq '.[0].key' | tee /dev/stderr)
    [ "${actual}" = 'key1' ]
    actual=$(echo "$object" | yq '.[0].operator' | tee /dev/stderr)
