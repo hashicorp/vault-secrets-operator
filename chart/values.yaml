@@ -35,7 +35,7 @@ controller:
     # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
     image:
       repository: gcr.io/kubebuilder/kube-rbac-proxy
-      tag: v0.11.0
+      tag: v0.14.1
 
     # Configures the default resources for the kube rbac proxy container.
     # For more information on configuring resources, see the K8s documentation:
@@ -49,6 +49,18 @@ controller:
       requests:
         cpu: 5m
         memory: 64Mi
+
+  # Image pull secret to use for private container registry authentication which will be applied to the controllers
+  # service account. Alternatively, the value may be specified as an array of strings.
+  # Example:
+  # ```yaml
+  # imagePullSecrets:
+  #   - name: pull-secret-name-1
+  #   - name: pull-secret-name-2
+  # ```
+  # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
+  # @type: array<map>
+  imagePullSecrets: []
 
   # This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
   annotations: {}
