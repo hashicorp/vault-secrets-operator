@@ -17,8 +17,9 @@ controller:
   #   beta.kubernetes.io/arch: amd64
   nodeSelector: {}
   # Toleration Settings for vault-secrets-operator pod.
-  # This should be either a multi-line string or YAML matching the Toleration array
-  # in a PodSpec.
+  # The value is an array of PodSpec Toleration maps.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  # @type: array<map>
   # Example:
   # tolerations:
   #  - key: "key1"
