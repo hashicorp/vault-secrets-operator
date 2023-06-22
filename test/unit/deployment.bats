@@ -287,3 +287,68 @@ load _helpers
       yq -r '.imagePullSecrets[1].name' | tee /dev/stderr)
   [ "${actual}" = "bar" ]
 }
+
+#--------------------------------------------------------------------
+# nodeSelector
+
+@test "controller/Deployment: nodeSelector not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.nodeSelector | select(documentIndex == 1)' | tee /dev/stderr)
+
+   [ "${object}" = null ]
+}
+
+@test "controller/Deployment: nodeSelector can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.nodeSelector.key1=value1' \
+      --set 'controller.nodeSelector.key2=value2' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.nodeSelector | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "2" ]
+   actual=$(echo "$object" | yq '.key1' | tee /dev/stderr)
+   [ "${actual}" = 'value1' ]
+   actual=$(echo "$object" | yq '.key2' | tee /dev/stderr)
+   [ "${actual}" = 'value2' ]
+}
+
+#--------------------------------------------------------------------
+# tolerations
+
+@test "controller/Deployment: tolerations not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.tolerations | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: tolerations can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.tolerations[0].key=key1' \
+      --set 'controller.tolerations[0].operator=Equal' \
+      --set 'controller.tolerations[0].value=value1' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.tolerations | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '3' ]
+   actual=$(echo "$object" | yq '.[0].key' | tee /dev/stderr)
+   [ "${actual}" = 'key1' ]
+   actual=$(echo "$object" | yq '.[0].operator' | tee /dev/stderr)
+   [ "${actual}" = 'Equal' ]
+   actual=$(echo "$object" | yq '.[0].value' | tee /dev/stderr)
+   [ "${actual}" = 'value1' ]
+}
