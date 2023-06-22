@@ -262,6 +262,12 @@ ci-docker-build: ## Build docker image with the operator (without generating ass
 	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
 	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
 
+.PHONY: ci-docker-build-ubi
+ci-docker-build-ubi: ## Build docker ubi image with the operator (without generating assets)
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
+	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
+	docker build -t $(IMG)-ubi --platform $(GOOS)/$(GOARCH) . --target release-ubi --build-arg GO_VERSION=$(shell cat .go-version)
+
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... $(TESTARGS) -coverprofile cover.out
@@ -474,10 +480,17 @@ envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
-.PHONY: bundle
-bundle: manifests kustomize set-image ## Generate bundle manifests and metadata, then validate generated files.
+.PHONY: set-image-ubi
+set-image-ubi: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_DIR
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)-ubi
+
+.PHONY: sdk-generate
+sdk-generate:
 	operator-sdk generate kustomize manifests -q
-	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+
+.PHONY: bundle
+bundle: manifests kustomize sdk-generate set-image-ubi ## Generate bundle manifests and metadata, then validate generated files.
+	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	operator-sdk bundle validate ./bundle
 
 .PHONY: bundle-build
