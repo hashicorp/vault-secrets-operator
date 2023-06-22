@@ -9,6 +9,26 @@ controller:
   # @type: integer
   replicas: 1
 
+  # nodeSelector labels for vault-secrets-operator pod assignment.
+  # @type: map
+  # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+  # Example:
+  # nodeSelector:
+  #   beta.kubernetes.io/arch: amd64
+  nodeSelector: {}
+  # Toleration Settings for vault-secrets-operator pod.
+  # The value is an array of PodSpec Toleration maps.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  # @type: array<map>
+  # Example:
+  # tolerations:
+  #  - key: "key1"
+  #    operator: "Equal"
+  #    value: "value1"
+  #    effect: "NoSchedule"
+  tolerations: []
+
+  
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
