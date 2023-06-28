@@ -55,7 +55,8 @@ type CachingClientFactory interface {
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
 	Disable(context.Context)
-	RevokeAll(context.Context, ctrlclient.Client)
+	RevokeAllInMemory(context.Context, ctrlclient.Client)
+	RevokeAllInStorage(context.Context, ctrlclient.Client)
 }
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
@@ -237,10 +238,10 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 	return errs
 }
 
-// RevokeAll will attempt to revoke all Client tokens. If storage is not enabled, tokens in cache will be revoked.
+// RevokeAllInMemory will attempt to revoke all Client tokens. If storage is not enabled, tokens in cache will be revoked.
 // Otherwise, revocation will take place in both cache and storage.
 // Normally this should be called upon operator deployment deletion if client cache cleanup is required
-func (m *cachingClientFactory) RevokeAll(ctx context.Context, client ctrlclient.Client) {
+func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context, client ctrlclient.Client) {
 	if !m.tokenRevocationRequired {
 		m.logger.Error(nil, "Cached client cleanup must be required to revoke all client tokens")
 		return
@@ -264,7 +265,9 @@ func (m *cachingClientFactory) RevokeAll(ctx context.Context, client ctrlclient.
 			logger.Info("Successfully revoked cached client")
 		}
 	}
+}
 
+func (m *cachingClientFactory) RevokeAllInStorage(ctx context.Context, client ctrlclient.Client) {
 	// revoke tokens in storage
 	if !m.persist || m.storage == nil {
 		return
@@ -290,10 +293,12 @@ func (m *cachingClientFactory) RevokeAll(ctx context.Context, client ctrlclient.
 		logger.Info("Restoring client in storage")
 		if c, err := m.restoreClient(ctx, client, entry); err != nil {
 			logger.Error(err, "Restore failed", "cacheKey", entry.CacheKey)
+		} else if _, err = c.Read(ctx, "/auth/token/lookup-self"); err != nil {
+			logger.Info("Client token already revoked")
 		} else if _, err = c.Write(ctx, "/auth/token/revoke-self", nil); err != nil {
-			logger.Error(err, "Failed to self-revoke client from storage")
+			logger.Error(err, "Failed to self-revoke client token from storage")
 		} else {
-			logger.Info("Successfully self-revoked client from storage")
+			logger.Info("Successfully self-revoked client token from storage")
 		}
 	}
 }

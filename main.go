@@ -63,7 +63,8 @@ func main() {
 	var clientCachePersistenceModel string
 	var printVersion bool
 	var outputFormat string
-	var finalizerCleanup bool
+	var preDeleteHook bool
+	var preDeleteHookTimeoutSeconds int
 	var vaultTokenRevocationRequired bool
 
 	// command-line args and flags
@@ -82,14 +83,20 @@ func main() {
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
-	flag.BoolVar(&finalizerCleanup, "finalizer-cleanup", false, "Remove finalizers from all CRs in preparation for shutdown.")
+	flag.BoolVar(&preDeleteHook, "pre-delete-hook", false, "Run as helm pre-delete hook")
 	flag.BoolVar(&vaultTokenRevocationRequired, "vault-token-revocation-required", false,
 		"Revoke all cached Vault client tokens for shutdown.")
+	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
+		"Pre-delete hook timeout in seconds")
+
 	opts := zap.Options{
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	preDeleteHookDeadline := time.Now().Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
+	preDeleteHookCtx, cancel := context.WithDeadline(context.Background(), preDeleteHookDeadline)
 
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
@@ -138,19 +145,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// These flags are passed by the pre-delete hook on helm uninstall.
-	// cleanUp := finalizerCleanup || vaultClientCacheCleanup
-
-	// This flag is passed by the pre-delete hook on helm uninstall.
-	if finalizerCleanup {
+	if preDeleteHook {
 		cleanupLog.Info("commencing cleanup of finalizers")
-		duration := time.Now().Add(time.Second * 60)
-		shutdownCtx, cancel := context.WithDeadline(context.Background(), duration)
-
-		if vaultTokenRevocationRequired {
-			helpers.SetDeletionTimestampReceived(shutdownCtx, defaultClient)
-			helpers.AwaitManagerAcked(shutdownCtx, cleanupLog, defaultClient)
-		}
 
 		// Even though ctx will be expired, it is good practice to call its
 		// cancellation function in any case. Failure to do so may keep the
@@ -158,11 +154,22 @@ func main() {
 		defer cancel()
 
 		cleanupLog.Info("deleting finalizers")
-		if err = controllers.RemoveAllFinalizers(shutdownCtx, defaultClient, cleanupLog); err != nil {
+		if err = controllers.RemoveAllFinalizers(preDeleteHookCtx, defaultClient, cleanupLog); err != nil {
 			cleanupLog.Error(err, "unable to remove finalizers")
 			os.Exit(1)
 		}
-		return
+
+		if !vaultTokenRevocationRequired {
+			return
+		}
+	}
+
+	collectMetrics := metricsAddr != ""
+	if collectMetrics {
+		cfc.MetricsRegistry.MustRegister(
+			metrics.NewBuildInfoGauge(versionInfo),
+		)
+		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -188,22 +195,7 @@ func main() {
 		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
-	handlerCtx := ctrl.SetupSignalHandler()
-	var (
-		ctx    = handlerCtx
-		cancel context.CancelFunc
-	)
-	if vaultTokenRevocationRequired {
-		ctx, cancel = context.WithCancel(context.Background())
-	}
-
-	collectMetrics := metricsAddr != ""
-	if collectMetrics {
-		cfc.MetricsRegistry.MustRegister(
-			metrics.NewBuildInfoGauge(versionInfo),
-		)
-		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
-	}
+	ctx := ctrl.SetupSignalHandler()
 
 	var clientFactory vclient.CachingClientFactory
 	{
@@ -232,20 +224,31 @@ func main() {
 	}
 
 	if vaultTokenRevocationRequired {
-		ctx, cancel = context.WithCancel(context.Background())
-
-		if err = helpers.CreateDeploymentStatusConfigMap(ctx, defaultClient); err != nil {
-			setupLog.Error(err, fmt.Sprintf("Failed to create %s ConfigMap", helpers.DeploymentStatusConfigMapName))
-			os.Exit(1)
+		if preDeleteHook {
+			if err := helpers.AnnotatePredeleteHookStarted(preDeleteHookCtx, defaultClient); err != nil {
+				cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationPredeleteHookStarted))
+				return
+			}
+			helpers.AwaitInMemoryVaultTokensRevoked(preDeleteHookCtx, cleanupLog, defaultClient)
+			clientFactory.RevokeAllInStorage(preDeleteHookCtx, defaultClient)
+			return
 		}
 
-		go helpers.AwaitDeletionTimestampReceived(ctx, setupLog, defaultClient)
+		preDeleteCtx, preDeleteHandler := context.WithCancel(context.Background())
+		go helpers.AwaitPredeleteHookStarted(preDeleteHandler, setupLog)
+
 		go func() {
-			<-handlerCtx.Done()
+			<-preDeleteCtx.Done()
 
 			clientFactory.Disable(ctx)
-			clientFactory.RevokeAll(ctx, defaultClient)
-			cancel()
+			cleanupLog.Info("Disabled client factory")
+
+			cleanupLog.Info("Revoking all Vault tokens in memory")
+			clientFactory.RevokeAllInMemory(ctx, defaultClient)
+
+			if err := helpers.AnnotateInMemoryVaultTokensRevoked(ctx, defaultClient); err != nil {
+				cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationInMemoryVaultTokensRevoked))
+			}
 		}()
 	}
 

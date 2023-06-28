@@ -292,6 +292,10 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 	return true, nil
 }
 
+type revocationK8sOutputs struct {
+	AuthRole string `json:"auth_role"`
+}
+
 type authMethodsK8sOutputs struct {
 	AuthRole      string `json:"auth_role"`
 	AppRoleRoleID string `json:"role_id"`

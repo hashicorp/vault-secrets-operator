@@ -266,7 +266,10 @@ controller:
 
   # Optional duration in seconds the pod needs to terminate gracefully.
   # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
-  terminationGracePeriodSeconds: 10
+  terminationGracePeriodSeconds: 120
+
+  # Optional timeout in seconds for the pre-delete hook
+  preDeleteHookTimeoutSeconds: 120
 
 
 # Configure the metrics service ports used by the metrics service.

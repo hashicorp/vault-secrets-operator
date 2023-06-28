@@ -5,135 +5,112 @@ package helpers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	DeploymentStatusConfigMapName             = "deploymentstatus"
-	DeploymentStatusDeletionTimestampReceived = "deletion_timestamp_received"
-	DeploymentStatusManagerAcked              = "manager_acked"
-	StringTrue                                = "true"
-	StringFalse                               = "false"
+	AnnotationPredeleteHookStarted       = "vso.secrets.hashicorp.com/pre-delete-hook-started"
+	AnnotationInMemoryVaultTokensRevoked = "vso.secrets.hashicorp.com/in-memory-vault-tokens-revoked"
+	LabelSelectorControlPlane            = "control-plane=controller-manager"
+	StringTrue                           = "true"
 )
 
-type deploymentStatus map[string]string
-
-func CreateDeploymentStatusConfigMap(ctx context.Context, c client.Client) error {
-	status := deploymentStatus{
-		DeploymentStatusDeletionTimestampReceived: StringFalse,
-		DeploymentStatusManagerAcked:              StringFalse,
-	}
-
-	configMap := corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      DeploymentStatusConfigMapName,
-			Namespace: common.OperatorNamespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: common.OperatorDeploymentAPIVersion,
-					Kind:       common.OperatorDeploymentKind,
-					Name:       common.OperatorDeploymentName,
-					UID:        common.OperatorDeploymentUID,
-				},
-			},
-		},
-		Data: status,
-	}
-	if err := c.Create(ctx, &configMap); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func AwaitManagerAcked(ctx context.Context, logger logr.Logger, c client.Client) {
-	var (
-		configMap corev1.ConfigMap
-		key       = getDeploymentStatusConfigMapKey()
-	)
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Error(ctx.Err(), "failed to await manager acked")
-			return
-		default:
-			if err := c.Get(ctx, key, &configMap); err != nil {
-				logger.Error(err, "failed to get configmap", "name", DeploymentStatusConfigMapName)
-			} else if value, ok := configMap.Data[DeploymentStatusManagerAcked]; ok && value == StringTrue {
-				return
-			}
-			time.Sleep(300 * time.Millisecond)
-		}
-	}
-}
-
-func AwaitDeletionTimestampReceived(ctx context.Context, logger logr.Logger, c client.Client) {
-	var (
-		configMap corev1.ConfigMap
-		key       = getDeploymentStatusConfigMapKey()
-	)
-
-	logger = logger.WithValues("configMap", DeploymentStatusConfigMapName)
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Error(ctx.Err(), "failed to await deletion timestamp received")
-			return
-		default:
-
-			if err := c.Get(ctx, key, &configMap); err != nil {
-				logger.Error(err, "failed to get object")
-			} else if value, ok := configMap.Data[DeploymentStatusDeletionTimestampReceived]; ok && value == StringTrue {
-				if err = setManagerAcked(ctx, c); err != nil {
-					logger.Error(err, "failed to set manager acked")
-				}
-				return
-			}
-			time.Sleep(300 * time.Millisecond)
-		}
-	}
-}
-
-func setManagerAcked(ctx context.Context, c client.Client) error {
-	return updateDeploymentStatusConfigMap(ctx, c, deploymentStatus{
-		DeploymentStatusDeletionTimestampReceived: StringTrue,
-		DeploymentStatusManagerAcked:              StringTrue,
-	})
-}
-
-func SetDeletionTimestampReceived(ctx context.Context, c client.Client) error {
-	return updateDeploymentStatusConfigMap(ctx, c, deploymentStatus{
-		DeploymentStatusDeletionTimestampReceived: StringTrue,
-		DeploymentStatusManagerAcked:              StringFalse,
-	})
-}
-
-func updateDeploymentStatusConfigMap(ctx context.Context, c client.Client, data map[string]string) error {
-	var configMap corev1.ConfigMap
-	err := c.Get(ctx, getDeploymentStatusConfigMapKey(), &configMap)
+func AwaitInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, c client.Client) {
+	selector, err := labels.Parse(LabelSelectorControlPlane)
 	if err != nil {
-		return err
+		logger.Error(err, "failed to parse label selector", "selector", LabelSelectorControlPlane)
+		return
 	}
 
-	configMap.Data = data
-
-	if err = c.Update(ctx, &configMap, &client.UpdateOptions{}); err != nil {
-		return err
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Error(ctx.Err(), "failed to await in-memory vault tokens revoked")
+			return
+		default:
+			var list corev1.PodList
+			err = c.List(ctx, &list, client.MatchingLabelsSelector{
+				Selector: selector,
+			})
+			if err != nil {
+				logger.Error(err, "failed to get pod list", "selector", LabelSelectorControlPlane)
+			} else {
+				for _, pod := range list.Items {
+					if value, ok := pod.Annotations[AnnotationInMemoryVaultTokensRevoked]; ok && value == StringTrue {
+						logger.Info("Operator pods annotations updated", AnnotationInMemoryVaultTokensRevoked, StringTrue)
+						return
+					}
+				}
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
 	}
-	return nil
 }
 
-func getDeploymentStatusConfigMapKey() client.ObjectKey {
-	return client.ObjectKey{
-		Name:      DeploymentStatusConfigMapName,
-		Namespace: common.OperatorNamespace,
+func AwaitPredeleteHookStarted(handler context.CancelFunc, logger logr.Logger) {
+	for {
+		select {
+		default:
+			if b, err := os.ReadFile("/var/run/podinfo/pre-delete-hook-started"); err != nil {
+				logger.Error(err, "failed to get downward API exposed file", "path", "/var/run/podinfo/pre-delete-hook-started")
+			} else if string(b) == StringTrue {
+				logger.Info("Operator pods annotations updated", AnnotationPredeleteHookStarted, StringTrue)
+				handler()
+				return
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
 	}
+}
+
+func AnnotateInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) error {
+	return annotateOperatorPods(ctx, c, map[string]string{AnnotationInMemoryVaultTokensRevoked: StringTrue})
+}
+
+func AnnotatePredeleteHookStarted(ctx context.Context, c client.Client) error {
+	return annotateOperatorPods(ctx, c, map[string]string{AnnotationPredeleteHookStarted: StringTrue})
+}
+
+func annotateOperatorPods(ctx context.Context, c client.Client, annotations map[string]string) error {
+	var list corev1.PodList
+
+	selector, err := labels.Parse(LabelSelectorControlPlane)
+	if err != nil {
+		return fmt.Errorf("failed to parse label selector err=%v", err)
+	}
+
+	err = c.List(ctx, &list, client.MatchingLabelsSelector{
+		Selector: selector,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list pods err=%v", err)
+	}
+
+	errs := []string{}
+	for _, pod := range list.Items {
+		for k, v := range annotations {
+			pod.Annotations[k] = v
+		}
+		pJson, err := json.Marshal(pod)
+		if err != nil {
+			return fmt.Errorf("failed to marshal patch payload err=%v", err)
+		}
+		if err = c.Patch(ctx, &pod, client.RawPatch(types.MergePatchType, pJson)); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if len(errs) != 0 {
+		return fmt.Errorf(strings.Join(errs, ","))
+	}
+	return nil
 }

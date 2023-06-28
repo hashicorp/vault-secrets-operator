@@ -32,6 +32,8 @@ spec:
         control-plane: controller-manager
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
+        vso.secrets.hashicorp.com/pre-delete-hook-started: "false"
+        vso.secrets.hashicorp.com/in-memory-vault-tokens-revoked: "false"
         kubectl.kubernetes.io/default-container: manager
       {{- if .Values.controller.annotations }}
         {{- toYaml .Values.controller.annotations | nindent 8 }}
@@ -120,6 +122,9 @@ spec:
           - fieldRef:
               fieldPath: metadata.uid
             path: uid
+          - fieldRef:
+              fieldPath: metadata.annotations['vso.secrets.hashicorp.com/pre-delete-hook-started']
+            path: pre-delete-hook-started
         name: podinfo
 ---
 apiVersion: batch/v1
@@ -144,9 +149,15 @@ spec:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
-        - --finalizer-cleanup=true
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address=127.0.0.1:8080
+        - --pre-delete-hook
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.manager.preDeleteHookTimeoutSeconds }}
         {{- if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
         - --vault-token-revocation-required
+        {{- end }}
+        {{- if .Values.controller.manager.clientCache.persistenceModel }}
+        - --client-cache-persistence-model={{ .Values.controller.manager.clientCache.persistenceModel }}
         {{- end }}
         command:
         - /vault-secrets-operator
