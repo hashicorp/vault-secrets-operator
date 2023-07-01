@@ -16,7 +16,9 @@ metadata:
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   address: {{ .Values.defaultVaultConnection.address }}
+  {{- if .Values.defaultVaultConnection.skipTLSVerify }}
   skipTLSVerify: {{ .Values.defaultVaultConnection.skipTLSVerify }}
+  {{- end }}
   {{- if .Values.defaultVaultConnection.caCertSecret }}
   caCertSecretRef: {{ .Values.defaultVaultConnection.caCertSecret }}
   {{- end }}
