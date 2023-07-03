@@ -54,7 +54,7 @@ type CachingClientFactory interface {
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
-	Disable(context.Context)
+	Disable()
 	RevokeAllInMemory(context.Context, ctrlclient.Client)
 	RevokeAllInStorage(context.Context, ctrlclient.Client)
 }
@@ -249,6 +249,7 @@ func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context, client ctr
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.logger.Info("Revoking all Vault client tokens cached in memory")
 	// revoke in-memory cached clients
 	for _, k := range m.cache.Keys() {
 		logger := m.logger.WithValues("cacheKey", k)
@@ -304,7 +305,7 @@ func (m *cachingClientFactory) RevokeAllInStorage(ctx context.Context, client ct
 }
 
 // Disable will disable client cache, "blocking" ClientFactory interface calls
-func (m *cachingClientFactory) Disable(ctx context.Context) {
+func (m *cachingClientFactory) Disable() {
 	m.mu.Lock()
 	m.disable = true
 	m.mu.Unlock()

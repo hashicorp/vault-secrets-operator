@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	AnnotationPredeleteHookStarted       = "vso.secrets.hashicorp.com/pre-delete-hook-started"
+	AnnotationPreDeleteHookStarted       = "vso.secrets.hashicorp.com/pre-delete-hook-started"
 	AnnotationInMemoryVaultTokensRevoked = "vso.secrets.hashicorp.com/in-memory-vault-tokens-revoked"
 	LabelSelectorControlPlane            = "control-plane=controller-manager"
 	StringTrue                           = "true"
@@ -57,14 +57,17 @@ func AwaitInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, c 
 	}
 }
 
-func AwaitPredeleteHookStarted(handler context.CancelFunc, logger logr.Logger) {
+func AwaitPreDeleteStarted(ctx context.Context, handler context.CancelFunc, logger logr.Logger) {
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Error(ctx.Err(), "Operator manager context canceled. Stopping /var/run/podinfo/pre-delete-hook-started watcher")
+			return
 		default:
 			if b, err := os.ReadFile("/var/run/podinfo/pre-delete-hook-started"); err != nil {
 				logger.Error(err, "failed to get downward API exposed file", "path", "/var/run/podinfo/pre-delete-hook-started")
 			} else if string(b) == StringTrue {
-				logger.Info("Operator pods annotations updated", AnnotationPredeleteHookStarted, StringTrue)
+				logger.Info("Operator pods annotations updated", AnnotationPreDeleteHookStarted, StringTrue)
 				handler()
 				return
 			}
@@ -78,7 +81,7 @@ func AnnotateInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) er
 }
 
 func AnnotatePredeleteHookStarted(ctx context.Context, c client.Client) error {
-	return annotateOperatorPods(ctx, c, map[string]string{AnnotationPredeleteHookStarted: StringTrue})
+	return annotateOperatorPods(ctx, c, map[string]string{AnnotationPreDeleteHookStarted: StringTrue})
 }
 
 func annotateOperatorPods(ctx context.Context, c client.Client, annotations map[string]string) error {

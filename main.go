@@ -95,8 +95,8 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	preDeleteHookDeadline := time.Now().Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
-	preDeleteHookCtx, cancel := context.WithDeadline(context.Background(), preDeleteHookDeadline)
+	preDeleteDeadline := time.Now().Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
+	preDeleteDeadlineCtx, cancel := context.WithDeadline(context.Background(), preDeleteDeadline)
 
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
@@ -154,7 +154,7 @@ func main() {
 		defer cancel()
 
 		cleanupLog.Info("deleting finalizers")
-		if err = controllers.RemoveAllFinalizers(preDeleteHookCtx, defaultClient, cleanupLog); err != nil {
+		if err = controllers.RemoveAllFinalizers(preDeleteDeadlineCtx, defaultClient, cleanupLog); err != nil {
 			cleanupLog.Error(err, "unable to remove finalizers")
 			os.Exit(1)
 		}
@@ -225,29 +225,34 @@ func main() {
 
 	if vaultTokenRevocationRequired {
 		if preDeleteHook {
-			if err := helpers.AnnotatePredeleteHookStarted(preDeleteHookCtx, defaultClient); err != nil {
-				cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationPredeleteHookStarted))
+			if err := helpers.AnnotatePredeleteHookStarted(preDeleteDeadlineCtx, defaultClient); err != nil {
+				cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationPreDeleteHookStarted))
 				return
 			}
-			helpers.AwaitInMemoryVaultTokensRevoked(preDeleteHookCtx, cleanupLog, defaultClient)
-			clientFactory.RevokeAllInStorage(preDeleteHookCtx, defaultClient)
+			helpers.AwaitInMemoryVaultTokensRevoked(preDeleteDeadlineCtx, cleanupLog, defaultClient)
+			clientFactory.RevokeAllInStorage(preDeleteDeadlineCtx, defaultClient)
 			return
 		}
 
-		preDeleteCtx, preDeleteHandler := context.WithCancel(context.Background())
-		go helpers.AwaitPredeleteHookStarted(preDeleteHandler, setupLog)
+		preDeleteStartedCtx, preDeleteHandler := context.WithCancel(context.Background())
+		go helpers.AwaitPreDeleteStarted(ctx, preDeleteHandler, setupLog)
 
 		go func() {
-			<-preDeleteCtx.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					cleanupLog.Error(ctx.Err(), "Operator manager context canceled. Stopping waiting for pre-delete hook started")
+					return
+				case <-preDeleteStartedCtx.Done():
+					clientFactory.Disable()
 
-			clientFactory.Disable(ctx)
-			cleanupLog.Info("Disabled client factory")
+					clientFactory.RevokeAllInMemory(ctx, defaultClient)
 
-			cleanupLog.Info("Revoking all Vault tokens in memory")
-			clientFactory.RevokeAllInMemory(ctx, defaultClient)
-
-			if err := helpers.AnnotateInMemoryVaultTokensRevoked(ctx, defaultClient); err != nil {
-				cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationInMemoryVaultTokensRevoked))
+					if err := helpers.AnnotateInMemoryVaultTokensRevoked(ctx, defaultClient); err != nil {
+						cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationInMemoryVaultTokensRevoked))
+					}
+					return
+				}
 			}
 		}()
 	}
