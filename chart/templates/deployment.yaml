@@ -10,6 +10,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "chart.labels" . | nindent 4 }}
+{{ include "imagePullSecrets" .}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -113,6 +114,14 @@ spec:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds : {{ .Values.controller.terminationGracePeriodSeconds }}
+      {{- if .Values.controller.nodeSelector }}
+      nodeSelector:
+      {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controller.tolerations }}
+      tolerations:
+      {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      {{- end }}
       volumes:
       - downwardAPI:
           items:
@@ -165,3 +174,11 @@ spec:
         - name: OPERATOR_DEPLOYMENT_NAME
           value: {{ include "chart.fullname" . }}-controller-manager
       restartPolicy: Never
+      {{- if .Values.controller.nodeSelector }}
+      nodeSelector:
+      {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controller.tolerations }}
+      tolerations:
+      {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      {{- end }}
