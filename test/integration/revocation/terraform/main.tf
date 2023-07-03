@@ -151,12 +151,12 @@ resource "helm_release" "vault-secrets-operator" {
   }
 
   set {
-    name = "controller.manager.clientCache.vaultTokenRevocationRequired"
+    name  = "controller.manager.clientCache.vaultTokenRevocationRequired"
     value = "true"
   }
 
   set {
-    name = "controller.manager.clientCache.persistenceModel"
+    name  = "controller.manager.clientCache.persistenceModel"
     value = "direct-unencrypted"
   }
 }
