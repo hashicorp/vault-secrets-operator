@@ -135,6 +135,8 @@ func TestRevocation(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
+		// As VSO deployment was deleted earlier, we don't have the reconciliation loops to remove the finalizers of
+		// the CRs created in k8s test namespace. They need to be manually removed before deleting the CRs.
 		for _, auth := range auths {
 			assert.NoError(t,
 				crdClient.Patch(ctx, auth, ctrlclient.RawPatch(types.JSONPatchType, []byte(`[ { "op": "remove", "path": "/metadata/finalizers" } ]`))),
@@ -220,7 +222,7 @@ func TestRevocation(t *testing.T) {
 		return resp.Data, nil
 	}
 
-	// get all Vault token accessors that are created from the test by filtering for those that have only the dev policy
+	// Get all Vault token accessors that are created from the test by filtering for those that have only the dev and default policy
 	devPolicyTokenAccessors := []interface{}{}
 	retry.DoWithRetry(t, "getAllDevPolicyTokenAccessors", 30, time.Second, func() (string, error) {
 		resp, err := vClient.Logical().ListWithContext(ctx, "auth/token/accessors")
@@ -248,11 +250,10 @@ func TestRevocation(t *testing.T) {
 		if len(errMsgs) != 0 {
 			return "", fmt.Errorf(strings.Join(errMsgs, ","))
 		}
-		fmt.Println(fmt.Sprintf("%v", devPolicyTokenAccessors))
-		return "", nil
+
+		return fmt.Sprintf("Token accessors to revoke %v", devPolicyTokenAccessors), nil
 	})
 
-	// Undeploy
 	exportKindLogs(t)
 	// Uninstall vso resource
 	terraform.Destroy(t, &terraform.Options{
@@ -296,6 +297,6 @@ func TestRevocation(t *testing.T) {
 			return "", fmt.Errorf("found tokens unrevoked accessors=%v", unrevoked)
 		}
 
-		return "", nil
+		return fmt.Sprintf("Tokens revoked successfully %v", devPolicyTokenAccessors), nil
 	})
 }

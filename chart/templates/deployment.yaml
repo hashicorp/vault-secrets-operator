@@ -152,7 +152,7 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
         - --pre-delete-hook
-        - --pre-delete-hook-timeout-seconds={{ .Values.controller.manager.preDeleteHookTimeoutSeconds }}
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
         {{- if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
         - --vault-token-revocation-required
         {{- end }}
