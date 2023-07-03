@@ -82,6 +82,23 @@ load _helpers
     [ "${actual}" = "128Mi" ]
 }
 
+@test "controller/Deployment: default resources for job" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].resources | select(documentIndex == 2)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+    [ "${actual}" = "10m" ]
+   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+    [ "${actual}" = "64Mi" ]
+   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+    [ "${actual}" = "500m" ]
+   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+    [ "${actual}" = "128Mi" ]
+}
+
 @test "controller/Deployment: can set resources for controller" {
   cd `chart_dir`
   local object=$(helm template \
@@ -91,15 +108,26 @@ load _helpers
       --set 'controller.manager.resources.limits.memory=200Mi' \
       --set 'controller.manager.resources.limits.cpu=200m' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+   local controller=$(echo "$object" | yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
+   local job=$(echo "$object" | yq '.spec.template.spec.containers[0].resources | select(documentIndex == 2)' | tee /dev/stderr)
+
+   local actual=$(echo "$controller" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "100m" ]
-   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "100Mi" ]
-   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "200m" ]
-   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.memory' | tee /dev/stderr)
+    [ "${actual}" = "200Mi" ]
+   actual=$(echo "$job" | yq '.requests.cpu' | tee /dev/stderr)
+    [ "${actual}" = "100m" ]
+   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
+    [ "${actual}" = "100Mi" ]
+   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
+    [ "${actual}" = "200m" ]
+   actual=$(echo "$job" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "200Mi" ]
 }
 

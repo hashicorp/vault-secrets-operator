@@ -147,10 +147,11 @@ spec:
       containers:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
-        args:
-        - --finalizer-cleanup=true
         command:
         - /vault-secrets-operator
+        args:
+        - --finalizer-cleanup=true
+        resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
