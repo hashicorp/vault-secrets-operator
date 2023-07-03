@@ -197,7 +197,7 @@ load _helpers
       yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "1" ]
+   [ "${actual}" = "3" ]
    actual=$(echo "$object" | yq '."kubectl.kubernetes.io/default-container"' | tee /dev/stderr)
    [ "${actual}" = "manager" ]
 }
@@ -212,7 +212,7 @@ load _helpers
       yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "3" ]
+   [ "${actual}" = "5" ]
    actual=$(echo "$object" | yq '."kubectl.kubernetes.io/default-container"' | tee /dev/stderr)
    [ "${actual}" = 'manager' ]
    actual=$(echo "$object" | yq '.annot1' | tee /dev/stderr)
