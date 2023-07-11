@@ -352,3 +352,34 @@ load _helpers
    actual=$(echo "$object" | yq '.[0].value' | tee /dev/stderr)
    [ "${actual}" = 'value1' ]
 }
+
+#--------------------------------------------------------------------
+# extraLabels
+
+@test "controller/Deployment: extraLabels not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+}
+
+@test "controller/Deployment: extraLabels can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.extraLabels.label1=value1' \
+      --set 'controller.extraLabels.label2=value2' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "5" ]
+   actual=$(echo "$object" | yq '.label1' | tee /dev/stderr)
+   [ "${actual}" = 'value1' ]
+   actual=$(echo "$object" | yq '.label2'| tee /dev/stderr)
+   [ "${actual}" = 'value2' ]
+}
