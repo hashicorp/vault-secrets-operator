@@ -2,6 +2,7 @@
 
 Improvements:
 * Helm: `controller.imagePullSecrets` stanza is added to provide imagePullSecrets to the controller's containers via the serviceAccount: [GH-266](https://github.com/hashicorp/vault-secrets-operator/pull/266)
+* Helm: Setting `controller.extraLabels` will apply extra labels to the controller deployment: [GH-281](https://github.com/hashicorp/vault-secrets-operator/pull/281)
 
 Changes:
 * Helm: Update default kube-rbac-proxy container image in helm chart from `v0.11.0` to `v0.14.1`: [GH-267](https://github.com/hashicorp/vault-secrets-operator/pull/267)
