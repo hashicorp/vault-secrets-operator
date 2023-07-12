@@ -139,7 +139,7 @@ metadata:
     "helm.sh/hook": pre-delete
     "helm.sh/hook-delete-policy": hook-succeeded
     {{- if .Values.controller.annotations }}
-      {{- toYaml .Values.controller.annotations | nindent 8 }}
+      {{- toYaml .Values.controller.annotations | nindent 4 }}
     {{- end }}
 spec:
   template:
