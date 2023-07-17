@@ -33,8 +33,10 @@ spec:
         control-plane: controller-manager
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
+      {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
         vso.secrets.hashicorp.com/pre-delete-hook-started: "false"
         vso.secrets.hashicorp.com/in-memory-vault-tokens-revoked: "false"
+      {{- end }}
         kubectl.kubernetes.io/default-container: manager
       {{- if .Values.controller.annotations }}
         {{- toYaml .Values.controller.annotations | nindent 8 }}

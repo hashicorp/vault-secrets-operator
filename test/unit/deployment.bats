@@ -197,7 +197,7 @@ load _helpers
       yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "3" ]
+   [ "${actual}" = "1" ]
    actual=$(echo "$object" | yq '."kubectl.kubernetes.io/default-container"' | tee /dev/stderr)
    [ "${actual}" = "manager" ]
 }
@@ -212,13 +212,31 @@ load _helpers
       yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "5" ]
+   [ "${actual}" = "3" ]
    actual=$(echo "$object" | yq '."kubectl.kubernetes.io/default-container"' | tee /dev/stderr)
    [ "${actual}" = 'manager' ]
    actual=$(echo "$object" | yq '.annot1' | tee /dev/stderr)
    [ "${actual}" = 'value1' ]
    actual=$(echo "$object" | yq '.annot2'| tee /dev/stderr)
    [ "${actual}" = 'value2' ]
+}
+
+@test "controller/Deployment: annotations related to token revocation can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.revokeVaultTokensOnUninstall=true' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.annotations | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+   actual=$(echo "$object" | yq '."kubectl.kubernetes.io/default-container"' | tee /dev/stderr)
+   [ "${actual}" = 'manager' ]
+   actual=$(echo "$object" | yq '."vso.secrets.hashicorp.com/pre-delete-hook-started"' | tee /dev/stderr)
+   [ "${actual}" = 'false' ]
+   actual=$(echo "$object" | yq '."vso.secrets.hashicorp.com/in-memory-vault-tokens-revoked"'| tee /dev/stderr)
+   [ "${actual}" = 'false' ]
 }
 
 #--------------------------------------------------------------------
