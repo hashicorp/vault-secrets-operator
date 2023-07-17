@@ -622,7 +622,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		storage:                 cacheStorage,
 		recorder:                config.Recorder,
 		persist:                 config.Persist,
-		tokenRevocationRequired: config.TokenRevocationRequired,
+		tokenRevocationRequired: config.RevokeTokensOnUninstall,
 		encryptionRequired:      config.StorageConfig.EnforceEncryption,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
@@ -678,7 +678,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 
 // CachingClientFactoryConfig provides the configuration for a CachingClientFactory instance.
 type CachingClientFactoryConfig struct {
-	TokenRevocationRequired   bool
+	RevokeTokensOnUninstall   bool
 	Persist                   bool
 	StorageConfig             *ClientCacheStorageConfig
 	ClientCacheSize           int

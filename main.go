@@ -65,7 +65,7 @@ func main() {
 	var outputFormat string
 	var preDeleteHook bool
 	var preDeleteHookTimeoutSeconds int
-	var vaultTokenRevocationRequired bool
+	var revokeVaultTokensOnUninstall bool
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -84,8 +84,8 @@ func main() {
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
 	flag.BoolVar(&preDeleteHook, "pre-delete-hook", false, "Run as helm pre-delete hook")
-	flag.BoolVar(&vaultTokenRevocationRequired, "vault-token-revocation-required", false,
-		"Revoke all cached Vault client tokens for shutdown.")
+	flag.BoolVar(&revokeVaultTokensOnUninstall, "revoke-vault-tokens-on-uninstall", false,
+		"Revoke all cached Vault client tokens on Helm uninstall.")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
 		"Pre-delete hook timeout in seconds")
 
@@ -159,7 +159,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if !vaultTokenRevocationRequired {
+		if !revokeVaultTokensOnUninstall {
 			return
 		}
 	}
@@ -213,7 +213,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		cfc.TokenRevocationRequired = vaultTokenRevocationRequired
+		cfc.RevokeTokensOnUninstall = revokeVaultTokensOnUninstall
 		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
@@ -223,38 +223,18 @@ func main() {
 		}
 	}
 
-	if vaultTokenRevocationRequired {
+	if revokeVaultTokensOnUninstall {
 		if preDeleteHook {
 			if err := helpers.AnnotatePredeleteHookStarted(preDeleteDeadlineCtx, defaultClient); err != nil {
 				cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationPreDeleteHookStarted))
 				return
 			}
-			helpers.AwaitInMemoryVaultTokensRevoked(preDeleteDeadlineCtx, cleanupLog, defaultClient)
+			helpers.WaitForInMemoryVaultTokensRevoked(preDeleteDeadlineCtx, cleanupLog, defaultClient)
 			clientFactory.RevokeAllInStorage(preDeleteDeadlineCtx, defaultClient)
 			return
 		}
 
-		preDeleteStartedCtx, preDeleteHandler := context.WithCancel(context.Background())
-		go helpers.AwaitPreDeleteStarted(ctx, preDeleteHandler, setupLog)
-
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					cleanupLog.Error(ctx.Err(), "Operator manager context canceled. Stopping waiting for pre-delete hook started")
-					return
-				case <-preDeleteStartedCtx.Done():
-					clientFactory.Disable()
-
-					clientFactory.RevokeAllInMemory(ctx, defaultClient)
-
-					if err := helpers.AnnotateInMemoryVaultTokensRevoked(ctx, defaultClient); err != nil {
-						cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationInMemoryVaultTokensRevoked))
-					}
-					return
-				}
-			}
-		}()
+		go helpers.WaitForPreDeleteStartedAndRevokeVaultTokens(ctx, setupLog, clientFactory, defaultClient)
 	}
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)

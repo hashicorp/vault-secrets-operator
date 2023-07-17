@@ -69,8 +69,8 @@ spec:
         {{- if .Values.controller.manager.clientCache.cacheSize }}
         - --client-cache-size={{ .Values.controller.manager.clientCache.cacheSize }}
         {{- end }}
-        {{- if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
-        - --vault-token-revocation-required
+        {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
+        - --revoke-vault-tokens-on-uninstall
         {{- end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles-vds={{ .Values.controller.manager.maxConcurrentReconciles }}
@@ -162,8 +162,8 @@ spec:
         - --metrics-bind-address=127.0.0.1:8080
         - --pre-delete-hook
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
-        {{- if .Values.controller.manager.clientCache.vaultTokenRevocationRequired }}
-        - --vault-token-revocation-required
+        {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
+        - --revoke-vault-tokens-on-uninstall
         {{- end }}
         {{- if .Values.controller.manager.clientCache.persistenceModel }}
         - --client-cache-persistence-model={{ .Values.controller.manager.clientCache.persistenceModel }}

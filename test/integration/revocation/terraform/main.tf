@@ -151,7 +151,7 @@ resource "helm_release" "vault-secrets-operator" {
   }
 
   set {
-    name  = "controller.manager.clientCache.vaultTokenRevocationRequired"
+    name  = "controller.manager.clientCache.revokeVaultTokensOnUninstall"
     value = "true"
   }
 

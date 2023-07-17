@@ -253,7 +253,7 @@ controller:
       # Toggles the revocation of Vault client tokens upon the operator deployment deletion
       # Clients from in-memory cache will be revoked. If persistence model is in use, persisted tokens will be revoked.
       # @type: boolean
-      vaultTokenRevocationRequired: false
+      revokeVaultTokensOnUninstall: false
 
     # Defines the maximum number of concurrent reconciles by the controller.
     # NOTE: Currently this is only used by the reconciliation logic of dynamic secrets.

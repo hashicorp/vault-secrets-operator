@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,7 +26,7 @@ const (
 	StringTrue                           = "true"
 )
 
-func AwaitInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, c client.Client) {
+func WaitForInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, c client.Client) {
 	selector, err := labels.Parse(LabelSelectorControlPlane)
 	if err != nil {
 		logger.Error(err, "failed to parse label selector", "selector", LabelSelectorControlPlane)
@@ -57,7 +58,7 @@ func AwaitInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, c 
 	}
 }
 
-func AwaitPreDeleteStarted(ctx context.Context, handler context.CancelFunc, logger logr.Logger) {
+func WaitForPreDeleteStartedAndRevokeVaultTokens(ctx context.Context, logger logr.Logger, clientFactory vault.CachingClientFactory, client client.Client) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -68,7 +69,13 @@ func AwaitPreDeleteStarted(ctx context.Context, handler context.CancelFunc, logg
 				logger.Error(err, "failed to get downward API exposed file", "path", "/var/run/podinfo/pre-delete-hook-started")
 			} else if string(b) == StringTrue {
 				logger.Info("Operator pods annotations updated", AnnotationPreDeleteHookStarted, StringTrue)
-				handler()
+				clientFactory.Disable()
+
+				clientFactory.RevokeAllInMemory(ctx, client)
+
+				if err := annotateInMemoryVaultTokensRevoked(ctx, client); err != nil {
+					logger.Error(err, fmt.Sprintf("failed to annotate %s", AnnotationInMemoryVaultTokensRevoked))
+				}
 				return
 			}
 			time.Sleep(300 * time.Millisecond)
@@ -76,7 +83,7 @@ func AwaitPreDeleteStarted(ctx context.Context, handler context.CancelFunc, logg
 	}
 }
 
-func AnnotateInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) error {
+func annotateInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) error {
 	return annotateOperatorPods(ctx, c, map[string]string{AnnotationInMemoryVaultTokensRevoked: StringTrue})
 }
 
