@@ -135,7 +135,7 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCache
 }
 
 func (c *clientCache) Keys() []ClientCacheKey {
-	var keys []ClientCacheKey
+	keys := make([]ClientCacheKey, 0, len(c.cache.Keys()))
 	for _, k := range c.cache.Keys() {
 		keys = append(keys, k.(ClientCacheKey))
 	}
