@@ -59,14 +59,16 @@ func WaitForInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, 
 }
 
 func WaitForPreDeleteStartedAndRevokeVaultTokens(ctx context.Context, logger logr.Logger, clientFactory vault.CachingClientFactory, client client.Client) {
+	const preDeleteHookStartedPath = "/var/run/podinfo/pre-delete-hook-started"
+
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Error(ctx.Err(), "Operator manager context canceled. Stopping /var/run/podinfo/pre-delete-hook-started watcher")
+			logger.Error(ctx.Err(), fmt.Sprintf("Operator manager context canceled. Stopping %s watcher", preDeleteHookStartedPath))
 			return
 		default:
-			if b, err := os.ReadFile("/var/run/podinfo/pre-delete-hook-started"); err != nil {
-				logger.Error(err, "failed to get downward API exposed file", "path", "/var/run/podinfo/pre-delete-hook-started")
+			if b, err := os.ReadFile(preDeleteHookStartedPath); err != nil {
+				logger.Error(err, "failed to get downward API exposed file", "path", preDeleteHookStartedPath)
 			} else if string(b) == StringTrue {
 				logger.Info("Operator pods annotations updated", AnnotationPreDeleteHookStarted, StringTrue)
 				clientFactory.Disable()
