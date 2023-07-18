@@ -81,8 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # * Distroless docker container only supports amd64+arm64.
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "ppc64le", "s390x"]
       fail-fast: true
     steps:
       - name: Checkout
@@ -100,7 +99,7 @@ jobs:
         run: |
           mkdir dist out
           make ci-build
-          zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/
+          zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/${{ env.GOOS }}/${{ env.GOARCH }}/
       - name: Upload binaries
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
@@ -113,8 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # The distroless image seems to only support amd64 and arm64
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "ppc64le", "s390x"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
@@ -137,6 +135,83 @@ jobs:
         shell: bash
         run: |
           version_output=$(docker run hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
+          echo $version_output
+          git_version=$(echo $version_output | jq -r .gitVersion)
+
+          if [ "$git_version" != "${{ env.version }}" ]; then
+            echo "$gitVersion expected to be ${{ env.version }}"
+            exit 1
+          fi
+
+  build-docker-ubi-dockerhub:
+    name: UBI ${{ matrix.arch }} build for dockerhub
+    needs: [get-product-version, build-pre-checks, build]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: ["arm64", "amd64", "ppc64le", "s390x"]
+    env:
+      repo: ${{github.event.repository.name}}
+      version: ${{needs.get-product-version.outputs.product-version}}
+      image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
+
+    steps:
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      - name: Docker Build (Action)
+        uses: hashicorp/actions-docker-build@v1
+        env:
+          VERSION: ${{ needs.get-product-version.outputs.product-version }}
+          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
+        with:
+          version: ${{env.version}}
+          target: release-ubi
+          arch: ${{matrix.arch}}
+          tags: |
+            docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
+            public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
+
+      - name: Check binary version in container
+        shell: bash
+        run: |
+          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
+          echo $version_output
+          git_version=$(echo $version_output | jq -r .gitVersion)
+
+          if [ "$git_version" != "${{ env.version }}" ]; then
+            echo "$gitVersion expected to be ${{ env.version }}"
+            exit 1
+          fi
+
+  build-docker-ubi-redhat-registry:
+    name: UBI ${{ matrix.arch }} build for redhat's registry (quay.io)
+    needs: [get-product-version, build-pre-checks, build]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # CRT does not support multi-arch images for redhat's registry
+        arch: ["amd64"]
+    env:
+      repo: ${{github.event.repository.name}}
+      version: ${{needs.get-product-version.outputs.product-version}}
+      image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
+
+    steps:
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      - name: Docker Build (Action)
+        uses: hashicorp/actions-docker-build@v1
+        env:
+          VERSION: ${{ needs.get-product-version.outputs.product-version }}
+          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
+        with:
+          version: ${{env.version}}
+          target: release-ubi
+          arch: ${{matrix.arch}}
+          redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
+
+      - name: Check binary version in container
+        shell: bash
+        run: |
+          version_output=$(docker run quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
           echo $version_output
           git_version=$(echo $version_output | jq -r .gitVersion)
 

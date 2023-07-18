@@ -250,17 +250,20 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: ci-build
 ci-build: ## Build operator binary (without generating assets).
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
 		-a \
-		-o $(BUILD_DIR)/$(BIN_NAME) \
+		-o $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME) \
 		.
 
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
-	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
-	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
 	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
+
+.PHONY: ci-docker-build-ubi
+ci-docker-build-ubi: ## Build docker ubi image with the operator (without generating assets)
+	docker build -t $(IMG)-ubi --platform $(GOOS)/$(GOARCH) . --target release-ubi --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
