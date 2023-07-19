@@ -189,6 +189,7 @@ jobs:
         include:
           - kind-k8s-version: 1.26.4
             vault-version: 1.13.2
+            integration-test: ${{ fromJSON(needs.build-integration-test-array.outputs.json) }}
           - kind-k8s-version: 1.25.9
             vault-version: 1.13.2
           - kind-k8s-version: 1.24.13
