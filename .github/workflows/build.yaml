@@ -185,6 +185,7 @@ jobs:
           - kind-k8s-version: 1.24.13
           - kind-k8s-version: 1.23.17
           - kind-k8s-version: 1.22.17
+
         include:
           - kind-k8s-version: 1.26.4
             vault-version: 1.13.2
@@ -197,7 +198,7 @@ jobs:
           - kind-k8s-version: 1.22.17
             vault-version: 1.13.2
 
-    name: Integration vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} test:${{ matrix.integration-test}}
+    name: Integration vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} test:${{ matrix.integration-test }}
     steps:
       - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
