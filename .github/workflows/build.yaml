@@ -189,35 +189,35 @@ jobs:
         include:
           - kind-k8s-version: 1.26.4
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_HELM_TEST_NAME }}
+            integration-test: env.OSS_HELM_TEST_NAME
           - kind-k8s-version: 1.25.9
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_HELM_TEST_NAME }}
+            integration-test: env.OSS_HELM_TEST_NAME
           - kind-k8s-version: 1.24.13
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_HELM_TEST_NAME }}
+            integration-test: env.OSS_HELM_TEST_NAME
           - kind-k8s-version: 1.23.17
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_HELM_TEST_NAME }}
+            integration-test: env.OSS_HELM_TEST_NAME
           - kind-k8s-version: 1.22.17
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_HELM_TEST_NAME }}
+            integration-test: env.OSS_HELM_TEST_NAM
 
           - kind-k8s-version: 1.26.4
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_KUSTOMIZE_TEST_NAME }}
+            integration-test: env.OSS_KUSTOMIZE_TEST_NAME
           - kind-k8s-version: 1.25.9
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_KUSTOMIZE_TEST_NAME }}
+            integration-test: env.OSS_KUSTOMIZE_TEST_NAME
           - kind-k8s-version: 1.24.13
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_KUSTOMIZE_TEST_NAME }}
+            integration-test: env.OSS_KUSTOMIZE_TEST_NAME
           - kind-k8s-version: 1.23.17
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_KUSTOMIZE_TEST_NAME }}
+            integration-test: env.OSS_KUSTOMIZE_TEST_NAME
           - kind-k8s-version: 1.22.17
             vault-version: 1.13.2
-            integration-test: ${{ env.OSS_KUSTOMIZE_TEST_NAME }}
+            integration-test: env.OSS_KUSTOMIZE_TEST_NAME
 
 
     name: Integration vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} test:${{ matrix.integration-test }}
