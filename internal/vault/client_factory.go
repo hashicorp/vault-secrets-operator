@@ -304,7 +304,9 @@ func (m *cachingClientFactory) RevokeAllInStorage(ctx context.Context, client ct
 	}
 }
 
-// Disable will disable client cache, "blocking" ClientFactory interface calls
+// Disable will disable client cache, "blocking" future ClientFactory interface calls
+// NOTE: If a consumer of the client cache factory already has a reference to a client in hand,
+// they may continue using it and generating new tokens/leases.
 func (m *cachingClientFactory) Disable() {
 	m.mu.Lock()
 	m.disable = true

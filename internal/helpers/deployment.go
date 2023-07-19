@@ -73,6 +73,8 @@ func WaitForPreDeleteStartedAndRevokeVaultTokens(ctx context.Context, logger log
 				logger.Info("Operator pods annotations updated", AnnotationPreDeleteHookStarted, StringTrue)
 				clientFactory.Disable()
 
+				// Comment out when running test/integration/revocation_integration_test.go for error path testing.
+				// In this case, we can ensure that all tokens in storage are revoked successfully.
 				clientFactory.RevokeAllInMemory(ctx, client)
 
 				if err := annotateInMemoryVaultTokensRevoked(ctx, client); err != nil {

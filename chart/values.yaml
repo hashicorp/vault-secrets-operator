@@ -250,8 +250,9 @@ controller:
         # @type:  map
         headers: {}
 
-      # Toggles the revocation of Vault client tokens upon the operator deployment deletion
-      # Clients from in-memory cache will be revoked. If persistence model is in use, persisted tokens will be revoked.
+      # Toggles the revocation of Vault tokens upon the operator deployment deletion
+      # Tokens from in-memory cache will be revoked. If the persistence model is in use, persisted tokens will be revoked.
+      # NOTE: When a token is revoked, all of its leases are also revoked.
       # @type: boolean
       revokeVaultTokensOnUninstall: false
 
@@ -296,12 +297,25 @@ controller:
   # @type: string
   kubernetesClusterDomain: cluster.local
 
-  # Optional duration in seconds the pod needs to terminate gracefully.
+  # Duration in seconds the pod needs to terminate gracefully.
   # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
   terminationGracePeriodSeconds: 120
 
-  # Optional timeout in seconds for the pre-delete hook
-  preDeleteHookTimeoutSeconds: 360
+  # Timeout in seconds for the pre-delete hook
+  preDeleteHookTimeoutSeconds: 120
+
+
+  # withRevokeVaultTokensOnUninstall provides the configuration with terminationGracePeriodSeconds
+  # and preDeleteHookTimeoutSeconds in the case where Vault tokens are revoked upon the operator deployment deletion.
+  # The values are different from `controller.terminationGracePeriodSeconds` and `controller.preDeleteHookTimeoutSeconds`.
+  # This should only be configured when `controller.manager.clientCache.revokeVaultTokensOnUninstall` is enabled
+  withRevokeVaultTokensOnUninstall:
+    # Duration in seconds the pod needs to terminate gracefully.
+    # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
+    terminationGracePeriodSeconds: 180
+
+    # Timeout in seconds for the pre-delete hook
+    preDeleteHookTimeoutSeconds: 360
 
 
 # Configure the metrics service ports used by the metrics service.

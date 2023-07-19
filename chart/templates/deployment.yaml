@@ -115,7 +115,11 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
-      terminationGracePeriodSeconds : {{ .Values.controller.terminationGracePeriodSeconds }}
+      {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall}}
+      terminationGracePeriodSeconds : {{ .Values.controller.withRevokeVaultTokensOnUninstall.terminationGracePeriodSeconds }}
+      {{- else }}
+      terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
+      {{- end }}
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
       {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
@@ -163,7 +167,11 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
         - --pre-delete-hook
+        {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.withRevokeVaultTokensOnUninstall.preDeleteHookTimeoutSeconds }}
+        {{- else }}
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
+        {{- end }}
         {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
         - --revoke-vault-tokens-on-uninstall
         {{- end }}

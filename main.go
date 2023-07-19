@@ -230,7 +230,11 @@ func main() {
 				return
 			}
 			helpers.WaitForInMemoryVaultTokensRevoked(preDeleteDeadlineCtx, cleanupLog, defaultClient)
+
+			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
+			// In this case, we can ensure that all tokens cached in memory are revoked successfully.
 			clientFactory.RevokeAllInStorage(preDeleteDeadlineCtx, defaultClient)
+
 			return
 		}
 

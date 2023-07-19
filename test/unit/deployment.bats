@@ -240,6 +240,54 @@ load _helpers
 }
 
 #--------------------------------------------------------------------
+# terminationGracePeriodSeconds
+
+@test "controller/Deployment: default terminationGracePeriodSeconds when revokeVaultTokensOnUninstall is not enabled" {
+  cd `chart_dir`
+  local actual=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.terminationGracePeriodSeconds | select(documentIndex == 1)' | tee /dev/stderr)
+   [ "${actual}" = "120" ]
+}
+
+@test "controller/Deployment: different terminationGracePeriodSeconds value when revokeVaultTokensOnUninstall is enabled" {
+  cd `chart_dir`
+  local actual=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.revokeVaultTokensOnUninstall=true' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.terminationGracePeriodSeconds | select(documentIndex == 1)' | tee /dev/stderr)
+   [ "${actual}" = "180" ]
+}
+
+#--------------------------------------------------------------------
+# preDeleteHookTimeoutSeconds
+
+@test "controller/Deployment: default preDeleteHookTimeoutSeconds when revokeVaultTokensOnUninstall is not enabled" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=120"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: different preDeleteHookTimeoutSeconds value when revokeVaultTokensOnUninstall is enabled" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.revokeVaultTokensOnUninstall=true' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=360"])' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+}
+
+#--------------------------------------------------------------------
 # controller.imagePullSecrets
 
 @test "controller/Deployment: no image pull secrets by default" {
