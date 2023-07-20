@@ -206,6 +206,7 @@ jobs:
           version: ${{env.version}}
           target: release-ubi
           arch: ${{matrix.arch}}
+          # The quay id here corresponds to the project id on RedHat's portal
           redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
 
       - name: Check binary version in container
