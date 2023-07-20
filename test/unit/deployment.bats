@@ -283,7 +283,7 @@ load _helpers
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
 
-  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=360"])' | tee /dev/stderr)
+  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=180"])' | tee /dev/stderr)
     [ "${actual}" = "true" ]
 }
 

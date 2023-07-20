@@ -315,7 +315,7 @@ controller:
     terminationGracePeriodSeconds: 180
 
     # Timeout in seconds for the pre-delete hook
-    preDeleteHookTimeoutSeconds: 360
+    preDeleteHookTimeoutSeconds: 180
 
 
 # Configure the metrics service ports used by the metrics service.
