@@ -19,6 +19,12 @@ type VaultPKISecretSpec struct {
 	// configured in its own Kubernetes namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
+	// VaultAuthRefNamespace for the VaultAuth resource.
+	// If no value is specified the Operator will attempt to use the CRs namespace.
+	// If no `VaultAuthRef` is specificed` the Operator will continue to use the `default` VaultAuth,
+	// which always resides in the operator namespace.
+	VaultAuthRefNamespace string `json:"vaultAuthRefNamespace,omitempty"`
+
 	// Namespace to get the secret from in Vault
 	Namespace string `json:"namespace,omitempty"`
 

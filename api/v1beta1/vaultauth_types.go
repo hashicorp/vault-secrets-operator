@@ -96,6 +96,11 @@ type VaultAuthSpec struct {
 	// If no value is specified the Operator will default to the `default` VaultConnection,
 	// configured in its own Kubernetes namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
+	// VaultConnectionRefNamespace of the corresponding VaultConnection CustomResource.
+	// If no value is specified the Operator will default to namespace of the VaultAuth CR.
+	// If no value is specified for the VaultConnectionRef the Operator will default to the operator
+	// namespace.
+	VaultConnectionRefNamespace string `json:"vaultConnectionRefNamespace,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// Method to use when authenticating to Vault.

@@ -41,30 +41,47 @@ func init() {
 	}
 }
 
-func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, types.NamespacedName, error) {
+func GetAuthNamespacedName(obj client.Object) (types.NamespacedName, error) {
 	var authRef string
 	var target types.NamespacedName
+	var authRefNamespace string
+
 	switch o := obj.(type) {
 	case *secretsv1beta1.VaultPKISecret:
+		if o.Spec.VaultAuthRefNamespace == "" {
+			authRefNamespace = o.Namespace
+		} else {
+			authRefNamespace = o.Spec.VaultAuthRefNamespace
+		}
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
-			Namespace: o.Namespace,
+			Namespace: authRefNamespace,
 			Name:      o.Name,
 		}
 	case *secretsv1beta1.VaultStaticSecret:
+		if o.Spec.VaultAuthRefNamespace == "" {
+			authRefNamespace = o.Namespace
+		} else {
+			authRefNamespace = o.Spec.VaultAuthRefNamespace
+		}
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
-			Namespace: o.Namespace,
+			Namespace: authRefNamespace,
 			Name:      o.Name,
 		}
 	case *secretsv1beta1.VaultDynamicSecret:
+		if o.Spec.VaultAuthRefNamespace == "" {
+			authRefNamespace = o.Namespace
+		} else {
+			authRefNamespace = o.Spec.VaultAuthRefNamespace
+		}
 		authRef = o.Spec.VaultAuthRef
 		target = types.NamespacedName{
-			Namespace: o.Namespace,
+			Namespace: authRefNamespace,
 			Name:      o.Name,
 		}
 	default:
-		return nil, types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
+		return types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
 	}
 
 	var authName types.NamespacedName
@@ -81,11 +98,19 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 			Name:      authRef,
 		}
 	}
+	return authName, nil
+}
+
+func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, types.NamespacedName, error) {
+	authName, err := GetAuthNamespacedName(obj)
+	if err != nil {
+		return nil, types.NamespacedName{}, err
+	}
 	authObj, err := GetVaultAuthWithRetry(ctx, c, authName, time.Millisecond*500, 60)
 	if err != nil {
 		return nil, types.NamespacedName{}, err
 	}
-	return authObj, target, nil
+	return authObj, authName, nil
 }
 
 func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.VaultConnection, error) {
@@ -160,9 +185,16 @@ func GetConnectionNamespacedName(a *secretsv1beta1.VaultAuth) (types.NamespacedN
 		}, nil
 	}
 
-	// the VaultConnection CR must be in the same namespace as its VaultAuth.
+	// Use the NS of the AuthRef, unless it's overridden in the AuthRef Spec.
+	var vaultConnectionRefNamespace string
+	if a.Spec.VaultConnectionRefNamespace == "" {
+		vaultConnectionRefNamespace = a.Namespace
+	} else {
+		vaultConnectionRefNamespace = a.Spec.VaultConnectionRefNamespace
+	}
+
 	return types.NamespacedName{
-		Namespace: a.Namespace,
+		Namespace: vaultConnectionRefNamespace,
 		Name:      a.Spec.VaultConnectionRef,
 	}, nil
 }
