@@ -149,17 +149,9 @@ jobs:
             exit 1
           fi
 
-  build-integration-test-array:
-    runs-on: ubuntu-latest
-    outputs:
-      json: ${{ steps.main.outputs.json }}
-    steps:
-      - id: main
-        run: echo "json=[\"$OSS_HELM_TEST_NAME\", \"$OSS_KUSTOMIZE_TEST_NAME\", \"$ENT_HELM_TEST_NAME\", \"$ENT_KUSTOMIZE_TEST_NAME\"]" > $GITHUB_OUTPUT
-
   integrationTest:
     runs-on: ubuntu-latest
-    needs: [get-product-version, build-pre-checks, build-docker, build-integration-test-array]
+    needs: [get-product-version, build-pre-checks, build-docker]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -170,12 +162,11 @@ jobs:
       matrix:
         kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4, 1.27.2]
         vault-version: [1.11.10, 1.12.6, 1.13.2]
-        integration-test: ${{ fromJSON(needs.build-integration-test-array.outputs.json) }}
-        # Note: The below exclude and includes are a bit awkward, but they
-        # allow us to exclude the combos we don't really need. We want to test
-        # the operator with the different k8s versions, and with the different
-        # vault versions, but we don't care about testing all the k8s versions
-        # against all the vault versions.
+        installation-method: [ helm, kustomize ]
+        software-type: [ent, oss]
+        # Note: We want to test the operator with the different k8s versions,
+        # and with the different vault versions, but we don't care about testing
+        # all the k8s versions against all the vault versions.
         # Combos to exclude:
         #   kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4]
         #   vault-version: [1.11.10, 1.12.6]
@@ -203,7 +194,7 @@ jobs:
           - kind-k8s-version: 1.22.17
             vault-version: 1.12.6
 
-    name: Integration vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} test:${{ matrix.integration-test }}
+    name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }}-${{ matrix.software-type }}
     steps:
       - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
@@ -232,45 +223,25 @@ jobs:
       - uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4.0.1
         with:
           go-version-file: .go-version
-      - name: ${{ env.OSS_HELM_TEST_NAME }}
-        # This step runs OSS tests using Helm if matrix.integration-test is env.OSS_HELM_TEST_NAME
-        # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.integration-test == env.OSS_HELM_TEST_NAME && matrix.vault-version == '1.13.2' }}
+      - name: ${{ matrix.installation-method }}-${{ matrix.software-type }}
+        # We run kustomize ent against the full matrix, and other tests against vault version 1.13.2
+        # TODO: When the VDS integration test supports Helm, test kustomize ent against one version of (ENT) Vault like the other tests.
+        # TODO: When the VDS integration test supports Helm, swap the matrix filter so helm ent test runs the full matrix.
+        if: ${{ matrix.integration-method == kustomize && matrix.software-type == ent|| matrix.vault-version == '1.13.2' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-        run: |
-          make integration-test-helm SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
-      - name: ${{ env.OSS_KUSTOMIZE_TEST_NAME }}
-        # This step runs OSS tests using Kustomize if matrix.integration-test is env.OSS_KUSTOMIZE_TEST_NAME
-        # Ideally we only need to test the latest release of OSS Vault.
-        if: ${{ matrix.integration-test == env.OSS_KUSTOMIZE_TEST_NAME && matrix.vault-version == '1.13.2' }}
-        env:
-          INTEGRATION_TESTS: true
-          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
-        run: |
-          make integration-test SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
-      - name: ${{ env.ENT_KUSTOMIZE_TEST_NAME }}
-        # This step runs ENT tests using Kustomize if matrix.integration-test is env.ENT_KUSTOMIZE_TEST_NAME
-        # TODO: When the VDS integration test supports Helm we test against one version of (ENT) Vault like the other tests.
-        # if: ${{ matrix.vault-version == '1.13.2' }}
-        if: ${{ matrix.integration-test == env.ENT_KUSTOMIZE_TEST_NAME }}
-        env:
-          INTEGRATION_TESTS: true
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
-          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
         run: |
-          make integration-test-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
-      - name: ${{ env.ENT_HELM_TEST_NAME }}
-        # This step runs ENT tests using Helm if matrix.integration-test is env.ENT_HELM_TEST_NAME
-        # TODO: When the VDS integration test supports Helm swap the matrix filter so this test runs the full matrix.
-        if: ${{ matrix.integration-test == env.ENT_HELM_TEST_NAME && matrix.vault-version == '1.13.2' }}
-        env:
-          INTEGRATION_TESTS: true
-          VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
-          VAULT_IMAGE_TAG: ${{ matrix.vault-version }}-ent
-        run: |
-          make integration-test-helm-ent SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+          make_target=integration-test
+          if [ ${{ matrix.installation-method }} != "helm"]; then
+            make_target+="-helm"
+          fi
+          if [ ${{ matrix.software-type }} != "ent"]; then
+            export VAULT_IMAGE_TAG=${{ matrix.vault-version }}-ent
+            make_target+="-ent"
+          fi
+          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success()
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
