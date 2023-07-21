@@ -254,12 +254,12 @@ jobs:
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
         run: |
           make_target=integration-test
-          if [ ${{ matrix.installation-method }} != 'helm']; then
+          if [ ${{ matrix.installation-method }} == 'helm']; then
             make_target+='-helm'
           fi
-          if [ ${{ matrix.software-type }} != 'ent']; then
-            export VAULT_IMAGE_TAG=${{ matrix.vault-version }}-ent
+          if [ ${{ matrix.software-type }} == 'ent']; then
             make_target+='-ent'
+            export VAULT_IMAGE_TAG=${{ matrix.vault-version }}-ent
           fi
           echo "make_target=${make_targe}" >> $GITHUB_OUTPUT
           echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG" >> $GITHUB_OUTPUT
