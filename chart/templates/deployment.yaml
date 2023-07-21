@@ -55,7 +55,7 @@ spec:
           protocol: TCP
         resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
+          {{- toYaml .Values.controller.kubeRbacProxy.securityContext | nindent 12 }}
       - name: manager
         args:
         - --health-probe-bind-address=:8081
@@ -99,12 +99,12 @@ spec:
           periodSeconds: 10
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
+          {{- toYaml .Values.controller.manager.securityContext | nindent 12 }}
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
       securityContext:
-        runAsNonRoot: true
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       {{- if .Values.controller.nodeSelector }}
