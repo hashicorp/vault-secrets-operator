@@ -263,7 +263,9 @@ jobs:
           fi
           echo "make_target=${make_targe}" >> $GITHUB_OUTPUT
           echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG" >> $GITHUB_OUTPUT
-          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+          echo "make_target=${make_targe}"
+          echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG"
+#          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success()
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
