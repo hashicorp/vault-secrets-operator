@@ -170,6 +170,12 @@ jobs:
         # Combos to exclude:
         #   kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4]
         #   vault-version: [1.11.10, 1.12.6]
+        # We run kustomize ent against the full matrix, and other tests against vault version 1.13.2.
+        # Combos to exclude:
+        #   vault-version: [1.11.10, 1.12.6]
+        #   any combos from installation-method and software-type except for kustomize ent
+        # TODO: When the VDS integration test supports Helm, test kustomize ent against one version of (ENT) Vault like the other tests.
+        # TODO: When the VDS integration test supports Helm, swap the matrix filter so helm ent test runs the full matrix.
         exclude:
           # vault version 1.11.10
           - kind-k8s-version: 1.26.4
@@ -182,6 +188,15 @@ jobs:
             vault-version: 1.11.10
           - kind-k8s-version: 1.22.17
             vault-version: 1.11.10
+          - vault-version: 1.11.10
+            installation-method: helm
+            software-type: ent
+          - vault-version: 1.11.10
+            installation-method: helm
+            software-type: oss
+          - vault-version: 1.11.10
+            installation-method: kustomize
+            software-type: oss
           # vault version 1.12.6
           - kind-k8s-version: 1.26.4
             vault-version: 1.12.6
@@ -193,6 +208,15 @@ jobs:
             vault-version: 1.12.6
           - kind-k8s-version: 1.22.17
             vault-version: 1.12.6
+          - vault-version: 1.12.6
+            installation-method: helm
+            software-type: ent
+          - vault-version: 1.12.6
+            installation-method: helm
+            software-type: oss
+          - vault-version: 1.12.6
+            installation-method: kustomize
+            software-type: oss
 
     name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }}-${{ matrix.software-type }}
     steps:
@@ -224,10 +248,6 @@ jobs:
         with:
           go-version-file: .go-version
       - name: ${{ matrix.installation-method }}-${{ matrix.software-type }}
-        # We run kustomize ent against the full matrix, and other tests against vault version 1.13.2
-        # TODO: When the VDS integration test supports Helm, test kustomize ent against one version of (ENT) Vault like the other tests.
-        # TODO: When the VDS integration test supports Helm, swap the matrix filter so helm ent test runs the full matrix.
-        if: ${{ matrix.integration-method == 'kustomize' && matrix.software-type == 'ent' || matrix.vault-version == '1.13.2' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
@@ -241,6 +261,8 @@ jobs:
             export VAULT_IMAGE_TAG=${{ matrix.vault-version }}-ent
             make_target+='-ent'
           fi
+          echo "make_target=${make_targe}" >> $GITHUB_OUTPUT
+          echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG" >> $GITHUB_OUTPUT
           make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success()
