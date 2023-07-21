@@ -162,7 +162,7 @@ jobs:
       matrix:
         kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4, 1.27.2]
         vault-version: [1.11.10, 1.12.6, 1.13.2]
-        installation-method: [ helm, kustomize ]
+        installation-method: [helm, kustomize]
         software-type: [ent, oss]
         # Note: We want to test the operator with the different k8s versions,
         # and with the different vault versions, but we don't care about testing
@@ -227,19 +227,19 @@ jobs:
         # We run kustomize ent against the full matrix, and other tests against vault version 1.13.2
         # TODO: When the VDS integration test supports Helm, test kustomize ent against one version of (ENT) Vault like the other tests.
         # TODO: When the VDS integration test supports Helm, swap the matrix filter so helm ent test runs the full matrix.
-        if: ${{ matrix.integration-method == kustomize && matrix.software-type == ent|| matrix.vault-version == '1.13.2' }}
+        if: ${{ matrix.integration-method == 'kustomize' && matrix.software-type == 'ent' || matrix.vault-version == '1.13.2' }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
         run: |
           make_target=integration-test
-          if [ ${{ matrix.installation-method }} != "helm"]; then
-            make_target+="-helm"
+          if [ ${{ matrix.installation-method }} != 'helm']; then
+            make_target+='-helm'
           fi
-          if [ ${{ matrix.software-type }} != "ent"]; then
+          if [ ${{ matrix.software-type }} != 'ent']; then
             export VAULT_IMAGE_TAG=${{ matrix.vault-version }}-ent
-            make_target+="-ent"
+            make_target+='-ent'
           fi
           make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
