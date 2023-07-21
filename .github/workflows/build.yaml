@@ -157,17 +157,9 @@ jobs:
       - id: main
         run: echo "json=[\"$OSS_HELM_TEST_NAME\", \"$OSS_KUSTOMIZE_TEST_NAME\", \"$ENT_HELM_TEST_NAME\", \"$ENT_KUSTOMIZE_TEST_NAME\"]" > $GITHUB_OUTPUT
 
-  test-integration-test-matrix-setup:
-    runs-on: ubuntu-latest
-    needs: build-integration-test-matrix-include
-    steps:
-      - run: echo "${{ fromJSON(needs.build-integration-test-matrix-include.outputs.json) }}"
-        name: echo-step
-    name: test-integration-test-matrix-setup
-
   integrationTest:
     runs-on: ubuntu-latest
-    needs: [get-product-version, build-pre-checks, build-docker, build-integration-test-array, build-integration-test-matrix-include]
+    needs: [get-product-version, build-pre-checks, build-docker, build-integration-test-array]
     env:
       KIND_CLUSTER_NAME: vault-secrets-operator
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -188,6 +180,7 @@ jobs:
         #   kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4]
         #   vault-version: [1.11.10, 1.12.6]
         exclude:
+          # vault version 1.11.10
           - kind-k8s-version: 1.26.4
             vault-version: 1.11.10
           - kind-k8s-version: 1.25.9
@@ -198,7 +191,7 @@ jobs:
             vault-version: 1.11.10
           - kind-k8s-version: 1.22.17
             vault-version: 1.11.10
-
+          # vault version 1.12.6
           - kind-k8s-version: 1.26.4
             vault-version: 1.12.6
           - kind-k8s-version: 1.25.9
