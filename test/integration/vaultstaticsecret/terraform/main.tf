@@ -36,6 +36,12 @@ resource "kubernetes_namespace" "tenant-1" {
   }
 }
 
+resource "kubernetes_namespace" "tenant-2" {
+  metadata {
+    name = format("%s-test", var.k8s_test_namespace)
+  }
+}
+
 resource "kubernetes_secret" "secretkv" {
   metadata {
     name      = "secretkv"

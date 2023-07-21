@@ -37,6 +37,7 @@ import (
 func TestVaultStaticSecret_kv(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
+	testK8sNamespace2 := "k8s-tenant-" + testID + "-test"
 	testKvMountPath := consts.KVSecretTypeV1 + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
@@ -136,7 +137,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultconnection-test-tenant-1",
-				Namespace: testK8sNamespace,
+				Namespace: testK8sNamespace2,
 			},
 			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
@@ -163,10 +164,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
-				VaultConnectionRef: "vaultconnection-test-tenant-1",
-				Namespace:          testVaultNamespace,
-				Method:             "kubernetes",
-				Mount:              "kubernetes",
+				// This VaultAuth references a VaultConnection in its own namespace.
+				VaultConnectionRef:          "vaultconnection-test-tenant-1",
+				VaultConnectionRefNamespace: testK8sNamespace2,
+				Namespace:                   testVaultNamespace,
+				Method:                      "kubernetes",
+				Mount:                       "kubernetes",
 				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 					Role:           "role1",
 					ServiceAccount: "default",
@@ -221,11 +224,13 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					VaultAuthRef: auths[0].ObjectMeta.Name,
-					Namespace:    testVaultNamespace,
-					Mount:        testKvMountPath,
-					Type:         consts.KVSecretTypeV1,
-					Path:         "secret",
+					// This Secret references an Auth Method in a different namespace.
+					VaultAuthRef:          auths[0].ObjectMeta.Name,
+					VaultAuthRefNamespace: auths[0].ObjectMeta.Namespace,
+					Namespace:             testVaultNamespace,
+					Mount:                 testKvMountPath,
+					Type:                  consts.KVSecretTypeV1,
+					Path:                  "secret",
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkv",
 						Create: false,
@@ -247,6 +252,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
+					// This Secret references the default Auth Method.
 					Namespace: testVaultNamespace,
 					Mount:     testKvv2MountPath,
 					Type:      consts.KVSecretTypeV2,
@@ -438,11 +444,12 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 								Namespace: testK8sNamespace,
 							},
 							Spec: secretsv1beta1.VaultStaticSecretSpec{
-								VaultAuthRef: auths[0].ObjectMeta.Name,
-								Namespace:    testVaultNamespace,
-								Mount:        mount,
-								Type:         kvType,
-								Path:         dest,
+								VaultAuthRef:          auths[0].ObjectMeta.Name,
+								VaultAuthRefNamespace: auths[0].ObjectMeta.Namespace,
+								Namespace:             testVaultNamespace,
+								Mount:                 mount,
+								Type:                  kvType,
+								Path:                  dest,
 								Destination: secretsv1beta1.Destination{
 									Name:   dest,
 									Create: true,

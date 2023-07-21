@@ -41,8 +41,8 @@ func init() {
 	}
 }
 
-func GetAuthNamespacedName(obj client.Object) (types.NamespacedName, error) {
-	var authRef string
+func GetAuthAndTargetNamespacedName(obj client.Object) (types.NamespacedName, types.NamespacedName, error) {
+	var authRef types.NamespacedName
 	var target types.NamespacedName
 	var authRefNamespace string
 
@@ -53,9 +53,12 @@ func GetAuthNamespacedName(obj client.Object) (types.NamespacedName, error) {
 		} else {
 			authRefNamespace = o.Spec.VaultAuthRefNamespace
 		}
-		authRef = o.Spec.VaultAuthRef
-		target = types.NamespacedName{
+		authRef = types.NamespacedName{
 			Namespace: authRefNamespace,
+			Name:      o.Spec.VaultAuthRef,
+		}
+		target = types.NamespacedName{
+			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
 	case *secretsv1beta1.VaultStaticSecret:
@@ -64,9 +67,12 @@ func GetAuthNamespacedName(obj client.Object) (types.NamespacedName, error) {
 		} else {
 			authRefNamespace = o.Spec.VaultAuthRefNamespace
 		}
-		authRef = o.Spec.VaultAuthRef
-		target = types.NamespacedName{
+		authRef = types.NamespacedName{
 			Namespace: authRefNamespace,
+			Name:      o.Spec.VaultAuthRef,
+		}
+		target = types.NamespacedName{
+			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
 	case *secretsv1beta1.VaultDynamicSecret:
@@ -75,42 +81,39 @@ func GetAuthNamespacedName(obj client.Object) (types.NamespacedName, error) {
 		} else {
 			authRefNamespace = o.Spec.VaultAuthRefNamespace
 		}
-		authRef = o.Spec.VaultAuthRef
-		target = types.NamespacedName{
+		authRef = types.NamespacedName{
 			Namespace: authRefNamespace,
+			Name:      o.Spec.VaultAuthRef,
+		}
+		target = types.NamespacedName{
+			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
 	default:
-		return types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
+		return types.NamespacedName{}, types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
 	}
 
-	var authName types.NamespacedName
-	if authRef == "" {
+	if authRef.Name == "" {
 		// if no authRef configured we try and grab the 'default' from the
 		// Operator's current namespace.
-		authName = types.NamespacedName{
+		authRef = types.NamespacedName{
 			Namespace: OperatorNamespace,
 			Name:      consts.NameDefault,
 		}
-	} else {
-		authName = types.NamespacedName{
-			Namespace: target.Namespace,
-			Name:      authRef,
-		}
 	}
-	return authName, nil
+	return authRef, target, nil
 }
 
 func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, types.NamespacedName, error) {
-	authName, err := GetAuthNamespacedName(obj)
+	authRef, target, err := GetAuthAndTargetNamespacedName(obj)
 	if err != nil {
 		return nil, types.NamespacedName{}, err
 	}
-	authObj, err := GetVaultAuthWithRetry(ctx, c, authName, time.Millisecond*500, 60)
+	authObj, err := GetVaultAuthWithRetry(ctx, c, authRef, time.Millisecond*500, 60)
 	if err != nil {
 		return nil, types.NamespacedName{}, err
 	}
-	return authObj, authName, nil
+	return authObj, target, nil
 }
 
 func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.VaultConnection, error) {

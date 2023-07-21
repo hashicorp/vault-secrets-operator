@@ -175,7 +175,8 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 					VaultAuthRefNamespace: tt.a.Namespace,
 				},
 			}
-			got, err := GetAuthNamespacedName(obj)
+			// TargetName is always just the object name+ns
+			got, _, err := GetAuthAndTargetNamespacedName(obj)
 			if !tt.wantErr(t, err, fmt.Sprintf("getAuthNamespacedName(%v)", tt.a)) {
 				return
 			}
