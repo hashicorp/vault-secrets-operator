@@ -218,7 +218,7 @@ jobs:
             installation-method: kustomize
             software-type: oss
 
-    name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }}-${{ matrix.software-type }}
+    name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }} ${{ matrix.software-type }}
     steps:
       - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
