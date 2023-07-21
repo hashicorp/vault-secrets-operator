@@ -259,11 +259,11 @@ jobs:
           fi
           if [ ${{ matrix.software-type }} == 'ent']; then
             make_target+='-ent'
-            export VAULT_IMAGE_TAG=${{ matrix.vault-version }}-ent
+            export VAULT_IMAGE_TAG='${{ matrix.vault-version }}-ent'
           fi
-          echo "make_target=${make_targe}" >> $GITHUB_OUTPUT
+          echo "make_target=${make_target}" >> $GITHUB_OUTPUT
           echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "make_target=${make_targe}"
+          echo "make_target=${make_target}"
           echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG"
 #          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
