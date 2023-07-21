@@ -157,14 +157,6 @@ jobs:
       - id: main
         run: echo "json=[\"$OSS_HELM_TEST_NAME\", \"$OSS_KUSTOMIZE_TEST_NAME\", \"$ENT_HELM_TEST_NAME\", \"$ENT_KUSTOMIZE_TEST_NAME\"]" > $GITHUB_OUTPUT
 
-  build-integration-test-matrix-include:
-    runs-on: ubuntu-latest
-    outputs:
-      json: ${{ steps.main.outputs.json }}
-    steps:
-      - id: main
-        run: echo "json=[{\"kind-k8s-version\":\"1.26.4\",\"vault-version\":\"1.13.2\",\"integration-test\":\"$OSS_HELM_TEST_NAME\"}]"> $GITHUB_OUTPUT
-
   test-integration-test-matrix-setup:
     runs-on: ubuntu-latest
     needs: build-integration-test-matrix-include
@@ -197,27 +189,26 @@ jobs:
         #   vault-version: [1.11.10, 1.12.6]
         exclude:
           - kind-k8s-version: 1.26.4
+            vault-version: 1.11.10
           - kind-k8s-version: 1.25.9
+            vault-version: 1.11.10
           - kind-k8s-version: 1.24.13
+            vault-version: 1.11.10
           - kind-k8s-version: 1.23.17
+            vault-version: 1.11.10
           - kind-k8s-version: 1.22.17
+            vault-version: 1.11.10
 
-        include: ${{ fromJSON(needs.build-integration-test-matrix-include.outputs.json) }}
-#          - kind-k8s-version: 1.26.4
-#            vault-version: 1.13.2
-#            integration-test: env.OSS_HELM_TEST_NAME
-#          - kind-k8s-version: 1.25.9
-#            vault-version: 1.13.2
-#            integration-test: env.OSS_HELM_TEST_NAME
-#          - kind-k8s-version: 1.24.13
-#            vault-version: 1.13.2
-#            integration-test: env.OSS_HELM_TEST_NAME
-#          - kind-k8s-version: 1.23.17
-#            vault-version: 1.13.2
-#            integration-test: env.OSS_HELM_TEST_NAME
-#          - kind-k8s-version: 1.22.17
-#            vault-version: 1.13.2
-#            integration-test: env.OSS_HELM_TEST_NAM
+          - kind-k8s-version: 1.26.4
+            vault-version: 1.12.6
+          - kind-k8s-version: 1.25.9
+            vault-version: 1.12.6
+          - kind-k8s-version: 1.24.13
+            vault-version: 1.12.6
+          - kind-k8s-version: 1.23.17
+            vault-version: 1.12.6
+          - kind-k8s-version: 1.22.17
+            vault-version: 1.12.6
 
     name: Integration vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} test:${{ matrix.integration-test }}
     steps:
