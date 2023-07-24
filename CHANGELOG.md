@@ -2,7 +2,6 @@
 
 Features:
 * UBI-based images now built and published with releases: [GH-288](https://github.com/hashicorp/vault-secrets-operator/pull/288)
-* `ppc64le` and `s390x` builds are now included in releases: [GH-288](https://github.com/hashicorp/vault-secrets-operator/pull/288)
 
 Improvements:
 * Helm: `controller.imagePullSecrets` stanza is added to provide imagePullSecrets to the controller's containers via the serviceAccount: [GH-266](https://github.com/hashicorp/vault-secrets-operator/pull/266)
