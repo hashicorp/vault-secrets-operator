@@ -13,10 +13,6 @@ on:
 
 env:
   PKG_NAME: "vault-secrets-operator"
-  OSS_HELM_TEST_NAME: OSS tests using Helm
-  OSS_KUSTOMIZE_TEST_NAME: OSS tests using Kustomize
-  ENT_HELM_TEST_NAME: ENT tests using Helm
-  ENT_KUSTOMIZE_TEST_NAME: ENT tests using Kustomize
 
 jobs:
   get-product-version:
