@@ -190,10 +190,9 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultConnectionRef` _string_ | VaultConnectionRef of the corresponding VaultConnection CustomResource. If no value is specified the Operator will default to the `default` VaultConnection, configured in its own Kubernetes namespace. |
-| `vaultConnectionRefNamespace` _string_ | VaultConnectionRefNamespace of the corresponding VaultConnection CustomResource. If no value is specified the Operator will default to namespace of the VaultAuth CR. If no value is specified for the VaultConnectionRef the Operator will default to the operator namespace. |
+| `vaultConnectionRef` _string_ | VaultConnectionRef of the corresponding VaultConnection CustomResource. The connectionRef can be prefixed with a namespace, eg: `namespaceA/connectionB`. If no namespace is specified the Operator will default to namespace of the VaultAuth CR. If no value is specified the Operator will default to the `default` VaultConnection, configured in its own Kubernetes namespace unless prefixed. |
 | `namespace` _string_ | Namespace to auth to in Vault |
-| `method` _string_ | Method to use when authenticating to Vault. |
+| `method` _string_ | BoundNamespaces Kubernetes Namespaces which are AllowListed for use with this AuthMethod. This field allows administrators to customize which Kubernetes namespaces are authorized to act with this AuthMethod. While Vault will still enforce its own rules, this has the added configurability of restricting which AuthMethods can be used by which namespaces. Accepted values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces. []{} - empty list, no namespaces. BoundNamespaces []string `json:"omitempty,boundNamespaces"` Method to use when authenticating to Vault. |
 | `mount` _string_ | Mount to use when authenticating to auth method. |
 | `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |
 | `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |
@@ -303,8 +302,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
-| `vaultAuthRefNamespace` _string_ | VaultAuthRefNamespace for the VaultAuth resource. If no value is specified the Operator will attempt to use the CRs namespace. If no `VaultAuthRef` is specificed` the Operator will continue to use the `default` VaultAuth, which always resides in the operator namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource The VaultAuthRef can be prefixed with a namespace, eg: `namespaceA/vaultRefB`. If no namespace is specified the Operator will default to namespace of the VaultAuth CR. If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
 | `namespace` _string_ | Namespace where the secrets engine is mounted in Vault. |
 | `mount` _string_ | Mount path of the secret's engine in Vault. |
 | `requestHTTPMethod` _string_ | RequestHTTPMethod to use when syncing Secrets from Vault. Setting a value here is not typically required. If left unset the Operator will make requests using the GET method. In the case where Params are specified the Operator will use the PUT method. Please consult https://developer.hashicorp.com/vault/docs/secrets if you are uncertain about what method to use. Of note, the Vault client treats PUT and POST as being equivalent. The underlying Vault client implementation will always use the PUT method. |
@@ -363,8 +361,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef of the VaultAuth resource If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
-| `vaultAuthRefNamespace` _string_ | VaultAuthRefNamespace for the VaultAuth resource. If no value is specified the Operator will attempt to use the CRs namespace. If no `VaultAuthRef` is specificed` the Operator will continue to use the `default` VaultAuth, which always resides in the operator namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource The VaultAuthRef can be prefixed with a namespace, eg: `namespaceA/vaultRefB`. If no namespace is specified the Operator will default to namespace of the VaultAuth CR. If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
 | `namespace` _string_ | Namespace to get the secret from in Vault |
 | `mount` _string_ | Mount for the secret in Vault |
 | `role` _string_ | Role in Vault to use when issuing TLS certificates. |
@@ -465,8 +462,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef of the VaultAuth resource If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
-| `vaultAuthRefNamespace` _string_ | VaultAuthRefNamespace for the VaultAuth resource. If no value is specified the Operator will attempt to use the CRs namespace. If no `VaultAuthRef` is specificed` the Operator will continue to use the `default` VaultAuth, which always resides in the operator namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource The VaultAuthRef can be prefixed with a namespace, eg: `namespaceA/vaultRefB`. If no namespace is specified the Operator will default to namespace of the VaultAuth CR. If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
 | `namespace` _string_ | Namespace to get the secret from in Vault |
 | `mount` _string_ | Mount for the secret in Vault |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for, kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |

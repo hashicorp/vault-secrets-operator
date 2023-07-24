@@ -93,16 +93,22 @@ type VaultAuthConfigAWS struct {
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
+	// The connectionRef can be prefixed with a namespace, eg: `namespaceA/connectionB`.
+	// If no namespace is specified the Operator will default to namespace of the VaultAuth CR.
 	// If no value is specified the Operator will default to the `default` VaultConnection,
-	// configured in its own Kubernetes namespace.
+	// configured in its own Kubernetes namespace unless prefixed.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
-	// VaultConnectionRefNamespace of the corresponding VaultConnection CustomResource.
-	// If no value is specified the Operator will default to namespace of the VaultAuth CR.
-	// If no value is specified for the VaultConnectionRef the Operator will default to the operator
-	// namespace.
-	VaultConnectionRefNamespace string `json:"vaultConnectionRefNamespace,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
+	// BoundNamespaces Kubernetes Namespaces which are AllowListed for use with this AuthMethod.
+	// This field allows administrators to customize which Kubernetes namespaces are authorized to
+	// act with this AuthMethod. While Vault will still enforce its own rules, this has the added
+	// configurability of restricting which AuthMethods can be used by which namespaces.
+	// Accepted values:
+	// []{"*"} - wildcard, all namespaces.
+	// []{"a", "b"} - list of namespaces.
+	// []{} - empty list, no namespaces.
+	// BoundNamespaces []string `json:"omitempty,boundNamespaces"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws
 	Method string `json:"method"`

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -45,45 +46,64 @@ func GetAuthAndTargetNamespacedName(obj client.Object) (types.NamespacedName, ty
 	var authRef types.NamespacedName
 	var target types.NamespacedName
 	var authRefNamespace string
+	var authRefName string
 
 	switch o := obj.(type) {
 	case *secretsv1beta1.VaultPKISecret:
-		if o.Spec.VaultAuthRefNamespace == "" {
-			authRefNamespace = o.Namespace
-		} else {
-			authRefNamespace = o.Spec.VaultAuthRefNamespace
+		if o.Spec.VaultAuthRef != "" {
+			// todo: some sorta sanity checking?
+			names := strings.Split(o.Spec.VaultAuthRef, "/")
+			if len(names) > 1 {
+				authRefNamespace = names[0]
+				authRefName = names[1]
+			} else {
+				authRefNamespace = o.Namespace
+				authRefName = names[0]
+			}
 		}
 		authRef = types.NamespacedName{
 			Namespace: authRefNamespace,
-			Name:      o.Spec.VaultAuthRef,
+			Name:      authRefName,
 		}
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
 	case *secretsv1beta1.VaultStaticSecret:
-		if o.Spec.VaultAuthRefNamespace == "" {
-			authRefNamespace = o.Namespace
-		} else {
-			authRefNamespace = o.Spec.VaultAuthRefNamespace
+		if o.Spec.VaultAuthRef != "" {
+			// todo: some sorta sanity checking?
+			names := strings.Split(o.Spec.VaultAuthRef, "/")
+			if len(names) > 1 {
+				authRefNamespace = names[0]
+				authRefName = names[1]
+			} else {
+				authRefNamespace = o.Namespace
+				authRefName = names[0]
+			}
 		}
 		authRef = types.NamespacedName{
 			Namespace: authRefNamespace,
-			Name:      o.Spec.VaultAuthRef,
+			Name:      authRefName,
 		}
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
 			Name:      o.Name,
 		}
 	case *secretsv1beta1.VaultDynamicSecret:
-		if o.Spec.VaultAuthRefNamespace == "" {
-			authRefNamespace = o.Namespace
-		} else {
-			authRefNamespace = o.Spec.VaultAuthRefNamespace
+		if o.Spec.VaultAuthRef != "" {
+			// todo: some sorta sanity checking?
+			names := strings.Split(o.Spec.VaultAuthRef, "/")
+			if len(names) > 1 {
+				authRefNamespace = names[0]
+				authRefName = names[1]
+			} else {
+				authRefNamespace = o.Namespace
+				authRefName = names[0]
+			}
 		}
 		authRef = types.NamespacedName{
 			Namespace: authRefNamespace,
-			Name:      o.Spec.VaultAuthRef,
+			Name:      authRefName,
 		}
 		target = types.NamespacedName{
 			Namespace: o.Namespace,
@@ -190,15 +210,19 @@ func GetConnectionNamespacedName(a *secretsv1beta1.VaultAuth) (types.NamespacedN
 
 	// Use the NS of the AuthRef, unless it's overridden in the AuthRef Spec.
 	var vaultConnectionRefNamespace string
-	if a.Spec.VaultConnectionRefNamespace == "" {
+	var vaultConnectionRefName string
+	vcrNames := strings.Split(a.Spec.VaultConnectionRef, "/")
+	if len(vcrNames) == 1 {
 		vaultConnectionRefNamespace = a.Namespace
+		vaultConnectionRefName = vcrNames[0]
 	} else {
-		vaultConnectionRefNamespace = a.Spec.VaultConnectionRefNamespace
+		vaultConnectionRefNamespace = vcrNames[0]
+		vaultConnectionRefName = vcrNames[1]
 	}
 
 	return types.NamespacedName{
 		Namespace: vaultConnectionRefNamespace,
-		Name:      a.Spec.VaultConnectionRef,
+		Name:      vaultConnectionRefName,
 	}, nil
 }
 

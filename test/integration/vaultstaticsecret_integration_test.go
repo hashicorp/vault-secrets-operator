@@ -165,11 +165,10 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
 				// This VaultAuth references a VaultConnection in its own namespace.
-				VaultConnectionRef:          "vaultconnection-test-tenant-1",
-				VaultConnectionRefNamespace: testK8sNamespace2,
-				Namespace:                   testVaultNamespace,
-				Method:                      "kubernetes",
-				Mount:                       "kubernetes",
+				VaultConnectionRef: fmt.Sprintf("%s/vaultconnection-test-tenant-1", testK8sNamespace2),
+				Namespace:          testVaultNamespace,
+				Method:             "kubernetes",
+				Mount:              "kubernetes",
 				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 					Role:           "role1",
 					ServiceAccount: "default",
@@ -225,12 +224,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					// This Secret references an Auth Method in a different namespace.
-					VaultAuthRef:          auths[0].ObjectMeta.Name,
-					VaultAuthRefNamespace: auths[0].ObjectMeta.Namespace,
-					Namespace:             testVaultNamespace,
-					Mount:                 testKvMountPath,
-					Type:                  consts.KVSecretTypeV1,
-					Path:                  "secret",
+					VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
+					Namespace:    testVaultNamespace,
+					Mount:        testKvMountPath,
+					Type:         consts.KVSecretTypeV1,
+					Path:         "secret",
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkv",
 						Create: false,
@@ -444,12 +442,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 								Namespace: testK8sNamespace,
 							},
 							Spec: secretsv1beta1.VaultStaticSecretSpec{
-								VaultAuthRef:          auths[0].ObjectMeta.Name,
-								VaultAuthRefNamespace: auths[0].ObjectMeta.Namespace,
-								Namespace:             testVaultNamespace,
-								Mount:                 mount,
-								Type:                  kvType,
-								Path:                  dest,
+								VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
+								Namespace:    testVaultNamespace,
+								Mount:        mount,
+								Type:         kvType,
+								Path:         dest,
 								Destination: secretsv1beta1.Destination{
 									Name:   dest,
 									Create: true,

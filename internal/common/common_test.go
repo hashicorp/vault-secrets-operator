@@ -66,13 +66,12 @@ func Test_GetConnectionNamespacedName(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultConnectionRef:          "foo",
-					VaultConnectionRefNamespace: "bar",
+					VaultConnectionRef: "foo/bar",
 				},
 			},
 			want: types.NamespacedName{
-				Namespace: "bar",
-				Name:      "foo",
+				Name:      "bar",
+				Namespace: "foo",
 			},
 			wantErr: assert.NoError,
 		},
@@ -138,13 +137,12 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 			name: "with-auth-ref-with-ns", // ns comes from the Auth
 			a: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "qux",
-					Namespace: "baz",
+					Name: "baz/qux",
 				},
 			},
 			want: types.NamespacedName{
-				Namespace: "baz",
 				Name:      "qux",
+				Namespace: "baz",
 			},
 			wantErr: assert.NoError,
 		},
@@ -171,8 +169,7 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 					Namespace: SecretNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					VaultAuthRef:          tt.a.Name,
-					VaultAuthRefNamespace: tt.a.Namespace,
+					VaultAuthRef: tt.a.Name,
 				},
 			}
 			// TargetName is always just the object name+ns
