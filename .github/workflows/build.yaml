@@ -265,6 +265,7 @@ jobs:
           echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "make_target=${make_target}"
           echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG"
+          echo "$INTEGRATION_TESTS"
 #          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success()
