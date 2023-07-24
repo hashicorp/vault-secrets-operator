@@ -261,12 +261,7 @@ jobs:
             make_target+='-ent'
             export VAULT_IMAGE_TAG='${{ matrix.vault-version }}-ent'
           fi
-          echo "make_target=${make_target}" >> $GITHUB_OUTPUT
-          echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "make_target=${make_target}"
-          echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG"
-          echo "$INTEGRATION_TESTS"
-#          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success()
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
