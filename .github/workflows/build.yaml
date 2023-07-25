@@ -159,7 +159,7 @@ jobs:
         kind-k8s-version: [1.22.17, 1.23.17, 1.24.13, 1.25.9, 1.26.4, 1.27.2]
         vault-version: [1.11.10, 1.12.6, 1.13.2]
         installation-method: [helm, kustomize]
-        software-type: [ent, oss]
+        enterprise: [true, false]
         # Note: We want to test the operator with the different k8s versions,
         # and with the different vault versions, but we don't care about testing
         # all the k8s versions against all the vault versions.
@@ -169,8 +169,8 @@ jobs:
         # We run kustomize ent against the full matrix, and other tests against vault version 1.13.2.
         # Combos to exclude:
         #   vault-version: [1.11.10, 1.12.6]
-        #   any combos from installation-method and software-type except for kustomize ent
-        # TODO: When the VDS integration test supports Helm, test kustomize ent against one version of (ENT) Vault like the other tests.
+        #   any combos from installation-method and enterprise except for kustomize true
+        # TODO: When the VDS integration test supports Helm, test kustomize enterprise against one version of (ENT) Vault like the other tests.
         # TODO: When the VDS integration test supports Helm, swap the matrix filter so helm ent test runs the full matrix.
         exclude:
           # vault version 1.11.10
@@ -186,13 +186,13 @@ jobs:
             vault-version: 1.11.10
           - vault-version: 1.11.10
             installation-method: helm
-            software-type: ent
+            enterprise: true
           - vault-version: 1.11.10
             installation-method: helm
-            software-type: oss
+            enterprise: false
           - vault-version: 1.11.10
             installation-method: kustomize
-            software-type: oss
+            enterprise: false
           # vault version 1.12.6
           - kind-k8s-version: 1.26.4
             vault-version: 1.12.6
@@ -206,15 +206,15 @@ jobs:
             vault-version: 1.12.6
           - vault-version: 1.12.6
             installation-method: helm
-            software-type: ent
+            enterprise: true
           - vault-version: 1.12.6
             installation-method: helm
-            software-type: oss
+            enterprise: false
           - vault-version: 1.12.6
             installation-method: kustomize
-            software-type: oss
+            enterprise: false
 
-    name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }} ${{ matrix.software-type }}
+    name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }} ent=${{ matrix.enterprise}}
     steps:
       - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
@@ -243,7 +243,7 @@ jobs:
       - uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4.0.1
         with:
           go-version-file: .go-version
-      - name: ${{ matrix.installation-method }}-${{ matrix.software-type }}
+      - name: ${{ matrix.installation-method }} enterprise=${{ matrix.enterprise }}
         env:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
@@ -253,11 +253,15 @@ jobs:
           if [ ${{ matrix.installation-method }} == 'helm' ]; then
             make_target+='-helm'
           fi
-          if [ ${{ matrix.software-type }} == 'ent' ]; then
+          if [ ${{ matrix.enterprise }} == 'true' ]; then
             make_target+='-ent'
             export VAULT_IMAGE_TAG='${{ matrix.vault-version }}-ent'
           fi
-          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+          echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "make_target=${make_target}"
+          echo "VAULT_IMAGE_TAG=$VAULT_IMAGE_TAG"
+          echo "$INTEGRATION_TESTS"
+#          make $make_target SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
       - name: Store kind cluster logs
         if: success()
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
