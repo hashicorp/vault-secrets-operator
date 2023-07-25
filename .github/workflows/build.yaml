@@ -307,7 +307,11 @@ jobs:
       - name: Create kind export log root
         id: create_kind_export_log_root
         run: |
-          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-logs"
+          vault_flavor=oss
+          if [ ${{ matrix.enterprise }} == 'true' ]; then
+            vault_flavor=ent
+          fi
+          log_artifact_name="kind-${{ env.KIND_CLUSTER_NAME}}-$(git rev-parse --short ${{ github.sha }})-${{ matrix.kind-k8s-version }}-${{ matrix.vault-version }}-${vault_flavor}-${{ matrix.installation-method }}-logs"
           log_root="/tmp/${log_artifact_name}"
           mkdir -p "${log_root}"
           echo "log_root=${log_root}" >> $GITHUB_OUTPUT
