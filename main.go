@@ -28,7 +28,6 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
@@ -66,6 +65,7 @@ func main() {
 	var preDeleteHook bool
 	var preDeleteHookTimeoutSeconds int
 	var revokeVaultTokensOnUninstall bool
+	var pruneVaultTokensOnUninstall bool
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -86,6 +86,8 @@ func main() {
 	flag.BoolVar(&preDeleteHook, "pre-delete-hook", false, "Run as helm pre-delete hook")
 	flag.BoolVar(&revokeVaultTokensOnUninstall, "revoke-vault-tokens-on-uninstall", false,
 		"Revoke all cached Vault client tokens on Helm uninstall.")
+	flag.BoolVar(&pruneVaultTokensOnUninstall, "prune-vault-tokens-on-uninstall", false,
+		"Prune all Vault client tokens in storage on Helm uninstall.")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
 		"Pre-delete hook timeout in seconds")
 
@@ -137,11 +139,6 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to instantiate a default Client")
-		os.Exit(1)
-	}
-
-	if common.OperatorDeploymentUID, err = common.GetOperatorDeploymentUID(defaultClient); err != nil {
-		setupLog.Error(err, "failed to get operator deployment uid")
 		os.Exit(1)
 	}
 
@@ -214,6 +211,7 @@ func main() {
 		}
 
 		cfc.RevokeTokensOnUninstall = revokeVaultTokensOnUninstall
+		cfc.StorageConfig.PruneVaultTokensOnUninstall = pruneVaultTokensOnUninstall
 		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)

@@ -74,6 +74,9 @@ spec:
         {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
         - --revoke-vault-tokens-on-uninstall
         {{- end }}
+        {{- if .Values.controller.manager.clientCache.pruneVaultTokensOnUninstall }}
+        - --prune-vault-tokens-on-uninstall
+        {{- end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles-vds={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}

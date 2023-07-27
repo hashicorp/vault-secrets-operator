@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,20 +24,10 @@ import (
 var (
 	// OperatorNamespace of the current operator instance, set in init()
 	OperatorNamespace string
-	// OperatorDeploymentName of the current operator instance, set init()
-	OperatorDeploymentName string
-	// OperatorDeploymentUID of the current operator instance
-	OperatorDeploymentUID types.UID
 
 	InvalidObjectKeyError               = fmt.Errorf("invalid objectKey")
 	InvalidObjectKeyErrorEmptyName      = fmt.Errorf("%w, empty name", InvalidObjectKeyError)
 	InvalidObjectKeyErrorEmptyNamespace = fmt.Errorf("%w, empty namespace", InvalidObjectKeyError)
-)
-
-const (
-	OperatorDeploymentNameDefault = "vault-secrets-operator-controller-manager"
-	OperatorDeploymentKind        = "Deployment"
-	OperatorDeploymentAPIVersion  = "apps/v1"
 )
 
 func init() {
@@ -51,9 +39,6 @@ func init() {
 		} else {
 			OperatorNamespace = v1.NamespaceDefault
 		}
-	}
-	if OperatorDeploymentName = os.Getenv("OPERATOR_DEPLOYMENT_NAME"); OperatorDeploymentName == "" {
-		OperatorDeploymentName = OperatorDeploymentNameDefault
 	}
 }
 
@@ -266,26 +251,6 @@ func GetVaultNamespace(obj client.Object) (string, error) {
 		return "", fmt.Errorf("unsupported type %T", o)
 	}
 	return ns, nil
-}
-
-func GetOperatorDeploymentUID(c client.Client) (types.UID, error) {
-	var obj appsv1.Deployment
-	if err := c.Get(context.Background(), types.NamespacedName{
-		Namespace: OperatorNamespace,
-		Name:      OperatorDeploymentName,
-	}, &obj); err != nil {
-		return "", err
-	}
-	return obj.GetUID(), nil
-}
-
-func GetOperatorDeploymentOwnerReference() metav1.OwnerReference {
-	return metav1.OwnerReference{
-		APIVersion: OperatorDeploymentAPIVersion,
-		Kind:       OperatorDeploymentKind,
-		Name:       OperatorDeploymentName,
-		UID:        OperatorDeploymentUID,
-	}
 }
 
 func ValidateObjectKey(key ctrlclient.ObjectKey) error {

@@ -156,6 +156,11 @@ resource "helm_release" "vault-secrets-operator" {
   }
 
   set {
+    name  = "controller.manager.clientCache.pruneVaultTokensOnUninstall"
+    value = "true"
+  }
+
+  set {
     name  = "controller.manager.clientCache.persistenceModel"
     value = "direct-unencrypted"
   }

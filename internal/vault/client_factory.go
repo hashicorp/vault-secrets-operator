@@ -62,13 +62,14 @@ type CachingClientFactory interface {
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
 
 type cachingClientFactory struct {
-	cache                   ClientCache
-	storage                 ClientCacheStorage
-	recorder                record.EventRecorder
-	persist                 bool
-	encryptionRequired      bool
-	tokenRevocationRequired bool
-	disable                 bool
+	cache                        ClientCache
+	storage                      ClientCacheStorage
+	recorder                     record.EventRecorder
+	persist                      bool
+	encryptionRequired           bool
+	revokeVaultTokensOnUninstall bool
+	pruneVaultTokensOnUninstall  bool
+	disable                      bool
 	// clientCacheKeyEncrypt is a member of the ClientCache, it is instantiated whenever the ClientCacheStorage has enforceEncryption enabled.
 	clientCacheKeyEncrypt  ClientCacheKey
 	logger                 logr.Logger
@@ -242,8 +243,8 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 // Otherwise, revocation will take place in both cache and storage.
 // Normally this should be called upon operator deployment deletion if client cache cleanup is required
 func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context, client ctrlclient.Client) {
-	if !m.tokenRevocationRequired {
-		m.logger.Error(nil, "Cached client cleanup must be required to revoke all client tokens")
+	if !m.revokeVaultTokensOnUninstall {
+		m.logger.Error(nil, "revoke-vault-tokens-on-uninstall must be enabled to revoke all client tokens")
 		return
 	}
 	m.mu.Lock()
@@ -270,7 +271,7 @@ func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context, client ctr
 
 func (m *cachingClientFactory) RevokeAllInStorage(ctx context.Context, client ctrlclient.Client) {
 	// revoke tokens in storage
-	if !m.persist || m.storage == nil {
+	if !m.revokeVaultTokensOnUninstall || !m.persist || m.storage == nil {
 		return
 	}
 
@@ -466,10 +467,6 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 		req.EncryptionVaultAuth = authObj
 	}
 
-	if m.tokenRevocationRequired {
-		req.OwnerReferences = append(req.OwnerReferences, common.GetOperatorDeploymentOwnerReference())
-	}
-
 	if _, err := m.storage.Store(ctx, client, req); err != nil {
 		errs = errors.Join(err)
 		return errs
@@ -621,11 +618,12 @@ func (c *cachingClientFactory) incrementRequestCounter(operation string, err err
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
 	factory := &cachingClientFactory{
-		storage:                 cacheStorage,
-		recorder:                config.Recorder,
-		persist:                 config.Persist,
-		tokenRevocationRequired: config.RevokeTokensOnUninstall,
-		encryptionRequired:      config.StorageConfig.EnforceEncryption,
+		storage:                      cacheStorage,
+		recorder:                     config.Recorder,
+		persist:                      config.Persist,
+		revokeVaultTokensOnUninstall: config.RevokeTokensOnUninstall,
+		pruneVaultTokensOnUninstall:  config.StorageConfig.PruneVaultTokensOnUninstall,
+		encryptionRequired:           config.StorageConfig.EnforceEncryption,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,

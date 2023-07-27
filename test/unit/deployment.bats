@@ -123,10 +123,15 @@ load _helpers
       -s templates/deployment.yaml  \
       --set 'controller.manager.clientCache.cacheSize=22' \
       --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+      --set 'controller.manager.clientCache.pruneVaultTokensOnUninstall=true' \
+      --set 'controller.manager.clientCache.revokeVaultTokensOnUninstall=true' \
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq 'contains(["--client-cache-size=22", "--client-cache-persistence-model=direct-encrypted"])' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'contains(["--client-cache-size=22",
+      "--client-cache-persistence-model=direct-encrypted",
+      "--prune-vault-tokens-on-uninstall",
+      "--revoke-vault-tokens-on-uninstall" ])' | tee /dev/stderr)
     [ "${actual}" = "true" ]
 }
 

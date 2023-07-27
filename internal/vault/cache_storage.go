@@ -134,15 +134,16 @@ type ClientCacheStorage interface {
 }
 
 type defaultClientCacheStorage struct {
-	hmacSecretObjKey         ctrlclient.ObjectKey
-	hmacKey                  []byte
-	enforceEncryption        bool
-	logger                   logr.Logger
-	requestCounterVec        *prometheus.CounterVec
-	requestErrorCounterVec   *prometheus.CounterVec
-	operationCounterVec      *prometheus.CounterVec
-	operationErrorCounterVec *prometheus.CounterVec
-	mu                       sync.RWMutex
+	hmacKey                     []byte
+	enforceEncryption           bool
+	pruneVaultTokensOnUninstall bool
+	deploymentOwnerRef          *metav1.OwnerReference
+	logger                      logr.Logger
+	requestCounterVec           *prometheus.CounterVec
+	requestErrorCounterVec      *prometheus.CounterVec
+	operationCounterVec         *prometheus.CounterVec
+	operationErrorCounterVec    *prometheus.CounterVec
+	mu                          sync.RWMutex
 }
 
 func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) (*corev1.Secret, error) {
@@ -181,6 +182,10 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	if c.enforceEncryption && (req.EncryptionClient == nil || req.EncryptionVaultAuth == nil) {
 		err = fmt.Errorf("request is invalid for when enforcing encryption")
 		return nil, err
+	}
+
+	if c.pruneVaultTokensOnUninstall && c.deploymentOwnerRef != nil {
+		req.OwnerReferences = append(req.OwnerReferences, *c.deploymentOwnerRef)
 	}
 
 	c.mu.Lock()
@@ -585,8 +590,9 @@ func (c *defaultClientCacheStorage) incrementOperationCounter(operation string, 
 type ClientCacheStorageConfig struct {
 	// EnforceEncryption for persisting Clients i.e. the controller must have VaultTransitRef
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
-	EnforceEncryption bool
-	HMACSecretObjKey  ctrlclient.ObjectKey
+	EnforceEncryption           bool
+	PruneVaultTokensOnUninstall bool
+	HMACSecretObjKey            ctrlclient.ObjectKey
 }
 
 func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
@@ -610,7 +616,18 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	s, err := createHMACKeySecret(ctx, client, config.HMACSecretObjKey)
+	deploymentOwnerRef := &metav1.OwnerReference{}
+	ownerReferences := []metav1.OwnerReference{}
+	if config.PruneVaultTokensOnUninstall {
+		var err error
+		deploymentOwnerRef, err = GetOperatorDeploymentOwnerReference(client)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get operator deployment owner reference err=%s", err)
+		}
+		ownerReferences = append(ownerReferences, *deploymentOwnerRef)
+	}
+
+	s, err := createHMACKeySecret(ctx, client, config.HMACSecretObjKey, ownerReferences)
 	if err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, err
@@ -625,10 +642,11 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	}
 
 	cacheStorage := &defaultClientCacheStorage{
-		hmacSecretObjKey:  config.HMACSecretObjKey,
-		hmacKey:           s.Data[hmacKeyName],
-		enforceEncryption: config.EnforceEncryption,
-		logger:            zap.New().WithName("ClientCacheStorage"),
+		enforceEncryption:           config.EnforceEncryption,
+		pruneVaultTokensOnUninstall: config.PruneVaultTokensOnUninstall,
+		deploymentOwnerRef:          deploymentOwnerRef,
+		hmacKey:                     s.Data[hmacKeyName],
+		logger:                      zap.New().WithName("ClientCacheStorage"),
 		requestCounterVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: metricsFQNClientCacheStorageReqsTotal,
