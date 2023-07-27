@@ -66,6 +66,35 @@ USER 65532:65532
 
 ENTRYPOINT ["/vault-secrets-operator"]
 
+# ubi release image
+# -----------------------------------
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.2-9 as release-ubi
+
+ENV BIN_NAME=vault-secrets-operator
+ARG PRODUCT_VERSION
+ARG PRODUCT_REVISION
+ARG PRODUCT_NAME=$BIN_NAME
+# TARGETARCH and TARGETOS are set automatically when --platform is provided.
+ARG TARGETOS TARGETARCH
+
+LABEL name="Vault Secrets Operator" \
+      maintainer="Team Vault <vault@hashicorp.com>" \
+      vendor="HashiCorp" \
+      version=$PRODUCT_VERSION \
+      release=$PRODUCT_VERSION \
+      revision=$PRODUCT_REVISION \
+      summary="The Vault Secrets Operator (VSO) allows Pods to consume Vault secrets natively from Kubernetes Secrets." \
+      description="The Vault Secrets Operator (VSO) allows Pods to consume Vault secrets natively from Kubernetes Secrets."
+
+WORKDIR /
+
+COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /
+COPY LICENSE /licenses/copyright.txt
+
+USER 65532:65532
+
+ENTRYPOINT ["/vault-secrets-operator"]
+
 # ===================================
 #
 #   Set default target to 'dev'.
