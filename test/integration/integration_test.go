@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"os"
 	"path"
 	"path/filepath"
@@ -372,7 +373,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient.Object, sec *corev1.Secret) {
 	t.Helper()
 
-	meta, err := helpers.NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	require.NoError(t, err)
 
 	if meta.Destination.Create {
