@@ -45,75 +45,23 @@ func init() {
 func GetAuthAndTargetNamespacedName(obj client.Object) (types.NamespacedName, types.NamespacedName, error) {
 	var authRef types.NamespacedName
 	var target types.NamespacedName
-	var authRefNamespace string
-	var authRefName string
 
-	switch o := obj.(type) {
-	case *secretsv1beta1.VaultPKISecret:
-		if o.Spec.VaultAuthRef != "" {
-			// todo: some sorta sanity checking?
-			names := strings.Split(o.Spec.VaultAuthRef, "/")
-			if len(names) > 1 {
-				authRefNamespace = names[0]
-				authRefName = names[1]
-			} else {
-				authRefNamespace = o.Namespace
-				authRefName = names[0]
-			}
-		}
-		authRef = types.NamespacedName{
-			Namespace: authRefNamespace,
-			Name:      authRefName,
-		}
-		target = types.NamespacedName{
-			Namespace: o.Namespace,
-			Name:      o.Name,
-		}
-	case *secretsv1beta1.VaultStaticSecret:
-		if o.Spec.VaultAuthRef != "" {
-			// todo: some sorta sanity checking?
-			names := strings.Split(o.Spec.VaultAuthRef, "/")
-			if len(names) > 1 {
-				authRefNamespace = names[0]
-				authRefName = names[1]
-			} else {
-				authRefNamespace = o.Namespace
-				authRefName = names[0]
-			}
-		}
-		authRef = types.NamespacedName{
-			Namespace: authRefNamespace,
-			Name:      authRefName,
-		}
-		target = types.NamespacedName{
-			Namespace: o.Namespace,
-			Name:      o.Name,
-		}
-	case *secretsv1beta1.VaultDynamicSecret:
-		if o.Spec.VaultAuthRef != "" {
-			// todo: some sorta sanity checking?
-			names := strings.Split(o.Spec.VaultAuthRef, "/")
-			if len(names) > 1 {
-				authRefNamespace = names[0]
-				authRefName = names[1]
-			} else {
-				authRefNamespace = o.Namespace
-				authRefName = names[0]
-			}
-		}
-		authRef = types.NamespacedName{
-			Namespace: authRefNamespace,
-			Name:      authRefName,
-		}
-		target = types.NamespacedName{
-			Namespace: o.Namespace,
-			Name:      o.Name,
-		}
-	default:
-		return types.NamespacedName{}, types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
+	m, err := NewSyncableSecretMetaData(obj)
+	if err != nil {
+		return types.NamespacedName{}, types.NamespacedName{}, fmt.Errorf("unsupported type %T", obj)
 	}
 
-	if authRef.Name == "" {
+	if m.AuthRef != "" {
+		// todo: some sorta sanity checking?
+		names := strings.Split(m.AuthRef, "/")
+		if len(names) > 1 {
+			authRef.Namespace = names[0]
+			authRef.Name = names[1]
+		} else {
+			authRef.Namespace = obj.GetNamespace()
+			authRef.Name = names[0]
+		}
+	} else {
 		// if no authRef configured we try and grab the 'default' from the
 		// Operator's current namespace.
 		authRef = types.NamespacedName{
@@ -121,7 +69,36 @@ func GetAuthAndTargetNamespacedName(obj client.Object) (types.NamespacedName, ty
 			Name:      consts.NameDefault,
 		}
 	}
+	target = types.NamespacedName{
+		Namespace: obj.GetNamespace(),
+		Name:      obj.GetName(),
+	}
 	return authRef, target, nil
+}
+
+// According to the spec for secretsv1beta1.VaultAuth, Spec.AllowedNamespaces behave as follows:
+// AllowedNamespaces:
+//
+//	 nil - all namespaces are allowed
+//	[]{}  - no namespaces are allowed
+//	[]{"*"} - with length of 1, all namespaces are allowed
+//	[]{"a","b"} - explicitly namespaces a, b are allowed
+func isValidTargetNamespace(auth *secretsv1beta1.VaultAuth, name types.NamespacedName) bool {
+	if auth.Spec.AllowedNamespaces == nil {
+		return true
+	}
+	if len(auth.Spec.AllowedNamespaces) == 0 {
+		return false
+	}
+	if len(auth.Spec.AllowedNamespaces) == 1 && auth.Spec.AllowedNamespaces[0] == "*" {
+		return true
+	}
+	for _, ns := range auth.Spec.AllowedNamespaces {
+		if name.Namespace == ns {
+			return true
+		}
+	}
+	return false
 }
 
 func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, types.NamespacedName, error) {
@@ -132,6 +109,9 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 	authObj, err := GetVaultAuthWithRetry(ctx, c, authRef, time.Millisecond*500, 60)
 	if err != nil {
 		return nil, types.NamespacedName{}, err
+	}
+	if !isValidTargetNamespace(authObj, target) {
+		return nil, types.NamespacedName{}, fmt.Errorf("target namespace is not allowed for this auth method")
 	}
 	return authObj, target, nil
 }
@@ -319,4 +299,50 @@ func ValidateObjectKey(key ctrlclient.ObjectKey) error {
 		return InvalidObjectKeyErrorEmptyNamespace
 	}
 	return nil
+}
+
+// SyncableSecretMetaData provides common data structure that extracts the bits pertinent
+// when handling any of the sync-able secret custom resource types.
+//
+// See NewSyncableSecretMetaData for the supported object types.
+type SyncableSecretMetaData struct {
+	// APIVersion of the syncable-secret object. Maps to obj.APIVersion.
+	APIVersion string
+	// Kind of the syncable-secret object. Maps to obj.Kind.
+	Kind string
+	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
+	Destination *secretsv1beta1.Destination
+	AuthRef     string
+}
+
+// NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
+// An error will be returned of obj is not a supported type.
+//
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
+func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
+	switch t := obj.(type) {
+	case *secretsv1beta1.VaultDynamicSecret:
+		return &SyncableSecretMetaData{
+			Destination: &t.Spec.Destination,
+			APIVersion:  t.APIVersion,
+			Kind:        t.Kind,
+			AuthRef:     t.Spec.VaultAuthRef,
+		}, nil
+	case *secretsv1beta1.VaultStaticSecret:
+		return &SyncableSecretMetaData{
+			Destination: &t.Spec.Destination,
+			APIVersion:  t.APIVersion,
+			Kind:        t.Kind,
+			AuthRef:     t.Spec.VaultAuthRef,
+		}, nil
+	case *secretsv1beta1.VaultPKISecret:
+		return &SyncableSecretMetaData{
+			Destination: &t.Spec.Destination,
+			APIVersion:  t.APIVersion,
+			Kind:        t.Kind,
+			AuthRef:     t.Spec.VaultAuthRef,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported type %T", t)
+	}
 }

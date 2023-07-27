@@ -100,7 +100,7 @@ type VaultAuthSpec struct {
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
-	// BoundNamespaces Kubernetes Namespaces which are AllowListed for use with this AuthMethod.
+	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
 	// This field allows administrators to customize which Kubernetes namespaces are authorized to
 	// act with this AuthMethod. While Vault will still enforce its own rules, this has the added
 	// configurability of restricting which AuthMethods can be used by which namespaces.
@@ -108,7 +108,7 @@ type VaultAuthSpec struct {
 	// []{"*"} - wildcard, all namespaces.
 	// []{"a", "b"} - list of namespaces.
 	// []{} - empty list, no namespaces.
-	// BoundNamespaces []string `json:"omitempty,boundNamespaces"`
+	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws
 	Method string `json:"method"`
