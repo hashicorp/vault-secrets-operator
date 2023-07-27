@@ -192,7 +192,8 @@ _Appears in:_
 | --- | --- |
 | `vaultConnectionRef` _string_ | VaultConnectionRef of the corresponding VaultConnection CustomResource. The connectionRef can be prefixed with a namespace, eg: `namespaceA/connectionB`. If no namespace is specified the Operator will default to namespace of the VaultAuth CR. If no value is specified the Operator will default to the `default` VaultConnection, configured in its own Kubernetes namespace unless prefixed. |
 | `namespace` _string_ | Namespace to auth to in Vault |
-| `method` _string_ | BoundNamespaces Kubernetes Namespaces which are AllowListed for use with this AuthMethod. This field allows administrators to customize which Kubernetes namespaces are authorized to act with this AuthMethod. While Vault will still enforce its own rules, this has the added configurability of restricting which AuthMethods can be used by which namespaces. Accepted values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces. []{} - empty list, no namespaces. BoundNamespaces []string `json:"omitempty,boundNamespaces"` Method to use when authenticating to Vault. |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod. This field allows administrators to customize which Kubernetes namespaces are authorized to act with this AuthMethod. While Vault will still enforce its own rules, this has the added configurability of restricting which AuthMethods can be used by which namespaces. Accepted values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces. []{} - empty list, no namespaces. |
+| `method` _string_ | Method to use when authenticating to Vault. |
 | `mount` _string_ | Mount to use when authenticating to auth method. |
 | `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |
 | `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |
