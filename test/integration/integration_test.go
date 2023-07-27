@@ -11,7 +11,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,6 +18,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/k8s"
