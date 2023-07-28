@@ -10,17 +10,13 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	deploymentShutdown         = "deploymentShutdown"
+	DeploymentShutdown         = "DeploymentShutdown"
 	inMemoryVaultTokensRevoked = "inMemoryVaultTokensRevoked"
 	StringTrue                 = "true"
 	managerConfigMapNameEnv    = "MANAGER_CONFIGMAP_NAME"
@@ -30,31 +26,29 @@ func getManagerConfigMapName() string {
 	return os.Getenv(managerConfigMapNameEnv)
 }
 
-func WatchManagerConfigMap(ctx context.Context) (watch.Interface, error) {
+func WatchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Interface, error) {
 	name := getManagerConfigMapName()
 	if name == "" {
 		return nil, fmt.Errorf("failed to parse manager configmap name from %s", managerConfigMapNameEnv)
 	}
 
-	clientCfg, err := rest.InClusterConfig()
+	var configMap corev1.ConfigMap
+	err := c.Get(ctx, client.ObjectKey{Namespace: common.OperatorNamespace, Name: name}, &configMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get the in-cluster client config err=%s", err)
+		return nil, fmt.Errorf("failed to get manager configmap")
 	}
 
-	clientset, err := kubernetes.NewForConfig(clientCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get a clietset err=%s", err)
-	}
-
-	watcher, err := clientset.CoreV1().ConfigMaps(common.OperatorNamespace).Watch(ctx,
-		metav1.SingleObject(metav1.ObjectMeta{Name: name, Namespace: common.OperatorNamespace}))
+	list := corev1.ConfigMapList{Items: []corev1.ConfigMap{configMap}}
+	watcher, err := c.Watch(ctx, &list)
 	if err != nil {
 		return nil, fmt.Errorf("failed to watch the manager configmap err=%s", err)
 	}
 	return watcher, nil
 }
 
-func WaitForDeploymentShutdownAndRevokeVaultTokens(ctx context.Context, logger logr.Logger, watcher watch.Interface, client client.Client, clientFactory vault.CachingClientFactory) {
+type BeforeShutdown func(context.Context, client.Client, *corev1.ConfigMap) error
+
+func WaitForDeploymentShutdown(ctx context.Context, logger logr.Logger, watcher watch.Interface, c client.Client, funcs ...BeforeShutdown) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -63,17 +57,8 @@ func WaitForDeploymentShutdownAndRevokeVaultTokens(ctx context.Context, logger l
 		case event := <-watcher.ResultChan():
 			if event.Type == watch.Modified {
 				if m, ok := event.Object.(*corev1.ConfigMap); ok {
-					if val, ok := m.Data[deploymentShutdown]; ok && val == StringTrue {
-						clientFactory.Disable()
-
-						// Comment out when running test/integration/revocation_integration_test.go for error path testing.
-						// In this case, we can ensure that all tokens in storage are revoked successfully.
-						clientFactory.RevokeAllInMemory(ctx)
-
-						if err := setConfigMapInMemoryVaultTokensRevoked(ctx, client); err != nil {
-							logger.Error(err, fmt.Sprintf("failed to set %s", deploymentShutdown))
-						}
-						return
+					for _, f := range funcs {
+						f(ctx, c, m)
 					}
 				}
 			}
@@ -101,11 +86,11 @@ func WaitForInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, 
 
 func SetConfigMapDeploymentShutdown(ctx context.Context, c client.Client) error {
 	return updateManagerConfigMap(ctx, c, map[string]string{
-		deploymentShutdown: StringTrue,
+		DeploymentShutdown: StringTrue,
 	})
 }
 
-func setConfigMapInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) error {
+func SetConfigMapInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) error {
 	return updateManagerConfigMap(ctx, c, map[string]string{
 		inMemoryVaultTokensRevoked: StringTrue,
 	})

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -133,7 +134,7 @@ func main() {
 
 	config := ctrl.GetConfigOrDie()
 
-	defaultClient, err := client.New(config, client.Options{
+	defaultClient, err := client.NewWithWatch(config, client.Options{
 		Scheme: scheme,
 	})
 	if err != nil {
@@ -226,7 +227,7 @@ func main() {
 			ctx, cancel = context.WithDeadline(context.Background(), preDeleteDeadline)
 		}
 
-		watcher, err := helpers.WatchManagerConfigMap(ctx)
+		watcher, err := helpers.WatchManagerConfigMap(ctx, defaultClient)
 		if err != nil {
 			setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
 			os.Exit(1)
@@ -242,11 +243,25 @@ func main() {
 
 			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
 			// In this case, we can ensure that all tokens cached in memory are revoked successfully.
-			clientFactory.RevokeAllInStorage(ctx, defaultClient)
+			//clientFactory.RevokeAllInStorage(ctx, defaultClient)
 			return
 		}
 
-		go helpers.WaitForDeploymentShutdownAndRevokeVaultTokens(ctx, setupLog, watcher, defaultClient, clientFactory)
+		revokeVaultTokensInMemory := helpers.BeforeShutdown(ctx context.Context, m *v1.ConfigMap, c client.Client) error {
+			if val, ok := m.Data[helpers.DeploymentShutdown]; ok && val == helpers.StringTrue {
+				clientFactory.Disable()
+
+				// Comment out when running test/integration/revocation_integration_test.go for error path testing.
+				// In this case, we can ensure that all tokens in storage are revoked successfully.
+				clientFactory.RevokeAllInMemory(ctx)
+				if err := helpers.SetConfigMapInMemoryVaultTokensRevoked(ctx, c); err != nil {
+					return fmt.Errorf("failed to set %s", helpers.DeploymentShutdown)
+				}
+			}
+			return nil
+		}
+
+		go helpers.WaitForDeploymentShutdown(ctx, setupLog, watcher, defaultClient, revokeVaultTokensInMemory)
 	}
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
