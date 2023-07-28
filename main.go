@@ -243,7 +243,7 @@ func main() {
 
 			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
 			// In this case, we can ensure that all tokens cached in memory are revoked successfully.
-			//clientFactory.RevokeAllInStorage(ctx, defaultClient)
+			clientFactory.RevokeAllInStorage(ctx, defaultClient)
 			return
 		}
 
