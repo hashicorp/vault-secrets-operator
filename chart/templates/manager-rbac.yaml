@@ -75,14 +75,6 @@ rules:
   - patch
   - watch
 - apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - patch
-- apiGroups:
   - secrets.hashicorp.com
   resources:
   - vaultauths

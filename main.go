@@ -98,7 +98,6 @@ func main() {
 	flag.Parse()
 
 	preDeleteDeadline := time.Now().Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
-	preDeleteDeadlineCtx, cancel := context.WithDeadline(context.Background(), preDeleteDeadline)
 
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
@@ -144,7 +143,7 @@ func main() {
 
 	if preDeleteHook {
 		cleanupLog.Info("commencing cleanup of finalizers")
-
+		preDeleteDeadlineCtx, cancel := context.WithDeadline(context.Background(), preDeleteDeadline)
 		// Even though ctx will be expired, it is good practice to call its
 		// cancellation function in any case. Failure to do so may keep the
 		// context and its parent alive longer than necessary.
@@ -222,21 +221,32 @@ func main() {
 	}
 
 	if revokeVaultTokensOnUninstall {
+		var cancel context.CancelFunc
 		if preDeleteHook {
-			if err := helpers.AnnotatePredeleteHookStarted(preDeleteDeadlineCtx, defaultClient); err != nil {
-				cleanupLog.Error(err, fmt.Sprintf("failed to annotate %s", helpers.AnnotationPreDeleteHookStarted))
+			ctx, cancel = context.WithDeadline(context.Background(), preDeleteDeadline)
+		}
+
+		watcher, err := helpers.WatchManagerConfigMap(ctx)
+		if err != nil {
+			setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
+			os.Exit(1)
+		}
+
+		if preDeleteHook {
+			defer cancel()
+			if err := helpers.SetConfigMapDeploymentShutdown(ctx, defaultClient); err != nil {
+				cleanupLog.Error(err, "")
 				return
 			}
-			helpers.WaitForInMemoryVaultTokensRevoked(preDeleteDeadlineCtx, cleanupLog, defaultClient)
+			helpers.WaitForInMemoryVaultTokensRevoked(ctx, cleanupLog, watcher)
 
 			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
 			// In this case, we can ensure that all tokens cached in memory are revoked successfully.
-			clientFactory.RevokeAllInStorage(preDeleteDeadlineCtx, defaultClient)
-
+			clientFactory.RevokeAllInStorage(ctx, defaultClient)
 			return
 		}
 
-		go helpers.WaitForPreDeleteStartedAndRevokeVaultTokens(ctx, setupLog, clientFactory, defaultClient)
+		go helpers.WaitForDeploymentShutdownAndRevokeVaultTokens(ctx, setupLog, watcher, defaultClient, clientFactory)
 	}
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)

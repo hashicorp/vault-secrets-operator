@@ -5,126 +5,126 @@ package helpers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	AnnotationPreDeleteHookStarted       = "vso.secrets.hashicorp.com/pre-delete-hook-started"
-	AnnotationInMemoryVaultTokensRevoked = "vso.secrets.hashicorp.com/in-memory-vault-tokens-revoked"
-	LabelSelectorControlPlane            = "control-plane=controller-manager"
-	StringTrue                           = "true"
+	deploymentShutdown         = "deploymentShutdown"
+	inMemoryVaultTokensRevoked = "inMemoryVaultTokensRevoked"
+	StringTrue                 = "true"
+	managerConfigMapNameEnv    = "MANAGER_CONFIGMAP_NAME"
 )
 
-func WaitForInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, c client.Client) {
-	selector, err := labels.Parse(LabelSelectorControlPlane)
-	if err != nil {
-		logger.Error(err, "failed to parse label selector", "selector", LabelSelectorControlPlane)
-		return
+func getManagerConfigMapName() string {
+	return os.Getenv(managerConfigMapNameEnv)
+}
+
+func WatchManagerConfigMap(ctx context.Context) (watch.Interface, error) {
+	name := getManagerConfigMapName()
+	if name == "" {
+		return nil, fmt.Errorf("failed to parse manager configmap name from %s", managerConfigMapNameEnv)
 	}
 
+	clientCfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get the in-cluster client config err=%s", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(clientCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get a clietset err=%s", err)
+	}
+
+	watcher, err := clientset.CoreV1().ConfigMaps(common.OperatorNamespace).Watch(ctx,
+		metav1.SingleObject(metav1.ObjectMeta{Name: name, Namespace: common.OperatorNamespace}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to watch the manager configmap err=%s", err)
+	}
+	return watcher, nil
+}
+
+func WaitForDeploymentShutdownAndRevokeVaultTokens(ctx context.Context, logger logr.Logger, watcher watch.Interface, client client.Client, clientFactory vault.CachingClientFactory) {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Error(ctx.Err(), "failed to await in-memory vault tokens revoked")
+			logger.Error(ctx.Err(), "Operator manager context canceled")
 			return
-		default:
-			var list corev1.PodList
-			err = c.List(ctx, &list, client.MatchingLabelsSelector{
-				Selector: selector,
-			})
-			if err != nil {
-				logger.Error(err, "failed to get pod list", "selector", LabelSelectorControlPlane)
-			} else {
-				for _, pod := range list.Items {
-					if value, ok := pod.Annotations[AnnotationInMemoryVaultTokensRevoked]; ok && value == StringTrue {
-						logger.Info("Operator pods annotations updated", AnnotationInMemoryVaultTokensRevoked, StringTrue)
+		case event := <-watcher.ResultChan():
+			if event.Type == watch.Modified {
+				if m, ok := event.Object.(*corev1.ConfigMap); ok {
+					if val, ok := m.Data[deploymentShutdown]; ok && val == StringTrue {
+						clientFactory.Disable()
+
+						// Comment out when running test/integration/revocation_integration_test.go for error path testing.
+						// In this case, we can ensure that all tokens in storage are revoked successfully.
+						clientFactory.RevokeAllInMemory(ctx)
+
+						if err := setConfigMapInMemoryVaultTokensRevoked(ctx, client); err != nil {
+							logger.Error(err, fmt.Sprintf("failed to set %s", deploymentShutdown))
+						}
 						return
 					}
 				}
 			}
-			time.Sleep(300 * time.Millisecond)
 		}
 	}
 }
 
-func WaitForPreDeleteStartedAndRevokeVaultTokens(ctx context.Context, logger logr.Logger, clientFactory vault.CachingClientFactory, client client.Client) {
-	const preDeleteHookStartedPath = "/var/run/podinfo/pre-delete-hook-started"
-
+func WaitForInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, watcher watch.Interface) {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Error(ctx.Err(), fmt.Sprintf("Operator manager context canceled. Stopping %s watcher", preDeleteHookStartedPath))
+			logger.Error(ctx.Err(), "Operator manager context canceled")
 			return
-		default:
-			if b, err := os.ReadFile(preDeleteHookStartedPath); err != nil {
-				logger.Error(err, "failed to get downward API exposed file", "path", preDeleteHookStartedPath)
-			} else if string(b) == StringTrue {
-				logger.Info("Operator pods annotations updated", AnnotationPreDeleteHookStarted, StringTrue)
-				clientFactory.Disable()
-
-				// Comment out when running test/integration/revocation_integration_test.go for error path testing.
-				// In this case, we can ensure that all tokens in storage are revoked successfully.
-				clientFactory.RevokeAllInMemory(ctx, client)
-
-				if err := annotateInMemoryVaultTokensRevoked(ctx, client); err != nil {
-					logger.Error(err, fmt.Sprintf("failed to annotate %s", AnnotationInMemoryVaultTokensRevoked))
+		case event := <-watcher.ResultChan():
+			if event.Type == watch.Modified {
+				if m, ok := event.Object.(*corev1.ConfigMap); ok {
+					if val, ok := m.Data[inMemoryVaultTokensRevoked]; ok && val == StringTrue {
+						return
+					}
 				}
-				return
 			}
-			time.Sleep(300 * time.Millisecond)
 		}
 	}
 }
 
-func annotateInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) error {
-	return annotateOperatorPods(ctx, c, map[string]string{AnnotationInMemoryVaultTokensRevoked: StringTrue})
-}
-
-func AnnotatePredeleteHookStarted(ctx context.Context, c client.Client) error {
-	return annotateOperatorPods(ctx, c, map[string]string{AnnotationPreDeleteHookStarted: StringTrue})
-}
-
-func annotateOperatorPods(ctx context.Context, c client.Client, annotations map[string]string) error {
-	var list corev1.PodList
-
-	selector, err := labels.Parse(LabelSelectorControlPlane)
-	if err != nil {
-		return fmt.Errorf("failed to parse label selector err=%v", err)
-	}
-
-	err = c.List(ctx, &list, client.MatchingLabelsSelector{
-		Selector: selector,
+func SetConfigMapDeploymentShutdown(ctx context.Context, c client.Client) error {
+	return updateManagerConfigMap(ctx, c, map[string]string{
+		deploymentShutdown: StringTrue,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to list pods err=%v", err)
+}
+
+func setConfigMapInMemoryVaultTokensRevoked(ctx context.Context, c client.Client) error {
+	return updateManagerConfigMap(ctx, c, map[string]string{
+		inMemoryVaultTokensRevoked: StringTrue,
+	})
+}
+
+func updateManagerConfigMap(ctx context.Context, c client.Client, data map[string]string) error {
+	name := getManagerConfigMapName()
+	if name == "" {
+		return fmt.Errorf("failed to parse manager configmap name from %s", managerConfigMapNameEnv)
 	}
 
-	errs := []string{}
-	for _, pod := range list.Items {
-		for k, v := range annotations {
-			pod.Annotations[k] = v
-		}
-		pJson, err := json.Marshal(pod)
-		if err != nil {
-			return fmt.Errorf("failed to marshal patch payload err=%v", err)
-		}
-		if err = c.Patch(ctx, &pod, client.RawPatch(types.MergePatchType, pJson)); err != nil {
-			errs = append(errs, err.Error())
-		}
+	var configMap corev1.ConfigMap
+	err := c.Get(ctx, client.ObjectKey{Namespace: common.OperatorNamespace, Name: name}, &configMap)
+	for k, v := range data {
+		configMap.Data[k] = v
 	}
-	if len(errs) != 0 {
-		return fmt.Errorf(strings.Join(errs, ","))
+
+	if err = c.Update(ctx, &configMap, &client.UpdateOptions{}); err != nil {
+		return fmt.Errorf("failed to update the manager ConfigMap data=%v", data)
 	}
 	return nil
 }

@@ -55,7 +55,7 @@ type CachingClientFactory interface {
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
 	Disable()
-	RevokeAllInMemory(context.Context, ctrlclient.Client)
+	RevokeAllInMemory(context.Context)
 	RevokeAllInStorage(context.Context, ctrlclient.Client)
 }
 
@@ -242,7 +242,7 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 // RevokeAllInMemory will attempt to revoke all Client tokens. If storage is not enabled, tokens in cache will be revoked.
 // Otherwise, revocation will take place in both cache and storage.
 // Normally this should be called upon operator deployment deletion if client cache cleanup is required
-func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context, client ctrlclient.Client) {
+func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context) {
 	if !m.revokeVaultTokensOnUninstall {
 		m.logger.Error(nil, "revoke-vault-tokens-on-uninstall must be enabled to revoke all client tokens")
 		return

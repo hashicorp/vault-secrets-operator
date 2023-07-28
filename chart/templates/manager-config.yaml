@@ -24,3 +24,7 @@ data:
       bindAddress: {{ .Values.controller.controllerConfigMapYaml.metrics.bindAddress | quote }}
     webhook:
       port: {{ .Values.controller.controllerConfigMapYaml.webhook.port }}
+  {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
+  deploymentShutdown: "false"
+  inMemoryVaultTokensRevoked: "false"
+  {{- end }}

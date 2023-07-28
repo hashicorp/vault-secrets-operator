@@ -33,10 +33,6 @@ spec:
         control-plane: controller-manager
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
-      {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
-        vso.secrets.hashicorp.com/pre-delete-hook-started: "false"
-        vso.secrets.hashicorp.com/in-memory-vault-tokens-revoked: "false"
-      {{- end }}
         kubectl.kubernetes.io/default-container: manager
       {{- if .Values.controller.annotations }}
         {{- toYaml .Values.controller.annotations | nindent 8 }}
@@ -83,6 +79,8 @@ spec:
         command:
         - /vault-secrets-operator
         env:
+        - name: MANAGER_CONFIGMAP_NAME
+          value: {{ include "chart.fullname" . }}-manager-config
         - name: OPERATOR_DEPLOYMENT_NAME
           value: {{ include "chart.fullname" . }}-controller-manager
         - name: OPERATOR_POD_NAME
@@ -140,9 +138,6 @@ spec:
           - fieldRef:
               fieldPath: metadata.uid
             path: uid
-          - fieldRef:
-              fieldPath: metadata.annotations['vso.secrets.hashicorp.com/pre-delete-hook-started']
-            path: pre-delete-hook-started
         name: podinfo
 ---
 apiVersion: batch/v1
@@ -184,6 +179,8 @@ spec:
         command:
         - /vault-secrets-operator
         env:
+        - name: MANAGER_CONFIGMAP_NAME
+          value: {{ include "chart.fullname" . }}-manager-config
         - name: OPERATOR_DEPLOYMENT_NAME
           value: {{ include "chart.fullname" . }}-controller-manager
       restartPolicy: Never
