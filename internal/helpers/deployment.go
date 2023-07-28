@@ -46,7 +46,7 @@ func WatchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Inter
 	return watcher, nil
 }
 
-type BeforeShutdown func(context.Context, client.Client, *corev1.ConfigMap) error
+type BeforeShutdown func(context.Context, *corev1.ConfigMap, client.Client) error
 
 func WaitForDeploymentShutdown(ctx context.Context, logger logr.Logger, watcher watch.Interface, c client.Client, funcs ...BeforeShutdown) {
 	for {
@@ -58,7 +58,7 @@ func WaitForDeploymentShutdown(ctx context.Context, logger logr.Logger, watcher 
 			if event.Type == watch.Modified {
 				if m, ok := event.Object.(*corev1.ConfigMap); ok {
 					for _, f := range funcs {
-						f(ctx, c, m)
+						f(ctx, m, c)
 					}
 				}
 			}

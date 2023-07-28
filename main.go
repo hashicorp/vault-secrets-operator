@@ -247,7 +247,7 @@ func main() {
 			return
 		}
 
-		revokeVaultTokensInMemory := helpers.BeforeShutdown(ctx context.Context, m *v1.ConfigMap, c client.Client) error {
+		revokeVaultTokensInMemory := func(ctx context.Context, m *v1.ConfigMap, c client.Client) error {
 			if val, ok := m.Data[helpers.DeploymentShutdown]; ok && val == helpers.StringTrue {
 				clientFactory.Disable()
 
