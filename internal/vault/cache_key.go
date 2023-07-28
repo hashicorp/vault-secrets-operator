@@ -128,7 +128,7 @@ func computeClientCacheKey(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1
 		connObj.GetUID(), connObj.GetGeneration(), providerUID)
 
 	sum := sha256.Sum256([]byte(input))
-	key := method + "-" + fmt.Sprintf("%x%x", sum[0:7], sum[len(sum)-4:])
+	key := strings.ToLower(method + "-" + fmt.Sprintf("%x%x", sum[0:7], sum[len(sum)-4:]))
 	if len(key) > 63 {
 		return "", errorKeyLengthExceeded
 	}
