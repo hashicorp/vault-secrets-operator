@@ -5,8 +5,7 @@
 # used to generate the 'manifests/' directory in a bundle.
 resources:
 - bases/vault-secrets-operator.clusterserviceversion.yaml
-- ../default
-- ../samples
+- ../default-openshift
 - ../scorecard
 
 # [WEBHOOK] To enable webhooks, uncomment all the sections with [WEBHOOK] prefix.
