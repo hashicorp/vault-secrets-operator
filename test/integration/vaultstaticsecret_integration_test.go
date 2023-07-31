@@ -174,6 +174,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
 				},
+				AllowedNamespaces: []string{"*"},
 			},
 		},
 	}

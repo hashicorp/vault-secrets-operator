@@ -181,3 +181,97 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 		})
 	}
 }
+
+func Test_isValidTargetNamespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        *secretsv1beta1.VaultAuth
+		target   types.NamespacedName
+		expected bool
+	}{
+		{
+			name: "wildcard-filter", // allow
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo/bar",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					AllowedNamespaces: []string{"*"},
+				},
+			},
+			target: types.NamespacedName{
+				Name:      "qux",
+				Namespace: "baz",
+			},
+			expected: true,
+		},
+		{
+			name: "list of filters with target ns included", // allow
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo/bar",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					AllowedNamespaces: []string{"foo", "bar", "baz"},
+				},
+			},
+			target: types.NamespacedName{
+				Name:      "qux",
+				Namespace: "baz",
+			},
+			expected: true,
+		},
+		{
+			name: "list of filters with target ns excluded", // disallow
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo/bar",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					AllowedNamespaces: []string{"foo", "bar"},
+				},
+			},
+			target: types.NamespacedName{
+				Name:      "qux",
+				Namespace: "baz",
+			},
+			expected: false,
+		},
+		{
+			name: "nil-filter-slice", // allow - allow for backward compatibility
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo/bar",
+				},
+			},
+			target: types.NamespacedName{
+				Namespace: OperatorNamespace,
+				Name:      consts.NameDefault,
+			},
+			expected: true,
+		},
+		{
+			name: "empty-filter-slice", // disallow all
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo/bar",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					AllowedNamespaces: []string{},
+				},
+			},
+			target: types.NamespacedName{
+				Namespace: OperatorNamespace,
+				Name:      consts.NameDefault,
+			},
+			expected: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// TargetName is always just the object name+ns
+			allowed := isValidTargetNamespace(tt.a, tt.target)
+			assert.Equal(t, allowed, tt.expected)
+		})
+	}
+}

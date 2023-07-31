@@ -93,8 +93,8 @@ type VaultAuthConfigAWS struct {
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
-	// The connectionRef can be prefixed with a namespace, eg: `namespaceA/connectionB`.
-	// If no namespace is specified the Operator will default to namespace of the VaultAuth CR.
+	// The connectionRef may be prefixed with a namespace, eg: `namespaceA/connectionB`.
+	// If no namespace is included the Operator will default to the namespace of the VaultAuth CR.
 	// If no value is specified the Operator will default to the `default` VaultConnection,
 	// configured in its own Kubernetes namespace unless prefixed.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
@@ -108,6 +108,7 @@ type VaultAuthSpec struct {
 	// []{"*"} - wildcard, all namespaces.
 	// []{"a", "b"} - list of namespaces.
 	// []{} - empty list, no namespaces.
+	// nil - all namespaces, default behavior.
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws
