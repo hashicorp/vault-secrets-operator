@@ -80,31 +80,32 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	var resp *api.KVSecret
+	var respErr error
 	switch o.Spec.Type {
 	case consts.KVSecretTypeV1:
-		w, err := c.KVv1(o.Spec.Mount)
-		if err != nil {
+		if w, err := c.KVv1(o.Spec.Mount); err != nil {
 			return ctrl.Result{}, err
-		}
-		resp, err = w.Get(ctx, o.Spec.Path)
-	case consts.KVSecretTypeV2:
-		w, err := c.KVv2(o.Spec.Mount)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if o.Spec.Version == 0 {
-			resp, err = w.Get(ctx, o.Spec.Path)
 		} else {
-			resp, err = w.GetVersion(ctx, o.Spec.Path, o.Spec.Version)
+			resp, respErr = w.Get(ctx, o.Spec.Path)
+		}
+	case consts.KVSecretTypeV2:
+		if w, err := c.KVv2(o.Spec.Mount); err != nil {
+			return ctrl.Result{}, err
+		} else {
+			if o.Spec.Version == 0 {
+				resp, respErr = w.Get(ctx, o.Spec.Path)
+			} else {
+				resp, respErr = w.GetVersion(ctx, o.Spec.Path, o.Spec.Version)
+			}
 		}
 	default:
-		err = fmt.Errorf("unsupported secret type %q", o.Spec.Type)
+		err := fmt.Errorf("unsupported secret type %q", o.Spec.Type)
 		logger.Error(err, "")
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
 	}
 
-	if err != nil {
+	if respErr != nil {
 		logger.Error(err, "Failed to read Vault secret")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
