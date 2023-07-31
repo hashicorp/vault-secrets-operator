@@ -93,7 +93,7 @@ type VaultAuthConfigAWS struct {
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
-	// The connectionRef may be prefixed with a namespace, eg: `namespaceA/connectionB`.
+	// The VaultConnectionRef may be prefixed with a namespace, eg: `namespaceA/connectionB`.
 	// If no namespace is included the Operator will default to the namespace of the VaultAuth CR.
 	// If no value is specified the Operator will default to the `default` VaultConnection,
 	// configured in its own Kubernetes namespace unless prefixed.
@@ -103,7 +103,7 @@ type VaultAuthSpec struct {
 	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
 	// This field allows administrators to customize which Kubernetes namespaces are authorized to
 	// act with this AuthMethod. While Vault will still enforce its own rules, this has the added
-	// configurability of restricting which AuthMethods can be used by which namespaces.
+	// configurability of restricting which VaultAuthMethods can be used by which namespaces.
 	// Accepted values:
 	// []{"*"} - wildcard, all namespaces.
 	// []{"a", "b"} - list of namespaces.
