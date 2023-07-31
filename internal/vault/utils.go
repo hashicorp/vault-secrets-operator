@@ -5,7 +5,6 @@ package vault
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strings"
 
@@ -45,7 +44,6 @@ func GetOperatorDeploymentOwnerReference(c client.Client) (*metav1.OwnerReferenc
 	if err != nil {
 		return nil, err
 	}
-	fmt.Print("Deployment", deployment, "\n")
 	return &metav1.OwnerReference{
 		APIVersion: operatorDeploymentAPIVersion,
 		Kind:       operatorDeploymentKind,
