@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -133,8 +134,7 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 type ClientBase interface {
 	Read(context.Context, string) (*api.Secret, error)
 	Write(context.Context, string, map[string]any) (*api.Secret, error)
-	KVv1(string) (*api.KVv1, error)
-	KVv2(string) (*api.KVv2, error)
+	ReadKV(context.Context, KVReadRequest) (*api.KVSecret, error)
 }
 
 type Client interface {
@@ -250,14 +250,6 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 
 func (c *defaultClient) GetCredentialProvider() credentials.CredentialProvider {
 	return c.credentialProvider
-}
-
-func (c *defaultClient) KVv1(mount string) (*api.KVv1, error) {
-	return c.client.KVv1(mount), nil
-}
-
-func (c *defaultClient) KVv2(mount string) (*api.KVv2, error) {
-	return c.client.KVv2(mount), nil
 }
 
 func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
@@ -491,6 +483,42 @@ func (c *defaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection 
 }
 
 func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, error) {
+	return c.read(ctx, path, nil)
+}
+
+func (c *defaultClient) ReadKV(ctx context.Context, request KVReadRequest) (*api.KVSecret, error) {
+	path := request.Path()
+	resp, err := c.read(ctx, path, request.Values())
+	if err != nil {
+		return nil, err
+	}
+
+	if resp == nil {
+		return nil, fmt.Errorf("empty response from Vault, path=%q", path)
+	}
+
+	kv := &api.KVSecret{
+		Raw: resp,
+	}
+	switch t := request.(type) {
+	case *KVReadRequestV1:
+		kv.Data = resp.Data
+	case *KVReadRequestV2:
+		if resp.Data != nil {
+			if v, ok := resp.Data["data"]; ok && v != nil {
+				if d, ok := v.(map[string]interface{}); ok {
+					kv.Data = d
+				}
+			}
+		}
+	default:
+		return nil, fmt.Errorf("unsupported KVReadRequest type %T", t)
+	}
+
+	return kv, nil
+}
+
+func (c *defaultClient) read(ctx context.Context, path string, vals url.Values) (*api.Secret, error) {
 	var err error
 	startTS := time.Now()
 	defer func() {
@@ -499,7 +527,11 @@ func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, err
 	}()
 
 	var secret *api.Secret
-	secret, err = c.client.Logical().ReadWithContext(ctx, path)
+	if len(vals) > 0 {
+		secret, err = c.client.Logical().ReadWithDataWithContext(ctx, path, vals)
+	} else {
+		secret, err = c.client.Logical().ReadWithContext(ctx, path)
+	}
 	return secret, err
 }
 

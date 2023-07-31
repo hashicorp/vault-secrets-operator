@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,54 +78,24 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	var resp *api.KVSecret
-	var respErr error
-	switch o.Spec.Type {
-	case consts.KVSecretTypeV1:
-		if w, err := c.KVv1(o.Spec.Mount); err != nil {
-			return ctrl.Result{}, err
-		} else {
-			resp, respErr = w.Get(ctx, o.Spec.Path)
-		}
-	case consts.KVSecretTypeV2:
-		if w, err := c.KVv2(o.Spec.Mount); err != nil {
-			return ctrl.Result{}, err
-		} else {
-			if o.Spec.Version == 0 {
-				resp, respErr = w.Get(ctx, o.Spec.Path)
-			} else {
-				resp, respErr = w.GetVersion(ctx, o.Spec.Path, o.Spec.Version)
-			}
-		}
-	default:
-		err := fmt.Errorf("unsupported secret type %q", o.Spec.Type)
-		logger.Error(err, "")
+	kvReq, err := newKVRequest(o.Spec)
+	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
 	}
 
-	if respErr != nil {
-		logger.Error(err, "Failed to read Vault secret")
+	kvs, err := c.ReadKV(ctx, kvReq)
+	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
-	if resp == nil {
-		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "path", o.Spec.Path)
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Vault secret was empty, mount %s, path %s", o.Spec.Mount, o.Spec.Path)
-		return ctrl.Result{
-			RequeueAfter: requeueAfter,
-		}, nil
-	}
-
-	data, err := makeK8sSecret(resp)
+	data, err := makeK8sSecret(kvs)
 	if err != nil {
-		logger.Error(err, "Failed to construct k8s secret")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Failed to construct k8s secret: %s", err)
-		return ctrl.Result{}, err
+			"Invalid Vault Secret data: %s", err)
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
 	var doRolloutRestart bool
@@ -183,36 +152,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// makeK8sSecret returns Kubernetes Secret data from an api.KVSecret
+// Deprecated: use vault.MarshalKVData instead
 func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
-	if vaultSecret.Raw == nil {
-		return nil, fmt.Errorf("raw portion of vault secret was nil")
-	}
-
-	b, err := json.Marshal(vaultSecret.Raw.Data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal raw Vault secret: %s", err)
-	}
-	k8sSecretData := map[string][]byte{
-		"_raw": b,
-	}
-	for k, v := range vaultSecret.Data {
-		if k == "_raw" {
-			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
-		}
-		var m []byte
-		switch vTyped := v.(type) {
-		case string:
-			m = []byte(vTyped)
-		default:
-			m, err = json.Marshal(vTyped)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal key %q from Vault secret: %s", k, err)
-			}
-		}
-		k8sSecretData[k] = m
-	}
-	return k8sSecretData, nil
+	return vault.MarshalKVData(vaultSecret)
 }
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -220,4 +163,17 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&secretsv1beta1.VaultStaticSecret{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
+}
+
+func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.KVReadRequest, error) {
+	var kvReq vault.KVReadRequest
+	switch s.Type {
+	case consts.KVSecretTypeV1:
+		kvReq = vault.NewKVSecretRequestV1(s.Mount, s.Path)
+	case consts.KVSecretTypeV2:
+		kvReq = vault.NewKVSecretRequestV2(s.Mount, s.Path, s.Version)
+	default:
+		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
+	}
+	return kvReq, nil
 }

@@ -39,7 +39,7 @@ func Test_makeK8sSecret(t *testing.T) {
 				Data: map[string]interface{}{},
 			},
 			expectedK8sSecret: nil,
-			expectedError:     fmt.Errorf("raw portion of vault secret was nil"),
+			expectedError:     fmt.Errorf("raw portion of vault KV secret was nil"),
 		},
 		"empty data": {
 			vaultSecret: &api.KVSecret{
@@ -91,7 +91,7 @@ func Test_makeK8sSecret(t *testing.T) {
 				},
 			},
 			expectedK8sSecret: nil,
-			expectedError:     fmt.Errorf(`failed to marshal key "password" from Vault secret: json: unsupported type: chan int`),
+			expectedError:     fmt.Errorf(`json: unsupported type: chan int`),
 		},
 		"fail to marshal secret raw": {
 			vaultSecret: &api.KVSecret{
@@ -102,7 +102,7 @@ func Test_makeK8sSecret(t *testing.T) {
 				},
 			},
 			expectedK8sSecret: nil,
-			expectedError:     fmt.Errorf("failed to marshal raw Vault secret: json: unsupported type: chan int"),
+			expectedError:     fmt.Errorf("json: unsupported type: chan int"),
 		},
 	}
 

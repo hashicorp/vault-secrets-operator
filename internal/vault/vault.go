@@ -5,6 +5,7 @@ package vault
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -33,16 +34,41 @@ func UnmarshalPKIIssueResponse(resp *api.Secret) (*PKICertResponse, error) {
 	return result, nil
 }
 
+// MarshalSecretData returns Kubernetes Secret data from an api.Secret
+// TODO: move to internal/helpers
 func MarshalSecretData(resp *api.Secret) (map[string][]byte, error) {
+	if resp == nil {
+		return nil, fmt.Errorf("response is nil")
+	}
+
+	return marshalData(resp.Data, resp.Data)
+}
+
+// MarshalKVData returns Kubernetes Secret data from an api.KVSecret
+// TODO: move to internal/helpers
+func MarshalKVData(kv *api.KVSecret) (map[string][]byte, error) {
+	if kv.Raw == nil {
+		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
+	}
+
+	return marshalData(kv.Data, kv.Raw.Data)
+}
+
+// TODO: move to internal/helpers
+func marshalData(d, raw map[string]interface{}) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 
-	b, err := json.Marshal(resp.Data)
+	b, err := json.Marshal(raw)
 	if err != nil {
 		return nil, err
 	}
 	data["_raw"] = b
 
-	for k, v := range resp.Data {
+	for k, v := range d {
+		if k == "_raw" {
+			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
+		}
+
 		switch x := v.(type) {
 		case string:
 			data[k] = []byte(x)

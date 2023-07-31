@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
 func Test_inRenewalWindow(t *testing.T) {
@@ -515,8 +516,15 @@ type mockRequest struct {
 	params map[string]any
 }
 
+var _ vault.ClientBase = (*mockRecordingVaultClient)(nil)
+
 type mockRecordingVaultClient struct {
 	requests []*mockRequest
+}
+
+func (m *mockRecordingVaultClient) ReadKV(ctx context.Context, request vault.KVReadRequest) (*api.KVSecret, error) {
+	// TODO implement me
+	panic("implement me")
 }
 
 func (m *mockRecordingVaultClient) Read(ctx context.Context, s string) (*api.Secret, error) {
@@ -540,12 +548,4 @@ func (m *mockRecordingVaultClient) Write(ctx context.Context, s string, params m
 	return &api.Secret{
 		Data: make(map[string]interface{}),
 	}, nil
-}
-
-func (m *mockRecordingVaultClient) KVv1(s string) (*api.KVv1, error) {
-	return nil, nil
-}
-
-func (m *mockRecordingVaultClient) KVv2(s string) (*api.KVv2, error) {
-	return nil, nil
 }
