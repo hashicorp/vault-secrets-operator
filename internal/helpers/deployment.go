@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DeploymentShutdown         = "DeploymentShutdown"
+	deploymentShutdown         = "deploymentShutdown"
 	inMemoryVaultTokensRevoked = "inMemoryVaultTokensRevoked"
 	StringTrue                 = "true"
 	managerConfigMapNameEnv    = "MANAGER_CONFIGMAP_NAME"
@@ -46,9 +46,9 @@ func WatchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Inter
 	return watcher, nil
 }
 
-type BeforeShutdown func(context.Context, *corev1.ConfigMap, client.Client) error
+type OnConfigMapChange func(context.Context, *corev1.ConfigMap, client.Client) error
 
-func WaitForDeploymentShutdown(ctx context.Context, logger logr.Logger, watcher watch.Interface, c client.Client, funcs ...BeforeShutdown) {
+func WaitForManagerConfigMapModified(ctx context.Context, logger logr.Logger, watcher watch.Interface, c client.Client, evaluator func(*corev1.ConfigMap) bool, onChanges ...OnConfigMapChange) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -57,25 +57,10 @@ func WaitForDeploymentShutdown(ctx context.Context, logger logr.Logger, watcher 
 		case event := <-watcher.ResultChan():
 			if event.Type == watch.Modified {
 				if m, ok := event.Object.(*corev1.ConfigMap); ok {
-					for _, f := range funcs {
-						f(ctx, m, c)
-					}
-				}
-			}
-		}
-	}
-}
-
-func WaitForInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, watcher watch.Interface) {
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Error(ctx.Err(), "Operator manager context canceled")
-			return
-		case event := <-watcher.ResultChan():
-			if event.Type == watch.Modified {
-				if m, ok := event.Object.(*corev1.ConfigMap); ok {
-					if val, ok := m.Data[inMemoryVaultTokensRevoked]; ok && val == StringTrue {
+					if evaluator(m) {
+						for _, onChange := range onChanges {
+							onChange(ctx, m, c)
+						}
 						return
 					}
 				}
@@ -84,9 +69,19 @@ func WaitForInMemoryVaultTokensRevoked(ctx context.Context, logger logr.Logger, 
 	}
 }
 
+func IsDeploymentShutdown(m *corev1.ConfigMap) bool {
+	val, ok := m.Data[deploymentShutdown]
+	return ok && val == StringTrue
+}
+
+func IsInMemoryVaultTokensRevoked(m *corev1.ConfigMap) bool {
+	val, ok := m.Data[inMemoryVaultTokensRevoked]
+	return ok && val == StringTrue
+}
+
 func SetConfigMapDeploymentShutdown(ctx context.Context, c client.Client) error {
 	return updateManagerConfigMap(ctx, c, map[string]string{
-		DeploymentShutdown: StringTrue,
+		deploymentShutdown: StringTrue,
 	})
 }
 

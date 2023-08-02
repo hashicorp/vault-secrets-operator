@@ -239,7 +239,8 @@ func main() {
 				cleanupLog.Error(err, "")
 				return
 			}
-			helpers.WaitForInMemoryVaultTokensRevoked(ctx, cleanupLog, watcher)
+
+			helpers.WaitForManagerConfigMapModified(ctx, cleanupLog, watcher, defaultClient, helpers.IsInMemoryVaultTokensRevoked)
 
 			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
 			// In this case, we can ensure that all tokens cached in memory are revoked successfully.
@@ -248,20 +249,19 @@ func main() {
 		}
 
 		revokeVaultTokensInMemory := func(ctx context.Context, m *v1.ConfigMap, c client.Client) error {
-			if val, ok := m.Data[helpers.DeploymentShutdown]; ok && val == helpers.StringTrue {
-				clientFactory.Disable()
+			clientFactory.Disable()
 
-				// Comment out when running test/integration/revocation_integration_test.go for error path testing.
-				// In this case, we can ensure that all tokens in storage are revoked successfully.
-				clientFactory.RevokeAllInMemory(ctx)
-				if err := helpers.SetConfigMapInMemoryVaultTokensRevoked(ctx, c); err != nil {
-					return fmt.Errorf("failed to set %s", helpers.DeploymentShutdown)
-				}
+			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
+			// In this case, we can ensure that all tokens in storage are revoked successfully.
+			clientFactory.RevokeAllInMemory(ctx)
+			if err := helpers.SetConfigMapInMemoryVaultTokensRevoked(ctx, c); err != nil {
+				return err
 			}
+
 			return nil
 		}
 
-		go helpers.WaitForDeploymentShutdown(ctx, setupLog, watcher, defaultClient, revokeVaultTokensInMemory)
+		go helpers.WaitForManagerConfigMapModified(ctx, setupLog, watcher, defaultClient, helpers.IsDeploymentShutdown, revokeVaultTokensInMemory)
 	}
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
