@@ -83,6 +83,32 @@ rules:
 - apiGroups:
   - secrets.hashicorp.com
   resources:
+  - hcpauths
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpauths/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpauths/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
   - vaultauths
   verbs:
   - create

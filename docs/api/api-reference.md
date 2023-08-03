@@ -9,6 +9,8 @@
 Package v1beta1 contains API Schema definitions for the secrets v1beta1 API group
 
 ### Resource Types
+- [HCPAuth](#hcpauth)
+- [HCPAuthList](#hcpauthlist)
 - [VaultAuth](#vaultauth)
 - [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
@@ -40,6 +42,72 @@ _Appears in:_
 | `labels` _object (keys:string, values:string)_ | Labels to apply to the Secret. Requires Create to be set to true. |
 | `annotations` _object (keys:string, values:string)_ | Annotations to apply to the Secret. Requires Create to be set to true. |
 | `type` _[SecretType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secrettype-v1-core)_ | Type of Kubernetes Secret. Requires Create to be set to true. Defaults to Opaque. |
+
+
+#### HCPAuth
+
+
+
+HCPAuth is the Schema for the hcpauths API
+
+_Appears in:_
+- [HCPAuthList](#hcpauthlist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPAuth`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[HCPAuthSpec](#hcpauthspec)_ |  |
+
+
+#### HCPAuthList
+
+
+
+HCPAuthList contains a list of HCPAuth
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPAuthList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[HCPAuth](#hcpauth) array_ |  |
+
+
+#### HCPAuthServicePrincipal
+
+
+
+HCPAuthServicePrincipal provides HCPAuth configuration options needed for authenticating to HCP using a service principal configured in SecretRef.
+
+_Appears in:_
+- [HCPAuthSpec](#hcpauthspec)
+
+| Field | Description |
+| --- | --- |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID, and clientKey. The secret data must have the following structure { "clientID": "clientID", "clientKey": "clientKey", } |
+
+
+#### HCPAuthSpec
+
+
+
+HCPAuthSpec defines the desired state of HCPAuth
+
+_Appears in:_
+- [HCPAuth](#hcpauth)
+
+| Field | Description |
+| --- | --- |
+| `organizationID` _string_ | OrganizationID |
+| `projectID` _string_ | ProjectID |
+| `method` _string_ | Method to use when authenticating to Vault. |
+| `servicePrincipal` _[HCPAuthServicePrincipal](#hcpauthserviceprincipal)_ | ServicePrincipal |
+
+
 
 
 #### RolloutRestartTarget

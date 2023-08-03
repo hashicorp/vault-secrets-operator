@@ -125,6 +125,15 @@ func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.Names
 	return &obj, nil
 }
 
+func GetHCPAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1beta1.HCPAuth, error) {
+	var obj secretsv1beta1.HCPAuth
+	if err := getWithRetry(ctx, c, key, &obj, delay, max); err != nil {
+		return nil, err
+	}
+
+	return &obj, nil
+}
+
 func setVaultConnectionRef(obj *secretsv1beta1.VaultAuth) {
 	if obj.Namespace == OperatorNamespace && obj.Name == consts.NameDefault && obj.Spec.VaultConnectionRef == "" {
 		obj.Spec.VaultConnectionRef = consts.NameDefault
