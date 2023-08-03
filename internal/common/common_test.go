@@ -159,6 +159,19 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 			},
 			wantErr: assert.NoError,
 		},
+		{
+			name: "invalid auth name", // ns comes from the Secret
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo/bar/baz/qux",
+				},
+			},
+			want: types.NamespacedName{},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				assert.EqualError(t, err, "invalid auth method name foo/bar/baz/qux", i...)
+				return err != nil
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -182,7 +195,7 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 	}
 }
 
-func Test_isValidTargetNamespace(t *testing.T) {
+func Test_AllowedNamespace(t *testing.T) {
 	tests := []struct {
 		name     string
 		a        *secretsv1beta1.VaultAuth
@@ -222,6 +235,38 @@ func Test_isValidTargetNamespace(t *testing.T) {
 			expected: true,
 		},
 		{
+			name: "target and auth method in same ns", // allow
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bar",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{},
+			},
+			target: types.NamespacedName{
+				Name:      "qux",
+				Namespace: "foo",
+			},
+			expected: true,
+		},
+		{
+			name: "default auth method is used", // allow
+			a: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "default",
+					Namespace: OperatorNamespace,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					AllowedNamespaces: []string{"foo", "bar", "baz"},
+				},
+			},
+			target: types.NamespacedName{
+				Name:      "qux",
+				Namespace: "baz",
+			},
+			expected: true,
+		},
+		{
 			name: "list of filters with target ns excluded", // disallow
 			a: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
@@ -238,31 +283,34 @@ func Test_isValidTargetNamespace(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "nil-filter-slice", // allow - allow for backward compatibility
+			name: "nil-filter-slice", // disallow
 			a: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "foo/bar",
+					Name: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					AllowedNamespaces: nil,
 				},
 			},
 			target: types.NamespacedName{
-				Namespace: OperatorNamespace,
-				Name:      consts.NameDefault,
+				Namespace: "foo",
+				Name:      "bar",
 			},
-			expected: true,
+			expected: false,
 		},
 		{
-			name: "empty-filter-slice", // disallow all
+			name: "empty-filter-slice", // disallow
 			a: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "foo/bar",
+					Name: "bar",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					AllowedNamespaces: []string{},
 				},
 			},
 			target: types.NamespacedName{
-				Namespace: OperatorNamespace,
-				Name:      consts.NameDefault,
+				Namespace: "foo",
+				Name:      "bar",
 			},
 			expected: false,
 		},
@@ -270,7 +318,7 @@ func Test_isValidTargetNamespace(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// TargetName is always just the object name+ns
-			allowed := isValidTargetNamespace(tt.a, tt.target)
+			allowed := AllowedNamespace(tt.a, tt.target)
 			assert.Equal(t, allowed, tt.expected)
 		})
 	}

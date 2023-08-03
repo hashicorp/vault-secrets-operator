@@ -14,11 +14,10 @@ import (
 
 // VaultPKISecretSpec defines the desired state of VaultPKISecret
 type VaultPKISecretSpec struct {
-	// VaultAuthRef to the VaultAuth resource
-	// The VaultAuthRef can be prefixed with a namespace, eg: `namespaceA/vaultRefB`.
-	// If no namespace is specified the Operator will default to namespace of the VaultAuth CR.
-	// If no value is specified the Operator will default to the `default` VaultAuth,
-	// configured in its own Kubernetes namespace.
+	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
+	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
+	// default to the `default` VaultAuth, configured in its own Kubernetes namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
 	// Namespace to get the secret from in Vault

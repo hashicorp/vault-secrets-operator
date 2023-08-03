@@ -52,8 +52,10 @@ func GetAuthAndTargetNamespacedName(obj client.Object) (types.NamespacedName, ty
 	}
 
 	if m.AuthRef != "" {
-		// todo: some sorta sanity checking?
 		names := strings.Split(m.AuthRef, "/")
+		if len(names) > 2 {
+			return types.NamespacedName{}, types.NamespacedName{}, fmt.Errorf("invalid auth method name %s", m.AuthRef)
+		}
 		if len(names) > 1 {
 			authRef.Namespace = names[0]
 			authRef.Name = names[1]
@@ -76,23 +78,30 @@ func GetAuthAndTargetNamespacedName(obj client.Object) (types.NamespacedName, ty
 	return authRef, target, nil
 }
 
-// According to the spec for secretsv1beta1.VaultAuth, Spec.AllowedNamespaces behave as follows:
+// According to the spec for secretsv1beta1.VaultAuth, Spec.AllowedNamespaces behaves as follows:
 // AllowedNamespaces:
 //
-//	 nil - all namespaces are allowed
-//	[]{}  - no namespaces are allowed
+//	unset - disallow all except the OperatorNamespace and the AuthMethod's ns, default behavior.
 //	[]{"*"} - with length of 1, all namespaces are allowed
 //	[]{"a","b"} - explicitly namespaces a, b are allowed
-func isValidTargetNamespace(auth *secretsv1beta1.VaultAuth, name types.NamespacedName) bool {
-	if auth.Spec.AllowedNamespaces == nil {
+func AllowedNamespace(auth *secretsv1beta1.VaultAuth, name types.NamespacedName) bool {
+	// Allow if target ns is the same as auth
+	if name.Namespace == auth.ObjectMeta.Namespace {
 		return true
 	}
-	if len(auth.Spec.AllowedNamespaces) == 0 {
+	// Disallow by default
+	if auth.Spec.AllowedNamespaces == nil || len(auth.Spec.AllowedNamespaces) == 0 {
 		return false
 	}
+	// Default Auth Method
+	if auth.ObjectMeta.Name == consts.NameDefault && auth.ObjectMeta.Namespace == OperatorNamespace {
+		return true
+	}
+	// Wildcard
 	if len(auth.Spec.AllowedNamespaces) == 1 && auth.Spec.AllowedNamespaces[0] == "*" {
 		return true
 	}
+	// Explicitly set.
 	for _, ns := range auth.Spec.AllowedNamespaces {
 		if name.Namespace == ns {
 			return true
@@ -110,7 +119,7 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 	if err != nil {
 		return nil, types.NamespacedName{}, err
 	}
-	if !isValidTargetNamespace(authObj, target) {
+	if !AllowedNamespace(authObj, target) {
 		return nil, types.NamespacedName{}, fmt.Errorf("target namespace is not allowed for this auth method")
 	}
 	return authObj, target, nil
