@@ -89,13 +89,13 @@ func AllowedNamespace(auth *secretsv1beta1.VaultAuth, name types.NamespacedName)
 	if name.Namespace == auth.ObjectMeta.Namespace {
 		return true
 	}
-	// Disallow by default
-	if auth.Spec.AllowedNamespaces == nil || len(auth.Spec.AllowedNamespaces) == 0 {
-		return false
-	}
 	// Default Auth Method
 	if auth.ObjectMeta.Name == consts.NameDefault && auth.ObjectMeta.Namespace == OperatorNamespace {
 		return true
+	}
+	// Disallow by default
+	if auth.Spec.AllowedNamespaces == nil || len(auth.Spec.AllowedNamespaces) == 0 {
+		return false
 	}
 	// Wildcard
 	if len(auth.Spec.AllowedNamespaces) == 1 && auth.Spec.AllowedNamespaces[0] == "*" {
@@ -120,7 +120,7 @@ func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Obje
 		return nil, types.NamespacedName{}, err
 	}
 	if !AllowedNamespace(authObj, target) {
-		return nil, types.NamespacedName{}, fmt.Errorf("target namespace is not allowed for this auth method")
+		return nil, types.NamespacedName{}, fmt.Errorf(fmt.Sprintf("target namespace is not allowed for this auth method, targetns: %v, authMethod:%s", target.Namespace, authRef.Name))
 	}
 	return authObj, target, nil
 }
