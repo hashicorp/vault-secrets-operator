@@ -12,7 +12,7 @@ var (
 
 type Response interface {
 	Secret() *api.Secret
-	Data() map[string]interface{}
+	Data() map[string]any
 }
 
 type defaultResponse struct {
@@ -23,7 +23,7 @@ func (r *defaultResponse) Secret() *api.Secret {
 	return r.secret
 }
 
-func (r *defaultResponse) Data() map[string]interface{} {
+func (r *defaultResponse) Data() map[string]any {
 	if r.secret == nil {
 		return nil
 		// return make(map[string]interface{}, 0)
@@ -40,7 +40,7 @@ func (r *kvV2Response) Secret() *api.Secret {
 	return r.secret
 }
 
-func (r *kvV2Response) Data() map[string]interface{} {
+func (r *kvV2Response) Data() map[string]any {
 	if r.secret == nil {
 		return nil
 	}

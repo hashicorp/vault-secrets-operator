@@ -4,7 +4,6 @@
 package vault
 
 import (
-	"net/http"
 	"net/url"
 	"strconv"
 )
@@ -16,7 +15,6 @@ type ReadRequest interface {
 
 type WriteRequest interface {
 	Path() string
-	Method() string
 	Params() map[string]any
 }
 
@@ -28,7 +26,6 @@ var (
 )
 
 type defaultWriteRequest struct {
-	method string
 	path   string
 	params map[string]any
 }
@@ -39,14 +36,6 @@ func (r *defaultWriteRequest) Path() string {
 
 func (r *defaultWriteRequest) Params() map[string]any {
 	return r.params
-}
-
-func (r *defaultWriteRequest) Method() string {
-	if r.method == "" {
-		return http.MethodPut
-	}
-
-	return r.method
 }
 
 type defaultReadRequest struct {
@@ -122,10 +111,9 @@ func NewReadRequest(path string, values url.Values) ReadRequest {
 	}
 }
 
-func NewWriteRequest(path string, params map[string]any, method string) WriteRequest {
+func NewWriteRequest(path string, params map[string]any) WriteRequest {
 	return &defaultWriteRequest{
 		path:   path,
 		params: params,
-		method: method,
 	}
 }

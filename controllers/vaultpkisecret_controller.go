@@ -155,7 +155,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData(), ""))
+	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to issue certificate from Vault"
@@ -346,7 +346,7 @@ func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr
 
 	if _, err := c.Write(ctx, vault.NewWriteRequest(fmt.Sprintf("%s/revoke", s.Spec.Mount), map[string]any{
 		"serial_number": s.Status.SerialNumber,
-	}, "")); err != nil {
+	})); err != nil {
 		l.Error(err, "Failed to revoke certificate", "serial_number", s.Status.SerialNumber)
 		return err
 	}

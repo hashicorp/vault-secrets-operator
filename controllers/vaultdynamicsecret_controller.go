@@ -293,7 +293,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 	switch method {
 	case http.MethodPut, http.MethodPost:
-		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, method))
+		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params))
 	case http.MethodGet:
 		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil))
 	default:
@@ -389,7 +389,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 	resp, err := c.Write(ctx, vault.NewWriteRequest("/sys/leases/renew", map[string]any{
 		"lease_id":  o.Status.SecretLease.ID,
 		"increment": o.Status.SecretLease.LeaseDuration,
-	}, ""))
+	}))
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +475,7 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	}
 	if _, err = c.Write(ctx, vault.NewWriteRequest("/sys/leases/revoke", map[string]any{
 		"lease_id": leaseID,
-	}, "")); err != nil {
+	})); err != nil {
 		msg := "Failed to revoke lease"
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoke, msg+": %s", err)
 		logger.Error(err, "Failed to revoke lease ", "id", leaseID)
