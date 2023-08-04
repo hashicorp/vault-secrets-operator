@@ -36,3 +36,32 @@ variable "db_role" {
 
 variable "vault_address" {}
 variable "vault_token" {}
+
+variable "with_hcp_vault_secrets" {
+  default = false
+}
+
+variable "hcp_organization_id" {
+  type    = string
+  default = ""
+}
+
+variable "hcp_project_id" {
+  type    = string
+  default = ""
+}
+
+variable "hcp_client_id" {
+  type    = string
+  default = ""
+}
+
+variable "hcp_client_key" {
+  type    = string
+  default = ""
+}
+
+variable "hcp_hvs_app_name" {
+  type    = string
+  default = "vso"
+}
