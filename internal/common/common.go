@@ -41,6 +41,41 @@ func init() {
 	}
 }
 
+func GetHCPAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.HCPAuth, types.NamespacedName, error) {
+	var authRef string
+	var target types.NamespacedName
+	switch o := obj.(type) {
+	case *secretsv1beta1.HCPVaultSecretsApp:
+		authRef = o.Spec.HCPAuthRef
+		target = types.NamespacedName{
+			Namespace: o.Namespace,
+			Name:      o.Name,
+		}
+	default:
+		return nil, types.NamespacedName{}, fmt.Errorf("unsupported type %T", o)
+	}
+
+	var authName types.NamespacedName
+	if authRef == "" {
+		// if no authRef configured we try and grab the 'default' from the
+		// Operator's current namespace.
+		authName = types.NamespacedName{
+			Namespace: OperatorNamespace,
+			Name:      consts.NameDefault,
+		}
+	} else {
+		authName = types.NamespacedName{
+			Namespace: target.Namespace,
+			Name:      authRef,
+		}
+	}
+	authObj, err := GetHCPAuthWithRetry(ctx, c, authName, time.Millisecond*500, 60)
+	if err != nil {
+		return nil, types.NamespacedName{}, err
+	}
+	return authObj, target, nil
+}
+
 func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, types.NamespacedName, error) {
 	var authRef string
 	var target types.NamespacedName

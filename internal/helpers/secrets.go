@@ -81,6 +81,12 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 		}, nil
+	case *secretsv1beta1.HCPVaultSecretsApp:
+		return &SyncableSecretMetaData{
+			Destination: &t.Spec.Destination,
+			APIVersion:  t.APIVersion,
+			Kind:        t.Kind,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}

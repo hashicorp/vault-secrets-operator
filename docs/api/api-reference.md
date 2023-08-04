@@ -11,6 +11,8 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 ### Resource Types
 - [HCPAuth](#hcpauth)
 - [HCPAuthList](#hcpauthlist)
+- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
+- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
 - [VaultAuth](#vaultauth)
 - [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
@@ -31,6 +33,7 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 Destination provides the configuration that will be applied to the destination Kubernetes Secret during a Vault Secret -> K8s Secret sync.
 
 _Appears in:_
+- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
@@ -110,6 +113,59 @@ _Appears in:_
 
 
 
+#### HCPVaultSecretsApp
+
+
+
+HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
+
+_Appears in:_
+- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPVaultSecretsApp`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)_ |  |
+
+
+#### HCPVaultSecretsAppList
+
+
+
+HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPVaultSecretsAppList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[HCPVaultSecretsApp](#hcpvaultsecretsapp) array_ |  |
+
+
+#### HCPVaultSecretsAppSpec
+
+
+
+HCPVaultSecretsAppSpec defines the desired state of HCPVaultSecretsApp
+
+_Appears in:_
+- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
+
+| Field | Description |
+| --- | --- |
+| `appName` _string_ | AppName |
+| `hcpAuthRef` _string_ | HCPAuthRef |
+| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation |
+| `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does not support dynamically reloading a rotated secret. In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events. See RolloutRestartTarget for more details. |
+| `destination` _[Destination](#destination)_ | Destination |
+
+
+
+
 #### RolloutRestartTarget
 
 
@@ -118,6 +174,7 @@ RolloutRestartTarget provides the configuration required to perform a rollout-re
  Supported resources: Deployment, DaemonSet, StatefulSet
 
 _Appears in:_
+- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
