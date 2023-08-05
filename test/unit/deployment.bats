@@ -382,6 +382,8 @@ load _helpers
     [ "${actual}" = 'HTTP_PROXY' ]
     actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
     [ "${actual}" = 'http://proxy.example.com/' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
 }
 
 @test "controller/Deployment: extra env number values can be set" {
@@ -398,6 +400,8 @@ load _helpers
     [ "${actual}" = 'RANDOM_PORT' ]
     actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
     [ "${actual}" = '42' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
 }
 
 # a little hack is needed here to pass a quoted string as a value
@@ -415,4 +419,24 @@ load _helpers
     [ "${actual}" = 'QUOTED_ENV' ]
     actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
     [ "${actual}" = 'noquotesneeded' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+@test "controller/Deployment: white space in envs works" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraEnv[0].name=WHITESPACE_WORKS'  \
+      --set 'controller.manager.extraEnv[0].value=Hello World!'  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'WHITESPACE_WORKS' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = 'Hello World!' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
 }

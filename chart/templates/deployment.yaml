@@ -85,7 +85,7 @@ spec:
           value: {{ .Values.controller.kubernetesClusterDomain }}
         {{- range .Values.controller.manager.extraEnv }}
         - name: {{ .name }}
-          value: {{ .value | quote }}
+          value: {{ .value }}
         {{- end }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         imagePullPolicy: IfNotPresent
