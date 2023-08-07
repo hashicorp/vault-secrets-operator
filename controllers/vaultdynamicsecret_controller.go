@@ -268,7 +268,7 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
-	var resp *api.Secret
+	var resp vault.Response
 	var params map[string]any
 	paramsLen := len(o.Spec.Params)
 	if paramsLen > 0 {
@@ -293,9 +293,9 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 	switch method {
 	case http.MethodPut, http.MethodPost:
-		resp, err = c.Write(ctx, path, params)
+		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params))
 	case http.MethodGet:
-		resp, err = c.Read(ctx, path)
+		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil))
 	default:
 		return nil, false, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
@@ -308,20 +308,22 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
-	data, err := vault.MarshalSecretData(resp)
+	data, err := vault.MarshalSecretData(resp.Secret())
 	if err != nil {
 		return nil, false, err
 	}
 
-	secretLease := r.getVaultSecretLease(resp)
+	secretLease := r.getVaultSecretLease(resp.Secret())
 	if !secretLease.Renewable && o.Spec.AllowStaticCreds {
-		if v, ok := resp.Data["last_vault_rotation"]; ok && v != nil {
+		respData := resp.Data()
+
+		if v, ok := respData["last_vault_rotation"]; ok && v != nil {
 			ts, err := time.Parse(time.RFC3339Nano, v.(string))
 			if err == nil {
 				o.Status.StaticCredsMetaData.LastVaultRotation = ts.Unix()
 			}
 		}
-		if v, ok := resp.Data["rotation_period"]; ok && v != nil {
+		if v, ok := respData["rotation_period"]; ok && v != nil {
 			switch t := v.(type) {
 			case json.Number:
 				period, err := t.Int64()
@@ -330,7 +332,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 				}
 			}
 		}
-		if v, ok := resp.Data["ttl"]; ok && v != nil {
+		if v, ok := respData["ttl"]; ok && v != nil {
 			switch t := v.(type) {
 			case json.Number:
 				ttl, err := t.Int64()
@@ -384,24 +386,24 @@ func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *se
 func (r *VaultDynamicSecretReconciler) renewLease(
 	ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret,
 ) (*secretsv1beta1.VaultSecretLease, error) {
-	resp, err := c.Write(ctx, "/sys/leases/renew", map[string]interface{}{
+	resp, err := c.Write(ctx, vault.NewWriteRequest("/sys/leases/renew", map[string]any{
 		"lease_id":  o.Status.SecretLease.ID,
 		"increment": o.Status.SecretLease.LeaseDuration,
-	})
+	}))
 	if err != nil {
 		return nil, err
 	}
 	// The renewal duration can come back as less than the requested increment
 	// if the time remaining on max_ttl is less than the increment. In this case
 	// return an error so new credentials are acquired.
-	if resp.LeaseDuration < o.Status.SecretLease.LeaseDuration {
-		return r.getVaultSecretLease(resp), &LeaseTruncatedError{
+	if resp.Secret().LeaseDuration < o.Status.SecretLease.LeaseDuration {
+		return r.getVaultSecretLease(resp.Secret()), &LeaseTruncatedError{
 			Expected: o.Status.SecretLease.LeaseDuration,
-			Actual:   resp.LeaseDuration,
+			Actual:   resp.Secret().LeaseDuration,
 		}
 	}
 
-	return r.getVaultSecretLease(resp), nil
+	return r.getVaultSecretLease(resp.Secret()), nil
 }
 
 func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
@@ -471,9 +473,9 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 		logger.Error(err, "Failed to get client when revoking lease for ", "id", leaseID)
 		return
 	}
-	if _, err = c.Write(ctx, "/sys/leases/revoke", map[string]interface{}{
+	if _, err = c.Write(ctx, vault.NewWriteRequest("/sys/leases/revoke", map[string]any{
 		"lease_id": leaseID,
-	}); err != nil {
+	})); err != nil {
 		msg := "Failed to revoke lease"
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoke, msg+": %s", err)
 		logger.Error(err, "Failed to revoke lease ", "id", leaseID)

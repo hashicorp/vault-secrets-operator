@@ -525,7 +525,7 @@ func Test_defaultClient_Validate(t *testing.T) {
 	}
 }
 
-func Test_defaultClient_ReadKV(t *testing.T) {
+func Test_defaultClient_Read(t *testing.T) {
 	handlerFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 		m, err := json.Marshal(
 			&api.Secret{
@@ -546,30 +546,25 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
 		name           string
-		request        KVReadRequest
+		request        ReadRequest
 		handler        *testHandler
 		expectRequests int
 		expectPaths    []string
 		expectParams   []map[string]interface{}
 		expectValues   []url.Values
-		want           *api.KVSecret
+		want           Response
 		wantErr        assert.ErrorAssertionFunc
 	}{
 		{
 			name:    "kv-v1-request",
-			request: NewKVSecretRequestV1("kv-v1", "secrets"),
+			request: NewKVReadRequestV1("kv-v1", "secrets"),
 			handler: &testHandler{
 				handlerFunc: handlerFunc,
 			},
 			expectRequests: 1,
 			expectPaths:    []string{"/v1/kv-v1/secrets"},
-			want: &api.KVSecret{
-				Data: map[string]interface{}{
-					"foo": "bar",
-				},
-				VersionMetadata: nil,
-				CustomMetadata:  nil,
-				Raw: &api.Secret{
+			want: &defaultResponse{
+				secret: &api.Secret{
 					Data: map[string]interface{}{
 						"foo": "bar",
 					},
@@ -579,7 +574,7 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 		},
 		{
 			name:    "kv-v2-request",
-			request: NewKVSecretRequestV2("kv-v2", "secrets", 0),
+			request: NewKVReadRequestV2("kv-v2", "secrets", 0),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					m, err := json.Marshal(
@@ -602,13 +597,8 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 			},
 			expectRequests: 1,
 			expectPaths:    []string{"/v1/kv-v2/data/secrets"},
-			want: &api.KVSecret{
-				Data: map[string]interface{}{
-					"foo": "bar",
-				},
-				VersionMetadata: nil,
-				CustomMetadata:  nil,
-				Raw: &api.Secret{
+			want: &kvV2Response{
+				secret: &api.Secret{
 					Data: map[string]interface{}{
 						"data": map[string]interface{}{
 							"foo": "bar",
@@ -620,7 +610,7 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 		},
 		{
 			name:    "kv-v2-request-with-version",
-			request: NewKVSecretRequestV2("kv-v2", "secrets", 1),
+			request: NewKVReadRequestV2("kv-v2", "secrets", 1),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					m, err := json.Marshal(
@@ -648,13 +638,8 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 					"version": []string{"1"},
 				},
 			},
-			want: &api.KVSecret{
-				Data: map[string]interface{}{
-					"foo": "bar",
-				},
-				VersionMetadata: nil,
-				CustomMetadata:  nil,
-				Raw: &api.Secret{
+			want: &kvV2Response{
+				secret: &api.Secret{
 					Data: map[string]interface{}{
 						"data": map[string]interface{}{
 							"foo": "bar",
@@ -666,7 +651,7 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 		},
 		{
 			name:    "fail-kv-v1-nil-response",
-			request: NewKVSecretRequestV1("kv-v1", "secrets"),
+			request: NewKVReadRequestV1("kv-v1", "secrets"),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					w.WriteHeader(http.StatusOK)
@@ -682,7 +667,7 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 		},
 		{
 			name:    "fail-kv-v2-nil-response",
-			request: NewKVSecretRequestV2("kv-v2", "secrets", 0),
+			request: NewKVReadRequestV2("kv-v2", "secrets", 0),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					w.WriteHeader(http.StatusOK)
@@ -717,7 +702,7 @@ func Test_defaultClient_ReadKV(t *testing.T) {
 					},
 				},
 			}
-			got, err := c.ReadKV(ctx, tt.request)
+			got, err := c.Read(ctx, tt.request)
 			if !tt.wantErr(t, err, fmt.Sprintf("ReadKV(%v, %v)", ctx, tt.request)) {
 				return
 			}

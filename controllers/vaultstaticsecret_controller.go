@@ -84,14 +84,14 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	kvs, err := c.ReadKV(ctx, kvReq)
+	resp, err := c.Read(ctx, kvReq)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
-	data, err := makeK8sSecret(kvs)
+	data, err := vault.MarshalData(resp.Data(), resp.Secret().Data)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Invalid Vault Secret data: %s", err)
@@ -165,13 +165,13 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.KVReadRequest, error) {
-	var kvReq vault.KVReadRequest
+func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.ReadRequest, error) {
+	var kvReq vault.ReadRequest
 	switch s.Type {
 	case consts.KVSecretTypeV1:
-		kvReq = vault.NewKVSecretRequestV1(s.Mount, s.Path)
+		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path)
 	case consts.KVSecretTypeV2:
-		kvReq = vault.NewKVSecretRequestV2(s.Mount, s.Path, s.Version)
+		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version)
 	default:
 		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
 	}

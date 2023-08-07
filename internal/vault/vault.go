@@ -41,7 +41,7 @@ func MarshalSecretData(resp *api.Secret) (map[string][]byte, error) {
 		return nil, fmt.Errorf("response is nil")
 	}
 
-	return marshalData(resp.Data, resp.Data)
+	return MarshalData(resp.Data, resp.Data)
 }
 
 // MarshalKVData returns Kubernetes Secret data from an api.KVSecret
@@ -51,11 +51,11 @@ func MarshalKVData(kv *api.KVSecret) (map[string][]byte, error) {
 		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
 	}
 
-	return marshalData(kv.Data, kv.Raw.Data)
+	return MarshalData(kv.Data, kv.Raw.Data)
 }
 
 // TODO: move to internal/helpers
-func marshalData(d, raw map[string]interface{}) (map[string][]byte, error) {
+func MarshalData(d, raw map[string]interface{}) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 
 	b, err := json.Marshal(raw)
