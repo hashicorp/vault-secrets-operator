@@ -258,7 +258,7 @@ controller:
     maxConcurrentReconciles:
 
     # Defines additional environment variables to be added to the
-    # vault-secrets-operator container.
+    # vault-secrets-opearator manager container.
     # extraEnv:
     #   - name: HTTP_PROXY
     #     value: http://proxy.example.com

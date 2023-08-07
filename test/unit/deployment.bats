@@ -404,8 +404,6 @@ load _helpers
     [ "${actual}" = '4' ]
 }
 
-# a little hack is needed here to pass a quoted string as a value
-# in order to test for double quotes
 @test "controller/Deployment: extra env values don't get double quoted" {
     cd `chart_dir`
     local object=$(printf  \
@@ -423,7 +421,7 @@ load _helpers
     [ "${actual}" = '4' ]
 }
 
-@test "controller/Deployment: white space in envs works" {
+@test "controller/Deployment: extra env values with white space" {
     cd `chart_dir`
     local object=$(helm template  \
       -s templates/deployment.yaml  \
