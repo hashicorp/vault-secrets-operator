@@ -117,6 +117,19 @@ load _helpers
     [ "${actual}" = "false" ]
 }
 
+@test "controller/Deployment: clientCache settings can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.cacheSize=22' \
+      --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq 'contains(["--client-cache-size=22", "--client-cache-persistence-model=direct-encrypted"])' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+}
+
 #--------------------------------------------------------------------
 # maxConcurrentReconciles
 

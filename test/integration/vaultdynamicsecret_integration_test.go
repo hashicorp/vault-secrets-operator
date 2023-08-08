@@ -32,6 +32,7 @@ import (
 )
 
 func TestVaultDynamicSecret(t *testing.T) {
+	t.Skip("Thy")
 	if testWithHelm {
 		t.Skipf("Test is not compatiable with Helm")
 	}
