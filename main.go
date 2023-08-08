@@ -12,8 +12,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -56,6 +56,7 @@ func main() {
 	defaultPersistenceModel := persistenceModelNone
 	vdsOptions := controller.Options{}
 	cfc := vclient.DefaultCachingClientFactoryConfig()
+	startTime := time.Now()
 
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -63,10 +64,8 @@ func main() {
 	var clientCachePersistenceModel string
 	var printVersion bool
 	var outputFormat string
-	var preDeleteHook bool
+	var shutdown bool
 	var preDeleteHookTimeoutSeconds int
-	var revokeVaultTokensOnUninstall bool
-	var pruneVaultTokensOnUninstall bool
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -84,11 +83,7 @@ func main() {
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
-	flag.BoolVar(&preDeleteHook, "pre-delete-hook", false, "Run as helm pre-delete hook")
-	flag.BoolVar(&revokeVaultTokensOnUninstall, "revoke-vault-tokens-on-uninstall", false,
-		"Revoke all cached Vault client tokens on Helm uninstall.")
-	flag.BoolVar(&pruneVaultTokensOnUninstall, "prune-vault-tokens-on-uninstall", false,
-		"Prune all Vault client tokens in storage on Helm uninstall.")
+	flag.BoolVar(&shutdown, "shutdown", false, "Run in shutdown mode")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
 		"Pre-delete hook timeout in seconds")
 
@@ -97,8 +92,6 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
-
-	preDeleteDeadline := time.Now().Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
 
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
@@ -142,11 +135,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if preDeleteHook {
+	if shutdown {
 		cleanupLog.Info("commencing cleanup of finalizers")
-		preDeleteDeadlineCtx, cancel := context.WithDeadline(context.Background(), preDeleteDeadline)
+		preDeleteDeadline := startTime.Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
+		preDeleteDeadlineCtx, cancel := context.WithDeadline(logr.NewContext(context.Background(), cleanupLog), preDeleteDeadline)
 		// Even though ctx will be expired, it is good practice to call its
-		// cancellation function in any case. Failure to do so may keep the
+		// cancellation functions in any case. Failure to do so may keep the
 		// context and its parent alive longer than necessary.
 		defer cancel()
 
@@ -156,9 +150,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		if !revokeVaultTokensOnUninstall {
-			return
-		}
+		helpers.Shutdown(preDeleteDeadlineCtx, defaultClient)
+		return
 	}
 
 	collectMetrics := metricsAddr != ""
@@ -210,8 +203,15 @@ func main() {
 			os.Exit(1)
 		}
 
-		cfc.RevokeTokensOnUninstall = revokeVaultTokensOnUninstall
-		cfc.StorageConfig.PruneVaultTokensOnUninstall = pruneVaultTokensOnUninstall
+		if cfc.Persist {
+			ownerRefs, err := helpers.GetStorageOwnerRefs(ctx, defaultClient)
+			if err != nil {
+				setupLog.Error(err, "Failed to get storage OwnerReferences")
+				os.Exit(1)
+			}
+			cfc.StorageConfig.OwnerRefs = ownerRefs
+		}
+
 		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
@@ -221,48 +221,7 @@ func main() {
 		}
 	}
 
-	if revokeVaultTokensOnUninstall {
-		var cancel context.CancelFunc
-		if preDeleteHook {
-			ctx, cancel = context.WithDeadline(context.Background(), preDeleteDeadline)
-		}
-
-		watcher, err := helpers.WatchManagerConfigMap(ctx, defaultClient)
-		if err != nil {
-			setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
-			os.Exit(1)
-		}
-
-		if preDeleteHook {
-			defer cancel()
-			if err := helpers.SetConfigMapDeploymentShutdown(ctx, defaultClient); err != nil {
-				cleanupLog.Error(err, "")
-				return
-			}
-
-			helpers.WaitForManagerConfigMapModified(ctx, cleanupLog, watcher, defaultClient, helpers.IsInMemoryVaultTokensRevoked)
-
-			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
-			// In this case, we can ensure that all tokens cached in memory are revoked successfully.
-			clientFactory.RevokeAllInStorage(ctx, defaultClient)
-			return
-		}
-
-		revokeVaultTokensInMemory := func(ctx context.Context, m *v1.ConfigMap, c client.Client) error {
-			clientFactory.Disable()
-
-			// Comment out when running test/integration/revocation_integration_test.go for error path testing.
-			// In this case, we can ensure that all tokens in storage are revoked successfully.
-			clientFactory.RevokeAllInMemory(ctx)
-			if err := helpers.SetConfigMapInMemoryVaultTokensRevoked(ctx, c); err != nil {
-				return err
-			}
-
-			return nil
-		}
-
-		go helpers.WaitForManagerConfigMapModified(ctx, setupLog, watcher, defaultClient, helpers.IsDeploymentShutdown, revokeVaultTokensInMemory)
-	}
+	helpers.AwaitForManagerConfigMapModified(ctx, defaultClient, clientFactory)
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
 	if err = (&controllers.VaultStaticSecretReconciler{

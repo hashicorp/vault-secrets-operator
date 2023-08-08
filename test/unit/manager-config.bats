@@ -48,16 +48,15 @@ load _helpers
     [ "${actual}" = "9091" ]
 }
 
-@test "managerConfig: configmap token revocation properties can be added" {
+@test "managerConfig: configmap ( not controller_manager_config.yaml ) has defaults " {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/manager-config.yaml  \
-      --set 'controller.manager.clientCache.revokeVaultTokensOnUninstall=true' \
       . | tee /dev/stderr |
       yq '.data' | tee /dev/stderr)
 
-  local actual=$(echo "$object" | yq  '.deploymentShutdown' | tee /dev/stderr)
+  local actual=$(echo "$object" | yq  '.shutdown' | tee /dev/stderr)
     [ "${actual}" = "false" ]
-   actual=$(echo "$object" | yq  '.inMemoryVaultTokensRevoked' | tee /dev/stderr)
-    [ "${actual}" = "false" ]
+   actual=$(echo "$object" | yq  '.vaultTokensCleanupModel' | tee /dev/stderr)
+    [ "${actual}" = "" ]
 }

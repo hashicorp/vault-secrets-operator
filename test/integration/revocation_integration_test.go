@@ -96,7 +96,7 @@ func TestRevocation(t *testing.T) {
 		// Create a non-default VaultAuth CR
 		{
 			ObjectMeta: v1.ObjectMeta{
-				Name:      "vaultauth-test-kubernetes",
+				Name:      "vaultauth-test-kubernetes-1",
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{

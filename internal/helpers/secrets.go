@@ -86,7 +86,7 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 	}
 }
 
-func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
+func GetOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
 	ownerRef := metav1.OwnerReference{
 		Name: owner.GetName(),
 		UID:  owner.GetUID(),
@@ -142,7 +142,7 @@ func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, err
 // Those are secrets that have a copy of OwnerLabels, and exactly one metav1.OwnerReference
 // that matches obj.
 func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) ([]corev1.Secret, error) {
-	ownerRef, err := getOwnerRefFromObj(obj, client.Scheme())
+	ownerRef, err := GetOwnerRefFromObj(obj, client.Scheme())
 	if err != nil {
 		return nil, err
 	}

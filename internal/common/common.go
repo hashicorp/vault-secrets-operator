@@ -23,8 +23,7 @@ import (
 
 var (
 	// OperatorNamespace of the current operator instance, set in init()
-	OperatorNamespace string
-
+	OperatorNamespace                   string
 	InvalidObjectKeyError               = fmt.Errorf("invalid objectKey")
 	InvalidObjectKeyErrorEmptyName      = fmt.Errorf("%w, empty name", InvalidObjectKeyError)
 	InvalidObjectKeyErrorEmptyNamespace = fmt.Errorf("%w, empty namespace", InvalidObjectKeyError)

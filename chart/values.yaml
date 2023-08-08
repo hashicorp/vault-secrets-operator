@@ -91,6 +91,10 @@ controller:
       # @type: string
       persistenceModel: ""
 
+      # default: "none"
+      # @type: string
+      vaultTokensCleanupModel: ""
+
       # Toggles pruning vault tokens in storage on Helm uninstall or operator deployment shutdown
       # @type: boolean
       pruneVaultTokensOnUninstall: false
@@ -309,11 +313,11 @@ controller:
   preDeleteHookTimeoutSeconds: 120
 
 
-  # withRevokeVaultTokensOnUninstall provides the configuration with terminationGracePeriodSeconds
+  # withRevokeVaultTokensCleanupModel provides the configuration with terminationGracePeriodSeconds
   # and preDeleteHookTimeoutSeconds in the case where Vault tokens are revoked upon the operator deployment deletion.
   # The values are different from `controller.terminationGracePeriodSeconds` and `controller.preDeleteHookTimeoutSeconds`.
   # This should only be configured when `controller.manager.clientCache.revokeVaultTokensOnUninstall` is enabled
-  withRevokeVaultTokensOnUninstall:
+  withRevokeVaultTokensCleanupModel:
     # Duration in seconds the pod needs to terminate gracefully.
     # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
     terminationGracePeriodSeconds: 180

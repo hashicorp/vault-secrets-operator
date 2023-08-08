@@ -67,12 +67,6 @@ spec:
         {{- if .Values.controller.manager.clientCache.cacheSize }}
         - --client-cache-size={{ .Values.controller.manager.clientCache.cacheSize }}
         {{- end }}
-        {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
-        - --revoke-vault-tokens-on-uninstall
-        {{- end }}
-        {{- if .Values.controller.manager.clientCache.pruneVaultTokensOnUninstall }}
-        - --prune-vault-tokens-on-uninstall
-        {{- end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles-vds={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
@@ -116,8 +110,8 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
-      {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall}}
-      terminationGracePeriodSeconds : {{ .Values.controller.withRevokeVaultTokensOnUninstall.terminationGracePeriodSeconds }}
+      {{- if or (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "all") (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "revoke") }}
+      terminationGracePeriodSeconds : {{ .Values.controller.withRevokeVaultTokensCleanupModel.terminationGracePeriodSeconds }}
       {{- else }}
       terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
       {{- end }}
@@ -165,24 +159,16 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
         - --pre-delete-hook
-        {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
-        - --pre-delete-hook-timeout-seconds={{ .Values.controller.withRevokeVaultTokensOnUninstall.preDeleteHookTimeoutSeconds }}
+        {{- if or (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "all") (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "revoke") }}
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.withRevokeVaultTokensCleanupModel.preDeleteHookTimeoutSeconds }}
         {{- else }}
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
-        {{- end }}
-        {{- if .Values.controller.manager.clientCache.revokeVaultTokensOnUninstall }}
-        - --revoke-vault-tokens-on-uninstall
-        {{- end }}
-        {{- if .Values.controller.manager.clientCache.persistenceModel }}
-        - --client-cache-persistence-model={{ .Values.controller.manager.clientCache.persistenceModel }}
         {{- end }}
         command:
         - /vault-secrets-operator
         env:
         - name: MANAGER_CONFIGMAP_NAME
           value: {{ include "chart.fullname" . }}-manager-config
-        - name: OPERATOR_DEPLOYMENT_NAME
-          value: {{ include "chart.fullname" . }}-controller-manager
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
