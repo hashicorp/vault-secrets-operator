@@ -150,6 +150,7 @@ func main() {
 			os.Exit(1)
 		}
 
+		cleanupLog.Info("signaling shutdown")
 		helpers.Shutdown(preDeleteDeadlineCtx, defaultClient)
 		return
 	}

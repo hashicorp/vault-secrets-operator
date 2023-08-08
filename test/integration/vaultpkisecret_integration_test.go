@@ -27,7 +27,6 @@ import (
 )
 
 func TestVaultPKISecret(t *testing.T) {
-	t.Skip("Thy")
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testPKIMountPath := "pki-" + testID

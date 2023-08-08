@@ -75,8 +75,6 @@ spec:
         env:
         - name: MANAGER_CONFIGMAP_NAME
           value: {{ include "chart.fullname" . }}-manager-config
-        - name: OPERATOR_DEPLOYMENT_NAME
-          value: {{ include "chart.fullname" . }}-controller-manager
         - name: OPERATOR_POD_NAME
           valueFrom:
             fieldRef:
@@ -156,9 +154,7 @@ spec:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
-        - --health-probe-bind-address=:8081
-        - --metrics-bind-address=127.0.0.1:8080
-        - --pre-delete-hook
+        - --shutdown
         {{- if or (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "all") (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "revoke") }}
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.withRevokeVaultTokensCleanupModel.preDeleteHookTimeoutSeconds }}
         {{- else }}
