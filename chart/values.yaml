@@ -9,6 +9,9 @@ controller:
   # @type: integer
   replicas: 1
 
+  # -- Additional labels for the pod.
+  podLabels: {}
+  
   # nodeSelector labels for vault-secrets-operator pod assignment.
   # @type: map
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector

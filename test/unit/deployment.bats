@@ -438,3 +438,34 @@ load _helpers
     actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
     [ "${actual}" = '4' ]
 }
+
+#--------------------------------------------------------------------
+# pod labels
+
+@test "controller/Deployment: pod labels are not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.podLabels | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: pod labels can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.podLabels.key1=value1' \
+      --set 'controller.podLabels.key2=value2' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "5" ]
+  actual=$(echo "$object" | yq '.key1' | tee /dev/stderr)
+  [ "${actual}" = 'value1' ]
+  actual=$(echo "$object" | yq '.key2' | tee /dev/stderr)
+  [ "${actual}" = 'value2' ]
+
+}
