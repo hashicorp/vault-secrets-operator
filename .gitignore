@@ -43,6 +43,4 @@ bin/*
 .idea
 *.png
 build
-bundle
-bundle.Dockerfile
 .DS_Store

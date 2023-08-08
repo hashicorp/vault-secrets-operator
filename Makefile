@@ -13,7 +13,8 @@ CONFIG_MANAGER_DIR ?= $(CONFIG_BUILD_DIR)/manager
 CONFIG_CRD_BASES_DIR ?= $(CONFIG_SRC_DIR)/crd/bases
 KUSTOMIZATION ?= default
 KUSTOMIZE_BUILD_DIR ?= $(CONFIG_BUILD_DIR)/$(KUSTOMIZATION)
-BUNDLE_DIR ?= bundle
+OPERATOR_BUILD_DIR ?= build
+BUNDLE_DIR ?= $(OPERATOR_BUILD_DIR)/bundle
 
 CHART_ROOT ?= chart
 CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
@@ -494,16 +495,17 @@ sdk-generate:
 .PHONY: bundle
 bundle: manifests kustomize sdk-generate set-image-ubi ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
-	@rm -f bundle.Dockerfile
+	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	@$(COPYWRITE) headers &> /dev/null
 	@./hack/set_openshift_minimum_version.sh
 	@./hack/set_containerImage.sh
+	mv bundle.Dockerfile $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	operator-sdk bundle validate $(BUNDLE_DIR)
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	docker build -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
