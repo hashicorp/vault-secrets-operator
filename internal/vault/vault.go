@@ -34,28 +34,8 @@ func UnmarshalPKIIssueResponse(resp *api.Secret) (*PKICertResponse, error) {
 	return result, nil
 }
 
-// MarshalSecretData returns Kubernetes Secret data from an api.Secret
 // TODO: move to internal/helpers
-func MarshalSecretData(resp *api.Secret) (map[string][]byte, error) {
-	if resp == nil {
-		return nil, fmt.Errorf("response is nil")
-	}
-
-	return MarshalData(resp.Data, resp.Data)
-}
-
-// MarshalKVData returns Kubernetes Secret data from an api.KVSecret
-// TODO: move to internal/helpers
-func MarshalKVData(kv *api.KVSecret) (map[string][]byte, error) {
-	if kv.Raw == nil {
-		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
-	}
-
-	return MarshalData(kv.Data, kv.Raw.Data)
-}
-
-// TODO: move to internal/helpers
-func MarshalData(d, raw map[string]interface{}) (map[string][]byte, error) {
+func MakeSecretK8sData(d, raw map[string]interface{}) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 
 	b, err := json.Marshal(raw)

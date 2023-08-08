@@ -494,8 +494,10 @@ func (c *defaultClient) Read(ctx context.Context, request ReadRequest) (Response
 
 	var respFunc func(*api.Secret) Response
 	switch t := request.(type) {
-	case *defaultReadRequest, *kvReadRequestV1:
-		respFunc = NewResponse
+	case *defaultReadRequest:
+		respFunc = NewDefaultResponse
+	case *kvReadRequestV1:
+		respFunc = NewKVV1Response
 	case *kvReadRequestV2:
 		respFunc = NewKVV2Response
 	default:

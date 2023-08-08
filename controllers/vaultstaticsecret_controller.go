@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -88,14 +87,14 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
-		return ctrl.Result{RequeueAfter: requeueAfter}, nil
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := vault.MarshalData(resp.Data(), resp.Secret().Data)
+	data, err := vault.MakeSecretK8sData(resp.Data(), resp.Secret().Data)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Invalid Vault Secret data: %s", err)
-		return ctrl.Result{RequeueAfter: requeueAfter}, nil
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	var doRolloutRestart bool
@@ -104,7 +103,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
 		if requeueAfter == 0 {
-			// hardcoding a default horizon here, perhaps we will want make this value public?
+			// hardcoding a default horizon here, perhaps we will want to make this value public?
 			requeueAfter = computeHorizonWithJitter(time.Second * 60)
 		}
 
@@ -150,12 +149,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
-}
-
-// makeK8sSecret returns Kubernetes Secret data from an api.KVSecret
-// Deprecated: use vault.MarshalKVData instead
-func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
-	return vault.MarshalKVData(vaultSecret)
 }
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {

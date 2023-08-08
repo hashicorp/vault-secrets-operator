@@ -18,7 +18,7 @@ import (
 
 // TestHTTPServer creates a test HTTP server that handles requests until
 // the listener returned is closed.
-// XXX: based off of github.com/hashicorp/vault/api/client_test.go
+// Note: based off of github.com/hashicorp/vault/api/client_test.go
 func NewTestHTTPServer(t *testing.T, handler http.Handler) (*api.Config, net.Listener) {
 	t.Helper()
 

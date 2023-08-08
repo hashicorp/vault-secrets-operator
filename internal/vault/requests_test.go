@@ -117,7 +117,6 @@ func Test_defaultReadRequest_Path(t *testing.T) {
 }
 
 func Test_defaultReadRequest_Values(t *testing.T) {
-	type fields struct{}
 	tests := []struct {
 		name   string
 		values url.Values
@@ -171,7 +170,6 @@ func Test_defaultWriteRequest_Path(t *testing.T) {
 }
 
 func Test_defaultWriteRequest_Params(t *testing.T) {
-	type fields struct{}
 	tests := []struct {
 		name   string
 		params map[string]any

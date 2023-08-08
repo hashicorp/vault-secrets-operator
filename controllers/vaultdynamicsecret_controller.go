@@ -308,7 +308,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
-	data, err := vault.MarshalSecretData(resp.Secret())
+	data, err := resp.SecretK8sData()
 	if err != nil {
 		return nil, false, err
 	}

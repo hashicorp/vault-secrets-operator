@@ -556,6 +556,39 @@ func Test_defaultClient_Read(t *testing.T) {
 		wantErr        assert.ErrorAssertionFunc
 	}{
 		{
+			name:    "default-request",
+			request: NewReadRequest("foo/bar", nil),
+			handler: &testHandler{
+				handlerFunc: handlerFunc,
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/foo/bar"},
+			want: &defaultResponse{
+				secret: &api.Secret{
+					Data: map[string]interface{}{
+						"foo": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "fail-default-nil-response",
+			request: NewReadRequest("foo/bar", nil),
+			handler: &testHandler{
+				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				},
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/foo/bar"},
+			want:           nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					fmt.Sprintf(`empty response from Vault, path="foo/bar"`))
+			},
+		},
+		{
 			name:    "kv-v1-request",
 			request: NewKVReadRequestV1("kv-v1", "secrets"),
 			handler: &testHandler{
@@ -563,7 +596,7 @@ func Test_defaultClient_Read(t *testing.T) {
 			},
 			expectRequests: 1,
 			expectPaths:    []string{"/v1/kv-v1/secrets"},
-			want: &defaultResponse{
+			want: &kvV1Response{
 				secret: &api.Secret{
 					Data: map[string]interface{}{
 						"foo": "bar",
