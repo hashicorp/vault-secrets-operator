@@ -91,13 +91,15 @@ controller:
       # @type: string
       persistenceModel: ""
 
+      # Defines the vault tokens cleanup model.
+      # "none" - No vault tokens cleanup will be done.
+      # "revoke" - vault tokens will be revoked on Helm uninstall or operator deployment shutdown. Revoking a token will automatically revoke all of its leases.
+      # "prune" - vault tokens persisted in storage, if enabled, will be pruned on Helm uninstall or operator deployment shutdown.
+      # "all" - The combination of "revoke" and "prune" models.
       # default: "none"
       # @type: string
       vaultTokensCleanupModel: ""
 
-      # Toggles pruning vault tokens in storage on Helm uninstall or operator deployment shutdown
-      # @type: boolean
-      pruneVaultTokensOnUninstall: false
 
       # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
       # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
@@ -311,7 +313,6 @@ controller:
 
   # Timeout in seconds for the pre-delete hook
   preDeleteHookTimeoutSeconds: 120
-
 
   # withRevokeVaultTokensCleanupModel provides the configuration with terminationGracePeriodSeconds
   # and preDeleteHookTimeoutSeconds in the case where Vault tokens are revoked upon the operator deployment deletion.
