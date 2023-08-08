@@ -40,7 +40,6 @@ func (r *defaultResponse) Secret() *api.Secret {
 func (r *defaultResponse) Data() map[string]any {
 	if r.secret == nil {
 		return nil
-		// return make(map[string]interface{}, 0)
 	}
 
 	return r.secret.Data
