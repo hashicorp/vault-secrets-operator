@@ -3,9 +3,7 @@
 
 package vault
 
-import (
-	"strings"
-)
+import "strings"
 
 // JoinPath for Vault requests.
 func JoinPath(parts ...string) string {
