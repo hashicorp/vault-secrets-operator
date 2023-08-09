@@ -142,6 +142,7 @@ type Client interface {
 	Init(context.Context, ctrlclient.Client, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection, string, *ClientOptions) error
 	Login(context.Context, ctrlclient.Client) error
 	Restore(context.Context, *api.Secret) error
+	SelfRevoke(ctx context.Context)
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
 	Validate() error
@@ -304,6 +305,10 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	}
 
 	return nil
+}
+
+func (c *defaultClient) SelfRevoke(ctx context.Context) {
+
 }
 
 func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth,

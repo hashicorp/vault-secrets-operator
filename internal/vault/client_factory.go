@@ -54,9 +54,7 @@ type CachingClientFactory interface {
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
-	Disable()
-	RevokeAllInMemory(context.Context)
-	RevokeAllInStorage(context.Context, ctrlclient.Client)
+	Shutdown(context.Context, ctrlclient.Client, CachingClientFactoryShutdownRequest)
 }
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
@@ -102,6 +100,13 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 		return 0, fmt.Errorf("client removal not supported for type %T", cur)
 	}
 
+	if !req.PruneStorage {
+		return 0, nil
+	}
+	return m.prune(ctx, client, filter)
+}
+
+func (m *cachingClientFactory) prune(ctx context.Context, client ctrlclient.Client, filter ClientCachePruneFilterFunc) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -109,7 +114,7 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 	pruned := m.cache.Prune(filter)
 	var errs error
 	// for all cache entries pruned, remove the corresponding storage entries.
-	if req.PruneStorage && m.persist && m.storage != nil {
+	if m.persist && m.storage != nil {
 		for _, key := range pruned {
 			if _, err := m.pruneStorage(ctx, client, key); err != nil {
 				errs = errors.Join(errs, err)
@@ -239,11 +244,37 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 
 // RevokeAllInMemory will attempt to revoke all Client tokens in memory.
 // This should be called upon operator deployment deletion if client cache cleanup is required.
-func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context) {
+func (m *cachingClientFactory) Shutdown(ctx context.Context, client ctrlclient.Client, shutdownReq CachingClientFactoryShutdownRequest) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.logger.Info("Disabling ClientFactory")
+	// This will disable client cache, "blocking" future ClientFactory interface calls
+	// NOTE: If a consumer of the client cache factory already has a reference to a client in hand,
+	// they may continue using it and generating new tokens/leases.
+	m.disable = true
+
+	if shutdownReq.Revoke {
+		// Comment out when running test/integration/revocation_integration_test.go for error path testing.
+		// In this case, we can ensure that all tokens in storage are revoked successfully.
+		m.revokeAll(ctx)
+
+		// Comment out when running test/integration/revocation_integration_test.go for error path testing.
+		// In this case, we can ensure that all tokens cached in memory are revoked successfully.
+		m.revokeAllInStorage(ctx, client)
+	}
+
+	filter := func(client Client) bool {
+		return true
+	}
+	if shutdownReq.Prune {
+		m.prune(ctx, client, filter)
+	}
+}
+
+func (m *cachingClientFactory) revokeAll(ctx context.Context) {
 	m.logger.Info("Revoking all Vault client tokens cached in memory")
+
 	// revoke in-memory cached clients
 	for _, k := range m.cache.Keys() {
 		logger := m.logger.WithValues("cacheKey", k)
@@ -262,9 +293,7 @@ func (m *cachingClientFactory) RevokeAllInMemory(ctx context.Context) {
 	}
 }
 
-// RevokeAllInStorage will attempt to revoke all Client tokens in storage.
-// This should be called upon operator deployment deletion if client cache cleanup is required.
-func (m *cachingClientFactory) RevokeAllInStorage(ctx context.Context, client ctrlclient.Client) {
+func (m *cachingClientFactory) revokeAllInStorage(ctx context.Context, client ctrlclient.Client) {
 	// revoke tokens in storage
 	if !m.persist || m.storage == nil {
 		return
@@ -290,24 +319,12 @@ func (m *cachingClientFactory) RevokeAllInStorage(ctx context.Context, client ct
 		logger.Info("Restoring client in storage")
 		if c, err := m.restoreClient(ctx, client, entry); err != nil {
 			logger.Error(err, "Restore failed", "cacheKey", entry.CacheKey)
-		} else if _, err = c.Read(ctx, "/auth/token/lookup-self"); err != nil {
-			logger.Info("Client token already revoked")
 		} else if _, err = c.Write(ctx, "/auth/token/revoke-self", nil); err != nil {
 			logger.Error(err, "Failed to self-revoke client token from storage")
 		} else {
 			logger.Info("Successfully self-revoked client token from storage")
 		}
 	}
-}
-
-// Disable will disable client cache, "blocking" future ClientFactory interface calls
-// NOTE: If a consumer of the client cache factory already has a reference to a client in hand,
-// they may continue using it and generating new tokens/leases.
-func (m *cachingClientFactory) Disable() {
-	m.mu.Lock()
-	m.disable = true
-	m.mu.Unlock()
-	m.logger.Info("Disabled ClientFactory")
 }
 
 func (m *cachingClientFactory) isDisabled() bool {

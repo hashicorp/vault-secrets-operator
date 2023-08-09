@@ -6,8 +6,8 @@ package helpers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	corev1 "k8s.io/api/core/v1"
@@ -17,14 +17,16 @@ import (
 )
 
 const (
-	configMapKeyShutdown                = "shutdown"
-	configMapKeyVaultTokensCleanupModel = "vaultTokensCleanupModel"
-	configMapKeyVaultTokensRevoked      = "vaultTokensRevoked"
+	ConfigMapSuffix                     = "-manager-config"
+	ConfigMapKeyShutdown                = "shutdown"
+	ConfigMapKeyVaultTokensCleanupModel = "vaultTokensCleanupModel"
+	ConfigMapKeyVaultTokensRevoked      = "vaultTokensRevoked"
 )
 
-type onConfigMapChange func(context.Context, *corev1.ConfigMap, client.Client) (bool, error)
+type OnConfigMapChange func(context.Context, *corev1.ConfigMap, client.Client) (bool, error)
 
-func waitForManagerConfigMapModified(ctx context.Context, watcher watch.Interface, c client.Client, onChanges ...onConfigMapChange) {
+func WaitForManagerConfigMapModified(ctx context.Context, watcher watch.Interface, c client.Client, onChanges ...OnConfigMapChange) {
+	defer watcher.Stop()
 	logger := log.FromContext(ctx)
 	executed := make([]bool, len(onChanges))
 	executedCnt := 0
@@ -40,9 +42,11 @@ func waitForManagerConfigMapModified(ctx context.Context, watcher watch.Interfac
 						if executed[i] {
 							continue
 						}
+
 						if ok, err := onChange(ctx, m, c); err != nil {
 							logger.Error(err, "Failed to execute on configmap change func")
 						} else if ok {
+							executed[i] = true
 							executedCnt += 1
 						}
 					}
@@ -55,7 +59,7 @@ func waitForManagerConfigMapModified(ctx context.Context, watcher watch.Interfac
 	}
 }
 
-func isConfigMapValueTrue(cm *corev1.ConfigMap, key string) (bool, error) {
+func IsConfigMapValueTrue(cm *corev1.ConfigMap, key string) (bool, error) {
 	s, ok := cm.Data[key]
 	if !ok {
 		return false, fmt.Errorf("key=%s doesn't exist in the configmap", key)
@@ -67,64 +71,65 @@ func isConfigMapValueTrue(cm *corev1.ConfigMap, key string) (bool, error) {
 	return val, nil
 }
 
-func getManagerConfigMapName() string {
-	return os.Getenv(envVarManagerConfigMapName)
+func getConfigMapList(ctx context.Context, c client.Client) (*corev1.ConfigMapList, error) {
+	var list corev1.ConfigMapList
+	opts := []client.ListOption{
+		client.InNamespace(common.OperatorNamespace),
+		client.MatchingLabels{"app.kubernetes.io/component": "controller-manager"},
+	}
+
+	if err := c.List(ctx, &list, opts...); err != nil {
+		return nil, err
+	}
+	return &list, nil
 }
 
-func getManagerConfigMap(ctx context.Context, c client.Client, objKey client.ObjectKey) (*corev1.ConfigMap, error) {
-	var cm corev1.ConfigMap
-	err := c.Get(ctx, objKey, &cm)
+func GetManagerConfigMap(ctx context.Context, c client.Client) (*corev1.ConfigMap, error) {
+	list, err := getConfigMapList(ctx, c)
 	if err != nil {
 		return nil, err
 	}
-	return &cm, nil
+
+	for _, cm := range list.Items {
+		if strings.HasSuffix(cm.Name, ConfigMapSuffix) {
+			return &cm, nil
+		}
+	}
+	return nil, fmt.Errorf("the manger configmap suffix=%s not found", ConfigMapSuffix)
 }
 
-func watchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Interface, error) {
-	name := getManagerConfigMapName()
-	if name == "" {
-		return nil, fmt.Errorf("failed to parse the manager configmap name from %s", envVarManagerConfigMapName)
-	}
-
-	cm, err := getManagerConfigMap(ctx, c, client.ObjectKey{Namespace: common.OperatorNamespace, Name: name})
+func WatchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Interface, error) {
+	list, err := getConfigMapList(ctx, c)
 	if err != nil {
-		return nil, fmt.Errorf(errMsgGetManagerConfigMap+" err=%s", err)
+		return nil, err
 	}
 
-	list := corev1.ConfigMapList{Items: []corev1.ConfigMap{*cm}}
-	watcher, err := c.Watch(ctx, &list)
+	watcher, err := c.Watch(ctx, list)
 	if err != nil {
 		return nil, fmt.Errorf("failed to watch the manager configmap err=%s", err)
 	}
 	return watcher, nil
 }
 
-func setConfigMapShutdown(ctx context.Context, c client.Client) error {
+func SetConfigMapShutdown(ctx context.Context, c client.Client, cm *corev1.ConfigMap) error {
 	return updateManagerConfigMap(ctx, c, map[string]string{
-		configMapKeyShutdown: strconv.FormatBool(true),
-	})
+		ConfigMapKeyShutdown: strconv.FormatBool(true),
+	}, cm)
 }
 
-func setConfigMapVaultTokensRevoked(ctx context.Context, c client.Client) error {
+func SetConfigMapVaultTokensRevoked(ctx context.Context, c client.Client, cm *corev1.ConfigMap) error {
 	return updateManagerConfigMap(ctx, c, map[string]string{
-		configMapKeyVaultTokensRevoked: strconv.FormatBool(true),
-	})
+		ConfigMapKeyVaultTokensRevoked: strconv.FormatBool(true),
+	}, cm)
 }
 
-func updateManagerConfigMap(ctx context.Context, c client.Client, data map[string]string) error {
-	name := getManagerConfigMapName()
-	if name == "" {
-		return fmt.Errorf("failed to parse manager configmap name from %s", envVarManagerConfigMapName)
-	}
-
-	var configMap corev1.ConfigMap
-	err := c.Get(ctx, client.ObjectKey{Namespace: common.OperatorNamespace, Name: name}, &configMap)
+func updateManagerConfigMap(ctx context.Context, c client.Client, data map[string]string, cm *corev1.ConfigMap) error {
 	for k, v := range data {
-		configMap.Data[k] = v
+		cm.Data[k] = v
 	}
 
-	if err = c.Update(ctx, &configMap, &client.UpdateOptions{}); err != nil {
-		return fmt.Errorf("failed to update the manager ConfigMap data=%v", data)
+	if err := c.Update(ctx, cm, &client.UpdateOptions{}); err != nil {
+		return fmt.Errorf("failed to update the manager configmap data=%v", data)
 	}
 	return nil
 }

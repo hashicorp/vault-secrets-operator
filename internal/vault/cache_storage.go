@@ -62,6 +62,11 @@ type ClientCacheStoragePruneRequest struct {
 	Filter         PruneFilterFunc
 }
 
+type CachingClientFactoryShutdownRequest struct {
+	Revoke bool
+	Prune  bool
+}
+
 type ClientCacheStorageRestoreRequest struct {
 	SecretObjKey        ctrlclient.ObjectKey
 	CacheKey            ClientCacheKey

@@ -73,8 +73,6 @@ spec:
         command:
         - /vault-secrets-operator
         env:
-        - name: MANAGER_CONFIGMAP_NAME
-          value: {{ include "chart.fullname" . }}-manager-config
         - name: OPERATOR_POD_NAME
           valueFrom:
             fieldRef:
@@ -162,9 +160,6 @@ spec:
         {{- end }}
         command:
         - /vault-secrets-operator
-        env:
-        - name: MANAGER_CONFIGMAP_NAME
-          value: {{ include "chart.fullname" . }}-manager-config
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:

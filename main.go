@@ -150,8 +150,12 @@ func main() {
 			os.Exit(1)
 		}
 
-		cleanupLog.Info("signaling shutdown")
-		helpers.Shutdown(preDeleteDeadlineCtx, defaultClient)
+		cleanupLog.Info("Starting the operator shutdown process")
+		err = vclient.Shutdown(preDeleteDeadlineCtx, defaultClient)
+		if err != nil {
+			cleanupLog.Error(err, "Failed to complete the operator shutdown process")
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -205,7 +209,7 @@ func main() {
 		}
 
 		if cfc.Persist {
-			ownerRefs, err := helpers.GetStorageOwnerRefs(ctx, defaultClient)
+			ownerRefs, err := vclient.GetStorageOwnerRefs(ctx, defaultClient)
 			if err != nil {
 				setupLog.Error(err, "Failed to get storage OwnerReferences")
 				os.Exit(1)
@@ -222,7 +226,13 @@ func main() {
 		}
 	}
 
-	helpers.AwaitForManagerConfigMapModified(ctx, defaultClient, clientFactory)
+	watcher, err := helpers.WatchManagerConfigMap(ctx, defaultClient)
+	if err != nil {
+		setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
+		os.Exit(1)
+	}
+
+	go helpers.WaitForManagerConfigMapModified(ctx, watcher, defaultClient, vclient.OnShutdown(clientFactory))
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
 	if err = (&controllers.VaultStaticSecretReconciler{
