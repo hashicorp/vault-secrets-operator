@@ -79,8 +79,9 @@ func parseAuthOrVaultConnectionRefName(refName, targetNamespace string) (types.N
 	return ref, nil
 }
 
-// According to the spec for secretsv1beta1.VaultAuth, Spec.AllowedNamespaces behaves as follows:
-// AllowedNamespaces:
+// isAllowedNamespace computes whether a targetNamespace is allowed based on the AllowedNamespaces
+// field of the VaultAuth.
+// AllowedNamespaces behaves as follows:
 //
 //	unset - disallow all except the OperatorNamespace and the AuthMethod's ns, default behavior.
 //	[]{"*"} - with length of 1, all namespaces are allowed
@@ -111,7 +112,7 @@ func isAllowedNamespace(auth *secretsv1beta1.VaultAuth, targetNamespace string) 
 	return false
 }
 
-func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, error) {
+func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, error) {
 	authRef, err := GetAuthRefNamespacedName(obj)
 	if err != nil {
 		return nil, err

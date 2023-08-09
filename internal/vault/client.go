@@ -50,8 +50,8 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 			return nil, fmt.Errorf("invalid object %T, StorageEncryption not configured", t)
 		}
 	default:
-		// otherwise we fall back to the common.GetVaultAuthAndTarget() to decide whether, or not obj is supported.
-		a, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+		// otherwise we fall back to the common.GetVaultAuthNamespaced() to decide whether, or not obj is supported.
+		a, err := common.GetVaultAuthNamespaced(ctx, client, obj)
 		if err != nil {
 			return nil, err
 		}

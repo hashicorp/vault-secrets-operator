@@ -55,7 +55,7 @@ func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
 //
 // See computeClientCacheKey for more details on how the client cache is derived.
 func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (ClientCacheKey, error) {
-	authObj, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+	authObj, err := common.GetVaultAuthNamespaced(ctx, client, obj)
 	if err != nil {
 		return "", err
 	}
