@@ -62,9 +62,8 @@ type ClientCacheStoragePruneRequest struct {
 	Filter         PruneFilterFunc
 }
 
-type CachingClientFactoryShutdownRequest struct {
-	Revoke bool
-	Prune  bool
+type CachingClientFactoryShutDownRequest struct {
+	Preserve bool
 }
 
 type ClientCacheStorageRestoreRequest struct {

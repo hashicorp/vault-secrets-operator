@@ -23,7 +23,7 @@ type ClientCache interface {
 	Len() int
 	Prune(filterFunc ClientCachePruneFilterFunc) []ClientCacheKey
 	Contains(key ClientCacheKey) bool
-	Keys() []ClientCacheKey
+	Purge() []ClientCacheKey
 }
 
 var _ ClientCache = (*clientCache)(nil)
@@ -38,6 +38,28 @@ type clientCache struct {
 	evictionCloneGauge prometheus.Gauge
 	hitCloneCounter    prometheus.Counter
 	missCloneCounter   prometheus.Counter
+}
+
+// Purge all Clients from the cache. Useful when shutting down a
+// CachingClientFactory.
+func (c *clientCache) Purge() []ClientCacheKey {
+	var purged []ClientCacheKey
+	for _, v := range c.cache.Keys() {
+		key, ok := v.(ClientCacheKey)
+		if !ok {
+			continue
+		}
+		client, ok := c.Get(key)
+		if !ok {
+			continue
+		}
+
+		if ok := c.remove(key, client); ok {
+			purged = append(purged, key)
+		}
+	}
+
+	return purged
 }
 
 func (c *clientCache) Contains(key ClientCacheKey) bool {
@@ -134,16 +156,7 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCache
 	return pruned
 }
 
-func (c *clientCache) Keys() []ClientCacheKey {
-	keys := make([]ClientCacheKey, 0, len(c.cache.Keys()))
-	for _, k := range c.cache.Keys() {
-		keys = append(keys, k.(ClientCacheKey))
-	}
-	return keys
-}
-
 func (c *clientCache) remove(key ClientCacheKey, client Client) bool {
-	client.Close()
 	if !client.IsClone() {
 		c.pruneClones(key)
 	}

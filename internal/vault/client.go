@@ -142,7 +142,6 @@ type Client interface {
 	Init(context.Context, ctrlclient.Client, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection, string, *ClientOptions) error
 	Login(context.Context, ctrlclient.Client) error
 	Restore(context.Context, *api.Secret) error
-	SelfRevoke(ctx context.Context)
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
 	Validate() error
@@ -150,7 +149,7 @@ type Client interface {
 	GetVaultConnectionObj() *secretsv1beta1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
-	Close()
+	Close(bool)
 	Clone(string) (Client, error)
 	IsClone() bool
 	Namespace() string
@@ -307,9 +306,6 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	return nil
 }
 
-func (c *defaultClient) SelfRevoke(ctx context.Context) {
-}
-
 func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth,
 	connObj *secretsv1beta1.VaultConnection, providerNamespace string, opts *ClientOptions,
 ) error {
@@ -365,14 +361,23 @@ func (c *defaultClient) GetTokenSecret() *api.Secret {
 
 // Close un-initializes this Client, stopping its LifetimeWatcher in the process.
 // It is safe to be called multiple times.
-func (c *defaultClient) Close() {
+func (c *defaultClient) Close(revoke bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	log.FromContext(nil).Info("Calling Client.Close()")
+	logger := log.FromContext(nil)
+	logger.Info("Calling Client.Close()")
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
+
+	if revoke && c.client != nil {
+		if err := c.client.Auth().Token().RevokeSelf(""); err != nil {
+			logger.V(consts.LogLevelWarning).Info(
+				"Failed to revoke Vault client token", "err", err)
+		}
+	}
+
 	c.client = nil
 }
 

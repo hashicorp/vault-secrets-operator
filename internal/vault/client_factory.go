@@ -54,7 +54,7 @@ type CachingClientFactory interface {
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
-	Shutdown(context.Context, ctrlclient.Client, CachingClientFactoryShutdownRequest) error
+	ShutDown(CachingClientFactoryShutDownRequest) error
 }
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
@@ -65,12 +65,14 @@ type cachingClientFactory struct {
 	recorder           record.EventRecorder
 	persist            bool
 	encryptionRequired bool
-	shutdown           bool
+	shutDown           bool
 	// clientCacheKeyEncrypt is a member of the ClientCache, it is instantiated whenever the ClientCacheStorage has enforceEncryption enabled.
 	clientCacheKeyEncrypt  ClientCacheKey
 	logger                 logr.Logger
 	requestCounterVec      *prometheus.CounterVec
 	requestErrorCounterVec *prometheus.CounterVec
+	revokeOnEvict          bool
+	pruneStorageOnEvict    bool
 	mu                     sync.RWMutex
 }
 
@@ -103,18 +105,18 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 	if !req.PruneStorage {
 		return 0, nil
 	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	return m.prune(ctx, client, filter)
 }
 
 func (m *cachingClientFactory) prune(ctx context.Context, client ctrlclient.Client, filter ClientCachePruneFilterFunc) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// prune the client cache for filter, pruned is a slice of cache keys
 	pruned := m.cache.Prune(filter)
 	var errs error
 	// for all cache entries pruned, remove the corresponding storage entries.
-	if m.persist && m.storage != nil {
+	if m.storageEnabled() {
 		for _, key := range pruned {
 			if _, err := m.pruneStorage(ctx, client, key); err != nil {
 				errs = errors.Join(errs, err)
@@ -142,8 +144,9 @@ func (m *cachingClientFactory) pruneStorage(ctx context.Context, client ctrlclie
 func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlclient.Client, cacheKey ClientCacheKey, c Client) {
 	logger := m.logger.WithValues("cacheKey", cacheKey)
 	logger.Info("Handling client cache eviction")
-	c.Close()
-	if m.persist && m.storage != nil {
+	c.Close(m.revokeOnEvict)
+
+	if m.storageEnabled() && m.pruneStorageOnEvict {
 		if count, err := m.pruneStorage(ctx, client, cacheKey); err != nil {
 			logger.Error(err, "Failed to remove Client from storage")
 		} else {
@@ -242,106 +245,46 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 	return errs
 }
 
-// Shutdown will attempt to revoke all Client tokens in memory and in storage if they are persisted,
-// based on CachingClientFactoryShutdownRequest. This should be called upon operator deployment deletion
-func (m *cachingClientFactory) Shutdown(ctx context.Context, client ctrlclient.Client, shutdownReq CachingClientFactoryShutdownRequest) error {
+// ShutDown will attempt to revoke all Client tokens in memory.
+// This should be called upon operator deployment deletion if client cache cleanup is required.
+func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if m.shutdown {
-		return fmt.Errorf("already shutdown")
-	}
 
 	m.logger.Info("Shutting down ClientFactory")
 	// This will shut down client cache, "blocking" future ClientFactory interface calls
 	// NOTE: If a consumer of the client cache factory already has a reference to a client in hand,
 	// they may continue using it and generating new tokens/leases.
-	m.shutdown = true
+	m.shutDown = true
 
 	var errs error
-	if shutdownReq.Revoke {
-		// Comment out when running test/integration/revocation_integration_test.go for error path testing.
-		// In this case, we can ensure that all tokens in storage are revoked successfully.
-		if err := m.revokeAll(ctx); err != nil {
-			errs = errors.Join(errs, err)
-		}
-
-		// Comment out when running test/integration/revocation_integration_test.go for error path testing.
-		// In this case, we can ensure that all tokens cached in memory are revoked successfully.
-		if err := m.revokeAllInStorage(ctx, client); err != nil {
-			errs = errors.Join(errs, err)
-		}
+	if req.Preserve {
+		m.revokeOnEvict = false
+		m.pruneStorageOnEvict = false
+	} else {
+		m.revokeOnEvict = true
+		m.pruneStorageOnEvict = true
 	}
 
-	filter := func(client Client) bool {
-		return true
+	m.cache.Purge()
+
+	if errs != nil {
+		m.logger.Error(errs, "ClientFactory shut down completed with errors")
+	} else {
+		m.logger.Info("Successfully shut down ClientFactory")
 	}
 
-	if shutdownReq.Prune {
-		if _, err := m.prune(ctx, client, filter); err != nil {
-			errs = errors.Join(errs, err)
-		}
-	}
-
-	// TODO
 	return errs
 }
 
-func (m *cachingClientFactory) revokeAll(ctx context.Context) error {
-	var errs error
-	// revoke in-memory cached clients
-	for _, k := range m.cache.Keys() {
-		c, ok := m.cache.Get(k)
-		if !ok {
-			continue
-		}
-
-		if _, err := c.Write(ctx, "/auth/token/revoke-self", nil); err != nil {
-			errs = errors.Join(errs, err)
-		}
-	}
-	return errs
-}
-
-func (m *cachingClientFactory) revokeAllInStorage(ctx context.Context, client ctrlclient.Client) error {
-	// revoke tokens in storage
-	if !m.persist || m.storage == nil {
-		return nil
-	}
-
-	req, err := m.restoreAllRequest(ctx, client)
-	if err != nil {
-		m.logger.Error(err, "Failed to revoke cached client")
-	}
-
-	entries, err := m.storage.RestoreAll(ctx, client, req)
-	if err != nil {
-		m.logger.Error(err, "RestoreAll failed from storage")
-	}
-
-	if entries == nil {
-		return nil
-	}
-
-	m.logger.Info("Restoring and self-revoking all Clients in storage", "numEntries", len(entries))
-	for _, entry := range entries {
-		logger := m.logger.WithValues("cacheKey", entry.CacheKey)
-		logger.Info("Restoring client in storage")
-		if c, err := m.restoreClient(ctx, client, entry); err != nil {
-			logger.Error(err, "Restore failed", "cacheKey", entry.CacheKey)
-		} else if _, err = c.Write(ctx, "/auth/token/revoke-self", nil); err != nil {
-			logger.Error(err, "Failed to self-revoke client token from storage")
-		} else {
-			logger.Info("Successfully self-revoked client token from storage")
-		}
-	}
-	return nil
+func (m *cachingClientFactory) storageEnabled() bool {
+	return m.persist && m.storage != nil
 }
 
 func (m *cachingClientFactory) isDisabled() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.shutdown
+	return m.shutDown
 }
 
 // Get is meant to be called for all resources that require access to Vault.
@@ -425,7 +368,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !ok && (m.persist && m.storage != nil) {
+	if !ok && m.storageEnabled() {
 		// try and restore from Client storage cache, if properly configured to do so.
 		restored, err := m.restoreClientFromCacheKey(ctx, client, cacheKey)
 		if err == nil {
@@ -450,7 +393,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, errs
 	}
 
-	if m.persist && m.storage != nil {
+	if m.storageEnabled() {
 		if err := m.storeClient(ctx, client, c); err != nil {
 			logger.Error(err, "Failed to store the client")
 		}
@@ -706,15 +649,17 @@ type CachingClientFactoryConfig struct {
 	CollectClientCacheMetrics bool
 	Recorder                  record.EventRecorder
 	MetricsRegistry           prometheus.Registerer
+	PruneStorageOnEvict       bool
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
 func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 	return &CachingClientFactoryConfig{
-		StorageConfig:   DefaultClientCacheStorageConfig(),
-		ClientCacheSize: 10000,
-		Recorder:        &nullEventRecorder{},
-		MetricsRegistry: ctrlmetrics.Registry,
+		StorageConfig:       DefaultClientCacheStorageConfig(),
+		ClientCacheSize:     10000,
+		Recorder:            &nullEventRecorder{},
+		MetricsRegistry:     ctrlmetrics.Registry,
+		PruneStorageOnEvict: true,
 	}
 }
 

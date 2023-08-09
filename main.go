@@ -150,7 +150,7 @@ func main() {
 		}
 
 		cleanupLog.Info("Starting the operator shutdown process")
-		err = shutdownOperator(preDeleteDeadlineCtx, defaultClient)
+		err = shutDownOperator(preDeleteDeadlineCtx, defaultClient, vclient.ShutDownModePreserve)
 		if err != nil {
 			cleanupLog.Error(err, "Failed to complete the operator shutdown process")
 			os.Exit(1)
@@ -207,15 +207,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		if cfc.Persist {
-			ownerRefs, err := vclient.GetStorageOwnerRefs(ctx, defaultClient)
-			if err != nil {
-				setupLog.Error(err, "Failed to get storage OwnerReferences")
-				os.Exit(1)
-			}
-			cfc.StorageConfig.OwnerRefs = ownerRefs
-		}
-
 		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
@@ -230,7 +221,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		go vclient.WaitForManagerConfigMapModified(ctx, watcher, defaultClient, vclient.OnShutdown(clientFactory))
+		go vclient.WaitForManagerConfigMapModified(ctx, watcher, defaultClient, vclient.OnShutDown(clientFactory))
 	}
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
@@ -303,37 +294,30 @@ func main() {
 	}
 }
 
-func shutdownOperator(ctx context.Context, c client.Client) error {
+func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDownMode) error {
 	cm, err := vclient.GetManagerConfigMap(ctx, c)
 	if err != nil {
 		return err
 	}
 
-	if ok, _ := vclient.IsConfigMapValueTrue(cm, vclient.ConfigMapKeyVaultTokensRevoked); ok {
-		return fmt.Errorf("shutdown set to true already")
-	}
-
-	if err := vclient.SetConfigMapShutdown(ctx, c, cm); err != nil {
+	if err := vclient.SetShutDownMode(ctx, c, cm, mode); err != nil {
 		return fmt.Errorf("failed to set shutdown in the manager configmap err=%s", err)
 	}
 
-	if val, ok := cm.Data[vclient.ConfigMapKeyVaultTokensCleanupModel]; ok &&
-		(val == vclient.VaultTokensCleanupModelRevoke || val == vclient.VaultTokensCleanupModelAll) {
-		var err error
-		for {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("shutdown context canceled err=%s", err)
-			default:
-				time.Sleep(500 * time.Millisecond)
-				cm, err = vclient.GetManagerConfigMap(ctx, c)
-				if ok, err = vclient.IsConfigMapValueTrue(cm, vclient.ConfigMapKeyVaultTokensRevoked); err != nil {
-					err = fmt.Errorf("failed to get the configmap value err=%s", err)
-				} else if ok {
-					return nil
-				}
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("shutdown context canceled err=%s", err)
+		default:
+			time.Sleep(500 * time.Millisecond)
+			cm, err = vclient.GetManagerConfigMap(ctx, c)
+			// TODO: ....
+			if err != nil {
+				return err
 			}
+			// TODO: wait until the mode vclient.ShutDownStatusDone
+			// TODO: abort when mode is vclient.ShutDownStatusFailed
+			// TODO: continue when mode is vclient.ShutDownStatusPending
 		}
 	}
-	return nil
 }
