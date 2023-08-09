@@ -131,6 +131,87 @@ func Test_defaultResponse_Secret(t *testing.T) {
 	}
 }
 
+func Test_defaultResponse_SecretK8sData(t *testing.T) {
+	respFunc := func(tt testResponseSecretK8sData) Response {
+		return &defaultResponse{
+			secret: tt.secret,
+		}
+	}
+
+	tests := []testResponseSecretK8sData{
+		{
+			name:     "basic",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"baz": "qux",
+				},
+			},
+			want: map[string][]byte{
+				"baz":  []byte("qux"),
+				"_raw": []byte(`{"baz":"qux"}`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:     "invalid-empty-raw-data",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"_raw": "qux",
+					"baz":  "foo",
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "key '_raw' not permitted in Vault secret")
+			},
+		},
+		{
+			name:     "nil-data",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: nil,
+			},
+			want:    map[string][]byte{"_raw": []byte(`null`)},
+			wantErr: assert.NoError,
+		},
+		{
+			name:     "invalid-raw-data-unmarshalable",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"baz": make(chan int),
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "json: unsupported type: chan int")
+			},
+		},
+		{
+			name:     "invalid-data-unmarshalable",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"data": map[string]interface{}{
+						"baz": make(chan int),
+					},
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "json: unsupported type: chan int")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertResponseSecretK8sData(t, tt)
+		})
+	}
+}
+
 func Test_kvV1Response_Data(t *testing.T) {
 	respFunc := func(tt testResponseData) Response {
 		return &kvV1Response{
@@ -229,6 +310,89 @@ func Test_kvV1Response_Secret(t *testing.T) {
 	}
 }
 
+func Test_kvV1Response_SecretK8sData(t *testing.T) {
+	respFunc := func(tt testResponseSecretK8sData) Response {
+		return &kvV1Response{
+			secret: tt.secret,
+		}
+	}
+
+	tests := []testResponseSecretK8sData{
+		{
+			name:     "basic",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"baz": "qux",
+				},
+			},
+			want: map[string][]byte{
+				"baz":  []byte("qux"),
+				"_raw": []byte(`{"baz":"qux"}`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:     "invalid-data-contains-raw",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"_raw": "qux",
+					"baz":  "foo",
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "key '_raw' not permitted in Vault secret")
+			},
+		},
+		{
+			name:     "invalid-empty-raw-data",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: nil,
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "raw portion of vault KV secret was nil")
+			},
+		},
+		{
+			name:     "invalid-raw-data-unmarshalable",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"baz": make(chan int),
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "json: unsupported type: chan int")
+			},
+		},
+		{
+			name:     "invalid-data-unmarshalable",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"data": map[string]interface{}{
+						"baz": make(chan int),
+					},
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "json: unsupported type: chan int")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertResponseSecretK8sData(t, tt)
+		})
+	}
+}
+
 func Test_kvV2Response_Data(t *testing.T) {
 	respFunc := func(tt testResponseData) Response {
 		return &kvV2Response{
@@ -321,192 +485,6 @@ func Test_kvV2Response_Secret(t *testing.T) {
 	}
 }
 
-func assertResponseData(t *testing.T, tt testResponseData) {
-	t.Helper()
-	resp := tt.respFunc(tt)
-	assert.Equalf(t, tt.want, resp.Data(), "Data()")
-}
-
-func assertResponseSecret(t *testing.T, tt testResponseSecret) {
-	t.Helper()
-	resp := tt.respFunc(tt)
-	assert.Equalf(t, tt.want, resp.Secret(), "Data()")
-}
-
-func Test_defaultResponse_SecretK8sData(t *testing.T) {
-	respFunc := func(tt testResponseSecretK8sData) Response {
-		return &defaultResponse{
-			secret: tt.secret,
-		}
-	}
-
-	tests := []testResponseSecretK8sData{
-		{
-			name:     "basic",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"baz": "qux",
-				},
-			},
-			want: map[string][]byte{
-				"baz":  []byte("qux"),
-				"_raw": []byte(`{"baz":"qux"}`),
-			},
-			wantErr: assert.NoError,
-		},
-		{
-			name:     "invalid-empty-raw-data",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"_raw": "qux",
-					"baz":  "foo",
-				},
-			},
-			want: nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "key '_raw' not permitted in Vault secret")
-			},
-		},
-		{
-			name:     "nil-data",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: nil,
-			},
-			want:    map[string][]byte{"_raw": []byte(`null`)},
-			wantErr: assert.NoError,
-		},
-		{
-			name:     "invalid-raw-data-unmarshalable",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"baz": make(chan int),
-				},
-			},
-			want: nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "json: unsupported type: chan int")
-			},
-		},
-		{
-			name:     "invalid-data-unmarshalable",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"data": map[string]interface{}{
-						"baz": make(chan int),
-					},
-				},
-			},
-			want: nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "json: unsupported type: chan int")
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := tt.respFunc(tt)
-			got, err := r.SecretK8sData()
-			if !tt.wantErr(t, err, fmt.Sprintf("SecretK8sData()")) {
-				return
-			}
-			assert.Equalf(t, tt.want, got, "SecretK8sData()")
-		})
-	}
-}
-
-func Test_kvV1Response_SecretK8sData(t *testing.T) {
-	respFunc := func(tt testResponseSecretK8sData) Response {
-		return &kvV1Response{
-			secret: tt.secret,
-		}
-	}
-
-	tests := []testResponseSecretK8sData{
-		{
-			name:     "basic",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"baz": "qux",
-				},
-			},
-			want: map[string][]byte{
-				"baz":  []byte("qux"),
-				"_raw": []byte(`{"baz":"qux"}`),
-			},
-			wantErr: assert.NoError,
-		},
-		{
-			name:     "invalid-data-contains-raw",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"_raw": "qux",
-					"baz":  "foo",
-				},
-			},
-			want: nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "key '_raw' not permitted in Vault secret")
-			},
-		},
-		{
-			name:     "invalid-empty-raw-data",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: nil,
-			},
-			want: nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "raw portion of vault KV secret was nil")
-			},
-		},
-		{
-			name:     "invalid-raw-data-unmarshalable",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"baz": make(chan int),
-				},
-			},
-			want: nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "json: unsupported type: chan int")
-			},
-		},
-		{
-			name:     "invalid-data-unmarshalable",
-			respFunc: respFunc,
-			secret: &api.Secret{
-				Data: map[string]interface{}{
-					"data": map[string]interface{}{
-						"baz": make(chan int),
-					},
-				},
-			},
-			want: nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "json: unsupported type: chan int")
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := tt.respFunc(tt)
-			got, err := r.SecretK8sData()
-			if !tt.wantErr(t, err, fmt.Sprintf("SecretK8sData()")) {
-				return
-			}
-			assert.Equalf(t, tt.want, got, "SecretK8sData()")
-		})
-	}
-}
-
 func Test_kvV2Response_SecretK8sData(t *testing.T) {
 	respFunc := func(tt testResponseSecretK8sData) Response {
 		return &kvV2Response{
@@ -589,12 +567,29 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := tt.respFunc(tt)
-			got, err := r.SecretK8sData()
-			if !tt.wantErr(t, err, fmt.Sprintf("SecretK8sData()")) {
-				return
-			}
-			assert.Equalf(t, tt.want, got, "SecretK8sData()")
+			assertResponseSecretK8sData(t, tt)
 		})
 	}
+}
+
+func assertResponseData(t *testing.T, tt testResponseData) {
+	t.Helper()
+	resp := tt.respFunc(tt)
+	assert.Equalf(t, tt.want, resp.Data(), "Data()")
+}
+
+func assertResponseSecret(t *testing.T, tt testResponseSecret) {
+	t.Helper()
+	resp := tt.respFunc(tt)
+	assert.Equalf(t, tt.want, resp.Secret(), "Data()")
+}
+
+func assertResponseSecretK8sData(t *testing.T, tt testResponseSecretK8sData) {
+	t.Helper()
+	resp := tt.respFunc(tt)
+	got, err := resp.SecretK8sData()
+	if !tt.wantErr(t, err, fmt.Sprintf("SecretK8sData()")) {
+		return
+	}
+	assert.Equalf(t, tt.want, got, "SecretK8sData()")
 }
