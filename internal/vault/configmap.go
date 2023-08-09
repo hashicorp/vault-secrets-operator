@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package helpers
+package vault
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ConfigMapSuffix                     = "-manager-config"
+	ConfigMapSuffix                     = "manager-config"
 	ConfigMapKeyShutdown                = "shutdown"
 	ConfigMapKeyVaultTokensCleanupModel = "vaultTokensCleanupModel"
 	ConfigMapKeyVaultTokensRevoked      = "vaultTokensRevoked"
@@ -42,8 +42,8 @@ func WaitForManagerConfigMapModified(ctx context.Context, watcher watch.Interfac
 						if executed[i] {
 							continue
 						}
-
-						if ok, err := onChange(ctx, m, c); err != nil {
+						// TODO handle onChange error and executed logic
+						if ok, err := onChange(ctx, m, c); err != nil && !ok {
 							logger.Error(err, "Failed to execute on configmap change func")
 						} else if ok {
 							executed[i] = true

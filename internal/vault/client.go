@@ -308,7 +308,6 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 }
 
 func (c *defaultClient) SelfRevoke(ctx context.Context) {
-
 }
 
 func (c *defaultClient) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth,

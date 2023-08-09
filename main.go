@@ -29,7 +29,6 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
@@ -151,7 +150,7 @@ func main() {
 		}
 
 		cleanupLog.Info("Starting the operator shutdown process")
-		err = vclient.Shutdown(preDeleteDeadlineCtx, defaultClient)
+		err = shutdownOperator(preDeleteDeadlineCtx, defaultClient)
 		if err != nil {
 			cleanupLog.Error(err, "Failed to complete the operator shutdown process")
 			os.Exit(1)
@@ -224,15 +223,15 @@ func main() {
 			setupLog.Error(err, "Failed to setup the Vault ClientFactory")
 			os.Exit(1)
 		}
-	}
 
-	watcher, err := helpers.WatchManagerConfigMap(ctx, defaultClient)
-	if err != nil {
-		setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
-		os.Exit(1)
-	}
+		watcher, err := vclient.WatchManagerConfigMap(ctx, defaultClient)
+		if err != nil {
+			setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
+			os.Exit(1)
+		}
 
-	go helpers.WaitForManagerConfigMapModified(ctx, watcher, defaultClient, vclient.OnShutdown(clientFactory))
+		go vclient.WaitForManagerConfigMapModified(ctx, watcher, defaultClient, vclient.OnShutdown(clientFactory))
+	}
 
 	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
 	if err = (&controllers.VaultStaticSecretReconciler{
@@ -302,4 +301,39 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func shutdownOperator(ctx context.Context, c client.Client) error {
+	cm, err := vclient.GetManagerConfigMap(ctx, c)
+	if err != nil {
+		return err
+	}
+
+	if ok, _ := vclient.IsConfigMapValueTrue(cm, vclient.ConfigMapKeyVaultTokensRevoked); ok {
+		return fmt.Errorf("shutdown set to true already")
+	}
+
+	if err := vclient.SetConfigMapShutdown(ctx, c, cm); err != nil {
+		return fmt.Errorf("failed to set shutdown in the manager configmap err=%s", err)
+	}
+
+	if val, ok := cm.Data[vclient.ConfigMapKeyVaultTokensCleanupModel]; ok &&
+		(val == vclient.VaultTokensCleanupModelRevoke || val == vclient.VaultTokensCleanupModelAll) {
+		var err error
+		for {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("shutdown context canceled err=%s", err)
+			default:
+				time.Sleep(500 * time.Millisecond)
+				cm, err = vclient.GetManagerConfigMap(ctx, c)
+				if ok, err = vclient.IsConfigMapValueTrue(cm, vclient.ConfigMapKeyVaultTokensRevoked); err != nil {
+					err = fmt.Errorf("failed to get the configmap value err=%s", err)
+				} else if ok {
+					return nil
+				}
+			}
+		}
+	}
+	return nil
 }

@@ -8,13 +8,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -86,23 +85,6 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 	}
 }
 
-func GetOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
-	ownerRef := metav1.OwnerReference{
-		Name: owner.GetName(),
-		UID:  owner.GetUID(),
-	}
-
-	gvk, err := apiutil.GVKForObject(owner, scheme)
-	if err != nil {
-		return ownerRef, err
-	}
-
-	apiVersion, kind := gvk.ToAPIVersionAndKind()
-	ownerRef.APIVersion = apiVersion
-	ownerRef.Kind = kind
-	return ownerRef, nil
-}
-
 // OwnerLabelsForObj returns the canonical set of labels that should be set on
 // all secrets created/owned by VSO.
 func OwnerLabelsForObj(obj ctrlclient.Object) (map[string]string, error) {
@@ -142,7 +124,7 @@ func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, err
 // Those are secrets that have a copy of OwnerLabels, and exactly one metav1.OwnerReference
 // that matches obj.
 func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) ([]corev1.Secret, error) {
-	ownerRef, err := GetOwnerRefFromObj(obj, client.Scheme())
+	ownerRef, err := utils.GetOwnerRefFromObj(obj, client.Scheme())
 	if err != nil {
 		return nil, err
 	}
