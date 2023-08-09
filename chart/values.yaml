@@ -257,6 +257,14 @@ controller:
     # @type: integer
     maxConcurrentReconciles:
 
+    # Defines additional environment variables to be added to the
+    # vault-secrets-opearator manager container.
+    # extraEnv:
+    #   - name: HTTP_PROXY
+    #     value: http://proxy.example.com
+    # @type: array<map>
+    extraEnv: []
+
     # Configures the default resources for the vault-secrets-operator container.
     # For more information on configuring resources, see the K8s documentation:
     # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
