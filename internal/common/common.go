@@ -42,7 +42,7 @@ func init() {
 	}
 }
 
-func GetAuthAndTargetNamespacedName(obj client.Object) (types.NamespacedName, error) {
+func GetAuthRefNamespacedName(obj client.Object) (types.NamespacedName, error) {
 	m, err := NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return types.NamespacedName{}, fmt.Errorf("unsupported type %T", obj)
@@ -112,7 +112,7 @@ func isAllowedNamespace(auth *secretsv1beta1.VaultAuth, targetNamespace string) 
 }
 
 func GetVaultAuthAndTarget(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, error) {
-	authRef, err := GetAuthAndTargetNamespacedName(obj)
+	authRef, err := GetAuthRefNamespacedName(obj)
 	if err != nil {
 		return nil, err
 	}

@@ -111,7 +111,7 @@ func Test_GetConnectionNamespacedName(t *testing.T) {
 	}
 }
 
-func Test_GetAuthNamespacedName(t *testing.T) {
+func Test_GetAuthRefNamespacedName(t *testing.T) {
 	SecretNamespace := "foo"
 	tests := []struct {
 		name    string
@@ -186,7 +186,7 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 				},
 			}
 			// TargetName is always just the object name+ns
-			got, err := GetAuthAndTargetNamespacedName(obj)
+			got, err := GetAuthRefNamespacedName(obj)
 			if !tt.wantErr(t, err, fmt.Sprintf("getAuthNamespacedName(%v)", tt.a)) {
 				return
 			}
