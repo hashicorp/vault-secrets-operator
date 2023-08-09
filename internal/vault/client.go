@@ -51,12 +51,12 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 		}
 	default:
 		// otherwise we fall back to the common.GetVaultAuthAndTarget() to decide whether, or not obj is supported.
-		a, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+		a, err := common.GetVaultAuthAndTarget(ctx, client, obj)
 		if err != nil {
 			return nil, err
 		}
 
-		providerNamespace = target.Namespace
+		providerNamespace = obj.GetNamespace()
 		authObj = a
 	}
 

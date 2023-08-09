@@ -37,7 +37,7 @@ import (
 func TestVaultStaticSecret_kv(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
-	testK8sNamespace2 := "k8s-tenant-" + testID + "-test"
+	testK8sNamespace2 := testK8sNamespace + "-test"
 	testKvMountPath := consts.KVSecretTypeV1 + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""

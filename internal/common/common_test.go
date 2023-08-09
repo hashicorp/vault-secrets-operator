@@ -168,7 +168,7 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 			},
 			want: types.NamespacedName{},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				assert.EqualError(t, err, "invalid auth method name foo/bar/baz/qux", i...)
+				assert.EqualError(t, err, "invalid name: foo/bar/baz/qux", i...)
 				return err != nil
 			},
 		},
@@ -186,7 +186,7 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 				},
 			}
 			// TargetName is always just the object name+ns
-			got, _, err := GetAuthAndTargetNamespacedName(obj)
+			got, err := GetAuthAndTargetNamespacedName(obj)
 			if !tt.wantErr(t, err, fmt.Sprintf("getAuthNamespacedName(%v)", tt.a)) {
 				return
 			}
@@ -195,12 +195,12 @@ func Test_GetAuthNamespacedName(t *testing.T) {
 	}
 }
 
-func Test_AllowedNamespace(t *testing.T) {
+func Test_isAllowedNamespace(t *testing.T) {
 	tests := []struct {
-		name     string
-		a        *secretsv1beta1.VaultAuth
-		target   types.NamespacedName
-		expected bool
+		name            string
+		a               *secretsv1beta1.VaultAuth
+		targetNamespace string
+		expected        bool
 	}{
 		{
 			name: "wildcard-filter", // allow
@@ -212,11 +212,8 @@ func Test_AllowedNamespace(t *testing.T) {
 					AllowedNamespaces: []string{"*"},
 				},
 			},
-			target: types.NamespacedName{
-				Name:      "qux",
-				Namespace: "baz",
-			},
-			expected: true,
+			targetNamespace: "baz",
+			expected:        true,
 		},
 		{
 			name: "list of filters with target ns included", // allow
@@ -228,11 +225,8 @@ func Test_AllowedNamespace(t *testing.T) {
 					AllowedNamespaces: []string{"foo", "bar", "baz"},
 				},
 			},
-			target: types.NamespacedName{
-				Name:      "qux",
-				Namespace: "baz",
-			},
-			expected: true,
+			targetNamespace: "baz",
+			expected:        true,
 		},
 		{
 			name: "target and auth method in same ns", // allow
@@ -243,11 +237,8 @@ func Test_AllowedNamespace(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{},
 			},
-			target: types.NamespacedName{
-				Name:      "qux",
-				Namespace: "foo",
-			},
-			expected: true,
+			targetNamespace: "foo",
+			expected:        true,
 		},
 		{
 			name: "default auth method is used", // allow
@@ -260,11 +251,8 @@ func Test_AllowedNamespace(t *testing.T) {
 					AllowedNamespaces: []string{"foo", "bar", "baz"},
 				},
 			},
-			target: types.NamespacedName{
-				Name:      "qux",
-				Namespace: "baz",
-			},
-			expected: true,
+			targetNamespace: "baz",
+			expected:        true,
 		},
 		{
 			name: "list of filters with target ns excluded", // disallow
@@ -276,11 +264,8 @@ func Test_AllowedNamespace(t *testing.T) {
 					AllowedNamespaces: []string{"foo", "bar"},
 				},
 			},
-			target: types.NamespacedName{
-				Name:      "qux",
-				Namespace: "baz",
-			},
-			expected: false,
+			targetNamespace: "baz",
+			expected:        false,
 		},
 		{
 			name: "nil-filter-slice", // disallow
@@ -292,11 +277,8 @@ func Test_AllowedNamespace(t *testing.T) {
 					AllowedNamespaces: nil,
 				},
 			},
-			target: types.NamespacedName{
-				Namespace: "foo",
-				Name:      "bar",
-			},
-			expected: false,
+			targetNamespace: "foo",
+			expected:        false,
 		},
 		{
 			name: "empty-filter-slice", // disallow
@@ -308,17 +290,14 @@ func Test_AllowedNamespace(t *testing.T) {
 					AllowedNamespaces: []string{},
 				},
 			},
-			target: types.NamespacedName{
-				Namespace: "foo",
-				Name:      "bar",
-			},
-			expected: false,
+			targetNamespace: "foo",
+			expected:        false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// TargetName is always just the object name+ns
-			allowed := AllowedNamespace(tt.a, tt.target)
+			allowed := isAllowedNamespace(tt.a, tt.targetNamespace)
 			assert.Equal(t, allowed, tt.expected)
 		})
 	}
