@@ -10,9 +10,10 @@ import (
 
 // VaultDynamicSecretSpec defines the desired state of VaultDynamicSecret
 type VaultDynamicSecretSpec struct {
-	// VaultAuthRef to the VaultAuth resource
-	// If no value is specified the Operator will default to the `default` VaultAuth,
-	// configured in its own Kubernetes namespace.
+	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
+	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
+	// default to the `default` VaultAuth, configured in its own Kubernetes namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 	// Namespace where the secrets engine is mounted in Vault.
 	Namespace string `json:"namespace,omitempty"`
