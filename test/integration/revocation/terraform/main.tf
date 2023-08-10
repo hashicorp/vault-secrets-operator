@@ -151,8 +151,8 @@ resource "helm_release" "vault-secrets-operator" {
   }
 
   set {
-    name  = "controller.manager.clientCache.vaultTokensCleanupModel"
-    value = "all"
+    name  = "controller.manager.clientCache.preserveOnShutDown"
+    value = "false"
   }
 
   set {

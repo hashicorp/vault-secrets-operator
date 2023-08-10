@@ -106,10 +106,10 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
-      {{- if or (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "all") (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "revoke") }}
-      terminationGracePeriodSeconds : {{ .Values.controller.withRevokeVaultTokensCleanupModel.terminationGracePeriodSeconds }}
-      {{- else }}
+      {{- if .Values.controller.manager.clientCache.preserveOnShutDown }}
       terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
+      {{- else }}
+      terminationGracePeriodSeconds : {{ .Values.controller.withShutDownModeNoPreserve.terminationGracePeriodSeconds }}
       {{- end }}
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
@@ -153,10 +153,11 @@ spec:
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
         - --shutdown
-        {{- if or (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "all") (eq .Values.controller.manager.clientCache.vaultTokensCleanupModel "revoke") }}
-        - --pre-delete-hook-timeout-seconds={{ .Values.controller.withRevokeVaultTokensCleanupModel.preDeleteHookTimeoutSeconds }}
-        {{- else }}
+        {{- if .Values.controller.manager.clientCache.preserveOnShutDown }}
+        - --preserve-client-cache
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
+        {{- else }}
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.withShutDownModeNoPreserve.preDeleteHookTimeoutSeconds }}
         {{- end }}
         command:
         - /vault-secrets-operator

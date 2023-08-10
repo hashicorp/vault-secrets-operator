@@ -224,7 +224,7 @@ load _helpers
 #--------------------------------------------------------------------
 # terminationGracePeriodSeconds
 
-@test "controller/Deployment: default terminationGracePeriodSeconds when vaultTokensCleanupModel is neither all nor revoke" {
+@test "controller/Deployment: default terminationGracePeriodSeconds when preserveOnShutDown is true by default" {
   cd `chart_dir`
   local actual=$(helm template \
       -s templates/deployment.yaml  \
@@ -233,21 +233,11 @@ load _helpers
    [ "${actual}" = "120" ]
 }
 
-@test "controller/Deployment: different terminationGracePeriodSeconds value when vaultTokensCleanupModel is revoke"  {
+@test "controller/Deployment: different terminationGracePeriodSeconds value when preserveOnShutDown is false"  {
   cd `chart_dir`
   local actual=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controller.manager.clientCache.vaultTokensCleanupModel=revoke' \
-      . | tee /dev/stderr |
-      yq '.spec.template.spec.terminationGracePeriodSeconds | select(documentIndex == 1)' | tee /dev/stderr)
-   [ "${actual}" = "180" ]
-}
-
-@test "controller/Deployment: different terminationGracePeriodSeconds value when vaultTokensCleanupModel is all"  {
-  cd `chart_dir`
-  local actual=$(helm template \
-      -s templates/deployment.yaml  \
-      --set 'controller.manager.clientCache.vaultTokensCleanupModel=all' \
+      --set 'controller.manager.clientCache.preserveOnShutDown=false' \
       . | tee /dev/stderr |
       yq '.spec.template.spec.terminationGracePeriodSeconds | select(documentIndex == 1)' | tee /dev/stderr)
    [ "${actual}" = "180" ]
@@ -256,7 +246,7 @@ load _helpers
 #--------------------------------------------------------------------
 # preDeleteHookTimeoutSeconds
 
-@test "controller/Deployment: default preDeleteHookTimeoutSeconds when vaultTokensCleanupModel is neither all nor revoke" {
+@test "controller/Deployment: default preDeleteHookTimeoutSeconds when preserveOnShutDown is true by default" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
@@ -267,23 +257,11 @@ load _helpers
   [ "${actual}" = "true" ]
 }
 
-@test "controller/Deployment: different preDeleteHookTimeoutSeconds value when vaultTokensCleanupModel is revoke" {
+@test "controller/Deployment: different preDeleteHookTimeoutSeconds value when preserveOnShutDown is false" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controller.manager.clientCache.vaultTokensCleanupModel=revoke' \
-      . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
-
-  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=180"])' | tee /dev/stderr)
-    [ "${actual}" = "true" ]
-}
-
-@test "controller/Deployment: different preDeleteHookTimeoutSeconds value when vaultTokensCleanupModel is all" {
-  cd `chart_dir`
-  local object=$(helm template \
-      -s templates/deployment.yaml  \
-      --set 'controller.manager.clientCache.vaultTokensCleanupModel=all' \
+      --set 'controller.manager.clientCache.preserveOnShutDown=false' \
       . | tee /dev/stderr |
       yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
 

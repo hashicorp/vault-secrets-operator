@@ -55,8 +55,8 @@ load _helpers
       . | tee /dev/stderr |
       yq '.data' | tee /dev/stderr)
 
-  local actual=$(echo "$object" | yq  '.shutdown' | tee /dev/stderr)
-    [ "${actual}" = "false" ]
-   actual=$(echo "$object" | yq  '.vaultTokensCleanupModel' | tee /dev/stderr)
-    [ "${actual}" = "" ]
+  local actual=$(echo "$object" | yq  '.shutDownMode' | tee /dev/stderr)
+    [ "${actual}" = "default" ]
+   actual=$(echo "$object" | yq  '.shutDownStatus' | tee /dev/stderr)
+    [ "${actual}" = "unknown" ]
 }

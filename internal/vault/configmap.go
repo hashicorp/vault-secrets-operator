@@ -5,6 +5,7 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -78,7 +79,6 @@ func WaitForManagerConfigMapModified(ctx context.Context, watcher watch.Interfac
 						if executed[i] {
 							continue
 						}
-						// TODO handle onChange error and executed logic
 						if ok, err := onChange(ctx, m, c); err != nil && !ok {
 							logger.Error(err, "Failed to execute on configmap change func")
 						} else if ok {
@@ -135,6 +135,12 @@ func WatchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Inter
 	return watcher, nil
 }
 
+func SetShutDownStatus(ctx context.Context, c client.Client, cm *corev1.ConfigMap, status ShutDownStatus) error {
+	return updateManagerConfigMap(ctx, c, map[string]string{
+		ConfigMapKeyShutDownStatus: status.String(),
+	}, cm)
+}
+
 func SetShutDownMode(ctx context.Context, c client.Client, cm *corev1.ConfigMap, mode ShutDownMode) error {
 	return updateManagerConfigMap(ctx, c, map[string]string{
 		ConfigMapKeyShutDownMode: mode.String(),
@@ -163,7 +169,7 @@ func getShutDownMode(cm *corev1.ConfigMap) ShutDownMode {
 	return ShutDownModeUnset
 }
 
-func getShutDownStatus(cm *corev1.ConfigMap) ShutDownStatus {
+func GetShutDownStatus(cm *corev1.ConfigMap) ShutDownStatus {
 	status := cm.Data[ConfigMapKeyShutDownStatus]
 	switch status {
 	case ShutDownStatusDone.String():
@@ -177,8 +183,8 @@ func getShutDownStatus(cm *corev1.ConfigMap) ShutDownStatus {
 	}
 }
 
-// OnShutDown ....
-// TODO
+// OnShutDown shuts down the client factory if the manager configmap's ConfigMapKeyShutDownMode is set, and
+// sets ConfigMapKeyShutDownStatus based on the client factory shutdown error
 // contract
 // if the change meets the condition to execute: bool = true
 // if the change doesn't meet the condition to execute: return bool = false and error = nil
@@ -200,27 +206,31 @@ func OnShutDown(clientFactory CachingClientFactory) OnConfigMapChange {
 		logger := log.FromContext(ctx)
 		logger.Info("Starting OnShutDown on configmap change function")
 		if !strings.HasSuffix(cm.Name, ConfigMapSuffix) {
-			err = fmt.Errorf("modified config is not the manager configmap")
+			err = fmt.Errorf("modified configmap is not the manager configmap")
 			return false, err
 		}
 
 		mode := getShutDownMode(cm)
 		var shutdownReq CachingClientFactoryShutDownRequest
 		switch mode {
-		case ShutDownModePreserve:
-			shutdownReq.Preserve = true
 		case ShutDownModeNoPreserve:
 			shutdownReq.Preserve = false
+		case ShutDownModePreserve:
+			shutdownReq.Preserve = true
 		case ShutDownModeUnset:
-			// TODO: decide what to do here.
-			return true, nil
+			err = fmt.Errorf("%s is not set", ConfigMapKeyShutDownMode)
+			return false, err
 		}
 
-		err = clientFactory.ShutDown(shutdownReq)
-		if err != nil {
-			return true, err
+		var errs error
+		errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusPending))
+		if shutDownErr := errors.Join(clientFactory.ShutDown(shutdownReq)); shutDownErr != nil {
+			errs = errors.Join(shutDownErr)
+			errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusFailed))
+		} else {
+			errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusDone))
 		}
-
-		return true, nil
+		err = errs
+		return true, errs
 	}
 }

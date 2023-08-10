@@ -64,6 +64,7 @@ func main() {
 	var printVersion bool
 	var outputFormat string
 	var shutdown bool
+	var preserveClientCache bool
 	var preDeleteHookTimeoutSeconds int
 
 	// command-line args and flags
@@ -83,6 +84,8 @@ func main() {
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
 	flag.BoolVar(&shutdown, "shutdown", false, "Run in shutdown mode")
+	flag.BoolVar(&preserveClientCache, "preserve-client-cache", false, "Preserve the client cache "+
+		"upon the operator deployment shutdown")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
 		"Pre-delete hook timeout in seconds")
 
@@ -150,8 +153,11 @@ func main() {
 		}
 
 		cleanupLog.Info("Starting the operator shutdown process")
-		err = shutDownOperator(preDeleteDeadlineCtx, defaultClient, vclient.ShutDownModePreserve)
-		if err != nil {
+		shutdownMode := vclient.ShutDownModePreserve
+		if !preserveClientCache {
+			shutdownMode = vclient.ShutDownModeNoPreserve
+		}
+		if err = shutDownOperator(preDeleteDeadlineCtx, defaultClient, shutdownMode); err != nil {
 			cleanupLog.Error(err, "Failed to complete the operator shutdown process")
 			os.Exit(1)
 		}
@@ -300,8 +306,8 @@ func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDow
 		return err
 	}
 
-	if err := vclient.SetShutDownMode(ctx, c, cm, mode); err != nil {
-		return fmt.Errorf("failed to set shutdown in the manager configmap err=%s", err)
+	if err = vclient.SetShutDownMode(ctx, c, cm, mode); err != nil {
+		return err
 	}
 
 	for {
@@ -311,13 +317,16 @@ func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDow
 		default:
 			time.Sleep(500 * time.Millisecond)
 			cm, err = vclient.GetManagerConfigMap(ctx, c)
-			// TODO: ....
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get the manager configmap err=%s", err)
 			}
-			// TODO: wait until the mode vclient.ShutDownStatusDone
-			// TODO: abort when mode is vclient.ShutDownStatusFailed
-			// TODO: continue when mode is vclient.ShutDownStatusPending
+			status := vclient.GetShutDownStatus(cm)
+			switch status {
+			case vclient.ShutDownStatusDone:
+				return nil
+			case vclient.ShutDownStatusFailed:
+				return fmt.Errorf("the operator failed to shut down")
+			}
 		}
 	}
 }

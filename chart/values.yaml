@@ -91,15 +91,12 @@ controller:
       # @type: string
       persistenceModel: ""
 
-      # Defines the vault tokens cleanup model.
-      # "none" - No vault tokens cleanup will be done.
-      # "revoke" - vault tokens will be revoked on Helm uninstall or operator deployment shutdown. Revoking a token will automatically revoke all of its leases.
-      # "prune" - vault tokens persisted in storage, if enabled, will be pruned on Helm uninstall or operator deployment shutdown.
-      # "all" - The combination of "revoke" and "prune" models.
-      # default: "none"
-      # @type: string
-      vaultTokensCleanupModel: ""
-
+      # @type: boolean
+      # Toggles the preservation of vault tokens upon on Helm uninstall or operator deployment shutdown.
+      # If preserveOnShutDown is true, Vault tokens will be revoked, and purged from the cache and storage
+      # NOTE: When a token is revoked, all of its leases are also revoked.
+      # @type: boolean
+      preserveOnShutDown: "true"
 
       # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
       # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
@@ -260,11 +257,6 @@ controller:
         # @type:  map
         headers: {}
 
-      # Toggles the revocation of Vault tokens upon the operator deployment deletion
-      # Tokens from in-memory cache will be revoked. If the persistence model is in use, persisted tokens will be revoked.
-      # NOTE: When a token is revoked, all of its leases are also revoked.
-      # @type: boolean
-      revokeVaultTokensOnUninstall: false
 
     # Defines the maximum number of concurrent reconciles by the controller.
     # NOTE: Currently this is only used by the reconciliation logic of dynamic secrets.
@@ -314,11 +306,12 @@ controller:
   # Timeout in seconds for the pre-delete hook
   preDeleteHookTimeoutSeconds: 120
 
-  # withRevokeVaultTokensCleanupModel provides the configuration with terminationGracePeriodSeconds
-  # and preDeleteHookTimeoutSeconds in the case where Vault tokens are revoked upon the operator deployment deletion.
+  # withShutDownModeNoPreserve provides the configuration with terminationGracePeriodSeconds and
+  # preDeleteHookTimeoutSeconds in the case where cached Vault tokens are not preserved upon the operator
+  # deployment shutdown.
   # The values are different from `controller.terminationGracePeriodSeconds` and `controller.preDeleteHookTimeoutSeconds`.
-  # This should only be configured when `controller.manager.clientCache.revokeVaultTokensOnUninstall` is enabled
-  withRevokeVaultTokensCleanupModel:
+  # This should only be configured when `controller.manager.clientCache.preserveOnShutDown` is false
+  withShutDownModeNoPreserve:
     # Duration in seconds the pod needs to terminate gracefully.
     # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
     terminationGracePeriodSeconds: 180
