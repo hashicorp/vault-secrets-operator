@@ -553,7 +553,7 @@ func (c *defaultClient) renew(ctx context.Context) error {
 		return errs
 	}
 
-	resp, err := c.Write(ctx, nil)
+	resp, err := c.Write(ctx, NewWriteRequest("/auth/token/renew-self", nil))
 	if err != nil {
 		c.authSecret = nil
 		c.lastRenewal = 0

@@ -69,7 +69,6 @@ func (r *kvV1Response) Secret() *api.Secret {
 func (r *kvV1Response) Data() map[string]any {
 	if r.secret == nil {
 		return nil
-		// return make(map[string]interface{}, 0)
 	}
 
 	return r.secret.Data
