@@ -37,6 +37,7 @@ import (
 func TestVaultStaticSecret_kv(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
+	testK8sNamespace2 := testK8sNamespace + "-test"
 	testKvMountPath := consts.KVSecretTypeV1 + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
@@ -136,7 +137,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultconnection-test-tenant-1",
-				Namespace: testK8sNamespace,
+				Namespace: testK8sNamespace2,
 			},
 			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
@@ -163,7 +164,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
-				VaultConnectionRef: "vaultconnection-test-tenant-1",
+				// This VaultAuth references a VaultConnection in its own namespace.
+				VaultConnectionRef: fmt.Sprintf("%s/vaultconnection-test-tenant-1", testK8sNamespace2),
 				Namespace:          testVaultNamespace,
 				Method:             "kubernetes",
 				Mount:              "kubernetes",
@@ -172,6 +174,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
 				},
+				AllowedNamespaces: []string{"*"},
 			},
 		},
 	}
@@ -221,7 +224,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					VaultAuthRef: auths[0].ObjectMeta.Name,
+					// This Secret references an Auth Method in a different namespace.
+					VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 					Namespace:    testVaultNamespace,
 					Mount:        testKvMountPath,
 					Type:         consts.KVSecretTypeV1,
@@ -247,6 +251,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
+					// This Secret references the default Auth Method.
 					Namespace: testVaultNamespace,
 					Mount:     testKvv2MountPath,
 					Type:      consts.KVSecretTypeV2,
@@ -438,7 +443,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 								Namespace: testK8sNamespace,
 							},
 							Spec: secretsv1beta1.VaultStaticSecretSpec{
-								VaultAuthRef: auths[0].ObjectMeta.Name,
+								VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 								Namespace:    testVaultNamespace,
 								Mount:        mount,
 								Type:         kvType,
