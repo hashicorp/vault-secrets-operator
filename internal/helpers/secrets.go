@@ -356,8 +356,8 @@ func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlcl
 	return ok, err
 }
 
-// GetSecret
-func GetSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
+// GetSyncableSecret
+func GetSyncableSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
 	return getSecretExists(ctx, client, obj)
 }
 
@@ -370,7 +370,7 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
 		"secretName", meta.Destination.Name, "create", meta.Destination.Create)
 	objKey := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.Destination.Name}
-	s, err := getSecret(ctx, client, objKey)
+	s, err := GetSecret(ctx, client, objKey)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
@@ -384,7 +384,7 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	return s, true, nil
 }
 
-func getSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
+func GetSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	var s corev1.Secret
 	err := client.Get(ctx, objKey, &s)
 

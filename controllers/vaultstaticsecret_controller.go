@@ -32,7 +32,7 @@ type VaultStaticSecretReconciler struct {
 	Scheme        *runtime.Scheme
 	Recorder      record.EventRecorder
 	ClientFactory vault.ClientFactory
-	HMACValidator vault.HMACValidator
+	HMACValidator helpers.HMACValidator
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete

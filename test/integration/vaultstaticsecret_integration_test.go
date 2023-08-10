@@ -380,7 +380,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			}
 
 			if obj.Spec.Destination.Create {
-				sec, _, err := helpers.GetSecret(ctx, crdClient, obj)
+				sec, _, err := helpers.GetSyncableSecret(ctx, crdClient, obj)
 				if assert.NoError(t, err) {
 					// ensure that a Secret deleted out-of-band is properly restored
 					if assert.NoError(t, crdClient.Delete(ctx, sec)) {
@@ -574,7 +574,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.C
 			return backoff.Permanent(fmt.Errorf("could not marshal Secret.Data, should never happen: %w", err))
 		}
 
-		validator := vault.NewHMACValidator(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
+		validator := helpers.NewHMACValidator(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
 		valid, actualMAC, err := validator.Validate(ctx, client, message, expectedMAC)
 		if err != nil {
 			return backoff.Permanent(err)

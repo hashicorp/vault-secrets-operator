@@ -41,8 +41,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 var (
@@ -590,7 +590,7 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			credentials.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
+			vault.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))

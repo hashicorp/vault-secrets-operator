@@ -28,6 +28,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
@@ -207,7 +208,7 @@ func main() {
 		}
 	}
 
-	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
+	hmacValidator := helpers.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
 	if err = (&controllers.VaultStaticSecretReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),

@@ -19,7 +19,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 )
 
 func Test_defaultClient_CheckExpiry(t *testing.T) {
@@ -180,7 +180,7 @@ func Test_defaultClient_Init(t *testing.T) {
 		},
 		Spec: secretsv1beta1.VaultAuthSpec{
 			VaultConnectionRef: consts.NameDefault,
-			Method:             credentials.ProviderMethodKubernetes,
+			Method:             vault.ProviderMethodKubernetes,
 			Mount:              "kubernetes",
 			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 				ServiceAccount: consts.NameDefault,
