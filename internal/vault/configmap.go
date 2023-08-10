@@ -186,9 +186,11 @@ func GetShutDownStatus(cm *corev1.ConfigMap) ShutDownStatus {
 // OnShutDown shuts down the client factory if the manager configmap's ConfigMapKeyShutDownMode is set, and
 // sets ConfigMapKeyShutDownStatus based on the client factory shutdown error
 // contract
-// if the change meets the condition to execute: bool = true
-// if the change doesn't meet the condition to execute: return bool = false and error = nil
-// if the execution fails: return that bool value and error
+// if the change doesn't meet the condition to execute: the returned bool value will be false
+// if the change meets the condition to execute, the returned bool value will be true, and the client factory begins
+// the shutdown process.
+// if the client factory shutdown fails, return the true bool value and shutdown error.
+// ConfigMapKeyShutDownStatus will be set with the best effort
 func OnShutDown(clientFactory CachingClientFactory) OnConfigMapChange {
 	var done bool
 	return func(ctx context.Context, cm *corev1.ConfigMap, c client.Client) (bool, error) {
