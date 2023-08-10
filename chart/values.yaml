@@ -62,6 +62,9 @@ controller:
   # @type: array<map>
   imagePullSecrets: []
 
+  # Extra labels to attach to the deployment. This should be formatted as a YAML object (map)
+  extraLabels: {}
+
   # This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
   annotations: {}
 
