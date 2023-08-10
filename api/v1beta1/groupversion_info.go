@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 // Package v1beta1 contains API Schema definitions for the secrets v1beta1 API group
 // +kubebuilder:object:generate=true
