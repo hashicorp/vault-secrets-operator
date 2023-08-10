@@ -31,6 +31,9 @@ spec:
     metadata:
       labels:
         control-plane: controller-manager
+      {{- if  .Values.controller.extraLabels }}
+        {{- toYaml .Values.controller.extraLabels | nindent 8 }}
+      {{- end }}
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
