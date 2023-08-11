@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,6 +18,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
 
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by

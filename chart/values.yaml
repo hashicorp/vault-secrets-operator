@@ -91,7 +91,6 @@ controller:
       # @type: string
       persistenceModel: ""
 
-      # @type: boolean
       # Toggles the preservation of vault tokens upon on Helm uninstall or operator deployment shutdown.
       # If preserveClientCacheOnShutDown is true, Vault tokens will be revoked, and purged from the cache and storage
       # NOTE: When a token is revoked, all of its leases are also revoked.
@@ -256,7 +255,6 @@ controller:
         #   X-vault-something1: "foo"
         # @type:  map
         headers: {}
-
 
     # Defines the maximum number of concurrent reconciles by the controller.
     # NOTE: Currently this is only used by the reconciliation logic of dynamic secrets.

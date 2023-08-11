@@ -24,7 +24,6 @@ const (
 	ShutDownModeUnknown ShutDownMode = iota
 	ShutDownModePreserve
 	ShutDownModeNoPreserve
-	ConfigMapSuffix = "manager-config"
 
 	ConfigMapKeyShutDownMode   = "shutDownMode"
 	ConfigMapKeyShutDownStatus = "shutDownStatus"
