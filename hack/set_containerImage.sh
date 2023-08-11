@@ -1,6 +1,6 @@
 #!/usr/bin/env bash -e
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 # Set the annotation `containerImage` in
 # bundle/manifests/vault-secrets-operator.clusterserviceversion.yaml to the
