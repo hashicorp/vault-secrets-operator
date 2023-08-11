@@ -106,11 +106,7 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
-      {{- if .Values.controller.manager.clientCache.preserveOnShutDown }}
       terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
-      {{- else }}
-      terminationGracePeriodSeconds : {{ .Values.controller.withShutDownModeNoPreserve.terminationGracePeriodSeconds }}
-      {{- end }}
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
       {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
@@ -155,10 +151,8 @@ spec:
         - --shutdown
         {{- if .Values.controller.manager.clientCache.preserveOnShutDown }}
         - --preserve-client-cache
-        - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
-        {{- else }}
-        - --pre-delete-hook-timeout-seconds={{ .Values.controller.withShutDownModeNoPreserve.preDeleteHookTimeoutSeconds }}
         {{- end }}
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
         command:
         - /vault-secrets-operator
       restartPolicy: Never

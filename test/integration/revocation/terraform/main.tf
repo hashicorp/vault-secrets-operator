@@ -54,6 +54,15 @@ resource "kubernetes_secret" "default" {
   wait_for_service_account_token = true
 }
 
+resource "random_string" "prefix" {
+  length  = 10
+  upper   = false
+  special = false
+  keepers = {
+    name_prefix = var.name_prefix
+  }
+}
+
 provider "vault" {
   # Configuration options
 }
@@ -67,7 +76,7 @@ resource "vault_mount" "kvv2" {
 }
 
 resource "vault_policy" "default" {
-  name      = "dev"
+  name      = local.policy_name
   namespace = local.namespace
   policy    = <<EOT
 path "${vault_mount.kvv2.path}/*" {

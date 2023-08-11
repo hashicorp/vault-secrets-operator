@@ -4,3 +4,7 @@
 output "auth_role" {
   value = var.auth_role
 }
+
+output "policy_name" {
+  value = local.policy_name
+}

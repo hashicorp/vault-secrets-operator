@@ -96,7 +96,7 @@ controller:
       # If preserveOnShutDown is true, Vault tokens will be revoked, and purged from the cache and storage
       # NOTE: When a token is revoked, all of its leases are also revoked.
       # @type: boolean
-      preserveOnShutDown: "true"
+      preserveClientCacheOnShutDown: "true"
 
       # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
       # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
@@ -305,20 +305,6 @@ controller:
 
   # Timeout in seconds for the pre-delete hook
   preDeleteHookTimeoutSeconds: 120
-
-  # withShutDownModeNoPreserve provides the configuration with terminationGracePeriodSeconds and
-  # preDeleteHookTimeoutSeconds in the case where cached Vault tokens are not preserved upon the operator
-  # deployment shutdown.
-  # The values are different from `controller.terminationGracePeriodSeconds` and `controller.preDeleteHookTimeoutSeconds`.
-  # This should only be configured when `controller.manager.clientCache.preserveOnShutDown` is false
-  withShutDownModeNoPreserve:
-    # Duration in seconds the pod needs to terminate gracefully.
-    # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
-    terminationGracePeriodSeconds: 180
-
-    # Timeout in seconds for the pre-delete hook
-    preDeleteHookTimeoutSeconds: 180
-
 
 # Configure the metrics service ports used by the metrics service.
 # Set the configuration fo the metricsService port.

@@ -72,3 +72,7 @@ variable "operator_image_tag" {
 variable "auth_role" {
   default = "role1"
 }
+
+variable "name_prefix" {
+  default = ""
+}

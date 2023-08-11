@@ -24,5 +24,3 @@ data:
       bindAddress: {{ .Values.controller.controllerConfigMapYaml.metrics.bindAddress | quote }}
     webhook:
       port: {{ .Values.controller.controllerConfigMapYaml.webhook.port }}
-  shutDownMode: "default"
-  shutDownStatus : "unknown"

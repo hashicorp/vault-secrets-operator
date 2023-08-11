@@ -32,6 +32,7 @@ func TestRevocation(t *testing.T) {
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
+	testNamePrefix := "revocation"
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
@@ -61,6 +62,7 @@ func TestRevocation(t *testing.T) {
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartPath,
+			"name_prefix":                  testNamePrefix,
 		},
 	}
 	if operatorImageRepo != "" {
@@ -96,7 +98,7 @@ func TestRevocation(t *testing.T) {
 		// Create a non-default VaultAuth CR
 		{
 			ObjectMeta: v1.ObjectMeta{
-				Name:      "vaultauth-test-kubernetes-1",
+				Name:      "vaultauth-test-kubernetes",
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
@@ -214,45 +216,37 @@ func TestRevocation(t *testing.T) {
 		deleteKV(t, secrets[idx])
 	}
 
-	getTokenData := func(token interface{}) (map[string]interface{}, error) {
-		resp, err := vClient.Logical().WriteBytes("auth/token/lookup-accessor", []byte(fmt.Sprintf(`{"accessor":"%s"}`, token)))
+	getTokenData := func(t *testing.T, accessor string) (map[string]interface{}, error) {
+		t.Helper()
+
+		resp, err := vClient.Logical().WriteWithContext(ctx, "auth/token/lookup-accessor", map[string]interface{}{"accessor": accessor})
 		if err != nil || resp == nil {
 			return nil, err
 		}
 		return resp.Data, nil
 	}
 
-	// Get all Vault token accessors that are created from the test by filtering for those that have only the dev and default policy
-	devPolicyTokenAccessors := []interface{}{}
-	retry.DoWithRetry(t, "getAllDevPolicyTokenAccessors", 30, time.Second, func() (string, error) {
-		resp, err := vClient.Logical().ListWithContext(ctx, "auth/token/accessors")
-		if err != nil || resp == nil {
-			return "", err
-		}
-		accessors := resp.Data["keys"].([]interface{})
-		if len(accessors) == 0 {
-			// Print out the lease ids that are still found to make debugging easier.
-			return "", fmt.Errorf("no token accessors found")
-		}
-		errMsgs := []string{}
-		for _, accessor := range accessors {
-			tokenData, err := getTokenData(accessor)
-			if err != nil {
-				errMsgs = append(errMsgs, err.Error())
-			}
+	// Get all Vault token accessors that are created from the test by filtering for those that have only the default
+	// and revocationK8sOutputs.PolicyName policies
+	var testTokenAccessors []string
+	resp, err := vClient.Logical().ListWithContext(ctx, "auth/token/accessors")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	accessors, ok := resp.Data["keys"].([]interface{})
+	require.True(t, ok)
+
+	for _, accessor := range accessors {
+		tokenData, err := getTokenData(t, accessor.(string))
+		if assert.NoError(t, err) {
 			policies := tokenData["policies"].([]interface{})
 			if len(policies) == 2 &&
-				(policies[0] == "default" && policies[1] == "dev" ||
-					policies[0] == "dev" && policies[1] == "default") {
-				devPolicyTokenAccessors = append(devPolicyTokenAccessors, accessor)
+				(policies[0] == outputs.PolicyName || policies[1] == outputs.PolicyName) {
+				testTokenAccessors = append(testTokenAccessors, accessor.(string))
 			}
 		}
-		if len(errMsgs) != 0 {
-			return "", fmt.Errorf(strings.Join(errMsgs, ","))
-		}
-
-		return fmt.Sprintf("Token accessors to revoke %v", devPolicyTokenAccessors), nil
-	})
+	}
+	require.Len(t, testTokenAccessors, len(auths))
 
 	exportKindLogs(t)
 	// Uninstall vso resource
@@ -269,26 +263,13 @@ func TestRevocation(t *testing.T) {
 		},
 	})
 
-	// Check if all dev policy tokens have been revoked.
-	retry.DoWithRetry(t, "waitForAllDevPolicyTokenToBeRevoked", 30, time.Second, func() (string, error) {
-		unrevoked := []interface{}{}
-		for _, accessor := range devPolicyTokenAccessors {
-			// expect to receive the following error when looking up the token using its accessor
+	// Check if all test tokens have been revoked.
+	retry.DoWithRetry(t, "waitForAllTestTokensToBeRevoked", 30, time.Second, func() (string, error) {
+		var unrevoked []string
+		for _, accessor := range testTokenAccessors {
+			// expect to receive an error that contains "invalid accessor" when looking up the token using its accessor
 			// as an indication that the token was successfully revoked
-			// $ curl \
-			//    --header "X-Vault-Token: root" \
-			//    --request POST \
-			//    --data @payload.json \
-			//    http://127.0.0.1:8200/v1/auth/token/lookup-accessor | jq
-			//  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-			//                                 Dload  Upload   Total   Spent    Left  Speed
-			//100    99  100    59  100    40   3301   2238 --:--:-- --:--:-- --:--:--  8250
-			//{
-			//  "errors": [
-			//    "1 error occurred:\n\t* invalid accessor\n\n"
-			//  ]
-			//}
-			_, err = getTokenData(accessor)
+			_, err = getTokenData(t, accessor)
 			if err == nil || !strings.Contains(err.Error(), "invalid accessor") {
 				unrevoked = append(unrevoked, accessor)
 			}
@@ -297,6 +278,6 @@ func TestRevocation(t *testing.T) {
 			return "", fmt.Errorf("found tokens unrevoked accessors=%v", unrevoked)
 		}
 
-		return fmt.Sprintf("Tokens revoked successfully %v", devPolicyTokenAccessors), nil
+		return fmt.Sprintf("Tokens revoked successfully %v", testTokenAccessors), nil
 	})
 }

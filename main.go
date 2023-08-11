@@ -157,11 +157,13 @@ func main() {
 		if !preserveClientCache {
 			shutdownMode = vclient.ShutDownModeNoPreserve
 		}
+
 		if err = shutDownOperator(preDeleteDeadlineCtx, defaultClient, shutdownMode); err != nil {
 			cleanupLog.Error(err, "Failed to complete the operator shutdown process")
 			os.Exit(1)
 		}
-		return
+
+		os.Exit(0)
 	}
 
 	collectMetrics := metricsAddr != ""
@@ -313,7 +315,10 @@ func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDow
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("shutdown context canceled err=%s", err)
+			if ctx.Err() != nil {
+				return fmt.Errorf("shutdown context canceled err=%s", ctx.Err())
+			}
+			return nil
 		default:
 			time.Sleep(500 * time.Millisecond)
 			cm, err = vclient.GetManagerConfigMap(ctx, c)
@@ -325,7 +330,7 @@ func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDow
 			case vclient.ShutDownStatusDone:
 				return nil
 			case vclient.ShutDownStatusFailed:
-				return fmt.Errorf("the operator failed to shut down")
+				return fmt.Errorf("failed to shut down")
 			}
 		}
 	}

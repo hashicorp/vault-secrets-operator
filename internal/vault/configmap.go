@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -22,7 +21,7 @@ type ShutDownMode int
 type ShutDownStatus int
 
 const (
-	ShutDownModeUnset ShutDownMode = iota
+	ShutDownModeUnknown ShutDownMode = iota
 	ShutDownModePreserve
 	ShutDownModeNoPreserve
 	ConfigMapSuffix = "manager-config"
@@ -43,7 +42,7 @@ func (m ShutDownMode) String() string {
 	case ShutDownModeNoPreserve:
 		return "no-preserve"
 	default:
-		return "default"
+		return "unknown"
 	}
 }
 
@@ -60,34 +59,19 @@ func (s ShutDownStatus) String() string {
 	}
 }
 
-type OnConfigMapChange func(context.Context, *corev1.ConfigMap, client.Client) (bool, error)
+type OnConfigMapChange func(context.Context, client.Client, *corev1.ConfigMap)
 
 func WaitForManagerConfigMapModified(ctx context.Context, watcher watch.Interface, c client.Client, onChanges ...OnConfigMapChange) {
 	defer watcher.Stop()
-	logger := log.FromContext(ctx)
-	executed := make([]bool, len(onChanges))
-	executedCnt := 0
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Error(ctx.Err(), "Operator manager context canceled")
 			return
 		case event := <-watcher.ResultChan():
 			if event.Type == watch.Modified {
-				if m, ok := event.Object.(*corev1.ConfigMap); ok {
-					for i, onChange := range onChanges {
-						if executed[i] {
-							continue
-						}
-						if ok, err := onChange(ctx, m, c); err != nil && !ok {
-							logger.Error(err, "Failed to execute on configmap change func")
-						} else if ok {
-							executed[i] = true
-							executedCnt += 1
-						}
-					}
-					if executedCnt == len(onChanges) {
-						return
+				if cm, ok := event.Object.(*corev1.ConfigMap); ok {
+					for _, onChange := range onChanges {
+						onChange(ctx, c, cm)
 					}
 				}
 			}
@@ -95,35 +79,42 @@ func WaitForManagerConfigMapModified(ctx context.Context, watcher watch.Interfac
 	}
 }
 
-func getConfigMapList(ctx context.Context, c client.Client) (*corev1.ConfigMapList, error) {
-	var list corev1.ConfigMapList
+// getManagerConfigMapList returns the manager configmap list that has configmaps with labels matching
+// "app.kubernetes.io/component": "controller-manager". For simplicity, we assume there should be one manager configmap
+func getManagerConfigMapList(ctx context.Context, c client.Client) (*corev1.ConfigMapList, error) {
+	labels := client.MatchingLabels{"app.kubernetes.io/component": "controller-manager"}
 	opts := []client.ListOption{
 		client.InNamespace(common.OperatorNamespace),
-		client.MatchingLabels{"app.kubernetes.io/component": "controller-manager"},
+		labels,
 	}
 
+	var list corev1.ConfigMapList
 	if err := c.List(ctx, &list, opts...); err != nil {
 		return nil, err
 	}
+
+	if len(list.Items) == 0 {
+		return nil, fmt.Errorf("no configmaps matching labels=%v found in the operator namespace", labels)
+	}
+
+	if len(list.Items) > 1 {
+		return nil, fmt.Errorf("more than 1 configmaps matching labels=%v found in the operator namespace", labels)
+	}
+
 	return &list, nil
 }
 
 func GetManagerConfigMap(ctx context.Context, c client.Client) (*corev1.ConfigMap, error) {
-	list, err := getConfigMapList(ctx, c)
+	list, err := getManagerConfigMapList(ctx, c)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, cm := range list.Items {
-		if strings.HasSuffix(cm.Name, ConfigMapSuffix) {
-			return &cm, nil
-		}
-	}
-	return nil, fmt.Errorf("the manger configmap suffix=%s not found", ConfigMapSuffix)
+	return &list.Items[0], err
 }
 
 func WatchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Interface, error) {
-	list, err := getConfigMapList(ctx, c)
+	list, err := getManagerConfigMapList(ctx, c)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +157,7 @@ func getShutDownMode(cm *corev1.ConfigMap) ShutDownMode {
 	if mode == ShutDownModePreserve.String() {
 		return ShutDownModePreserve
 	}
-	return ShutDownModeUnset
+	return ShutDownModeUnknown
 }
 
 func GetShutDownStatus(cm *corev1.ConfigMap) ShutDownStatus {
@@ -185,32 +176,13 @@ func GetShutDownStatus(cm *corev1.ConfigMap) ShutDownStatus {
 
 // OnShutDown shuts down the client factory if the manager configmap's ConfigMapKeyShutDownMode is set, and
 // sets ConfigMapKeyShutDownStatus based on the client factory shutdown error
-// contract
-// if the change doesn't meet the condition to execute: the returned bool value will be false
-// if the change meets the condition to execute, the returned bool value will be true, and the client factory begins
-// the shutdown process.
-// if the client factory shutdown fails, return the true bool value and shutdown error.
-// ConfigMapKeyShutDownStatus will be set with the best effort
 func OnShutDown(clientFactory CachingClientFactory) OnConfigMapChange {
-	var done bool
-	return func(ctx context.Context, cm *corev1.ConfigMap, c client.Client) (bool, error) {
-		if done {
-			return true, nil
+	var completed bool
+	return func(ctx context.Context, c client.Client, cm *corev1.ConfigMap) {
+		if completed {
+			return
 		}
-
-		var err error
-		defer func() {
-			if err == nil {
-				done = true
-			}
-		}()
-
 		logger := log.FromContext(ctx)
-		logger.Info("Starting OnShutDown on configmap change function")
-		if !strings.HasSuffix(cm.Name, ConfigMapSuffix) {
-			err = fmt.Errorf("modified configmap is not the manager configmap")
-			return false, err
-		}
 
 		mode := getShutDownMode(cm)
 		var shutdownReq CachingClientFactoryShutDownRequest
@@ -219,20 +191,22 @@ func OnShutDown(clientFactory CachingClientFactory) OnConfigMapChange {
 			shutdownReq.Preserve = false
 		case ShutDownModePreserve:
 			shutdownReq.Preserve = true
-		case ShutDownModeUnset:
-			err = fmt.Errorf("%s is not set", ConfigMapKeyShutDownMode)
-			return false, err
+		case ShutDownModeUnknown:
+			return
 		}
 
-		var errs error
-		errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusPending))
-		if shutDownErr := errors.Join(clientFactory.ShutDown(shutdownReq)); shutDownErr != nil {
-			errs = errors.Join(shutDownErr)
+		errs := errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusPending))
+		if err := errors.Join(clientFactory.ShutDown(shutdownReq)); err != nil {
+			errs = errors.Join(err)
 			errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusFailed))
 		} else {
 			errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusDone))
 		}
-		err = errs
-		return true, errs
+		if errs != nil {
+			logger.Error(errs, "OnShutDown failed")
+		} else {
+			completed = true
+		}
+		return
 	}
 }
