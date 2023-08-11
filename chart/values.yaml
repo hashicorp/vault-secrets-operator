@@ -93,7 +93,7 @@ controller:
 
       # @type: boolean
       # Toggles the preservation of vault tokens upon on Helm uninstall or operator deployment shutdown.
-      # If preserveOnShutDown is true, Vault tokens will be revoked, and purged from the cache and storage
+      # If preserveClientCacheOnShutDown is true, Vault tokens will be revoked, and purged from the cache and storage
       # NOTE: When a token is revoked, all of its leases are also revoked.
       # @type: boolean
       preserveClientCacheOnShutDown: "true"

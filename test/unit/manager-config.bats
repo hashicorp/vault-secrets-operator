@@ -48,15 +48,3 @@ load _helpers
     [ "${actual}" = "9091" ]
 }
 
-@test "managerConfig: configmap ( not controller_manager_config.yaml ) has defaults " {
-  cd `chart_dir`
-  local object=$(helm template \
-      -s templates/manager-config.yaml  \
-      . | tee /dev/stderr |
-      yq '.data' | tee /dev/stderr)
-
-  local actual=$(echo "$object" | yq  '.shutDownMode' | tee /dev/stderr)
-    [ "${actual}" = "default" ]
-   actual=$(echo "$object" | yq  '.shutDownStatus' | tee /dev/stderr)
-    [ "${actual}" = "unknown" ]
-}

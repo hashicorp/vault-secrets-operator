@@ -149,7 +149,7 @@ spec:
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
         - --shutdown
-        {{- if .Values.controller.manager.clientCache.preserveOnShutDown }}
+        {{- if .Values.controller.manager.clientCache.preserveClientCacheOnShutDown }}
         - --preserve-client-cache
         {{- end }}
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}

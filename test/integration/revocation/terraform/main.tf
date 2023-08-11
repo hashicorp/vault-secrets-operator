@@ -160,7 +160,7 @@ resource "helm_release" "vault-secrets-operator" {
   }
 
   set {
-    name  = "controller.manager.clientCache.preserveOnShutDown"
+    name  = "controller.manager.clientCache.preserveClientCacheOnShutDown"
     value = "false"
   }
 
