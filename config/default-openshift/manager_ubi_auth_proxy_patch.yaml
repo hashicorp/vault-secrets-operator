@@ -1,0 +1,17 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+# This patch injects a UBI-based version of a sidecar container which is an HTTP
+# proxy for the controller manager, it performs RBAC authorization against the
+# Kubernetes API using SubjectAccessReviews.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: kube-rbac-proxy
+        image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.13.0

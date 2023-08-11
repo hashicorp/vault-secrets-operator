@@ -1,0 +1,9 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+bases:
+- ../default
+
+patchesStrategicMerge:
+- manager_ubi_auth_proxy_patch.yaml
+- manager_resource_patch.yaml
