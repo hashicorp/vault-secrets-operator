@@ -9,6 +9,8 @@ Improvements:
 
 Changes:
 * Helm: Update default kube-rbac-proxy container image in helm chart from `v0.11.0` to `v0.14.1`: [GH-267](https://github.com/hashicorp/vault-secrets-operator/pull/267)
+* Added Vault 1.14 and removed 1.11 from CI testing [GH-324](https://github.com/hashicorp/vault-secrets-operator/pull/324)
+* K8s versions tested are now 1.23-1.27 [GH-324](https://github.com/hashicorp/vault-secrets-operator/pull/324)
 
 ## 0.1.0 (June 12th, 2023)
 
