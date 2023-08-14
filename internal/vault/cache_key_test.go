@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -33,7 +33,7 @@ type computeClientCacheKeyTest struct {
 }
 
 func Test_computeClientCacheKey(t *testing.T) {
-	type args struct{}
+	t.Parallel()
 	tests := []computeClientCacheKeyTest{
 		{
 			name: "valid",
@@ -75,6 +75,27 @@ func Test_computeClientCacheKey(t *testing.T) {
 			},
 			providerUID: providerUID,
 			want:        ClientCacheKey("ical" + strings.Repeat("x", 36) + "-" + computedHash),
+			wantErr:     assert.NoError,
+		},
+		{
+			name: "valid-mixed-case-method-name",
+			authObj: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:        authUID,
+					Generation: 0,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "icalBarBaz",
+				},
+			},
+			connObj: &secretsv1beta1.VaultConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:        connUID,
+					Generation: 0,
+				},
+			},
+			providerUID: providerUID,
+			want:        ClientCacheKey("icalbarbaz" + "-" + computedHash),
 			wantErr:     assert.NoError,
 		},
 		{
@@ -179,6 +200,7 @@ func Test_computeClientCacheKey(t *testing.T) {
 }
 
 func TestComputeClientCacheKeyFromClient(t *testing.T) {
+	t.Parallel()
 	tests := []computeClientCacheKeyTest{
 		{
 			name: "valid",
@@ -226,6 +248,7 @@ func TestComputeClientCacheKeyFromClient(t *testing.T) {
 }
 
 func TestClientCacheKey_IsClone(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		k    ClientCacheKey
@@ -261,6 +284,7 @@ func TestClientCacheKey_IsClone(t *testing.T) {
 }
 
 func TestClientCacheKeyClone(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		key       ClientCacheKey

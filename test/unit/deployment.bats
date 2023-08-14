@@ -374,3 +374,120 @@ load _helpers
    actual=$(echo "$object" | yq '.[0].value' | tee /dev/stderr)
    [ "${actual}" = 'value1' ]
 }
+
+#--------------------------------------------------------------------
+# extraEnv values
+
+@test "controller/Deployment: extra env string aren't set by default" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '3' ]
+}
+
+@test "controller/Deployment: extra env string values can be set" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraEnv[0].name=HTTP_PROXY'  \
+      --set 'controller.manager.extraEnv[0].value=http://proxy.example.com/'  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'HTTP_PROXY' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = 'http://proxy.example.com/' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+@test "controller/Deployment: extra env number values can be set" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraEnv[0].name=RANDOM_PORT'  \
+      --set 'controller.manager.extraEnv[0].value=42'  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'RANDOM_PORT' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = '42' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+@test "controller/Deployment: extra env values don't get double quoted" {
+    cd `chart_dir`
+    local object=$(printf  \
+      'controller: {manager: {extraEnv: [{name: QUOTED_ENV, value: "noquotesneeded"}]}}\n' |  \
+      helm template -s templates/deployment.yaml --values /dev/stdin . |   \
+      tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'QUOTED_ENV' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = 'noquotesneeded' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+@test "controller/Deployment: extra env values with white space" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraEnv[0].name=WHITESPACE_WORKS'  \
+      --set 'controller.manager.extraEnv[0].value=Hello World!'  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'WHITESPACE_WORKS' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = 'Hello World!' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+#--------------------------------------------------------------------
+# extraLabels
+
+@test "controller/Deployment: extraLabels not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+}
+
+@test "controller/Deployment: extraLabels can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.extraLabels.label1=value1' \
+      --set 'controller.extraLabels.label2=value2' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "5" ]
+   actual=$(echo "$object" | yq '.label1' | tee /dev/stderr)
+   [ "${actual}" = 'value1' ]
+   actual=$(echo "$object" | yq '.label2'| tee /dev/stderr)
+   [ "${actual}" = 'value2' ]
+}

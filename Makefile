@@ -13,6 +13,8 @@ CONFIG_MANAGER_DIR ?= $(CONFIG_BUILD_DIR)/manager
 CONFIG_CRD_BASES_DIR ?= $(CONFIG_SRC_DIR)/crd/bases
 KUSTOMIZATION ?= default
 KUSTOMIZE_BUILD_DIR ?= $(CONFIG_BUILD_DIR)/$(KUSTOMIZATION)
+OPERATOR_BUILD_DIR ?= build
+BUNDLE_DIR ?= $(OPERATOR_BUILD_DIR)/bundle
 
 CHART_ROOT ?= chart
 CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
@@ -50,6 +52,7 @@ BATS_TESTS_FILTER ?= .\*
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
+CHANNELS = "stable"
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
 # - use the CHANNELS as arg of the bundle target (e.g make bundle CHANNELS=candidate,fast,stable)
 # - use environment variables to overwrite this value (e.g export CHANNELS="candidate,fast,stable")
@@ -59,6 +62,7 @@ endif
 
 # DEFAULT_CHANNEL defines the default channel used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
+DEFAULT_CHANNEL = "stable"
 # To re-generate a bundle for any other default channel without changing the default setup, you can:
 # - use the DEFAULT_CHANNEL as arg of the bundle target (e.g make bundle DEFAULT_CHANNEL=stable)
 # - use environment variables to overwrite this value (e.g export DEFAULT_CHANNEL="stable")
@@ -79,7 +83,7 @@ IMAGE_TAG_BASE ?= hashicorp/vault-secrets-operator
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
-BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+BUNDLE_GEN_FLAGS ?= -q --overwrite --output-dir $(BUNDLE_DIR) --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
 # USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
 # You can enable this value if you would like to use SHA Based Digests
@@ -91,6 +95,9 @@ endif
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
+
+# Redhat-certified image for use in the operator bundle
+IMG_UBI ?= registry.connect.redhat.com/hashicorp/vault-secrets-operator:$(VERSION)-ubi
 
 # Default path to saving and loading the Docker image for IMG.
 IMAGE_ARCHIVE_FILE ?= $(BUILD_DIR)/$(subst /,_,$(IMAGE_TAG_BASE))-$(VERSION).tar
@@ -250,17 +257,20 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: ci-build
 ci-build: ## Build operator binary (without generating assets).
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
 		-a \
-		-o $(BUILD_DIR)/$(BIN_NAME) \
+		-o $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME) \
 		.
 
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
-	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
-	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
 	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
+
+.PHONY: ci-docker-build-ubi
+ci-docker-build-ubi: ## Build docker ubi image with the operator (without generating assets)
+	docker build -t $(IMG)-ubi --platform $(GOOS)/$(GOARCH) . --target release-ubi --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
@@ -474,15 +484,28 @@ envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
-.PHONY: bundle
-bundle: manifests kustomize set-image ## Generate bundle manifests and metadata, then validate generated files.
+.PHONY: set-image-ubi
+set-image-ubi: kustomize copy-config ## Set the controller UBI image
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG_UBI)
+
+.PHONY: sdk-generate
+sdk-generate:
 	operator-sdk generate kustomize manifests -q
-	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
-	operator-sdk bundle validate ./bundle
+
+.PHONY: bundle
+bundle: manifests kustomize sdk-generate set-image-ubi ## Generate bundle manifests and metadata, then validate generated files.
+	@rm -rf $(BUNDLE_DIR)
+	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
+	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+	@$(COPYWRITE) headers &> /dev/null
+	@./hack/set_openshift_minimum_version.sh
+	@./hack/set_containerImage.sh
+	mv bundle.Dockerfile $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
+	operator-sdk bundle validate $(BUNDLE_DIR)
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	docker build -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.

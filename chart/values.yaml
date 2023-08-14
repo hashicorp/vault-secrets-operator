@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 # Top level configuration for the vault secrets operator deployment.
 # This consists of a controller and a kube rbac proxy container.
@@ -61,6 +61,9 @@ controller:
   # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
   # @type: array<map>
   imagePullSecrets: []
+
+  # Extra labels to attach to the deployment. This should be formatted as a YAML object (map)
+  extraLabels: {}
 
   # This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
   annotations: {}
@@ -256,6 +259,14 @@ controller:
     # default: 100
     # @type: integer
     maxConcurrentReconciles:
+
+    # Defines additional environment variables to be added to the
+    # vault-secrets-opearator manager container.
+    # extraEnv:
+    #   - name: HTTP_PROXY
+    #     value: http://proxy.example.com
+    # @type: array<map>
+    extraEnv: []
 
     # Configures the default resources for the vault-secrets-operator container.
     # For more information on configuring resources, see the K8s documentation:

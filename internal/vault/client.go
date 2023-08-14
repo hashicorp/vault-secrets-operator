@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -50,13 +50,13 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 			return nil, fmt.Errorf("invalid object %T, StorageEncryption not configured", t)
 		}
 	default:
-		// otherwise we fall back to the common.GetVaultAuthAndTarget() to decide whether, or not obj is supported.
-		a, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+		// otherwise we fall back to the common.GetVaultAuthNamespaced() to decide whether, or not obj is supported.
+		a, err := common.GetVaultAuthNamespaced(ctx, client, obj)
 		if err != nil {
 			return nil, err
 		}
 
-		providerNamespace = target.Namespace
+		providerNamespace = obj.GetNamespace()
 		authObj = a
 	}
 

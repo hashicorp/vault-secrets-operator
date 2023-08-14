@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package helpers
 
@@ -36,54 +36,6 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/name":       "vault-secrets-operator",
 	"app.kubernetes.io/managed-by": "hashicorp-vso",
 	"app.kubernetes.io/component":  "secret-sync",
-}
-
-// SyncOptions to provide to SyncSecret().
-type SyncOptions struct {
-	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
-	PruneOrphans bool
-}
-
-// SyncableSecretMetaData provides common data structure that extracts the bits pertinent
-// when handling any of the sync-able secret custom resource types.
-//
-// See NewSyncableSecretMetaData for the supported object types.
-type SyncableSecretMetaData struct {
-	// APIVersion of the syncable-secret object. Maps to obj.APIVersion.
-	APIVersion string
-	// Kind of the syncable-secret object. Maps to obj.Kind.
-	Kind string
-	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
-	Destination *secretsv1beta1.Destination
-}
-
-// NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
-// An error will be returned of obj is not a supported type.
-//
-// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
-func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
-	switch t := obj.(type) {
-	case *secretsv1beta1.VaultDynamicSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	case *secretsv1beta1.VaultStaticSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	case *secretsv1beta1.VaultPKISecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported type %T", t)
-	}
 }
 
 func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
@@ -174,6 +126,12 @@ func DefaultSyncOptions() SyncOptions {
 	}
 }
 
+// SyncOptions to provide to SyncSecret().
+type SyncOptions struct {
+	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
+	PruneOrphans bool
+}
+
 // SyncSecret writes data to a Kubernetes Secret for obj. All configuring is
 // derived from the object's Spec.Destination configuration. Note: in order to
 // keep the interface simpler opts is a variadic argument, only the first element
@@ -188,7 +146,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		options = DefaultSyncOptions()
 	}
 
-	meta, err := NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return err
 	}
@@ -362,7 +320,7 @@ func GetSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 }
 
 func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
-	meta, err := NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, false, err
 	}
