@@ -260,7 +260,7 @@ jobs:
         # and with the different vault versions, but we don't care about testing
         # all the k8s versions against all the vault versions.
         # Combos to exclude:
-        #   kind-k8s-version: [K8S_1_23, K8S_1_24, K8S_1_25, 1.26.6]
+        #   kind-k8s-version: [K8S_1_23, K8S_1_24, K8S_1_25, K8S_1_26]
         #   vault-version: [VAULT_N_2, VAULT_N_1]
         # We run kustomize ent against the full matrix, and other tests against vault version VAULT_N.
         # Combos to exclude:
