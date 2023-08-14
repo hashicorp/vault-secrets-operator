@@ -65,37 +65,31 @@ load _helpers
     [ "${actual}" = "200Mi" ]
 }
 
-@test "controller/Deployment: default resources for controller" {
+@test "controller/Deployment: default resources for controller and job" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+   local controller=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .resources' | tee /dev/stderr)
+   local job=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .resources' | tee /dev/stderr)
+
+   local actual=$(echo "$controller" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "10m" ]
-   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "64Mi" ]
-   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "500m" ]
-   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "128Mi" ]
-}
-
-@test "controller/Deployment: default resources for job" {
-  cd `chart_dir`
-  local object=$(helm template \
-      -s templates/deployment.yaml  \
-      . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[0].resources | select(documentIndex == 2)' | tee /dev/stderr)
-
-   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+   local actual=$(echo "$job" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "10m" ]
-   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "64Mi" ]
-   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "500m" ]
-   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+   actual=$(echo "$job" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "128Mi" ]
 }
 
@@ -110,8 +104,8 @@ load _helpers
       . | tee /dev/stderr |
       yq '.' | tee /dev/stderr)
 
-   local controller=$(echo "$object" | yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
-   local job=$(echo "$object" | yq '.spec.template.spec.containers[0].resources | select(documentIndex == 2)' | tee /dev/stderr)
+   local controller=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .resources' | tee /dev/stderr)
+   local job=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .resources' | tee /dev/stderr)
 
    local actual=$(echo "$controller" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "100m" ]

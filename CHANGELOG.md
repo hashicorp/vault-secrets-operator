@@ -2,7 +2,7 @@
 
 Improvements:
 * Helm: `controller.imagePullSecrets` stanza is added to provide imagePullSecrets to the controller's containers via the serviceAccount: [GH-266](https://github.com/hashicorp/vault-secrets-operator/pull/266)
-* Helm: `controller.manager.resources` values now also apply to the pre-delete-controller-cleanup-job. [GH-2R8066](https://github.com/hashicorp/vault-secrets-operator/pull/280)
+* Helm: `controller.manager.resources` values now also apply to the pre-delete-controller-cleanup-job. [GH-280](https://github.com/hashicorp/vault-secrets-operator/pull/280)
 
 Changes:
 * Helm: Update default kube-rbac-proxy container image in helm chart from `v0.11.0` to `v0.14.1`: [GH-267](https://github.com/hashicorp/vault-secrets-operator/pull/267)
