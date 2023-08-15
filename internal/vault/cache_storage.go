@@ -140,7 +140,6 @@ type ClientCacheStorage interface {
 type defaultClientCacheStorage struct {
 	hmacKey                  []byte
 	enforceEncryption        bool
-	ownerRefs                []metav1.OwnerReference
 	logger                   logr.Logger
 	requestCounterVec        *prometheus.CounterVec
 	requestErrorCounterVec   *prometheus.CounterVec
@@ -187,7 +186,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
-	req.OwnerReferences = append(req.OwnerReferences, c.ownerRefs...)
+	req.OwnerReferences = append(req.OwnerReferences)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -599,7 +598,6 @@ type ClientCacheStorageConfig struct {
 func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
 	return &ClientCacheStorageConfig{
 		EnforceEncryption: false,
-		OwnerRefs:         nil,
 		HMACSecretObjKey: ctrlclient.ObjectKey{
 			Name:      NamePrefixVCC + "storage-hmac-key",
 			Namespace: common.OperatorNamespace,
@@ -618,7 +616,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	s, err := createHMACKeySecret(ctx, client, config.HMACSecretObjKey, config.OwnerRefs)
+	s, err := createHMACKeySecret(ctx, client, config.HMACSecretObjKey)
 	if err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, err
@@ -634,7 +632,6 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 
 	cacheStorage := &defaultClientCacheStorage{
 		enforceEncryption: config.EnforceEncryption,
-		ownerRefs:         config.OwnerRefs,
 		hmacKey:           s.Data[hmacKeyName],
 		logger:            zap.New().WithName("ClientCacheStorage"),
 		requestCounterVec: prometheus.NewCounterVec(

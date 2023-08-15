@@ -58,7 +58,7 @@ func (v *defaultHMACValidator) HMAC(ctx context.Context, client ctrlclient.Clien
 
 // createHMACKeySecret with a generated HMAC key stored in Secret.Data with hmacKeyName.
 // If the Secret already exist, or if the HMAC key could not be generated, an error will be returned.
-func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey, ownerReferences []metav1.OwnerReference) (*corev1.Secret, error) {
+func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	key, err := generateHMACKey()
 	if err != nil {
 		return nil, err
@@ -73,7 +73,6 @@ func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey c
 				"app.kubernetes.io/managed-by": "hashicorp-vso",
 				"app.kubernetes.io/component":  "client-cache-storage-verification",
 			},
-			OwnerReferences: ownerReferences,
 		},
 		Immutable: pointer.Bool(true),
 		Data: map[string][]byte{
