@@ -15,7 +15,6 @@ import (
 
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
-	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -264,20 +263,11 @@ func TestRevocation(t *testing.T) {
 	})
 
 	// Check if all test tokens have been revoked.
-	retry.DoWithRetry(t, "waitForAllTestTokensToBeRevoked", 30, time.Second, func() (string, error) {
-		var unrevoked []string
-		for _, accessor := range testTokenAccessors {
-			// expect to receive an error that contains "invalid accessor" when looking up the token using its accessor
-			// as an indication that the token was successfully revoked
-			_, err = getTokenData(t, accessor)
-			if err == nil || !strings.Contains(err.Error(), "invalid accessor") {
-				unrevoked = append(unrevoked, accessor)
-			}
-		}
-		if len(unrevoked) > 0 {
-			return "", fmt.Errorf("found tokens unrevoked accessors=%v", unrevoked)
-		}
-
-		return fmt.Sprintf("Tokens revoked successfully %v", testTokenAccessors), nil
-	})
+	for _, accessor := range testTokenAccessors {
+		// expect to receive an error that contains "invalid accessor" when looking up the token using its accessor
+		// as an indication that the token was successfully revoked
+		_, err = getTokenData(t, accessor)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid accessor")
+	}
 }
