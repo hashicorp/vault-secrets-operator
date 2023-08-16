@@ -14,6 +14,7 @@ Changes:
 * Added Vault 1.14 and removed 1.11 from CI testing [GH-324](https://github.com/hashicorp/vault-secrets-operator/pull/324)
 * K8s versions tested are now 1.23-1.27 [GH-324](https://github.com/hashicorp/vault-secrets-operator/pull/324)
 * UBI-based images now built and published with releases: [GH-288](https://github.com/hashicorp/vault-secrets-operator/pull/288)
+* Updated the license from MPL to Business Source License: [GH-321](https://github.com/hashicorp/vault-secrets-operator/pull/321)
 
 Bugs:
 * VaultStaticSecrets (VSS): fix issue where the response error was not being set: [GH-301](https://github.com/hashicorp/vault-secrets-operator/pull/301)
