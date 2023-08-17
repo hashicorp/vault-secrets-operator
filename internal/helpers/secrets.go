@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package helpers
 
@@ -156,6 +156,12 @@ func DefaultSyncOptions() SyncOptions {
 	}
 }
 
+// SyncOptions to provide to SyncSecret().
+type SyncOptions struct {
+	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
+	PruneOrphans bool
+}
+
 // SyncSecret writes data to a Kubernetes Secret for obj. All configuring is
 // derived from the object's Spec.Destination configuration. Note: in order to
 // keep the interface simpler opts is a variadic argument, only the first element
@@ -170,7 +176,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		options = DefaultSyncOptions()
 	}
 
-	meta, err := NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return err
 	}
@@ -344,7 +350,7 @@ func GetSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 }
 
 func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
-	meta, err := NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, false, err
 	}

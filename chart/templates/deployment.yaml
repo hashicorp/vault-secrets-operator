@@ -1,6 +1,6 @@
 {{/*
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 */}}
 
 apiVersion: v1
@@ -31,6 +31,9 @@ spec:
     metadata:
       labels:
         control-plane: controller-manager
+      {{- if  .Values.controller.extraLabels }}
+        {{- toYaml .Values.controller.extraLabels | nindent 8 }}
+      {{- end }}
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
@@ -83,6 +86,10 @@ spec:
               fieldPath: metadata.uid
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.controller.kubernetesClusterDomain }}
+        {{- range .Values.controller.manager.extraEnv }}
+        - name: {{ .name }}
+          value: {{ .value }}
+        {{- end }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -155,6 +162,7 @@ spec:
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
         command:
         - /vault-secrets-operator
+        resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
