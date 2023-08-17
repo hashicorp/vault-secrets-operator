@@ -37,12 +37,6 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/component":  "secret-sync",
 }
 
-// SyncOptions to provide to SyncSecret().
-type SyncOptions struct {
-	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
-	PruneOrphans bool
-}
-
 // SyncableSecretMetaData provides common data structure that extracts the bits pertinent
 // when handling any of the sync-able secret custom resource types.
 //
