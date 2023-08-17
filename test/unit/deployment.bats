@@ -224,7 +224,7 @@ load _helpers
 #--------------------------------------------------------------------
 # terminationGracePeriodSeconds
 
-@test "controller/Deployment: default terminationGracePeriodSeconds when preserveClientCacheOnShutDown is true by default" {
+@test "controller/Deployment: default terminationGracePeriodSeconds when revokeClientCacheOnUninstall is false by default" {
   cd `chart_dir`
   local actual=$(helm template \
       -s templates/deployment.yaml  \
@@ -236,7 +236,7 @@ load _helpers
 #--------------------------------------------------------------------
 # preDeleteHookTimeoutSeconds
 
-@test "controller/Deployment: default preDeleteHookTimeoutSeconds when preserveClientCacheOnShutDown is true by default" {
+@test "controller/Deployment: default preDeleteHookTimeoutSeconds when revokeClientCacheOnUninstall is false by default" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \

@@ -258,12 +258,12 @@ func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest)
 	m.shutDown = true
 
 	var errs error
-	if req.Preserve {
-		m.revokeOnEvict = false
-		m.pruneStorageOnEvict = false
-	} else {
+	if req.Revoke {
 		m.revokeOnEvict = true
 		m.pruneStorageOnEvict = true
+	} else {
+		m.revokeOnEvict = false
+		m.pruneStorageOnEvict = false
 	}
 
 	m.cache.Purge()

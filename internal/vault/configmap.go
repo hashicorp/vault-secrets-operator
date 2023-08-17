@@ -22,8 +22,8 @@ type ShutDownStatus int
 
 const (
 	ShutDownModeUnknown ShutDownMode = iota
-	ShutDownModePreserve
-	ShutDownModeNoPreserve
+	ShutDownModeRevoke
+	ShutDownModeNoRevoke
 
 	ConfigMapKeyShutDownMode   = "shutDownMode"
 	ConfigMapKeyShutDownStatus = "shutDownStatus"
@@ -36,10 +36,10 @@ const (
 
 func (m ShutDownMode) String() string {
 	switch m {
-	case ShutDownModePreserve:
-		return "preserve"
-	case ShutDownModeNoPreserve:
-		return "no-preserve"
+	case ShutDownModeRevoke:
+		return "revoke"
+	case ShutDownModeNoRevoke:
+		return "no-revoke"
 	default:
 		return "unknown"
 	}
@@ -150,11 +150,11 @@ func updateManagerConfigMap(ctx context.Context, c client.Client, data map[strin
 
 func getShutDownMode(cm *corev1.ConfigMap) ShutDownMode {
 	mode := cm.Data[ConfigMapKeyShutDownMode]
-	if mode == ShutDownModeNoPreserve.String() {
-		return ShutDownModeNoPreserve
+	if mode == ShutDownModeRevoke.String() {
+		return ShutDownModeRevoke
 	}
-	if mode == ShutDownModePreserve.String() {
-		return ShutDownModePreserve
+	if mode == ShutDownModeNoRevoke.String() {
+		return ShutDownModeNoRevoke
 	}
 	return ShutDownModeUnknown
 }
@@ -186,10 +186,10 @@ func OnShutDown(clientFactory CachingClientFactory) OnConfigMapChange {
 		mode := getShutDownMode(cm)
 		var shutdownReq CachingClientFactoryShutDownRequest
 		switch mode {
-		case ShutDownModeNoPreserve:
-			shutdownReq.Preserve = false
-		case ShutDownModePreserve:
-			shutdownReq.Preserve = true
+		case ShutDownModeRevoke:
+			shutdownReq.Revoke = true
+		case ShutDownModeNoRevoke:
+			shutdownReq.Revoke = false
 		case ShutDownModeUnknown:
 			return
 		}

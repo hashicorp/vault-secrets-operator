@@ -16,16 +16,22 @@ import (
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
-	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
+// TestRevocation tests the revocation logic on Helm uninstall
 func TestRevocation(t *testing.T) {
+	if !testWithHelm {
+		t.Skipf("Test is only compatiable with Helm")
+	}
 	ctx := context.Background()
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
@@ -96,7 +102,7 @@ func TestRevocation(t *testing.T) {
 	auths := []*secretsv1beta1.VaultAuth{
 		// Create a non-default VaultAuth CR
 		{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      "vaultauth-test-kubernetes",
 				Namespace: testK8sNamespace,
 			},
@@ -112,7 +118,7 @@ func TestRevocation(t *testing.T) {
 			},
 		},
 		{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      "vaultauth-test-jwt-serviceaccount",
 				Namespace: testK8sNamespace,
 			},
@@ -163,7 +169,7 @@ func TestRevocation(t *testing.T) {
 		secretName := fmt.Sprintf("test-secret-%s", a.Name)
 		secrets = append(secrets,
 			&secretsv1beta1.VaultStaticSecret{
-				ObjectMeta: v1.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Name:      secretName,
 					Namespace: testK8sNamespace,
 				},
@@ -247,6 +253,26 @@ func TestRevocation(t *testing.T) {
 	}
 	require.Len(t, testTokenAccessors, len(auths))
 
+	// Get all Vault token secrets of the test auth objects
+	var secretList corev1.SecretList
+	labels := ctrlclient.MatchingLabels{"app.kubernetes.io/component": "client-cache-storage"}
+	opts := []ctrlclient.ListOption{
+		ctrlclient.InNamespace(operatorNS),
+		labels,
+	}
+	crdClient.List(ctx, &secretList, opts...)
+	var testTokenSecrets []corev1.Secret
+	for _, item := range secretList.Items {
+		fmt.Printf("item %s %+v", item.Name, item.Labels)
+		for _, auth := range auths {
+			if val, ok := item.Labels["auth/UID"]; ok && val == string(auth.UID) {
+				testTokenSecrets = append(testTokenSecrets, item)
+				break
+			}
+		}
+	}
+	require.Len(t, testTokenSecrets, len(auths))
+
 	exportKindLogs(t)
 	// Uninstall vso resource
 	terraform.Destroy(t, &terraform.Options{
@@ -262,12 +288,21 @@ func TestRevocation(t *testing.T) {
 		},
 	})
 
-	// Check if all test tokens have been revoked.
+	// Check if all test tokens were revoked.
 	for _, accessor := range testTokenAccessors {
 		// expect to receive an error that contains "invalid accessor" when looking up the token using its accessor
 		// as an indication that the token was successfully revoked
 		_, err = getTokenData(t, accessor)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid accessor")
+	}
+
+	// Check if Vault token secrets were deleted. Get should return an error
+	for _, tokenSecret := range testTokenSecrets {
+		err := crdClient.Get(ctx, ctrlclient.ObjectKey{
+			Namespace: operatorNS,
+			Name:      tokenSecret.Name,
+		}, &tokenSecret)
+		require.Error(t, err)
 	}
 }

@@ -149,8 +149,8 @@ spec:
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
         - --shutdown
-        {{- if .Values.controller.manager.clientCache.preserveClientCacheOnShutDown }}
-        - --preserve-client-cache
+        {{- if .Values.controller.manager.clientCache.revokeClientCacheOnUninstall }}
+        - --revoke-client-cache
         {{- end }}
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
         command:

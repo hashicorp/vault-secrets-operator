@@ -63,8 +63,8 @@ func main() {
 	var clientCachePersistenceModel string
 	var printVersion bool
 	var outputFormat string
-	var shutdown bool
-	var preserveClientCache bool
+	var uninstall bool
+	var revokeClientCache bool
 	var preDeleteHookTimeoutSeconds int
 
 	// command-line args and flags
@@ -83,9 +83,9 @@ func main() {
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
-	flag.BoolVar(&shutdown, "shutdown", false, "Run in shutdown mode")
-	flag.BoolVar(&preserveClientCache, "preserve-client-cache", false, "Preserve the client cache "+
-		"upon the operator deployment shutdown")
+	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
+	flag.BoolVar(&revokeClientCache, "revoke-client-cache", false, "Revoke the client cache "+
+		"upon Helm uninstall")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
 		"Pre-delete hook timeout in seconds")
 
@@ -137,7 +137,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if shutdown {
+	// This is the code path where we do Helm uninstall, and decide the shutdownMode for ClientFactory
+	if uninstall {
 		cleanupLog.Info("commencing cleanup of finalizers")
 		preDeleteDeadline := startTime.Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
 		preDeleteDeadlineCtx, cancel := context.WithDeadline(logr.NewContext(context.Background(), cleanupLog), preDeleteDeadline)
@@ -152,14 +153,14 @@ func main() {
 			os.Exit(1)
 		}
 
-		cleanupLog.Info("Starting the operator shutdown process")
-		shutdownMode := vclient.ShutDownModePreserve
-		if !preserveClientCache {
-			shutdownMode = vclient.ShutDownModeNoPreserve
+		cleanupLog.Info("Starting the operator uninstall process")
+		shutdownMode := vclient.ShutDownModeNoRevoke
+		if revokeClientCache {
+			shutdownMode = vclient.ShutDownModeRevoke
 		}
 
 		if err = shutDownOperator(preDeleteDeadlineCtx, defaultClient, shutdownMode); err != nil {
-			cleanupLog.Error(err, "Failed to complete the operator shutdown process")
+			cleanupLog.Error(err, "Failed to complete the operator uninstall process")
 			os.Exit(1)
 		}
 

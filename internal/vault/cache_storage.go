@@ -63,7 +63,7 @@ type ClientCacheStoragePruneRequest struct {
 }
 
 type CachingClientFactoryShutDownRequest struct {
-	Preserve bool
+	Revoke bool
 }
 
 type ClientCacheStorageRestoreRequest struct {
@@ -186,6 +186,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
+	// TODO we currently don't pass in owner references
 	req.OwnerReferences = append(req.OwnerReferences)
 
 	c.mu.Lock()

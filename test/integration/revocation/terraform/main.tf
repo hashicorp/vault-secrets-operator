@@ -160,8 +160,8 @@ resource "helm_release" "vault-secrets-operator" {
   }
 
   set {
-    name  = "controller.manager.clientCache.preserveClientCacheOnShutDown"
-    value = "false"
+    name  = "controller.manager.clientCache.revokeClientCacheOnUninstall"
+    value = "true"
   }
 
   set {

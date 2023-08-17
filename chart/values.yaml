@@ -91,11 +91,11 @@ controller:
       # @type: string
       persistenceModel: ""
 
-      # Toggles the preservation of vault tokens upon on Helm uninstall or operator deployment shutdown.
-      # If preserveClientCacheOnShutDown is true, Vault tokens will be revoked, and purged from the cache and storage
-      # NOTE: When a token is revoked, all of its leases are also revoked.
+      # Toggles the revocation of client cache upon on Helm uninstall.
+      # If revokeClientCacheOnUninstall is true, Vault client tokens will be revoked, and purged from the cache and storage.
+      # NOTE: When a token is revoked, all of its leases are also revoked. This can cause failures in the consumer applications.
       # @type: boolean
-      preserveClientCacheOnShutDown: "true"
+      revokeClientCacheOnUninstall: false
 
       # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
       # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
