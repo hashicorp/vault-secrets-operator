@@ -12,7 +12,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -141,7 +140,7 @@ func main() {
 	if uninstall {
 		cleanupLog.Info("commencing cleanup of finalizers")
 		preDeleteDeadline := startTime.Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
-		preDeleteDeadlineCtx, cancel := context.WithDeadline(logr.NewContext(context.Background(), cleanupLog), preDeleteDeadline)
+		preDeleteDeadlineCtx, cancel := context.WithDeadline(context.Background(), preDeleteDeadline)
 		// Even though ctx will be expired, it is good practice to call its
 		// cancellation functions in any case. Failure to do so may keep the
 		// context and its parent alive longer than necessary.
@@ -321,6 +320,7 @@ func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDow
 			}
 			return nil
 		default:
+			// Periodically check for shutDownStatus updates as the ClientFactory shutdown process can take a while
 			time.Sleep(500 * time.Millisecond)
 			cm, err = vclient.GetManagerConfigMap(ctx, c)
 			if err != nil {
