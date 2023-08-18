@@ -1,5 +1,7 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
+
+
 
 locals {
   name_prefix = "${var.name_prefix}-${random_string.prefix.result}"
