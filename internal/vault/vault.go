@@ -4,8 +4,10 @@
 package vault
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -51,7 +53,11 @@ func MakeSecretK8sData(d, raw map[string]interface{}) (map[string][]byte, error)
 
 		switch x := v.(type) {
 		case string:
-			data[k] = []byte(x)
+			decodedValue, err := convertBase64(x)
+			if err != nil {
+				return nil, err
+			}
+			data[k] = []byte(decodedValue)
 		default:
 			b, err := json.Marshal(v)
 			if err != nil {
@@ -62,4 +68,21 @@ func MakeSecretK8sData(d, raw map[string]interface{}) (map[string][]byte, error)
 	}
 
 	return data, nil
+}
+
+func convertBase64(input string) (string, error) {
+	base64Pattern := "^[A-Za-z0-9+/]*={0,2}$"
+	regex, err := regexp.Compile(base64Pattern)
+	isBase64 := regex.MatchString(input)
+	if err != nil {
+		return "", err
+	}
+	if isBase64 {
+		decodedValue, err := base64.StdEncoding.DecodeString(input)
+		if err != nil {
+			return "", err
+		}
+		return string(decodedValue), nil
+	}
+	return input, nil
 }

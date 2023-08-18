@@ -10,6 +10,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"testing"
+
+	"github.com/hashicorp/vault/api"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMakeSecretK8sData(t *testing.T) {
@@ -148,6 +152,70 @@ func TestMakeSecretK8sData(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "MakeSecretK8sData(%v, %v)", tt.data, tt.raw)
+		})
+	}
+}
+
+func Test_MarshalSecretData(t *testing.T) {
+	tests := map[string]struct {
+		input    api.Secret
+		expected map[string]string
+	}{
+		"secrets included base64": {
+			input: api.Secret{
+				Data: map[string]interface{}{
+					"key_algorithm":    "KEY_ALG_RSA_2048",
+					"key_type":         "TYPE_GOOGLE_CREDENTIALS_FILE",
+					"private_key_data": "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwicHJvamVjdF9pZCI6IlBST0pFQ1RfSUQiLCJwcml2YXRlX2tleV9pZCI6IktFWV9JRCIsInByaXZhdGVfa2V5IjoiLS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tXG5QUklWQVRFX0tFWVxuLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLVxuIiwiY2xpZW50X2VtYWlsIjoiU0VSVklDRV9BQ0NPVU5UX0VNQUlMIiwiY2xpZW50X2lkIjoiQ0xJRU5UX0lEIiwiYXV0aF91cmkiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20vby9vYXV0aDIvYXV0aCIsInRva2VuX3VyaSI6Imh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi90b2tlbiIsImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6Imh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsImNsaWVudF94NTA5X2NlcnRfdXJsIjoiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vcm9ib3QvdjEvbWV0YWRhdGEveDUwOS9TRVJWSUNFX0FDQ09VTlRfRU1BSUwifQ==",
+				},
+			},
+			expected: map[string]string{
+				"_raw":             "{\"key_algorithm\":\"KEY_ALG_RSA_2048\",\"key_type\":\"TYPE_GOOGLE_CREDENTIALS_FILE\",\"private_key_data\":\"eyJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwicHJvamVjdF9pZCI6IlBST0pFQ1RfSUQiLCJwcml2YXRlX2tleV9pZCI6IktFWV9JRCIsInByaXZhdGVfa2V5IjoiLS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tXG5QUklWQVRFX0tFWVxuLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLVxuIiwiY2xpZW50X2VtYWlsIjoiU0VSVklDRV9BQ0NPVU5UX0VNQUlMIiwiY2xpZW50X2lkIjoiQ0xJRU5UX0lEIiwiYXV0aF91cmkiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20vby9vYXV0aDIvYXV0aCIsInRva2VuX3VyaSI6Imh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi90b2tlbiIsImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6Imh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsImNsaWVudF94NTA5X2NlcnRfdXJsIjoiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vcm9ib3QvdjEvbWV0YWRhdGEveDUwOS9TRVJWSUNFX0FDQ09VTlRfRU1BSUwifQ==\"}",
+				"key_algorithm":    "KEY_ALG_RSA_2048",
+				"key_type":         "TYPE_GOOGLE_CREDENTIALS_FILE",
+				"private_key_data": `{"type":"service_account","project_id":"PROJECT_ID","private_key_id":"KEY_ID","private_key":"-----BEGIN PRIVATE KEY-----\nPRIVATE_KEY\n-----END PRIVATE KEY-----\n","client_email":"SERVICE_ACCOUNT_EMAIL","client_id":"CLIENT_ID","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://accounts.google.com/o/oauth2/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/SERVICE_ACCOUNT_EMAIL"}`,
+			},
+		},
+		"secrets include regular string": {
+			input: api.Secret{
+				Data: map[string]interface{}{
+					"key_algorithm":    "KEY_ALG_RSA_2048",
+					"key_type":         "TYPE_GOOGLE_CREDENTIALS_FILE",
+					"private_key_data": "test string",
+				},
+			},
+			expected: map[string]string{
+				"_raw":             "{\"key_algorithm\":\"KEY_ALG_RSA_2048\",\"key_type\":\"TYPE_GOOGLE_CREDENTIALS_FILE\",\"private_key_data\":\"test string\"}",
+				"key_algorithm":    "KEY_ALG_RSA_2048",
+				"key_type":         "TYPE_GOOGLE_CREDENTIALS_FILE",
+				"private_key_data": "test string",
+			},
+		},
+		"secrets include a valid base64": {
+			input: api.Secret{
+				Data: map[string]interface{}{
+					"key_algorithm":    "KEY_ALG_RSA_2048",
+					"key_type":         "TYPE_GOOGLE_CREDENTIALS_FILE",
+					"private_key_data": "SGVsbG8gV29ybGQh!!",
+				},
+			},
+			expected: map[string]string{
+				"_raw":             "{\"key_algorithm\":\"KEY_ALG_RSA_2048\",\"key_type\":\"TYPE_GOOGLE_CREDENTIALS_FILE\",\"private_key_data\":\"SGVsbG8gV29ybGQh!!\"}",
+				"key_algorithm":    "KEY_ALG_RSA_2048",
+				"key_type":         "TYPE_GOOGLE_CREDENTIALS_FILE",
+				"private_key_data": "SGVsbG8gV29ybGQh!!",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			result, err := MarshalSecretData(&tc.input)
+			assert.Nil(t, err)
+			assert.Equal(t, tc.expected["private_key_data"], string(result["private_key_data"]))
+			assert.Equal(t, tc.expected["key_algorithm"], string(result["key_algorithm"]))
+			assert.Equal(t, tc.expected["key_type"], string(result["key_type"]))
+			assert.Equal(t, tc.expected["_raw"], string(result["_raw"]))
 		})
 	}
 }
