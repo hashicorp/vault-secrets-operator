@@ -186,7 +186,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		return nil, err
 	}
 
-	// TODO we currently don't pass in owner references
+	// TODO: we currently don't pass in owner references to avoid deleting the cache on restart.
 	req.OwnerReferences = append(req.OwnerReferences)
 
 	c.mu.Lock()
