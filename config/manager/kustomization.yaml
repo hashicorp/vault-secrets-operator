@@ -6,8 +6,6 @@ resources:
 
 generatorOptions:
   disableNameSuffixHash: true
-  labels:
-    app.kubernetes.io/component: controller-manager
 
 configMapGenerator:
 - files:
