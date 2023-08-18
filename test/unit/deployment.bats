@@ -491,3 +491,36 @@ load _helpers
    actual=$(echo "$object" | yq '.label2'| tee /dev/stderr)
    [ "${actual}" = 'value2' ]
 }
+
+#--------------------------------------------------------------------
+# sidecarContainers
+
+@test "controller/Deployment: sidecarContainers not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers | select(documentIndex == 1)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'map(select(.name != "kube-rbac-proxy" and .name != "manager")) | length')
+  [ "${actual}" = "0" ]
+}
+
+@test "controller/Deployment: sidecarContainers can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.sidecarContainers.hello-world.image=hello-world' \
+      --set 'controller.sidecarContainers.hello-world.resources.requests.memory=150Mi' \
+      --set 'controller.sidecarContainers.hello-world.resources.limits.cpu=150m' \
+      . | tee /dev/stderr)
+
+  local helloWorld=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "hello-world")' | tee /dev/stderr)
+
+  local actual=$(echo "$helloWorld" | yq '.image' | tee /dev/stderr)
+  [ "${actual}" = 'hello-world' ]
+  actual=$(echo "$helloWorld" | yq '.resources.requests.memory' | tee /dev/stderr)
+  [ "${actual}" = '150Mi' ]
+  actual=$(echo "$helloWorld" | yq '.resources.limits.cpu' | tee /dev/stderr)
+  [ "${actual}" = '150m' ]
+}

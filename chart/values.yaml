@@ -28,6 +28,15 @@ controller:
   #    effect: "NoSchedule"
   tolerations: []
 
+  # sidecarContainers - add more containers to vault secrets operator
+  # Key/Value where Key is the sidecar `- name: <Key>`
+  # Example:
+  #   sidecarContainers:
+  #      tailscale:
+  #        image: tailscale
+  # @recurse: true
+  # @type: map
+  sidecarContainers: {}
   
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
@@ -301,7 +310,6 @@ controller:
   # Configures the environment variable KUBERNETES_CLUSTER_DOMAIN used by KubeDNS.
   # @type: string
   kubernetesClusterDomain: cluster.local
-
 
 # Configure the metrics service ports used by the metrics service.
 # Set the configuration fo the metricsService port.
