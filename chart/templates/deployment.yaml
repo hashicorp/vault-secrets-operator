@@ -110,6 +110,14 @@ spec:
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
+      {{- range $name, $spec :=  .Values.controller.sidecarContainers }}
+      - name: {{ $name }}
+        {{- if kindIs "string" $spec }}
+          {{- tpl $spec $ | nindent 8 }}
+        {{- else }}
+          {{- toYaml $spec | nindent 8 }}
+        {{- end }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
