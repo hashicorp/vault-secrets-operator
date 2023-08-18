@@ -270,6 +270,22 @@ load _helpers
 }
 
 #--------------------------------------------------------------------
+# when revokeClientCacheOnUninstall is true
+
+@test "controller/Deployment: correct args when revokeClientCacheOnUninstall is true" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.revokeClientCacheOnUninstall=true' \
+      --set 'controller.preDeleteHookTimeoutSeconds=180' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'contains(["--uninstall", "--revoke-client-cache","--pre-delete-hook-timeout-seconds=180"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+#--------------------------------------------------------------------
 # controller.imagePullSecrets
 
 @test "controller/Deployment: no image pull secrets by default" {
