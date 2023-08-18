@@ -94,9 +94,9 @@ controller:
       # @type: string
       persistenceModel: ""
 
-      # Toggles the revocation of client cache upon on Helm uninstall.
-      # If revokeClientCacheOnUninstall is true, Vault client tokens will be revoked, and purged from the cache and storage.
-      # NOTE: When a token is revoked, all of its leases are also revoked. This can cause failures in the consumer applications.
+      # Toggles the revocation of client cache on Helm uninstall.
+      # If revokeClientCacheOnUninstall is true, all Vault client tokens used by the operator will be revoked, and purged from the cache and storage.
+      # NOTE: When a token is revoked, all of its leases are also revoked. This can cause failures in the consuming applications.
       # @type: boolean
       revokeClientCacheOnUninstall: false
 
