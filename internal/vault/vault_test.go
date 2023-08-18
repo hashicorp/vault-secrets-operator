@@ -191,7 +191,7 @@ func Test_MarshalSecretData(t *testing.T) {
 				"private_key_data": "test string",
 			},
 		},
-		"secrets include a valid base64": {
+		"secrets include a invalid base64": {
 			input: api.Secret{
 				Data: map[string]interface{}{
 					"key_algorithm":    "KEY_ALG_RSA_2048",
