@@ -359,7 +359,7 @@ func (c *defaultClient) GetTokenSecret() *api.Secret {
 	return c.authSecret
 }
 
-// Close un-initializes this Client, stopping its LifetimeWatcher in the process.
+// Close un-initializes this Client, stopping its LifetimeWatcher in the process and optionally revoking the token.
 // It is safe to be called multiple times.
 func (c *defaultClient) Close(revoke bool) {
 	c.mu.Lock()
