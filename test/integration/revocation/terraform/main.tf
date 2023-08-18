@@ -42,18 +42,6 @@ resource "kubernetes_default_service_account" "default" {
   }
 }
 
-resource "kubernetes_secret" "default" {
-  metadata {
-    namespace = kubernetes_namespace.tenant-1.metadata[0].name
-    name      = "test-sa-secret"
-    annotations = {
-      "kubernetes.io/service-account.name" = kubernetes_default_service_account.default.metadata[0].name
-    }
-  }
-  type                           = "kubernetes.io/service-account-token"
-  wait_for_service_account_token = true
-}
-
 resource "random_string" "prefix" {
   length  = 10
   upper   = false
@@ -112,25 +100,6 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   token_policies                   = [vault_policy.default.name]
   audience                         = "vault"
 }
-
-# jwt auth config
-resource "vault_jwt_auth_backend" "dev" {
-  namespace             = local.namespace
-  path                  = "jwt"
-  oidc_discovery_url    = var.vault_oidc_discovery_url
-  oidc_discovery_ca_pem = var.vault_oidc_ca ? nonsensitive(kubernetes_secret.default.data["ca.crt"]) : ""
-}
-
-resource "vault_jwt_auth_backend_role" "dev" {
-  namespace       = vault_jwt_auth_backend.dev.namespace
-  backend         = "jwt"
-  role_name       = var.auth_role
-  role_type       = "jwt"
-  bound_audiences = ["vault"]
-  user_claim      = "sub"
-  token_policies  = [vault_policy.default.name]
-}
-
 
 # VSO Helm chart
 resource "helm_release" "vault-secrets-operator" {

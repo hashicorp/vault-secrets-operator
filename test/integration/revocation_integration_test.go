@@ -103,7 +103,7 @@ func TestRevocation(t *testing.T) {
 		// Create a non-default VaultAuth CR
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "vaultauth-test-kubernetes",
+				Name:      "vaultauth-test-kubernetes-1",
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
@@ -119,14 +119,14 @@ func TestRevocation(t *testing.T) {
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "vaultauth-test-jwt-serviceaccount",
+				Name:      "vaultauth-test-kubernetes-2",
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
 				Namespace: testVaultNamespace,
-				Method:    "jwt",
-				Mount:     "jwt",
-				JWT: &secretsv1beta1.VaultAuthConfigJWT{
+				Method:    "kubernetes",
+				Mount:     "kubernetes",
+				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 					Role:           outputs.AuthRole,
 					ServiceAccount: consts.NameDefault,
 					TokenAudiences: []string{"vault"},
