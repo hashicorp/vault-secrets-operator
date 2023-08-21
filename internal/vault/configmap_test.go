@@ -64,8 +64,8 @@ func TestOnShutDown(t *testing.T) {
 
 		if tt.expected {
 			// we test the next calling of onConfigMapChange should return true without checking the configmap
-			// we pass in an empty ConfigMap. This will ensure shutDown in OnShutDown's scope was cached correctly, and
-			// onConfigMapChange should check shutDown and returns true
+			// we pass in an empty ConfigMap. This checks if shutDown in OnShutDown's scope was cached correctly, and
+			// onConfigMapChange only checks shutDown and returns true
 			actual = onConfigMapChange(ctx, client, &corev1.ConfigMap{})
 			assert.Equal(t, tt.expected, actual)
 		}
