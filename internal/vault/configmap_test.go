@@ -33,25 +33,31 @@ func TestOnShutDown(t *testing.T) {
 	}{
 		{
 			&corev1.ConfigMap{
-				Data: map[string]string{"shutDownMode": ""},
-			},
-			false,
-		},
-		{
-			&corev1.ConfigMap{
 				Data: map[string]string{"anotherKey": "anotherValue"},
 			},
 			false,
 		},
 		{
 			&corev1.ConfigMap{
-				Data: map[string]string{"shutDownMode": "revoke"},
+				Data: map[string]string{ConfigMapKeyShutDownMode: ""},
+			},
+			false,
+		},
+		{
+			&corev1.ConfigMap{
+				Data: map[string]string{ConfigMapKeyShutDownMode: "invalidValue"},
+			},
+			false,
+		},
+		{
+			&corev1.ConfigMap{
+				Data: map[string]string{ConfigMapKeyShutDownMode: ShutDownModeRevoke.String()},
 			},
 			true,
 		},
 		{
 			&corev1.ConfigMap{
-				Data: map[string]string{"shutDownMode": "no-revoke"},
+				Data: map[string]string{ConfigMapKeyShutDownMode: ShutDownModeNoRevoke.String()},
 			},
 			true,
 		},
