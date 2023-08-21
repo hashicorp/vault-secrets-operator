@@ -163,6 +163,7 @@ func main() {
 			os.Exit(1)
 		}
 
+		cleanupLog.Info("Successfully completed the operator uninstall process")
 		os.Exit(0)
 	}
 

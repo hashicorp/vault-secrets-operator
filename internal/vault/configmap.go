@@ -58,7 +58,7 @@ func (s ShutDownStatus) String() string {
 	}
 }
 
-type OnConfigMapChange func(context.Context, client.Client, *corev1.ConfigMap)
+type OnConfigMapChange func(context.Context, client.Client, *corev1.ConfigMap) bool
 
 func WaitForManagerConfigMapModified(ctx context.Context, watcher watch.Interface, c client.Client, onChanges ...OnConfigMapChange) {
 	defer watcher.Stop()
@@ -69,8 +69,12 @@ func WaitForManagerConfigMapModified(ctx context.Context, watcher watch.Interfac
 		case event := <-watcher.ResultChan():
 			if event.Type == watch.Modified {
 				if cm, ok := event.Object.(*corev1.ConfigMap); ok {
+					allDone := true
 					for _, onChange := range onChanges {
-						onChange(ctx, c, cm)
+						allDone = allDone && onChange(ctx, c, cm)
+					}
+					if allDone {
+						return
 					}
 				}
 			}
@@ -94,10 +98,6 @@ func getManagerConfigMapList(ctx context.Context, c client.Client) (*corev1.Conf
 
 	if len(list.Items) == 0 {
 		return nil, fmt.Errorf("no configmaps matching labels=%v found in the operator namespace", labels)
-	}
-
-	if len(list.Items) > 1 {
-		return nil, fmt.Errorf("more than 1 configmaps matching labels=%v found in the operator namespace", labels)
 	}
 
 	return &list, nil
@@ -176,10 +176,11 @@ func GetShutDownStatus(cm *corev1.ConfigMap) ShutDownStatus {
 // OnShutDown shuts down the client factory if the manager configmap's ConfigMapKeyShutDownMode is set, and
 // sets ConfigMapKeyShutDownStatus based on the client factory shutdown error
 func OnShutDown(clientFactory CachingClientFactory) OnConfigMapChange {
-	var completed bool
-	return func(ctx context.Context, c client.Client, cm *corev1.ConfigMap) {
-		if completed {
-			return
+	// indicates whether clientFactory was already shut down
+	var shutDown bool
+	return func(ctx context.Context, c client.Client, cm *corev1.ConfigMap) bool {
+		if shutDown {
+			return true
 		}
 		logger := log.FromContext(ctx)
 
@@ -191,21 +192,16 @@ func OnShutDown(clientFactory CachingClientFactory) OnConfigMapChange {
 		case ShutDownModeNoRevoke:
 			shutdownReq.Revoke = false
 		case ShutDownModeUnknown:
-			return
+			return false
 		}
 
+		shutDown = true
 		errs := errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusPending))
-		if err := errors.Join(clientFactory.ShutDown(shutdownReq)); err != nil {
-			errs = errors.Join(err)
-			errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusFailed))
-		} else {
-			errs = errors.Join(SetShutDownStatus(ctx, c, cm, ShutDownStatusDone))
-		}
+		clientFactory.ShutDown(shutdownReq)
+		errs = errors.Join(errs, SetShutDownStatus(ctx, c, cm, ShutDownStatusDone))
 		if errs != nil {
 			logger.Error(errs, "OnShutDown failed")
-		} else {
-			completed = true
 		}
-		return
+		return shutDown
 	}
 }

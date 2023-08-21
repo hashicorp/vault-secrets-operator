@@ -54,7 +54,7 @@ type CachingClientFactory interface {
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
-	ShutDown(CachingClientFactoryShutDownRequest) error
+	ShutDown(CachingClientFactoryShutDownRequest)
 }
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
@@ -247,7 +247,7 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 
 // ShutDown will attempt to revoke all Client tokens in memory.
 // This should be called upon operator deployment deletion if client cache cleanup is required.
-func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest) error {
+func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -257,7 +257,6 @@ func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest)
 	// they may continue using it and generating new tokens/leases.
 	m.shutDown = true
 
-	var errs error
 	if req.Revoke {
 		m.revokeOnEvict = true
 		m.pruneStorageOnEvict = true
@@ -267,14 +266,7 @@ func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest)
 	}
 
 	m.cache.Purge()
-
-	if errs != nil {
-		m.logger.Error(errs, "ClientFactory shut down completed with errors")
-	} else {
-		m.logger.Info("Successfully shut down ClientFactory")
-	}
-
-	return errs
+	m.logger.Info("Completed ClientFactory shutdown")
 }
 
 func (m *cachingClientFactory) storageEnabled() bool {
