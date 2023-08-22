@@ -94,6 +94,12 @@ controller:
       # @type: string
       persistenceModel: ""
 
+      # Toggles the revocation of client cache on Helm uninstall.
+      # If revokeClientCacheOnUninstall is true, all Vault client tokens used by the operator will be revoked, and purged from the cache and storage.
+      # NOTE: When a token is revoked, all of its leases are also revoked. This can cause failures in the consuming applications.
+      # @type: boolean
+      revokeClientCacheOnUninstall: false
+
       # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
       # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
       # of the client cache which can result in additional Vault client counts.
@@ -302,6 +308,12 @@ controller:
   # @type: string
   kubernetesClusterDomain: cluster.local
 
+  # Duration in seconds the pod needs to terminate gracefully.
+  # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
+  terminationGracePeriodSeconds: 120
+
+  # Timeout in seconds for the pre-delete hook
+  preDeleteHookTimeoutSeconds: 120
 
 # Configure the metrics service ports used by the metrics service.
 # Set the configuration fo the metricsService port.
