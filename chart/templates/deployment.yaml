@@ -113,7 +113,7 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
       {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
@@ -154,10 +154,14 @@ spec:
       containers:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
+        args:
+        - --uninstall
+        {{- if .Values.controller.manager.clientCache.revokeClientCacheOnUninstall }}
+        - --revoke-client-cache
+        {{- end }}
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
         command:
         - /vault-secrets-operator
-        args:
-        - --finalizer-cleanup=true
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}

@@ -31,6 +31,12 @@ const (
 	NamePrefixVCC = "vso-cc-"
 )
 
+type ClientFactoryDisabledError struct{}
+
+func (e *ClientFactoryDisabledError) Error() string {
+	return "ClientFactory disabled due to operator deployment deletion"
+}
+
 type ClientFactory interface {
 	Get(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 }
@@ -48,6 +54,7 @@ type CachingClientFactory interface {
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
+	ShutDown(CachingClientFactoryShutDownRequest)
 }
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
@@ -58,11 +65,14 @@ type cachingClientFactory struct {
 	recorder           record.EventRecorder
 	persist            bool
 	encryptionRequired bool
+	shutDown           bool
 	// clientCacheKeyEncrypt is a member of the ClientCache, it is instantiated whenever the ClientCacheStorage has enforceEncryption enabled.
 	clientCacheKeyEncrypt  ClientCacheKey
 	logger                 logr.Logger
 	requestCounterVec      *prometheus.CounterVec
 	requestErrorCounterVec *prometheus.CounterVec
+	revokeOnEvict          bool
+	pruneStorageOnEvict    bool
 	mu                     sync.RWMutex
 }
 
@@ -72,6 +82,10 @@ type cachingClientFactory struct {
 // Pruning continues on error, so there is a possibility that only a subset of the requested Secrets will be removed
 // from the ClientCacheStorage.
 func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, req CachingClientFactoryPruneRequest) (int, error) {
+	if m.isDisabled() {
+		return 0, &ClientFactoryDisabledError{}
+	}
+
 	var filter ClientCachePruneFilterFunc
 	switch cur := obj.(type) {
 	case *secretsv1beta1.VaultAuth:
@@ -88,6 +102,13 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 		return 0, fmt.Errorf("client removal not supported for type %T", cur)
 	}
 
+	if !req.PruneStorage {
+		return 0, nil
+	}
+	return m.prune(ctx, client, filter)
+}
+
+func (m *cachingClientFactory) prune(ctx context.Context, client ctrlclient.Client, filter ClientCachePruneFilterFunc) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -95,7 +116,7 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 	pruned := m.cache.Prune(filter)
 	var errs error
 	// for all cache entries pruned, remove the corresponding storage entries.
-	if req.PruneStorage && m.persist && m.storage != nil {
+	if m.storageEnabled() {
 		for _, key := range pruned {
 			if _, err := m.pruneStorage(ctx, client, key); err != nil {
 				errs = errors.Join(errs, err)
@@ -123,8 +144,9 @@ func (m *cachingClientFactory) pruneStorage(ctx context.Context, client ctrlclie
 func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlclient.Client, cacheKey ClientCacheKey, c Client) {
 	logger := m.logger.WithValues("cacheKey", cacheKey)
 	logger.Info("Handling client cache eviction")
-	c.Close()
-	if m.persist && m.storage != nil {
+	c.Close(m.revokeOnEvict)
+
+	if m.storageEnabled() && m.pruneStorageOnEvict {
 		if count, err := m.pruneStorage(ctx, client, cacheKey); err != nil {
 			logger.Error(err, "Failed to remove Client from storage")
 		} else {
@@ -223,6 +245,40 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 	return errs
 }
 
+// ShutDown will attempt to revoke all Client tokens in memory.
+// This should be called upon operator deployment deletion if client cache cleanup is required.
+func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.logger.Info("Shutting down ClientFactory")
+	// This will shut down client cache, "blocking" future ClientFactory interface calls
+	// NOTE: If a consumer of the client cache factory already has a reference to a client in hand,
+	// they may continue using it and generating new tokens/leases.
+	m.shutDown = true
+
+	if req.Revoke {
+		m.revokeOnEvict = true
+		m.pruneStorageOnEvict = true
+	} else {
+		m.revokeOnEvict = false
+		m.pruneStorageOnEvict = false
+	}
+
+	m.cache.Purge()
+	m.logger.Info("Completed ClientFactory shutdown")
+}
+
+func (m *cachingClientFactory) storageEnabled() bool {
+	return m.persist && m.storage != nil
+}
+
+func (m *cachingClientFactory) isDisabled() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.shutDown
+}
+
 // Get is meant to be called for all resources that require access to Vault.
 // It will attempt to fetch a Client from the in-memory cache for the provided Object.
 // On a cache miss, an attempt at restoration from storage will be made, if a restoration attempt fails,
@@ -241,6 +297,11 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 			time.Since(startTS).Seconds(),
 		)
 	}()
+
+	if m.isDisabled() {
+		errs = errors.Join(&ClientFactoryDisabledError{})
+		return nil, errs
+	}
 
 	cacheKey, err := ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
@@ -299,7 +360,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !ok && (m.persist && m.storage != nil) {
+	if !ok && m.storageEnabled() {
 		// try and restore from Client storage cache, if properly configured to do so.
 		restored, err := m.restoreClientFromCacheKey(ctx, client, cacheKey)
 		if err == nil {
@@ -324,7 +385,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, errs
 	}
 
-	if m.persist && m.storage != nil {
+	if m.storageEnabled() {
 		if err := m.storeClient(ctx, client, c); err != nil {
 			logger.Error(err, "Failed to store the client")
 		}
@@ -573,21 +634,24 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 
 // CachingClientFactoryConfig provides the configuration for a CachingClientFactory instance.
 type CachingClientFactoryConfig struct {
+	RevokeTokensOnUninstall   bool
 	Persist                   bool
 	StorageConfig             *ClientCacheStorageConfig
 	ClientCacheSize           int
 	CollectClientCacheMetrics bool
 	Recorder                  record.EventRecorder
 	MetricsRegistry           prometheus.Registerer
+	PruneStorageOnEvict       bool
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
 func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 	return &CachingClientFactoryConfig{
-		StorageConfig:   DefaultClientCacheStorageConfig(),
-		ClientCacheSize: 10000,
-		Recorder:        &nullEventRecorder{},
-		MetricsRegistry: ctrlmetrics.Registry,
+		StorageConfig:       DefaultClientCacheStorageConfig(),
+		ClientCacheSize:     10000,
+		Recorder:            &nullEventRecorder{},
+		MetricsRegistry:     ctrlmetrics.Registry,
+		PruneStorageOnEvict: true,
 	}
 }
 

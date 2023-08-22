@@ -149,7 +149,7 @@ type Client interface {
 	GetVaultConnectionObj() *secretsv1beta1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
-	Close()
+	Close(bool)
 	Clone(string) (Client, error)
 	IsClone() bool
 	Namespace() string
@@ -359,16 +359,25 @@ func (c *defaultClient) GetTokenSecret() *api.Secret {
 	return c.authSecret
 }
 
-// Close un-initializes this Client, stopping its LifetimeWatcher in the process.
+// Close un-initializes this Client, stopping its LifetimeWatcher in the process and optionally revoking the token.
 // It is safe to be called multiple times.
-func (c *defaultClient) Close() {
+func (c *defaultClient) Close(revoke bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	log.FromContext(nil).Info("Calling Client.Close()")
+	logger := log.FromContext(nil)
+	logger.Info("Calling Client.Close()")
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
+
+	if revoke && c.client != nil {
+		if err := c.client.Auth().Token().RevokeSelf(""); err != nil {
+			logger.V(consts.LogLevelWarning).Info(
+				"Failed to revoke Vault client token", "err", err)
+		}
+	}
+
 	c.client = nil
 }
 

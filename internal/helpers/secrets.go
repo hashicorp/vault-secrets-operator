@@ -12,14 +12,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
 
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by
@@ -36,23 +35,6 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/name":       "vault-secrets-operator",
 	"app.kubernetes.io/managed-by": "hashicorp-vso",
 	"app.kubernetes.io/component":  "secret-sync",
-}
-
-func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
-	ownerRef := metav1.OwnerReference{
-		Name: owner.GetName(),
-		UID:  owner.GetUID(),
-	}
-
-	gvk, err := apiutil.GVKForObject(owner, scheme)
-	if err != nil {
-		return ownerRef, err
-	}
-
-	apiVersion, kind := gvk.ToAPIVersionAndKind()
-	ownerRef.APIVersion = apiVersion
-	ownerRef.Kind = kind
-	return ownerRef, nil
 }
 
 // OwnerLabelsForObj returns the canonical set of labels that should be set on
@@ -94,7 +76,7 @@ func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, err
 // Those are secrets that have a copy of OwnerLabels, and exactly one metav1.OwnerReference
 // that matches obj.
 func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) ([]corev1.Secret, error) {
-	ownerRef, err := getOwnerRefFromObj(obj, client.Scheme())
+	ownerRef, err := utils.GetOwnerRefFromObj(obj, client.Scheme())
 	if err != nil {
 		return nil, err
 	}

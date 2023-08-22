@@ -12,8 +12,8 @@ namespace: vault-secrets-operator-system
 namePrefix: vault-secrets-operator-
 
 # Labels to add to all resources and selectors.
-#commonLabels:
-#  someName: someValue
+commonLabels:
+  app.kubernetes.io/component: controller-manager
 
 bases:
 - ../crd
