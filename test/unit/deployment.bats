@@ -65,20 +65,31 @@ load _helpers
     [ "${actual}" = "200Mi" ]
 }
 
-@test "controller/Deployment: default resources for controller" {
+@test "controller/Deployment: default resources for controller and job" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+   local controller=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .resources' | tee /dev/stderr)
+   local job=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .resources' | tee /dev/stderr)
+
+   local actual=$(echo "$controller" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "10m" ]
-   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "64Mi" ]
-   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "500m" ]
-   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.memory' | tee /dev/stderr)
+    [ "${actual}" = "128Mi" ]
+   local actual=$(echo "$job" | yq '.requests.cpu' | tee /dev/stderr)
+    [ "${actual}" = "10m" ]
+   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
+    [ "${actual}" = "64Mi" ]
+   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
+    [ "${actual}" = "500m" ]
+   actual=$(echo "$job" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "128Mi" ]
 }
 
@@ -91,15 +102,26 @@ load _helpers
       --set 'controller.manager.resources.limits.memory=200Mi' \
       --set 'controller.manager.resources.limits.cpu=200m' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+   local controller=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .resources' | tee /dev/stderr)
+   local job=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .resources' | tee /dev/stderr)
+
+   local actual=$(echo "$controller" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "100m" ]
-   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "100Mi" ]
-   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "200m" ]
-   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.memory' | tee /dev/stderr)
+    [ "${actual}" = "200Mi" ]
+   actual=$(echo "$job" | yq '.requests.cpu' | tee /dev/stderr)
+    [ "${actual}" = "100m" ]
+   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
+    [ "${actual}" = "100Mi" ]
+   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
+    [ "${actual}" = "200m" ]
+   actual=$(echo "$job" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "200Mi" ]
 }
 
@@ -219,6 +241,48 @@ load _helpers
    [ "${actual}" = 'value1' ]
    actual=$(echo "$object" | yq '.annot2'| tee /dev/stderr)
    [ "${actual}" = 'value2' ]
+}
+
+#--------------------------------------------------------------------
+# terminationGracePeriodSeconds
+
+@test "controller/Deployment: default terminationGracePeriodSeconds when revokeClientCacheOnUninstall is false by default" {
+  cd `chart_dir`
+  local actual=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.terminationGracePeriodSeconds | select(documentIndex == 1)' | tee /dev/stderr)
+   [ "${actual}" = "120" ]
+}
+
+#--------------------------------------------------------------------
+# preDeleteHookTimeoutSeconds
+
+@test "controller/Deployment: default preDeleteHookTimeoutSeconds when revokeClientCacheOnUninstall is false by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=120"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+#--------------------------------------------------------------------
+# when revokeClientCacheOnUninstall is true
+
+@test "controller/Deployment: correct args when revokeClientCacheOnUninstall is true" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.revokeClientCacheOnUninstall=true' \
+      --set 'controller.preDeleteHookTimeoutSeconds=180' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'contains(["--uninstall", "--revoke-client-cache","--pre-delete-hook-timeout-seconds=180"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
 }
 
 #--------------------------------------------------------------------
@@ -351,4 +415,121 @@ load _helpers
    [ "${actual}" = 'Equal' ]
    actual=$(echo "$object" | yq '.[0].value' | tee /dev/stderr)
    [ "${actual}" = 'value1' ]
+}
+
+#--------------------------------------------------------------------
+# extraEnv values
+
+@test "controller/Deployment: extra env string aren't set by default" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '3' ]
+}
+
+@test "controller/Deployment: extra env string values can be set" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraEnv[0].name=HTTP_PROXY'  \
+      --set 'controller.manager.extraEnv[0].value=http://proxy.example.com/'  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'HTTP_PROXY' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = 'http://proxy.example.com/' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+@test "controller/Deployment: extra env number values can be set" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraEnv[0].name=RANDOM_PORT'  \
+      --set 'controller.manager.extraEnv[0].value=42'  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'RANDOM_PORT' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = '42' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+@test "controller/Deployment: extra env values don't get double quoted" {
+    cd `chart_dir`
+    local object=$(printf  \
+      'controller: {manager: {extraEnv: [{name: QUOTED_ENV, value: "noquotesneeded"}]}}\n' |  \
+      helm template -s templates/deployment.yaml --values /dev/stdin . |   \
+      tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'QUOTED_ENV' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = 'noquotesneeded' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+@test "controller/Deployment: extra env values with white space" {
+    cd `chart_dir`
+    local object=$(helm template  \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraEnv[0].name=WHITESPACE_WORKS'  \
+      --set 'controller.manager.extraEnv[0].value=Hello World!'  \
+      . | tee /dev/stderr |  \
+      yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+      tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+    [ "${actual}" = 'WHITESPACE_WORKS' ]
+    actual=$(echo "$object" | yq '.[3].value' | tee /dev/stderr)
+    [ "${actual}" = 'Hello World!' ]
+    actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '4' ]
+}
+
+#--------------------------------------------------------------------
+# extraLabels
+
+@test "controller/Deployment: extraLabels not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+}
+
+@test "controller/Deployment: extraLabels can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.extraLabels.label1=value1' \
+      --set 'controller.extraLabels.label2=value2' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "5" ]
+   actual=$(echo "$object" | yq '.label1' | tee /dev/stderr)
+   [ "${actual}" = 'value1' ]
+   actual=$(echo "$object" | yq '.label2'| tee /dev/stderr)
+   [ "${actual}" = 'value2' ]
 }

@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 # Top level configuration for the vault secrets operator deployment.
 # This consists of a controller and a kube rbac proxy container.
@@ -66,6 +66,9 @@ controller:
   # @type: array<map>
   imagePullSecrets: []
 
+  # Extra labels to attach to the deployment. This should be formatted as a YAML object (map)
+  extraLabels: {}
+
   # This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
   annotations: {}
 
@@ -75,7 +78,7 @@ controller:
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       repository: hashicorp/vault-secrets-operator
-      tag: 0.1.0
+      tag: 0.2.0
 
     # Configures the Container Security Context
     # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
@@ -99,6 +102,12 @@ controller:
       # default: "none"
       # @type: string
       persistenceModel: ""
+
+      # Toggles the revocation of client cache on Helm uninstall.
+      # If revokeClientCacheOnUninstall is true, all Vault client tokens used by the operator will be revoked, and purged from the cache and storage.
+      # NOTE: When a token is revoked, all of its leases are also revoked. This can cause failures in the consuming applications.
+      # @type: boolean
+      revokeClientCacheOnUninstall: false
 
       # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
       # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
@@ -266,6 +275,14 @@ controller:
     # @type: integer
     maxConcurrentReconciles:
 
+    # Defines additional environment variables to be added to the
+    # vault-secrets-opearator manager container.
+    # extraEnv:
+    #   - name: HTTP_PROXY
+    #     value: http://proxy.example.com
+    # @type: array<map>
+    extraEnv: []
+
     # Configures the default resources for the vault-secrets-operator container.
     # For more information on configuring resources, see the K8s documentation:
     # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
@@ -299,6 +316,13 @@ controller:
   # Configures the environment variable KUBERNETES_CLUSTER_DOMAIN used by KubeDNS.
   # @type: string
   kubernetesClusterDomain: cluster.local
+
+  # Duration in seconds the pod needs to terminate gracefully.
+  # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
+  terminationGracePeriodSeconds: 120
+
+  # Timeout in seconds for the pre-delete hook
+  preDeleteHookTimeoutSeconds: 120
 
 # Configures the Pod Security Context
 # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
