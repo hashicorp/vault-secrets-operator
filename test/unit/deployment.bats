@@ -178,6 +178,75 @@ load _helpers
     [ "${actual}" = "true" ]
 }
 
+# podSecurityContext
+@test "controller/Deployment: controller.podSecurityContext set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.securityContext | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq '.runAsNonRoot' | tee /dev/stderr)
+   [ "${actual}" = "true" ]
+
+}
+
+@test "controller/Deployment: controller.podSecurityContext can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.podSecurityContext.runAsGroup=2000' \
+      --set 'controller.podSecurityContext.runAsUser=2000' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.securityContext | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "2" ]
+   actual=$(echo "$object" | yq '.runAsGroup' | tee /dev/stderr)
+   [ "${actual}" = '2000' ]
+   actual=$(echo "$object" | yq '.runAsUser'| tee /dev/stderr)
+   [ "${actual}" = '2000' ]
+
+}
+
+# securityContext
+@test "controller/Deployment: controller.{manager,kube-rbac-proxy}.securityContext set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+
+   actual=$(echo "$object" | yq '.containers[1].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+
+}
+
+@test "controller/Deployment: controller.{manager,kube-rbac-proxy}.securityContext can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.kube-rbac-proxy.securityContext.allowPrivilegeEscalation=true' \
+      --set 'controller.manager.securityContext.allowPrivilegeEscalation=true' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.containers[0].securityContext | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq '.containers[1].securityContext | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq '.containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+   [ "${actual}" = 'true' ]
+   actual=$(echo "$object" | yq '.containers[1].securityContext.allowPrivilegeEscalation'| tee /dev/stderr)
+   [ "${actual}" = 'true' ]
+
+}
+
 # kubernetesClusterDomain
 @test "controller/Deployment: controller.kubernetesClusterDomain not set by default" {
   cd `chart_dir`
