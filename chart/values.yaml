@@ -296,6 +296,11 @@ controller:
         cpu: 10m
         memory: 64Mi
 
+  # Configures the Pod Security Context
+  # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+  podSecurityContext:
+    runAsNonRoot: true
+
   # Sets the configuration settings used by the controller. Any custom changes will be reflected in the
   # data field of the configmap.
   # For more information on configuring resources, see the K8s documentation:
@@ -323,11 +328,6 @@ controller:
 
   # Timeout in seconds for the pre-delete hook
   preDeleteHookTimeoutSeconds: 120
-
-# Configures the Pod Security Context
-# https://kubernetes.io/docs/tasks/configure-pod-container/security-context
-podSecurityContext:
-  runAsNonRoot: true
 
 # Configure the metrics service ports used by the metrics service.
 # Set the configuration fo the metricsService port.
