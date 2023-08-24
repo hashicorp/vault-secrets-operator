@@ -20,7 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -310,7 +309,7 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
 		// Add metrics for create/update/delete of the resource
-		Watches(&source.Kind{Type: &secretsv1beta1.VaultPKISecret{}},
+		Watches(&secretsv1beta1.VaultPKISecret{},
 			&handler.InstrumentedEnqueueRequestForObject{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
