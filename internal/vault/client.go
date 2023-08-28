@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -51,13 +51,13 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 			return nil, fmt.Errorf("invalid object %T, StorageEncryption not configured", t)
 		}
 	default:
-		// otherwise we fall back to the common.GetVaultAuthAndTarget() to decide whether, or not obj is supported.
-		a, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+		// otherwise we fall back to the common.GetVaultAuthNamespaced() to decide whether, or not obj is supported.
+		a, err := common.GetVaultAuthNamespaced(ctx, client, obj)
 		if err != nil {
 			return nil, err
 		}
 
-		providerNamespace = target.Namespace
+		providerNamespace = obj.GetNamespace()
 		authObj = a
 	}
 
@@ -148,7 +148,7 @@ type Client interface {
 	GetVaultConnectionObj() *secretsv1beta1.VaultConnection
 	GetCredentialProvider() credentials.CredentialProvider
 	GetCacheKey() (ClientCacheKey, error)
-	Close()
+	Close(bool)
 	Clone(string) (Client, error)
 	IsClone() bool
 	Namespace() string
@@ -350,16 +350,25 @@ func (c *defaultClient) GetTokenSecret() *api.Secret {
 	return c.authSecret
 }
 
-// Close un-initializes this Client, stopping its LifetimeWatcher in the process.
+// Close un-initializes this Client, stopping its LifetimeWatcher in the process and optionally revoking the token.
 // It is safe to be called multiple times.
-func (c *defaultClient) Close() {
+func (c *defaultClient) Close(revoke bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	log.FromContext(nil).Info("Calling Client.Close()")
+	logger := log.FromContext(nil)
+	logger.Info("Calling Client.Close()")
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
+
+	if revoke && c.client != nil {
+		if err := c.client.Auth().Token().RevokeSelf(""); err != nil {
+			logger.V(consts.LogLevelWarning).Info(
+				"Failed to revoke Vault client token", "err", err)
+		}
+	}
+
 	c.client = nil
 }
 
