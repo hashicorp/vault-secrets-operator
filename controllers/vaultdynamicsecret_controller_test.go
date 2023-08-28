@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/vault/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
 func Test_inRenewalWindow(t *testing.T) {
@@ -112,7 +112,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 	}
 	type args struct {
 		ctx     context.Context
-		vClient *mockRecordingVaultClient
+		vClient *vault.MockRecordingVaultClient
 		o       *secretsv1beta1.VaultDynamicSecret
 	}
 	tests := []struct {
@@ -120,7 +120,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 		fields         fields
 		args           args
 		want           *secretsv1beta1.VaultSecretLease
-		expectRequests []*mockRequest
+		expectRequests []*vault.MockRequest
 		wantErr        assert.ErrorAssertionFunc
 	}{
 		{
@@ -131,7 +131,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -153,11 +153,11 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
-					method: http.MethodGet,
-					path:   "baz/foo",
-					params: nil,
+					Method: http.MethodGet,
+					Path:   "baz/foo",
+					Params: nil,
 				},
 			},
 			wantErr: assert.NoError,
@@ -170,7 +170,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -194,11 +194,11 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
-					method: http.MethodPut,
-					path:   "baz/foo",
-					params: map[string]any{
+					Method: http.MethodPut,
+					Path:   "baz/foo",
+					Params: map[string]any{
 						"qux": "bar",
 					},
 				},
@@ -213,7 +213,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -238,11 +238,11 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
-					method: http.MethodPut,
-					path:   "baz/foo",
-					params: map[string]any{
+					Method: http.MethodPut,
+					Path:   "baz/foo",
+					Params: map[string]any{
 						"qux": "bar",
 					},
 				},
@@ -257,7 +257,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -282,12 +282,12 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
 					// the vault client API always translates POST to PUT
-					method: http.MethodPut,
-					path:   "baz/foo",
-					params: map[string]any{
+					Method: http.MethodPut,
+					Path:   "baz/foo",
+					Params: map[string]any{
 						"qux": "bar",
 					},
 				},
@@ -302,7 +302,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -327,11 +327,11 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
-					method: http.MethodPut,
-					path:   "baz/foo",
-					params: map[string]any{
+					Method: http.MethodPut,
+					Path:   "baz/foo",
+					Params: map[string]any{
 						"qux": "bar",
 					},
 				},
@@ -346,7 +346,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -369,11 +369,11 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
-					method: http.MethodGet,
-					path:   "baz/foo",
-					params: nil,
+					Method: http.MethodGet,
+					Path:   "baz/foo",
+					Params: nil,
 				},
 			},
 			wantErr: assert.NoError,
@@ -386,7 +386,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -409,11 +409,11 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
-					method: http.MethodPut,
-					path:   "baz/foo",
-					params: nil,
+					Method: http.MethodPut,
+					Path:   "baz/foo",
+					Params: nil,
 				},
 			},
 			wantErr: assert.NoError,
@@ -426,7 +426,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -449,12 +449,12 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				LeaseDuration: 0,
 				Renewable:     false,
 			},
-			expectRequests: []*mockRequest{
+			expectRequests: []*vault.MockRequest{
 				{
 					// the vault client API always translates POST to PUT
-					method: http.MethodPut,
-					path:   "baz/foo",
-					params: nil,
+					Method: http.MethodPut,
+					Path:   "baz/foo",
+					Params: nil,
 				},
 			},
 			wantErr: assert.NoError,
@@ -467,7 +467,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			},
 			args: args{
 				ctx:     nil,
-				vClient: &mockRecordingVaultClient{},
+				vClient: &vault.MockRecordingVaultClient{},
 				o: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "baz",
@@ -504,7 +504,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)
-			assert.Equalf(t, tt.expectRequests, tt.args.vClient.requests, "syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)
+			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)
 		})
 	}
 }
@@ -513,39 +513,4 @@ type mockRequest struct {
 	method string
 	path   string
 	params map[string]any
-}
-
-type mockRecordingVaultClient struct {
-	requests []*mockRequest
-}
-
-func (m *mockRecordingVaultClient) Read(ctx context.Context, s string) (*api.Secret, error) {
-	m.requests = append(m.requests, &mockRequest{
-		method: http.MethodGet,
-
-		path:   s,
-		params: nil,
-	})
-	return &api.Secret{
-		Data: make(map[string]interface{}),
-	}, nil
-}
-
-func (m *mockRecordingVaultClient) Write(ctx context.Context, s string, params map[string]any) (*api.Secret, error) {
-	m.requests = append(m.requests, &mockRequest{
-		method: http.MethodPut,
-		path:   s,
-		params: params,
-	})
-	return &api.Secret{
-		Data: make(map[string]interface{}),
-	}, nil
-}
-
-func (m *mockRecordingVaultClient) KVv1(s string) (*api.KVv1, error) {
-	return nil, nil
-}
-
-func (m *mockRecordingVaultClient) KVv2(s string) (*api.KVv2, error) {
-	return nil, nil
 }
