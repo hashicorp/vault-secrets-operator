@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -61,6 +61,10 @@ type ClientCacheStorageStoreRequest struct {
 type ClientCacheStoragePruneRequest struct {
 	MatchingLabels ctrlclient.MatchingLabels
 	Filter         PruneFilterFunc
+}
+
+type CachingClientFactoryShutDownRequest struct {
+	Revoke bool
 }
 
 type ClientCacheStorageRestoreRequest struct {
@@ -135,7 +139,6 @@ type ClientCacheStorage interface {
 }
 
 type defaultClientCacheStorage struct {
-	hmacSecretObjKey         ctrlclient.ObjectKey
 	hmacKey                  []byte
 	enforceEncryption        bool
 	logger                   logr.Logger
@@ -588,6 +591,7 @@ type ClientCacheStorageConfig struct {
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
 	EnforceEncryption bool
 	HMACSecretObjKey  ctrlclient.ObjectKey
+	OwnerRefs         []metav1.OwnerReference
 }
 
 func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
@@ -626,7 +630,6 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	}
 
 	cacheStorage := &defaultClientCacheStorage{
-		hmacSecretObjKey:  config.HMACSecretObjKey,
 		hmacKey:           s.Data[helpers.HMACKeyName],
 		enforceEncryption: config.EnforceEncryption,
 		logger:            zap.New().WithName("ClientCacheStorage"),

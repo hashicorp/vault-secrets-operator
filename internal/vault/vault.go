@@ -1,10 +1,11 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -33,16 +34,21 @@ func UnmarshalPKIIssueResponse(resp *api.Secret) (*PKICertResponse, error) {
 	return result, nil
 }
 
-func MarshalSecretData(resp *api.Secret) (map[string][]byte, error) {
+// TODO: move to internal/helpers
+func MakeSecretK8sData(d, raw map[string]interface{}) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 
-	b, err := json.Marshal(resp.Data)
+	b, err := json.Marshal(raw)
 	if err != nil {
 		return nil, err
 	}
 	data["_raw"] = b
 
-	for k, v := range resp.Data {
+	for k, v := range d {
+		if k == "_raw" {
+			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
+		}
+
 		switch x := v.(type) {
 		case string:
 			data[k] = []byte(x)
