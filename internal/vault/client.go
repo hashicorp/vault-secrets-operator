@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -131,10 +132,8 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 }
 
 type ClientBase interface {
-	Read(context.Context, string) (*api.Secret, error)
-	Write(context.Context, string, map[string]any) (*api.Secret, error)
-	KVv1(string) (*api.KVv1, error)
-	KVv2(string) (*api.KVv2, error)
+	Read(context.Context, ReadRequest) (Response, error)
+	Write(context.Context, WriteRequest) (Response, error)
 }
 
 type Client interface {
@@ -250,14 +249,6 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 
 func (c *defaultClient) GetCredentialProvider() credentials.CredentialProvider {
 	return c.credentialProvider
-}
-
-func (c *defaultClient) KVv1(mount string) (*api.KVv1, error) {
-	return c.client.KVv1(mount), nil
-}
-
-func (c *defaultClient) KVv2(mount string) (*api.KVv2, error) {
-	return c.client.KVv2(mount), nil
 }
 
 func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
@@ -470,18 +461,21 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	}
 
 	path := fmt.Sprintf("auth/%s/login", c.authObj.Spec.Mount)
-	resp, err := c.Write(ctx, path, creds)
+	resp, err := c.Write(ctx, &defaultWriteRequest{
+		path:   path,
+		params: creds,
+	})
 	if err != nil {
 		errs = err
 		return errs
 	}
 
-	c.client.SetToken(resp.Auth.ClientToken)
+	c.client.SetToken(resp.Secret().Auth.ClientToken)
 
-	c.authSecret = resp
+	c.authSecret = resp.Secret()
 	c.lastRenewal = time.Now().Unix()
 
-	if resp.Auth.Renewable {
+	if resp.Secret().Auth.Renewable {
 		if err := c.startLifetimeWatcher(ctx); err != nil {
 			errs = err
 			return errs
@@ -499,7 +493,7 @@ func (c *defaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection 
 	return c.connObj
 }
 
-func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, error) {
+func (c *defaultClient) Read(ctx context.Context, request ReadRequest) (Response, error) {
 	var err error
 	startTS := time.Now()
 	defer func() {
@@ -507,12 +501,33 @@ func (c *defaultClient) Read(ctx context.Context, path string) (*api.Secret, err
 		c.incrementOperationCounter(metrics.OperationRead, err)
 	}()
 
+	var respFunc func(*api.Secret) Response
+	switch t := request.(type) {
+	case *defaultReadRequest:
+		respFunc = NewDefaultResponse
+	case *kvReadRequestV1:
+		respFunc = NewKVV1Response
+	case *kvReadRequestV2:
+		respFunc = NewKVV2Response
+	default:
+		return nil, fmt.Errorf("unsupported ReadRequest type %T", t)
+	}
+
+	path := request.Path()
 	var secret *api.Secret
-	secret, err = c.client.Logical().ReadWithContext(ctx, path)
-	return secret, err
+	secret, err = c.client.Logical().ReadWithDataWithContext(ctx, path, request.Values())
+	if err != nil {
+		return nil, err
+	}
+
+	if secret == nil {
+		return nil, fmt.Errorf("empty response from Vault, path=%q", path)
+	}
+
+	return respFunc(secret), nil
 }
 
-func (c *defaultClient) Write(ctx context.Context, path string, m map[string]any) (*api.Secret, error) {
+func (c *defaultClient) Write(ctx context.Context, req WriteRequest) (Response, error) {
 	var err error
 	startTS := time.Now()
 	defer func() {
@@ -521,8 +536,9 @@ func (c *defaultClient) Write(ctx context.Context, path string, m map[string]any
 	}()
 
 	var secret *api.Secret
-	secret, err = c.client.Logical().WriteWithContext(ctx, path, m)
-	return secret, err
+	secret, err = c.client.Logical().WriteWithContext(ctx, req.Path(), req.Params())
+
+	return &defaultResponse{secret: secret}, err
 }
 
 func (c *defaultClient) renew(ctx context.Context) error {
@@ -546,14 +562,14 @@ func (c *defaultClient) renew(ctx context.Context) error {
 		return errs
 	}
 
-	resp, err := c.Write(ctx, "/auth/token/renew-self", nil)
+	resp, err := c.Write(ctx, NewWriteRequest("/auth/token/renew-self", nil))
 	if err != nil {
 		c.authSecret = nil
 		c.lastRenewal = 0
 		errs = err
 		return err
 	} else {
-		c.authSecret = resp
+		c.authSecret = resp.Secret()
 		c.lastRenewal = time.Now().UTC().Unix()
 	}
 	return nil
@@ -610,4 +626,44 @@ func (c *defaultClient) incrementOperationCounter(operation string, err error) {
 	if err != nil {
 		clientOperationErrors.WithLabelValues(operation, vaultConn).Inc()
 	}
+}
+
+type MockRequest struct {
+	Method string
+	Path   string
+	Params map[string]any
+}
+
+var _ ClientBase = (*MockRecordingVaultClient)(nil)
+
+type MockRecordingVaultClient struct {
+	Requests []*MockRequest
+}
+
+func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {
+	m.Requests = append(m.Requests, &MockRequest{
+		Method: http.MethodGet,
+
+		Path:   s.Path(),
+		Params: nil,
+	})
+
+	return &defaultResponse{
+		secret: &api.Secret{
+			Data: make(map[string]interface{}),
+		},
+	}, nil
+}
+
+func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Response, error) {
+	m.Requests = append(m.Requests, &MockRequest{
+		Method: http.MethodPut,
+		Path:   s.Path(),
+		Params: s.Params(),
+	})
+	return &defaultResponse{
+		secret: &api.Secret{
+			Data: make(map[string]interface{}),
+		},
+	}, nil
 }
