@@ -1,13 +1,23 @@
 ## Unreleased
 
-Features:
-* UBI-based images now built and published with releases: [GH-288](https://github.com/hashicorp/vault-secrets-operator/pull/288)
+## 0.2.0 (August 16th, 2023)
 
 Improvements:
 * Helm: `controller.imagePullSecrets` stanza is added to provide imagePullSecrets to the controller's containers via the serviceAccount: [GH-266](https://github.com/hashicorp/vault-secrets-operator/pull/266)
+* Helm: `controller.manager.resources` values now also apply to the pre-delete-controller-cleanup-job. [GH-280](https://github.com/hashicorp/vault-secrets-operator/pull/280)
+* Helm: Adding nodeselector and tolerations to deployment: [GH-272](https://github.com/hashicorp/vault-secrets-operator/pull/272)
+* Helm: Add extraLabels to deployment: [#281](https://github.com/hashicorp/vault-secrets-operator/pull/281)
+* Add K8s namespace support to VaultAuthRef and VaultConnectionRef: ([#291](https://github.com/hashicorp/vault-secrets-operator/pull/291))
 
 Changes:
 * Helm: Update default kube-rbac-proxy container image in helm chart from `v0.11.0` to `v0.14.1`: [GH-267](https://github.com/hashicorp/vault-secrets-operator/pull/267)
+* Added Vault 1.14 and removed 1.11 from CI testing [GH-324](https://github.com/hashicorp/vault-secrets-operator/pull/324)
+* K8s versions tested are now 1.23-1.27 [GH-324](https://github.com/hashicorp/vault-secrets-operator/pull/324)
+* UBI-based images now built and published with releases: [GH-288](https://github.com/hashicorp/vault-secrets-operator/pull/288)
+* Updated the license from MPL to Business Source License: [GH-321](https://github.com/hashicorp/vault-secrets-operator/pull/321)
+
+Bugs:
+* VaultStaticSecrets (VSS): fix issue where the response error was not being set: [GH-301](https://github.com/hashicorp/vault-secrets-operator/pull/301)
 
 ## 0.1.0 (June 12th, 2023)
 

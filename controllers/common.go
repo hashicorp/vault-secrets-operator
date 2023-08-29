@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package controllers
 
@@ -18,8 +18,9 @@ import (
 )
 
 var (
-	_      error = (*LeaseTruncatedError)(nil)
-	random       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	_                      error = (*LeaseTruncatedError)(nil)
+	random                       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	requeueDurationOnError       = time.Second * 5
 )
 
 // LeaseTruncatedError indicates that the requested lease renewal duration is
