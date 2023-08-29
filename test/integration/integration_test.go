@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
@@ -292,6 +293,11 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 	return true, nil
 }
 
+type revocationK8sOutputs struct {
+	AuthRole   string `json:"auth_role"`
+	PolicyName string `json:"policy_name"`
+}
+
 type authMethodsK8sOutputs struct {
 	AuthRole      string `json:"auth_role"`
 	AppRoleRoleID string `json:"role_id"`
@@ -372,7 +378,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient.Object, sec *corev1.Secret) {
 	t.Helper()
 
-	meta, err := helpers.NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	require.NoError(t, err)
 
 	if meta.Destination.Create {

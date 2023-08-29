@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 # This kustomization.yaml is not intended to be run by itself,
 # since it depends on service name and namespace that are out of this kustomize package.

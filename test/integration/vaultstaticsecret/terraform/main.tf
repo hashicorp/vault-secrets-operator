@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 terraform {
   required_providers {
@@ -33,6 +33,12 @@ provider "helm" {
 resource "kubernetes_namespace" "tenant-1" {
   metadata {
     name = var.k8s_test_namespace
+  }
+}
+
+resource "kubernetes_namespace" "tenant-2" {
+  metadata {
+    name = format("%s-test", var.k8s_test_namespace)
   }
 }
 

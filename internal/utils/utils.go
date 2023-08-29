@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package utils
 
@@ -9,6 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 var (
@@ -29,4 +34,21 @@ func GetCurrentNamespace() (string, error) {
 	}
 
 	return string(bytes.Trim(b, " ")), nil
+}
+
+func GetOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
+	ownerRef := metav1.OwnerReference{
+		Name: owner.GetName(),
+		UID:  owner.GetUID(),
+	}
+
+	gvk, err := apiutil.GVKForObject(owner, scheme)
+	if err != nil {
+		return ownerRef, err
+	}
+
+	apiVersion, kind := gvk.ToAPIVersionAndKind()
+	ownerRef.APIVersion = apiVersion
+	ownerRef.Kind = kind
+	return ownerRef, nil
 }

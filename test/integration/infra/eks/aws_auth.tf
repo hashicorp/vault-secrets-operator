@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 module "iam_assumable_role" {
   source                         = "terraform-aws-modules/iam/aws//modules/iam-assumable-role-with-oidc"
