@@ -186,6 +186,8 @@ func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.Names
 	return &obj, nil
 }
 
+// GetHCPAuthForObj returns the corresponding secretsv1beta1.HCPAuth for obj.
+// Supported client.Object: secretsv1beta1.HCPVaultSecretsApp
 func GetHCPAuthForObj(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.HCPAuth, error) {
 	authRef, err := getAuthRefNamespacedName(obj)
 	if err != nil {

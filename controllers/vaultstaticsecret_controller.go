@@ -27,10 +27,11 @@ import (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.ClientFactory
-	HMACValidator helpers.HMACValidator
+	Scheme            *runtime.Scheme
+	Recorder          record.EventRecorder
+	ClientFactory     vault.ClientFactory
+	SecretDataBuilder *helpers.SecretDataBuilder
+	HMACValidator     helpers.HMACValidator
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -90,7 +91,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := vault.MakeSecretK8sData(resp.Data(), resp.Secret().Data)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Invalid Vault Secret data: %s", err)

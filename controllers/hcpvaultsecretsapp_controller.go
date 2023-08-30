@@ -22,20 +22,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
-
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
 type HCPVaultSecretsAppReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	HMACValidator helpers.HMACValidator
+	Scheme            *runtime.Scheme
+	Recorder          record.EventRecorder
+	SecretDataBuilder *helpers.SecretDataBuilder
+	HMACValidator     helpers.HMACValidator
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -68,14 +68,6 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	// we want to ensure that requeueAfter is set so that we can perform the proper
-	// drift detection during each reconciliation. setting up a watcher on the Secret
-	// is also possibility, but polling seems to be the simplest approach for now.
-	if requeueAfter == 0 {
-		// hardcoding a default horizon here, perhaps we will want to make this value public?
-		requeueAfter = computeHorizonWithJitter(time.Second * 60)
-	}
-
 	c, err := r.secretClient(ctx, o)
 	if err != nil {
 		logger.Error(err, "Get HCP Client")
@@ -97,30 +89,17 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	s := resp.GetPayload()
-	data := make(map[string][]byte)
-	b, err := s.MarshalBinary()
+	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp)
 	if err != nil {
-		logger.Error(err, "Secrets.MarshalBinary()", "appName", o.Spec.AppName)
+		logger.Error(err, "hcp.MakeVaultSecretK8sData()", "appName", o.Spec.AppName)
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
 	}
 
-	data["_raw"] = b
-	for _, v := range s.Secrets {
-		ver := v.Version
-		if ver.Type != "kv" {
-			logger.V(consts.LogLevelWarning).Info("Unsupported secret type",
-				"type", ver.Type, "name", v.Name)
-			continue
-		}
-		data[v.Name] = []byte(ver.Value)
-	}
-
-	doRolloutRestart := o.Status.SecretMAC != ""
 	// doRolloutRestart only if this is not the first time this secret has been synced
-	macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
+	doRolloutRestart := o.Status.SecretMAC != ""
+	syncSecret, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
 	if err != nil {
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
@@ -128,8 +107,6 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
-
-	syncSecret := !macsEqual
 	if syncSecret {
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
@@ -191,15 +168,15 @@ func (r *HCPVaultSecretsAppReconciler) secretClient(ctx context.Context, o *secr
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get HCP Config, err=%w", err)
+		return nil, fmt.Errorf("failed to instantiate HCP Config, err=%w", err)
 	}
+
 	cl, err := hcpclient.New(hcpclient.Config{
 		HCPConfig: hcpConfig,
 	})
-	hc := hvsclient.New(cl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get HCP Client, err=%w", err)
+		return nil, fmt.Errorf("failed to instantiate HCP Client, err=%w", err)
 	}
 
-	return hc, nil
+	return hvsclient.New(cl, nil), nil
 }

@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package v1beta1
 
@@ -14,6 +14,7 @@ type HCPVaultSecretsAppSpec struct {
 	// HCPAuthRef
 	HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	// RefreshAfter a period of time, in duration notation
+	// +kubebuilder:default="300s"
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
