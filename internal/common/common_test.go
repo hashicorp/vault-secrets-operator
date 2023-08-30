@@ -4,12 +4,18 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -111,7 +117,7 @@ func Test_GetConnectionNamespacedName(t *testing.T) {
 	}
 }
 
-func Test_GetAuthRefNamespacedName(t *testing.T) {
+func Test_getAuthRefNamespacedName(t *testing.T) {
 	SecretNamespace := "foo"
 	tests := []struct {
 		name    string
@@ -186,7 +192,7 @@ func Test_GetAuthRefNamespacedName(t *testing.T) {
 				},
 			}
 			// TargetName is always just the object name+ns
-			got, err := GetAuthRefNamespacedName(obj)
+			got, err := getAuthRefNamespacedName(obj)
 			if !tt.wantErr(t, err, fmt.Sprintf("getAuthNamespacedName(%v)", tt.a)) {
 				return
 			}
@@ -297,8 +303,283 @@ func Test_isAllowedNamespace(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// TargetName is always just the object name+ns
-			allowed := isAllowedNamespace(tt.a, tt.targetNamespace)
+			allowed := isAllowedNamespace(tt.a, tt.targetNamespace, tt.a.Spec.AllowedNamespaces...)
 			assert.Equal(t, allowed, tt.expected)
+		})
+	}
+}
+
+func TestGetHCPAuthForObj(t *testing.T) {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+	clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
+
+	ctx := context.Background()
+	tests := []struct {
+		name     string
+		client   client.Client
+		obj      client.Object
+		want     *secretsv1beta1.HCPAuth
+		hcpAuths []*secretsv1beta1.HCPAuth
+		wantErr  assert.ErrorAssertionFunc
+	}{
+		{
+			name:   "relative-namespace",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "baz",
+				},
+			},
+			hcpAuths: []*secretsv1beta1.HCPAuth{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "foo",
+						Name:      "baz",
+					},
+				},
+			},
+			want: &secretsv1beta1.HCPAuth{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "HCPAuth",
+					APIVersion: "secrets.hashicorp.com/v1beta1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       "foo",
+					Name:            "baz",
+					ResourceVersion: "1",
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:   "external-namespace-allowed",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "ns1/baz",
+				},
+			},
+			hcpAuths: []*secretsv1beta1.HCPAuth{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "ns1",
+						Name:      "baz",
+					},
+					Spec: secretsv1beta1.HCPAuthSpec{
+						AllowedNamespaces: []string{"foo"},
+					},
+				},
+			},
+			want: &secretsv1beta1.HCPAuth{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "HCPAuth",
+					APIVersion: "secrets.hashicorp.com/v1beta1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       "ns1",
+					Name:            "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.HCPAuthSpec{
+					AllowedNamespaces: []string{"foo"},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:   "external-namespace-allowed-wildcard",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "ns1/baz",
+				},
+			},
+			hcpAuths: []*secretsv1beta1.HCPAuth{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "ns1",
+						Name:      "baz",
+					},
+					Spec: secretsv1beta1.HCPAuthSpec{
+						AllowedNamespaces: []string{"*"},
+					},
+				},
+			},
+			want: &secretsv1beta1.HCPAuth{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "HCPAuth",
+					APIVersion: "secrets.hashicorp.com/v1beta1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       "ns1",
+					Name:            "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.HCPAuthSpec{
+					AllowedNamespaces: []string{"*"},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:   "external-namespace-disallowed-unset",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "ns1/baz",
+				},
+			},
+			hcpAuths: []*secretsv1beta1.HCPAuth{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "ns1",
+						Name:      "baz",
+					},
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				var wantErr *NamespaceNotAllowedError
+				return assert.ErrorAs(t, err, &wantErr)
+			},
+		},
+		{
+			name:   "external-namespace-disallowed-other",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "ns1/baz",
+				},
+			},
+			hcpAuths: []*secretsv1beta1.HCPAuth{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "ns1",
+						Name:      "baz",
+					},
+					Spec: secretsv1beta1.HCPAuthSpec{
+						AllowedNamespaces: []string{"qux"},
+					},
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				var wantErr *NamespaceNotAllowedError
+				return assert.ErrorAs(t, err, &wantErr)
+			},
+		},
+		{
+			name:   "external-namespace-disallowed-invalid",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "ns1/baz",
+				},
+			},
+			hcpAuths: []*secretsv1beta1.HCPAuth{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "ns1",
+						Name:      "baz",
+					},
+					Spec: secretsv1beta1.HCPAuthSpec{
+						AllowedNamespaces: []string{"*", "qux"},
+					},
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				var wantErr *NamespaceNotAllowedError
+				return assert.ErrorAs(t, err, &wantErr)
+			},
+		},
+		{
+			name:   "relative-not-found",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "baz",
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
+				return errors.IsNotFound(err)
+			},
+		},
+		{
+			name:   "external-not-found",
+			client: clientBuilder.Build(),
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "baz",
+					Namespace: "foo",
+				},
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef: "qux/baz",
+				},
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
+				return errors.IsNotFound(err)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, obj := range tt.hcpAuths {
+				assert.NoError(t, tt.client.Create(ctx, obj))
+			}
+
+			m := defaultMaxRetries
+			t.Cleanup(func() {
+				defaultMaxRetries = m
+			})
+
+			// monkey patch defaultMaxRetries to expedite test execution
+			defaultMaxRetries = uint64(1)
+
+			got, err := GetHCPAuthForObj(ctx, tt.client, tt.obj)
+			if !tt.wantErr(t, err, fmt.Sprintf("GetHCPAuthForObj(%v, %v, %v)", ctx, tt.client, tt.obj)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "GetHCPAuthForObj(%v, %v, %v)", ctx, tt.client, tt.obj)
 		})
 	}
 }

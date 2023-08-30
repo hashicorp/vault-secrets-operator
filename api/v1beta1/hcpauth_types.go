@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package v1beta1
 
@@ -13,6 +13,16 @@ type HCPAuthSpec struct {
 	OrganizationID string `json:"organizationID"`
 	// ProjectID
 	ProjectID string `json:"projectID"`
+	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
+	// This field allows administrators to customize which Kubernetes namespaces are authorized to
+	// use with this AuthMethod. While Vault will still enforce its own rules, this has the added
+	// configurability of restricting which VaultAuthMethods can be used by which namespaces.
+	// Accepted values:
+	// []{"*"} - wildcard, all namespaces.
+	// []{"a", "b"} - list of namespaces.
+	// unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this
+	// is the default behavior.
+	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=servicePrincipal
 	Method string `json:"method,omitempty"`

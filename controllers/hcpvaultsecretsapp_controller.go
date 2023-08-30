@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package controllers
 
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
-	"github.com/hashicorp/hcp-sdk-go/config"
+	hcpconfig "github.com/hashicorp/hcp-sdk-go/config"
 	hcpclient "github.com/hashicorp/hcp-sdk-go/httpclient"
 	"github.com/hashicorp/hcp-sdk-go/profile"
 	corev1 "k8s.io/api/core/v1"
@@ -20,6 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
 
@@ -67,10 +68,11 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
-	// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
+	// we want to ensure that requeueAfter is set so that we can perform the proper
+	// drift detection during each reconciliation. setting up a watcher on the Secret
+	// is also possibility, but polling seems to be the simplest approach for now.
 	if requeueAfter == 0 {
-		// hardcoding a default horizon here, perhaps we will want make this value public?
+		// hardcoding a default horizon here, perhaps we will want to make this value public?
 		requeueAfter = computeHorizonWithJitter(time.Second * 60)
 	}
 
@@ -78,7 +80,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		logger.Error(err, "Get HCP Client")
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueAfter),
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
 	}
 
@@ -91,7 +93,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		logger.Error(err, "Get App Secret", "appName", o.Spec.AppName)
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueAfter),
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
 	}
 
@@ -101,26 +103,30 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		logger.Error(err, "Secrets.MarshalBinary()", "appName", o.Spec.AppName)
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueAfter),
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
 	}
 
 	data["_raw"] = b
 	for _, v := range s.Secrets {
-		if v.Version.Type != "kv" {
+		ver := v.Version
+		if ver.Type != "kv" {
 			logger.V(consts.LogLevelWarning).Info("Unsupported secret type",
-				"type", v.Version.Type, "name", v.Name)
+				"type", ver.Type, "name", v.Name)
 			continue
 		}
-		data[v.Name] = []byte(v.Version.Value)
+		data[v.Name] = []byte(ver.Value)
 	}
 
 	doRolloutRestart := o.Status.SecretMAC != ""
 	// doRolloutRestart only if this is not the first time this secret has been synced
 	macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+		}, nil
 	}
+
 	o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
 
 	syncSecret := !macsEqual
@@ -155,16 +161,17 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
 
 func (r *HCPVaultSecretsAppReconciler) secretClient(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) (hvsclient.ClientService, error) {
-	authObj, target, err := common.GetHCPAuthAndTarget(ctx, r.Client, o)
+	authObj, err := common.GetHCPAuthForObj(ctx, r.Client, o)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get HCPAuth, err=%w", err)
 	}
 
-	p, err := credentials.NewCredentialProvider(ctx, r.Client, authObj, target.Namespace)
+	p, err := credentials.NewCredentialProvider(ctx, r.Client, authObj, o.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup CredentialProvider, err=%w", err)
 	}
@@ -174,12 +181,12 @@ func (r *HCPVaultSecretsAppReconciler) secretClient(ctx context.Context, o *secr
 		return nil, fmt.Errorf("failed to get creds from CredentialProvider, err=%w", err)
 	}
 
-	hcpConfig, err := config.NewHCPConfig(
-		config.WithProfile(&profile.UserProfile{
+	hcpConfig, err := hcpconfig.NewHCPConfig(
+		hcpconfig.WithProfile(&profile.UserProfile{
 			OrganizationID: authObj.Spec.OrganizationID,
 			ProjectID:      authObj.Spec.ProjectID,
 		}),
-		config.WithClientCredentials(
+		hcpconfig.WithClientCredentials(
 			creds["clientID"].(string), creds["clientKey"].(string),
 		),
 	)
