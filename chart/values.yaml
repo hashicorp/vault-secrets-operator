@@ -28,7 +28,22 @@ controller:
   #    effect: "NoSchedule"
   tolerations: []
 
-  
+  # Affinity settings for vault-secrets-operator pod.
+  # The value is a map of PodSpec Affinity maps.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+  # Example:
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: topology.kubernetes.io/zone
+  #           operator: In
+  #           values:
+  #           - antarctica-east1
+  #           - antarctica-west1
+  affinity: {}
+
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
