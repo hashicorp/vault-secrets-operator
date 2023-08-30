@@ -9,6 +9,16 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Host Aliases settings for vault-secrets-operator pod.
+  # The value is an array of PodSpec HostAlias maps.
+  # ref: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
+  # Example:
+  # hostAliases:
+  #   - ip: 192.168.1.100
+  #     hostnames:
+  #     - vault.example.com
+  hostAliases: []
+
   # nodeSelector labels for vault-secrets-operator pod assignment.
   # @type: map
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector

@@ -114,6 +114,10 @@ spec:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
+      {{- if .Values.controller.hostAliases }}
+      hostAliases:
+      {{- toYaml .Values.controller.hostAliases | nindent 8 }}
+      {{- end }}
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
       {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
