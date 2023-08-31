@@ -9,20 +9,26 @@ import (
 
 // HCPVaultSecretsAppSpec defines the desired state of HCPVaultSecretsApp
 type HCPVaultSecretsAppSpec struct {
-	// AppName
+	// AppName of the Vault Secrets Application that is to be synced.
 	AppName string `json:"appName"`
-	// HCPAuthRef
+	// HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg:
+	// `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default
+	// to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the
+	// Operator will default to the `default` HCPAuth, configured in its own
+	// Kubernetes namespace. HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	HCPAuthRef string `json:"hcpAuthRef,omitempty"`
-	// RefreshAfter a period of time, in duration notation
+	// RefreshAfter a period of time, in duration notation.
 	// +kubebuilder:default="300s"
 	RefreshAfter string `json:"refreshAfter,omitempty"`
-	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
-	// not support dynamically reloading a rotated secret.
-	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
-	// trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.
-	// See RolloutRestartTarget for more details.
+	// RolloutRestartTargets should be configured whenever the application(s)
+	// consuming the HCP Vault Secrets App does not support dynamically reloading a
+	// rotated secret. In that case one, or more RolloutRestartTarget(s) can be
+	// configured here. The Operator will trigger a "rollout-restart" for each target
+	// whenever the Vault secret changes between reconciliation events. See
+	// RolloutRestartTarget for more details.
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
-	// Destination
+	// Destination provides configuration necessary for syncing the HCP Vault
+	// Application secrets to Kubernetes.
 	Destination Destination `json:"destination"`
 }
 
@@ -30,8 +36,9 @@ type HCPVaultSecretsAppSpec struct {
 type HCPVaultSecretsAppStatus struct {
 	// SecretMAC used when deciding whether new Vault secret data should be synced.
 	//
-	// The controller will compare the "new" Vault secret data to this value using HMAC,
-	// if they are different, then the data will be synced to the Destination.
+	// The controller will compare the "new" HCP Vault Secrets App data to this value
+	// using HMAC, if they are different, then the data will be synced to the
+	// Destination.
 	//
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.

@@ -43,6 +43,9 @@ type HCPVaultSecretsAppReconciler struct {
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
+// Reconcile a secretsv1beta1.HCPVaultSecretsApp Custom Resource instance. Each
+// invocation will ensure that the configured HCP Vault Secrets Application data
+// is synced to the configured K8s Secret.
 func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -68,9 +71,9 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	c, err := r.secretClient(ctx, o)
+	c, err := r.hvsClient(ctx, o)
 	if err != nil {
-		logger.Error(err, "Get HCP Client")
+		logger.Error(err, "Get HCP Vault Secrets Client")
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -91,7 +94,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp)
 	if err != nil {
-		logger.Error(err, "hcp.MakeVaultSecretK8sData()", "appName", o.Spec.AppName)
+		logger.Error(err, "MakeVaultSecretK8sData", "appName", o.Spec.AppName)
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -142,7 +145,7 @@ func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Complete(r)
 }
 
-func (r *HCPVaultSecretsAppReconciler) secretClient(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) (hvsclient.ClientService, error) {
+func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) (hvsclient.ClientService, error) {
 	authObj, err := common.GetHCPAuthForObj(ctx, r.Client, o)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get HCPAuth, err=%w", err)
