@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-logr/logr v1.2.4
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.3.1
 	github.com/gruntwork-io/terratest v0.42.0
 	github.com/hashicorp/go-hclog v1.5.0
 	github.com/hashicorp/go-rootcerts v1.0.2
