@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-logr/logr v1.2.4
+	github.com/go-openapi/strfmt v0.21.3
 	github.com/google/uuid v1.3.0
 	github.com/gruntwork-io/terratest v0.42.0
 	github.com/hashicorp/go-hclog v1.5.0
@@ -61,7 +62,6 @@ require (
 	github.com/go-openapi/loads v0.21.2 // indirect
 	github.com/go-openapi/runtime v0.25.0 // indirect
 	github.com/go-openapi/spec v0.20.8 // indirect
-	github.com/go-openapi/strfmt v0.21.3 // indirect
 	github.com/go-openapi/swag v0.22.3 // indirect
 	github.com/go-openapi/validate v0.22.1 // indirect
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
