@@ -36,7 +36,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 		client            client.Client
 		secretData        map[string][]byte
 		providerNamespace string
-		want              map[string]interface{}
+		want              map[string]any
 		wantErr           assert.ErrorAssertionFunc
 	}{
 		{
@@ -48,7 +48,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 				ProviderSecretClientID:  []byte("client-id-1"),
 				ProviderSecretClientKey: []byte("client-key-1"),
 			},
-			want: map[string]interface{}{
+			want: map[string]any{
 				ProviderSecretClientID:  "client-id-1",
 				ProviderSecretClientKey: "client-key-1",
 			},

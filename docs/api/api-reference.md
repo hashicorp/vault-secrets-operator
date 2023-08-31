@@ -88,7 +88,8 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID, and clientKey. The secret data must have the following structure { "clientID": "clientID", "clientKey": "clientKey", } |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID, and clientKey. 
+ The secret data must have the following structure { "clientID": "clientID", "clientKey": "clientKey", } |
 
 
 #### HCPAuthSpec
@@ -102,10 +103,10 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `organizationID` _string_ | OrganizationID |
-| `projectID` _string_ | ProjectID |
+| `organizationID` _string_ | OrganizationID of the HCP organization. |
+| `projectID` _string_ | ProjectID of the HCP project. |
 | `method` _string_ | Method to use when authenticating to Vault. |
-| `servicePrincipal` _[HCPAuthServicePrincipal](#hcpauthserviceprincipal)_ | ServicePrincipal |
+| `servicePrincipal` _[HCPAuthServicePrincipal](#hcpauthserviceprincipal)_ | ServicePrincipal provides the necessary configuration for authenticating to HCP using a service principal. For security reasons, only project-level service principals should ever be used. |
 
 
 
