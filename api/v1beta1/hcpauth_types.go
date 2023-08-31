@@ -9,9 +9,9 @@ import (
 
 // HCPAuthSpec defines the desired state of HCPAuth
 type HCPAuthSpec struct {
-	// OrganizationID
+	// OrganizationID of the HCP organization.
 	OrganizationID string `json:"organizationID"`
-	// ProjectID
+	// ProjectID of the HCP project.
 	ProjectID string `json:"projectID"`
 	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
 	// This field allows administrators to customize which Kubernetes namespaces are authorized to
@@ -25,18 +25,22 @@ type HCPAuthSpec struct {
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=servicePrincipal
+	// +kubebuilder:default="servicePrincipal"
 	Method string `json:"method,omitempty"`
-	// ServicePrincipal
+	// ServicePrincipal provides the necessary configuration for authenticating to
+	// HCP using a service principal. For security reasons, only project-level
+	// service principals should ever be used.
 	ServicePrincipal *HCPAuthServicePrincipal `json:"servicePrincipal,omitempty"`
 }
 
 // HCPAuthServicePrincipal provides HCPAuth configuration options needed for
 // authenticating to HCP using a service principal configured in SecretRef.
 type HCPAuthServicePrincipal struct {
-	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI/HCP) namespace which
-	// provides the HCP ServicePrincipal clientID, and clientKey.
-	// The secret data must have the following structure
-	// {
+	// SecretRef is the name of a Kubernetes secret in the consumer's
+	// (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID,
+	// and clientKey.
+	//
+	//The secret data must have the following structure {
 	//   "clientID": "clientID",
 	//   "clientKey": "clientKey",
 	// }

@@ -24,16 +24,21 @@ const (
 
 var _ CredentialProviderHCP = (*ServicePrincipleCredentialProvider)(nil)
 
+// ServicePrincipleCredentialProvider provides credentials for authenticating to
+// HCP using a service principal. For security reasons, only project-level
+// service principals should ever be used.
 type ServicePrincipleCredentialProvider struct {
 	authObj           *secretsv1beta1.HCPAuth
 	providerNamespace string
 	uid               types.UID
 }
 
+// GetNamespace returns the K8s Namespace of the credential source.
 func (l *ServicePrincipleCredentialProvider) GetNamespace() string {
 	return l.providerNamespace
 }
 
+// GetUID returns the K8s UID of the credential source.
 func (l *ServicePrincipleCredentialProvider) GetUID() types.UID {
 	return l.uid
 }
@@ -60,9 +65,10 @@ func (l *ServicePrincipleCredentialProvider) Init(ctx context.Context, client ct
 	return nil
 }
 
+// GetCreds returns the credentials as from their source.
 func (l *ServicePrincipleCredentialProvider) GetCreds(ctx context.Context,
 	client ctrlclient.Client,
-) (map[string]interface{}, error) {
+) (map[string]any, error) {
 	objKey := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.ServicePrincipal.SecretRef,
@@ -74,7 +80,7 @@ func (l *ServicePrincipleCredentialProvider) GetCreds(ctx context.Context,
 	}
 
 	keys := []string{ProviderSecretClientKey, ProviderSecretClientID}
-	result := make(map[string]interface{}, len(keys))
+	result := make(map[string]any, len(keys))
 	var invalidKeys []string
 	for _, k := range keys {
 		v, ok := secret.Data[k]

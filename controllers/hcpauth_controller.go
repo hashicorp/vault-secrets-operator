@@ -33,6 +33,8 @@ type HCPAuthReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
+// Reconcile validates the HCPAuth CR instance, updating the instance's status
+// with the result.
 func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -46,6 +48,7 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// perform a rudimentary health check on the HCP host on port 443.
 	conn, err := net.DialTimeout("tcp",
 		fmt.Sprintf("%s:443", hvsclient.DefaultHost), time.Second*5)
 	defer func() {
@@ -67,8 +70,7 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
-		errs = errors.Join(errs, err)
-		return ctrl.Result{}, errs
+		return ctrl.Result{}, errors.Join(errs, err)
 	}
 
 	var requeueAfter time.Duration
