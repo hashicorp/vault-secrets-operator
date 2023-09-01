@@ -71,18 +71,18 @@ func (c *clientCache) Len() int {
 // was found in the cache.
 func (c *clientCache) Get(key ClientCacheKey) (Client, bool) {
 	if key.IsClone() {
-		if v, ok := c.cloneCache.Get(key); ok {
+		if client, ok := c.cloneCache.Get(key); ok {
 			c.hitCloneCounter.Inc()
-			return v, ok
+			return client, ok
 		} else {
 			c.missCloneCounter.Inc()
 		}
 		return nil, false
 	}
 
-	if v, ok := c.cache.Get(key); ok {
+	if client, ok := c.cache.Get(key); ok {
 		c.hitCounter.Inc()
-		return v, ok
+		return client, ok
 	} else {
 		c.missCounter.Inc()
 		return nil, false
@@ -127,8 +127,8 @@ func (c *clientCache) Add(client Client) (bool, error) {
 // If it was present then Client.Close() will be called.
 func (c *clientCache) Remove(key ClientCacheKey) bool {
 	var removed bool
-	if v, ok := c.cache.Peek(key); ok {
-		removed = c.remove(key, v)
+	if client, ok := c.cache.Peek(key); ok {
+		removed = c.remove(key, client)
 	}
 
 	return removed
@@ -137,8 +137,7 @@ func (c *clientCache) Remove(key ClientCacheKey) bool {
 func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCacheKey {
 	var pruned []ClientCacheKey
 	for _, k := range c.cache.Keys() {
-		if v, ok := c.cache.Peek(k); ok {
-			client := v.(Client)
+		if client, ok := c.cache.Peek(k); ok {
 			if filterFunc(client) {
 				if c.remove(k, client) {
 					pruned = append(pruned, k)
