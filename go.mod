@@ -5,12 +5,12 @@ go 1.20
 require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-logr/logr v1.2.4
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.3.1
 	github.com/gruntwork-io/terratest v0.42.0
 	github.com/hashicorp/go-hclog v1.5.0
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.2.3-0.20230606170242-1a4b95565d57
-	github.com/hashicorp/golang-lru v0.5.4
+	github.com/hashicorp/golang-lru/v2 v2.0.6
 	github.com/hashicorp/hcp-sdk-go v0.58.0
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
