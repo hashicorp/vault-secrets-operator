@@ -50,7 +50,8 @@ func (l *ServicePrincipleCredentialProvider) Init(ctx context.Context, client ct
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
-	// We use the UID of the secret which holds the AppRole Role's secret_id for the provider UID
+	// We use the UID of the secret which holds the HCP service principle's
+	// credentials.
 	objKey := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.ServicePrincipal.SecretRef,
