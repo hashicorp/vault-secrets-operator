@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/golang-lru"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -30,8 +30,8 @@ var _ ClientCache = (*clientCache)(nil)
 
 // clientCache implements ClientCache with an underlying LRU cache. The cache size is fixed.
 type clientCache struct {
-	cache              *lru.Cache
-	cloneCache         *lru.Cache
+	cache              *lru.Cache[ClientCacheKey, Client]
+	cloneCache         *lru.Cache[ClientCacheKey, Client]
 	evictionGauge      prometheus.Gauge
 	hitCounter         prometheus.Counter
 	missCounter        prometheus.Counter
@@ -44,11 +44,7 @@ type clientCache struct {
 // CachingClientFactory.
 func (c *clientCache) Purge() []ClientCacheKey {
 	var purged []ClientCacheKey
-	for _, v := range c.cache.Keys() {
-		key, ok := v.(ClientCacheKey)
-		if !ok {
-			continue
-		}
+	for _, key := range c.cache.Keys() {
 		client, ok := c.Get(key)
 		if !ok {
 			continue
@@ -75,18 +71,18 @@ func (c *clientCache) Len() int {
 // was found in the cache.
 func (c *clientCache) Get(key ClientCacheKey) (Client, bool) {
 	if key.IsClone() {
-		if v, ok := c.cloneCache.Get(key); ok {
+		if client, ok := c.cloneCache.Get(key); ok {
 			c.hitCloneCounter.Inc()
-			return v.(Client), ok
+			return client, ok
 		} else {
 			c.missCloneCounter.Inc()
 		}
 		return nil, false
 	}
 
-	if v, ok := c.cache.Get(key); ok {
+	if client, ok := c.cache.Get(key); ok {
 		c.hitCounter.Inc()
-		return v.(Client), ok
+		return client, ok
 	} else {
 		c.missCounter.Inc()
 		return nil, false
@@ -131,8 +127,7 @@ func (c *clientCache) Add(client Client) (bool, error) {
 // If it was present then Client.Close() will be called.
 func (c *clientCache) Remove(key ClientCacheKey) bool {
 	var removed bool
-	if v, ok := c.cache.Peek(key); ok {
-		client := v.(Client)
+	if client, ok := c.cache.Peek(key); ok {
 		removed = c.remove(key, client)
 	}
 
@@ -142,12 +137,10 @@ func (c *clientCache) Remove(key ClientCacheKey) bool {
 func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCacheKey {
 	var pruned []ClientCacheKey
 	for _, k := range c.cache.Keys() {
-		if v, ok := c.cache.Peek(k); ok {
-			key := k.(ClientCacheKey)
-			client := v.(Client)
+		if client, ok := c.cache.Peek(k); ok {
 			if filterFunc(client) {
-				if c.remove(key, client) {
-					pruned = append(pruned, key)
+				if c.remove(k, client) {
+					pruned = append(pruned, k)
 				}
 			}
 		}
@@ -166,7 +159,7 @@ func (c *clientCache) remove(key ClientCacheKey, client Client) bool {
 
 func (c *clientCache) pruneClones(cacheKey ClientCacheKey) {
 	for _, k := range c.cloneCache.Keys() {
-		if !strings.HasPrefix(k.(ClientCacheKey).String(), cacheKey.String()) {
+		if !strings.HasPrefix(k.String(), cacheKey.String()) {
 			continue
 		}
 
@@ -217,19 +210,19 @@ func NewClientCache(size int, callbackFunc onEvictCallbackFunc, metricsRegistry 
 		}),
 	}
 
-	onEvictFunc := func(key, value interface{}) {
+	onEvictFunc := func(key ClientCacheKey, value Client) {
 		if callbackFunc != nil {
 			callbackFunc(key, value)
 		}
 		onEvictPruneClonesFunc(cache)(key, value)
 	}
 
-	lruCache, err := lru.NewWithEvict(size, onEvictFunc)
+	lruCache, err := lru.NewWithEvict[ClientCacheKey, Client](size, onEvictFunc)
 	if err != nil {
 		return nil, err
 	}
 
-	lruCloneCache, err := lru.New(size)
+	lruCloneCache, err := lru.New[ClientCacheKey, Client](size)
 	if err != nil {
 		return nil, err
 	}
