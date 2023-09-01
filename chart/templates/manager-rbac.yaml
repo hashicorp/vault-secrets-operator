@@ -213,37 +213,31 @@ rules:
   - list
   - watch
 - apiGroups:
-    - secrets.hashicorp.com
+  - secrets.hashicorp.com
   resources:
-    - hcpauths
+  - hcpauths/finalizers
   verbs:
-    - create
-    - delete
-    - get
-    - list
-    - patch
-    - update
-    - watch
+  - update
 - apiGroups:
-    - secrets.hashicorp.com
+  - secrets.hashicorp.com
   resources:
-    - hcpauths/status
+  - hcpauths/status
   verbs:
-    - get
+  - get
+  - patch
+  - update
 - apiGroups:
-    - secrets.hashicorp.com
+  - secrets.hashicorp.com
   resources:
-    - hcpauths
+  - vaultauths
   verbs:
-    - get
-    - list
-    - watch
-- apiGroups:
-    - secrets.hashicorp.com
-  resources:
-    - hcpauths/status
-  verbs:
-    - get
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
