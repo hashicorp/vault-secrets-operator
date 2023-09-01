@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -32,6 +33,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 	tests := []struct {
 		name              string
 		authObj           *secretsv1beta1.HCPAuth
+		client            client.Client
 		secretData        map[string][]byte
 		providerNamespace string
 		want              map[string]any
@@ -41,6 +43,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			name:              "valid",
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
+			client:            fake.NewClientBuilder().Build(),
 			secretData: map[string][]byte{
 				ProviderSecretClientID:  []byte("client-id-1"),
 				ProviderSecretClientKey: []byte("client-key-1"),
@@ -55,6 +58,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			name:              "secret-not-found",
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
+			client:            fake.NewClientBuilder().Build(),
 			want:              nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				if !assert.ErrorIs(t, err, errors.InvalidCredentialDataError) {
@@ -71,6 +75,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			name:              "invalid-no-data",
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
+			client:            fake.NewClientBuilder().Build(),
 			secretData:        map[string][]byte{},
 			want:              nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -85,6 +90,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			name:              "invalid-empty-values",
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
+			client:            fake.NewClientBuilder().Build(),
 			secretData: map[string][]byte{
 				ProviderSecretClientID:  make([]byte, 0),
 				ProviderSecretClientKey: make([]byte, 0),
@@ -102,6 +108,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			name:              "invalid-secret-client-key",
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
+			client:            fake.NewClientBuilder().Build(),
 			secretData: map[string][]byte{
 				ProviderSecretClientID: []byte("client-id-1"),
 			},
@@ -117,6 +124,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			name:              "invalid-secret-client-id",
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
+			client:            fake.NewClientBuilder().Build(),
 			secretData: map[string][]byte{
 				ProviderSecretClientKey: []byte("client-key-1"),
 			},
@@ -136,9 +144,8 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 				providerNamespace: tt.providerNamespace,
 			}
 
-			client := fake.NewClientBuilder().Build()
 			if tt.secretData != nil {
-				require.NoError(t, client.Create(ctx, &corev1.Secret{
+				require.NoError(t, tt.client.Create(ctx, &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      tt.authObj.Spec.ServicePrincipal.SecretRef,
 						Namespace: tt.providerNamespace,
@@ -146,11 +153,11 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 					Data: tt.secretData,
 				}))
 			}
-			got, err := l.GetCreds(ctx, client)
-			if !tt.wantErr(t, err, fmt.Sprintf("GetCreds(%v, %v)", ctx, client)) {
+			got, err := l.GetCreds(ctx, tt.client)
+			if !tt.wantErr(t, err, fmt.Sprintf("GetCreds(%v, %v)", ctx, tt.client)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "GetCreds(%v, %v)", ctx, client)
+			assert.Equalf(t, tt.want, got, "GetCreds(%v, %v)", ctx, tt.client)
 		})
 	}
 }
