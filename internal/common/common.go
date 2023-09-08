@@ -25,10 +25,24 @@ import (
 var (
 	// OperatorNamespace of the current operator instance, set in init()
 	OperatorNamespace                   string
-	InvalidObjectKeyError               = fmt.Errorf("invalid objectKey")
-	InvalidObjectKeyErrorEmptyName      = fmt.Errorf("%w, empty name", InvalidObjectKeyError)
-	InvalidObjectKeyErrorEmptyNamespace = fmt.Errorf("%w, empty namespace", InvalidObjectKeyError)
+	InvalidObjectKeyError                      = fmt.Errorf("invalid objectKey")
+	InvalidObjectKeyErrorEmptyName             = fmt.Errorf("%w, empty name", InvalidObjectKeyError)
+	InvalidObjectKeyErrorEmptyNamespace        = fmt.Errorf("%w, empty namespace", InvalidObjectKeyError)
+	defaultMaxRetries                   uint64 = 60
+	defaultRetryDuration                       = time.Millisecond * 500
 )
+
+type NamespaceNotAllowedError struct {
+	TargetNS  string
+	ObjRef    types.NamespacedName
+	AllowedNS []string
+}
+
+func (n *NamespaceNotAllowedError) Error() string {
+	return fmt.Sprintf(
+		"target namespace %q is not allowed by authRef %s, allowed=%v",
+		n.TargetNS, n.ObjRef, n.AllowedNS)
+}
 
 func init() {
 	var err error
@@ -42,22 +56,22 @@ func init() {
 	}
 }
 
-func GetAuthRefNamespacedName(obj client.Object) (types.NamespacedName, error) {
+func getAuthRefNamespacedName(obj client.Object) (types.NamespacedName, error) {
 	m, err := NewSyncableSecretMetaData(obj)
 	if err != nil {
-		return types.NamespacedName{}, fmt.Errorf("unsupported type %T", obj)
+		return types.NamespacedName{}, err
 	}
 
-	authRef, err := parseAuthOrVaultConnectionRefName(m.AuthRef, obj.GetNamespace())
+	authRef, err := parseResourceRef(m.AuthRef, obj.GetNamespace())
 	if err != nil {
 		return types.NamespacedName{}, err
 	}
 	return authRef, nil
 }
 
-// Parses an input string  and returns a types.NamesapcedName with appropriate namespace
-// and name set or otherwise overridden as default.
-func parseAuthOrVaultConnectionRefName(refName, targetNamespace string) (types.NamespacedName, error) {
+// parseResourceRef parses an input string and returns a types.NamespacedName
+// with appropriate namespace and name set or otherwise overridden as default.
+func parseResourceRef(refName, defaultNamespace string) (types.NamespacedName, error) {
 	var ref types.NamespacedName
 	if refName != "" {
 		names := strings.Split(refName, "/")
@@ -68,7 +82,7 @@ func parseAuthOrVaultConnectionRefName(refName, targetNamespace string) (types.N
 			ref.Namespace = names[0]
 			ref.Name = names[1]
 		} else {
-			ref.Namespace = targetNamespace
+			ref.Namespace = defaultNamespace
 			ref.Name = names[0]
 		}
 	} else {
@@ -80,31 +94,34 @@ func parseAuthOrVaultConnectionRefName(refName, targetNamespace string) (types.N
 }
 
 // isAllowedNamespace computes whether a targetNamespace is allowed based on the AllowedNamespaces
-// field of the VaultAuth.
-// AllowedNamespaces behaves as follows:
+// field of the VaultAuth or HCPAuth objects.
+//
+// isAllowedNamespace behaves as follows:
 //
 //	unset - disallow all except the OperatorNamespace and the AuthMethod's ns, default behavior.
 //	[]{"*"} - with length of 1, all namespaces are allowed
 //	[]{"a","b"} - explicitly namespaces a, b are allowed
-func isAllowedNamespace(auth *secretsv1beta1.VaultAuth, targetNamespace string) bool {
+func isAllowedNamespace(obj ctrlclient.Object, targetNamespace string, allowed ...string) bool {
 	// Allow if target ns is the same as auth
-	if targetNamespace == auth.ObjectMeta.Namespace {
+	if targetNamespace == obj.GetNamespace() {
 		return true
 	}
 	// Default Auth Method
-	if auth.ObjectMeta.Name == consts.NameDefault && auth.ObjectMeta.Namespace == OperatorNamespace {
+	if obj.GetName() == consts.NameDefault && obj.GetNamespace() == OperatorNamespace {
 		return true
 	}
+
+	lenAllowed := len(allowed)
 	// Disallow by default
-	if len(auth.Spec.AllowedNamespaces) == 0 {
+	if lenAllowed == 0 {
 		return false
 	}
 	// Wildcard
-	if len(auth.Spec.AllowedNamespaces) == 1 && auth.Spec.AllowedNamespaces[0] == "*" {
+	if lenAllowed == 1 && allowed[0] == "*" {
 		return true
 	}
 	// Explicitly set.
-	for _, ns := range auth.Spec.AllowedNamespaces {
+	for _, ns := range allowed {
 		if targetNamespace == ns {
 			return true
 		}
@@ -113,16 +130,21 @@ func isAllowedNamespace(auth *secretsv1beta1.VaultAuth, targetNamespace string) 
 }
 
 func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, error) {
-	authRef, err := GetAuthRefNamespacedName(obj)
+	authRef, err := getAuthRefNamespacedName(obj)
 	if err != nil {
 		return nil, err
 	}
-	authObj, err := GetVaultAuthWithRetry(ctx, c, authRef, time.Millisecond*500, 60)
+
+	authObj, err := GetVaultAuthWithRetry(ctx, c, authRef, defaultRetryDuration, defaultMaxRetries)
 	if err != nil {
 		return nil, err
 	}
-	if !isAllowedNamespace(authObj, obj.GetNamespace()) {
-		return nil, fmt.Errorf(fmt.Sprintf("target namespace is not allowed for this auth method, targetns: %v, authMethod:%s", obj.GetNamespace(), authRef.Name))
+
+	if !isAllowedNamespace(authObj, obj.GetNamespace(), authObj.Spec.AllowedNamespaces...) {
+		return nil, &NamespaceNotAllowedError{
+			TargetNS: obj.GetNamespace(),
+			ObjRef:   authRef,
+		}
 	}
 	return authObj, nil
 }
@@ -164,7 +186,32 @@ func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.Names
 	return &obj, nil
 }
 
-func GetHCPAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName, delay time.Duration, max uint64) (*secretsv1beta1.HCPAuth, error) {
+// GetHCPAuthForObj returns the corresponding secretsv1beta1.HCPAuth for obj.
+// Supported client.Object: secretsv1beta1.HCPVaultSecretsApp
+func GetHCPAuthForObj(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.HCPAuth, error) {
+	authRef, err := getAuthRefNamespacedName(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	authObj, err := GetHCPAuthWithRetry(ctx, c, authRef, defaultRetryDuration, defaultMaxRetries)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isAllowedNamespace(authObj, obj.GetNamespace(), authObj.Spec.AllowedNamespaces...) {
+		return nil, &NamespaceNotAllowedError{
+			TargetNS: obj.GetNamespace(),
+			ObjRef:   authRef,
+		}
+	}
+
+	return authObj, nil
+}
+
+func GetHCPAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName,
+	delay time.Duration, max uint64,
+) (*secretsv1beta1.HCPAuth, error) {
 	var obj secretsv1beta1.HCPAuth
 	if err := getWithRetry(ctx, c, key, &obj, delay, max); err != nil {
 		return nil, err
@@ -201,7 +248,7 @@ func GetConnectionNamespacedName(a *secretsv1beta1.VaultAuth) (types.NamespacedN
 	if a.Spec.VaultConnectionRef == "" && OperatorNamespace == "" {
 		return types.NamespacedName{}, fmt.Errorf("operator's default namespace is not set, this is a bug")
 	}
-	connRef, err := parseAuthOrVaultConnectionRefName(a.Spec.VaultConnectionRef, a.GetNamespace())
+	connRef, err := parseResourceRef(a.Spec.VaultConnectionRef, a.GetNamespace())
 	if err != nil {
 		return types.NamespacedName{}, err
 	}
@@ -343,6 +390,13 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 			APIVersion:  t.APIVersion,
 			Kind:        t.Kind,
 			AuthRef:     t.Spec.VaultAuthRef,
+		}, nil
+	case *secretsv1beta1.HCPVaultSecretsApp:
+		return &SyncableSecretMetaData{
+			Destination: &t.Spec.Destination,
+			APIVersion:  t.APIVersion,
+			Kind:        t.Kind,
+			AuthRef:     t.Spec.HCPAuthRef,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)

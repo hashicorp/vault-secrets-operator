@@ -239,12 +239,14 @@ func main() {
 	}
 
 	hmacValidator := helpers.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
+	secretDataBuilder := helpers.NewSecretsDataBuilder()
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultStaticSecret"),
-		HMACValidator: hmacValidator,
-		ClientFactory: clientFactory,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("VaultStaticSecret"),
+		SecretDataBuilder: secretDataBuilder,
+		HMACValidator:     hmacValidator,
+		ClientFactory:     clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
@@ -291,6 +293,16 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPAuth")
+		os.Exit(1)
+	}
+	if err = (&controllers.HCPVaultSecretsAppReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
+		SecretDataBuilder: secretDataBuilder,
+		HMACValidator:     hmacValidator,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

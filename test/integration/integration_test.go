@@ -175,12 +175,12 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				return "", err
 			}
 
-			if _, ok := destSecret.Data["_raw"]; !ok {
-				return "", fmt.Errorf("secret hasn't been synced yet, missing '_raw' field")
+			if _, ok := destSecret.Data[helpers.SecretDataKeyRaw]; !ok {
+				return "", fmt.Errorf("secret hasn't been synced yet, missing '%s' field", helpers.SecretDataKeyRaw)
 			}
 
 			var rawSecret map[string]interface{}
-			err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
+			err = json.Unmarshal(destSecret.Data[helpers.SecretDataKeyRaw], &rawSecret)
 			require.NoError(t, err)
 			if _, ok := rawSecret["data"]; ok {
 				rawSecret = rawSecret["data"].(map[string]interface{})
@@ -188,7 +188,8 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 			for k, v := range expectedData {
 				// compare expected secret data to _raw in the k8s secret
 				if !reflect.DeepEqual(v, rawSecret[k]) {
-					err = errors.Join(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
+					err = errors.Join(err,
+						fmt.Errorf("expected data '%s:%s' missing from %s: %#v", k, v, helpers.SecretDataKeyRaw, rawSecret))
 				}
 				// compare expected secret k/v to the top level items in the k8s secret
 				if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
@@ -196,7 +197,9 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				}
 			}
 			if len(expectedData) != len(rawSecret) {
-				err = errors.Join(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
+				err = errors.Join(err,
+					fmt.Errorf("expected data length %d does not match %s length %d",
+						len(expectedData), helpers.SecretDataKeyRaw, len(rawSecret)))
 			}
 			// the k8s secret has an extra key because of the "_raw" item
 			if len(expectedData) != len(destSecret.Data)-1 {
@@ -338,7 +341,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 		// these keys typically have variable values that make them difficult to compare,
 		// we can ensure that they are at least present and have a length > 0 in the
 		// resulting Secret data.
-		expectedPresentOnly["_raw"] = 1
+		expectedPresentOnly[helpers.SecretDataKeyRaw] = 1
 		expectedPresentOnly["last_vault_rotation"] = 1
 		expectedPresentOnly["ttl"] = 1
 	}

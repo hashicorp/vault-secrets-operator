@@ -38,6 +38,8 @@ func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 		cur = t.Status.SecretMAC
 	case *v1beta1.VaultStaticSecret:
 		cur = t.Status.SecretMAC
+	case *v1beta1.HCPVaultSecretsApp:
+		cur = t.Status.SecretMAC
 	default:
 		return false, nil, fmt.Errorf("unsupported object type %T", t)
 	}

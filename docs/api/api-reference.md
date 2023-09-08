@@ -11,6 +11,8 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 ### Resource Types
 - [HCPAuth](#hcpauth)
 - [HCPAuthList](#hcpauthlist)
+- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
+- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
 - [VaultAuth](#vaultauth)
 - [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
@@ -31,6 +33,7 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 Destination provides the configuration that will be applied to the destination Kubernetes Secret during a Vault Secret -> K8s Secret sync.
 
 _Appears in:_
+- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
@@ -105,8 +108,62 @@ _Appears in:_
 | --- | --- |
 | `organizationID` _string_ | OrganizationID of the HCP organization. |
 | `projectID` _string_ | ProjectID of the HCP project. |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod. This field allows administrators to customize which Kubernetes namespaces are authorized to use with this AuthMethod. While Vault will still enforce its own rules, this has the added configurability of restricting which HCPAuthMethods can be used by which namespaces. Accepted values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces. unset - disallow all namespaces except the Operator's the HCPAuthMethod's namespace, this is the default behavior. |
 | `method` _string_ | Method to use when authenticating to Vault. |
 | `servicePrincipal` _[HCPAuthServicePrincipal](#hcpauthserviceprincipal)_ | ServicePrincipal provides the necessary configuration for authenticating to HCP using a service principal. For security reasons, only project-level service principals should ever be used. |
+
+
+
+
+#### HCPVaultSecretsApp
+
+
+
+HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
+
+_Appears in:_
+- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPVaultSecretsApp`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)_ |  |
+
+
+#### HCPVaultSecretsAppList
+
+
+
+HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPVaultSecretsAppList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[HCPVaultSecretsApp](#hcpvaultsecretsapp) array_ |  |
+
+
+#### HCPVaultSecretsAppSpec
+
+
+
+HCPVaultSecretsAppSpec defines the desired state of HCPVaultSecretsApp
+
+_Appears in:_
+- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
+
+| Field | Description |
+| --- | --- |
+| `appName` _string_ | AppName of the Vault Secrets Application that is to be synced. |
+| `hcpAuthRef` _string_ | HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the Operator will default to the `default` HCPAuth, configured in its own Kubernetes namespace. HCPAuthRef string `json:"hcpAuthRef,omitempty"` |
+| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation. |
+| `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the HCP Vault Secrets App does not support dynamically reloading a rotated secret. In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events. See RolloutRestartTarget for more details. |
+| `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the HCP Vault Application secrets to Kubernetes. |
 
 
 
@@ -119,6 +176,7 @@ RolloutRestartTarget provides the configuration required to perform a rollout-re
  Supported resources: Deployment, DaemonSet, StatefulSet
 
 _Appears in:_
+- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
@@ -270,7 +328,7 @@ _Appears in:_
 | `appRole` _[VaultAuthConfigAppRole](#vaultauthconfigapprole)_ | AppRole specific auth configuration, requires that the Method be set to `appRole`. |
 | `jwt` _[VaultAuthConfigJWT](#vaultauthconfigjwt)_ | JWT specific auth configuration, requires that the Method be set to `jwt`. |
 | `aws` _[VaultAuthConfigAWS](#vaultauthconfigaws)_ | AWS specific auth configuration, requires that Method be set to `aws`. |
-| `storageEncryption` _[StorageEncryption](#storageencryption)_ | StorageEncryption provides the necessary configuration to encrypt the client storage cache. This should only be configured when client cache persistence with encryption is enabled. This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted. Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the label: cacheStorageEncryption=true |
+| `storageEncryption` _[StorageEncryption](#storageencryption)_ | StorageEncryption provides the necessary configuration to encrypt the client storage cache. This should only be configured when client cache persistence with encryption is enabled. This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted. Typically, there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the label: cacheStorageEncryption=true |
 
 
 
