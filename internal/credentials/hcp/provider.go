@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: BUSL-1.1
 
-package vault
+package hcp
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
 )
 
-type CredentialProvider interface {
+type CredentialProviderHCP interface {
 	provider.CredentialProviderBase
-	Init(ctx context.Context, client client.Client, object *v1beta1.VaultAuth, providerNamespace string) error
+	Init(context.Context, client.Client, *v1beta1.HCPAuth, string) error
 }

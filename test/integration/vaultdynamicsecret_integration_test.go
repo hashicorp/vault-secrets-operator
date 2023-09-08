@@ -29,6 +29,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 func TestVaultDynamicSecret(t *testing.T) {
@@ -199,9 +200,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 			existing: outputs.K8sDBSecrets,
 			authObj:  auths[0],
 			expected: map[string]int{
-				"_raw":     100,
-				"username": 51,
-				"password": 20,
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
 			},
 		},
 		{
@@ -209,9 +210,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 			create:  5,
 			authObj: auths[0],
 			expected: map[string]int{
-				"_raw":     100,
-				"username": 51,
-				"password": 20,
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
 			},
 		},
 		{
@@ -221,9 +222,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 			existing:     outputs.K8sDBSecrets,
 			authObj:      auths[0],
 			expected: map[string]int{
-				"_raw":     100,
-				"username": 51,
-				"password": 20,
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
 			},
 			expectedStatic: map[string]int{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
