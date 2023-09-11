@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/vault/api"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var (
@@ -30,7 +32,7 @@ func (r *defaultResponse) SecretK8sData() (map[string][]byte, error) {
 		rawData = r.secret.Data
 	}
 
-	return MakeSecretK8sData(r.Data(), rawData)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData)
 }
 
 func (r *defaultResponse) Secret() *api.Secret {
@@ -59,7 +61,7 @@ func (r *kvV1Response) SecretK8sData() (map[string][]byte, error) {
 		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
 	}
 
-	return MakeSecretK8sData(r.Data(), rawData)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData)
 }
 
 func (r *kvV1Response) Secret() *api.Secret {
@@ -88,7 +90,7 @@ func (r *kvV2Response) SecretK8sData() (map[string][]byte, error) {
 		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
 	}
 
-	return MakeSecretK8sData(r.Data(), rawData)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData)
 }
 
 func (r *kvV2Response) Secret() *api.Secret {

@@ -22,8 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 func Test_clientCacheStorageCollector(t *testing.T) {
@@ -534,7 +534,7 @@ func storeSecret(t *testing.T, ctx context.Context, client ctrlclient.Client, st
 					Generation: 0,
 				},
 			},
-			credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
+			credentialProvider: vault.NewKubernetesCredentialProvider(nil, "",
 				types.UID(uuid.New().String())),
 		},
 	}

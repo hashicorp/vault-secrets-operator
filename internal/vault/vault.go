@@ -5,7 +5,6 @@ package vault
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -32,34 +31,4 @@ func UnmarshalPKIIssueResponse(resp *api.Secret) (*PKICertResponse, error) {
 	}
 
 	return result, nil
-}
-
-// TODO: move to internal/helpers
-func MakeSecretK8sData(d, raw map[string]interface{}) (map[string][]byte, error) {
-	data := make(map[string][]byte)
-
-	b, err := json.Marshal(raw)
-	if err != nil {
-		return nil, err
-	}
-	data["_raw"] = b
-
-	for k, v := range d {
-		if k == "_raw" {
-			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
-		}
-
-		switch x := v.(type) {
-		case string:
-			data[k] = []byte(x)
-		default:
-			b, err := json.Marshal(v)
-			if err != nil {
-				return nil, err
-			}
-			data[k] = b
-		}
-	}
-
-	return data, nil
 }
