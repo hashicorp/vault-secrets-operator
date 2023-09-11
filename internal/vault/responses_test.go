@@ -9,6 +9,8 @@ import (
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 type testResponseSecret struct {
@@ -148,8 +150,8 @@ func Test_defaultResponse_SecretK8sData(t *testing.T) {
 				},
 			},
 			want: map[string][]byte{
-				"baz":  []byte("qux"),
-				"_raw": []byte(`{"baz":"qux"}`),
+				"baz":                    []byte("qux"),
+				helpers.SecretDataKeyRaw: []byte(`{"baz":"qux"}`),
 			},
 			wantErr: assert.NoError,
 		},
@@ -158,13 +160,13 @@ func Test_defaultResponse_SecretK8sData(t *testing.T) {
 			respFunc: respFunc,
 			secret: &api.Secret{
 				Data: map[string]interface{}{
-					"_raw": "qux",
-					"baz":  "foo",
+					helpers.SecretDataKeyRaw: "qux",
+					"baz":                    "foo",
 				},
 			},
 			want: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "key '_raw' not permitted in Vault secret")
+				return assert.ErrorIs(t, err, helpers.SecretDataErrorContainsRaw)
 			},
 		},
 		{
@@ -173,7 +175,7 @@ func Test_defaultResponse_SecretK8sData(t *testing.T) {
 			secret: &api.Secret{
 				Data: nil,
 			},
-			want:    map[string][]byte{"_raw": []byte(`null`)},
+			want:    map[string][]byte{helpers.SecretDataKeyRaw: []byte(`null`)},
 			wantErr: assert.NoError,
 		},
 		{
@@ -327,8 +329,8 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 				},
 			},
 			want: map[string][]byte{
-				"baz":  []byte("qux"),
-				"_raw": []byte(`{"baz":"qux"}`),
+				"baz":                    []byte("qux"),
+				helpers.SecretDataKeyRaw: []byte(`{"baz":"qux"}`),
 			},
 			wantErr: assert.NoError,
 		},
@@ -337,13 +339,13 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 			respFunc: respFunc,
 			secret: &api.Secret{
 				Data: map[string]interface{}{
-					"_raw": "qux",
-					"baz":  "foo",
+					helpers.SecretDataKeyRaw: "qux",
+					"baz":                    "foo",
 				},
 			},
 			want: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "key '_raw' not permitted in Vault secret")
+				return assert.ErrorIs(t, err, helpers.SecretDataErrorContainsRaw)
 			},
 		},
 		{
@@ -504,8 +506,8 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 				},
 			},
 			want: map[string][]byte{
-				"baz":  []byte("qux"),
-				"_raw": []byte(`{"data":{"baz":"qux"}}`),
+				"baz":                    []byte("qux"),
+				helpers.SecretDataKeyRaw: []byte(`{"data":{"baz":"qux"}}`),
 			},
 			wantErr: assert.NoError,
 		},
@@ -515,14 +517,14 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 			secret: &api.Secret{
 				Data: map[string]interface{}{
 					"data": map[string]interface{}{
-						"_raw": "qux",
-						"baz":  "foo",
+						helpers.SecretDataKeyRaw: "qux",
+						"baz":                    "foo",
 					},
 				},
 			},
 			want: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "key '_raw' not permitted in Vault secret")
+				return assert.ErrorIs(t, err, helpers.SecretDataErrorContainsRaw)
 			},
 		},
 		{

@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: BUSL-1.1
 
-package credentials
+package vault
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var _ CredentialProvider = (*AppRoleCredentialProvider)(nil)
@@ -40,7 +41,7 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.AppRole.SecretRef,
 	}
-	secret, err := getSecret(ctx, client, key)
+	secret, err := helpers.GetSecret(ctx, client, key)
 	if err != nil {
 		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return err
@@ -58,7 +59,7 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.AppRole.SecretRef,
 	}
-	secret, err := getSecret(ctx, client, key)
+	secret, err := helpers.GetSecret(ctx, client, key)
 	if err != nil {
 		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return nil, err
