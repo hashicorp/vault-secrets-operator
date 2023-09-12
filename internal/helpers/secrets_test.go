@@ -5,9 +5,13 @@ package helpers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
+	"github.com/go-openapi/strfmt"
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
+	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -479,6 +483,266 @@ func TestSyncSecret(t *testing.T) {
 				ctrlclient.InNamespace(tt.obj.GetNamespace()))) {
 				assert.Equal(t, tt.expectSecretsCount, len(secrets.Items))
 			}
+		})
+	}
+}
+
+func TestSecretDataBuilder_WithVaultData(t *testing.T) {
+	marshalRaw := func(t *testing.T, d any) []byte {
+		b, err := json.Marshal(d)
+		require.NoError(t, err)
+		return b
+	}
+
+	tests := []struct {
+		name    string
+		data    map[string]interface{}
+		raw     map[string]interface{}
+		want    map[string][]byte
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "equal-raw-data",
+			data: map[string]interface{}{
+				"baz": "qux",
+				"foo": "biff",
+			},
+			raw: map[string]interface{}{
+				"baz": "qux",
+				"foo": "biff",
+			},
+			want: map[string][]byte{
+				"baz": []byte(`qux`),
+				"foo": []byte(`biff`),
+				SecretDataKeyRaw: marshalRaw(t, map[string]any{
+					"baz": "qux",
+					"foo": "biff",
+				}),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "mixed",
+			data: map[string]interface{}{
+				"baz": "qux",
+				"foo": "biff",
+			},
+			raw: map[string]interface{}{
+				"foo":  "bar",
+				"biff": "buz",
+				"buz":  1,
+			},
+			want: map[string][]byte{
+				"baz": []byte(`qux`),
+				"foo": []byte(`biff`),
+				SecretDataKeyRaw: marshalRaw(t, map[string]any{
+					"biff": "buz",
+					"foo":  "bar",
+					"buz":  1,
+				}),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "nil-data-nil-raw",
+			data:    nil,
+			raw:     nil,
+			want:    map[string][]byte{SecretDataKeyRaw: []byte(`null`)},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "nil-data",
+			data: nil,
+			raw: map[string]interface{}{
+				"baz": "qux",
+				"foo": "biff",
+			},
+			want: map[string][]byte{
+				SecretDataKeyRaw: marshalRaw(t, map[string]any{
+					"baz": "qux",
+					"foo": "biff",
+				}),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "nil-raw",
+			data: map[string]interface{}{
+				"baz": "qux",
+				"foo": "biff",
+			},
+			raw: nil,
+			want: map[string][]byte{
+				SecretDataKeyRaw: []byte(`null`),
+				"baz":            []byte("qux"),
+				"foo":            []byte("biff"),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "invalid-raw-data-unmarshalable",
+			data: nil,
+			raw: map[string]interface{}{
+				"baz": make(chan int),
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "json: unsupported type: chan int")
+			},
+		},
+		{
+			name: "invalid-data-unmarshalable",
+			data: map[string]interface{}{
+				"baz": make(chan int),
+			},
+			raw:  nil,
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "json: unsupported type: chan int")
+			},
+		},
+		{
+			name: "invalid-data-contains-raw",
+			data: map[string]interface{}{
+				SecretDataKeyRaw: "qux",
+				"baz":            "foo",
+			},
+			raw: map[string]interface{}{
+				"baz": "foo",
+			},
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorIs(t, err, SecretDataErrorContainsRaw)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &SecretDataBuilder{}
+			got, err := s.WithVaultData(tt.data, tt.raw)
+			if !tt.wantErr(t, err, fmt.Sprintf("WithVaultData(%v, %v)", tt.data, tt.raw)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "WithVaultData(%v, %v)", tt.data, tt.raw)
+		})
+	}
+}
+
+func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
+	respValid := &hvsclient.OpenAppSecretsOK{
+		Payload: &models.Secrets20230613OpenAppSecretsResponse{
+			Secrets: []*models.Secrets20230613OpenSecret{
+				{
+					CreatedAt:     strfmt.DateTime{},
+					CreatedBy:     nil,
+					LatestVersion: "",
+					Name:          "bar",
+					SyncStatus:    nil,
+					Version: &models.Secrets20230613OpenSecretVersion{
+						CreatedAt: strfmt.DateTime{},
+						CreatedBy: nil,
+						Type:      "kv",
+						Value:     "foo",
+						Version:   "",
+					},
+				},
+			},
+		},
+	}
+
+	rawValid, err := respValid.GetPayload().MarshalBinary()
+	require.NoError(t, err)
+
+	respValidUnsupportedType := &hvsclient.OpenAppSecretsOK{
+		Payload: &models.Secrets20230613OpenAppSecretsResponse{
+			Secrets: []*models.Secrets20230613OpenSecret{
+				{
+					Name: "biff",
+					Version: &models.Secrets20230613OpenSecretVersion{
+						CreatedAt: strfmt.DateTime{},
+						CreatedBy: nil,
+						Type:      "kv",
+						Value:     "baz",
+					},
+				},
+				{
+					Name: "baz",
+					Version: &models.Secrets20230613OpenSecretVersion{
+						CreatedAt: strfmt.DateTime{},
+						CreatedBy: nil,
+						Type:      "_unsupported_",
+						Value:     "qux",
+					},
+				},
+			},
+		},
+	}
+
+	rawUnsupportedType, err := respValidUnsupportedType.GetPayload().MarshalBinary()
+	require.NoError(t, err)
+
+	respContainsRaw := &hvsclient.OpenAppSecretsOK{
+		Payload: &models.Secrets20230613OpenAppSecretsResponse{
+			Secrets: []*models.Secrets20230613OpenSecret{
+				{
+					CreatedAt:     strfmt.DateTime{},
+					CreatedBy:     nil,
+					LatestVersion: "",
+					Name:          SecretDataKeyRaw,
+					SyncStatus:    nil,
+					Version: &models.Secrets20230613OpenSecretVersion{
+						CreatedAt: strfmt.DateTime{},
+						CreatedBy: nil,
+						Type:      "kv",
+						Value:     "foo",
+						Version:   "",
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		resp    *hvsclient.OpenAppSecretsOK
+		want    map[string][]byte
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "valid",
+			resp: respValid,
+			want: map[string][]byte{
+				"bar":            []byte("foo"),
+				SecretDataKeyRaw: rawValid,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "valid-unsupported-type",
+			resp: respValidUnsupportedType,
+			want: map[string][]byte{
+				"biff":           []byte("baz"),
+				SecretDataKeyRaw: rawUnsupportedType,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "invalid-contains-raw",
+			resp: respContainsRaw,
+			want: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorIs(t, err, SecretDataErrorContainsRaw)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &SecretDataBuilder{}
+			got, err := s.WithHVSAppSecrets(tt.resp)
+			if !tt.wantErr(t, err, fmt.Sprintf("WithHVSAppSecrets(%v)", tt.resp)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "WithHVSAppSecrets(%v)", tt.resp)
 		})
 	}
 }

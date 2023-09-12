@@ -129,7 +129,7 @@ type VaultAuthSpec struct {
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
 	// This is done by passing setting the manager's commandline argument
-	// --client-cache-persistence-model=direct-encrypted. Typically there should only ever
+	// --client-cache-persistence-model=direct-encrypted. Typically, there should only ever
 	// be one VaultAuth configured with StorageEncryption in the Cluster, and it should have
 	// the label: cacheStorageEncryption=true
 	StorageEncryption *StorageEncryption `json:"storageEncryption,omitempty"`

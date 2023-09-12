@@ -5,9 +5,11 @@ package helpers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +22,10 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
+
+const SecretDataKeyRaw = "_raw"
+
+var SecretDataErrorContainsRaw = fmt.Errorf("key '%s' not permitted in Secret data", SecretDataKeyRaw)
 
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by
 // a specific VSO object. It should be included in every Secret that is created
@@ -296,8 +302,8 @@ func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlcl
 	return ok, err
 }
 
-// GetSecret
-func GetSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
+// GetSyncableSecret
+func GetSyncableSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
 	return getSecretExists(ctx, client, obj)
 }
 
@@ -310,7 +316,7 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
 		"secretName", meta.Destination.Name, "create", meta.Destination.Create)
 	objKey := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.Destination.Name}
-	s, err := getSecret(ctx, client, objKey)
+	s, err := GetSecret(ctx, client, objKey)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
@@ -324,7 +330,7 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	return s, true, nil
 }
 
-func getSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
+func GetSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	var s corev1.Secret
 	err := client.Get(ctx, objKey, &s)
 
@@ -359,4 +365,81 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 		errs = errors.Join(errs, fmt.Errorf("not the owner of the destination Secret %s", key))
 	}
 	return errs
+}
+
+// SecretDataBuilder constructs K8s Secret data from various sources.
+type SecretDataBuilder struct{}
+
+// WithVaultData returns the K8s Secret data from a Vault Secret data.
+func (s *SecretDataBuilder) WithVaultData(d, raw map[string]any) (map[string][]byte, error) {
+	return s.makeData(
+		func() ([]byte, map[string][]byte, error) {
+			data := make(map[string][]byte)
+
+			b, err := json.Marshal(raw)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			for k, v := range d {
+				switch x := v.(type) {
+				case string:
+					data[k] = []byte(x)
+				default:
+					b, err := json.Marshal(v)
+					if err != nil {
+						return nil, nil, err
+					}
+					data[k] = b
+				}
+			}
+			return b, data, nil
+		})
+}
+
+// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
+func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK) (map[string][]byte, error) {
+	return s.makeData(
+		func() ([]byte, map[string][]byte, error) {
+			p := resp.GetPayload()
+			data := make(map[string][]byte)
+			raw, err := p.MarshalBinary()
+			if err != nil {
+				return nil, nil, err
+			}
+
+			for _, v := range p.Secrets {
+				ver := v.Version
+				if ver == nil {
+					continue
+				}
+
+				if ver.Type != "kv" {
+					continue
+				}
+
+				data[v.Name] = []byte(ver.Value)
+			}
+
+			return raw, data, nil
+		})
+}
+
+func (s *SecretDataBuilder) makeData(dataFunc func() ([]byte, map[string][]byte, error)) (map[string][]byte, error) {
+	raw, data, err := dataFunc()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := data[SecretDataKeyRaw]; ok {
+		return nil, SecretDataErrorContainsRaw
+	}
+
+	data[SecretDataKeyRaw] = raw
+
+	return data, nil
+}
+
+func NewSecretsDataBuilder() *SecretDataBuilder {
+	return &SecretDataBuilder{}
 }
