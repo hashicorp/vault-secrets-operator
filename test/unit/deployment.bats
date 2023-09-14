@@ -203,7 +203,7 @@ load _helpers
       yq '.spec.template.spec.securityContext | select(documentIndex == 1)' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "2" ]
+   [ "${actual}" = "3" ]
    actual=$(echo "$object" | yq '.runAsGroup' | tee /dev/stderr)
    [ "${actual}" = '2000' ]
    actual=$(echo "$object" | yq '.runAsUser'| tee /dev/stderr)
@@ -231,7 +231,7 @@ load _helpers
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controller.kube-rbac-proxy.securityContext.allowPrivilegeEscalation=true' \
+      --set 'controller. kubeRbacProxy.securityContext.allowPrivilegeEscalation=true' \
       --set 'controller.manager.securityContext.allowPrivilegeEscalation=true' \
       . | tee /dev/stderr |
       yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
