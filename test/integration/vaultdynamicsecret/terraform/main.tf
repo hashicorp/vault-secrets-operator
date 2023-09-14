@@ -82,3 +82,17 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
   ]
   audience = "vault"
 }
+
+module "vso-helm" {
+  count                            = var.deploy_operator_via_helm ? 1 : 0
+  source                           = "../../modules/vso-helm"
+  operator_namespace               = var.operator_namespace
+  enable_default_auth_method       = var.enable_default_auth_method
+  enable_default_connection        = var.enable_default_connection
+  operator_helm_chart_path         = var.operator_helm_chart_path
+  k8s_auth_default_mount           = local.auth_mount
+  k8s_auth_default_role            = vault_kubernetes_auth_backend_role.dev.role_name
+  k8s_auth_default_token_audiences = "{${vault_kubernetes_auth_backend_role.dev.audience}}"
+  k8s_vault_connection_address     = var.k8s_vault_connection_address
+  vault_test_namespace             = local.namespace
+}

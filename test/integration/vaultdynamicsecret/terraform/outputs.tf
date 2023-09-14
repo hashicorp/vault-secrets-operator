@@ -29,7 +29,7 @@ output "db_path" {
   value = vault_database_secrets_mount.db.path
 }
 output "transit_ref" {
-  value = kubernetes_manifest.vault-auth-operator.manifest.metadata.name
+  value = one(kubernetes_manifest.vault-auth-operator[*].manifest.metadata.name)
 }
 output "transit_path" {
   value = vault_mount.transit.path

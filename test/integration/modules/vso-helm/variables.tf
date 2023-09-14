@@ -25,6 +25,10 @@ variable "k8s_auth_default_token_audiences" {
   default = ""
 }
 
+variable "k8s_auth_default_mount" {
+  default = ""
+}
+
 variable "k8s_auth_default_role" {
   default = ""
 }
@@ -37,4 +41,8 @@ variable "enable_default_connection" {
 variable "enable_default_auth_method" {
   type    = bool
   default = true
+}
+
+variable "vault_test_namespace" {
+  default = ""
 }
