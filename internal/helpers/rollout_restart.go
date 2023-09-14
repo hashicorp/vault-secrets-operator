@@ -42,8 +42,13 @@ func HandleRolloutRestarts(ctx context.Context, client ctrlclient.Client, obj ct
 		targets = t.Spec.RolloutRestartTargets
 	case *v1beta1.VaultPKISecret:
 		targets = t.Spec.RolloutRestartTargets
+	case *v1beta1.HCPVaultSecretsApp:
+		targets = t.Spec.RolloutRestartTargets
 	default:
-		return fmt.Errorf("unsupported type %T", t)
+		err := fmt.Errorf("unsupported Object type %T", t)
+		recorder.Eventf(obj, corev1.EventTypeWarning, consts.ReasonRolloutRestartUnsupported,
+			"Rollout restart impossible (please report this bug): err=%s", err)
+		return err
 	}
 	var errs error
 	for _, target := range targets {

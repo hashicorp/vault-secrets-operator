@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
@@ -506,7 +507,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
 	))
 }
 
@@ -605,4 +606,86 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 	require.Nil(t, crdClient.Create(ctx, secretObj))
 
 	return secretObj
+}
+
+func awaitSecretSynced(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, expectedData map[string][]byte,
+) (*corev1.Secret, error) {
+	t.Helper()
+
+	var s *corev1.Secret
+	err := backoff.Retry(
+		func() error {
+			m, err := common.NewSyncableSecretMetaData(obj)
+			if err != nil {
+				return backoff.Permanent(err)
+			}
+
+			sec, exists, err := helpers.GetSyncableSecret(ctx, client, obj)
+			if err != nil {
+				return err
+			} else if !exists {
+				return fmt.Errorf("expected secret '%s/%s' inexistent",
+					obj.GetNamespace(), m.Destination.Name,
+				)
+			}
+
+			if _, ok := sec.Data[helpers.SecretDataKeyRaw]; !ok {
+				return fmt.Errorf("secret hasn't been synced yet, missing '%s' field",
+					helpers.SecretDataKeyRaw,
+				)
+			}
+
+			actualData := make(map[string][]byte)
+			for k, v := range sec.Data {
+				if k == helpers.SecretDataKeyRaw {
+					continue
+				}
+				actualData[k] = v
+			}
+
+			if !reflect.DeepEqual(actualData, expectedData) {
+				return fmt.Errorf(
+					"incomplete Secret data, expected=%#v, actual=%#v", expectedData, actualData)
+			}
+
+			s = sec
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+	)
+
+	return s, err
+}
+
+func copyTerraformDir(t *testing.T, src, tempDest string) string {
+	t.Helper()
+	dir, err := files.CopyTerraformFolderToDest(src, tempDest, "terraform")
+	require.NoError(t, err)
+	return dir
+}
+
+func copyModulesDir(t *testing.T, tfDir string) string {
+	t.Helper()
+	modulesDestDir := path.Join(tfDir, "..", "..", "modules")
+	require.NoError(t, os.Mkdir(modulesDestDir, 0o755))
+	require.NoError(t,
+		files.CopyFolderContents(
+			path.Join(testRoot, "modules"),
+			modulesDestDir,
+		))
+
+	return modulesDestDir
+}
+
+func copyChartDir(t *testing.T, tfDir string) string {
+	t.Helper()
+	chartDestDir := path.Join(tfDir, "..", "..", "chart")
+	require.NoError(t, os.Mkdir(chartDestDir, 0o755))
+	require.NoError(t,
+		files.CopyFolderContents(
+			path.Join(testRoot, "..", "..", "chart"),
+			chartDestDir,
+		))
+	return chartDestDir
 }

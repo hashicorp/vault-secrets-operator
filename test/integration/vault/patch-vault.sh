@@ -6,6 +6,12 @@ set -e
 
 K8S_VAULT_NAMESPACE="${K8S_VAULT_NAMESPACE:-demo}"
 
+# convenient if you are running non-Vault acceptance tests.
+if [ -n "${SKIP_PATCH_VAULT}" ]; then
+    echo "SKIP_PATCH_VAULT is set" >&2
+    exit 0
+fi
+
 function waitVaultPod() {
     echo "waiting for the vault pod to become Ready"
     local tries=0
