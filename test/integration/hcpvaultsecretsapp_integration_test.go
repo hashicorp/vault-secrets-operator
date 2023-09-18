@@ -46,7 +46,7 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 		t.Skipf("Skipping test, SKIP_HCPVSAPPS_TESTS is set")
 	}
 
-	testID := fmt.Sprintf("hvs")
+	testID := "hvs"
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	assert.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
@@ -255,6 +255,9 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 
 			var objsCreated []ctrlclient.Object
 
+			// HVS restricts the length of an application name to 32 characters, so we
+			// compute a unique hash for each test case. The detailed test description should
+			// be included when the app is created.
 			sum := sha256.Sum256([]byte(fmt.Sprintf("%s-%s", outputs.NamePrefix, t.Name())))
 			appName := fmt.Sprintf("vso-test-%x", sum[:8])
 
@@ -345,7 +348,7 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 					WithLocationProjectID(hcpProjectID).
 					WithContext(ctx).
 					WithBody(hvsclient.CreateAppBody{
-						Description: fmt.Sprintf("VSO test %s", t.Name()),
+						Description: fmt.Sprintf("VSO test %s/%s", outputs.NamePrefix, t.Name()),
 						Name:        appName,
 					}), nil)
 			require.NoError(t, err, "failed to create app %q", appName)
@@ -357,10 +360,12 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 				if len(tt.updateData) > 0 {
 					require.NoError(t, createHVSSecrets(t, appName, tt.updateData))
 					_, err = awaitSecretSynced(t, ctx, crdClient, obj, tt.updateData)
-					// check that all rollout-restarts completed successfully
-					if len(obj.Spec.RolloutRestartTargets) > 0 {
-						awaitRolloutRestarts(t, ctx, crdClient,
-							obj, obj.Spec.RolloutRestartTargets)
+					if assert.NoError(t, err) {
+						// check that all rollout-restarts completed successfully
+						if len(obj.Spec.RolloutRestartTargets) > 0 {
+							awaitRolloutRestarts(t, ctx, crdClient,
+								obj, obj.Spec.RolloutRestartTargets)
+						}
 					}
 				}
 			}
