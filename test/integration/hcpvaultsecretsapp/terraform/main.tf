@@ -58,4 +58,6 @@ module "vso-helm" {
   enable_default_auth_method = false
   enable_default_connection  = false
   operator_helm_chart_path   = var.operator_helm_chart_path
+  operator_image_repo        = var.operator_image_repo
+  operator_image_tag         = var.operator_image_tag
 }
