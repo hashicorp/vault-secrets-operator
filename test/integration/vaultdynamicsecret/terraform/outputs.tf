@@ -37,15 +37,9 @@ output "transit_path" {
 output "transit_key_name" {
   value = vault_transit_secret_backend_key.cache.name
 }
-output "k8s_db_secret" {
-  value = kubernetes_secret.db[*].metadata[0].name
-}
 output "k8s_config_context" {
   value = var.k8s_config_context
 }
 output "namespace" {
   value = local.namespace
-}
-output "deployment_name" {
-  value = kubernetes_deployment.vso.metadata[0].name
 }

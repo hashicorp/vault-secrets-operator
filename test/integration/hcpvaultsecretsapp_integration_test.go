@@ -22,11 +22,7 @@ import (
 	"github.com/hashicorp/hcp-sdk-go/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -285,51 +281,12 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 			objsCreated = append(objsCreated, obj)
 
 			if len(obj.Spec.RolloutRestartTargets) > 0 {
-				depObj := &appsv1.Deployment{
-					ObjectMeta: v1.ObjectMeta{
+				depObj := createDeployment(t, ctx, crdClient,
+					ctrlclient.ObjectKey{
 						Name:      appName,
 						Namespace: outputs.K8sNamespace,
-						Labels: map[string]string{
-							"test": appName,
-						},
 					},
-					Spec: appsv1.DeploymentSpec{
-						Selector: &v1.LabelSelector{
-							MatchLabels: map[string]string{
-								"test": appName,
-							},
-						},
-						Replicas: pointer.Int32(3),
-						Template: corev1.PodTemplateSpec{
-							ObjectMeta: v1.ObjectMeta{
-								Labels: map[string]string{
-									"test": appName,
-								},
-							},
-							Spec: corev1.PodSpec{
-								Containers: []corev1.Container{
-									{
-										Name:  appName,
-										Image: "busybox:latest",
-										Command: []string{
-											"sh", "-c", "while : ; do sleep 10; done",
-										},
-									},
-								},
-								TerminationGracePeriodSeconds: pointer.Int64(2),
-							},
-						},
-						Strategy: appsv1.DeploymentStrategy{
-							RollingUpdate: &appsv1.RollingUpdateDeployment{
-								MaxUnavailable: &intstr.IntOrString{
-									Type:   intstr.String,
-									StrVal: "25%",
-								},
-							},
-						},
-					},
-				}
-				require.NoError(t, crdClient.Create(ctx, depObj))
+				)
 				objsCreated = append(objsCreated, depObj)
 			}
 

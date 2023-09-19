@@ -41,8 +41,6 @@ TEST_WITH_HELM ?=
 SUPPRESS_TF_OUTPUT ?=
 # Skip the integration test cleanup.
 SKIP_CLEANUP ?=
-# The number of k8s secrets to create in the VaultDynamicSecret's integration tests.
-K8S_DB_SECRET_COUNT ?=
 
 # Cloud test options
 SKIP_AWS_TESTS ?= true

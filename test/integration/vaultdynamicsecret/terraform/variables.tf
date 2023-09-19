@@ -30,10 +30,6 @@ variable "vault_enterprise" {
   default = false
 }
 
-variable "k8s_db_secret_count" {
-  default = 50
-}
-
 variable "vault_token_period" {
   default = 30
 }

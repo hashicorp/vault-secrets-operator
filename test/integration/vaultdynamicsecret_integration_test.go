@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -63,14 +62,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
 	}
 
-	k8sDBSecretsCountFromTF := 5
-	if v := os.Getenv("K8S_DB_SECRET_COUNT"); v != "" {
-		count, err := strconv.Atoi(v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		k8sDBSecretsCountFromTF = count
-	}
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	tfOptions := &terraform.Options{
@@ -79,7 +70,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		Vars: map[string]interface{}{
 			"k8s_config_context":         k8sConfigContext,
 			"name_prefix":                testID,
-			"k8s_db_secret_count":        k8sDBSecretsCountFromTF,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
@@ -206,11 +196,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 		expectedStatic map[string]int
 		create         int
 		createStatic   int
-		existing       []string
+		existing       int
 	}{
 		{
 			name:     "existing-only",
-			existing: outputs.K8sDBSecrets,
+			existing: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -230,7 +220,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:         "mixed",
 			create:       5,
 			createStatic: 5,
-			existing:     outputs.K8sDBSecrets,
+			existing:     0,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -259,17 +249,33 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			var objsCreated []*secretsv1beta1.VaultDynamicSecret
+			var otherObjsCreated []ctrlclient.Object
 
 			t.Cleanup(func() {
 				if !skipCleanup {
 					for _, obj := range objsCreated {
 						assert.NoError(t, crdClient.Delete(ctx, obj))
 					}
+					for _, obj := range otherObjsCreated {
+						assert.NoError(t, crdClient.Delete(ctx, obj))
+					}
 				}
 			})
 			// pre-created secrets test
-			for idx, dest := range tt.existing {
+			for idx := 0; idx < tt.existing; idx++ {
+				dest := fmt.Sprintf("%s-no-create-%d", tt.name, idx)
+				s := &corev1.Secret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+				}
+				require.NoError(t, crdClient.Create(ctx, s))
+				otherObjsCreated = append(otherObjsCreated, s)
 				vdsObj := &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
@@ -286,13 +292,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 						},
 					},
 				}
-				if idx == 0 {
-					vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
-						{
-							Kind: "Deployment",
-							Name: outputs.DeploymentName,
-						},
-					}
+				depObj := createDeployment(t, ctx, crdClient,
+					ctrlclient.ObjectKey{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+				)
+				otherObjsCreated = append(otherObjsCreated, depObj)
+
+				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
+					},
 				}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
@@ -316,6 +328,20 @@ func TestVaultDynamicSecret(t *testing.T) {
 							Name:   dest,
 							Create: true,
 						},
+					},
+				}
+				depObj := createDeployment(t, ctx, crdClient,
+					ctrlclient.ObjectKey{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+				)
+				otherObjsCreated = append(otherObjsCreated, depObj)
+
+				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
 					},
 				}
 
