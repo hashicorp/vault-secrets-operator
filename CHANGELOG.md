@@ -1,4 +1,11 @@
 ## Unreleased
+## 0.3.0-rc.1 (September 19th, 2023)
+
+Improvements:
+* Add support for HCP Vault Secrets: [GH-315](https://github.com/hashicorp/vault-secrets-operator/pull/315)
+* Add new HCPVaultSecretsApp CRD and Controller: [GH-314](https://github.com/hashicorp/vault-secrets-operator/pull/314)
+* Add new HCPAuth CRD and Controller: [GH-313](https://github.com/hashicorp/vault-secrets-operator/pull/313)
+* Optionally revoke and purge all cached vault clients upon Operator deployment deletion: [GH-202](https://github.com/hashicorp/vault-secrets-operator/pull/202)
 
 ## 0.2.0 (August 16th, 2023)
 
