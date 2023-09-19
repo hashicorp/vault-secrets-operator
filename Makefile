@@ -126,6 +126,9 @@ INTEGRATION_TEST_ROOT = ./test/integration
 # directory containing Kubernetes patches to be applied after Vault is been brought up in K8s.
 VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
 
+# avoid kubectl patching vault in k8s.
+SKIP_PATCH_VAULT ?=
+
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
 
