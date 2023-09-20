@@ -227,14 +227,16 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.spec.template.spec' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
     [ "${actual}" = "false" ]
 
-   actual=$(echo "$object" | yq '.containers[1].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
     [ "${actual}" = "false" ]
 
+    local actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
 }
 
 @test "controller/Deployment: controller.{manager,kube-rbac-proxy}.securityContext can be set" {
