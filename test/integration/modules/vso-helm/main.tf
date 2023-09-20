@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 resource "helm_release" "vault-secrets-operator" {
-  name             = "test"
+  name             = var.name
   namespace        = var.operator_namespace
   create_namespace = true
   wait             = true
-  chart            = var.operator_helm_chart_path
+  repository       = var.repository
+  chart            = var.chart
+  version          = var.chart_version
 
   # Connection Configuration
   set {

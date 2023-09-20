@@ -4,9 +4,8 @@ variable "k8s_vault_connection_address" {
   default = ""
 }
 
-# The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
-variable "operator_helm_chart_path" {
-  default = "../../../../chart"
+variable "name" {
+  default = "vault-secrets-operator"
 }
 
 variable "operator_namespace" {
@@ -37,4 +36,16 @@ variable "enable_default_connection" {
 variable "enable_default_auth_method" {
   type    = bool
   default = true
+}
+
+variable "repository" {
+  default = "https://helm.releases.hashicorp.com"
+}
+
+variable "chart" {
+  default = "../../../../chart"
+}
+
+variable "chart_version" {
+  default = ""
 }

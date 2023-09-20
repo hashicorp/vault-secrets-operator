@@ -6,7 +6,8 @@ variable "operator_namespace" {
 }
 
 variable "name_prefix" {
-  type = string
+  type    = string
+  default = "vault-secrets-demo"
 }
 
 variable "k8s_config_context" {
@@ -37,17 +38,11 @@ variable "hcp_client_secret" {
 
 variable "deploy_operator_via_helm" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "chart" {
-  default = "../../../chart"
+  default = "vault-secrets-operator"
 }
 
-variable "operator_image_repo" {
-  default = "hashicorp/vault-secrets-operator"
-}
-
-variable "operator_image_tag" {
-  default = "0.0.0-dev"
-}
+variable "vault_secret_app_name" {}
