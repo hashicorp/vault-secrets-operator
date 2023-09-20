@@ -231,8 +231,7 @@ load _helpers
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
-      --set 'controller.kubeRbacProxy.securityContext.allowPrivilegeEscalation=true' \
-      --set 'controller.manager.securityContext.allowPrivilegeEscalation=true' \
+      --set 'controller.securityContext.allowPrivilegeEscalation=true' \
       . | tee /dev/stderr |
       yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
 
