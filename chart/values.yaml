@@ -49,11 +49,6 @@ controller:
         cpu: 5m
         memory: 64Mi
 
-    # Configures the Container Security Context
-    # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
-    securityContext:
-      allowPrivilegeEscalation: false
-
   # Image pull secret to use for private container registry authentication which will be applied to the controllers
   # service account. Alternatively, the value may be specified as an array of strings.
   # Example:
