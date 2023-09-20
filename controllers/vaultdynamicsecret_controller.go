@@ -262,7 +262,7 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(secretLease *secretsv1be
 func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultStaticCredsMetaData) bool {
 	// the ldap and database engines have minimum rotation period of 5s, requiring a
 	// minimum of 1s should be okay here.
-	return meta.LastVaultRotation > 0 && meta.RotationPeriod > 1
+	return meta.LastVaultRotation > 0 && (meta.RotationPeriod > 1 || meta.RotationSchedule != "")
 }
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (*secretsv1beta1.VaultSecretLease, bool, error) {
@@ -330,6 +330,11 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 				if err == nil {
 					o.Status.StaticCredsMetaData.RotationPeriod = period
 				}
+			}
+		}
+		if v, ok := respData["rotation_schedule"]; ok && v != nil {
+			if schedule, ok := v.(string); ok && v != nil {
+				o.Status.StaticCredsMetaData.RotationSchedule = schedule
 			}
 		}
 		if v, ok := respData["ttl"]; ok && v != nil {

@@ -104,6 +104,11 @@ type VaultStaticCredsMetaData struct {
 	// "time to live". This value is compared to the LastVaultRotation to
 	// determine if a password needs to be rotated
 	RotationPeriod int64 `json:"rotationPeriod"`
+	// RotationSchedule is a "cron style" string representing the allowed
+	// schedule for each rotation.
+	// e.g. "1 0 * * *" would rotate at one minute past midnight (00:01) every
+	// day.
+	RotationSchedule string `json:"rotationSchedule"`
 	// TTL is the seconds remaining before the next rotation.
 	TTL int64 `json:"ttl"`
 }
