@@ -29,9 +29,12 @@ resource "helm_release" "vault-secrets-operator" {
       value = var.k8s_auth_default_mount
     }
   }
-  set {
-    name  = "defaultAuthMethod.namespace"
-    value = var.vault_test_namespace
+  dynamic "set" {
+    for_each = var.vault_test_namespace != null ? [""] : []
+    content {
+      name  = "defaultAuthMethod.namespace"
+      value = var.vault_test_namespace
+    }
   }
   set {
     name  = "defaultAuthMethod.kubernetes.role"
