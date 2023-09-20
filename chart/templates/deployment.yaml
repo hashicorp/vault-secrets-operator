@@ -106,7 +106,7 @@ spec:
           periodSeconds: 10
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
         securityContext:
-          {{- toYaml .Values.controller.manager.securityContext | nindent 12 }}
+          {{- toYaml .Values.controller.manager.securityContext | nindent 10 }}
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
