@@ -184,13 +184,17 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.securityContext | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.spec.template.spec.securityContext' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | length' | tee /dev/stderr)
    [ "${actual}" = "1" ]
-   actual=$(echo "$object" | yq '.runAsNonRoot' | tee /dev/stderr)
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .runAsNonRoot' | tee /dev/stderr)
    [ "${actual}" = "true" ]
 
+   local actual=$(echo "$object" | yq 'select(documentIndex == 2) | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .runAsNonRoot' | tee /dev/stderr)
+   [ "${actual}" = "true" ]
 }
 
 @test "controller/Deployment: controller.podSecurityContext can be set" {
