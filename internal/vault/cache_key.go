@@ -16,7 +16,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
 )
 
 var (

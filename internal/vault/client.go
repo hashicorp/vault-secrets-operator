@@ -18,8 +18,9 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 type ClientOptions struct {
@@ -146,7 +147,7 @@ type Client interface {
 	Validate() error
 	GetVaultAuthObj() *secretsv1beta1.VaultAuth
 	GetVaultConnectionObj() *secretsv1beta1.VaultConnection
-	GetCredentialProvider() credentials.CredentialProvider
+	GetCredentialProvider() provider.CredentialProviderBase
 	GetCacheKey() (ClientCacheKey, error)
 	Close(bool)
 	Clone(string) (Client, error)
@@ -166,7 +167,7 @@ type defaultClient struct {
 	skipRenewal        bool
 	lastRenewal        int64
 	targetNamespace    string
-	credentialProvider credentials.CredentialProvider
+	credentialProvider provider.CredentialProviderBase
 	watcher            *api.LifetimeWatcher
 	lastWatcherErr     error
 	once               sync.Once
@@ -247,7 +248,7 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 	return client, nil
 }
 
-func (c *defaultClient) GetCredentialProvider() credentials.CredentialProvider {
+func (c *defaultClient) GetCredentialProvider() provider.CredentialProviderBase {
 	return c.credentialProvider
 }
 

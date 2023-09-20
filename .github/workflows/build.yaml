@@ -344,6 +344,10 @@ jobs:
           INTEGRATION_TESTS: true
           VAULT_IMAGE_TAG: ${{ matrix.vault-version }}
           VAULT_LICENSE_CI: ${{ secrets.VAULT_LICENSE_CI }}
+          HCP_ORGANIZATION_ID: ${{ secrets.HCP_ORGANIZATION_ID }}
+          HCP_PROJECT_ID: ${{ secrets.HCP_PROJECT_ID }}
+          HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
+          HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
         run: |
           make_target=integration-test
           if [ ${{ matrix.installation-method }} == 'helm' ]; then

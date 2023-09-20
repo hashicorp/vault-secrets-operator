@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"testing"
 
-	lru "github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_clientCache_Prune(t *testing.T) {
-	dummyCallbackFunc := func(key, value interface{}) {}
+	dummyCallbackFunc := func(_ ClientCacheKey, _ Client) {}
 	cacheSize := 10
 
 	tests := []struct {
@@ -47,9 +47,9 @@ func Test_clientCache_Prune(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &clientCache{}
-			cache, err := lru.NewWithEvict(cacheSize, dummyCallbackFunc)
-			c.cache = cache
+			cache, err := lru.NewWithEvict[ClientCacheKey, Client](cacheSize, dummyCallbackFunc)
 			require.NoError(t, err)
+			c.cache = cache
 
 			var expectedPrunedKeys []ClientCacheKey
 			for i := 0; i < tt.cacheLen; i++ {
