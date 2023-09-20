@@ -92,7 +92,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID, and clientKey. 
- The secret data must have the following structure { "clientID": "clientID", "clientKey": "clientKey", } |
+ The secret data must have the following structure { "clientID": "clientID", "clientSecret": "clientSecret", } |
 
 
 #### HCPAuthSpec

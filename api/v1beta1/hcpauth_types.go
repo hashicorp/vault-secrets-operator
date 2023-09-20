@@ -42,7 +42,7 @@ type HCPAuthServicePrincipal struct {
 	//
 	//The secret data must have the following structure {
 	//   "clientID": "clientID",
-	//   "clientKey": "clientKey",
+	//   "clientSecret": "clientSecret",
 	// }
 	SecretRef string `json:"secretRef"`
 }

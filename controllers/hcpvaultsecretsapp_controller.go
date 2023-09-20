@@ -26,6 +26,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/hcp"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
@@ -167,7 +168,8 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 			ProjectID:      authObj.Spec.ProjectID,
 		}),
 		hcpconfig.WithClientCredentials(
-			creds["clientID"].(string), creds["clientKey"].(string),
+			creds[hcp.ProviderSecretClientID].(string),
+			creds[hcp.ProviderSecretClientSecret].(string),
 		),
 	)
 	if err != nil {
