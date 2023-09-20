@@ -204,15 +204,21 @@ load _helpers
       --set 'controller.podSecurityContext.runAsGroup=2000' \
       --set 'controller.podSecurityContext.runAsUser=2000' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.securityContext | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.spec.template.spec.securityContext' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | length' | tee /dev/stderr)
    [ "${actual}" = "3" ]
-   actual=$(echo "$object" | yq '.runAsGroup' | tee /dev/stderr)
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .runAsGroup' | tee /dev/stderr)
    [ "${actual}" = '2000' ]
-   actual=$(echo "$object" | yq '.runAsUser'| tee /dev/stderr)
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .runAsUser'| tee /dev/stderr)
    [ "${actual}" = '2000' ]
 
+   local actual=$(echo "$object" | yq 'select(documentIndex == 2) | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .runAsGroup' | tee /dev/stderr)
+   [ "${actual}" = '2000' ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .runAsUser'| tee /dev/stderr)
+   [ "${actual}" = '2000' ]
 }
 
 # securityContext
