@@ -58,7 +58,7 @@ spec:
           protocol: TCP
         resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
+          {{- toYaml .Values.controller.securityContext | nindent 10 }}
       - name: manager
         args:
         - --health-probe-bind-address=:8081
@@ -106,12 +106,12 @@ spec:
           periodSeconds: 10
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
+          {{- toYaml .Values.controller.securityContext | nindent 10 }}
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
       securityContext:
-        runAsNonRoot: true
+        {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
       {{- if .Values.controller.hostAliases }}
@@ -159,6 +159,8 @@ spec:
       name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      securityContext:
+        {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
       containers:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
@@ -171,6 +173,8 @@ spec:
         command:
         - /vault-secrets-operator
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.controller.securityContext | nindent 10 }}
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
