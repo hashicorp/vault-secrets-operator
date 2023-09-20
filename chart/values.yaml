@@ -9,6 +9,16 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Host Aliases settings for vault-secrets-operator pod.
+  # The value is an array of PodSpec HostAlias maps.
+  # ref: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
+  # Example:
+  # hostAliases:
+  #   - ip: 192.168.1.100
+  #     hostnames:
+  #     - vault.example.com
+  hostAliases: []
+
   # nodeSelector labels for vault-secrets-operator pod assignment.
   # @type: map
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
@@ -27,6 +37,22 @@ controller:
   #    value: "value1"
   #    effect: "NoSchedule"
   tolerations: []
+
+  # Affinity settings for vault-secrets-operator pod.
+  # The value is a map of PodSpec Affinity maps.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+  # Example:
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: topology.kubernetes.io/zone
+  #           operator: In
+  #           values:
+  #           - antarctica-east1
+  #           - antarctica-west1
+  affinity: {}
 
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.

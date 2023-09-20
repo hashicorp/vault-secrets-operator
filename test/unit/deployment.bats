@@ -502,6 +502,89 @@ load _helpers
 }
 
 #--------------------------------------------------------------------
+# hostAliases
+
+@test "controller/Deployment: hostAliases not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.hostAliases | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: hostAliases can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.hostAliases[0].ip=192.168.1.100' \
+      --set 'controller.hostAliases[0].hostnames={vault.example.com}' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.hostAliases | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '2' ]
+   actual=$(echo "$object" | yq '.[0].ip' | tee /dev/stderr)
+   [ "${actual}" = '192.168.1.100' ]
+   actual=$(echo "$object" | yq '.[0].hostnames | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.[0].hostnames[0]' | tee /dev/stderr)
+   [ "${actual}" = 'vault.example.com' ]
+}
+
+#--------------------------------------------------------------------
+# affinity
+
+@test "controller/Deployment: affinity not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.affinity | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: affinity can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set "controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=topology.kubernetes.io/zone" \
+      --set "controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=In" \
+      --set "controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values={antarctica-east1,antarctica-west1}" \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.affinity | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '3' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key' | tee /dev/stderr)
+   [ "${actual}" = 'topology.kubernetes.io/zone' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator' | tee /dev/stderr)
+   [ "${actual}" = 'In' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values | length' | tee /dev/stderr)
+   [ "${actual}" = '2' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]' | tee /dev/stderr)
+   [ "${actual}" = 'antarctica-east1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[1]' | tee /dev/stderr)
+   [ "${actual}" = 'antarctica-west1' ]
+}
+
+#--------------------------------------------------------------------
 # extraEnv values
 
 @test "controller/Deployment: extra env string aren't set by default" {
