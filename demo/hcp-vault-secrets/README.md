@@ -42,11 +42,11 @@ terraform apply
 ```
 
 After running the command above, you should have a file called `scratch/demo.sh` in your current working directory
+Dump the K8s secret per the demo script's instructions.
 
 ```shell
 ./scratch/demo.sh
 ```
-Dump the K8s secret per the demo scripts instructions.
 
 ### Example run
 

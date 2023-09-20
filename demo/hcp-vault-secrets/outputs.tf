@@ -11,5 +11,5 @@ output "sp_secret_name" {
   value = kubernetes_secret.sp.metadata[0].name
 }
 output "demo_script" {
-  value = "./demo.sh"
+  value = local_file.demo-script.filename
 }

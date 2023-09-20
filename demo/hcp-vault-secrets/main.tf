@@ -43,6 +43,9 @@ resource "kubernetes_secret" "sp" {
 }
 
 resource "local_file" "hcp-auth" {
+  filename        = "scratch/hcpvs.yaml"
+  file_permission = "644"
+
   content = <<EOT
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
@@ -70,17 +73,16 @@ spec:
     name: ${var.name_prefix}-dest-secret
   refreshAfter: 3s
 EOT
-
-  filename = "scratch/demo.yaml"
 }
 
 resource "local_file" "demo-script" {
-  filename = "scratch/demo.sh"
-  content  = <<EOT
+  filename        = "scratch/demo.sh"
+  file_permission = "755"
+  content         = <<EOT
 #!/bin/sh
 set -e
-kubectl apply -f $(dirname $0)/demo.yaml &> /dev/null
-echo "run the following command to dump the HVS Secret data from K8s"
+kubectl apply -f "$(dirname $0)/$(basename ${local_file.hcp-auth.filename})"
+echo "\n** run the following command to dump the HVS Secret data from K8s"
 echo "kubectl get secret --namespace ${kubernetes_namespace.demo.metadata[0].name} ${var.name_prefix}-dest-secret -o yaml"
 EOT
 }
