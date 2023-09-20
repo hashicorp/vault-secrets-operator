@@ -327,7 +327,7 @@ type dynamicK8SOutputs struct {
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
-	delay time.Duration, vdsObj *secretsv1beta1.VaultDynamicSecret, expected map[string]int,
+	delay time.Duration, vdsObj *secretsv1beta1.VaultDynamicSecret, expected map[string]interface{},
 ) {
 	t.Helper()
 

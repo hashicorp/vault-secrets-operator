@@ -543,6 +543,7 @@ _Appears in:_
 | --- | --- |
 | `lastVaultRotation` _integer_ | LastVaultRotation represents the last time Vault rotated the password |
 | `rotationPeriod` _integer_ | RotationPeriod is number in seconds between each rotation, effectively a "time to live". This value is compared to the LastVaultRotation to determine if a password needs to be rotated |
+| `rotationSchedule` _string_ | RotationSchedule is a "chron style" string representing the allowed schedule for each rotation. e.g. "1 0 * * *" would rotate at one minute past midnight (00:01) every day. |
 | `ttl` _integer_ | TTL is the seconds remaining before the next rotation. |
 
 

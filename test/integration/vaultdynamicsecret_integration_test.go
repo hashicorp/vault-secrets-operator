@@ -189,8 +189,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 	tests := []struct {
 		name           string
 		authObj        *secretsv1beta1.VaultAuth
-		expected       map[string]int
-		expectedStatic map[string]int
+		expected       map[string]interface{}
+		expectedStatic map[string]interface{}
 		create         int
 		createStatic   int
 		existing       []string
@@ -199,7 +199,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:     "existing-only",
 			existing: outputs.K8sDBSecrets,
 			authObj:  auths[0],
-			expected: map[string]int{
+			expected: map[string]interface{}{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
 				"password":               20,
@@ -209,7 +209,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:    "create-only",
 			create:  5,
 			authObj: auths[0],
-			expected: map[string]int{
+			expected: map[string]interface{}{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
 				"password":               20,
@@ -221,12 +221,12 @@ func TestVaultDynamicSecret(t *testing.T) {
 			createStatic: 5,
 			existing:     outputs.K8sDBSecrets,
 			authObj:      auths[0],
-			expected: map[string]int{
+			expected: map[string]interface{}{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
 				"password":               20,
 			},
-			expectedStatic: map[string]int{
+			expectedStatic: map[string]interface{}{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
 				// assertDynamicSecret, so no need to include them here.
 				"password":        20,
@@ -238,12 +238,43 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:         "create-static",
 			createStatic: 5,
 			authObj:      auths[0],
-			expectedStatic: map[string]int{
+			expectedStatic: map[string]interface{}{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
 				// assertDynamicSecret, so no need to include them here.
 				"password":        20,
 				"rotation_period": 2,
 				"username":        24,
+			},
+		},
+		{
+			name:         "mixed-rotation-schedule",
+			create:       5,
+			createStatic: 5,
+			existing:     outputs.K8sDBSecrets,
+			authObj:      auths[0],
+			expected: map[string]interface{}{
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
+			},
+			expectedStatic: map[string]interface{}{
+				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
+				// assertDynamicSecret, so no need to include them here.
+				"password":          20,
+				"rotation_schedule": "0 0 * * SAT",
+				"username":          24,
+			},
+		},
+		{
+			name:         "create-static-rotation-schedule",
+			createStatic: 5,
+			authObj:      auths[0],
+			expectedStatic: map[string]interface{}{
+				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
+				// assertDynamicSecret, so no need to include them here.
+				"password":          20,
+				"rotation_schedule": "0 0 * * SAT",
+				"username":          24,
 			},
 		},
 	}
