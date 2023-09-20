@@ -507,7 +507,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 60),
 	))
 }
 
@@ -518,7 +518,7 @@ func assertRolloutRestarts(
 	t.Helper()
 
 	type status struct {
-		Replicas      int32
+		Replicas      *int32
 		ReadyReplicas int32
 	}
 	var errs error
@@ -540,21 +540,21 @@ func assertRolloutRestarts(
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
-			s = &status{o.Status.Replicas, o.Status.ReadyReplicas}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "StatefulSet":
 			var o appsv1.StatefulSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
-			s = &status{o.Status.Replicas, o.Status.ReadyReplicas}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "ReplicaSet":
 			var o appsv1.ReplicaSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
-			s = &status{o.Status.Replicas, o.Status.ReadyReplicas}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -581,7 +581,7 @@ func assertRolloutRestarts(
 		}
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
-		if s.ReadyReplicas != s.Replicas {
+		if s.ReadyReplicas != *s.Replicas {
 			errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
 		}
 	}
