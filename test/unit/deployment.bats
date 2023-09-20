@@ -245,17 +245,21 @@ load _helpers
       -s templates/deployment.yaml  \
       --set 'controller.securityContext.allowPrivilegeEscalation=true' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.spec.template.spec' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.containers[0].securityContext | length' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext | length' | tee /dev/stderr)
    [ "${actual}" = "1" ]
-   actual=$(echo "$object" | yq '.containers[1].securityContext | length' | tee /dev/stderr)
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext | length' | tee /dev/stderr)
    [ "${actual}" = "1" ]
-   actual=$(echo "$object" | yq '.containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
    [ "${actual}" = 'true' ]
-   actual=$(echo "$object" | yq '.containers[1].securityContext.allowPrivilegeEscalation'| tee /dev/stderr)
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext.allowPrivilegeEscalation'| tee /dev/stderr)
    [ "${actual}" = 'true' ]
 
+   local actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+   [ "${actual}" = 'true' ]
 }
 
 # kubernetesClusterDomain
