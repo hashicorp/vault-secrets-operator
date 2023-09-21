@@ -104,10 +104,6 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
-	if !testWithHelm {
-		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-	}
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -125,6 +121,18 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 			"operator_helm_chart_path": chartDestDir,
 			"operator_namespace":       operatorNS,
 		},
+	}
+
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
+	if !testWithHelm {
+		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	} else {
+		if operatorImageRepo != "" {
+			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
+		}
+		if operatorImageTag != "" {
+			tfOptions.Vars["operator_image_tag"] = operatorImageTag
+		}
 	}
 
 	tfOptions = setCommonTFOptions(t, tfOptions)

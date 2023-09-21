@@ -42,12 +42,12 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
 			secretData: map[string][]byte{
-				ProviderSecretClientID:  []byte("client-id-1"),
-				ProviderSecretClientKey: []byte("client-key-1"),
+				ProviderSecretClientID:     []byte("client-id-1"),
+				ProviderSecretClientSecret: []byte("client-secret-1"),
 			},
 			want: map[string]any{
-				ProviderSecretClientID:  "client-id-1",
-				ProviderSecretClientKey: "client-key-1",
+				ProviderSecretClientID:     "client-id-1",
+				ProviderSecretClientSecret: "client-secret-1",
 			},
 			wantErr: assert.NoError,
 		},
@@ -75,7 +75,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			want:              nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				expectErr := errors.NewIncompleteCredentialError(
-					ProviderSecretClientKey,
+					ProviderSecretClientSecret,
 					ProviderSecretClientID,
 				)
 				return assert.EqualError(t, err, expectErr.Error(), i...)
@@ -86,20 +86,20 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
 			secretData: map[string][]byte{
-				ProviderSecretClientID:  make([]byte, 0),
-				ProviderSecretClientKey: make([]byte, 0),
+				ProviderSecretClientID:     make([]byte, 0),
+				ProviderSecretClientSecret: make([]byte, 0),
 			},
 			want: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				expectErr := errors.NewIncompleteCredentialError(
-					ProviderSecretClientKey,
+					ProviderSecretClientSecret,
 					ProviderSecretClientID,
 				)
 				return assert.EqualError(t, err, expectErr.Error(), i...)
 			},
 		},
 		{
-			name:              "invalid-secret-client-key",
+			name:              "invalid-secret-client-secret",
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
 			secretData: map[string][]byte{
@@ -108,7 +108,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			want: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				expectErr := errors.NewIncompleteCredentialError(
-					ProviderSecretClientKey,
+					ProviderSecretClientSecret,
 				)
 				return assert.EqualError(t, err, expectErr.Error(), i...)
 			},
@@ -118,7 +118,7 @@ func TestServicePrincipleCredentialProvider_GetCreds(t *testing.T) {
 			authObj:           authObj,
 			providerNamespace: "tenant-ns",
 			secretData: map[string][]byte{
-				ProviderSecretClientKey: []byte("client-key-1"),
+				ProviderSecretClientSecret: []byte("client-secret-1"),
 			},
 			want: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {

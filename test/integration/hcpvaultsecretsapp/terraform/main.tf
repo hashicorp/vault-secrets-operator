@@ -46,8 +46,8 @@ resource "kubernetes_secret" "sp" {
     namespace = kubernetes_namespace.dev.metadata[0].name
   }
   data = {
-    "clientID"  = var.hcp_client_id
-    "clientKey" = var.hcp_client_secret
+    "clientID"     = var.hcp_client_id
+    "clientSecret" = var.hcp_client_secret
   }
 }
 
@@ -58,4 +58,6 @@ module "vso-helm" {
   enable_default_auth_method = false
   enable_default_connection  = false
   operator_helm_chart_path   = var.operator_helm_chart_path
+  operator_image_repo        = var.operator_image_repo
+  operator_image_tag         = var.operator_image_tag
 }

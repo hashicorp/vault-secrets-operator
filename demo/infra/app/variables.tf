@@ -56,7 +56,7 @@ variable "hcp_client_id" {
   default = ""
 }
 
-variable "hcp_client_key" {
+variable "hcp_client_secret" {
   type    = string
   default = ""
 }

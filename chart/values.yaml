@@ -9,6 +9,16 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Host Aliases settings for vault-secrets-operator pod.
+  # The value is an array of PodSpec HostAlias maps.
+  # ref: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
+  # Example:
+  # hostAliases:
+  #   - ip: 192.168.1.100
+  #     hostnames:
+  #     - vault.example.com
+  hostAliases: []
+
   # nodeSelector labels for vault-secrets-operator pod assignment.
   # @type: map
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
@@ -28,7 +38,22 @@ controller:
   #    effect: "NoSchedule"
   tolerations: []
 
-  
+  # Affinity settings for vault-secrets-operator pod.
+  # The value is a map of PodSpec Affinity maps.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+  # Example:
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: topology.kubernetes.io/zone
+  #           operator: In
+  #           values:
+  #           - antarctica-east1
+  #           - antarctica-west1
+  affinity: {}
+
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
@@ -74,7 +99,8 @@ controller:
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       repository: hashicorp/vault-secrets-operator
-      tag: 0.2.0
+      tag: 0.3.0-rc.1
+
 
     # Configures the client cache which is used by the controller to cache (and potentially persist) vault tokens that
     # are the result of using the VaultAuthMethod. This enables re-use of Vault Tokens
@@ -286,6 +312,16 @@ controller:
       requests:
         cpu: 10m
         memory: 64Mi
+
+  # Configures the Pod Security Context
+  # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+  podSecurityContext:
+    runAsNonRoot: true
+
+  # Configures the Container Security Context
+  # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+  securityContext:
+    allowPrivilegeEscalation: false
 
   # Sets the configuration settings used by the controller. Any custom changes will be reflected in the
   # data field of the configmap.
