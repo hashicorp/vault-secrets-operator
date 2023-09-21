@@ -90,9 +90,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		tfOptions.Vars["enable_default_auth_method"] = true
 		tfOptions.Vars["enable_default_connection"] = true
 		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
-		//tfOptions.Vars["storage_encryption_config"] = map[string]any{
-		//	"enabled": true,
-		//}
 	}
 
 	tfOptions = setCommonTFOptions(t, tfOptions)
