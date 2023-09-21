@@ -131,12 +131,12 @@ resource "helm_release" "vault-secrets-operator" {
   }
 
   set {
-    name  = "controller.manager.clientCache.revokeClientCacheOnUninstall"
+    name  = "${local.key_prefix_contoller_manager_client_cache}.revokeClientCacheOnUninstall"
     value = "true"
   }
 
   set {
-    name  = "controller.manager.clientCache.persistenceModel"
+    name  = "${local.key_prefix_contoller_manager_client_cache}.persistenceModel"
     value = "direct-unencrypted"
   }
 }

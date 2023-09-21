@@ -83,8 +83,8 @@ resource "vault_kubernetes_auth_backend_role" "operator" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.dev.backend
   role_name                        = local.auth_role_operator
-  bound_service_account_names      = [kubernetes_service_account.operator.metadata[0].name]
-  bound_service_account_namespaces = [kubernetes_service_account.operator.metadata[0].namespace]
+  bound_service_account_names      = [local.operator_service_account_name]
+  bound_service_account_namespaces = [var.operator_namespace]
   token_period                     = 120
   token_policies = [
     vault_policy.operator.name,

@@ -57,11 +57,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted")
-	if !testWithHelm {
-		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-	}
-
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	tfOptions := &terraform.Options{
@@ -76,8 +71,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_db_default_lease_ttl": 30,
 		},
 	}
+	if entTests {
+		tfOptions.Vars["vault_enterprise"] = true
+	}
 
-	if testWithHelm {
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted")
+	if !testWithHelm {
+		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	} else {
 		tfOptions.Vars["deploy_operator_via_helm"] = true
 		tfOptions.Vars["operator_helm_chart_path"] = chartDestDir
 		if operatorImageRepo != "" {
@@ -89,11 +90,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 		tfOptions.Vars["enable_default_auth_method"] = true
 		tfOptions.Vars["enable_default_connection"] = true
 		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
+		//tfOptions.Vars["storage_encryption_config"] = map[string]any{
+		//	"enabled": true,
+		//}
 	}
 
-	if entTests {
-		tfOptions.Vars["vault_enterprise"] = true
-	}
 	tfOptions = setCommonTFOptions(t, tfOptions)
 
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
@@ -220,7 +221,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:         "mixed",
 			create:       5,
 			createStatic: 5,
-			existing:     0,
+			existing:     5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -267,7 +268,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			})
 			// pre-created secrets test
 			for idx := 0; idx < tt.existing; idx++ {
-				dest := fmt.Sprintf("%s-no-create-%d", tt.name, idx)
+				dest := fmt.Sprintf("%s-dest-exists-%d", tt.name, idx)
 				s := &corev1.Secret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,

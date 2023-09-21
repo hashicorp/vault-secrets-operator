@@ -95,4 +95,19 @@ module "vso-helm" {
   k8s_auth_default_token_audiences = "{${vault_kubernetes_auth_backend_role.dev.audience}}"
   k8s_vault_connection_address     = var.k8s_vault_connection_address
   vault_test_namespace             = local.namespace
+  client_cache_config = {
+    persistence_model = "direct-encrypted"
+    storage_encryption = {
+      enabled                         = true
+      vault_connection_ref            = ""
+      namespace                       = local.namespace
+      method                          = vault_auth_backend.default.type
+      mount                           = vault_auth_backend.default.path
+      transit_mount                   = vault_transit_secret_cache_config.cache.backend
+      key_name                        = vault_transit_secret_backend_key.cache.name
+      kubernetes_auth_role            = vault_kubernetes_auth_backend_role.operator.role_name
+      kubernetes_auth_service_account = local.operator_service_account_name
+      kubernetes_auth_token_audiences = "{${vault_kubernetes_auth_backend_role.operator.audience}}"
+    }
+  }
 }

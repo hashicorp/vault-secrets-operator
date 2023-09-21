@@ -16,6 +16,9 @@ output "auth_policy" {
 output "auth_role" {
   value = local.auth_role
 }
+output "auth_role_operator" {
+  value = local.auth_role_operator
+}
 output "db_role" {
   value = local.db_role
 }
