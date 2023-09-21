@@ -38,11 +38,11 @@ type HCPAuthSpec struct {
 type HCPAuthServicePrincipal struct {
 	// SecretRef is the name of a Kubernetes secret in the consumer's
 	// (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID,
-	// and clientKey.
+	// and clientSecret.
 	//
 	//The secret data must have the following structure {
 	//   "clientID": "clientID",
-	//   "clientKey": "clientKey",
+	//   "clientSecret": "clientSecret",
 	// }
 	SecretRef string `json:"secretRef"`
 }

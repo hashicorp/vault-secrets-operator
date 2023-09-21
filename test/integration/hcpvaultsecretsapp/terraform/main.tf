@@ -46,8 +46,8 @@ resource "kubernetes_secret" "sp" {
     namespace = kubernetes_namespace.dev.metadata[0].name
   }
   data = {
-    "clientID"  = var.hcp_client_id
-    "clientKey" = var.hcp_client_secret
+    "clientID"     = var.hcp_client_id
+    "clientSecret" = var.hcp_client_secret
   }
 }
 
