@@ -19,7 +19,7 @@ import (
 const (
 	ProviderMethodServicePrincipal = "servicePrincipal"
 	ProviderSecretClientID         = "clientID"
-	ProviderSecretClientKey        = "clientKey"
+	ProviderSecretClientSecret     = "clientSecret"
 )
 
 var _ CredentialProviderHCP = (*ServicePrincipleCredentialProvider)(nil)
@@ -80,7 +80,7 @@ func (l *ServicePrincipleCredentialProvider) GetCreds(ctx context.Context,
 		return nil, fmt.Errorf("%w, %s", errors.InvalidCredentialDataError, err)
 	}
 
-	keys := []string{ProviderSecretClientKey, ProviderSecretClientID}
+	keys := []string{ProviderSecretClientSecret, ProviderSecretClientID}
 	result := make(map[string]any, len(keys))
 	var invalidKeys []string
 	for _, k := range keys {
