@@ -16,6 +16,9 @@ output "auth_policy" {
 output "auth_role" {
   value = local.auth_role
 }
+output "auth_role_operator" {
+  value = local.auth_role_operator
+}
 output "db_role" {
   value = local.db_role
 }
@@ -29,7 +32,7 @@ output "db_path" {
   value = vault_database_secrets_mount.db.path
 }
 output "transit_ref" {
-  value = kubernetes_manifest.vault-auth-operator.manifest.metadata.name
+  value = one(kubernetes_manifest.vault-auth-operator[*].manifest.metadata.name)
 }
 output "transit_path" {
   value = vault_mount.transit.path
@@ -37,15 +40,9 @@ output "transit_path" {
 output "transit_key_name" {
   value = vault_transit_secret_backend_key.cache.name
 }
-output "k8s_db_secret" {
-  value = kubernetes_secret.db[*].metadata[0].name
-}
 output "k8s_config_context" {
   value = var.k8s_config_context
 }
 output "namespace" {
   value = local.namespace
-}
-output "deployment_name" {
-  value = kubernetes_deployment.vso.metadata[0].name
 }

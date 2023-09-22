@@ -33,14 +33,6 @@ data "kubernetes_service" "postgres" {
   }
 }
 
-resource "kubernetes_secret" "db" {
-  count = var.k8s_db_secret_count
-  metadata {
-    name      = "db-secret-${count.index}"
-    namespace = kubernetes_namespace.dev.metadata[0].name
-  }
-}
-
 data "kubernetes_pod" "postgres" {
   metadata {
     namespace = helm_release.postgres.namespace

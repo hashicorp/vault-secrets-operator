@@ -25,6 +25,10 @@ variable "k8s_auth_default_token_audiences" {
   default = ""
 }
 
+variable "k8s_auth_default_mount" {
+  default = ""
+}
+
 variable "k8s_auth_default_role" {
   default = ""
 }
@@ -37,4 +41,42 @@ variable "enable_default_connection" {
 variable "enable_default_auth_method" {
   type    = bool
   default = true
+}
+
+variable "vault_test_namespace" {
+  default = ""
+}
+
+variable "client_cache_config" {
+  type = object({
+    persistence_model = string
+    storage_encryption = object({
+      enabled                         = bool
+      vault_connection_ref            = string
+      namespace                       = string
+      mount                           = string
+      transit_mount                   = string
+      key_name                        = string
+      method                          = string
+      kubernetes_auth_role            = string
+      kubernetes_auth_service_account = string
+      kubernetes_auth_token_audiences = string
+    })
+  })
+
+  default = {
+    persistence_model = ""
+    storage_encryption = {
+      enabled                         = false
+      vault_connection_ref            = ""
+      namespace                       = ""
+      mount                           = ""
+      transit_mount                   = ""
+      key_name                        = ""
+      method                          = ""
+      kubernetes_auth_role            = ""
+      kubernetes_auth_service_account = ""
+      kubernetes_auth_token_audiences = ""
+    }
+  }
 }
