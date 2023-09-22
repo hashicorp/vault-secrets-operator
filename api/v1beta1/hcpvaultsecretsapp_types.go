@@ -18,7 +18,7 @@ type HCPVaultSecretsAppSpec struct {
 	// Kubernetes namespace. HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
-	// +kubebuilder:default="300s"
+	// +kubebuilder:default="600s"
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s)
 	// consuming the HCP Vault Secrets App does not support dynamically reloading a
