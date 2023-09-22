@@ -17,7 +17,7 @@ type HCPVaultSecretsAppSpec struct {
 	// Operator will default to the `default` HCPAuth, configured in its own
 	// Kubernetes namespace. HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	HCPAuthRef string `json:"hcpAuthRef,omitempty"`
-	// RefreshAfter a period of time, in duration notation.
+	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:default="300s"
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s)
