@@ -17,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
@@ -505,6 +506,61 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			}
 			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)
 			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)
+		})
+	}
+}
+
+// Test_isStaticCreds tests that we can appropriately identify if a vault
+// credential is "static" by checking the LastVaultRotation, RotationPeriod,
+// and RotationSchedule fields
+func Test_isStaticCreds(t *testing.T) {
+	tests := []struct {
+		name     string
+		metaData v1beta1.VaultStaticCredsMetaData
+		want     bool
+	}{
+		{
+			name: "static-cred-with-rotation-period",
+			metaData: v1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: 1695430611,
+				RotationPeriod:    300,
+			},
+			want: true,
+		},
+		{
+			name: "not-static-cred-with-rotation-period",
+			metaData: v1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: 0,
+				RotationPeriod:    0,
+			},
+			want: false,
+		},
+		{
+			name: "static-cred-with-rotation-schedule",
+			metaData: v1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: 1695430611,
+				RotationSchedule:  "1 0 * * *",
+			},
+			want: true,
+		},
+		{
+			name: "not-static-cred-with-rotation-schedule",
+			metaData: v1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: 0,
+				RotationSchedule:  "",
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &VaultDynamicSecretReconciler{
+				Client: fake.NewClientBuilder().Build(),
+			}
+
+			got := r.isStaticCreds(&tt.metaData)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
