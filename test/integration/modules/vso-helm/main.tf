@@ -22,12 +22,9 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "defaultAuthMethod.enabled"
     value = var.enable_default_auth_method
   }
-  dynamic "set" {
-    for_each = var.k8s_auth_default_mount != "" ? [""] : []
-    content {
-      name  = "defaultAuthMethod.mount"
-      value = var.k8s_auth_default_mount
-    }
+  set {
+    name  = "defaultAuthMethod.mount"
+    value = var.k8s_auth_default_mount
   }
   dynamic "set" {
     for_each = var.vault_test_namespace != null ? [""] : []
