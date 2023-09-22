@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
-package credentials
+package vault
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var _ CredentialProvider = (*KubernetesCredentialProvider)(nil)
@@ -75,7 +76,7 @@ func (l *KubernetesCredentialProvider) GetCreds(ctx context.Context, client ctrl
 		return nil, err
 	}
 
-	tr, err := requestSAToken(ctx, client, sa, l.authObj.Spec.Kubernetes.TokenExpirationSeconds, l.authObj.Spec.Kubernetes.TokenAudiences)
+	tr, err := helpers.RequestSAToken(ctx, client, sa, l.authObj.Spec.Kubernetes.TokenExpirationSeconds, l.authObj.Spec.Kubernetes.TokenAudiences)
 	if err != nil {
 		logger.Error(err, "Failed to get service account token")
 		return nil, err

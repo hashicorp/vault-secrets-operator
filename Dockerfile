@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 ARG GO_VERSION=latest
 
@@ -68,7 +68,7 @@ ENTRYPOINT ["/vault-secrets-operator"]
 
 # ubi release image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-micro:9.2-13 as release-ubi
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.2-15 as release-ubi
 
 ENV BIN_NAME=vault-secrets-operator
 ARG PRODUCT_VERSION

@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package controllers
 
@@ -9,11 +9,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,10 +27,11 @@ import (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.ClientFactory
-	HMACValidator vault.HMACValidator
+	Scheme            *runtime.Scheme
+	Recorder          record.EventRecorder
+	ClientFactory     vault.ClientFactory
+	SecretDataBuilder *helpers.SecretDataBuilder
+	HMACValidator     helpers.HMACValidator
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -79,54 +78,24 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	var resp *api.KVSecret
-	var respErr error
-	switch o.Spec.Type {
-	case consts.KVSecretTypeV1:
-		if w, err := c.KVv1(o.Spec.Mount); err != nil {
-			return ctrl.Result{}, err
-		} else {
-			resp, respErr = w.Get(ctx, o.Spec.Path)
-		}
-	case consts.KVSecretTypeV2:
-		if w, err := c.KVv2(o.Spec.Mount); err != nil {
-			return ctrl.Result{}, err
-		} else {
-			if o.Spec.Version == 0 {
-				resp, respErr = w.Get(ctx, o.Spec.Path)
-			} else {
-				resp, respErr = w.GetVersion(ctx, o.Spec.Path, o.Spec.Version)
-			}
-		}
-	default:
-		err := fmt.Errorf("unsupported secret type %q", o.Spec.Type)
-		logger.Error(err, "")
+	kvReq, err := newKVRequest(o.Spec)
+	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
 	}
 
-	if respErr != nil {
-		logger.Error(err, "Failed to read Vault secret")
+	resp, err := c.Read(ctx, kvReq)
+	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	if resp == nil {
-		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "path", o.Spec.Path)
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Vault secret was empty, mount %s, path %s", o.Spec.Mount, o.Spec.Path)
-		return ctrl.Result{
-			RequeueAfter: requeueAfter,
-		}, nil
-	}
-
-	data, err := makeK8sSecret(resp)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data)
 	if err != nil {
-		logger.Error(err, "Failed to construct k8s secret")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Failed to construct k8s secret: %s", err)
-		return ctrl.Result{}, err
+			"Invalid Vault Secret data: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	var doRolloutRestart bool
@@ -135,7 +104,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
 		if requeueAfter == 0 {
-			// hardcoding a default horizon here, perhaps we will want make this value public?
+			// hardcoding a default horizon here, perhaps we will want to make this value public?
 			requeueAfter = computeHorizonWithJitter(time.Second * 60)
 		}
 
@@ -183,41 +152,22 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
-	if vaultSecret.Raw == nil {
-		return nil, fmt.Errorf("raw portion of vault secret was nil")
-	}
-
-	b, err := json.Marshal(vaultSecret.Raw.Data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal raw Vault secret: %s", err)
-	}
-	k8sSecretData := map[string][]byte{
-		"_raw": b,
-	}
-	for k, v := range vaultSecret.Data {
-		if k == "_raw" {
-			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
-		}
-		var m []byte
-		switch vTyped := v.(type) {
-		case string:
-			m = []byte(vTyped)
-		default:
-			m, err = json.Marshal(vTyped)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal key %q from Vault secret: %s", k, err)
-			}
-		}
-		k8sSecretData[k] = m
-	}
-	return k8sSecretData, nil
-}
-
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
+}
+
+func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.ReadRequest, error) {
+	var kvReq vault.ReadRequest
+	switch s.Type {
+	case consts.KVSecretTypeV1:
+		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path)
+	case consts.KVSecretTypeV2:
+		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version)
+	default:
+		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
+	}
+	return kvReq, nil
 }

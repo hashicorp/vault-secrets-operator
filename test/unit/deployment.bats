@@ -65,20 +65,31 @@ load _helpers
     [ "${actual}" = "200Mi" ]
 }
 
-@test "controller/Deployment: default resources for controller" {
+@test "controller/Deployment: default resources for controller and job" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+   local controller=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .resources' | tee /dev/stderr)
+   local job=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .resources' | tee /dev/stderr)
+
+   local actual=$(echo "$controller" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "10m" ]
-   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "64Mi" ]
-   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "500m" ]
-   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.memory' | tee /dev/stderr)
+    [ "${actual}" = "128Mi" ]
+   local actual=$(echo "$job" | yq '.requests.cpu' | tee /dev/stderr)
+    [ "${actual}" = "10m" ]
+   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
+    [ "${actual}" = "64Mi" ]
+   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
+    [ "${actual}" = "500m" ]
+   actual=$(echo "$job" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "128Mi" ]
 }
 
@@ -91,15 +102,26 @@ load _helpers
       --set 'controller.manager.resources.limits.memory=200Mi' \
       --set 'controller.manager.resources.limits.cpu=200m' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq '.' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
+   local controller=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .resources' | tee /dev/stderr)
+   local job=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .resources' | tee /dev/stderr)
+
+   local actual=$(echo "$controller" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "100m" ]
-   actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.requests.memory' | tee /dev/stderr)
     [ "${actual}" = "100Mi" ]
-   actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "200m" ]
-   actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
+   actual=$(echo "$controller" | yq '.limits.memory' | tee /dev/stderr)
+    [ "${actual}" = "200Mi" ]
+   actual=$(echo "$job" | yq '.requests.cpu' | tee /dev/stderr)
+    [ "${actual}" = "100m" ]
+   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
+    [ "${actual}" = "100Mi" ]
+   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
+    [ "${actual}" = "200m" ]
+   actual=$(echo "$job" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "200Mi" ]
 }
 
@@ -154,6 +176,90 @@ load _helpers
 
    local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds=5"])' | tee /dev/stderr)
     [ "${actual}" = "true" ]
+}
+
+# podSecurityContext
+@test "controller/Deployment: controller.podSecurityContext set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.securityContext' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .runAsNonRoot' | tee /dev/stderr)
+   [ "${actual}" = "true" ]
+
+   local actual=$(echo "$object" | yq 'select(documentIndex == 2) | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .runAsNonRoot' | tee /dev/stderr)
+   [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: controller.podSecurityContext can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.podSecurityContext.runAsGroup=2000' \
+      --set 'controller.podSecurityContext.runAsUser=2000' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.securityContext' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .runAsGroup' | tee /dev/stderr)
+   [ "${actual}" = '2000' ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .runAsUser'| tee /dev/stderr)
+   [ "${actual}" = '2000' ]
+
+   local actual=$(echo "$object" | yq 'select(documentIndex == 2) | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .runAsGroup' | tee /dev/stderr)
+   [ "${actual}" = '2000' ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .runAsUser'| tee /dev/stderr)
+   [ "${actual}" = '2000' ]
+}
+
+# securityContext
+@test "controller/Deployment: controller.{manager,kube-rbac-proxy}.securityContext set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+
+    local actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+}
+
+@test "controller/Deployment: controller.{manager,kube-rbac-proxy}.securityContext can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.securityContext.allowPrivilegeEscalation=true' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+   [ "${actual}" = 'true' ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext.allowPrivilegeEscalation'| tee /dev/stderr)
+   [ "${actual}" = 'true' ]
+
+   local actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
+   [ "${actual}" = 'true' ]
 }
 
 # kubernetesClusterDomain
@@ -219,6 +325,48 @@ load _helpers
    [ "${actual}" = 'value1' ]
    actual=$(echo "$object" | yq '.annot2'| tee /dev/stderr)
    [ "${actual}" = 'value2' ]
+}
+
+#--------------------------------------------------------------------
+# terminationGracePeriodSeconds
+
+@test "controller/Deployment: default terminationGracePeriodSeconds when revokeClientCacheOnUninstall is false by default" {
+  cd `chart_dir`
+  local actual=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.terminationGracePeriodSeconds | select(documentIndex == 1)' | tee /dev/stderr)
+   [ "${actual}" = "120" ]
+}
+
+#--------------------------------------------------------------------
+# preDeleteHookTimeoutSeconds
+
+@test "controller/Deployment: default preDeleteHookTimeoutSeconds when revokeClientCacheOnUninstall is false by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=120"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+#--------------------------------------------------------------------
+# when revokeClientCacheOnUninstall is true
+
+@test "controller/Deployment: correct args when revokeClientCacheOnUninstall is true" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.revokeClientCacheOnUninstall=true' \
+      --set 'controller.preDeleteHookTimeoutSeconds=180' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq 'contains(["--uninstall", "--revoke-client-cache","--pre-delete-hook-timeout-seconds=180"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
 }
 
 #--------------------------------------------------------------------
@@ -354,6 +502,89 @@ load _helpers
 }
 
 #--------------------------------------------------------------------
+# hostAliases
+
+@test "controller/Deployment: hostAliases not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.hostAliases | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: hostAliases can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.hostAliases[0].ip=192.168.1.100' \
+      --set 'controller.hostAliases[0].hostnames={vault.example.com}' \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.hostAliases | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '2' ]
+   actual=$(echo "$object" | yq '.[0].ip' | tee /dev/stderr)
+   [ "${actual}" = '192.168.1.100' ]
+   actual=$(echo "$object" | yq '.[0].hostnames | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.[0].hostnames[0]' | tee /dev/stderr)
+   [ "${actual}" = 'vault.example.com' ]
+}
+
+#--------------------------------------------------------------------
+# affinity
+
+@test "controller/Deployment: affinity not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.affinity | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: affinity can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set "controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=topology.kubernetes.io/zone" \
+      --set "controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=In" \
+      --set "controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values={antarctica-east1,antarctica-west1}" \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.affinity | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions | length' | tee /dev/stderr)
+   [ "${actual}" = '1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0] | length' | tee /dev/stderr)
+   [ "${actual}" = '3' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key' | tee /dev/stderr)
+   [ "${actual}" = 'topology.kubernetes.io/zone' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator' | tee /dev/stderr)
+   [ "${actual}" = 'In' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values | length' | tee /dev/stderr)
+   [ "${actual}" = '2' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]' | tee /dev/stderr)
+   [ "${actual}" = 'antarctica-east1' ]
+   actual=$(echo "$object" | yq '.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[1]' | tee /dev/stderr)
+   [ "${actual}" = 'antarctica-west1' ]
+}
+
+#--------------------------------------------------------------------
 # extraEnv values
 
 @test "controller/Deployment: extra env string aren't set by default" {
@@ -437,4 +668,35 @@ load _helpers
     [ "${actual}" = 'Hello World!' ]
     actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
     [ "${actual}" = '4' ]
+}
+
+#--------------------------------------------------------------------
+# extraLabels
+
+@test "controller/Deployment: extraLabels not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+}
+
+@test "controller/Deployment: extraLabels can be set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.extraLabels.label1=value1' \
+      --set 'controller.extraLabels.label2=value2' \
+      . | tee /dev/stderr |
+      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "5" ]
+   actual=$(echo "$object" | yq '.label1' | tee /dev/stderr)
+   [ "${actual}" = 'value1' ]
+   actual=$(echo "$object" | yq '.label2'| tee /dev/stderr)
+   [ "${actual}" = 'value2' ]
 }

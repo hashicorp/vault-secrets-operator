@@ -1,11 +1,14 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -19,7 +22,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 )
 
 func Test_defaultClient_CheckExpiry(t *testing.T) {
@@ -180,7 +183,7 @@ func Test_defaultClient_Init(t *testing.T) {
 		},
 		Spec: secretsv1beta1.VaultAuthSpec{
 			VaultConnectionRef: consts.NameDefault,
-			Method:             credentials.ProviderMethodKubernetes,
+			Method:             vault.ProviderMethodKubernetes,
 			Mount:              "kubernetes",
 			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 				ServiceAccount: consts.NameDefault,
@@ -518,6 +521,229 @@ func Test_defaultClient_Validate(t *testing.T) {
 				lastWatcherErr: tt.lastWatcherErr,
 			}
 			tt.wantErr(t, c.Validate(), fmt.Sprintf("Validate()"))
+		})
+	}
+}
+
+func Test_defaultClient_Read(t *testing.T) {
+	handlerFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+		m, err := json.Marshal(
+			&api.Secret{
+				Data: map[string]interface{}{
+					"foo": "bar",
+				},
+			},
+		)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(m)
+	}
+
+	ctx := context.Background()
+	tests := []struct {
+		name           string
+		request        ReadRequest
+		handler        *testHandler
+		expectRequests int
+		expectPaths    []string
+		expectParams   []map[string]interface{}
+		expectValues   []url.Values
+		want           Response
+		wantErr        assert.ErrorAssertionFunc
+	}{
+		{
+			name:    "default-request",
+			request: NewReadRequest("foo/bar", nil),
+			handler: &testHandler{
+				handlerFunc: handlerFunc,
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/foo/bar"},
+			want: &defaultResponse{
+				secret: &api.Secret{
+					Data: map[string]interface{}{
+						"foo": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "fail-default-nil-response",
+			request: NewReadRequest("foo/bar", nil),
+			handler: &testHandler{
+				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				},
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/foo/bar"},
+			want:           nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					fmt.Sprintf(`empty response from Vault, path="foo/bar"`))
+			},
+		},
+		{
+			name:    "kv-v1-request",
+			request: NewKVReadRequestV1("kv-v1", "secrets"),
+			handler: &testHandler{
+				handlerFunc: handlerFunc,
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/kv-v1/secrets"},
+			want: &kvV1Response{
+				secret: &api.Secret{
+					Data: map[string]interface{}{
+						"foo": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "kv-v2-request",
+			request: NewKVReadRequestV2("kv-v2", "secrets", 0),
+			handler: &testHandler{
+				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+					m, err := json.Marshal(
+						&api.Secret{
+							Data: map[string]interface{}{
+								"data": map[string]interface{}{
+									"foo": "bar",
+								},
+							},
+						},
+					)
+					if err != nil {
+						w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+
+					w.WriteHeader(http.StatusOK)
+					w.Write(m)
+				},
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/kv-v2/data/secrets"},
+			want: &kvV2Response{
+				secret: &api.Secret{
+					Data: map[string]interface{}{
+						"data": map[string]interface{}{
+							"foo": "bar",
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "kv-v2-request-with-version",
+			request: NewKVReadRequestV2("kv-v2", "secrets", 1),
+			handler: &testHandler{
+				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+					m, err := json.Marshal(
+						&api.Secret{
+							Data: map[string]interface{}{
+								"data": map[string]interface{}{
+									"foo": "bar",
+								},
+							},
+						},
+					)
+					if err != nil {
+						w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+
+					w.WriteHeader(http.StatusOK)
+					w.Write(m)
+				},
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/kv-v2/data/secrets"},
+			expectValues: []url.Values{
+				{
+					"version": []string{"1"},
+				},
+			},
+			want: &kvV2Response{
+				secret: &api.Secret{
+					Data: map[string]interface{}{
+						"data": map[string]interface{}{
+							"foo": "bar",
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "fail-kv-v1-nil-response",
+			request: NewKVReadRequestV1("kv-v1", "secrets"),
+			handler: &testHandler{
+				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				},
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/kv-v1/secrets"},
+			want:           nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					fmt.Sprintf(`empty response from Vault, path="kv-v1/secrets"`))
+			},
+		},
+		{
+			name:    "fail-kv-v2-nil-response",
+			request: NewKVReadRequestV2("kv-v2", "secrets", 0),
+			handler: &testHandler{
+				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				},
+			},
+			expectRequests: 1,
+			expectPaths:    []string{"/v1/kv-v2/data/secrets"},
+			want:           nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					fmt.Sprintf(`empty response from Vault, path="kv-v2/data/secrets"`))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config, l := NewTestHTTPServer(t, tt.handler.handler())
+			t.Cleanup(func() {
+				l.Close()
+			})
+
+			client, err := api.NewClient(config)
+			require.NoError(t, err)
+
+			c := &defaultClient{
+				client: client,
+				// needed for Client Prometheus metrics
+				connObj: &secretsv1beta1.VaultConnection{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "bar",
+					},
+				},
+			}
+			got, err := c.Read(ctx, tt.request)
+			if !tt.wantErr(t, err, fmt.Sprintf("ReadKV(%v, %v)", ctx, tt.request)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "ReadKV(%v, %v)", ctx, tt.request)
+			assert.Equal(t, tt.expectRequests, tt.handler.requestCount)
+			assert.Equal(t, tt.expectPaths, tt.handler.paths)
+			assert.Equal(t, tt.expectParams, tt.handler.params)
+			assert.Equal(t, tt.expectValues, tt.handler.values)
 		})
 	}
 }

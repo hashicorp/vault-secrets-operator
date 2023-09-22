@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package main
 
@@ -17,6 +17,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -28,6 +30,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
@@ -35,9 +38,9 @@ import (
 )
 
 var (
-	scheme              = runtime.NewScheme()
-	setupLog            = ctrl.Log.WithName("setup")
-	finalizerCleanupLog = ctrl.Log.WithName("cleanup")
+	scheme     = runtime.NewScheme()
+	setupLog   = ctrl.Log.WithName("setup")
+	cleanupLog = ctrl.Log.WithName("cleanup")
 )
 
 func init() {
@@ -54,6 +57,7 @@ func main() {
 	defaultPersistenceModel := persistenceModelNone
 	vdsOptions := controller.Options{}
 	cfc := vclient.DefaultCachingClientFactoryConfig()
+	startTime := time.Now()
 
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -61,7 +65,11 @@ func main() {
 	var clientCachePersistenceModel string
 	var printVersion bool
 	var outputFormat string
-	var finalizerCleanup bool
+	var uninstall bool
+	var revokeClientCache bool
+	var preDeleteHookTimeoutSeconds int
+
+	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
 	flag.StringVar(&outputFormat, "output", "", "Output format for the operator version information (yaml or json)")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -77,7 +85,12 @@ func main() {
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
-	flag.BoolVar(&finalizerCleanup, "finalizer-cleanup", false, "Remove finalizers from all CRs in preparation for shutdown.")
+	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
+	flag.BoolVar(&revokeClientCache, "revoke-client-cache", false, "Revoke the client cache "+
+		"upon Helm uninstall")
+	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
+		"Pre-delete hook timeout in seconds")
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -118,33 +131,59 @@ func main() {
 
 	config := ctrl.GetConfigOrDie()
 
-	// This flag is passed by the pre-delete hook on helm uninstall.
-	if finalizerCleanup {
-		finalizerCleanupLog.Info("commencing cleanup of finalizers")
-		var finalizerCleanupClient client.Client
-		finalizerCleanupClient, err := client.New(config, client.Options{
-			Scheme: scheme,
-		})
+	defaultClient, err := client.NewWithWatch(config, client.Options{
+		Scheme: scheme,
+	})
+	if err != nil {
+		setupLog.Error(err, "Failed to instantiate a default Client")
+		os.Exit(1)
+	}
 
-		d := time.Now().Add(time.Second * 60)
-		shutdownCtx, cancel := context.WithDeadline(context.Background(), d)
+	// This is the code path where we do Helm uninstall, and decide the shutdownMode for ClientFactory
+	if uninstall {
+		cleanupLog.Info("commencing cleanup of finalizers")
+		preDeleteDeadline := startTime.Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
+		preDeleteDeadlineCtx, cancel := context.WithDeadline(context.Background(), preDeleteDeadline)
 		// Even though ctx will be expired, it is good practice to call its
-		// cancellation function in any case. Failure to do so may keep the
+		// cancellation functions in any case. Failure to do so may keep the
 		// context and its parent alive longer than necessary.
 		defer cancel()
 
-		finalizerCleanupLog.Info("deleting finalizers")
-		if err = controllers.RemoveAllFinalizers(shutdownCtx, finalizerCleanupClient, finalizerCleanupLog); err != nil {
-			finalizerCleanupLog.Error(err, "unable to remove finalizers")
+		cleanupLog.Info("deleting finalizers")
+		if err = controllers.RemoveAllFinalizers(preDeleteDeadlineCtx, defaultClient, cleanupLog); err != nil {
+			cleanupLog.Error(err, "unable to remove finalizers")
 			os.Exit(1)
 		}
-		return
+
+		cleanupLog.Info("Starting the operator uninstall process")
+		shutdownMode := vclient.ShutDownModeNoRevoke
+		if revokeClientCache {
+			shutdownMode = vclient.ShutDownModeRevoke
+		}
+
+		if err = shutDownOperator(preDeleteDeadlineCtx, defaultClient, shutdownMode); err != nil {
+			cleanupLog.Error(err, "Failed to complete the operator uninstall process")
+			os.Exit(1)
+		}
+
+		cleanupLog.Info("Successfully completed the operator uninstall process")
+		os.Exit(0)
+	}
+
+	collectMetrics := metricsAddr != ""
+	if collectMetrics {
+		cfc.MetricsRegistry.MustRegister(
+			metrics.NewBuildInfoGauge(versionInfo),
+		)
+		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Scheme: scheme,
+		Metrics: server.Options{
+			BindAddress: metricsAddr,
+		},
+		WebhookServer:          webhook.NewServer(webhook.Options{Port: 9443}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "b0d477c0.hashicorp.com",
@@ -164,16 +203,8 @@ func main() {
 		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
-
 	ctx := ctrl.SetupSignalHandler()
 
-	collectMetrics := metricsAddr != ""
-	if collectMetrics {
-		cfc.MetricsRegistry.MustRegister(
-			metrics.NewBuildInfoGauge(versionInfo),
-		)
-		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
-	}
 	var clientFactory vclient.CachingClientFactory
 	{
 		switch clientCachePersistenceModel {
@@ -190,14 +221,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		defaultClient, err := client.New(config, client.Options{
-			Scheme: mgr.GetScheme(),
-		})
-		if err != nil {
-			setupLog.Error(err, "Failed to instantiate a default Client")
-			os.Exit(1)
-		}
-
 		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
@@ -205,15 +228,25 @@ func main() {
 			setupLog.Error(err, "Failed to setup the Vault ClientFactory")
 			os.Exit(1)
 		}
+
+		watcher, err := vclient.WatchManagerConfigMap(ctx, defaultClient)
+		if err != nil {
+			setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
+			os.Exit(1)
+		}
+
+		go vclient.WaitForManagerConfigMapModified(ctx, watcher, defaultClient, vclient.OnShutDown(clientFactory))
 	}
 
-	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
+	hmacValidator := helpers.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
+	secretDataBuilder := helpers.NewSecretsDataBuilder()
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultStaticSecret"),
-		HMACValidator: hmacValidator,
-		ClientFactory: clientFactory,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("VaultStaticSecret"),
+		SecretDataBuilder: secretDataBuilder,
+		HMACValidator:     hmacValidator,
+		ClientFactory:     clientFactory,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
@@ -255,6 +288,23 @@ func main() {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
 	}
+	if err = (&controllers.HCPAuthReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "HCPAuth")
+		os.Exit(1)
+	}
+	if err = (&controllers.HCPVaultSecretsAppReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
+		SecretDataBuilder: secretDataBuilder,
+		HMACValidator:     hmacValidator,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -270,10 +320,44 @@ func main() {
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
 	)
-
 	mgr.GetCache()
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
+	}
+}
+
+func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDownMode) error {
+	cm, err := vclient.GetManagerConfigMap(ctx, c)
+	if err != nil {
+		return err
+	}
+
+	if err = vclient.SetShutDownMode(ctx, c, cm, mode); err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() != nil {
+				return fmt.Errorf("shutdown context canceled err=%s", ctx.Err())
+			}
+			return nil
+		default:
+			// Periodically check for shutDownStatus updates as the ClientFactory shutdown process can take a while
+			time.Sleep(500 * time.Millisecond)
+			cm, err = vclient.GetManagerConfigMap(ctx, c)
+			if err != nil {
+				return fmt.Errorf("failed to get the manager configmap err=%s", err)
+			}
+			status := vclient.GetShutDownStatus(cm)
+			switch status {
+			case vclient.ShutDownStatusDone:
+				return nil
+			case vclient.ShutDownStatusFailed:
+				return fmt.Errorf("failed to shut down")
+			}
+		}
 	}
 }

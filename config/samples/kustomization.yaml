@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 ## Append samples you want in your CSV to this file as resources ##
 resources:
@@ -9,4 +9,6 @@ resources:
 - secrets_v1beta1_vaultauth.yaml
 - secrets_v1beta1_vaultconnection.yaml
 - secrets_v1beta1_vaultdynamicsecret.yaml
+- secrets_v1beta1_hcpsecretsapp.yaml
+- secrets_v1beta1_hcpauth.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

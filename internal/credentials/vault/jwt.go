@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
-package credentials
+package vault
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var _ CredentialProvider = (*JWTCredentialProvider)(nil)
@@ -48,7 +49,7 @@ func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			Namespace: l.providerNamespace,
 			Name:      l.authObj.Spec.JWT.SecretRef,
 		}
-		l.tokenSecret, err = getSecret(ctx, client, key)
+		l.tokenSecret, err = helpers.GetSecret(ctx, client, key)
 		if err != nil {
 			return err
 		}
@@ -83,7 +84,7 @@ func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 			return nil, err
 		}
 
-		tr, err := requestSAToken(ctx, client, sa, l.authObj.Spec.JWT.TokenExpirationSeconds, l.authObj.Spec.JWT.TokenAudiences)
+		tr, err := helpers.RequestSAToken(ctx, client, sa, l.authObj.Spec.JWT.TokenExpirationSeconds, l.authObj.Spec.JWT.TokenAudiences)
 		if err != nil {
 			logger.Error(err, "Failed to get service account token")
 			return nil, err
@@ -101,7 +102,7 @@ func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.JWT.SecretRef,
 	}
-	l.tokenSecret, err = getSecret(ctx, client, key)
+	l.tokenSecret, err = helpers.GetSecret(ctx, client, key)
 	if err != nil {
 		return nil, err
 	}

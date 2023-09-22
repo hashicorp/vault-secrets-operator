@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 resource "helm_release" "kube-prometheus" {
   count            = var.install_kube_prometheus ? 1 : 0

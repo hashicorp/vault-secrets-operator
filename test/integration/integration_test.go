@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
@@ -41,8 +42,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 var (
@@ -174,12 +176,12 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				return "", err
 			}
 
-			if _, ok := destSecret.Data["_raw"]; !ok {
-				return "", fmt.Errorf("secret hasn't been synced yet, missing '_raw' field")
+			if _, ok := destSecret.Data[helpers.SecretDataKeyRaw]; !ok {
+				return "", fmt.Errorf("secret hasn't been synced yet, missing '%s' field", helpers.SecretDataKeyRaw)
 			}
 
 			var rawSecret map[string]interface{}
-			err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
+			err = json.Unmarshal(destSecret.Data[helpers.SecretDataKeyRaw], &rawSecret)
 			require.NoError(t, err)
 			if _, ok := rawSecret["data"]; ok {
 				rawSecret = rawSecret["data"].(map[string]interface{})
@@ -187,7 +189,8 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 			for k, v := range expectedData {
 				// compare expected secret data to _raw in the k8s secret
 				if !reflect.DeepEqual(v, rawSecret[k]) {
-					err = errors.Join(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
+					err = errors.Join(err,
+						fmt.Errorf("expected data '%s:%s' missing from %s: %#v", k, v, helpers.SecretDataKeyRaw, rawSecret))
 				}
 				// compare expected secret k/v to the top level items in the k8s secret
 				if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
@@ -195,7 +198,9 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				}
 			}
 			if len(expectedData) != len(rawSecret) {
-				err = errors.Join(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
+				err = errors.Join(err,
+					fmt.Errorf("expected data length %d does not match %s length %d",
+						len(expectedData), helpers.SecretDataKeyRaw, len(rawSecret)))
 			}
 			// the k8s secret has an extra key because of the "_raw" item
 			if len(expectedData) != len(destSecret.Data)-1 {
@@ -292,6 +297,11 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 	return true, nil
 }
 
+type revocationK8sOutputs struct {
+	AuthRole   string `json:"auth_role"`
+	PolicyName string `json:"policy_name"`
+}
+
 type authMethodsK8sOutputs struct {
 	AuthRole      string `json:"auth_role"`
 	AppRoleRoleID string `json:"role_id"`
@@ -332,7 +342,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 		// these keys typically have variable values that make them difficult to compare,
 		// we can ensure that they are at least present and have a length > 0 in the
 		// resulting Secret data.
-		expectedPresentOnly["_raw"] = 1
+		expectedPresentOnly[helpers.SecretDataKeyRaw] = 1
 		expectedPresentOnly["last_vault_rotation"] = 1
 		expectedPresentOnly["ttl"] = 1
 	}
@@ -372,7 +382,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient.Object, sec *corev1.Secret) {
 	t.Helper()
 
-	meta, err := helpers.NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	require.NoError(t, err)
 
 	if meta.Destination.Create {
@@ -497,7 +507,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
 	))
 }
 
@@ -590,10 +600,92 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			credentials.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
+			vault.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))
 
 	return secretObj
+}
+
+func awaitSecretSynced(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, expectedData map[string][]byte,
+) (*corev1.Secret, error) {
+	t.Helper()
+
+	var s *corev1.Secret
+	err := backoff.Retry(
+		func() error {
+			m, err := common.NewSyncableSecretMetaData(obj)
+			if err != nil {
+				return backoff.Permanent(err)
+			}
+
+			sec, exists, err := helpers.GetSyncableSecret(ctx, client, obj)
+			if err != nil {
+				return err
+			} else if !exists {
+				return fmt.Errorf("expected secret '%s/%s' inexistent",
+					obj.GetNamespace(), m.Destination.Name,
+				)
+			}
+
+			if _, ok := sec.Data[helpers.SecretDataKeyRaw]; !ok {
+				return fmt.Errorf("secret hasn't been synced yet, missing '%s' field",
+					helpers.SecretDataKeyRaw,
+				)
+			}
+
+			actualData := make(map[string][]byte)
+			for k, v := range sec.Data {
+				if k == helpers.SecretDataKeyRaw {
+					continue
+				}
+				actualData[k] = v
+			}
+
+			if !reflect.DeepEqual(actualData, expectedData) {
+				return fmt.Errorf(
+					"incomplete Secret data, expected=%#v, actual=%#v", expectedData, actualData)
+			}
+
+			s = sec
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+	)
+
+	return s, err
+}
+
+func copyTerraformDir(t *testing.T, src, tempDest string) string {
+	t.Helper()
+	dir, err := files.CopyTerraformFolderToDest(src, tempDest, "terraform")
+	require.NoError(t, err)
+	return dir
+}
+
+func copyModulesDir(t *testing.T, tfDir string) string {
+	t.Helper()
+	modulesDestDir := path.Join(tfDir, "..", "..", "modules")
+	require.NoError(t, os.Mkdir(modulesDestDir, 0o755))
+	require.NoError(t,
+		files.CopyFolderContents(
+			path.Join(testRoot, "modules"),
+			modulesDestDir,
+		))
+
+	return modulesDestDir
+}
+
+func copyChartDir(t *testing.T, tfDir string) string {
+	t.Helper()
+	chartDestDir := path.Join(tfDir, "..", "..", "chart")
+	require.NoError(t, os.Mkdir(chartDestDir, 0o755))
+	require.NoError(t,
+		files.CopyFolderContents(
+			path.Join(testRoot, "..", "..", "chart"),
+			chartDestDir,
+		))
+	return chartDestDir
 }

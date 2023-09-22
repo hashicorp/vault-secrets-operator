@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package v1beta1
 
@@ -12,9 +12,10 @@ import (
 
 // VaultStaticSecretSpec defines the desired state of VaultStaticSecret
 type VaultStaticSecretSpec struct {
-	// VaultAuthRef of the VaultAuth resource
-	// If no value is specified the Operator will default to the `default` VaultAuth,
-	// configured in its own Kubernetes namespace.
+	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
+	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
+	// default to the `default` VaultAuth, configured in its own Kubernetes namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 	// Namespace to get the secret from in Vault
 	Namespace string `json:"namespace,omitempty"`
@@ -31,7 +32,7 @@ type VaultStaticSecretSpec struct {
 	// Type of the Vault static secret
 	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
 	Type string `json:"type"`
-	// RefreshAfter a period of time, in duration notation
+	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// HMACSecretData determines whether the Operator computes the
 	// HMAC of the Secret's data. The MAC value will be stored in

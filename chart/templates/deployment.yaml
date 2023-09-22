@@ -1,6 +1,6 @@
 {{/*
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 */}}
 
 apiVersion: v1
@@ -31,6 +31,9 @@ spec:
     metadata:
       labels:
         control-plane: controller-manager
+      {{- if  .Values.controller.extraLabels }}
+        {{- toYaml .Values.controller.extraLabels | nindent 8 }}
+      {{- end }}
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
@@ -55,7 +58,7 @@ spec:
           protocol: TCP
         resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
+          {{- toYaml .Values.controller.securityContext | nindent 10 }}
       - name: manager
         args:
         - --health-probe-bind-address=:8081
@@ -103,14 +106,18 @@ spec:
           periodSeconds: 10
         resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
+          {{- toYaml .Values.controller.securityContext | nindent 10 }}
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
       securityContext:
-        runAsNonRoot: true
+        {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
+      {{- if .Values.controller.hostAliases }}
+      hostAliases:
+      {{- toYaml .Values.controller.hostAliases | nindent 8 }}
+      {{- end }}
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:
       {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
@@ -118,6 +125,10 @@ spec:
       {{- if .Values.controller.tolerations }}
       tolerations:
       {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controller.affinity }}
+      affinity:
+      {{- toYaml .Values.controller.affinity | nindent 8 }}
       {{- end }}
       volumes:
       - downwardAPI:
@@ -148,13 +159,22 @@ spec:
       name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
     spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      securityContext:
+        {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
       containers:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         args:
-        - --finalizer-cleanup=true
+        - --uninstall
+        {{- if .Values.controller.manager.clientCache.revokeClientCacheOnUninstall }}
+        - --revoke-client-cache
+        {{- end }}
+        - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
         command:
         - /vault-secrets-operator
+        resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.controller.securityContext | nindent 10 }}
       restartPolicy: Never
       {{- if .Values.controller.nodeSelector }}
       nodeSelector:

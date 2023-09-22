@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
-package credentials
+package vault
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 const (
@@ -56,7 +57,7 @@ func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			Namespace: l.providerNamespace,
 			Name:      l.authObj.Spec.AWS.SecretRef,
 		}
-		credsSecret, err := getSecret(ctx, client, key)
+		credsSecret, err := helpers.GetSecret(ctx, client, key)
 		if err != nil {
 			return err
 		}
@@ -68,7 +69,7 @@ func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			Namespace: l.providerNamespace,
 			Name:      l.authObj.Spec.AWS.IRSAServiceAccount,
 		}
-		irsaServiceAccount, err := getServiceAccount(ctx, client, key)
+		irsaServiceAccount, err := helpers.GetServiceAccount(ctx, client, key)
 		if err != nil {
 			return err
 		}
@@ -81,7 +82,7 @@ func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 			Namespace: common.OperatorNamespace,
 			Name:      K8sRootCA,
 		}
-		kubeRootCA, err := getConfigMap(ctx, client, key)
+		kubeRootCA, err := helpers.GetConfigMap(ctx, client, key)
 		if err != nil {
 			return err
 		}
@@ -103,7 +104,7 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 			Namespace: l.providerNamespace,
 			Name:      l.authObj.Spec.AWS.SecretRef,
 		}
-		credsSecret, err = getSecret(ctx, client, key)
+		credsSecret, err = helpers.GetSecret(ctx, client, key)
 		if err != nil {
 			logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AWS.SecretRef)
 			return nil, err
@@ -113,7 +114,7 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 			Namespace: l.providerNamespace,
 			Name:      l.authObj.Spec.AWS.IRSAServiceAccount,
 		}
-		irsaServiceAccount, err := getServiceAccount(ctx, client, key)
+		irsaServiceAccount, err := helpers.GetServiceAccount(ctx, client, key)
 		if err != nil {
 			logger.Error(err, "Failed to get IRSA service account", "service_account", l.authObj.Spec.AWS.IRSAServiceAccount)
 			return nil, err
@@ -123,7 +124,7 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 			return nil, err
 		}
 
-		token, err := requestSAToken(ctx, client, irsaServiceAccount, irsaConfig.TokenExpiration, []string{irsaConfig.Audience})
+		token, err := helpers.RequestSAToken(ctx, client, irsaServiceAccount, irsaConfig.TokenExpiration, []string{irsaConfig.Audience})
 		if err != nil {
 			logger.Error(err, "Failed to get service account token")
 			return nil, err
