@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 data "kubernetes_namespace" "operator" {
+  count = var.deploy_operator_via_helm ? 0 : 1
   metadata {
     name = var.operator_namespace
   }
@@ -9,8 +10,8 @@ data "kubernetes_namespace" "operator" {
 # service account for the operator
 resource "kubernetes_service_account" "operator" {
   metadata {
-    namespace = data.kubernetes_namespace.operator.metadata[0].name
-    name      = "${local.name_prefix}-operator"
+    namespace = local.operator_namespace
+    name      = local.operator_service_account_name
   }
 }
 
@@ -49,12 +50,13 @@ EOT
 }
 
 resource "kubernetes_manifest" "vault-auth-operator" {
+  count = var.deploy_operator_via_helm ? 0 : 1
   manifest = {
     apiVersion = "secrets.hashicorp.com/v1beta1"
     kind       = "VaultAuth"
     metadata = {
       name      = "${local.name_prefix}-operator"
-      namespace = data.kubernetes_namespace.operator.metadata[0].name
+      namespace = local.operator_namespace
       labels = {
         cacheStorageEncryption = "true"
       }
@@ -81,8 +83,8 @@ resource "vault_kubernetes_auth_backend_role" "operator" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.dev.backend
   role_name                        = local.auth_role_operator
-  bound_service_account_names      = [kubernetes_service_account.operator.metadata[0].name]
-  bound_service_account_namespaces = [kubernetes_service_account.operator.metadata[0].namespace]
+  bound_service_account_names      = [local.operator_service_account_name]
+  bound_service_account_namespaces = [var.operator_namespace]
   token_period                     = 120
   token_policies = [
     vault_policy.operator.name,

@@ -34,9 +34,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -308,22 +310,20 @@ type authMethodsK8sOutputs struct {
 }
 
 type dynamicK8SOutputs struct {
-	NamePrefix       string   `json:"name_prefix"`
-	Namespace        string   `json:"namespace"`
-	K8sNamespace     string   `json:"k8s_namespace"`
-	K8sConfigContext string   `json:"k8s_config_context"`
-	AuthMount        string   `json:"auth_mount"`
-	AuthPolicy       string   `json:"auth_policy"`
-	AuthRole         string   `json:"auth_role"`
-	DBRole           string   `json:"db_role"`
-	DBRoleStatic     string   `json:"db_role_static"`
-	DBRoleStaticUser string   `json:"db_role_static_user"`
-	DBPath           string   `json:"db_path"`
-	TransitPath      string   `json:"transit_path"`
-	TransitKeyName   string   `json:"transit_key_name"`
-	TransitRef       string   `json:"transit_ref"`
-	K8sDBSecrets     []string `json:"k8s_db_secret"`
-	DeploymentName   string   `json:"deployment_name"`
+	NamePrefix       string `json:"name_prefix"`
+	Namespace        string `json:"namespace"`
+	K8sNamespace     string `json:"k8s_namespace"`
+	K8sConfigContext string `json:"k8s_config_context"`
+	AuthMount        string `json:"auth_mount"`
+	AuthPolicy       string `json:"auth_policy"`
+	AuthRole         string `json:"auth_role"`
+	DBRole           string `json:"db_role"`
+	DBRoleStatic     string `json:"db_role_static"`
+	DBRoleStaticUser string `json:"db_role_static_user"`
+	DBPath           string `json:"db_path"`
+	TransitPath      string `json:"transit_path"`
+	TransitKeyName   string `json:"transit_key_name"`
+	TransitRef       string `json:"transit_ref"`
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
@@ -507,7 +507,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 60),
 	))
 }
 
@@ -517,7 +517,13 @@ func assertRolloutRestarts(
 ) error {
 	t.Helper()
 
+	type status struct {
+		Replicas      *int32
+		ReadyReplicas int32
+	}
 	var errs error
+	var s *status
+
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
 	for _, target := range targets {
@@ -534,18 +540,21 @@ func assertRolloutRestarts(
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "StatefulSet":
 			var o appsv1.StatefulSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "ReplicaSet":
 			var o appsv1.ReplicaSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -572,6 +581,9 @@ func assertRolloutRestarts(
 		}
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
+		if s.ReadyReplicas != *s.Replicas {
+			errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
+		}
 	}
 	return errs
 }
@@ -688,4 +700,55 @@ func copyChartDir(t *testing.T, tfDir string) string {
 			chartDestDir,
 		))
 	return chartDestDir
+}
+
+func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) *appsv1.Deployment {
+	t.Helper()
+	depObj := &appsv1.Deployment{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: key.Namespace,
+			Name:      key.Name,
+			Labels: map[string]string{
+				"test": key.Name,
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &v1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": key.Name,
+				},
+			},
+			Replicas: pointer.Int32(3),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: v1.ObjectMeta{
+					Labels: map[string]string{
+						"test": key.Name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  key.Name,
+							Image: "busybox:latest",
+							Command: []string{
+								"sh", "-c", "while : ; do sleep 10; done",
+							},
+						},
+					},
+					TerminationGracePeriodSeconds: pointer.Int64(2),
+				},
+			},
+			Strategy: appsv1.DeploymentStrategy{
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxUnavailable: &intstr.IntOrString{
+						Type:   intstr.String,
+						StrVal: "25%",
+					},
+				},
+			},
+		},
+	}
+	require.NoError(t, client.Create(ctx, depObj), "failed to create %#v", depObj)
+
+	return depObj
 }

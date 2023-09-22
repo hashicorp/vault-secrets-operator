@@ -23,8 +23,15 @@ resource "helm_release" "vault-secrets-operator" {
     value = var.enable_default_auth_method
   }
   set {
-    name  = "defaultAuthMethod.namespace"
-    value = var.operator_namespace
+    name  = "defaultAuthMethod.mount"
+    value = var.k8s_auth_default_mount
+  }
+  dynamic "set" {
+    for_each = var.vault_test_namespace != null ? [""] : []
+    content {
+      name  = "defaultAuthMethod.namespace"
+      value = var.vault_test_namespace
+    }
   }
   set {
     name  = "defaultAuthMethod.kubernetes.role"
@@ -41,5 +48,52 @@ resource "helm_release" "vault-secrets-operator" {
   set {
     name  = "controller.manager.image.tag"
     value = var.operator_image_tag
+  }
+  set {
+    name  = "controller.manager.image.tag"
+    value = var.operator_image_tag
+  }
+  set {
+    name  = "controller.manager.clientCache.persistenceModel"
+    value = var.client_cache_config.persistence_model
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.enabled"
+    value = var.client_cache_config.storage_encryption.enabled
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.mount"
+    value = var.client_cache_config.storage_encryption.mount
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.transitMount"
+    value = var.client_cache_config.storage_encryption.transit_mount
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.keyName"
+    value = var.client_cache_config.storage_encryption.key_name
+  }
+  dynamic "set" {
+    for_each = var.client_cache_config.storage_encryption.namespace != null ? [""] : []
+    content {
+      name  = "controller.manager.clientCache.storageEncryption.namespace"
+      value = var.client_cache_config.storage_encryption.namespace
+    }
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.method"
+    value = var.client_cache_config.storage_encryption.method
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.kubernetes.role"
+    value = var.client_cache_config.storage_encryption.kubernetes_auth_role
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount"
+    value = var.client_cache_config.storage_encryption.kubernetes_auth_service_account
+  }
+  set {
+    name  = "controller.manager.clientCache.storageEncryption.kubernetes.tokenAudiences"
+    value = var.client_cache_config.storage_encryption.kubernetes_auth_token_audiences
   }
 }
