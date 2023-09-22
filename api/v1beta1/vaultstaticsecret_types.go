@@ -32,7 +32,7 @@ type VaultStaticSecretSpec struct {
 	// Type of the Vault static secret
 	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
 	Type string `json:"type"`
-	// RefreshAfter a period of time, in duration notation
+	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// HMACSecretData determines whether the Operator computes the
 	// HMAC of the Secret's data. The MAC value will be stored in
