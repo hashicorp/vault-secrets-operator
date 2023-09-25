@@ -123,7 +123,7 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 		},
 	}
 
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "hvsa-tests")
 	if !testWithHelm {
 		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
 	} else {

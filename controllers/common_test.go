@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -54,6 +55,55 @@ func Test_dynamicHorizon(t *testing.T) {
 			horizon := computeDynamicHorizonWithJitter(tc.leaseDuration, tc.renewalPercent)
 			assert.GreaterOrEqual(t, horizon, tc.expectedMin)
 			assert.LessOrEqual(t, horizon, tc.expectedMax)
+		})
+	}
+}
+
+func Test_parseDurationString(t *testing.T) {
+	tests := []struct {
+		name    string
+		ds      string
+		path    string
+		min     time.Duration
+		want    time.Duration
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name:    "basic",
+			ds:      "37s",
+			path:    ".spec.foo",
+			min:     time.Second * 30,
+			want:    time.Second * 37,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "below-minimum",
+			ds:   "29s",
+			path: ".spec.foo",
+			min:  time.Second * 30,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					fmt.Sprintf("invalid value %q for %s, below the minimum allowed value %s",
+						"29s", ".spec.foo", "30s"), i...)
+			},
+		},
+		{
+			name: "invalid-duration-string",
+			ds:   "10y",
+			path: ".spec.foo",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					fmt.Sprintf("invalid value %q for %s", "10y", ".spec.foo"), i...)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDurationString(tt.ds, tt.path, tt.min)
+			if !tt.wantErr(t, err, fmt.Sprintf("parseDurationString(%v, %v, %v)", tt.ds, tt.path, tt.min)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "parseDurationString(%v, %v, %v)", tt.ds, tt.path, tt.min)
 		})
 	}
 }

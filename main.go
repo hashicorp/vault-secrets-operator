@@ -68,6 +68,7 @@ func main() {
 	var uninstall bool
 	var revokeClientCache bool
 	var preDeleteHookTimeoutSeconds int
+	var minRefreshAfterHVSA time.Duration
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -90,7 +91,8 @@ func main() {
 		"upon Helm uninstall")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
 		"Pre-delete hook timeout in seconds")
-
+	flag.DurationVar(&minRefreshAfterHVSA, "min-refresh-after-hvsa", time.Second*30,
+		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -301,6 +303,7 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
 		SecretDataBuilder: secretDataBuilder,
 		HMACValidator:     hmacValidator,
+		MinRefreshAfter:   minRefreshAfterHVSA,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
 		os.Exit(1)
