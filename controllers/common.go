@@ -9,12 +9,12 @@ import (
 	"math/rand"
 	"time"
 
-	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 var (
@@ -183,4 +183,23 @@ func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, obj
 		}
 	}
 	log.Info(fmt.Sprintf("Removed %d finalizers", cnt))
+}
+
+func parseDurationString(ds, path string, min time.Duration) (time.Duration, error) {
+	var err error
+	var d time.Duration
+	if ds != "" {
+		d, err = time.ParseDuration(ds)
+		if err != nil {
+			return 0, fmt.Errorf(
+				"invalid value %q for %s, %w",
+				ds, path, err)
+		}
+		if d < min {
+			return 0, fmt.Errorf(
+				"invalid value %q for %s, below the minimum allowed value %s",
+				ds, path, min)
+		}
+	}
+	return d, nil
 }

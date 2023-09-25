@@ -68,11 +68,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
-		d, err := time.ParseDuration(o.Spec.RefreshAfter)
+		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
 		if err != nil {
-			logger.Error(err, "Failed to parse o.Spec.RefreshAfter")
+			logger.Error(err, "Field validation failed")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
-				"Failed to parse o.Spec.RefreshAfter %s", o.Spec.RefreshAfter)
+				"Field validation failed, err=%s", err)
 			return ctrl.Result{}, err
 		}
 		requeueAfter = computeHorizonWithJitter(d)

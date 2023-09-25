@@ -5,7 +5,7 @@ terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.8.0"
+      version = "2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -92,7 +92,7 @@ module "vso-helm" {
   operator_helm_chart_path         = var.operator_helm_chart_path
   k8s_auth_default_mount           = local.auth_mount
   k8s_auth_default_role            = vault_kubernetes_auth_backend_role.dev.role_name
-  k8s_auth_default_token_audiences = "{${vault_kubernetes_auth_backend_role.dev.audience}}"
+  k8s_auth_default_token_audiences = [vault_kubernetes_auth_backend_role.dev.audience]
   k8s_vault_connection_address     = var.k8s_vault_connection_address
   vault_test_namespace             = local.namespace
   client_cache_config = {

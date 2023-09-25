@@ -700,3 +700,34 @@ load _helpers
    actual=$(echo "$object" | yq '.label2'| tee /dev/stderr)
    [ "${actual}" = 'value2' ]
 }
+
+#--------------------------------------------------------------------
+# extraArgs
+
+@test "controller/Deployment: extraArgs not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+}
+
+@test "controller/Deployment: with extraArgs" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.extraArgs={--foo=baz,--bar=qux}'  \
+      . | tee /dev/stderr |
+      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "5" ]
+
+   local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+   [ "${actual}" = "--foo=baz" ]
+   local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
+   [ "${actual}" = "--bar=qux" ]
+}

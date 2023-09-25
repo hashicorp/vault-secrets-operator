@@ -37,7 +37,7 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "defaultAuthMethod.kubernetes.role"
     value = var.k8s_auth_default_role
   }
-  set {
+  set_list {
     name  = "defaultAuthMethod.kubernetes.tokenAudiences"
     value = var.k8s_auth_default_token_audiences
   }
@@ -95,5 +95,9 @@ resource "helm_release" "vault-secrets-operator" {
   set {
     name  = "controller.manager.clientCache.storageEncryption.kubernetes.tokenAudiences"
     value = var.client_cache_config.storage_encryption.kubernetes_auth_token_audiences
+  }
+  set_list {
+    name  = "controller.manager.extraArgs"
+    value = var.manager_extra_args
   }
 }
