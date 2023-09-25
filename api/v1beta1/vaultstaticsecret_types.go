@@ -34,7 +34,7 @@ type VaultStaticSecretSpec struct {
 	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^(-?[0-9]+(\\.[0-9]+)?(s|m|h))+$"
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// HMACSecretData determines whether the Operator computes the
 	// HMAC of the Secret's data. The MAC value will be stored in
