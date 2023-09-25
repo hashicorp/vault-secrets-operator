@@ -48,7 +48,7 @@ SKIP_AWS_STATIC_CREDS_TEST ?= true
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
 # number of parallel bats to run
-BATS_PARALLEL_JOBS ?= 10
+BATS_PARALLEL_JOBS ?= 30
 # set by the 'bats-parallel' target, requires that 'parallel'
 # be installed on the build host.
 BATS_PARALLEL_ARGS ?=
