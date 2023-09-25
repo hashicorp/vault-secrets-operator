@@ -37,6 +37,7 @@ type HCPVaultSecretsAppReconciler struct {
 	Recorder          record.EventRecorder
 	SecretDataBuilder *helpers.SecretDataBuilder
 	HMACValidator     helpers.HMACValidator
+	MinRefreshAfter   time.Duration
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -62,14 +63,16 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
-		d, err := time.ParseDuration(o.Spec.RefreshAfter)
+		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", r.MinRefreshAfter)
 		if err != nil {
-			logger.Error(err, "Failed to parse o.Spec.RefreshAfter")
+			logger.Error(err, "Field validation failed")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
-				"Failed to parse o.Spec.RefreshAfter %s", o.Spec.RefreshAfter)
+				"Field validation failed, err=%s", err)
 			return ctrl.Result{}, err
 		}
-		requeueAfter = computeHorizonWithJitter(d)
+		if d.Seconds() > 0 {
+			requeueAfter = computeHorizonWithJitter(d)
+		}
 	}
 
 	c, err := r.hvsClient(ctx, o)
