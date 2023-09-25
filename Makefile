@@ -47,6 +47,11 @@ SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
+# number of parallel bats to run
+BATS_PARALLEL_JOBS ?= 10
+# set by the 'bats-parallel' target, requires that 'parallel'
+# be installed on the build host.
+BATS_PARALLEL_ARGS ?=
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -404,8 +409,8 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 	rm -rf $(TF_VAULT_STATE_DIR)
 
 .PHONY: unit-test
-unit-test: ## Run unit tests for the helm chart
-	PATH="$(CURDIR)/scripts:$(PATH)" bats -f $(BATS_TESTS_FILTER) test/unit/
+unit-test: bats-parallel ## Run unit tests for the helm chart
+	PATH="$(CURDIR)/scripts:$(PATH)" bats $(BATS_PARALLEL_ARGS) -f $(BATS_TESTS_FILTER) test/unit/
 
 .PHONY: port-forward
 port-forward:
@@ -614,7 +619,6 @@ build-diags:
 clean:
 	rm -rf build
 
-
 # Generate Helm reference docs from values.yaml and update Vault website.
 # Usage: make gen-helm-docs
 # If no options are given, helm.mdx from a local copy of the vault repository will be used.
@@ -622,3 +626,11 @@ clean:
 VAULT_DOCS_PATH ?= ../vault/website/content/docs/platform/k8s/vso/helm.mdx
 gen-helm-docs:
 	@cd hack/helm-reference-gen; go run ./... --vault=$(VAULT_DOCS_PATH)
+
+# bats-parallel sets bats to run tests in parallel whenever 'parallel' is installed
+# on the build host.
+.PHONY: bats-parallel
+bats-parallel:
+ifneq (,$(shell which parallel 2>/dev/null))
+	$(eval BATS_PARALLEL_ARGS=-j $(BATS_PARALLEL_JOBS))
+endif
