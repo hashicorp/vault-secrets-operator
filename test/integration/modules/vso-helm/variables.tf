@@ -22,7 +22,8 @@ variable "operator_image_tag" {
 }
 
 variable "k8s_auth_default_token_audiences" {
-  default = ""
+  type    = list(string)
+  default = []
 }
 
 variable "k8s_auth_default_mount" {
@@ -79,4 +80,9 @@ variable "client_cache_config" {
       kubernetes_auth_token_audiences = ""
     }
   }
+}
+
+variable "manager_extra_args" {
+  type    = list(string)
+  default = []
 }

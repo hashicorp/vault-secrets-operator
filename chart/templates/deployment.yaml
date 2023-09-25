@@ -73,6 +73,9 @@ spec:
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles-vds={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
+        {{- if .Values.controller.manager.extraArgs }}
+        {{- toYaml .Values.controller.manager.extraArgs | nindent 8 }}
+        {{- end }}
         command:
         - /vault-secrets-operator
         env:

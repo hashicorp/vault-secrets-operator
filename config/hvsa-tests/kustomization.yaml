@@ -1,0 +1,11 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+bases:
+- ../default
+
+patchesStrategicMerge:
+# Protect the /metrics endpoint by putting it behind auth.
+# If you want your controller-manager to expose the /metrics
+# endpoint w/o any authn/z, please comment the following line.
+- manager_args_patch.yaml
