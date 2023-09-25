@@ -10,7 +10,7 @@ load _helpers
   local actual=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.replicas | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .spec.replicas' | tee /dev/stderr)
   [ "${actual}" = "1" ]
 }
 
@@ -20,7 +20,7 @@ load _helpers
       -s templates/deployment.yaml  \
       --set 'controller.replicas=2' \
       . | tee /dev/stderr |
-      yq '.spec.replicas | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .spec.replicas' | tee /dev/stderr)
   [ "${actual}" = "2" ]
 }
 
@@ -32,7 +32,7 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[0].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .resources' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "5m" ]
@@ -53,7 +53,7 @@ load _helpers
       --set 'controller.kubeRbacProxy.resources.limits.memory=200Mi' \
       --set 'controller.kubeRbacProxy.resources.limits.cpu=200m' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[0].resources | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .resources' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
     [ "${actual}" = "100m" ]
@@ -133,7 +133,7 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq 'contains(["--client-cache"])' | tee /dev/stderr)
     [ "${actual}" = "false" ]
@@ -146,7 +146,7 @@ load _helpers
       --set 'controller.manager.clientCache.cacheSize=22' \
       --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq 'contains(["--client-cache-size=22", "--client-cache-persistence-model=direct-encrypted"])' | tee /dev/stderr)
     [ "${actual}" = "true" ]
@@ -160,7 +160,7 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds"])' | tee /dev/stderr)
     [ "${actual}" = "false" ]
@@ -172,7 +172,7 @@ load _helpers
       -s templates/deployment.yaml  \
       --set 'controller.manager.maxConcurrentReconciles=5' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds=5"])' | tee /dev/stderr)
     [ "${actual}" = "true" ]
@@ -347,7 +347,7 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+      yq 'select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-delete") | .spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .args' | tee /dev/stderr)
 
   local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=120"])' | tee /dev/stderr)
   [ "${actual}" = "true" ]
@@ -363,7 +363,7 @@ load _helpers
       --set 'controller.manager.clientCache.revokeClientCacheOnUninstall=true' \
       --set 'controller.preDeleteHookTimeoutSeconds=180' \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[0].args | select(documentIndex == 2)' | tee /dev/stderr)
+      yq 'select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-delete") | .spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .args' | tee /dev/stderr)
 
   local actual=$(echo "$object" | yq 'contains(["--uninstall", "--revoke-client-cache","--pre-delete-hook-timeout-seconds=180"])' | tee /dev/stderr)
   [ "${actual}" = "true" ]
@@ -678,7 +678,7 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .spec.template.metadata | .labels' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
    [ "${actual}" = "3" ]
@@ -691,7 +691,7 @@ load _helpers
       --set 'controller.extraLabels.label1=value1' \
       --set 'controller.extraLabels.label2=value2' \
       . | tee /dev/stderr |
-      yq '.spec.template.metadata.labels | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .spec.template.metadata | .labels' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
    [ "${actual}" = "5" ]
@@ -709,11 +709,13 @@ load _helpers
   local object=$(helm template \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
    [ "${actual}" = "3" ]
 }
+
+#
 
 @test "controller/Deployment: with extraArgs" {
   cd `chart_dir`
@@ -721,7 +723,7 @@ load _helpers
       -s templates/deployment.yaml  \
       --set 'controller.manager.extraArgs={--foo=baz,--bar=qux}'  \
       . | tee /dev/stderr |
-      yq '.spec.template.spec.containers[1].args | select(documentIndex == 1)' | tee /dev/stderr)
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
    [ "${actual}" = "5" ]

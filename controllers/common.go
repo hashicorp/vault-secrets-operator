@@ -185,20 +185,20 @@ func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, obj
 	log.Info(fmt.Sprintf("Removed %d finalizers", cnt))
 }
 
-func parseDurationString(ds, path string, min time.Duration) (time.Duration, error) {
+func parseDurationString(duration, path string, min time.Duration) (time.Duration, error) {
 	var err error
 	var d time.Duration
-	if ds != "" {
-		d, err = time.ParseDuration(ds)
+	if duration != "" {
+		d, err = time.ParseDuration(duration)
 		if err != nil {
 			return 0, fmt.Errorf(
 				"invalid value %q for %s, %w",
-				ds, path, err)
+				duration, path, err)
 		}
 		if d < min {
 			return 0, fmt.Errorf(
 				"invalid value %q for %s, below the minimum allowed value %s",
-				ds, path, min)
+				duration, path, min)
 		}
 	}
 	return d, nil
