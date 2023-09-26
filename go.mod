@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/go-openapi/strfmt v0.21.7
 	github.com/google/uuid v1.3.1
-	github.com/gruntwork-io/terratest v0.42.0
+	github.com/gruntwork-io/terratest v0.44.0
 	github.com/hashicorp/go-hclog v1.5.0
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.2.3-0.20230606170242-1a4b95565d57
