@@ -45,7 +45,7 @@ jobs:
       - run: npm install -g bats@${BATS_VERSION}
         shell: bash
         env:
-          BATS_VERSION: '1.8.2'
+          BATS_VERSION: '1.10.0'
       - run: bats -v
         shell: bash
       - run: make unit-test
