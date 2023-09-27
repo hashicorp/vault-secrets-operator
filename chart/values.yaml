@@ -17,6 +17,7 @@ controller:
   #   - ip: 192.168.1.100
   #     hostnames:
   #     - vault.example.com
+  # @type: array<map>
   hostAliases: []
 
   # nodeSelector labels for vault-secrets-operator pod assignment.
