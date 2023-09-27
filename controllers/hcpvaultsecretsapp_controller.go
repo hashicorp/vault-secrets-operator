@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	headerHCPCLIRequester = "X-HCP-CLI-Requester"
-	headerUserAgent       = "User-Agent"
+	headerHVSRequester = "X-HVS-Requester"
+	headerUserAgent    = "User-Agent"
 )
 
 var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
@@ -210,7 +210,7 @@ type transport struct {
 // inject a header for identifying the requester type
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Add(headerUserAgent, userAgent)
-	req.Header.Add(headerHCPCLIRequester, userAgent)
+	req.Header.Add(headerHVSRequester, userAgent)
 	return t.child.RoundTrip(req)
 }
 
