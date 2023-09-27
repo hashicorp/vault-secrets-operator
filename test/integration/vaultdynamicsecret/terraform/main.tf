@@ -87,6 +87,8 @@ module "vso-helm" {
   count                            = var.deploy_operator_via_helm ? 1 : 0
   source                           = "../../modules/vso-helm"
   operator_namespace               = var.operator_namespace
+  operator_image_repo              = var.operator_image_repo
+  operator_image_tag               = var.operator_image_tag
   enable_default_auth_method       = var.enable_default_auth_method
   enable_default_connection        = var.enable_default_connection
   operator_helm_chart_path         = var.operator_helm_chart_path

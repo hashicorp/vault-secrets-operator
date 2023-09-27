@@ -65,9 +65,9 @@ variable "k8s_vault_connection_address" {
 }
 
 variable "operator_image_repo" {
-  default = ""
+  default = "hashicorp/vault-secrets-operator"
 }
 
 variable "operator_image_tag" {
-  default = ""
+  default = "0.0.0-dev"
 }
