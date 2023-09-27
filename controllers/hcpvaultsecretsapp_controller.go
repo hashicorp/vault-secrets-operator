@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"time"
 
+	httptransport "github.com/go-openapi/runtime/client"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
 	hcpconfig "github.com/hashicorp/hcp-sdk-go/config"
 	hcpclient "github.com/hashicorp/hcp-sdk-go/httpclient"
@@ -28,7 +30,15 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/hcp"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/version"
 )
+
+const (
+	headerHCPCLIRequester = "X-HCP-CLI-Requester"
+	headerUserAgent       = "User-Agent"
+)
+
+var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
 type HCPVaultSecretsAppReconciler struct {
@@ -186,5 +196,25 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 		return nil, fmt.Errorf("failed to instantiate HCP Client, err=%w", err)
 	}
 
+	injectRequestInformation(cl)
+
 	return hvsclient.New(cl, nil), nil
+}
+
+// transport is copied from https://github.com/hashicorp/vlt/blob/f1f50c53433aa1c6dd0e7f0f929553bb4e5d2c63/internal/command/transport.go#L15
+type transport struct {
+	child http.RoundTripper
+}
+
+// RoundTrip is a wrapper implementation of the http.RoundTrip interface to
+// inject a header for identifying the requester type
+func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Add(headerUserAgent, userAgent)
+	req.Header.Add(headerHCPCLIRequester, userAgent)
+	return t.child.RoundTrip(req)
+}
+
+// injectRequestInformation is copied from https://github.com/hashicorp/vlt/blob/f1f50c53433aa1c6dd0e7f0f929553bb4e5d2c63/internal/command/transport.go#L25
+func injectRequestInformation(runtime *httptransport.Runtime) {
+	runtime.Transport = &transport{child: runtime.Transport}
 }
