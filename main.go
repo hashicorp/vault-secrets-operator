@@ -66,7 +66,6 @@ func main() {
 	var printVersion bool
 	var outputFormat string
 	var uninstall bool
-	var revokeClientCache bool
 	var preDeleteHookTimeoutSeconds int
 	var minRefreshAfterHVSA time.Duration
 
@@ -87,9 +86,7 @@ func main() {
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
 	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
-	flag.BoolVar(&revokeClientCache, "revoke-client-cache", false, "Revoke the client cache "+
-		"upon Helm uninstall")
-	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 120,
+	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 60,
 		"Pre-delete hook timeout in seconds")
 	flag.DurationVar(&minRefreshAfterHVSA, "min-refresh-after-hvsa", time.Second*30,
 		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
@@ -157,18 +154,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		cleanupLog.Info("Starting the operator uninstall process")
-		shutdownMode := vclient.ShutDownModeNoRevoke
-		if revokeClientCache {
-			shutdownMode = vclient.ShutDownModeRevoke
-		}
-
-		if err = shutDownOperator(preDeleteDeadlineCtx, defaultClient, shutdownMode); err != nil {
-			cleanupLog.Error(err, "Failed to complete the operator uninstall process")
-			os.Exit(1)
-		}
-
-		cleanupLog.Info("Successfully completed the operator uninstall process")
 		os.Exit(0)
 	}
 
