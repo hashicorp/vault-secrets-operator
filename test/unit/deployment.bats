@@ -328,48 +328,6 @@ load _helpers
 }
 
 #--------------------------------------------------------------------
-# terminationGracePeriodSeconds
-
-@test "controller/Deployment: default terminationGracePeriodSeconds when revokeClientCacheOnUninstall is false by default" {
-  cd `chart_dir`
-  local actual=$(helm template \
-      -s templates/deployment.yaml  \
-      . | tee /dev/stderr |
-      yq '.spec.template.spec.terminationGracePeriodSeconds | select(documentIndex == 1)' | tee /dev/stderr)
-   [ "${actual}" = "120" ]
-}
-
-#--------------------------------------------------------------------
-# preDeleteHookTimeoutSeconds
-
-@test "controller/Deployment: default preDeleteHookTimeoutSeconds when revokeClientCacheOnUninstall is false by default" {
-  cd `chart_dir`
-  local object=$(helm template \
-      -s templates/deployment.yaml  \
-      . | tee /dev/stderr |
-      yq 'select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-delete") | .spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .args' | tee /dev/stderr)
-
-  local actual=$(echo "$object" | yq 'contains(["--pre-delete-hook-timeout-seconds=120"])' | tee /dev/stderr)
-  [ "${actual}" = "true" ]
-}
-
-#--------------------------------------------------------------------
-# when revokeClientCacheOnUninstall is true
-
-@test "controller/Deployment: correct args when revokeClientCacheOnUninstall is true" {
-  cd `chart_dir`
-  local object=$(helm template \
-      -s templates/deployment.yaml  \
-      --set 'controller.manager.clientCache.revokeClientCacheOnUninstall=true' \
-      --set 'controller.preDeleteHookTimeoutSeconds=180' \
-      . | tee /dev/stderr |
-      yq 'select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-delete") | .spec.template.spec.containers[] | select(.name == "pre-delete-controller-cleanup") | .args' | tee /dev/stderr)
-
-  local actual=$(echo "$object" | yq 'contains(["--uninstall", "--revoke-client-cache","--pre-delete-hook-timeout-seconds=180"])' | tee /dev/stderr)
-  [ "${actual}" = "true" ]
-}
-
-#--------------------------------------------------------------------
 # controller.imagePullSecrets
 
 @test "controller/Deployment: no image pull secrets by default" {

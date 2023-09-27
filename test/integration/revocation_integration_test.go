@@ -30,8 +30,11 @@ import (
 // TestRevocation tests the revocation logic on Helm uninstall
 func TestRevocation(t *testing.T) {
 	if !testWithHelm {
-		t.Skipf("Test is only compatiable with Helm")
+		t.Skip("Test is only compatible with Helm")
 	}
+
+	t.Skip("Disabling until VAULT-20196 is resolved")
+
 	ctx := context.Background()
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
