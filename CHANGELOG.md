@@ -1,4 +1,19 @@
-## Unreleased
+## 0.3.0 (September 27th, 2023)
+
+Improvements:
+* VDS: Support for DB schedule-based static role rotations: [GH-369](https://github.com/hashicorp/vault-secrets-operator/pull/369)
+* HVS: Rename servicePrinciple data key clientKey to clientSecret: [GH-368](https://github.com/hashicorp/vault-secrets-operator/pull/368)
+* HVS: Include User-Agent and requester HTTP request headers.: [GH-382](https://github.com/hashicorp/vault-secrets-operator/pull/382)
+* HVS: Add validation for spec.refreshAfter and min constraints: [GH-376](https://github.com/hashicorp/vault-secrets-operator/pull/376)
+* Helm: Add support for affinity and hostAliases: [GH-343](https://github.com/hashicorp/vault-secrets-operator/pull/343)
+* Helm: Add the ability to specify a security context to the deployment: [GH-289](https://github.com/hashicorp/vault-secrets-operator/pull/289)
+
+Features:
+* Add support for syncing HCP Vault Secrets: [GH-315](https://github.com/hashicorp/vault-secrets-operator/pull/315)
+
+Revert:
+* Temporarily remove/disable revoke on uninstall: [GH-383](https://github.com/hashicorp/vault-secrets-operator/pull/383) reverts [GH-202](https://github.com/hashicorp/vault-secrets-operator/pull/202)
+
 ## 0.3.0-rc.1 (September 19th, 2023)
 
 Improvements:
