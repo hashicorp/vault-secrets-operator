@@ -31,7 +31,6 @@ function checkVersion {
  fi
 
  local doc="$(cat ${filename})"
- local queries=
  echo "* Checking version(s) in ${filename}"
  for query in "${@:2}"
  do
