@@ -30,6 +30,7 @@ jobs:
 
   build-pre-checks:
     runs-on: ubuntu-latest
+    needs: get-product-version
     outputs:
       go-version: ${{ steps.setup-go.outputs.go-version }}
     steps:
@@ -48,6 +49,9 @@ jobs:
         run: |
           go mod tidy
           test -z "$(git status --porcelain)"
+      - name: check versions
+        run: |
+          make check-versions VERSION=${{ needs.get-product-version.outputs.product-version }}
       - name: generate manifests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -634,3 +634,7 @@ bats-parallel:
 ifneq (,$(shell which parallel 2>/dev/null))
 	$(eval BATS_PARALLEL_ARGS=-j $(BATS_PARALLEL_JOBS))
 endif
+
+.PHONY: check-versions
+check-versions:
+	VERSION=$(VERSION) ./scripts/check-versions.sh
