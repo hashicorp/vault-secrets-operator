@@ -14,12 +14,6 @@ terraform {
   }
 }
 
-locals {
-  vault_image_tag        = var.vault_image_tag
-  vault_image_repository = var.vault_enterprise ? var.vault_image_repo_ent : var.vault_image_repo
-  vault_license          = var.vault_enterprise ? (var.vault_license != "" ? var.vault_license : file(var.vault_license_path)) : ""
-}
-
 provider "helm" {
   kubernetes {
     config_context = var.k8s_config_context

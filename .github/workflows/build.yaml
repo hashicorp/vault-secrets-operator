@@ -226,9 +226,9 @@ jobs:
     steps:
       - run: echo "setting vault versions"
     outputs:
-      VAULT_N_2: 1.12.9
-      VAULT_N_1: 1.13.5
-      VAULT_N: 1.14.1
+      VAULT_N_2: 1.13.8
+      VAULT_N_1: 1.14.4
+      VAULT_N: 1.15.0
 
   k8s-versions:
     runs-on: ubuntu-latest
