@@ -1,3 +1,7 @@
+## 0.3.1 (September 27th, 2023)
+Fix:
+* Helm: bump the chart version and default tags to 0.3.1: [GH-386](https://github.com/hashicorp/vault-secrets-operator/pull/386)
+
 ## 0.3.0 (September 27th, 2023)
 
 Improvements:
