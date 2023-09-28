@@ -96,6 +96,13 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "controller.manager.clientCache.storageEncryption.kubernetes.tokenAudiences"
     value = var.client_cache_config.storage_encryption.kubernetes_auth_token_audiences
   }
+  dynamic "set" {
+    for_each = var.client_cache_config.revoke_client_cache_on_uninstall ? [""] : []
+    content {
+      name  = "controller.manager.clientCache.revokeClientCacheOnUninstall"
+      value = var.client_cache_config.revoke_client_cache_on_uninstall
+    }
+  }
   set_list {
     name  = "controller.manager.extraArgs"
     value = var.manager_extra_args

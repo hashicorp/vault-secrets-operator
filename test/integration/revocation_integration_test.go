@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +29,7 @@ import (
 // TestRevocation tests the revocation logic on Helm uninstall
 func TestRevocation(t *testing.T) {
 	if !testWithHelm {
-		t.Skip("Test is only compatible with Helm")
+		t.Skipf("Helm only test, and testWithHelm=%t", testWithHelm)
 	}
 
 	t.Skip("Disabling until VAULT-20196 is resolved")
@@ -49,15 +48,12 @@ func TestRevocation(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
-	// TF related setup
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "revocation/terraform"),
-		tempDir,
-		"terraform",
-	)
-	require.Nil(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "revocation/terraform"), tempDir)
+	copyModulesDir(t, tfDir)
+	chartDestDir := copyChartDir(t, tfDir)
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -69,7 +65,7 @@ func TestRevocation(t *testing.T) {
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
-			"operator_helm_chart_path":     chartPath,
+			"operator_helm_chart_path":     chartDestDir,
 			"name_prefix":                  testNamePrefix,
 		},
 	}
