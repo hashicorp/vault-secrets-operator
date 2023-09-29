@@ -50,7 +50,8 @@ variable "vault_test_namespace" {
 
 variable "client_cache_config" {
   type = object({
-    persistence_model = string
+    persistence_model                = string
+    revoke_client_cache_on_uninstall = bool
     storage_encryption = object({
       enabled                         = bool
       vault_connection_ref            = string
@@ -66,7 +67,8 @@ variable "client_cache_config" {
   })
 
   default = {
-    persistence_model = ""
+    persistence_model                = ""
+    revoke_client_cache_on_uninstall = false
     storage_encryption = {
       enabled                         = false
       vault_connection_ref            = ""

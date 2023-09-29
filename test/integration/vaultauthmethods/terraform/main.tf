@@ -176,7 +176,7 @@ resource "kubernetes_service_account" "irsa_assumable" {
     name      = "irsa-test"
     namespace = kubernetes_namespace.tenant-1.metadata[0].name
     annotations = {
-      "eks.amazonaws.com/role-arn" : "${var.irsa_assumable_role_arn}",
+      "eks.amazonaws.com/role-arn" : var.irsa_assumable_role_arn,
     }
   }
 }
@@ -202,7 +202,7 @@ resource "vault_aws_auth_backend_role" "aws-irsa" {
   backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-irsa"
   auth_type                = "iam"
-  bound_iam_principal_arns = ["${var.irsa_assumable_role_arn}"]
+  bound_iam_principal_arns = [var.irsa_assumable_role_arn]
   token_policies           = [vault_policy.default.name]
 }
 
@@ -224,7 +224,7 @@ resource "vault_aws_auth_backend_role" "aws-instance-profile" {
   auth_type                       = "iam"
   inferred_entity_type            = "ec2_instance"
   inferred_aws_region             = var.aws_region
-  bound_account_ids               = ["${var.aws_account_id}"]
+  bound_account_ids               = [var.aws_account_id]
   bound_iam_instance_profile_arns = ["arn:aws:iam::${var.aws_account_id}:instance-profile/eks-*"]
   token_policies                  = [vault_policy.default.name]
 }
@@ -235,7 +235,7 @@ resource "vault_aws_auth_backend_role" "aws-static" {
   backend                  = one(vault_auth_backend.aws).path
   role                     = "${var.auth_role}-aws-static"
   auth_type                = "iam"
-  bound_iam_principal_arns = ["${var.aws_static_creds_role}"]
+  bound_iam_principal_arns = [var.aws_static_creds_role]
   token_policies           = [vault_policy.default.name]
 }
 
@@ -246,36 +246,19 @@ resource "kubernetes_secret" "static-creds" {
     name      = "aws-static-creds"
   }
   data = {
-    "access_key_id"     = "${var.test_aws_access_key_id}"
-    "secret_access_key" = "${var.test_aws_secret_access_key}"
-    "session_token"     = "${var.test_aws_session_token}"
+    "access_key_id"     = var.test_aws_access_key_id
+    "secret_access_key" = var.test_aws_secret_access_key
+    "session_token"     = var.test_aws_session_token
   }
 }
 
-# VSO Helm chart
-resource "helm_release" "vault-secrets-operator" {
-  name             = "test"
-  namespace        = var.operator_namespace
-  create_namespace = true
-  wait             = true
-  chart            = var.operator_helm_chart_path
-
-  set {
-    name  = "controller.manager.image.repository"
-    value = var.operator_image_repo
-  }
-  set {
-    name  = "controller.manager.image.tag"
-    value = var.operator_image_tag
-  }
-
-  # Connection Configuration
-  set {
-    name  = "defaultVaultConnection.enabled"
-    value = "true"
-  }
-  set {
-    name  = "defaultVaultConnection.address"
-    value = var.k8s_vault_connection_address
-  }
+module "vso-helm" {
+  source                       = "../../modules/vso-helm"
+  operator_namespace           = var.operator_namespace
+  operator_image_repo          = var.operator_image_repo
+  operator_image_tag           = var.operator_image_tag
+  enable_default_connection    = true
+  enable_default_auth_method   = false
+  operator_helm_chart_path     = var.operator_helm_chart_path
+  k8s_vault_connection_address = var.k8s_vault_connection_address
 }
