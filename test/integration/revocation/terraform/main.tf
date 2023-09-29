@@ -104,39 +104,29 @@ resource "vault_kubernetes_auth_backend_role" "default" {
 }
 
 # VSO Helm chart
-resource "helm_release" "vault-secrets-operator" {
-  name             = "test"
-  namespace        = var.operator_namespace
-  create_namespace = true
-  wait             = true
-  chart            = var.operator_helm_chart_path
-
-  set {
-    name  = "controller.manager.image.repository"
-    value = var.operator_image_repo
-  }
-  set {
-    name  = "controller.manager.image.tag"
-    value = var.operator_image_tag
-  }
-
-  # Connection Configuration
-  set {
-    name  = "defaultVaultConnection.enabled"
-    value = "true"
-  }
-  set {
-    name  = "defaultVaultConnection.address"
-    value = var.k8s_vault_connection_address
-  }
-
-  set {
-    name  = "controller.manager.clientCache.revokeClientCacheOnUninstall"
-    value = "true"
-  }
-
-  set {
-    name  = "controller.manager.clientCache.persistenceModel"
-    value = "direct-unencrypted"
+module "vso-helm" {
+  source                       = "../../modules/vso-helm"
+  operator_namespace           = var.operator_namespace
+  operator_image_repo          = var.operator_image_repo
+  operator_image_tag           = var.operator_image_tag
+  enable_default_connection    = true
+  enable_default_auth_method   = false
+  operator_helm_chart_path     = var.operator_helm_chart_path
+  k8s_vault_connection_address = var.k8s_vault_connection_address
+  client_cache_config = {
+    persistence_model                = "direct-unencrypted"
+    revoke_client_cache_on_uninstall = true
+    storage_encryption = {
+      enabled                         = false
+      vault_connection_ref            = ""
+      namespace                       = ""
+      mount                           = ""
+      transit_mount                   = ""
+      key_name                        = ""
+      method                          = ""
+      kubernetes_auth_role            = ""
+      kubernetes_auth_service_account = ""
+      kubernetes_auth_token_audiences = ""
+    }
   }
 }

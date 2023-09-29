@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
@@ -48,10 +47,6 @@ func TestVaultPKISecret(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
-	if !testWithHelm {
-		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-	}
 
 	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
 	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
@@ -62,15 +57,13 @@ func TestVaultPKISecret(t *testing.T) {
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "vaultpkisecret/terraform"),
-		tempDir,
-		"terraform",
-	)
-	require.Nil(t, err)
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultpkisecret/terraform"), tempDir)
+	copyModulesDir(t, tfDir)
+	chartDestDir := copyChartDir(t, tfDir)
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
-	terraformOptions := &terraform.Options{
+	tfOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
@@ -79,21 +72,32 @@ func TestVaultPKISecret(t *testing.T) {
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           k8sConfigContext,
 			"vault_pki_mount_path":         testPKIMountPath,
-			"operator_helm_chart_path":     chartPath,
 		},
-	}
-	if operatorImageRepo != "" {
-		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
-	}
-	if operatorImageTag != "" {
-		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
 	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
-		terraformOptions.Vars["vault_enterprise"] = true
-		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		tfOptions.Vars["vault_enterprise"] = true
+		tfOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
-	terraformOptions = setCommonTFOptions(t, terraformOptions)
+	tfOptions = setCommonTFOptions(t, tfOptions)
+
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
+	if !testWithHelm {
+		// deploy the Operator with Kustomize
+		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	} else {
+		tfOptions.Vars["deploy_operator_via_helm"] = true
+		tfOptions.Vars["operator_helm_chart_path"] = chartDestDir
+		if operatorImageRepo != "" {
+			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
+		}
+		if operatorImageTag != "" {
+			tfOptions.Vars["operator_image_tag"] = operatorImageTag
+		}
+		tfOptions.Vars["enable_default_auth_method"] = true
+		tfOptions.Vars["enable_default_connection"] = true
+		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
+	}
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -108,7 +112,7 @@ func TestVaultPKISecret(t *testing.T) {
 			assert.Nil(t, crdClient.Delete(ctx, c))
 		}
 
-		terraform.Destroy(t, terraformOptions)
+		terraform.Destroy(t, tfOptions)
 		os.RemoveAll(tempDir)
 
 		// Undeploy Kustomize
@@ -118,7 +122,7 @@ func TestVaultPKISecret(t *testing.T) {
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
-	terraform.InitAndApply(t, terraformOptions)
+	terraform.InitAndApply(t, tfOptions)
 
 	// When we deploy the operator with Helm it will also deploy default VaultConnection/AuthMethod
 	// resources, so these are not needed. In this case, we will also clear the VaultAuthRef field of

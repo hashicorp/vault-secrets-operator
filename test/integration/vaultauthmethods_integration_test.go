@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -36,6 +35,10 @@ const (
 )
 
 func TestVaultAuthMethods(t *testing.T) {
+	if !testWithHelm {
+		t.Skipf("Helm only test, and testWithHelm=%t", testWithHelm)
+	}
+
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
@@ -73,19 +76,16 @@ func TestVaultAuthMethods(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
-	// TF related setup
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "vaultauthmethods/terraform"),
-		tempDir,
-		"terraform",
-	)
-	require.Nil(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultauthmethods/terraform"), tempDir)
+	copyModulesDir(t, tfDir)
+	chartDestDir := copyChartDir(t, tfDir)
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
-	terraformOptions := &terraform.Options{
+	tfOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
@@ -93,7 +93,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
-			"operator_helm_chart_path":     chartPath,
+			"operator_helm_chart_path":     chartDestDir,
 			"approle_mount_path":           appRoleMountPath,
 			"vault_oidc_discovery_url":     vault_oidc_discovery_url,
 			"vault_oidc_ca":                vault_oidc_ca,
@@ -109,17 +109,17 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 	}
 	if operatorImageRepo != "" {
-		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+		tfOptions.Vars["operator_image_repo"] = operatorImageRepo
 	}
 	if operatorImageTag != "" {
-		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
+		tfOptions.Vars["operator_image_tag"] = operatorImageTag
 	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
-		terraformOptions.Vars["vault_enterprise"] = true
-		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		tfOptions.Vars["vault_enterprise"] = true
+		tfOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
-	terraformOptions = setCommonTFOptions(t, terraformOptions)
+	tfOptions = setCommonTFOptions(t, tfOptions)
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -132,15 +132,15 @@ func TestVaultAuthMethods(t *testing.T) {
 		}
 		exportKindLogs(t)
 		// Clean up resources with "terraform destroy" at the end of the test.
-		terraform.Destroy(t, terraformOptions)
+		terraform.Destroy(t, tfOptions)
 		assert.NoError(t, os.RemoveAll(tempDir))
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
-	terraform.InitAndApply(t, terraformOptions)
+	terraform.InitAndApply(t, tfOptions)
 
 	// Parse terraform output
-	b, err := json.Marshal(terraform.OutputAll(t, terraformOptions))
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
 	require.Nil(t, err)
 
 	var outputs authMethodsK8sOutputs

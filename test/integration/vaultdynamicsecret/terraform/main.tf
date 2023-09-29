@@ -98,7 +98,8 @@ module "vso-helm" {
   k8s_vault_connection_address     = var.k8s_vault_connection_address
   vault_test_namespace             = local.namespace
   client_cache_config = {
-    persistence_model = "direct-encrypted"
+    persistence_model                = "direct-encrypted"
+    revoke_client_cache_on_uninstall = false
     storage_encryption = {
       enabled                         = true
       vault_connection_ref            = ""
