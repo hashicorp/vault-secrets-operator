@@ -18,8 +18,8 @@ ROOT_DIR="${0%/*}"
 # update PATH to prefer scripts relative to this one e.g. yq
 export PATH="${ROOT_DIR}:${PATH}"
 
-CHART_ROOT="${CHART_ROOT-$(readlink -f ${0%/*}/../chart)}"
-KUSTOMIZE_ROOT="${KUSTOMIZE_ROOT-$(readlink -f ${0%/*}/../config)}"
+CHART_ROOT="${CHART_ROOT-$(readlink -f ${ROOT_DIR}/../chart)}"
+KUSTOMIZE_ROOT="${KUSTOMIZE_ROOT-$(readlink -f ${ROOT_DIR}/../config)}"
 
 _result=0
 function checkVersion {
