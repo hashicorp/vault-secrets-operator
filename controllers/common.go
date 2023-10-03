@@ -23,6 +23,8 @@ var (
 	requeueDurationOnError       = time.Second * 5
 )
 
+const renewalPercentCap = 90
+
 // LeaseTruncatedError indicates that the requested lease renewal duration is
 // less than expected
 type LeaseTruncatedError struct {
@@ -67,8 +69,8 @@ func computeHorizonWithJitter(minDuration time.Duration) time.Duration {
 // inclusively
 func capRenewalPercent(renewalPercent int) (rp int) {
 	switch {
-	case renewalPercent > 90:
-		rp = 90
+	case renewalPercent > renewalPercentCap:
+		rp = renewalPercentCap
 	case renewalPercent < 0:
 		rp = 0
 	default:
@@ -81,11 +83,9 @@ func capRenewalPercent(renewalPercent int) (rp int) {
 // percentage of the lease duration, plus additional random jitter (up to 10% of
 // the lease), to ensure the horizon falls within the specified renewal window
 func computeDynamicHorizonWithJitter(leaseDuration time.Duration, renewalPercent int) time.Duration {
-	cappedRenewalPercent := capRenewalPercent(renewalPercent)
-
 	max, jitter := computeMaxJitter(leaseDuration)
 
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(cappedRenewalPercent) / 100)
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(capRenewalPercent(renewalPercent)) / 100)
 
 	return startRenewingAt + time.Duration(max) - time.Duration(jitter)
 }

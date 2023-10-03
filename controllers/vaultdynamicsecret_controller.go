@@ -229,6 +229,17 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				"Secret synced, isStaticCreds=%t, horizon=%s, ttl=%d",
 				true, horizon, o.Status.StaticCredsMetaData.TTL)
 		}
+	} else {
+		// Not all dynamic credentials are renewable (e.g.: aws/creds/)
+		// In the scenario we resync the secret within the lease duration window
+		nextRenewalTime := computeRotationTime(o)
+		horizon = nextRenewalTime.Sub(time.Now())
+		if horizon < 0 {
+			horizon = time.Second * 1
+		}
+
+		_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
+		horizon += time.Duration(jitter)
 	}
 
 	if doRolloutRestart {
@@ -238,7 +249,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	if (!r.isRenewableLease(secretLease, o, true) && !o.Spec.AllowStaticCreds) || horizon.Seconds() == 0 {
+	if horizon.Seconds() == 0 {
 		// no need to requeue
 		logger.Info("Vault secret does not support periodic renewal/refresh via reconciliation",
 			"requeue", false, "horizon", horizon)
@@ -494,10 +505,13 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 // inRenewalWindow checks if the specified percentage of the VDS lease duration
 // has elapsed
 func inRenewalWindow(vds *secretsv1beta1.VaultDynamicSecret) bool {
-	renewalPercent := capRenewalPercent(vds.Spec.RenewalPercent)
-	leaseDuration := time.Duration(vds.Status.SecretLease.LeaseDuration) * time.Second
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(renewalPercent) / 100)
-
-	ts := time.Unix(vds.Status.LastRenewalTime, 0).Add(startRenewingAt)
+	ts := computeRotationTime(vds)
 	return time.Now().After(ts)
+}
+
+func computeRotationTime(vds *secretsv1beta1.VaultDynamicSecret) time.Time {
+	leaseDuration := time.Duration(vds.Status.SecretLease.LeaseDuration) * time.Second
+	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(capRenewalPercent(vds.Spec.RenewalPercent)) / 100)
+
+	return time.Unix(vds.Status.LastRenewalTime, 0).Add(startRenewingAt)
 }

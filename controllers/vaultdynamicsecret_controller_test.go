@@ -570,3 +570,81 @@ type mockRequest struct {
 	path   string
 	params map[string]any
 }
+
+func Test_computeRotationTime(t *testing.T) {
+	// time without nanos, for ease of comparison
+	then := time.Unix(time.Now().Unix(), 0)
+	tests := []struct {
+		name string
+		vds  *secretsv1beta1.VaultDynamicSecret
+		want time.Time
+	}{
+		{
+			name: "fifty-percent",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 300,
+					},
+					LastRenewalTime: then.Unix(),
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 50,
+				},
+			},
+			want: then.Add(150 * time.Second),
+		},
+		{
+			name: "sixty-percent",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 300,
+					},
+					LastRenewalTime: then.Unix(),
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+				},
+			},
+			want: then.Add(180 * time.Second),
+		},
+		{
+			name: "zero-percent",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 300,
+						Renewable:     false,
+					},
+					LastRenewalTime: then.Unix(),
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 0,
+				},
+			},
+			want: then,
+		},
+		{
+			name: "exceed-renewal-percentage-cap",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 300,
+					},
+					LastRenewalTime: then.Unix(),
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: renewalPercentCap + 1,
+				},
+			},
+			want: then.Add(time.Duration(float64(time.Second*300) * (float64(renewalPercentCap) / 100))),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := computeRotationTime(tt.vds)
+			assert.Equalf(t, tt.want, actual, "computeRotationTime(%v)", tt.vds)
+		})
+	}
+}
