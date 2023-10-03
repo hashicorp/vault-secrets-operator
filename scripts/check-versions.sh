@@ -4,15 +4,16 @@
 
 set -e
 
-if [ -z "${VERSION}" ]; then
-  echo "VERSION variable must be set" >&2
-  exit 1
-fi
-
-if [ "${VERSION}" == "0.0.0-dev" ]; then
-  echo "dev build, skipping version checks"
-  exit 0
-fi
+case "${VERSION}" in
+  "")
+    echo "VERSION variable must be set" >&2
+    exit 1
+    ;;
+  *-dev)
+    echo "version ${VERSION} is for a dev build, skipping version checks"
+    exit 0
+    ;;
+esac
 
 ROOT_DIR="${0%/*}"
 # update PATH to prefer scripts relative to this one e.g. yq
