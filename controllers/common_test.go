@@ -107,3 +107,48 @@ func Test_parseDurationString(t *testing.T) {
 		})
 	}
 }
+
+func Test_computeStartRenewingAt(t *testing.T) {
+	type args struct{}
+	tests := []struct {
+		name           string
+		leaseDuration  time.Duration
+		renewalPercent int
+		want           time.Duration
+		wantFunc       func() time.Duration
+	}{
+		{
+			name:           "zero percent",
+			leaseDuration:  time.Second * 100,
+			renewalPercent: 0,
+			want:           0,
+		},
+		{
+			name:           "fifty percent",
+			leaseDuration:  time.Second * 100,
+			renewalPercent: 50,
+			want:           time.Second * 50,
+		},
+		{
+			name:           "ninety percent",
+			leaseDuration:  time.Second * 100,
+			renewalPercent: 90,
+			want:           time.Second * 90,
+		},
+		{
+			name:           "exceed renewalPercentCap",
+			leaseDuration:  time.Second * 50,
+			renewalPercent: renewalPercentCap + 1,
+			want: time.Duration(
+				float64((50 * time.Second).Nanoseconds()) * float64(renewalPercentCap) / 100),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want,
+				computeStartRenewingAt(tt.leaseDuration, tt.renewalPercent), "computeStartRenewingAt(%v, %v)",
+				tt.leaseDuration, tt.renewalPercent,
+			)
+		})
+	}
+}

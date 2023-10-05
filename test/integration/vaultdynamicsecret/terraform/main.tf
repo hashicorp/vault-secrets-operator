@@ -78,9 +78,21 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
   bound_service_account_namespaces = [kubernetes_namespace.dev.metadata[0].name]
   token_period                     = var.vault_token_period
   token_policies = [
+    vault_policy.revocation.name,
     vault_policy.db.name,
+    vault_policy.k8s_secrets.name,
   ]
   audience = "vault"
+}
+
+resource "vault_policy" "revocation" {
+  namespace = local.namespace
+  name      = "${local.auth_policy}-revocation"
+  policy    = <<EOT
+path "sys/leases/revoke" {
+  capabilities = ["update"]
+}
+EOT
 }
 
 module "vso-helm" {

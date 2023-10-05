@@ -50,12 +50,13 @@ import (
 )
 
 var (
-	testRoot            string
-	binDir              string
-	chartPath           string
-	testVaultAddress    string
-	k8sVaultNamespace   string
-	kustomizeConfigRoot string
+	testRoot               string
+	binDir                 string
+	chartPath              string
+	testVaultAddress       string
+	k8sVaultNamespace      string
+	k8sVaultServiceAccount string
+	kustomizeConfigRoot    string
 	// directory to store the kind logs after each test.
 	exportKindLogsRoot = os.Getenv("EXPORT_KIND_LOGS_ROOT")
 	entTests           = os.Getenv("ENT_TESTS") != ""
@@ -95,6 +96,8 @@ func init() {
 	if k8sVaultNamespace == "" {
 		k8sVaultNamespace = "vault"
 	}
+	k8sVaultServiceAccount = os.Getenv("K8S_VAULT_SERVICE_ACCOUNT")
+
 	testVaultAddress = fmt.Sprintf("http://vault.%s.svc.cluster.local:8200", k8sVaultNamespace)
 }
 
@@ -320,14 +323,18 @@ type dynamicK8SOutputs struct {
 	DBRole           string `json:"db_role"`
 	DBRoleStatic     string `json:"db_role_static"`
 	DBRoleStaticUser string `json:"db_role_static_user"`
-	DBPath           string `json:"db_path"`
-	TransitPath      string `json:"transit_path"`
-	TransitKeyName   string `json:"transit_key_name"`
-	TransitRef       string `json:"transit_ref"`
+	// should always be non-renewable
+	K8SSecretPath  string `json:"k8s_secret_path"`
+	K8SSecretRole  string `json:"k8s_secret_role"`
+	DBPath         string `json:"db_path"`
+	TransitPath    string `json:"transit_path"`
+	TransitKeyName string `json:"transit_key_name"`
+	TransitRef     string `json:"transit_ref"`
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 	delay time.Duration, vdsObj *secretsv1beta1.VaultDynamicSecret, expected map[string]int,
+	expectedPresentOnly ...string,
 ) {
 	t.Helper()
 
@@ -337,14 +344,9 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 		Namespace: namespace,
 	}
 
-	expectedPresentOnly := make(map[string]int)
-	if vdsObj.Spec.AllowStaticCreds {
-		// these keys typically have variable values that make them difficult to compare,
-		// we can ensure that they are at least present and have a length > 0 in the
-		// resulting Secret data.
-		expectedPresentOnly[helpers.SecretDataKeyRaw] = 1
-		expectedPresentOnly["last_vault_rotation"] = 1
-		expectedPresentOnly["ttl"] = 1
+	presentOnly := make(map[string]int)
+	for _, v := range expectedPresentOnly {
+		presentOnly[v] = 1
 	}
 
 	retry.DoWithRetry(t,
@@ -361,7 +363,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 			actualPresentOnly := make(map[string]int)
 			actual := make(map[string]int)
 			for f, b := range sec.Data {
-				if v, ok := expectedPresentOnly[f]; ok {
+				if v, ok := presentOnly[f]; ok {
 					if len(b) > 0 {
 						actualPresentOnly[f] = v
 					}
@@ -370,7 +372,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 				actual[f] = len(b)
 			}
 
-			assert.Equal(t, expectedPresentOnly, actualPresentOnly)
+			assert.Equal(t, presentOnly, actualPresentOnly)
 			assert.Equal(t, expected, actual, "actual %#v, expected %#v", actual, expected)
 
 			assertSyncableSecret(t, client, vdsObj, sec)

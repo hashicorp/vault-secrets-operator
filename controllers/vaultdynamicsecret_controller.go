@@ -107,33 +107,34 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// doSync indicates that the controller should perform the secret sync,
 	// skipping any lease renewals.
 	doSync := o.GetGeneration() != o.Status.LastGeneration
-	doRolloutRestart := doSync && o.Status.LastGeneration > 1
-
 	leaseID := o.Status.SecretLease.ID
-	if !doSync && !o.Spec.AllowStaticCreds && leaseID != "" {
-		if r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
-			// don't take part in the thundering herd on start up,
-			// and the lease is still within the renewal window.
-			if !inRenewalWindow(o) {
-				leaseDuration := time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
-				horizon := computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
-				if err := r.updateStatus(ctx, o); err != nil {
-					return ctrl.Result{}, err
-				}
-				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
-					leaseID, horizon)
-				return ctrl.Result{RequeueAfter: horizon}, nil
+	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
+		// don't take part in the thundering herd on start up,
+		// and the lease is still within the renewal window.
+		horizon, inWindow := computeRelativeHorizonWithJitter(o, time.Second*1)
+		if !inWindow {
+			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
+				"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
+				leaseID, horizon)
+			if err := r.updateStatus(ctx, o); err != nil {
+				return ctrl.Result{}, err
 			}
+			return ctrl.Result{RequeueAfter: horizon}, nil
 		}
+	}
 
-		vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
-		if err != nil {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-				"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
-			return ctrl.Result{}, err
-		}
+	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
 
+		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
+		return ctrl.Result{
+			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
+		}, nil
+	}
+
+	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
 		// Renew the lease and return from Reconcile if the lease is successfully renewed.
 		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
 			if !r.isRenewableLease(secretLease, o, false) {
@@ -165,11 +166,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				"Renewed lease, lease_id=%s, horizon=%s", leaseID, horizon)
 			return ctrl.Result{RequeueAfter: horizon}, nil
 		} else {
-			// The secretLease was not renewed or failed, continue through Reconcile and do a rollout restart.
-			doRolloutRestart = true
-			if e, ok := err.(*LeaseTruncatedError); ok || e != nil && errors.As(err, &e) {
+			var e *LeaseTruncatedError
+			if errors.As(err, &e) {
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-					"Lease renewal duration was truncated from %ds to %ds, requesting new credentials", e.Expected, e.Actual)
+					"Lease renewal duration was truncated from %ds to %ds, "+
+						"requesting new credentials", e.Expected, e.Actual)
 			} else if !isLeaseNotfoundError(err) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
@@ -177,20 +178,21 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
-		return ctrl.Result{}, err
+	reason := consts.ReasonSecretSynced
+	if o.Status.LastGeneration > 0 {
+		reason = consts.ReasonSecretRotated
 	}
 
+	// sync the secret
 	secretLease, updated, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
-		return ctrl.Result{}, err
+		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
+		return ctrl.Result{
+			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
+		}, nil
 	}
 
-	doRolloutRestart = updated
-
+	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || updated
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = time.Now().Unix()
 	o.Status.LastGeneration = o.GetGeneration()
@@ -198,52 +200,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	reason := consts.ReasonSecretSynced
-	var horizon time.Duration
-	isRenewable := r.isRenewableLease(secretLease, o, false)
-	if isRenewable {
-		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
-		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-			"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
-	} else if o.Spec.AllowStaticCreds {
-		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
-		staticCredsMeta := o.Status.StaticCredsMetaData
-		if !r.isStaticCreds(&staticCredsMeta) {
-			horizon = 0
-			logger.Info("Vault response data does not support static-creds semantics",
-				"allowStaticCreds", o.Spec.AllowStaticCreds,
-				"horizon", horizon,
-				"status", o.Status,
-			)
-		} else {
-			if staticCredsMeta.TTL > 0 {
-				horizon = time.Duration(staticCredsMeta.TTL) * time.Second
-			} else {
-				horizon = time.Second * 1
-			}
-
-			_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
-			horizon += time.Duration(jitter)
-			r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-				"Secret synced, isStaticCreds=%t, horizon=%s, ttl=%d",
-				true, horizon, o.Status.StaticCredsMetaData.TTL)
-		}
-	} else {
-		// Not all dynamic credentials are renewable (e.g.: aws/creds/)
-		// In the scenario we resync the secret within the lease duration window
-		nextRenewalTime := computeRotationTime(o)
-		horizon = nextRenewalTime.Sub(time.Now())
-		if horizon < 0 {
-			horizon = time.Second * 1
-		}
-
-		_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
-		horizon += time.Duration(jitter)
-	}
+	horizon := r.computePostSyncHorizon(ctx, o)
+	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
+		"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
 
 	if doRolloutRestart {
-		reason = consts.ReasonSecretRotated
 		// rollout-restart errors are not retryable
 		// all error reporting is handled by helpers.HandleRolloutRestarts
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
@@ -325,7 +286,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	}
 
 	secretLease := r.getVaultSecretLease(resp.Secret())
-	if !secretLease.Renewable && o.Spec.AllowStaticCreds {
+	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
 		respData := resp.Data()
 
 		if v, ok := respData["last_vault_rotation"]; ok && v != nil {
@@ -502,16 +463,79 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	}
 }
 
-// inRenewalWindow checks if the specified percentage of the VDS lease duration
-// has elapsed
-func inRenewalWindow(vds *secretsv1beta1.VaultDynamicSecret) bool {
-	ts := computeRotationTime(vds)
-	return time.Now().After(ts)
+// computePostSyncHorizon for a secretsv1beta1.VaultDynamicSecret. The duration computed
+// varies depending on the "type" of Vault secret being synced.
+func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) time.Duration {
+	logger := log.FromContext(ctx)
+	var horizon time.Duration
+
+	secretLease := &o.Status.SecretLease
+	if !o.Spec.AllowStaticCreds {
+		// renewable secret lease
+		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
+		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
+	} else {
+		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
+		staticCredsMeta := o.Status.StaticCredsMetaData
+		if !r.isStaticCreds(&staticCredsMeta) {
+			horizon = 0
+			logger.Info("Vault response data does not support static-creds semantics",
+				"allowStaticCreds", o.Spec.AllowStaticCreds,
+				"horizon", horizon,
+				"status", o.Status,
+			)
+		} else {
+			if staticCredsMeta.TTL > 0 {
+				horizon = time.Duration(staticCredsMeta.TTL) * time.Second
+			} else {
+				horizon = time.Second * 1
+			}
+
+			_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
+			horizon += time.Duration(jitter)
+		}
+	}
+
+	return horizon
 }
 
-func computeRotationTime(vds *secretsv1beta1.VaultDynamicSecret) time.Time {
-	leaseDuration := time.Duration(vds.Status.SecretLease.LeaseDuration) * time.Second
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(capRenewalPercent(vds.Spec.RenewalPercent)) / 100)
+func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
+	var ts int64
+	var horizon time.Duration
+	if o.Spec.AllowStaticCreds {
+		ts = o.Status.StaticCredsMetaData.LastVaultRotation
+		horizon = time.Duration(o.Status.StaticCredsMetaData.TTL) * time.Second
+	} else {
+		ts = o.Status.LastRenewalTime
+		horizon = computeStartRenewingAt(
+			time.Duration(o.Status.SecretLease.LeaseDuration)*time.Second, o.Spec.RenewalPercent)
+	}
 
-	return time.Unix(vds.Status.LastRenewalTime, 0).Add(startRenewingAt)
+	return time.Unix(ts, 0).Add(horizon)
+}
+
+// computeRelativeHorizon returns the duration of the renewal window based on the
+// lease's last renewal time relative to now. Return true if the associated lease
+// is within its renewal window.
+func computeRelativeHorizon(o *secretsv1beta1.VaultDynamicSecret) (time.Duration, bool) {
+	ts := computeRotationTime(o)
+	now := time.Now()
+	return ts.Sub(now), now.After(ts)
+}
+
+// computeRelativeHorizonWithJitter returns the duration minus some random jitter of the renewal window
+// based on the lease's last renewal time relative to now. Return true if the
+// associated lease is within its renewal window. Use minHorizon if it is less than computed horizon.
+func computeRelativeHorizonWithJitter(o *secretsv1beta1.VaultDynamicSecret, minHorizon time.Duration) (time.Duration, bool) {
+	horizon, inWindow := computeRelativeHorizon(o)
+	if horizon < minHorizon {
+		horizon = minHorizon
+	}
+	_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
+	if o.Spec.AllowStaticCreds {
+		horizon += time.Duration(jitter)
+	} else {
+		horizon -= time.Duration(jitter)
+	}
+	return horizon, inWindow
 }

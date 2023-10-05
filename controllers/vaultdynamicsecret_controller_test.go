@@ -6,26 +6,27 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
-func Test_inRenewalWindow(t *testing.T) {
+func Test_computeRelativeHorizon(t *testing.T) {
 	tests := map[string]struct {
 		vds              *secretsv1beta1.VaultDynamicSecret
 		expectedInWindow bool
+		expectedHorizon  time.Duration
 	}{
 		"full lease elapsed": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -40,6 +41,8 @@ func Test_inRenewalWindow(t *testing.T) {
 				},
 			},
 			expectedInWindow: true,
+			expectedHorizon: time.Unix(time.Now().Unix()-600, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
 		},
 		"two thirds elapsed": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -54,6 +57,8 @@ func Test_inRenewalWindow(t *testing.T) {
 				},
 			},
 			expectedInWindow: true,
+			expectedHorizon: time.Unix(time.Now().Unix()-450, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
 		},
 		"one third elapsed": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -68,6 +73,8 @@ func Test_inRenewalWindow(t *testing.T) {
 				},
 			},
 			expectedInWindow: false,
+			expectedHorizon: time.Unix(time.Now().Unix()-200, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
 		},
 		"past end of lease": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -82,6 +89,8 @@ func Test_inRenewalWindow(t *testing.T) {
 				},
 			},
 			expectedInWindow: true,
+			expectedHorizon: time.Unix(time.Now().Unix()-800, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
 		},
 		"renewalPercent is 0": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -96,12 +105,50 @@ func Test_inRenewalWindow(t *testing.T) {
 				},
 			},
 			expectedInWindow: true,
+			expectedHorizon: time.Unix(time.Now().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, 0)).Sub(time.Now()),
+		},
+		"renewalPercent is cap": {
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 600,
+					},
+					LastRenewalTime: time.Now().Unix() - 400,
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: renewalPercentCap,
+				},
+			},
+			expectedInWindow: false,
+			expectedHorizon: time.Unix(time.Now().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap)).Sub(time.Now()),
+		},
+		"renewalPercent exceeds cap": {
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 600,
+					},
+					LastRenewalTime: time.Now().Unix() - 400,
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: renewalPercentCap + 1,
+				},
+			},
+			expectedInWindow: false,
+			expectedHorizon: time.Unix(time.Now().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap+1)).Sub(time.Now()),
 		},
 	}
 
-	for name, tc := range tests {
+	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedInWindow, inRenewalWindow(tc.vds))
+			actualHorizon, actualInWindow := computeRelativeHorizon(tt.vds)
+			assert.Equal(t, math.Floor(tt.expectedHorizon.Seconds()),
+				math.Floor(actualHorizon.Seconds()),
+			)
+			assert.Equal(t, tt.expectedInWindow, actualInWindow)
 		})
 	}
 }

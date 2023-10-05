@@ -10,7 +10,11 @@ variable "vault_license" {
 }
 
 variable "k8s_namespace" {
-  default = "demo"
+  default = "vault"
+}
+
+variable "k8s_service_account" {
+  default = "vault"
 }
 
 variable "k8s_config_context" {

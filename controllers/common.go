@@ -85,9 +85,13 @@ func capRenewalPercent(renewalPercent int) (rp int) {
 func computeDynamicHorizonWithJitter(leaseDuration time.Duration, renewalPercent int) time.Duration {
 	max, jitter := computeMaxJitter(leaseDuration)
 
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(capRenewalPercent(renewalPercent)) / 100)
+	return computeStartRenewingAt(leaseDuration, renewalPercent) + time.Duration(max) - time.Duration(jitter)
+}
 
-	return startRenewingAt + time.Duration(max) - time.Duration(jitter)
+// computeStartRenewingAt returns a time.Duration that is the specified
+// percentage of the lease duration.
+func computeStartRenewingAt(leaseDuration time.Duration, renewalPercent int) time.Duration {
+	return time.Duration(float64(leaseDuration.Nanoseconds()) * float64(capRenewalPercent(renewalPercent)) / 100)
 }
 
 // RemoveAllFinalizers is responsible for removing all finalizers added by the controller to prevent

@@ -64,6 +64,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
 			"k8s_config_context":         k8sConfigContext,
+			"k8s_vault_namespace":        k8sVaultNamespace,
+			"k8s_vault_service_account":  k8sVaultServiceAccount,
 			"name_prefix":                testID,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
@@ -108,12 +110,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
-			os.RemoveAll(tempDir)
 
 			// Undeploy Kustomize
 			if !testWithHelm {
 				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			} else {
+				// Helm does not delete the CRDs on uninstall, so we have to do it manually using
+				// kubectl.
+				k8s.RunKubectl(t, &k8s.KubectlOptions{
+					ContextName: k8sConfigContext,
+				}, "delete", "--recursive", "--filename", path.Join(chartDestDir, "crds"))
 			}
+
+			os.RemoveAll(tempDir)
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
@@ -188,13 +197,15 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		authObj        *secretsv1beta1.VaultAuth
-		expected       map[string]int
-		expectedStatic map[string]int
-		create         int
-		createStatic   int
-		existing       int
+		name                 string
+		authObj              *secretsv1beta1.VaultAuth
+		expected             map[string]int
+		expectedStatic       map[string]int
+		expectedNonRenewable map[string]int
+		create               int
+		createStatic         int
+		createNonRenewable   int
+		existing             int
 	}{
 		{
 			name:     "existing-only",
@@ -207,7 +218,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:   "create-only",
-			create: 5,
+			create: 1,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -215,10 +226,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:         "mixed",
-			create:       5,
-			createStatic: 5,
-			existing:     5,
+			name:               "mixed",
+			create:             5,
+			createStatic:       5,
+			createNonRenewable: 5,
+			existing:           5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -231,6 +243,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 				"rotation_period": 2,
 				"username":        24,
 			},
+			expectedNonRenewable: map[string]int{},
 		},
 		{
 			name:         "create-static",
@@ -242,6 +255,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 				"rotation_period": 2,
 				"username":        24,
 			},
+		},
+		{
+			name:                 "create-non-renewable",
+			createNonRenewable:   5,
+			expectedNonRenewable: map[string]int{},
 		},
 	}
 
@@ -368,26 +386,73 @@ func TestVaultDynamicSecret(t *testing.T) {
 				objsCreated = append(objsCreated, vdsObj)
 			}
 
+			for idx := 0; idx < tt.createNonRenewable; idx++ {
+				dest := fmt.Sprintf("%s-create-nr-creds-%d", tt.name, idx)
+				vdsObj := &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+						// used to denote the expected secret "type"
+						Annotations: map[string]string{
+							"non-renewable": "true",
+						},
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Namespace: outputs.Namespace,
+						Mount:     outputs.K8SSecretPath,
+						// RequestHTTPMethod: http.MethodPut,
+						Params: map[string]string{
+							"kubernetes_namespace": outputs.K8sNamespace,
+						},
+						RenewalPercent: 5,
+						Path:           "creds/" + outputs.K8SSecretRole,
+						Destination: secretsv1beta1.Destination{
+							Name:   dest,
+							Create: true,
+						},
+					},
+				}
+
+				assert.NoError(t, crdClient.Create(ctx, vdsObj))
+				objsCreated = append(objsCreated, vdsObj)
+			}
 			var count int
 			for idx, obj := range objsCreated {
 				nameFmt := "existing-dest-%d"
 				if obj.Spec.Destination.Create {
 					nameFmt = "create-dest-%d"
 				}
+
+				expected := tt.expected
+				var expectedPresentOnly []string
 				if obj.Spec.AllowStaticCreds {
 					nameFmt = "static-" + nameFmt
+					expected = tt.expectedStatic
+					expectedPresentOnly = append(expectedPresentOnly,
+						helpers.SecretDataKeyRaw,
+						"last_vault_rotation",
+						"ttl",
+					)
+				} else if _, ok := obj.Annotations["non-renewable"]; ok {
+					nameFmt = "non-renewable-" + nameFmt
+					expected = tt.expectedNonRenewable
+					expectedPresentOnly = append(expectedPresentOnly,
+						helpers.SecretDataKeyRaw,
+						"service_account_name",
+						"service_account_namespace",
+						"service_account_token",
+					)
 				}
+
 				count++
 				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
-					// capture obj for parallel test
 					obj := obj
+					expected := expected
+					expectedPresentOnly := expectedPresentOnly
 					t.Parallel()
-					if obj.Spec.AllowStaticCreds {
-						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expectedStatic)
-					} else {
-						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expected)
-					}
 
+					assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj,
+						expected, expectedPresentOnly...)
 					if t.Failed() {
 						return
 					}
