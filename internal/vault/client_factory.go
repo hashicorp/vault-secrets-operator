@@ -471,6 +471,11 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 
 	c, err := NewClientFromStorageEntry(ctx, client, entry, nil)
 	if err != nil {
+		// remove the Client storage entry if its restoration failed for any reason
+		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {
+			m.logger.Error(err, "Failed to prune cache storage", "entry", entry)
+		}
+
 		return nil, err
 	}
 
