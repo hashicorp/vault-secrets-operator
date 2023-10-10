@@ -761,7 +761,6 @@ func Test_defaultClient_Close(t *testing.T) {
 	tests := []struct {
 		name           string
 		revoke         bool
-		handler        *testHandler
 		expectRequests int
 		expectParams   []map[string]interface{}
 		expectPaths    []string
@@ -769,23 +768,20 @@ func Test_defaultClient_Close(t *testing.T) {
 		{
 			name:   "ensure-closed",
 			revoke: false,
-			handler: &testHandler{
-				handlerFunc: handlerFunc,
-			},
 		},
 		{
-			name:   "ensure-closed-with-revoke",
-			revoke: true,
-			handler: &testHandler{
-				handlerFunc: handlerFunc,
-			},
+			name:           "ensure-closed-with-revoke",
+			revoke:         true,
 			expectPaths:    []string{"/v1/auth/token/revoke-self"},
 			expectRequests: 1,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config, l := NewTestHTTPServer(t, tt.handler.handler())
+			h := &testHandler{
+				handlerFunc: handlerFunc,
+			}
+			config, l := NewTestHTTPServer(t, h.handler())
 			t.Cleanup(func() {
 				l.Close()
 			})
@@ -799,9 +795,9 @@ func Test_defaultClient_Close(t *testing.T) {
 
 			c.Close(tt.revoke)
 
-			assert.Equal(t, tt.expectPaths, tt.handler.paths)
-			assert.Equal(t, tt.expectParams, tt.handler.params)
-			assert.Equal(t, tt.expectRequests, tt.handler.requestCount)
+			assert.Equal(t, tt.expectPaths, h.paths)
+			assert.Equal(t, tt.expectParams, h.params)
+			assert.Equal(t, tt.expectRequests, h.requestCount)
 
 			assert.True(t, c.closed)
 			assert.NotNil(t, c.client)
