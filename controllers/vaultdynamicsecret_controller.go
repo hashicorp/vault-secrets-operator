@@ -83,6 +83,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	logger.Info("Runtime Pod UID", "uid", r.runtimePodUID)
+
 	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -112,9 +114,23 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// don't take part in the thundering herd on start up,
 		// and the lease is still within the renewal window.
 		horizon, inWindow := computeRelativeHorizonWithJitter(o, time.Second*1)
-		if !inWindow {
+		logger.Info("Restart check",
+			"inWindow", inWindow,
+			"horizon", horizon,
+			"allowStaticCreds", o.Spec.AllowStaticCreds)
+		if !o.Spec.AllowStaticCreds {
+			if !inWindow {
+				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
+					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
+					leaseID, horizon)
+				if err := r.updateStatus(ctx, o); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{RequeueAfter: horizon}, nil
+			}
+		} else if inWindow {
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-				"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
+				"Not in rotation period after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 				leaseID, horizon)
 			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
@@ -520,7 +536,11 @@ func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
 func computeRelativeHorizon(o *secretsv1beta1.VaultDynamicSecret) (time.Duration, bool) {
 	ts := computeRotationTime(o)
 	now := time.Now()
-	return ts.Sub(now), now.After(ts)
+	if o.Spec.AllowStaticCreds {
+		return ts.Sub(now), now.Before(ts)
+	} else {
+		return ts.Sub(now), now.After(ts)
+	}
 }
 
 // computeRelativeHorizonWithJitter returns the duration minus some random jitter of the renewal window
