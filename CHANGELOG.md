@@ -1,3 +1,18 @@
+## 0.3.2 (October 10th, 2023)
+Fix:
+* Handle invalid Client race after restoration: [GH-400](https://github.com/hashicorp/vault-secrets-operator/pull/400)
+
+Dependency Updates:
+* Bump ubi9/ubi-micro from 9.2-15 to 9.2-15.1696515526: [GH-404](https://github.com/hashicorp/vault-secrets-operator/pull/404)
+* Bump github.com/hashicorp/hcp-sdk-go from 0.64.0 to 0.65.0: [GH-403](https://github.com/hashicorp/vault-secrets-operator/pull/403)
+* Bump github.com/gruntwork-io/terratest from 0.44.0 to 0.45.0: [GH-402](https://github.com/hashicorp/vault-secrets-operator/pull/402)
+* Bump github.com/prometheus/client_model from 0.4.1-0.20230718164431-9a2bf3000d16 to 0.5.0: [GH-401](https://github.com/hashicorp/vault-secrets-operator/pull/401)
+* Bump github.com/go-openapi/runtime from 0.25.0 to 0.26.0: [GH-394](https://github.com/hashicorp/vault-secrets-operator/pull/394)
+* Bump github.com/prometheus/client_golang from 1.16.0 to 1.17.0: [GH-393](https://github.com/hashicorp/vault-secrets-operator/pull/393)
+* Bump github.com/hashicorp/golang-lru/v2 from 2.0.6 to 2.0.7: [GH-392](https://github.com/hashicorp/vault-secrets-operator/pull/392)
+* Bump github.com/onsi/gomega from 1.27.10 to 1.28.0: [GH-391](https://github.com/hashicorp/vault-secrets-operator/pull/391)
+* Bump github.com/hashicorp/hcp-sdk-go from 0.63.0 to 0.64.0: [GH-390](https://github.com/hashicorp/vault-secrets-operator/pull/390)
+
 ## 0.3.1 (September 27th, 2023)
 Fix:
 * Helm: bump the chart version and default tags to 0.3.1: [GH-386](https://github.com/hashicorp/vault-secrets-operator/pull/386)
