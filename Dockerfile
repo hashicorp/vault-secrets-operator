@@ -68,7 +68,7 @@ ENTRYPOINT ["/vault-secrets-operator"]
 
 # ubi release image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-micro:9.2-15 as release-ubi
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.2-15.1696515526 as release-ubi
 
 ENV BIN_NAME=vault-secrets-operator
 ARG PRODUCT_VERSION
