@@ -747,3 +747,60 @@ func Test_defaultClient_Read(t *testing.T) {
 		})
 	}
 }
+
+func Test_defaultClient_Close(t *testing.T) {
+	handlerFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}
+
+	tests := []struct {
+		name           string
+		revoke         bool
+		expectRequests int
+		expectParams   []map[string]interface{}
+		expectPaths    []string
+	}{
+		{
+			name:   "ensure-closed",
+			revoke: false,
+		},
+		{
+			name:           "ensure-closed-with-revoke",
+			revoke:         true,
+			expectPaths:    []string{"/v1/auth/token/revoke-self"},
+			expectRequests: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &testHandler{
+				handlerFunc: handlerFunc,
+			}
+			config, l := NewTestHTTPServer(t, h.handler())
+			t.Cleanup(func() {
+				l.Close()
+			})
+
+			client, err := api.NewClient(config)
+			require.NoError(t, err)
+
+			c := &defaultClient{
+				client: client,
+			}
+
+			c.Close(tt.revoke)
+
+			assert.Equal(t, tt.expectPaths, h.paths)
+			assert.Equal(t, tt.expectParams, h.params)
+			assert.Equal(t, tt.expectRequests, h.requestCount)
+
+			assert.True(t, c.closed)
+			assert.NotNil(t, c.client)
+		})
+	}
+}
