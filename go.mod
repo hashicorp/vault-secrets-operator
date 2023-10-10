@@ -13,7 +13,7 @@ require (
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.2.3-0.20230606170242-1a4b95565d57
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hashicorp/hcp-sdk-go v0.64.0
+	github.com/hashicorp/hcp-sdk-go v0.65.0
 	github.com/hashicorp/vault/api v1.10.0
 	github.com/hashicorp/vault/sdk v0.10.0
 	github.com/onsi/ginkgo v1.16.5
