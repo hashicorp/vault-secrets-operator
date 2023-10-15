@@ -26,12 +26,16 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 const (
 	envSkipAWS            = "SKIP_AWS_TESTS"
 	envSkipAWSStaticCreds = "SKIP_AWS_STATIC_CREDS_TEST"
 	defaultAWSRegion      = "us-east-2"
+	envSkipGCP            = "SKIP_GCP_TESTS"
+	defaultGCPRegion      = "us-west1"
 )
 
 func TestVaultAuthMethods(t *testing.T) {
@@ -71,6 +75,14 @@ func TestVaultAuthMethods(t *testing.T) {
 	if r := os.Getenv("AWS_REGION"); r != "" {
 		awsRegion = r
 	}
+	runGCPTests := true
+	if run, _ := runGCP(t); !run {
+		runGCPTests = false
+	}
+	gcpRegion := defaultGCPRegion
+	if r := os.Getenv("GCP_REGION"); r != "" {
+		gcpRegion = r
+	}
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -106,6 +118,8 @@ func TestVaultAuthMethods(t *testing.T) {
 			"irsa_assumable_role_arn":      os.Getenv("AWS_IRSA_ROLE"),
 			"aws_account_id":               os.Getenv("AWS_ACCOUNT_ID"),
 			"aws_region":                   awsRegion,
+			"run_gcp_tests":                runGCPTests,
+			"gcp_project_id":               os.Getenv("GCP_PROJECT"),
 		},
 	}
 	if operatorImageRepo != "" {
@@ -154,11 +168,37 @@ func TestVaultAuthMethods(t *testing.T) {
 	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName)
 	created = append(created, secretObj)
 
-	auths := []struct {
+	// canRun function that waits a minute for eventual consistency with token
+	// create permission in GCP
+	waitForGCPConsistency := func() (bool, error) {
+		key := ctrlclient.ObjectKey{
+			Namespace: testK8sNamespace,
+			Name:      "workload-identity-sa",
+		}
+		sa, err := helpers.GetServiceAccount(ctx, crdClient, key)
+		require.NoError(t, err)
+		config := vault.GCPTokenExchangeConfig{
+			KSA:            sa,
+			GkeClusterName: os.Getenv("GKE_CLUSTER_NAME"),
+			GcpProject:     os.Getenv("GCP_PROJECT"),
+			Region:         gcpRegion,
+			VaultRole:      "consistency-check",
+		}
+		for i := 0; i < 30; i++ {
+			if _, err = vault.GCPTokenExchange(ctx, config, crdClient); err == nil {
+				return true, nil
+			}
+			time.Sleep(2 * time.Second)
+		}
+		return false, fmt.Errorf("timed out: %w", err)
+	}
+
+	type testCase struct {
 		shouldRun func(*testing.T) (bool, string)
 		canRun    func() (bool, error)
 		vaultAuth *secretsv1beta1.VaultAuth
-	}{
+	}
+	auths := []testCase{
 		{
 			shouldRun: alwaysRun,
 			canRun:    noRequirements,
@@ -317,6 +357,47 @@ func TestVaultAuthMethods(t *testing.T) {
 				},
 			},
 		},
+		{
+			shouldRun: runGCP,
+			canRun:    waitForGCPConsistency,
+			vaultAuth: &secretsv1beta1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-gcp-workload-identity",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "gcp",
+					Mount:     "gcp",
+					GCP: &secretsv1beta1.VaultAuthConfigGCP{
+						Role:                           outputs.AuthRole + "-gcp",
+						WorkloadIdentityServiceAccount: "workload-identity-sa",
+					},
+				},
+			},
+		},
+		{
+			shouldRun: runGCP,
+			canRun:    waitForGCPConsistency,
+			vaultAuth: &secretsv1beta1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-gcp-workload-identity-all-options",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "gcp",
+					Mount:     "gcp",
+					GCP: &secretsv1beta1.VaultAuthConfigGCP{
+						Role:                           outputs.AuthRole + "-gcp",
+						Region:                         gcpRegion,
+						WorkloadIdentityServiceAccount: "workload-identity-sa",
+						ClusterName:                    os.Getenv("GKE_CLUSTER_NAME"),
+						ProjectId:                      os.Getenv("GCP_PROJECT"),
+					},
+				},
+			},
+		},
 	}
 	expectedData := map[string]interface{}{"foo": "bar"}
 
@@ -331,33 +412,31 @@ func TestVaultAuthMethods(t *testing.T) {
 	secrets := []*secretsv1beta1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
-		if run, _ := a.shouldRun(t); !run {
-			continue
-		}
 		dest := fmt.Sprintf("kv-%s", a.vaultAuth.Name)
 		secretName := fmt.Sprintf("test-secret-%s", a.vaultAuth.Name)
-		secrets = append(secrets,
-			&secretsv1beta1.VaultStaticSecret{
-				ObjectMeta: v1.ObjectMeta{
-					Name:      secretName,
-					Namespace: testK8sNamespace,
+		secret := &secretsv1beta1.VaultStaticSecret{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      secretName,
+				Namespace: a.vaultAuth.Namespace,
+			},
+			Spec: secretsv1beta1.VaultStaticSecretSpec{
+				VaultAuthRef: a.vaultAuth.Name,
+				Namespace:    testVaultNamespace,
+				Mount:        testKvv2MountPath,
+				Type:         consts.KVSecretTypeV2,
+				Path:         dest,
+				Destination: secretsv1beta1.Destination{
+					Name:   dest,
+					Create: true,
 				},
-				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					VaultAuthRef: a.vaultAuth.Name,
-					Namespace:    testVaultNamespace,
-					Mount:        testKvv2MountPath,
-					Type:         consts.KVSecretTypeV2,
-					Path:         dest,
-					Destination: secretsv1beta1.Destination{
-						Name:   dest,
-						Create: true,
-					},
-				},
-			})
-	}
-	// Add to the created for cleanup
-	for _, secret := range secrets {
-		created = append(created, secret)
+			},
+		}
+		secrets = append(secrets, secret)
+
+		// Add to the created for cleanup
+		if run, _ := a.shouldRun(t); run {
+			created = append(created, secret)
+		}
 	}
 
 	putKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret) {
@@ -470,4 +549,14 @@ func requiredAWSStaticCreds() (bool, error) {
 		return false, errs
 	}
 	return true, nil
+}
+
+// checks whether or not to run the gcp tests
+func runGCP(t *testing.T) (bool, string) {
+	t.Helper()
+
+	if v := os.Getenv(envSkipGCP); v == "true" {
+		return false, "skipping because " + envSkipGCP + " is set to 'true'"
+	}
+	return true, ""
 }

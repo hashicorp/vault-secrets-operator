@@ -90,6 +90,31 @@ type VaultAuthConfigAWS struct {
 	IRSAServiceAccount string `json:"irsaServiceAccount,omitempty"`
 }
 
+// VaultAuthConfigGCP provides VaultAuth configuration options needed for
+// authenticating to Vault via a GCP AuthMethod, using workload identity
+type VaultAuthConfigGCP struct {
+	// Vault role to use for authenticating
+	Role string `json:"role"`
+
+	// WorkloadIdentityServiceAccount is the name of a Kubernetes service
+	// account (in the same Kubernetes namespace as this VaultAuth) which has
+	// been configured for workload identity in GKE. Should be annotated with
+	// "iam.gke.io/gcp-service-account".
+	WorkloadIdentityServiceAccount string `json:"workloadIdentityServiceAccount"`
+
+	// GCP Region of the GKE cluster's identity provider. Defaults to the region
+	// returned from the operator pod's local metadata server.
+	Region string `json:"region,omitempty"`
+
+	// GKE cluster name. Defaults to the cluster-name returned from the operator
+	// pod's local metadata server.
+	ClusterName string `json:"clusterName,omitempty"`
+
+	// GCP project id. Defaults to the project-id returned from the operator
+	// pod's local metadata server.
+	ProjectId string `json:"projectId,omitempty"`
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
@@ -110,7 +135,7 @@ type VaultAuthSpec struct {
 	// is the default behavior.
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
-	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws
+	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws;gcp
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
@@ -126,6 +151,8 @@ type VaultAuthSpec struct {
 	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
 	// AWS specific auth configuration, requires that Method be set to `aws`.
 	AWS *VaultAuthConfigAWS `json:"aws,omitempty"`
+	// GCP specific auth configuration, requires that Method be set to `gcp`.
+	GCP *VaultAuthConfigGCP `json:"gcp,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
 	// This is done by passing setting the manager's commandline argument

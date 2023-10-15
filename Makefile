@@ -45,6 +45,8 @@ SKIP_CLEANUP ?=
 # Cloud test options
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
+SKIP_GCP_TESTS ?= true
+
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
 # number of parallel bats to run
@@ -299,6 +301,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
     INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
+	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
