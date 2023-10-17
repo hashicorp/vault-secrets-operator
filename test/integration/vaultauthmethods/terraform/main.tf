@@ -34,6 +34,10 @@ provider "helm" {
   }
 }
 
+provider "google" {
+  project = var.gcp_project_id
+}
+
 resource "kubernetes_namespace" "tenant-1" {
   metadata {
     name = var.k8s_test_namespace
