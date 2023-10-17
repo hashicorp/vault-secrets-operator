@@ -239,11 +239,11 @@ jobs:
     steps:
       - run: echo "setting k8s versions"
     outputs:
-      K8S_1_23: 1.23.17
       K8S_1_24: 1.24.15
       K8S_1_25: 1.25.11
       K8S_1_26: 1.26.6
       K8S_1_27: 1.27.3
+      K8S_1_28: 1.28.0
 
   integrationTest:
     runs-on: ubuntu-latest
@@ -256,15 +256,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kind-k8s-version: [ "${{ needs.k8s-versions.outputs.K8S_1_23 }}", "${{ needs.k8s-versions.outputs.K8S_1_24 }}", "${{ needs.k8s-versions.outputs.K8S_1_25 }}", "${{ needs.k8s-versions.outputs.K8S_1_26 }}", "${{ needs.k8s-versions.outputs.K8S_1_27 }}"]
-        vault-version: ["${{ needs.vault-versions.outputs.VAULT_N_2 }}", "${{ needs.vault-versions.outputs.VAULT_N_1 }}", "${{ needs.vault-versions.outputs.VAULT_N }}"]
+        kind-k8s-version:
+          - "${{ needs.k8s-versions.outputs.K8S_1_24 }}"
+          - "${{ needs.k8s-versions.outputs.K8S_1_25 }}"
+          - "${{ needs.k8s-versions.outputs.K8S_1_26 }}"
+          - "${{ needs.k8s-versions.outputs.K8S_1_27 }}"
+          - "${{ needs.k8s-versions.outputs.K8S_1_28 }}"
+        vault-version:
+          - "${{ needs.vault-versions.outputs.VAULT_N_2 }}"
+          - "${{ needs.vault-versions.outputs.VAULT_N_1 }}"
+          - "${{ needs.vault-versions.outputs.VAULT_N }}"
         installation-method: [helm, kustomize]
         enterprise: [true, false]
         # Note: We want to test the operator with the different k8s versions,
         # and with the different vault versions, but we don't care about testing
         # all the k8s versions against all the vault versions.
         # Combos to exclude:
-        #   kind-k8s-version: [K8S_1_23, K8S_1_24, K8S_1_25, K8S_1_26]
+        #   kind-k8s-version: [K8S_1_24, K8S_1_25, K8S_1_26, K8S_1_27]
         #   vault-version: [VAULT_N_2, VAULT_N_1]
         # We run kustomize ent against the full matrix, and other tests against vault version VAULT_N.
         # Combos to exclude:
@@ -274,13 +282,13 @@ jobs:
         # TODO: When the VDS integration test supports Helm, swap the matrix filter so helm ent test runs the full matrix.
         exclude:
           # vault version N-2
+          - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_27 }}
+            vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_26 }}
             vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_25 }}
             vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_24 }}
-            vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
-          - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_23 }}
             vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
           - vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
             installation-method: helm
@@ -292,13 +300,13 @@ jobs:
             installation-method: kustomize
             enterprise: false
           # vault version N-1
+          - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_27 }}
+            vault-version: ${{ needs.vault-versions.outputs.VAULT_N_1 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_26 }}
             vault-version: ${{ needs.vault-versions.outputs.VAULT_N_1 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_25 }}
             vault-version: ${{ needs.vault-versions.outputs.VAULT_N_1 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_24 }}
-            vault-version: ${{ needs.vault-versions.outputs.VAULT_N_1 }}
-          - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_23 }}
             vault-version: ${{ needs.vault-versions.outputs.VAULT_N_1 }}
           - vault-version: ${{ needs.vault-versions.outputs.VAULT_N_1 }}
             installation-method: helm
