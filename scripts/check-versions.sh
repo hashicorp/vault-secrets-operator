@@ -40,6 +40,8 @@ function checkVersion {
  fi
 
  local doc="$(cat ${filename})"
+ local actual
+ local maybe_tag
  echo "* Checking version ${version} in ${filename}"
  for query in "${@:3}"
  do
