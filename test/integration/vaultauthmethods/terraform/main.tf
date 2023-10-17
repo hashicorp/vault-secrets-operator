@@ -36,6 +36,7 @@ provider "helm" {
 
 provider "google" {
   project = var.gcp_project_id
+  region  = "us-west2"
 }
 
 resource "kubernetes_namespace" "tenant-1" {
