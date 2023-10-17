@@ -1,3 +1,15 @@
+## 0.3.3 (October 17th, 2023)
+Fix:
+
+* Important security update to address some Golang vulnerabilities [GH-414]https://github.com/hashicorp/vault-secrets-operator/pull/414
+
+Dependency Updates:
+* Upgrade kube-rbac-proxy to v0.14.4 for CVE-2023-39325 [GH-414]https://github.com/hashicorp/vault-secrets-operator/pull/414
+* Bump to Go 1.21.3 for CVE-2023-39325: [GH-408](https://github.com/hashicorp/vault-secrets-operator/pull/408)
+* Bump github.com/hashicorp/vault/sdk from 0.10.0 to 0.10.2: [GH-410](https://github.com/hashicorp/vault-secrets-operator/pull/410)
+* Bump github.com/gruntwork-io/terratest from 0.45.0 to 0.46.0: [GH-409](https://github.com/hashicorp/vault-secrets-operator/pull/409)
+* Bump golang.org/x/net from 0.14.0 to 0.17.0: [GH-407](https://github.com/hashicorp/vault-secrets-operator/pull/407)
+
 ## 0.3.2 (October 10th, 2023)
 Fix:
 * Handle invalid Client race after restoration: [GH-400](https://github.com/hashicorp/vault-secrets-operator/pull/400)
