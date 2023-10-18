@@ -118,8 +118,6 @@ func TestVaultAuthMethods(t *testing.T) {
 			"irsa_assumable_role_arn":      os.Getenv("AWS_IRSA_ROLE"),
 			"aws_account_id":               os.Getenv("AWS_ACCOUNT_ID"),
 			"aws_region":                   awsRegion,
-			"run_gcp_tests":                runGCPTests,
-			"gcp_project_id":               os.Getenv("GCP_PROJECT"),
 		},
 	}
 	if operatorImageRepo != "" {
@@ -159,6 +157,39 @@ func TestVaultAuthMethods(t *testing.T) {
 
 	var outputs authMethodsK8sOutputs
 	require.Nil(t, json.Unmarshal(b, &outputs))
+
+	if runGCPTests {
+		gcpTempDir, err := os.MkdirTemp(os.TempDir(), t.Name()+"-gcp")
+		require.Nil(t, err)
+		gcpTfDir := copyTerraformDir(t, path.Join(testRoot, "vaultauthmethods/terraform-gcp"), gcpTempDir)
+
+		// Construct the terraform options with default retryable errors to handle the most common
+		// retryable errors in terraform testing.
+		gcpTfOptions := &terraform.Options{
+			// Set the path to the Terraform code that will be tested.
+			TerraformDir: gcpTfDir,
+			Vars: map[string]interface{}{
+				"k8s_vault_connection_address": testVaultAddress,
+				"k8s_test_namespace":           testK8sNamespace,
+				"k8s_config_context":           k8sConfigContext,
+				"run_gcp_tests":                runGCPTests,
+				"gcp_project_id":               os.Getenv("GCP_PROJECT"),
+				"gcp_region":                   os.Getenv("GCP_REGION"),
+				"vault_policy":                 outputs.VaultPolicy,
+			},
+		}
+		if entTests {
+			gcpTfOptions.Vars["vault_enterprise"] = true
+			gcpTfOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		}
+		gcpTfOptions = setCommonTFOptions(t, gcpTfOptions)
+		t.Cleanup(func() {
+			// Clean up GCP resources with "terraform destroy" at the end of the test
+			terraform.Destroy(t, gcpTfOptions)
+			assert.NoError(t, os.RemoveAll(gcpTempDir))
+		})
+		terraform.InitAndApply(t, gcpTfOptions)
+	}
 
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)

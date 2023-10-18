@@ -34,11 +34,6 @@ provider "helm" {
   }
 }
 
-provider "google" {
-  project = var.gcp_project_id
-  region  = "us-west2"
-}
-
 resource "kubernetes_namespace" "tenant-1" {
   metadata {
     name = var.k8s_test_namespace
@@ -259,59 +254,6 @@ resource "kubernetes_secret" "static-creds" {
     "secret_access_key" = var.test_aws_secret_access_key
     "session_token"     = var.test_aws_session_token
   }
-}
-
-# gcp auth config
-module "gcp-workload-identity" {
-  count      = var.run_gcp_tests ? 1 : 0
-  source     = "terraform-google-modules/kubernetes-engine/google//modules/workload-identity"
-  name       = "workload-identity-sa"
-  namespace  = kubernetes_namespace.tenant-1.metadata[0].name
-  project_id = var.gcp_project_id
-  roles      = ["roles/container.viewer"]
-}
-
-resource "vault_gcp_auth_backend" "gcp" {
-  count       = var.run_gcp_tests ? 1 : 0
-  credentials = base64decode(one(google_service_account_key.vault-key).private_key)
-  path        = "gcp"
-  namespace   = local.namespace
-}
-
-resource "vault_gcp_auth_backend_role" "role" {
-  count     = var.run_gcp_tests ? 1 : 0
-  backend   = one(vault_gcp_auth_backend.gcp).path
-  namespace = local.namespace
-  role      = "${var.auth_role}-gcp"
-  type      = "iam"
-  bound_service_accounts = [
-    one(module.gcp-workload-identity).gcp_service_account_email,
-  ]
-  token_policies = [vault_policy.default.name]
-
-  # The generateIdToken API always returns jwt's with a ttl of 1h, and the vault
-  # default is 15m
-  max_jwt_exp = 3600
-}
-
-# Create a new Service account for Vault's gcp auth method
-resource "google_service_account" "vault" {
-  count        = var.run_gcp_tests ? 1 : 0
-  account_id   = "sa-vault"
-  display_name = "GKE Service Account for Vault auth"
-  project      = var.gcp_project_id
-}
-
-resource "google_project_iam_member" "vault-auth-iam" {
-  count   = var.run_gcp_tests ? 1 : 0
-  project = var.gcp_project_id
-  role    = "roles/iam.serviceAccountKeyAdmin"
-  member  = "serviceAccount:${one(google_service_account.vault).email}"
-}
-
-resource "google_service_account_key" "vault-key" {
-  count              = var.run_gcp_tests ? 1 : 0
-  service_account_id = one(google_service_account.vault).name
 }
 
 module "vso-helm" {

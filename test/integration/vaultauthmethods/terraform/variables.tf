@@ -127,13 +127,3 @@ variable "run_aws_static_creds_test" {
   type    = bool
   default = false
 }
-
-variable "run_gcp_tests" {
-  type    = bool
-  default = false
-}
-
-variable "gcp_project_id" {
-  type    = string
-  default = ""
-}
