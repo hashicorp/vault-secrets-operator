@@ -334,7 +334,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
-	find $(INTEGRATION_TEST_ROOT)/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
+	find $(INTEGRATION_TEST_ROOT)/infra/state -type f -name '*tfstate*' | xargs rm &> /dev/null || true
 
 .PHONY: setup-integration-test
 ## Create Vault inside the cluster

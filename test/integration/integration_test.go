@@ -308,6 +308,7 @@ type authMethodsK8sOutputs struct {
 	AuthRole      string `json:"auth_role"`
 	AppRoleRoleID string `json:"role_id"`
 	GsaEmail      string `json:"gsa_email"`
+	VaultPolicy   string `json:"vault_policy"`
 }
 
 type dynamicK8SOutputs struct {
