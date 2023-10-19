@@ -35,7 +35,7 @@ provider "vault" {
 module "gke-workload-identity" {
   count      = var.run_gcp_tests ? 1 : 0
   source     = "terraform-google-modules/kubernetes-engine/google//modules/workload-identity"
-  name       = "workload-identity-sa"
+  name       = "workload-identity-sa-${var.test_id}"
   namespace  = var.k8s_test_namespace
   project_id = var.gcp_project_id
   roles      = ["roles/container.viewer"]
@@ -67,7 +67,7 @@ resource "vault_gcp_auth_backend_role" "role" {
 # Create a new Service account for Vault's gcp auth method
 resource "google_service_account" "vault" {
   count        = var.run_gcp_tests ? 1 : 0
-  account_id   = "sa-vault"
+  account_id   = "sa-vault-${var.test_id}"
   display_name = "GKE Service Account for Vault auth"
   project      = var.gcp_project_id
 }

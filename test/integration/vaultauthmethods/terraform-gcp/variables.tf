@@ -1,6 +1,10 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
+variable "test_id" {
+  default = ""
+}
+
 variable "k8s_vault_connection_address" {}
 
 variable "k8s_config_context" {

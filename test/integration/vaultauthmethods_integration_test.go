@@ -169,6 +169,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			// Set the path to the Terraform code that will be tested.
 			TerraformDir: gcpTfDir,
 			Vars: map[string]interface{}{
+				"test_id":                      testID,
 				"k8s_vault_connection_address": testVaultAddress,
 				"k8s_test_namespace":           testK8sNamespace,
 				"k8s_config_context":           k8sConfigContext,
@@ -204,7 +205,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	waitForGCPConsistency := func() (bool, error) {
 		key := ctrlclient.ObjectKey{
 			Namespace: testK8sNamespace,
-			Name:      "workload-identity-sa",
+			Name:      "workload-identity-sa-" + testID,
 		}
 		sa, err := helpers.GetServiceAccount(ctx, crdClient, key)
 		require.NoError(t, err)
@@ -402,7 +403,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					Mount:     "gcp",
 					GCP: &secretsv1beta1.VaultAuthConfigGCP{
 						Role:                           outputs.AuthRole + "-gcp",
-						WorkloadIdentityServiceAccount: "workload-identity-sa",
+						WorkloadIdentityServiceAccount: "workload-identity-sa-" + testID,
 					},
 				},
 			},
@@ -422,7 +423,7 @@ func TestVaultAuthMethods(t *testing.T) {
 					GCP: &secretsv1beta1.VaultAuthConfigGCP{
 						Role:                           outputs.AuthRole + "-gcp",
 						Region:                         gcpRegion,
-						WorkloadIdentityServiceAccount: "workload-identity-sa",
+						WorkloadIdentityServiceAccount: "workload-identity-sa-" + testID,
 						ClusterName:                    os.Getenv("GKE_CLUSTER_NAME"),
 						ProjectId:                      os.Getenv("GCP_PROJECT"),
 					},
