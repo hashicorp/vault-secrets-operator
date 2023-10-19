@@ -1,3 +1,8 @@
+## 0.3.4 (October 19th, 2023)
+Fix:
+
+* UBI image: Include the tls-ca-bundle.pem from ubi-minimal: [GH-415](https://github.com/hashicorp/vault-secrets-operator/pull/415)
+
 ## 0.3.3 (October 17th, 2023)
 Fix:
 
