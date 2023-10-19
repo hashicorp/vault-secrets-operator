@@ -9,14 +9,14 @@ require (
 	github.com/go-openapi/runtime v0.26.0
 	github.com/go-openapi/strfmt v0.21.7
 	github.com/google/uuid v1.3.1
-	github.com/gruntwork-io/terratest v0.45.0
+	github.com/gruntwork-io/terratest v0.46.0
 	github.com/hashicorp/go-hclog v1.5.0
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.2.3-0.20230606170242-1a4b95565d57
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/hcp-sdk-go v0.65.0
 	github.com/hashicorp/vault/api v1.10.0
-	github.com/hashicorp/vault/sdk v0.10.0
+	github.com/hashicorp/vault/sdk v0.10.2
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.28.0
 	github.com/operator-framework/operator-lib v0.11.1-0.20230717184314-6efbe3a22f6f
