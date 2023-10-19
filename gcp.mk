@@ -40,7 +40,8 @@ integration-test-gke: build-push ## Run integration tests in the GKE cluster
 	$(MAKE) port-forward &
 	$(MAKE) integration-test K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
 	IMG=$(IMG) VAULT_OIDC_DISC_URL=$(GKE_OIDC_URL) VAULT_OIDC_CA=false \
-	GCP_REGION=$(GCP_REGION) GCP_PROJECT=$(GCP_PROJECT) GKE_CLUSTER_NAME=$(GKE_CLUSTER_NAME)
+	GCP_REGION=$(GCP_REGION) GCP_PROJECT=$(GCP_PROJECT) GKE_CLUSTER_NAME=$(GKE_CLUSTER_NAME) \
+	SKIP_HCPVSAPPS_TESTS=true
 
 .PHONY: destroy-gke
 destroy-gke: ## Destroy the GKE cluster
