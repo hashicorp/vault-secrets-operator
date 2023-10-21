@@ -46,11 +46,11 @@ func (l *GCPCredentialProvider) Init(ctx context.Context, client ctrlclient.Clie
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.GCP.WorkloadIdentityServiceAccount,
 	}
-	wIServiceAccount, err := helpers.GetServiceAccount(ctx, client, key)
+	workloadIdentitySA, err := helpers.GetServiceAccount(ctx, client, key)
 	if err != nil {
 		return err
 	}
-	l.uid = wIServiceAccount.UID
+	l.uid = workloadIdentitySA.UID
 
 	return nil
 }
@@ -81,7 +81,7 @@ func (l *GCPCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 		}
 	}
 
-	// Create a k8s token for the workload identity service account
+	// Retrieve the workload identity k8s service account
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.GCP.WorkloadIdentityServiceAccount,
@@ -92,7 +92,7 @@ func (l *GCPCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 		return nil, err
 	}
 
-	// Exchange the k8s token for a Google ID token (signed jwt)
+	// Create and exchange a k8s token for a Google ID token (signed jwt)
 	config := GCPTokenExchangeConfig{
 		KSA:            sa,
 		GkeClusterName: gkeName,
@@ -121,9 +121,10 @@ type GCPTokenExchangeConfig struct {
 	VaultRole      string
 }
 
-// GCPTokenExchange exchanges a k8s service account token for a federated access
-// token from Google's STS API, and uses that to get an ID token (signed jwt)
-// from Google's IAM API, which can then be used to auth to Vault
+// GCPTokenExchange creates and exchanges a k8s service account token for a
+// federated access token from Google's STS API, and uses the federated access
+// token to get an ID token (signed jwt) from Google's IAM API, which can then
+// be used to auth to Vault
 func GCPTokenExchange(ctx context.Context, config GCPTokenExchangeConfig, client ctrlclient.Client) (string, error) {
 	// Read the GCP service account (GSA) from the k8s service account (KSA)
 	// annotation
