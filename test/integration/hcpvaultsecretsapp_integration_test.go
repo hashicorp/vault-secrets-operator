@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
@@ -258,13 +259,11 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 			t.Parallel()
 
 			var objsCreated []ctrlclient.Object
-
 			// HVS restricts the length of an application name to 32 characters, so we
 			// compute a unique hash for each test case. The detailed test description should
 			// be included when the app is created.
-			sum := sha256.Sum256([]byte(fmt.Sprintf("%s-%s", outputs.NamePrefix, t.Name())))
-			appName := fmt.Sprintf("vso-test-%x", sum[:8])
-
+			sum := sha256.Sum256([]byte(uuid.NewString()))
+			appName := fmt.Sprintf("vso-test-%x", sum[len(sum)-8:])
 			obj := &secretsv1beta1.HCPVaultSecretsApp{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      appName,
@@ -351,7 +350,7 @@ func deleteHVSApp(t *testing.T, ctx context.Context, hvsClient hvsclient.ClientS
 			WithLocationProjectID(projectID).
 			WithAppName(appName),
 		nil)
-	if assert.NoError(t, err) {
+	if assert.NoError(t, err, "failed to list secrets for app %q", appName) {
 		for _, v := range resp.GetPayload().Secrets {
 			_, err := hvsClient.DeleteAppSecret(
 				hvsclient.NewDeleteAppSecretParams().
@@ -361,15 +360,16 @@ func deleteHVSApp(t *testing.T, ctx context.Context, hvsClient hvsclient.ClientS
 					WithLocationProjectID(projectID).
 					WithSecretName(v.Name),
 				nil)
-			assert.NoError(t, err)
+			assert.NoError(t, err, "failed to delete secret %q in app %q",
+				v.Name, appName)
 		}
-	}
 
-	_, err = hvsClient.DeleteApp(
-		hvsclient.NewDeleteAppParams().
-			WithContext(ctx).
-			WithLocationOrganizationID(orgID).
-			WithLocationProjectID(projectID).
-			WithName(appName), nil)
-	assert.NoError(t, err)
+		_, err = hvsClient.DeleteApp(
+			hvsclient.NewDeleteAppParams().
+				WithContext(ctx).
+				WithLocationOrganizationID(orgID).
+				WithLocationProjectID(projectID).
+				WithName(appName), nil)
+		assert.NoError(t, err, "failed to delete app %q", appName)
+	}
 }
