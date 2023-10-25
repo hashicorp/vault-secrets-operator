@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -35,7 +36,6 @@ const (
 	envSkipAWSStaticCreds = "SKIP_AWS_STATIC_CREDS_TEST"
 	defaultAWSRegion      = "us-east-2"
 	envSkipGCP            = "SKIP_GCP_TESTS"
-	defaultGCPRegion      = "us-west1"
 )
 
 func TestVaultAuthMethods(t *testing.T) {
@@ -78,10 +78,6 @@ func TestVaultAuthMethods(t *testing.T) {
 	runGCPTests := true
 	if run, _ := runGCP(t); !run {
 		runGCPTests = false
-	}
-	gcpRegion := defaultGCPRegion
-	if r := os.Getenv("GCP_REGION"); r != "" {
-		gcpRegion = r
 	}
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
@@ -211,18 +207,19 @@ func TestVaultAuthMethods(t *testing.T) {
 		require.NoError(t, err)
 		config := vault.GCPTokenExchangeConfig{
 			KSA:            sa,
-			GkeClusterName: os.Getenv("GKE_CLUSTER_NAME"),
-			GcpProject:     os.Getenv("GCP_PROJECT"),
-			Region:         gcpRegion,
+			GKEClusterName: os.Getenv("GKE_CLUSTER_NAME"),
+			GCPProject:     os.Getenv("GCP_PROJECT"),
+			Region:         os.Getenv("GCP_REGION"),
 			VaultRole:      "consistency-check",
 		}
-		for i := 0; i < 30; i++ {
-			if _, err = vault.GCPTokenExchange(ctx, config, crdClient); err == nil {
-				return true, nil
-			}
-			time.Sleep(2 * time.Second)
+		err = backoff.Retry(func() error {
+			_, err := vault.GCPTokenExchange(ctx, config, crdClient)
+			return err
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 30))
+		if err != nil {
+			return false, fmt.Errorf("timed out: %w", err)
 		}
-		return false, fmt.Errorf("timed out: %w", err)
+		return true, nil
 	}
 
 	type testCase struct {
@@ -422,10 +419,10 @@ func TestVaultAuthMethods(t *testing.T) {
 					Mount:     "gcp",
 					GCP: &secretsv1beta1.VaultAuthConfigGCP{
 						Role:                           outputs.AuthRole + "-gcp",
-						Region:                         gcpRegion,
+						Region:                         os.Getenv("GCP_REGION"),
 						WorkloadIdentityServiceAccount: "workload-identity-sa-" + testID,
 						ClusterName:                    os.Getenv("GKE_CLUSTER_NAME"),
-						ProjectId:                      os.Getenv("GCP_PROJECT"),
+						ProjectID:                      os.Getenv("GCP_PROJECT"),
 					},
 				},
 			},

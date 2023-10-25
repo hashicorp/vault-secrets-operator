@@ -59,7 +59,7 @@ func (l *GCPCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	logger := log.FromContext(ctx)
 
 	var err error
-	gcpProject := l.authObj.Spec.GCP.ProjectId
+	gcpProject := l.authObj.Spec.GCP.ProjectID
 	if gcpProject == "" {
 		gcpProject, err = metadata.ProjectID()
 		if err != nil {
@@ -95,8 +95,8 @@ func (l *GCPCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	// Create and exchange a k8s token for a Google ID token (signed jwt)
 	config := GCPTokenExchangeConfig{
 		KSA:            sa,
-		GkeClusterName: gkeName,
-		GcpProject:     gcpProject,
+		GKEClusterName: gkeName,
+		GCPProject:     gcpProject,
 		Region:         gkeLocation,
 		VaultRole:      l.authObj.Spec.GCP.Role,
 	}
@@ -115,8 +115,8 @@ func (l *GCPCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 
 type GCPTokenExchangeConfig struct {
 	KSA            *corev1.ServiceAccount
-	GkeClusterName string
-	GcpProject     string
+	GKEClusterName string
+	GCPProject     string
 	Region         string
 	VaultRole      string
 }
@@ -135,7 +135,7 @@ func GCPTokenExchange(ctx context.Context, config GCPTokenExchangeConfig, client
 		return "", fmt.Errorf("workload identity service account %q is missing annotation %q", config.KSA.Name, GCPAnnotationServiceAccount)
 	}
 
-	workloadIdentityPool := fmt.Sprintf("%s.svc.id.goog", config.GcpProject)
+	workloadIdentityPool := fmt.Sprintf("%s.svc.id.goog", config.GCPProject)
 	k8sTokenRequest, err := helpers.RequestSAToken(ctx, client, config.KSA, 600, []string{workloadIdentityPool})
 	if err != nil {
 		return "", fmt.Errorf("failed to get service account token: %w", err)
@@ -143,7 +143,7 @@ func GCPTokenExchange(ctx context.Context, config GCPTokenExchangeConfig, client
 
 	identityProvider := fmt.Sprintf(
 		"https://container.googleapis.com/v1/projects/%s/locations/%s/clusters/%s",
-		config.GcpProject, config.Region, config.GkeClusterName,
+		config.GCPProject, config.Region, config.GKEClusterName,
 	)
 	fedTokenAudience := fmt.Sprintf("identitynamespace:%s:%s", workloadIdentityPool, identityProvider)
 

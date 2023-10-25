@@ -97,9 +97,9 @@ type VaultAuthConfigGCP struct {
 	Role string `json:"role"`
 
 	// WorkloadIdentityServiceAccount is the name of a Kubernetes service
-	// account (in the same Kubernetes namespace as this VaultAuth) which has
-	// been configured for workload identity in GKE. Should be annotated with
-	// "iam.gke.io/gcp-service-account".
+	// account (in the same Kubernetes namespace as the Vault*Secret referencing
+	// this resource) which has been configured for workload identity in GKE.
+	// Should be annotated with "iam.gke.io/gcp-service-account".
 	WorkloadIdentityServiceAccount string `json:"workloadIdentityServiceAccount"`
 
 	// GCP Region of the GKE cluster's identity provider. Defaults to the region
@@ -112,7 +112,7 @@ type VaultAuthConfigGCP struct {
 
 	// GCP project id. Defaults to the project-id returned from the operator
 	// pod's local metadata server.
-	ProjectId string `json:"projectId,omitempty"`
+	ProjectID string `json:"projectId,omitempty"`
 }
 
 // VaultAuthSpec defines the desired state of VaultAuth
