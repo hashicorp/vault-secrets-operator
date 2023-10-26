@@ -165,6 +165,9 @@ func GCPTokenExchange(ctx context.Context, config GCPTokenExchangeConfig, client
 	if err != nil {
 		return "", fmt.Errorf("failed to exchange k8s service account token for google federated token: %w", err)
 	}
+	if stsTokenResp == nil || stsTokenResp.AccessToken == "" {
+		return "", fmt.Errorf("empty token response when exchanging k8s service account token for google federated token")
+	}
 
 	// Use that access token to generate an ID token (signed jwt). Use
 	// WithoutAuthentication() to prevent picking up the instance credentials.
