@@ -402,3 +402,17 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}
 }
+
+// GetKubernetesServiceAccountNamespacedName returns the NamespacedName for the Kubernetes VaultAuth's configured
+// serviceAccount.
+// If the serviceAccount is empty then defaults Namespace and Name will be returned.
+func GetKubernetesServiceAccountNamespacedName(a *secretsv1beta1.VaultAuthConfigKubernetes, providerNamespace string) (types.NamespacedName, error) {
+	if a.ServiceAccount == "" && providerNamespace == "" {
+		return types.NamespacedName{}, fmt.Errorf("provider's default namespace is not set, this is a bug")
+	}
+	saRef, err := parseResourceRef(a.ServiceAccount, providerNamespace)
+	if err != nil {
+		return types.NamespacedName{}, err
+	}
+	return saRef, nil
+}

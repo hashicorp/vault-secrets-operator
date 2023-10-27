@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
@@ -56,9 +57,13 @@ func (l *KubernetesCredentialProvider) Init(ctx context.Context, client ctrlclie
 }
 
 func (l *KubernetesCredentialProvider) getServiceAccount(ctx context.Context, client ctrlclient.Client) (*corev1.ServiceAccount, error) {
+	a, err := common.GetKubernetesServiceAccountNamespacedName(l.authObj.Spec.Kubernetes, l.providerNamespace)
+	if err != nil {
+		return nil, err
+	}
 	key := ctrlclient.ObjectKey{
-		Namespace: l.providerNamespace,
-		Name:      l.authObj.Spec.Kubernetes.ServiceAccount,
+		Namespace: a.Namespace,
+		Name:      a.Name,
 	}
 	sa := &corev1.ServiceAccount{}
 	if err := client.Get(ctx, key, sa); err != nil {

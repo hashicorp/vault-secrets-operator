@@ -583,3 +583,60 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		})
 	}
 }
+
+func Test_GetKubernetesServiceAccountNamespacedName(t *testing.T) {
+	tests := []struct {
+		name              string
+		a                 *secretsv1beta1.VaultAuthConfigKubernetes
+		providerNamespace string
+		want              types.NamespacedName
+		wantErr           assert.ErrorAssertionFunc
+		unsetDefaultsNS   bool
+	}{
+		{
+			name: "empty-sa-ref",
+			a: &secretsv1beta1.VaultAuthConfigKubernetes{
+				ServiceAccount: "",
+			},
+			providerNamespace: "test",
+			want: types.NamespacedName{
+				Namespace: OperatorNamespace,
+				Name:      consts.NameDefault,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "with-sa-ref-with-ns",
+			a: &secretsv1beta1.VaultAuthConfigKubernetes{
+				ServiceAccount: "foo/bar",
+			},
+			providerNamespace: "baz",
+			want: types.NamespacedName{
+				Name:      "bar",
+				Namespace: "foo",
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "with-sa-ref-without-ns",
+			a: &secretsv1beta1.VaultAuthConfigKubernetes{
+				ServiceAccount: "foo",
+			},
+			providerNamespace: "baz",
+			want: types.NamespacedName{
+				Namespace: "baz",
+				Name:      "foo",
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetKubernetesServiceAccountNamespacedName(tt.a, tt.providerNamespace)
+			if !tt.wantErr(t, err, fmt.Sprintf("getKubernetesServiceAccountNamespacedName(%v)", tt.a)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "getKubernetesServiceAccountNamespacedName(%v)", tt.a)
+		})
+	}
+}
