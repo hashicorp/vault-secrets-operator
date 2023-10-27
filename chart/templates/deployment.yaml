@@ -52,7 +52,7 @@ spec:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.controller.kubernetesClusterDomain }}
         image: {{ .Values.controller.kubeRbacProxy.image.repository }}:{{ .Values.controller.kubeRbacProxy.image.tag }}
-        imagePullPolicy: {{ .Values.controller.kubeRbacProxy.imagepullPolicy }}
+        imagePullPolicy: {{ .Values.controller.kubeRbacProxy.image.pullPolicy }}
         ports:
         - containerPort: 8443
           name: https
