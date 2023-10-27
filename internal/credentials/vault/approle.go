@@ -38,7 +38,7 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 
 	// We use the UID of the secret which holds the AppRole Role's secret_id for the provider UID
 	key := ctrlclient.ObjectKey{
-		Namespace: l.providerNamespace,
+		Namespace: l.authObj.Namespace,
 		Name:      l.authObj.Spec.AppRole.SecretRef,
 	}
 	secret, err := helpers.GetSecret(ctx, client, key)
@@ -56,7 +56,7 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 	// GetCreds in case the SecretID has changed since the last time the client token was
 	// generated. In the case of AppRole this is assumed to be common.
 	key := ctrlclient.ObjectKey{
-		Namespace: l.providerNamespace,
+		Namespace: l.authObj.Namespace,
 		Name:      l.authObj.Spec.AppRole.SecretRef,
 	}
 	secret, err := helpers.GetSecret(ctx, client, key)
