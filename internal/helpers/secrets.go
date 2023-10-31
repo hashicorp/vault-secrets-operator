@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
+	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/models"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -302,7 +303,7 @@ func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlcl
 	return ok, err
 }
 
-// GetSyncableSecret
+// GetSyncableSecret returns K8s Secret for obj.
 func GetSyncableSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
 	return getSecretExists(ctx, client, obj)
 }
@@ -371,66 +372,163 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 type SecretDataBuilder struct{}
 
 // WithVaultData returns the K8s Secret data from a Vault Secret data.
-func (s *SecretDataBuilder) WithVaultData(d, raw map[string]any) (map[string][]byte, error) {
-	return s.makeData(
-		func() ([]byte, map[string][]byte, error) {
-			data := make(map[string][]byte)
-
-			b, err := json.Marshal(raw)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			for k, v := range d {
-				switch x := v.(type) {
-				case string:
-					data[k] = []byte(x)
-				default:
-					b, err := json.Marshal(v)
-					if err != nil {
-						return nil, nil, err
-					}
-					data[k] = b
-				}
-			}
-			return b, data, nil
-		})
-}
-
-// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
-func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK) (map[string][]byte, error) {
-	return s.makeData(
-		func() ([]byte, map[string][]byte, error) {
-			p := resp.GetPayload()
-			data := make(map[string][]byte)
-			raw, err := p.MarshalBinary()
-			if err != nil {
-				return nil, nil, err
-			}
-
-			for _, v := range p.Secrets {
-				ver := v.Version
-				if ver == nil {
-					continue
-				}
-
-				if ver.Type != "kv" {
-					continue
-				}
-
-				data[v.Name] = []byte(ver.Value)
-			}
-
-			return raw, data, nil
-		})
-}
-
-func (s *SecretDataBuilder) makeData(dataFunc func() ([]byte, map[string][]byte, error)) (map[string][]byte, error) {
-	raw, data, err := dataFunc()
+func (s *SecretDataBuilder) WithVaultData(d, raw map[string]any, opt *SecretRenderOption) (map[string][]byte, error) {
+	b, err := json.Marshal(raw)
 	if err != nil {
 		return nil, err
 	}
 
+	data := make(map[string][]byte)
+	if opt != nil {
+		if len(opt.Specs) > 0 {
+			metadata, ok := raw["metadata"].(map[string]any)
+			if !ok {
+				metadata = make(map[string]any)
+			}
+
+			input := NewSecretInput(d, metadata)
+			data, err = renderTemplates(opt, input)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		filtered, err := filterFields(&opt.FieldFilter, d)
+		if err != nil {
+			return nil, err
+		}
+
+		// include the filtered non-templated fields.
+		for k, v := range filtered {
+			if _, ok := data[k]; !ok {
+				bv, err := marshalJSON(v)
+				if err != nil {
+					return nil, err
+				}
+				data[k] = bv
+			}
+		}
+
+	} else {
+		for k, v := range d {
+			b, err := marshalJSON(v)
+			if err != nil {
+				return nil, err
+			}
+
+			data[k] = b
+		}
+	}
+
+	return s.makeData(b, data)
+}
+
+func marshalJSON(value any) ([]byte, error) {
+	var b []byte
+	var err error
+	switch x := value.(type) {
+	case string:
+		b = []byte(x)
+	default:
+		b, err = json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
+}
+
+// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
+func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretRenderOption) (map[string][]byte, error) {
+	p := resp.GetPayload()
+	raw, err := p.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	withOpt := opt != nil
+	withSpecs := withOpt && len(opt.Specs) > 0
+	var secrets map[string]any
+	var metadata map[string]any
+	if withOpt {
+		// secrets for SecretInput
+		secrets = make(map[string]any)
+		// metadata for SecretInput
+		metadata = make(map[string]any)
+	}
+	// secret data returned to the caller
+	data := make(map[string][]byte)
+	for _, v := range p.Secrets {
+		ver := v.Version
+		if ver == nil {
+			continue
+		}
+
+		if ver.Type != "kv" {
+			continue
+		}
+
+		if opt == nil {
+			// no input data processing required
+			data[v.Name] = []byte(ver.Value)
+		} else {
+			bv, err := ver.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			// unmarshal to non-open secret, which should/must not contain any
+			// secret/confidential data.
+			var ss models.Secrets20230613Secret
+			if err := json.Unmarshal(bv, &ss); err != nil {
+				return nil, err
+			}
+
+			sv, err := ss.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+
+			// unmarshal to
+			var m map[string]any
+			if err := json.Unmarshal(sv, &m); err != nil {
+				return nil, err
+			}
+
+			// maps secret name to its secret metadata
+			metadata[v.Name] = m
+			// populate secrets for filtering and template processing below
+			secrets[v.Name] = ver.Value
+		}
+	}
+
+	if withOpt {
+		if withSpecs {
+			data, err = renderTemplates(opt, NewSecretInput(secrets, metadata))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		if filtered, err := filterFields(&opt.FieldFilter, secrets); err != nil {
+			return nil, err
+		} else {
+			for k, v := range filtered {
+				// include only non-templated fields.
+				if _, ok := data[k]; !ok {
+					b, err := marshalJSON(v)
+					if err != nil {
+						return nil, err
+					}
+					data[k] = b
+				}
+			}
+		}
+	}
+
+	return s.makeData(raw, data)
+}
+
+func (s *SecretDataBuilder) makeData(raw []byte, data map[string][]byte) (map[string][]byte, error) {
 	if _, ok := data[SecretDataKeyRaw]; ok {
 		return nil, SecretDataErrorContainsRaw
 	}

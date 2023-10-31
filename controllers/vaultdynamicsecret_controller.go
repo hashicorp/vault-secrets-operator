@@ -181,12 +181,17 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	secretLease, updated, err := r.syncSecret(ctx, vClient, o)
+	tmplOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
+	secretLease, updated, err := r.syncSecret(ctx, vClient, o, tmplOption)
+	if err != nil {
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	doRolloutRestart = updated
@@ -265,7 +270,9 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 	return meta.LastVaultRotation > 0 && (meta.RotationPeriod > 1 || meta.RotationSchedule != "")
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (*secretsv1beta1.VaultSecretLease, bool, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
+	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretRenderOption,
+) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp vault.Response
@@ -308,7 +315,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
-	data, err := resp.SecretK8sData()
+	data, err := resp.SecretK8sData(opt)
 	if err != nil {
 		return nil, false, err
 	}

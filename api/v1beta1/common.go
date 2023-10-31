@@ -22,6 +22,15 @@ type Destination struct {
 	// Type of Kubernetes Secret. Requires Create to be set to true.
 	// Defaults to Opaque.
 	Type v1.SecretType `json:"type,omitempty"`
+	// TemplateSpecs contain the template configuration that is specific to this
+	// syncable secret custom resource. Each template spec will be rendered in order
+	// of configuration.
+	TemplateSpecs []TemplateSpec `json:"templateSpecs,omitempty"`
+	// TemplateRefs contain references to template configuration that is provided
+	// by another K8s resource (ConfigMap only).
+	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
+	// FieldFilter provides filtering of the source secret data before it is stored.
+	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
 }
 
 // RolloutRestartTarget provides the configuration required to perform a
@@ -36,4 +45,57 @@ type RolloutRestartTarget struct {
 	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet}
 	Kind string `json:"kind"`
 	Name string `json:"name"`
+}
+
+// TemplateSpec provides inline templating configuration.
+type TemplateSpec struct {
+	// Name of the template. In the case
+	Name string `json:"name"`
+	// Text contains the Go template in text format. The template
+	// references attributes from the data structure of the source secret.
+	Text string `json:"text"`
+	// Render this template to the K8s Secret data as Name.
+	// +kubebuilder:default=true
+	Render bool `json:"render,omitempty"`
+}
+
+// TemplateRefSpec provides ...
+type TemplateRefSpec struct {
+	// Name of the template. In the case
+	Name string `json:"name"`
+	// Name of the template. In the case
+	Key string `json:"key"`
+	// Render this template to the K8s Secret data as Name.
+	// +kubebuilder:default=true
+	Render bool `json:"render,omitempty"`
+}
+
+// TemplateRef contains the configuration for accessing templates from an
+// external Kubernetes resource. TemplateRefs can be shared across all
+// syncable secret custom resources. If a template contains confidential
+// information a Kubernetes Secret should be used along with a secure RBAC
+// config, otherwise a Configmap should suffice.
+// Supported resource types are: ConfigMap, Secret
+type TemplateRef struct {
+	// Namespace of the resource.
+	Namespace string `json:"namespace,omitempty"`
+	// Name of the resource.
+	Name string `json:"name"`
+	// Names of the templates found in the referenced resource. The name should be a
+	// key in the referenced resource's data. The value should be a valid Go text
+	// template. Refer to https://pkg.go.dev/text/template for more information.
+	Specs []TemplateRefSpec `json:"specs"`
+}
+
+// FieldFilter can be used to filter the secret data that is stored in the K8s
+// Secret Destination. Filters will not be applied to templated fields, those
+// will always be included in the Destination K8s Secret. Exclusion filters are
+// always applied first.
+type FieldFilter struct {
+	// Includes contains regex patterns of keys that should be included in the K8s
+	// Secret Data.
+	Includes []string `json:"includes,omitempty"`
+	// Excludes contains regex pattern for keys that should be excluded from the K8s
+	// Secret Data.
+	Excludes []string `json:"excludes,omitempty"`
 }

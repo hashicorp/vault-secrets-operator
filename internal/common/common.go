@@ -359,6 +359,10 @@ type SyncableSecretMetaData struct {
 	APIVersion string
 	// Kind of the syncable-secret object. Maps to obj.Kind.
 	Kind string
+	// Name
+	Name string
+	// Namespace
+	Namespace string
 	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
 	Destination *secretsv1beta1.Destination
 	AuthRef     string
@@ -369,36 +373,35 @@ type SyncableSecretMetaData struct {
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
+	meta := &SyncableSecretMetaData{
+		Name:      obj.GetNamespace(),
+		Namespace: obj.GetNamespace(),
+	}
+
 	switch t := obj.(type) {
 	case *secretsv1beta1.VaultDynamicSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.VaultAuthRef,
-		}, nil
+		meta.Destination = &t.Spec.Destination
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.VaultStaticSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.VaultAuthRef,
-		}, nil
+		meta.Destination = &t.Spec.Destination
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.VaultPKISecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.VaultAuthRef,
-		}, nil
+		meta.Destination = &t.Spec.Destination
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.HCPVaultSecretsApp:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.HCPAuthRef,
-		}, nil
+		meta.Destination = &t.Spec.Destination
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.HCPAuthRef
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}
+
+	return meta, nil
 }

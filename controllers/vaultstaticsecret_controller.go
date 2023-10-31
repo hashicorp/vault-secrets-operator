@@ -78,6 +78,13 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
+	tmplOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
+			"Failed get template specs: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
 	kvReq, err := newKVRequest(o.Spec)
 	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
@@ -91,7 +98,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, tmplOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Invalid Vault Secret data: %s", err)
@@ -140,7 +147,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
 	} else {
-		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
+		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
 	if err := r.Status().Update(ctx, o); err != nil {
