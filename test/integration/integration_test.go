@@ -307,6 +307,8 @@ type revocationK8sOutputs struct {
 type authMethodsK8sOutputs struct {
 	AuthRole      string `json:"auth_role"`
 	AppRoleRoleID string `json:"role_id"`
+	GSAEmail      string `json:"gsa_email"`
+	VaultPolicy   string `json:"vault_policy"`
 }
 
 type dynamicK8SOutputs struct {

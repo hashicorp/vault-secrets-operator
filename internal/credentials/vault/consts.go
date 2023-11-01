@@ -10,4 +10,5 @@ const (
 	ProviderMethodJWT        = "jwt"
 	ProviderMethodAppRole    = "appRole"
 	ProviderMethodAWS        = "aws"
+	ProviderMethodGCP        = "gcp"
 )
