@@ -190,11 +190,16 @@ func matchField(pat, f string) (bool, error) {
 	return re.MatchString(f), nil
 }
 
-// filterFields filters data using v1beta1.FieldFilter's exclude/include
-// regex patterns, with processing done in that order.
-func filterFields[V any](f *secretsv1beta1.FieldFilter, data map[string]V) (map[string]V, error) {
-	hasExcludes := len(f.Excludes) > 0
-	if !hasExcludes && len(f.Includes) == 0 {
+// filterFields filters data using v1beta1.FieldFilter's exclude/include regex
+// patterns, with processing done in that order. If filter is nil, return all
+// data, unfiltered.
+func filterFields[V any](filter *secretsv1beta1.FieldFilter, data map[string]V) (map[string]V, error) {
+	if filter == nil {
+		return data, nil
+	}
+
+	hasExcludes := len(filter.Excludes) > 0
+	if !hasExcludes && len(filter.Includes) == 0 {
 		return data, nil
 	}
 
@@ -206,7 +211,7 @@ func filterFields[V any](f *secretsv1beta1.FieldFilter, data map[string]V) (map[
 			continue
 		}
 
-		for _, pat := range f.Excludes {
+		for _, pat := range filter.Excludes {
 			if matched, err := matchField(pat, k); err != nil {
 				return nil, err
 			} else if !matched {
@@ -216,7 +221,7 @@ func filterFields[V any](f *secretsv1beta1.FieldFilter, data map[string]V) (map[
 	}
 
 	for k := range m {
-		for _, pat := range f.Includes {
+		for _, pat := range filter.Includes {
 			if matched, err := matchField(pat, k); err != nil {
 				return nil, err
 			} else if !matched {

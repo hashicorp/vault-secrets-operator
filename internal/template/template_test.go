@@ -83,12 +83,11 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 			},
 		},
 		{
-			// should result in a range error that is redacted since can leak confidential
+			// should result in a redacted range error, since the error can leak confidential
 			// information.
-			name: "range-over-error-redacted-2",
+			name: "range-error-redacted",
 			tmpl: &defaultSecretTemplate{
-				noRedactErrors: false,
-				tmpl:           template.New("tmpl1").Funcs(funcMap),
+				tmpl: template.New("tmpl1").Funcs(funcMap),
 			},
 			tmplName: "tmpl1",
 			m: struct {
@@ -114,7 +113,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 		},
 		{
 			// should result in a range error that is not redacted, for test purposes only
-			name: "range-over-error-no-redaction",
+			name: "range-error-not-redacted",
 			tmpl: &defaultSecretTemplate{
 				noRedactErrors: true,
 				tmpl:           template.New("tmpl1").Funcs(funcMap),

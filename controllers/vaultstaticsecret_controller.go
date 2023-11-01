@@ -78,7 +78,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	tmplOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
+	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed get template specs: %s", err)
@@ -98,7 +98,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, tmplOption)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, renderOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Invalid Vault Secret data: %s", err)

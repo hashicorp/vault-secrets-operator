@@ -79,7 +79,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	tmplOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
+	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
@@ -207,7 +207,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	data, err := resp.SecretK8sData(tmplOption)
+	data, err := resp.SecretK8sData(renderOption)
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to marshal Vault secret data"

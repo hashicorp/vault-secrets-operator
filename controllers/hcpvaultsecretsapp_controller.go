@@ -106,12 +106,12 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	tmplOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
+	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp, tmplOption)
+	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp, renderOption)
 	if err != nil {
 		logger.Error(err, "Failed to build K8s Secret data from HVS response", "appName", o.Spec.AppName)
 		return ctrl.Result{

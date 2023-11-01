@@ -184,12 +184,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	tmplOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
+	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	secretLease, updated, err := r.syncSecret(ctx, vClient, o, tmplOption)
+	secretLease, updated, err := r.syncSecret(ctx, vClient, o, renderOption)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
