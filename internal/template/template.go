@@ -12,9 +12,8 @@ import (
 	"text/template"
 )
 
-// tmplErrorRegexes is used to react template execution errors that may
-// inadvertently reveal confidential information that may end up in an insecure
-// location.
+// tmplErrorRegexes is used to redact confidential information from template
+// execution errors that may inadvertently end up in an insecure location.
 var tmplErrorRegexes []*regexp.Regexp
 
 func init() {
@@ -97,7 +96,7 @@ func (v *defaultSecretTemplate) ExecuteTemplate(name string, m any) (map[string]
 
 	w := bytes.NewBuffer(nil)
 	if err := v.tmpl.ExecuteTemplate(w, name, m); err != nil {
-		return nil, v.redactError(err)
+		return nil, v.maybeRedactError(err)
 	}
 
 	return map[string][]byte{
@@ -105,7 +104,7 @@ func (v *defaultSecretTemplate) ExecuteTemplate(name string, m any) (map[string]
 	}, nil
 }
 
-func (v *defaultSecretTemplate) redactError(err error) error {
+func (v *defaultSecretTemplate) maybeRedactError(err error) error {
 	if v.noRedactErrors {
 		return err
 	}

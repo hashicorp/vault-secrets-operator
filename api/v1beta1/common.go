@@ -22,6 +22,12 @@ type Destination struct {
 	// Type of Kubernetes Secret. Requires Create to be set to true.
 	// Defaults to Opaque.
 	Type v1.SecretType `json:"type,omitempty"`
+	// Transformation provides configuration for transforming the secret data before
+	// it is stored in the Destination.
+	Transformation Transformation `json:"transformation"`
+}
+
+type Transformation struct {
 	// TemplateSpecs contain the template configuration that is specific to this
 	// syncable secret custom resource. Each template spec will be rendered in order
 	// of configuration.
@@ -47,27 +53,36 @@ type RolloutRestartTarget struct {
 	Name string `json:"name"`
 }
 
+type TemplateSpecBase struct {
+	// Name of the template. When Source is false, Name will be used as the key to
+	// the rendered secret data.
+	Name string `json:"name"`
+	// Source the template, this spec will not be rendered to the K8s Secret data.
+	Source bool `json:"source,omitempty"`
+}
+
 // TemplateSpec provides inline templating configuration.
 type TemplateSpec struct {
-	// Name of the template. In the case
+	// Name of the template. When Source is false, Name will be used as the key to
+	// the rendered secret data.
 	Name string `json:"name"`
 	// Text contains the Go template in text format. The template
 	// references attributes from the data structure of the source secret.
 	Text string `json:"text"`
-	// Render this template to the K8s Secret data as Name.
-	// +kubebuilder:default=true
-	Render bool `json:"render,omitempty"`
+	// Source the template, the spec will not be rendered to the K8s Secret data.
+	Source bool `json:"render,omitempty"`
 }
 
-// TemplateRefSpec provides ...
+// TemplateRefSpec points to templating text that is stored in an external K8s
+// resource.
 type TemplateRefSpec struct {
-	// Name of the template. In the case
+	// Name of the template. When Source is false, Name will be used as the key to
+	// the rendered secret data.
 	Name string `json:"name"`
-	// Name of the template. In the case
+	// Key of the template text.
 	Key string `json:"key"`
-	// Render this template to the K8s Secret data as Name.
-	// +kubebuilder:default=true
-	Render bool `json:"render,omitempty"`
+	// Source the template, this spec will not be rendered to the K8s Secret data.
+	Source bool `json:"source,omitempty"`
 }
 
 // TemplateRef contains the configuration for accessing templates from an

@@ -378,7 +378,6 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 						Name: "foo",
 						Text: `{{- $key := "baz" -}}
 {{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
-						Render: true,
 					},
 				},
 			},
@@ -598,7 +597,6 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 						Name: "foo",
 						Text: `{{- $key := "baz" -}}
 {{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
-						Render: true,
 					},
 				},
 			},

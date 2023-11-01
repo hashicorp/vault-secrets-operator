@@ -618,13 +618,13 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }} {{- printf "%s=%s\n" $key $value -}}
 {{- end }}`,
 					},
 					{
 						Name:   "qux",
-						Render: true,
+						Source: false,
 						Text:   `it`,
 					},
 				},
@@ -656,7 +656,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%s\n" $key ( $value | b64enc ) -}}
 {{- end }}`,
@@ -693,7 +693,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%s\n" $key ( $value | b64dec ) -}}
 {{- end }}`,
@@ -728,7 +728,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets -}}
 {{- printf "SEC_%s=%s\n" ( $key | upper ) ( $value | b64dec ) -}}
 {{- end }}
@@ -778,7 +778,7 @@ META_QUX=biff
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -816,7 +816,7 @@ META_QUX=biff
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -852,7 +852,7 @@ META_QUX=biff
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -886,7 +886,7 @@ META_QUX=biff
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := . }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -912,7 +912,7 @@ META_QUX=biff
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key ($value | bx2dec -}}
 {{- end }}`,
@@ -943,7 +943,7 @@ META_QUX=biff
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
 						Name:   "buz",
-						Render: true,
+						Source: false,
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -1260,7 +1260,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 					{
 						Name:   "bar",
 						Text:   `{{- get .Secrets "bar" | upper -}}`,
-						Render: true,
+						Source: false,
 					},
 				},
 				FieldFilter: secretsv1beta1.FieldFilter{},
@@ -1280,7 +1280,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 					{
 						Name:   "metadata.json",
 						Text:   `{{- .Metadata | mustToPrettyJson -}}`,
-						Render: true,
+						Source: false,
 					},
 				},
 				FieldFilter: secretsv1beta1.FieldFilter{},
@@ -1332,7 +1332,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 					{
 						Name:   "bar",
 						Text:   `{{- get .Secrets "bar" | upper -}}`,
-						Render: true,
+						Source: false,
 					},
 				},
 				FieldFilter: secretsv1beta1.FieldFilter{

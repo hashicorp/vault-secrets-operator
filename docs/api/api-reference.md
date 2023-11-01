@@ -45,9 +45,7 @@ _Appears in:_
 | `labels` _object (keys:string, values:string)_ | Labels to apply to the Secret. Requires Create to be set to true. |
 | `annotations` _object (keys:string, values:string)_ | Annotations to apply to the Secret. Requires Create to be set to true. |
 | `type` _[SecretType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secrettype-v1-core)_ | Type of Kubernetes Secret. Requires Create to be set to true. Defaults to Opaque. |
-| `templateSpecs` _[TemplateSpec](#templatespec) array_ | TemplateSpecs contain the template configuration that is specific to this syncable secret custom resource. Each template spec will be rendered in order of configuration. |
-| `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs contain references to template configuration that is provided by another K8s resource (ConfigMap only). |
-| `fieldFilter` _[FieldFilter](#fieldfilter)_ | FieldFilter provides filtering of the source secret data before it is stored. |
+| `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before it is stored in the Destination. |
 
 
 #### FieldFilter
@@ -57,7 +55,7 @@ _Appears in:_
 FieldFilter can be used to filter the secret data that is stored in the K8s Secret Destination. Filters will not be applied to templated fields, those will always be included in the Destination K8s Secret. Exclusion filters are always applied first.
 
 _Appears in:_
-- [Destination](#destination)
+- [Transformation](#transformation)
 
 | Field | Description |
 | --- | --- |
@@ -226,7 +224,7 @@ _Appears in:_
 TemplateRef contains the configuration for accessing templates from an external Kubernetes resource. TemplateRefs can be shared across all syncable secret custom resources. If a template contains confidential information a Kubernetes Secret should be used along with a secure RBAC config, otherwise a Configmap should suffice. Supported resource types are: ConfigMap, Secret
 
 _Appears in:_
-- [Destination](#destination)
+- [Transformation](#transformation)
 
 | Field | Description |
 | --- | --- |
@@ -239,16 +237,16 @@ _Appears in:_
 
 
 
-TemplateRefSpec provides ...
+TemplateRefSpec points to templating text that is stored in an external K8s resource.
 
 _Appears in:_
 - [TemplateRef](#templateref)
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name of the template. In the case |
-| `key` _string_ | Name of the template. In the case |
-| `render` _boolean_ | Render this template to the K8s Secret data as Name. |
+| `name` _string_ | Name of the template. When Source is false, Name will be used as the key to the rendered secret data. |
+| `key` _string_ | Key of the template text. |
+| `source` _boolean_ | Source the template, this spec will not be rendered to the K8s Secret data. |
 
 
 #### TemplateSpec
@@ -258,13 +256,31 @@ _Appears in:_
 TemplateSpec provides inline templating configuration.
 
 _Appears in:_
+- [Transformation](#transformation)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the template. When Source is false, Name will be used as the key to the rendered secret data. |
+| `text` _string_ | Text contains the Go template in text format. The template references attributes from the data structure of the source secret. |
+| `render` _boolean_ | Source the template, the spec will not be rendered to the K8s Secret data. |
+
+
+
+
+#### Transformation
+
+
+
+
+
+_Appears in:_
 - [Destination](#destination)
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name of the template. In the case |
-| `text` _string_ | Text contains the Go template in text format. The template references attributes from the data structure of the source secret. |
-| `render` _boolean_ | Render this template to the K8s Secret data as Name. |
+| `templateSpecs` _[TemplateSpec](#templatespec) array_ | TemplateSpecs contain the template configuration that is specific to this syncable secret custom resource. Each template spec will be rendered in order of configuration. |
+| `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs contain references to template configuration that is provided by another K8s resource (ConfigMap only). |
+| `fieldFilter` _[FieldFilter](#fieldfilter)_ | FieldFilter provides filtering of the source secret data before it is stored. |
 
 
 #### VaultAuth

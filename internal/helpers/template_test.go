@@ -47,23 +47,20 @@ func Test_renderTemplates(t *testing.T) {
 					{
 						// source template should not be rendered to the K8s Secret
 						Name:   "helper",
-						Render: false,
+						Source: true,
 						Text:   `{{define "helper"}}{{- . | b64dec -}}{{end}}`,
 					},
 					{
-						Name:   "t1r",
-						Render: true,
-						Text:   `{{- template "helper" get .Secrets "baz" -}}`,
+						Name: "t1r",
+						Text: `{{- template "helper" get .Secrets "baz" -}}`,
 					},
 					{
-						Name:   "t2r",
-						Render: true,
-						Text:   `{{- template "helper" get .Secrets "bar" -}}`,
+						Name: "t2r",
+						Text: `{{- template "helper" get .Secrets "bar" -}}`,
 					},
 					{
-						Name:   "t3r",
-						Render: true,
-						Text:   `{{- get .Secrets "foo" -}}`,
+						Name: "t3r",
+						Text: `{{- get .Secrets "foo" -}}`,
 					},
 				},
 			},
@@ -82,30 +79,27 @@ func Test_renderTemplates(t *testing.T) {
 					{
 						// source template should not be rendered to the K8s Secret
 						Name:   "t1s",
-						Render: false,
+						Source: true,
 						Text: `{{define "helper1"}}{{- get .Secrets "baz" | b64dec -}}{{end}}
 `,
 					},
 					{
 						// source template should not be rendered to the K8s Secret
 						Name:   "t2s",
-						Render: false,
+						Source: true,
 						Text:   `{{define "helper2"}}{{- get .Secrets "foo" -}}{{end}}`,
 					},
 					{
-						Name:   "t1r",
-						Render: true,
-						Text:   `{{- template "helper1" . -}}`,
+						Name: "t1r",
+						Text: `{{- template "helper1" . -}}`,
 					},
 					{
-						Name:   "t2r",
-						Render: true,
-						Text:   `{{- template "helper2" . -}}`,
+						Name: "t2r",
+						Text: `{{- template "helper2" . -}}`,
 					},
 					{
-						Name:   "t3r",
-						Render: true,
-						Text:   `{{template "helper1" . }}_{{template "helper2" . }}`,
+						Name: "t3r",
+						Text: `{{template "helper1" . }}_{{template "helper2" . }}`,
 					},
 				},
 			},
@@ -124,8 +118,7 @@ func Test_renderTemplates(t *testing.T) {
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
-						Name:   "tmpl",
-						Render: true,
+						Name: "tmpl",
 						Text: `{{- $custom := get .Metadata "custom" -}}
 {{- get $custom "super" -}}
 `,
@@ -143,8 +136,7 @@ func Test_renderTemplates(t *testing.T) {
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
-						Name:   "tmpl",
-						Render: true,
+						Name: "tmpl",
 						Text: `{{- $custom := get .Metadata "custom" -}}
 {{- printf "%s_%s" (get $custom "super") (get .Secrets "bar" | b64dec) -}}
 `,
@@ -162,12 +154,10 @@ func Test_renderTemplates(t *testing.T) {
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
-						Name:   "t1s",
-						Render: false,
+						Name: "t1s",
 					},
 					{
-						Name:   "t1s",
-						Render: false,
+						Name: "t1s",
 					},
 				},
 			},
@@ -433,17 +423,18 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Destination: secretsv1beta1.Destination{
-						TemplateSpecs: []secretsv1beta1.TemplateSpec{
-							{
-								Name:   "default",
-								Render: true,
-								Text:   "{{- -}}",
+						Transformation: secretsv1beta1.Transformation{
+							TemplateSpecs: []secretsv1beta1.TemplateSpec{
+								{
+									Name: "default",
+									Text: "{{- -}}",
+								},
 							},
-						},
-						TemplateRefs: nil,
-						FieldFilter: secretsv1beta1.FieldFilter{
-							Excludes: []string{`^bad.+`},
-							Includes: []string{`^good.+`},
+							TemplateRefs: nil,
+							FieldFilter: secretsv1beta1.FieldFilter{
+								Excludes: []string{`^bad.+`},
+								Includes: []string{`^good.+`},
+							},
 						},
 					},
 				},
@@ -455,9 +446,8 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
-						Name:   "default",
-						Render: true,
-						Text:   "{{- -}}",
+						Name: "default",
+						Text: "{{- -}}",
 					},
 				},
 			},
@@ -473,19 +463,19 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Destination: secretsv1beta1.Destination{
-						TemplateSpecs: []secretsv1beta1.TemplateSpec{
-							{
-								Name:   "default",
-								Render: true,
-								Text:   "{{- -}}",
+						Transformation: secretsv1beta1.Transformation{
+							TemplateSpecs: []secretsv1beta1.TemplateSpec{
+								{
+									Name: "default",
+									Text: "{{- -}}",
+								},
+								{
+									Name: "default",
+									Text: "{{- -}}",
+								},
 							},
-							{
-								Name:   "default",
-								Render: true,
-								Text:   "{{- -}}",
-							},
+							TemplateRefs: nil,
 						},
-						TemplateRefs: nil,
 					},
 				},
 			},
@@ -521,8 +511,10 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Destination: secretsv1beta1.Destination{
-						FieldFilter: secretsv1beta1.FieldFilter{
-							Includes: []string{".+"},
+						Transformation: secretsv1beta1.Transformation{
+							FieldFilter: secretsv1beta1.FieldFilter{
+								Includes: []string{".+"},
+							},
 						},
 					},
 				},
@@ -544,22 +536,23 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Destination: secretsv1beta1.Destination{
-						TemplateRefs: []secretsv1beta1.TemplateRef{
-							{
-								Namespace: "default",
-								Name:      "templates",
-								Specs: []secretsv1beta1.TemplateRefSpec{
-									{
-										Name:   "default",
-										Render: true,
-										Key:    "default",
+						Transformation: secretsv1beta1.Transformation{
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Namespace: "default",
+									Name:      "templates",
+									Specs: []secretsv1beta1.TemplateRefSpec{
+										{
+											Name: "default",
+											Key:  "default",
+										},
 									},
 								},
 							},
-						},
-						FieldFilter: secretsv1beta1.FieldFilter{
-							Excludes: []string{`^bad.+`},
-							Includes: []string{`^good.+`},
+							FieldFilter: secretsv1beta1.FieldFilter{
+								Excludes: []string{`^bad.+`},
+								Includes: []string{`^good.+`},
+							},
 						},
 					},
 				},
@@ -582,9 +575,8 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
-						Name:   "default",
-						Render: true,
-						Text:   "{{- -}}",
+						Name: "default",
+						Text: "{{- -}}",
 					},
 				},
 			},
@@ -600,10 +592,12 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Destination: secretsv1beta1.Destination{
-						TemplateRefs: []secretsv1beta1.TemplateRef{
-							{
-								Namespace: "default",
-								Name:      "templates",
+						Transformation: secretsv1beta1.Transformation{
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Namespace: "default",
+									Name:      "templates",
+								},
 							},
 						},
 					},
@@ -622,15 +616,16 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Destination: secretsv1beta1.Destination{
-						TemplateRefs: []secretsv1beta1.TemplateRef{
-							{
-								Namespace: "default",
-								Name:      "templates",
-								Specs: []secretsv1beta1.TemplateRefSpec{
-									{
-										Name:   "default",
-										Render: true,
-										Key:    "default",
+						Transformation: secretsv1beta1.Transformation{
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Namespace: "default",
+									Name:      "templates",
+									Specs: []secretsv1beta1.TemplateRefSpec{
+										{
+											Name: "default",
+											Key:  "default",
+										},
 									},
 								},
 							},
@@ -652,15 +647,16 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					Destination: secretsv1beta1.Destination{
-						TemplateRefs: []secretsv1beta1.TemplateRef{
-							{
-								Namespace: "default",
-								Name:      "templates",
-								Specs: []secretsv1beta1.TemplateRefSpec{
-									{
-										Name:   "default",
-										Render: true,
-										Key:    "other",
+						Transformation: secretsv1beta1.Transformation{
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Namespace: "default",
+									Name:      "templates",
+									Specs: []secretsv1beta1.TemplateRefSpec{
+										{
+											Name: "default",
+											Key:  "other",
+										},
 									},
 								},
 							},

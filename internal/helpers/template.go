@@ -47,7 +47,7 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 	}
 
 	return &SecretRenderOption{
-		FieldFilter: meta.Destination.FieldFilter,
+		FieldFilter: meta.Destination.Transformation.FieldFilter,
 		Specs:       specs,
 	}, nil
 }
@@ -71,14 +71,15 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 		specs = append(specs, spec)
 	}
 
+	transformation := meta.Destination.Transformation
 	// get the in-line template specs
-	for _, spec := range meta.Destination.TemplateSpecs {
+	for _, spec := range transformation.TemplateSpecs {
 		appendSpec(spec)
 	}
 
 	// TODO: cache ref results
 	// get the remote ref template specs
-	for _, spec := range meta.Destination.TemplateRefs {
+	for _, spec := range transformation.TemplateRefs {
 		if len(spec.Specs) == 0 {
 			continue
 		}
@@ -111,7 +112,7 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 			appendSpec(secretsv1beta1.TemplateSpec{
 				Name:   s.Name,
 				Text:   text,
-				Render: s.Render,
+				Source: s.Source,
 			})
 		}
 	}
@@ -161,7 +162,7 @@ func renderTemplates(opt *SecretRenderOption, input *SecretInput) (map[string][]
 	}
 
 	for _, spec := range opt.Specs {
-		if !spec.Render {
+		if spec.Source {
 			continue
 		}
 
