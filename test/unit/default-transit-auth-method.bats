@@ -345,3 +345,76 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.aws.irsaServiceAccount' | tee /dev/stderr)
     [ "${actual}" = "iam-irsa-acct" ]
 }
+
+@test "defaultTransitAuthMethod/CR: settings can be modified for gcp auth method - minimum" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-transit-auth-method.yaml \
+        --set 'controller.manager.clientCache.storageEncryption.enabled=true' \
+        --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+        --set 'controller.manager.clientCache.storageEncryption.namespace=tenant-2' \
+        --set 'controller.manager.clientCache.storageEncryption.method=gcp' \
+        --set 'controller.manager.clientCache.storageEncryption.mount=foo' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.role=role-1' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.workloadIdentityServiceAccount=my-identity-sa' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+    [ "${actual}" = "tenant-2" ]
+
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    [ "${actual}" = "gcp" ]
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.gcp.role' | tee /dev/stderr)
+    [ "${actual}" = "role-1" ]
+    actual=$(echo "$object" | yq '.spec.gcp.workloadIdentityServiceAccount' | tee /dev/stderr)
+    [ "${actual}" = "my-identity-sa" ]
+
+    # the rest should not be set
+    actual=$(echo "$object" | yq '.spec.gcp.region' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.gcp.projectId' | tee /dev/stderr)
+    [ "${actual}" = null ]
+}
+
+@test "defaultTransitAuthMethod/CR: settings can be modified for gcp auth method - everything" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-transit-auth-method.yaml  \
+        --set 'controller.manager.clientCache.storageEncryption.enabled=true' \
+        --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+        --set 'controller.manager.clientCache.storageEncryption.namespace=tenant-2' \
+        --set 'controller.manager.clientCache.storageEncryption.method=gcp' \
+        --set 'controller.manager.clientCache.storageEncryption.mount=foo' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.role=role-1' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.workloadIdentityServiceAccount=my-identity-sa' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.region=us-test-2' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.clusterName=test-cluster' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.projectId=my-project' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+    [ "${actual}" = "tenant-2" ]
+
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    [ "${actual}" = "gcp" ]
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.gcp.role' | tee /dev/stderr)
+    [ "${actual}" = "role-1" ]
+    actual=$(echo "$object" | yq '.spec.gcp.workloadIdentityServiceAccount' | tee /dev/stderr)
+    [ "${actual}" = "my-identity-sa" ]
+    actual=$(echo "$object" | yq '.spec.gcp.region' | tee /dev/stderr)
+    [ "${actual}" = "us-test-2" ]
+    actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
+    [ "${actual}" = "test-cluster" ]
+    actual=$(echo "$object" | yq '.spec.gcp.projectId' | tee /dev/stderr)
+    [ "${actual}" = "my-project" ]
+}

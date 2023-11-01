@@ -129,6 +129,19 @@ VaultAuthMethod Spec
     {{- if $cur.aws.irsaServiceAccount }}
     irsaServiceAccount: {{ $cur.aws.irsaServiceAccount }}
     {{- end }}
+  {{- else if eq $cur.method "gcp" }}
+  gcp:
+    role: {{ $cur.gcp.role }}
+    workloadIdentityServiceAccount: {{ $cur.gcp.workloadIdentityServiceAccount }}
+    {{- if $cur.gcp.region }}
+    region: {{ $cur.gcp.region }}
+    {{- end }}
+    {{- if $cur.gcp.clusterName }}
+    clusterName: {{ $cur.gcp.clusterName }}
+    {{- end }}
+    {{- if $cur.gcp.projectId }}
+    projectId: {{ $cur.gcp.projectId }}
+    {{- end }}
   {{- end }}
 {{- end}}
 

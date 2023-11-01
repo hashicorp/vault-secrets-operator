@@ -1,3 +1,8 @@
+## Unreleased
+
+Features:
+* VaultAuth: Support for the GCP authentication method when using GKE workload identity [GH-411](https://github.com/hashicorp/vault-secrets-operator/pull/411)
+
 ## 0.3.4 (October 19th, 2023)
 Fix:
 
