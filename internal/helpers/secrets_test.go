@@ -1157,8 +1157,9 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 						CreatedBy: &models.Secrets20230613Principal{
 							Name: "vso-0",
 						},
-						Type:  "kv",
-						Value: "foo",
+						Type:    "kv",
+						Value:   "foo",
+						Version: "1",
 					},
 				},
 				{
@@ -1277,7 +1278,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
-						Name:   "bar",
+						Name:   "metadata.json",
 						Text:   `{{- .Metadata | mustToPrettyJson -}}`,
 						Render: true,
 					},
@@ -1285,21 +1286,39 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				FieldFilter: secretsv1beta1.FieldFilter{},
 			},
 			want: map[string][]byte{
-				"bar": []byte(`{
+				"metadata.json": []byte(`{
   "bar": {
-    "created_at": "0001-01-01T00:00:00.000Z",
+    "created_at": "1970-01-01T00:00:00.000Z",
     "created_by": {
-      "name": "vso-0"
+      "name": "vso"
+    },
+    "name": "bar",
+    "version": {
+      "created_at": "0001-01-01T00:00:00.000Z",
+      "created_by": {
+        "name": "vso-0"
+      },
+      "type": "kv",
+      "version": "1"
     }
   },
   "foo": {
-    "created_at": "0001-01-01T00:00:00.000Z",
+    "created_at": "1970-01-01T00:00:00.000Z",
     "created_by": {
       "name": "vso-1"
+    },
+    "name": "foo",
+    "version": {
+      "created_at": "0001-01-01T00:00:00.000Z",
+      "created_by": {
+        "name": "vso-1"
+      },
+      "type": "kv"
     }
   }
 }`,
 				),
+				"bar":            []byte("foo"),
 				"foo":            []byte("qux"),
 				SecretDataKeyRaw: rawValid,
 			},

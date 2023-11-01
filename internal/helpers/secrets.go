@@ -468,34 +468,36 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 			continue
 		}
 
-		if opt == nil {
+		if !withOpt {
 			// no input data processing required
 			data[v.Name] = []byte(ver.Value)
 		} else {
-			bv, err := ver.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			// unmarshal to non-open secret, which should/must not contain any
-			// secret/confidential data.
-			var ss models.Secrets20230613Secret
-			if err := json.Unmarshal(bv, &ss); err != nil {
-				return nil, err
-			}
+			if withSpecs {
+				bv, err := v.MarshalBinary()
+				if err != nil {
+					return nil, err
+				}
+				// unmarshal to non-open secret, which should/must not contain any
+				// secret/confidential data.
+				var ss models.Secrets20230613Secret
+				if err := json.Unmarshal(bv, &ss); err != nil {
+					return nil, err
+				}
 
-			sv, err := ss.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
+				sv, err := ss.MarshalBinary()
+				if err != nil {
+					return nil, err
+				}
 
-			// unmarshal to
-			var m map[string]any
-			if err := json.Unmarshal(sv, &m); err != nil {
-				return nil, err
-			}
+				// unmarshal to
+				var m map[string]any
+				if err := json.Unmarshal(sv, &m); err != nil {
+					return nil, err
+				}
 
-			// maps secret name to its secret metadata
-			metadata[v.Name] = m
+				// maps secret name to its secret metadata
+				metadata[v.Name] = m
+			}
 			// populate secrets for filtering and template processing below
 			secrets[v.Name] = ver.Value
 		}
