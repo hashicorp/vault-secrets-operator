@@ -265,8 +265,6 @@ _Appears in:_
 | `render` _boolean_ | Source the template, the spec will not be rendered to the K8s Secret data. |
 
 
-
-
 #### Transformation
 
 
@@ -280,7 +278,7 @@ _Appears in:_
 | --- | --- |
 | `templateSpecs` _[TemplateSpec](#templatespec) array_ | TemplateSpecs contain the template configuration that is specific to this syncable secret custom resource. Each template spec will be rendered in order of configuration. |
 | `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs contain references to template configuration that is provided by another K8s resource (ConfigMap only). |
-| `fieldFilter` _[FieldFilter](#fieldfilter)_ | FieldFilter provides filtering of the source secret data before it is stored. |
+| `fieldFilter` _[FieldFilter](#fieldfilter)_ | FieldFilter provides filtering of the source secret data before it is stored. Templated fields are not affected by filtering. |
 
 
 #### VaultAuth

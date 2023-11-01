@@ -27,18 +27,6 @@ type Destination struct {
 	Transformation Transformation `json:"transformation"`
 }
 
-type Transformation struct {
-	// TemplateSpecs contain the template configuration that is specific to this
-	// syncable secret custom resource. Each template spec will be rendered in order
-	// of configuration.
-	TemplateSpecs []TemplateSpec `json:"templateSpecs,omitempty"`
-	// TemplateRefs contain references to template configuration that is provided
-	// by another K8s resource (ConfigMap only).
-	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
-	// FieldFilter provides filtering of the source secret data before it is stored.
-	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
-}
-
 // RolloutRestartTarget provides the configuration required to perform a
 // rollout-restart of the supported resources upon Vault Secret rotation.
 // The rollout-restart is triggered by patching the target resource's
@@ -53,12 +41,17 @@ type RolloutRestartTarget struct {
 	Name string `json:"name"`
 }
 
-type TemplateSpecBase struct {
-	// Name of the template. When Source is false, Name will be used as the key to
-	// the rendered secret data.
-	Name string `json:"name"`
-	// Source the template, this spec will not be rendered to the K8s Secret data.
-	Source bool `json:"source,omitempty"`
+type Transformation struct {
+	// TemplateSpecs contain the template configuration that is specific to this
+	// syncable secret custom resource. Each template spec will be rendered in order
+	// of configuration.
+	TemplateSpecs []TemplateSpec `json:"templateSpecs,omitempty"`
+	// TemplateRefs contain references to template configuration that is provided
+	// by another K8s resource (ConfigMap only).
+	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
+	// FieldFilter provides filtering of the source secret data before it is stored.
+	// Templated fields are not affected by filtering.
+	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
 }
 
 // TemplateSpec provides inline templating configuration.
