@@ -23,4 +23,6 @@ const (
 	ReasonVaultClientConfigError    = "VaultClientConfigError"
 	ReasonVaultClientError          = "VaultClientError"
 	ReasonVaultStaticSecret         = "VaultStaticSecretError"
+	ReasonTransformationError       = "TransformationError"
+	ReasonSecretDataBuilderError    = "SecretDataBuilderError"
 )

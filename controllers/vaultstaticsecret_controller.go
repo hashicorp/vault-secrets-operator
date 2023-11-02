@@ -78,13 +78,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Failed get template specs: %s", err)
-		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
-	}
-
 	kvReq, err := newKVRequest(o.Spec)
 	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
@@ -98,10 +91,17 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
+	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretRenderOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
 	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, renderOption)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Invalid Vault Secret data: %s", err)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
+			"Failed to build K8s secret data: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 

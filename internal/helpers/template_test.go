@@ -41,7 +41,7 @@ func Test_renderTemplates(t *testing.T) {
 	}{
 		{
 			name:  "multi-with-helper",
-			input: NewSecretInput(secrets, nil),
+			input: NewSecretInput[any, any](secrets, nil, nil, nil),
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
@@ -72,8 +72,88 @@ func Test_renderTemplates(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name: "multi-with-real-world-helper",
+			input: NewSecretInput(
+				map[string]any{
+					"username": "alice",
+					"password": "secret",
+				}, nil,
+				map[string]string{
+					"myapp.config/postgres-host": "postgres-postgresql.postgres.svc.cluster.local:5432",
+				},
+				map[string]string{
+					"myapp/name": "db",
+				}),
+			opt: &SecretRenderOption{
+				Specs: []secretsv1beta1.TemplateSpec{
+					{
+						Name:   "helpers",
+						Source: true,
+						Text: `
+{{/* 
+compose a Postgres URL from SecretInput for this app 
+*/}}
+{{- define "getPgUrl" -}}
+{{- $host := get .Annotations "myapp.config/postgres-host" -}}
+{{- printf "postgresql://%s:%s@%s/postgres?sslmode=disable" (get .Secrets "username") (get .Secrets "password") $host -}}
+{{- end -}}
+{{/*
+create a Java props from SecretInput for this app
+*/}}
+{{- define "getAppProps" -}}
+{{- $host := get .Annotations "myapp.config/postgres-host" -}}
+{{- printf "db.host=%s\n" $host -}}
+{{- range $k, $v := .Secrets -}}
+{{- printf "db.%s=%s\n" $k $v -}}
+{{- end -}}
+{{- end -}}
+{{/* 
+create a JSON config from SecretInput for this app
+*/}}
+{{- define "getAppJson" -}}
+{{- $host := get .Annotations "myapp.config/postgres-host" -}}
+{{- $copy := .Secrets | mustDeepCopy -}}
+{{- $_ := set $copy "host" $host -}}
+{{- mustToPrettyJson $copy -}}
+{{- end -}}
+`,
+					},
+					{
+						Name: "url",
+						Text: `{{- template "getPgUrl" . -}}`,
+					},
+					{
+						Name: "app.props",
+						Text: `{{- template "getAppProps" . -}}`,
+					},
+					{
+						Name: "app.json",
+						Text: `{{- template "getAppJson" . -}}`,
+					},
+					{
+						Name: "app.name",
+						Text: `{{- get .Labels "myapp/name" -}}`,
+					},
+				},
+			},
+			want: map[string][]byte{
+				"url": []byte(`postgresql://alice:secret@postgres-postgresql.postgres.svc.cluster.local:5432/postgres?sslmode=disable`),
+				"app.props": []byte(`db.host=postgres-postgresql.postgres.svc.cluster.local:5432
+db.password=secret
+db.username=alice
+`),
+				"app.json": []byte(`{
+  "host": "postgres-postgresql.postgres.svc.cluster.local:5432",
+  "password": "secret",
+  "username": "alice"
+}`),
+				"app.name": []byte(`db`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name:  "multi-with-helpers",
-			input: NewSecretInput(secrets, nil),
+			input: NewSecretInput[string, string](secrets, nil, nil, nil),
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
@@ -111,10 +191,8 @@ func Test_renderTemplates(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "single-with-metadata-only",
-			input: NewSecretInput(
-				secrets,
-				metadata),
+			name:  "single-with-metadata-only",
+			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
@@ -132,7 +210,7 @@ func Test_renderTemplates(t *testing.T) {
 		},
 		{
 			name:  "single-with-both",
-			input: NewSecretInput(secrets, metadata),
+			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
@@ -150,7 +228,7 @@ func Test_renderTemplates(t *testing.T) {
 		},
 		{
 			name:  "duplicate-template-error",
-			input: NewSecretInput(secrets, nil),
+			input: NewSecretInput[string, string](secrets, nil, nil, nil),
 			opt: &SecretRenderOption{
 				Specs: []secretsv1beta1.TemplateSpec{
 					{
@@ -169,7 +247,7 @@ func Test_renderTemplates(t *testing.T) {
 		},
 		{
 			name:  "no-specs-error",
-			input: NewSecretInput(nil, nil),
+			input: NewSecretInput[string, string](nil, nil, nil, nil),
 			opt:   &SecretRenderOption{},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
@@ -713,10 +791,12 @@ func TestNewSecretInput(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name     string
-		secrets  map[string]any
-		metadata map[string]any
-		want     *SecretInput
+		name        string
+		secrets     map[string]any
+		metadata    map[string]any
+		annotations map[string]string
+		labels      map[string]string
+		want        *SecretInput
 	}{
 		{
 			name:    "secrets-only",
@@ -746,7 +826,7 @@ func TestNewSecretInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, NewSecretInput(tt.secrets, tt.metadata),
+			assert.Equalf(t, tt.want, NewSecretInput(tt.secrets, tt.metadata, tt.annotations, tt.labels),
 				"NewSecretInput(%v, %v)", tt.secrets, tt.metadata)
 		})
 	}

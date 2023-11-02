@@ -245,8 +245,8 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `name` _string_ | Name of the template. When Source is false, Name will be used as the key to the rendered secret data. |
-| `key` _string_ | Key of the template text. |
-| `source` _boolean_ | Source the template, this spec will not be rendered to the K8s Secret data. |
+| `key` _string_ | Key to the template text in the ConfigMap's data. |
+| `source` _boolean_ | Source the template when true, this spec will not be rendered to the K8s Secret data. |
 
 
 #### TemplateSpec
@@ -262,7 +262,7 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name of the template. When Source is false, Name will be used as the key to the rendered secret data. |
 | `text` _string_ | Text contains the Go template in text format. The template references attributes from the data structure of the source secret. |
-| `render` _boolean_ | Source the template, the spec will not be rendered to the K8s Secret data. |
+| `source` _boolean_ | Source the template, the spec will not be rendered to the K8s Secret data. |
 
 
 #### Transformation

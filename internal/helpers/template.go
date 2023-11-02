@@ -31,6 +31,8 @@ func init() {
 type SecretRenderOption struct {
 	FieldFilter secretsv1beta1.FieldFilter
 	Specs       []secretsv1beta1.TemplateSpec
+	Annotations map[string]string
+	Labels      map[string]string
 }
 
 func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
@@ -49,6 +51,8 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 	return &SecretRenderOption{
 		FieldFilter: meta.Destination.Transformation.FieldFilter,
 		Specs:       specs,
+		Annotations: obj.GetAnnotations(),
+		Labels:      obj.GetLabels(),
 	}, nil
 }
 
@@ -109,8 +113,12 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 						s.Key, objKey))
 				continue
 			}
+			name := s.Name
+			if name == "" {
+				name = s.Key
+			}
 			appendSpec(secretsv1beta1.TemplateSpec{
-				Name:   s.Name,
+				Name:   name,
 				Text:   text,
 				Source: s.Source,
 			})
@@ -166,11 +174,11 @@ func renderTemplates(opt *SecretRenderOption, input *SecretInput) (map[string][]
 			continue
 		}
 
-		d, err := tmpl.ExecuteTemplate(spec.Name, input)
+		b, err := tmpl.ExecuteTemplate(spec.Name, input)
 		if err != nil {
 			return nil, err
 		}
-		data[spec.Name] = d[spec.Name]
+		data[spec.Name] = b
 	}
 
 	return data, nil
@@ -240,13 +248,38 @@ type SecretInput struct {
 	Secrets map[string]any `json:"secrets"`
 	// Metadata contains the secret metadata that is not considered confidential.
 	Metadata map[string]any `json:"metadata"`
+	// Annotations associated with syncable secret K8s resource
+	Annotations map[string]any `json:"annotations"`
+	// Labels associated with syncable secret K8s resource
+	Labels map[string]any `json:"labels"`
 }
 
 // NewSecretInput sets up a SecretInput instance from the provided secret data
-// and secret metadata.
-func NewSecretInput(secrets, metadata map[string]any) *SecretInput {
+// secret metadata, and annotations and labels which are typically of the type
+// map[string]string.
+func NewSecretInput[A, L any](secrets, metadata map[string]any, annotations map[string]A, labels map[string]L) *SecretInput {
+	var a map[string]any
+	if annotations != nil {
+		a = make(map[string]any)
+		// copy annotations to `a` to ensure it is valid Go template input.
+		for k, v := range annotations {
+			a[k] = v
+		}
+	}
+
+	var l map[string]any
+	if labels != nil {
+		l = make(map[string]any)
+		// copy annotations to `a` to ensure it is valid Go template input.
+		for k, v := range labels {
+			l[k] = v
+		}
+	}
+
 	return &SecretInput{
-		Secrets:  secrets,
-		Metadata: metadata,
+		Secrets:     secrets,
+		Metadata:    metadata,
+		Annotations: a,
+		Labels:      l,
 	}
 }

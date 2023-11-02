@@ -186,12 +186,17 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
 	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretRenderOption: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	secretLease, updated, err := r.syncSecret(ctx, vClient, o, renderOption)
 	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
+			"Failed to sync secret: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+
 	}
 
 	doRolloutRestart = updated

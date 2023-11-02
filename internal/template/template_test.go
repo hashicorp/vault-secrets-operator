@@ -18,7 +18,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 		name           string
 		texts          map[string]string
 		m              any
-		want           map[string][]byte
+		want           []byte
 		tmpl           SecretTemplate
 		tmplName       string
 		noRedactErrors bool
@@ -32,9 +32,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 			texts: map[string]string{
 				"empty": "",
 			},
-			want: map[string][]byte{
-				"empty": nil,
-			},
+			want:          nil,
 			wantRenderErr: assert.NoError,
 			wantParseErr:  assert.NoError,
 		},
@@ -46,9 +44,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 				"tmpl1": `{{- print "foo" -}}`,
 				"tmpl2": `{{- print "bar" -}}`,
 			},
-			want: map[string][]byte{
-				"tmpl1": []byte("foo"),
-			},
+			want:          []byte("foo"),
 			wantRenderErr: assert.NoError,
 			wantParseErr:  assert.NoError,
 		},
@@ -60,9 +56,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 				"tmpl1": `{{- print "foo" -}}`,
 				"tmpl2": `{{- print "bar" -}}`,
 			},
-			want: map[string][]byte{
-				"tmpl2": []byte("bar"),
-			},
+			want:          []byte("bar"),
 			wantRenderErr: assert.NoError,
 			wantParseErr:  assert.NoError,
 		},

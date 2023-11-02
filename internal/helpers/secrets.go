@@ -389,7 +389,7 @@ func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *Sec
 			metadata = make(map[string]any)
 		}
 
-		input := NewSecretInput(d, metadata)
+		input := NewSecretInput(d, metadata, opt.Annotations, opt.Labels)
 		data, err = renderTemplates(opt, input)
 		if err != nil {
 			return nil, err
@@ -457,7 +457,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	}
 
 	if handleTemplates {
-		data, err = renderTemplates(opt, NewSecretInput(secrets, metadata))
+		data, err = renderTemplates(opt, NewSecretInput(secrets, metadata, opt.Annotations, opt.Labels))
 		if err != nil {
 			return nil, err
 		}

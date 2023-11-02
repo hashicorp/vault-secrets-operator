@@ -47,7 +47,7 @@ var _ SecretTemplate = (*defaultSecretTemplate)(nil)
 type SecretTemplate interface {
 	Name() string
 	Parse(string, string) error
-	ExecuteTemplate(string, any) (map[string][]byte, error)
+	ExecuteTemplate(string, any) ([]byte, error)
 }
 
 type defaultSecretTemplate struct {
@@ -86,7 +86,7 @@ func (v *defaultSecretTemplate) Parse(name, text string) error {
 	return nil
 }
 
-func (v *defaultSecretTemplate) ExecuteTemplate(name string, m any) (map[string][]byte, error) {
+func (v *defaultSecretTemplate) ExecuteTemplate(name string, m any) ([]byte, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -99,9 +99,7 @@ func (v *defaultSecretTemplate) ExecuteTemplate(name string, m any) (map[string]
 		return nil, v.maybeRedactError(err)
 	}
 
-	return map[string][]byte{
-		name: w.Bytes(),
-	}, nil
+	return w.Bytes(), nil
 }
 
 func (v *defaultSecretTemplate) maybeRedactError(err error) error {

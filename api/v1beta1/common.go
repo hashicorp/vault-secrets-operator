@@ -24,7 +24,7 @@ type Destination struct {
 	Type v1.SecretType `json:"type,omitempty"`
 	// Transformation provides configuration for transforming the secret data before
 	// it is stored in the Destination.
-	Transformation Transformation `json:"transformation"`
+	Transformation Transformation `json:"transformation,omitempty"`
 }
 
 // RolloutRestartTarget provides the configuration required to perform a
@@ -63,7 +63,7 @@ type TemplateSpec struct {
 	// references attributes from the data structure of the source secret.
 	Text string `json:"text"`
 	// Source the template, the spec will not be rendered to the K8s Secret data.
-	Source bool `json:"render,omitempty"`
+	Source bool `json:"source,omitempty"`
 }
 
 // TemplateRefSpec points to templating text that is stored in an external K8s
@@ -71,10 +71,10 @@ type TemplateSpec struct {
 type TemplateRefSpec struct {
 	// Name of the template. When Source is false, Name will be used as the key to
 	// the rendered secret data.
-	Name string `json:"name"`
-	// Key of the template text.
+	Name string `json:"name,omitempty"`
+	// Key to the template text in the ConfigMap's data.
 	Key string `json:"key"`
-	// Source the template, this spec will not be rendered to the K8s Secret data.
+	// Source the template when true, this spec will not be rendered to the K8s Secret data.
 	Source bool `json:"source,omitempty"`
 }
 
