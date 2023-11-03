@@ -67,11 +67,14 @@ resource "google_container_node_pool" "primary_nodes" {
       env = local.cluster_name
     }
 
-    machine_type    = "n1-standard-1"
+    machine_type    = "n1-standard-2"
     service_account = google_service_account.default.email
     tags            = ["gke-node", local.cluster_name]
     metadata = {
       disable-legacy-endpoints = "true"
+    }
+    workload_metadata_config {
+      mode = "GKE_METADATA"
     }
   }
 }

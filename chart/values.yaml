@@ -269,6 +269,34 @@ controller:
           # @type: string
           irsaServiceAccount: ""
 
+        gcp:
+          # Vault Auth Role to use
+          # This is a required field and must be setup in Vault prior to deploying the helm chart
+          # if using GCP for the Transit auth method.
+          # @type: string
+          role: ""
+
+          # Name of a Kubernetes service account that is configured for workload
+          # identity in GKE.
+          # @type: string
+          workloadIdentityServiceAccount: ""
+
+          # GCP Region of the GKE cluster's identity provider. Defaults to the
+          # region returned from the operator pod's local metadata server if
+          # unspecified.
+          # @type: string
+          region: ""
+
+          # GKE cluster name. Defaults to the cluster-name returned from the
+          # operator pod's local metadata server if unspecified.
+          # @type: string
+          clusterName: ""
+
+          # GCP project id. Defaults to the project-id returned from the
+          # operator pod's local metadata server if unspecified.
+          # @type: string
+          projectId: ""
+
         # Params to use when authenticating to Vault using this auth method.
         # params:
         #   param-something1: "foo"
@@ -525,6 +553,34 @@ defaultAuthMethod:
     # for Service Accounts (IRSA). Should be annotated with "eks.amazonaws.com/role-arn".
     # @type: string
     irsaServiceAccount: ""
+
+  gcp:
+    # Vault Auth Role to use
+    # This is a required field and must be setup in Vault prior to deploying the helm chart
+    # if using GCP for the Transit auth method.
+    # @type: string
+    role: ""
+
+    # Name of a Kubernetes service account that is configured for workload
+    # identity in GKE.
+    # @type: string
+    workloadIdentityServiceAccount: ""
+
+    # GCP Region of the GKE cluster's identity provider. Defaults to the
+    # region returned from the operator pod's local metadata server if
+    # unspecified.
+    # @type: string
+    region: ""
+
+    # GKE cluster name. Defaults to the cluster-name returned from the
+    # operator pod's local metadata server if unspecified.
+    # @type: string
+    clusterName: ""
+
+    # GCP project id. Defaults to the project-id returned from the
+    # operator pod's local metadata server if unspecified.
+    # @type: string
+    projectId: ""
 
   # Params to use when authenticating to Vault
   # params:
