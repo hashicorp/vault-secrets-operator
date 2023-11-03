@@ -54,13 +54,80 @@ resource "kubernetes_manifest" "vault-auth-default" {
   }
 }
 
-resource "kubernetes_config_map" "templates" {
-  metadata {
-    name      = "vso-templates"
-    namespace = kubernetes_namespace.dev.metadata[0].name
+resource "kubernetes_manifest" "vault-dynamic-secret" {
+  manifest = {
+    apiVersion = "secrets.hashicorp.com/v1beta1"
+    kind       = "VaultDynamicSecret"
+    metadata = {
+      name      = "vso-db-demo"
+      namespace = kubernetes_namespace.dev.metadata[0].name
+      annotations = {
+        "myapp.config/postgres-host" = "${local.postgres_host}:5432"
+      }
+      labels = {
+        "myapp/name" : "db"
+      }
+    }
+    spec = {
+      namespace      = vault_auth_backend.default.namespace
+      mount          = vault_database_secrets_mount.db.path
+      path           = local.db_creds_path
+      renewalPercent = "66"
+      destination = {
+        create = true
+        name   = "vso-db-demo"
+        transformation = {
+          templateSpecs = {
+            "app.props" = {
+              text = "{{- template \"appProps\" . -}}"
+            }
+            "app.json" = {
+              text = "{{- template \"appJson\" . -}}"
+            },
+            "url" = {
+              text = "{{- template \"dbUrl\" . -}}"
+            },
+            "app.name" = {
+              text = "{{- template \"appName\" . -}}"
+            }
+          }
+          transformationRefs = [
+            {
+              name = kubernetes_manifest.templates.manifest.metadata.name
+              templateRefSpecs = {
+                helpers = {
+                  name   = "helpers"
+                  source = true
+                }
+              }
+            }
+          ]
+        }
+      }
+
+      rolloutRestartTargets = [
+        {
+          kind = "Deployment"
+          name = "vso-db-demo"
+        }
+      ]
+    }
   }
-  data = {
-    helpers = <<EOF
+}
+
+resource "kubernetes_manifest" "templates" {
+  manifest = {
+    apiVersion = "secrets.hashicorp.com/v1beta1"
+    kind       = "SecretTransformation"
+    metadata = {
+      name      = "vso-templates"
+      namespace = kubernetes_namespace.dev.metadata[0].name
+    }
+    spec = {
+      templateSpecs = {
+        helpers = {
+          source = true
+          text   = <<EOF
 {{/*
   create a Java props from SecretInput for this app
 */}}
@@ -94,70 +161,14 @@ resource "kubernetes_config_map" "templates" {
 {{- get .Labels "myapp/name" -}}
 {{- end -}}
 EOF
+        }
+      }
+    }
   }
-}
 
-resource "kubernetes_manifest" "vault-dynamic-secret" {
-  manifest = {
-    apiVersion = "secrets.hashicorp.com/v1beta1"
-    kind       = "VaultDynamicSecret"
-    metadata = {
-      name      = "vso-db-demo"
-      namespace = kubernetes_namespace.dev.metadata[0].name
-      annotations = {
-        "myapp.config/postgres-host" = "${local.postgres_host}:5432"
-      }
-      labels = {
-        "myapp/name" : "db"
-      }
-    }
-    spec = {
-      namespace      = vault_auth_backend.default.namespace
-      mount          = vault_database_secrets_mount.db.path
-      path           = local.db_creds_path
-      renewalPercent = "66"
-      destination = {
-        create = true
-        name   = "vso-db-demo"
-        transformation = {
-          templateRefs = [
-            {
-              name = kubernetes_config_map.templates.metadata[0].name
-              specs = [
-                {
-                  key    = "helpers"
-                  source = true
-                }
-              ]
-            }
-          ]
-          templateSpecs = [
-            {
-              name = "app.props"
-              text = "{{- template \"appProps\" . -}}"
-            },
-            {
-              name = "app.json"
-              text = "{{- template \"appJson\" . -}}"
-            },
-            {
-              name = "url"
-              text = "{{- template \"dbUrl\" . -}}"
-            },
-            {
-              name = "app.name"
-              text = "{{- template \"appName\" . -}}"
-            }
-          ]
-        }
-      }
-      rolloutRestartTargets = [
-        {
-          kind = "Deployment"
-          name = "vso-db-demo"
-        }
-      ]
-    }
+  field_manager {
+    # force field manager conflicts to be overridden
+    force_conflicts = true
   }
 }
 

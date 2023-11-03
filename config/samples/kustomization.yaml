@@ -11,4 +11,5 @@ resources:
 - secrets_v1beta1_vaultdynamicsecret.yaml
 - secrets_v1beta1_hcpsecretsapp.yaml
 - secrets_v1beta1_hcpauth.yaml
+- secrets_v1beta1_secrettransformation.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

@@ -615,14 +615,14 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-equal-raw-data",
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }} {{- printf "%s=%s\n" $key $value -}}
 {{- end }}`,
 					},
-					{
-						Name: "qux",
+					"tmpl2": {
+						Key:  "qux",
 						Text: `it`,
 					},
 				},
@@ -651,9 +651,9 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-b64enc-values",
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%s\n" $key ( $value | b64enc ) -}}
 {{- end }}`,
@@ -687,9 +687,9 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-b64dec-values",
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%s\n" $key ( $value | b64dec ) -}}
 {{- end }}`,
@@ -721,9 +721,9 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-with-metadata",
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets -}}
 {{- printf "SEC_%s=%s\n" ( $key | upper ) ( $value | b64dec ) -}}
 {{- end }}
@@ -770,9 +770,9 @@ META_QUX=biff
 		{
 			name: "tmpl-mixed",
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -807,9 +807,9 @@ META_QUX=biff
 				FieldFilter: secretsv1beta1.FieldFilter{
 					Includes: []string{`^buz$`},
 				},
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -842,9 +842,9 @@ META_QUX=biff
 				FieldFilter: secretsv1beta1.FieldFilter{
 					Includes: []string{`^foo$`},
 				},
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -875,9 +875,9 @@ META_QUX=biff
 		{
 			name: "tmpl-render-range-over-error",
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := . }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -892,7 +892,7 @@ META_QUX=biff
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`template: buz:1:26: executing "buz" at <.>: `+
+					`template: tmpl1:1:26: executing "tmpl1" at <.>: `+
 						`range can't iterate over <redacted>`,
 				)
 			},
@@ -900,9 +900,9 @@ META_QUX=biff
 		{
 			name: "tmpl-render-function-not-defined-error",
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key ($value | bx2dec -}}
 {{- end }}`,
@@ -917,7 +917,7 @@ META_QUX=biff
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`template: buz:2: function "bx2dec" not defined`,
+					`template: tmpl1:2: function "bx2dec" not defined`,
 				)
 			},
 		},
@@ -930,9 +930,9 @@ META_QUX=biff
 						`^(buz|baz|foo)$`,
 					},
 				},
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "buz",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key: "buz",
 						Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
@@ -1245,9 +1245,9 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			name: "tmpl-valid",
 			resp: respValid,
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "bar",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key:  "bar",
 						Text: `{{- get .Secrets "bar" | upper -}}`,
 					},
 				},
@@ -1264,9 +1264,9 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			name: "tmpl-with-metadata-valid",
 			resp: respValid,
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "metadata.json",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key:  "metadata.json",
 						Text: `{{- .Metadata | mustToPrettyJson -}}`,
 					},
 				},
@@ -1315,9 +1315,9 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			name: "tmpl-filter-excludes-valid",
 			resp: respValid,
 			opt: &SecretRenderOption{
-				Specs: []secretsv1beta1.TemplateSpec{
-					{
-						Name: "bar",
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"tmpl1": {
+						Key:  "bar",
 						Text: `{{- get .Secrets "bar" | upper -}}`,
 					},
 				},

@@ -432,7 +432,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	metadata := make(map[string]any)
 	// secret data returned to the caller
 	data := make(map[string][]byte)
-	handleTemplates := len(opt.Specs) > 0
+	hasTemplates := len(opt.Specs) > 0
 	for _, v := range p.Secrets {
 		ver := v.Version
 		if ver == nil {
@@ -443,7 +443,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 			continue
 		}
 
-		if handleTemplates {
+		if hasTemplates {
 			// we only need the Secret's metadata if we have templates to render.
 			m, err := s.makeHVSMetadata(v)
 			if err != nil {
@@ -456,7 +456,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 		secrets[v.Name] = ver.Value
 	}
 
-	if handleTemplates {
+	if hasTemplates {
 		data, err = renderTemplates(opt, NewSecretInput(secrets, metadata, opt.Annotations, opt.Labels))
 		if err != nil {
 			return nil, err

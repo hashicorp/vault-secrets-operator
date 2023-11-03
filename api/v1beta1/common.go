@@ -42,57 +42,53 @@ type RolloutRestartTarget struct {
 }
 
 type Transformation struct {
-	// TemplateSpecs contain the template configuration that is specific to this
-	// syncable secret custom resource. Each template spec will be rendered in order
-	// of configuration.
-	TemplateSpecs []TemplateSpec `json:"templateSpecs,omitempty"`
-	// TemplateRefs contain references to template configuration that is provided
-	// by another K8s resource (ConfigMap only).
-	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
+	// TemplateSpecs map a template name to a TemplateSpec.
+	TemplateSpecs map[string]TemplateSpec `json:"templateSpecs,omitempty"`
 	// FieldFilter provides filtering of the source secret data before it is stored.
 	// Templated fields are not affected by filtering.
 	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
+	// TransformationRefs contain references to template configuration from SecretTransformation
+	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
 }
 
 // TemplateSpec provides inline templating configuration.
 type TemplateSpec struct {
-	// Name of the template. When Source is false, Name will be used as the key to
-	// the rendered secret data.
-	Name string `json:"name"`
-	// Text contains the Go template in text format. The template
-	// references attributes from the data structure of the source secret.
-	Text string `json:"text"`
+	// Key that the rendered Text will be stored with in the K8s Destination Secret.
+	// An empty value is allowed to be empty when Source is true. If Source is false,
+	// then a value must be provided.
+	Key string `json:"key,omitempty"`
 	// Source the template, the spec will not be rendered to the K8s Secret data.
 	Source bool `json:"source,omitempty"`
+	// Text contains the Go text template format. The template
+	// references attributes from the data structure of the source secret.
+	// Refer to https://pkg.go.dev/text/template for more information.
+	Text string `json:"text"`
 }
 
-// TemplateRefSpec points to templating text that is stored in an external K8s
+// TemplateSpecRef points to templating text that is stored in an external K8s
 // resource.
-type TemplateRefSpec struct {
-	// Name of the template. When Source is false, Name will be used as the key to
+type TemplateSpecRef struct {
+	// Name of the TemplateSpec in SecretTransformationSpec.TemplateSpecs.
 	// the rendered secret data.
-	Name string `json:"name,omitempty"`
-	// Key to the template text in the ConfigMap's data.
-	Key string `json:"key"`
+	Name string `json:"name"`
+	// Key to the rendered template in the Destination secret. If Key is empty, then
+	// the Key from reference spec will be used. Set this to override the Key set from
+	// the reference spec.
+	Key string `json:"key,omitempty"`
 	// Source the template when true, this spec will not be rendered to the K8s Secret data.
 	Source bool `json:"source,omitempty"`
 }
 
-// TemplateRef contains the configuration for accessing templates from an
-// external Kubernetes resource. TemplateRefs can be shared across all
-// syncable secret custom resources. If a template contains confidential
-// information a Kubernetes Secret should be used along with a secure RBAC
-// config, otherwise a Configmap should suffice.
-// Supported resource types are: ConfigMap, Secret
-type TemplateRef struct {
-	// Namespace of the resource.
+// TransformationRef contains the configuration for accessing templates from an
+// SecretTransformation resource. TransformationRefs can be shared across all
+// syncable secret custom resources.
+type TransformationRef struct {
+	// Namespace of the SecretTransformation resource.
 	Namespace string `json:"namespace,omitempty"`
-	// Name of the resource.
+	// Name of the SecretTransformation resource.
 	Name string `json:"name"`
-	// Names of the templates found in the referenced resource. The name should be a
-	// key in the referenced resource's data. The value should be a valid Go text
-	// template. Refer to https://pkg.go.dev/text/template for more information.
-	Specs []TemplateRefSpec `json:"specs"`
+	// TemplateRefSpecs map to a TemplateSpec found in this TransformationRef.
+	TemplateRefSpecs map[string]TemplateSpecRef `json:"templateRefSpecs"`
 }
 
 // FieldFilter can be used to filter the secret data that is stored in the K8s

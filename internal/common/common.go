@@ -220,6 +220,15 @@ func GetHCPAuthWithRetry(ctx context.Context, c client.Client, key types.Namespa
 	return &obj, nil
 }
 
+func GetSecretTransformation(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.SecretTransformation, error) {
+	var obj secretsv1beta1.SecretTransformation
+	if err := c.Get(ctx, key, &obj); err != nil {
+		return nil, err
+	}
+
+	return &obj, nil
+}
+
 func setVaultConnectionRef(obj *secretsv1beta1.VaultAuth) {
 	if obj.Namespace == OperatorNamespace && obj.Name == consts.NameDefault && obj.Spec.VaultConnectionRef == "" {
 		obj.Spec.VaultConnectionRef = consts.NameDefault

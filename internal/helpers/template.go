@@ -27,10 +27,11 @@ func init() {
 	}
 }
 
-// SecretRenderOption holds all TemplateSpecs and field filters for a given Destination
+// SecretRenderOption holds all TemplateSpecs and field filters for a given
+// Destination
 type SecretRenderOption struct {
 	FieldFilter secretsv1beta1.FieldFilter
-	Specs       []secretsv1beta1.TemplateSpec
+	Specs       map[string]secretsv1beta1.TemplateSpec
 	Annotations map[string]string
 	Labels      map[string]string
 }
@@ -56,72 +57,116 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 	}, nil
 }
 
-// gatherTemplateSpecs attempts to collect all template specs from
+// gatherTemplateSpecs attempts to collect all v1beta1.TemplateSpec for the
+// syncable secret object.
 func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	meta *common.SyncableSecretMetaData,
-) ([]secretsv1beta1.TemplateSpec, error) {
-	var specs []secretsv1beta1.TemplateSpec
-	seen := make(map[string]bool)
+) (map[string]secretsv1beta1.TemplateSpec, error) {
 	var errs error
-	appendSpec := func(spec secretsv1beta1.TemplateSpec) {
-		if _, ok := seen[spec.Name]; ok {
-			errs = errors.Join(errs,
-				fmt.Errorf("failed to gather templates, "+
-					"duplicate template spec name %q", spec.Name))
+	specs := make(map[string]secretsv1beta1.TemplateSpec)
+	addSpec := func(name string, spec secretsv1beta1.TemplateSpec, replace bool) {
+		if !replace {
+			// spec.Name is the name of the template, which are not allowed
+			// to collide when taking the union of all templates.
+			if _, ok := specs[name]; ok {
+				errs = errors.Join(errs,
+					fmt.Errorf("failed to gather templates, "+
+						"duplicate template spec name %q", name))
+				return
+			}
+		}
+
+		if err := validateTemplateSpec(spec); err != nil {
+			errs = errors.Join(errs, err)
 			return
 		}
 
-		seen[spec.Name] = true
-		specs = append(specs, spec)
+		specs[name] = spec
 	}
 
 	transformation := meta.Destination.Transformation
 	// get the in-line template specs
-	for _, spec := range transformation.TemplateSpecs {
-		appendSpec(spec)
+	for name, spec := range transformation.TemplateSpecs {
+		if !spec.Source && spec.Key == "" {
+			spec.Key = name
+		}
+		addSpec(name, spec, false)
 	}
 
+	seenRefs := make(map[string]bool)
 	// TODO: cache ref results
 	// get the remote ref template specs
-	for _, spec := range transformation.TemplateRefs {
-		if len(spec.Specs) == 0 {
+	for _, ref := range transformation.TransformationRefs {
+		// TODO: decide on a policy for restricting access to SecretTransformations
+		// TODO: support getting ConfigMaps by label, potentially
+		ns := meta.Namespace
+		if ref.Namespace != "" {
+			ns = ref.Namespace
+		}
+
+		objKey := ctrlclient.ObjectKey{Namespace: ns, Name: ref.Name}
+		if _, ok := seenRefs[objKey.String()]; ok {
+			errs = errors.Join(errs,
+				fmt.Errorf("duplicate SecretTransformation ref %s", objKey))
 			continue
 		}
 
-		// TODO: decide on a policy for restricting access to ConfigMap
-		// TODO: support getting ConfigMaps by label, potentially
-		ns := meta.Namespace
-		if spec.Namespace != "" {
-			ns = spec.Namespace
-		}
+		seenRefs[objKey.String()] = true
 
-		objKey := ctrlclient.ObjectKey{Namespace: ns, Name: spec.Name}
-		c, err := GetConfigMap(ctx, client, objKey)
+		obj, err := common.GetSecretTransformation(ctx, client, objKey)
 		if err != nil {
 			errs = errors.Join(errs, err)
 			continue
 		}
 
-		data := c.Data
-		for _, s := range spec.Specs {
-			text, ok := data[s.Key]
+		hasOverrides := len(ref.TemplateRefSpecs) > 0
+		for name, s := range obj.Spec.TemplateSpecs {
+			if _, ok := transformation.TemplateSpecs[name]; ok {
+				// inline specs take precedence
+				continue
+			}
+
+			if hasOverrides {
+				// if we have TemplateRefSpecs then all referenced TemplateSpecs are treated as a
+				// template source.
+				// s = *s.DeepCopy()
+				s.Source = true
+			}
+			addSpec(name, s, false)
+		}
+
+		for name, refSpec := range ref.TemplateRefSpecs {
+			if _, ok := transformation.TemplateSpecs[name]; ok {
+				// inline specs take precedence over
+				continue
+			}
+
+			spec, ok := obj.Spec.TemplateSpecs[name]
+			// get the template spec
 			if !ok {
 				errs = errors.Join(errs,
 					fmt.Errorf(
-						"template %q not found in object %s, "+
-							"kind=ConfigMap",
-						s.Key, objKey))
+						"template %q not found in object %s, %s",
+						name, objKey, obj.GetObjectKind().GroupVersionKind()))
 				continue
 			}
-			name := s.Name
-			if name == "" {
-				name = s.Key
+
+			key := spec.Key
+			if key == "" {
+				// spec.Key is empty, then set it from spec's
+				key = refSpec.Key
 			}
-			appendSpec(secretsv1beta1.TemplateSpec{
-				Name:   name,
-				Text:   text,
-				Source: s.Source,
-			})
+
+			source := refSpec.Source
+			if !source {
+				source = spec.Source
+			}
+
+			addSpec(name, secretsv1beta1.TemplateSpec{
+				Key:    key,
+				Text:   spec.Text,
+				Source: source,
+			}, true)
 		}
 	}
 
@@ -136,20 +181,13 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 // template.SecretTemplate. It should normally be called before rendering any of
 // the template.
 func loadTemplates(opt *SecretRenderOption) (template.SecretTemplate, error) {
-	seen := make(map[string]bool)
 	var t template.SecretTemplate
-	for _, spec := range opt.Specs {
-		if _, ok := seen[spec.Name]; ok {
-			return nil, fmt.Errorf("failed to load template, "+
-				"duplicate template spec name %q", spec.Name)
-		}
-
-		seen[spec.Name] = true
+	for name, spec := range opt.Specs {
 		if t == nil {
 			t = template.NewSecretTemplate("")
 		}
 
-		if err := t.Parse(spec.Name, spec.Text); err != nil {
+		if err := t.Parse(name, spec.Text); err != nil {
 			return nil, err
 		}
 	}
@@ -158,7 +196,9 @@ func loadTemplates(opt *SecretRenderOption) (template.SecretTemplate, error) {
 }
 
 // renderTemplates from the SecretRenderOption and SecretInput.
-func renderTemplates(opt *SecretRenderOption, input *SecretInput) (map[string][]byte, error) {
+func renderTemplates(opt *SecretRenderOption,
+	input *SecretInput,
+) (map[string][]byte, error) {
 	if len(opt.Specs) == 0 {
 		return nil, fmt.Errorf("no template specs configured")
 	}
@@ -169,16 +209,20 @@ func renderTemplates(opt *SecretRenderOption, input *SecretInput) (map[string][]
 		return nil, err
 	}
 
-	for _, spec := range opt.Specs {
+	for name, spec := range opt.Specs {
 		if spec.Source {
 			continue
 		}
 
-		b, err := tmpl.ExecuteTemplate(spec.Name, input)
+		if err := validateTemplateSpec(spec); err != nil {
+			return nil, err
+		}
+
+		b, err := tmpl.ExecuteTemplate(name, input)
 		if err != nil {
 			return nil, err
 		}
-		data[spec.Name] = b
+		data[spec.Key] = b
 	}
 
 	return data, nil
@@ -201,7 +245,9 @@ func matchField(pat, f string) (bool, error) {
 // filterFields filters data using v1beta1.FieldFilter's exclude/include regex
 // patterns, with processing done in that order. If filter is nil, return all
 // data, unfiltered.
-func filterFields[V any](filter *secretsv1beta1.FieldFilter, data map[string]V) (map[string]V, error) {
+func filterFields[V any](filter *secretsv1beta1.FieldFilter,
+	data map[string]V,
+) (map[string]V, error) {
 	if filter == nil {
 		return data, nil
 	}
@@ -257,7 +303,9 @@ type SecretInput struct {
 // NewSecretInput sets up a SecretInput instance from the provided secret data
 // secret metadata, and annotations and labels which are typically of the type
 // map[string]string.
-func NewSecretInput[A, L any](secrets, metadata map[string]any, annotations map[string]A, labels map[string]L) *SecretInput {
+func NewSecretInput[A, L any](secrets, metadata map[string]any,
+	annotations map[string]A, labels map[string]L,
+) *SecretInput {
 	var a map[string]any
 	if annotations != nil {
 		a = make(map[string]any)
@@ -282,4 +330,14 @@ func NewSecretInput[A, L any](secrets, metadata map[string]any, annotations map[
 		Annotations: a,
 		Labels:      l,
 	}
+}
+
+func validateTemplateSpec(spec secretsv1beta1.TemplateSpec) error {
+	if !spec.Source && spec.Key == "" {
+		// TODO: add more context to this error
+		return fmt.Errorf(
+			"key cannot be empty when source is false")
+	}
+
+	return nil
 }
