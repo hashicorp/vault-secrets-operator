@@ -98,7 +98,8 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	// get the remote ref template specs
 	for _, ref := range transformation.TransformationRefs {
 		// TODO: decide on a policy for restricting access to SecretTransformations
-		// TODO: support getting ConfigMaps by label, potentially
+		// TODO: support getting SecretTransformations by label, potentially
+		// TODO: consider only supporting a single SecretTransformation ref?
 		ns := meta.Namespace
 		if ref.Namespace != "" {
 			ns = ref.Namespace
@@ -119,6 +120,9 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 			continue
 		}
 
+		// hasOverrides means that only a subset of TemplateSpecs are needed, we still
+		// need to include all the reference TemplateSpecs when rendering the subset of
+		// all specs. We treat those specs as being a template source only.
 		hasOverrides := len(ref.TemplateRefSpecs) > 0
 		for name, s := range obj.Spec.TemplateSpecs {
 			if _, ok := transformation.TemplateSpecs[name]; ok {

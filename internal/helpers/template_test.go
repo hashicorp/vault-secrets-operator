@@ -511,7 +511,6 @@ func TestNewSecretRenderOption(t *testing.T) {
 							Text: "{{- -}}",
 						},
 					},
-					TransformationRefs: nil,
 					FieldFilter: secretsv1beta1.FieldFilter{
 						Excludes: []string{`^bad.+`},
 						Includes: []string{`^good.+`},

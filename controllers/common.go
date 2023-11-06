@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -202,4 +203,13 @@ func parseDurationString(duration, path string, min time.Duration) (time.Duratio
 		}
 	}
 	return d, nil
+}
+
+func syncableSecretPredicate() predicate.Predicate {
+	return predicate.Or(
+		predicate.GenerationChangedPredicate{},
+		// needed for template rendering
+		predicate.AnnotationChangedPredicate{},
+		// needed for template rendering
+		predicate.LabelChangedPredicate{})
 }

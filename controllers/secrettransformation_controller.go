@@ -68,6 +68,10 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 		logger.Error(err, "Failed to validate template specs")
 	}
 
+	if o.Status.Valid {
+		// TODO: force reconcile all syncable secrets that reference this SecretTransformation
+	}
+
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
