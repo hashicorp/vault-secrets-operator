@@ -113,6 +113,12 @@ func GetManagerConfigMap(ctx context.Context, c client.Client) (*corev1.ConfigMa
 }
 
 func WatchManagerConfigMap(ctx context.Context, c client.WithWatch) (watch.Interface, error) {
+	// This function is no longer being used, as we look at alternative approaches to
+	// the token cache revocation on termination use-case. Seems to cause a spike in
+	// CPU usage after VSO has been running for an hour or so. The time spent in
+	// epoll_wait and nanosleep syscalls increases by a factor of 20 over a period of
+	// ~1h compare to the nominal state.
+	// TODO: leaving this here as reminder to re-evaluate the approach.
 	list, err := getManagerConfigMapList(ctx, c)
 	if err != nil {
 		return nil, err
