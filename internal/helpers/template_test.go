@@ -503,6 +503,42 @@ func TestNewSecretRenderOption(t *testing.T) {
 		wantErr         assert.ErrorAssertionFunc
 	}{
 		{
+			name: "inline-default-2",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+						"default": {
+							Text: "{{- -}}",
+						},
+						"default-2": {
+							Text: "{{- -}}",
+						},
+					},
+					FieldFilter: secretsv1beta1.FieldFilter{
+						Excludes: []string{`^bad.+`},
+						Includes: []string{`^good.+`},
+					},
+				},
+			),
+			want: &SecretRenderOption{
+				Specs: map[string]secretsv1beta1.TemplateSpec{
+					"default": {
+						Key:  "default",
+						Text: "{{- -}}",
+					},
+					"default-2": {
+						Key:  "default-2",
+						Text: "{{- -}}",
+					},
+				},
+				FieldFilter: secretsv1beta1.FieldFilter{
+					Excludes: []string{`^bad.+`},
+					Includes: []string{`^good.+`},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name: "inline-default",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
