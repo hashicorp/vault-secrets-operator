@@ -215,14 +215,6 @@ func main() {
 			setupLog.Error(err, "Failed to setup the Vault ClientFactory")
 			os.Exit(1)
 		}
-
-		watcher, err := vclient.WatchManagerConfigMap(ctx, defaultClient)
-		if err != nil {
-			setupLog.Error(err, "Failed to setup the manager ConfigMap watcher")
-			os.Exit(1)
-		}
-
-		go vclient.WaitForManagerConfigMapModified(ctx, watcher, defaultClient, vclient.OnShutDown(clientFactory))
 	}
 
 	hmacValidator := helpers.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
