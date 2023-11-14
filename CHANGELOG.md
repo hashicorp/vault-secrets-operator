@@ -7,6 +7,7 @@ Fix:
 * Remove unneeded instantiation of the VSO ConfigMap watcher: [GH-446](https://github.com/hashicorp/vault-secrets-operator/pull/446)
 
 Dependency Updates:
+* Upgrade kube-rbac-proxy to v0.15.0: [GH-458](https://github.com/hashicorp/vault-secrets-operator/pull/458)
 * Bump github.com/gruntwork-io/terratest from 0.46.5 to 0.46.6: [GH-455](https://github.com/hashicorp/vault-secrets-operator/pull/455)
 * Bump google.golang.org/api from 0.149.0 to 0.150.0: [GH-454](https://github.com/hashicorp/vault-secrets-operator/pull/454)
 * Bump ubi9/ubi-minimal from 9.2-750.1697625013 to 9.3-1361: [GH-444](https://github.com/hashicorp/vault-secrets-operator/pull/444)
