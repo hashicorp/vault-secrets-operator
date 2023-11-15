@@ -218,7 +218,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:   "create-only",
-			create: 1,
+			create: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
