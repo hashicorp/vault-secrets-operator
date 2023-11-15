@@ -41,8 +41,8 @@ func Test_computeRelativeHorizon(t *testing.T) {
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(time.Now().Unix()-600, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
+			expectedHorizon: time.Until(time.Unix(time.Now().Unix()-600, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67))),
 		},
 		"two thirds elapsed": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -662,7 +662,6 @@ func Test_computeRotationTime(t *testing.T) {
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 300,
-						Renewable:     false,
 					},
 					LastRenewalTime: then.Unix(),
 				},

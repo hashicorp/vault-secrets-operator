@@ -400,7 +400,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 					Spec: secretsv1beta1.VaultDynamicSecretSpec{
 						Namespace: outputs.Namespace,
 						Mount:     outputs.K8SSecretPath,
-						// RequestHTTPMethod: http.MethodPut,
 						Params: map[string]string{
 							"kubernetes_namespace": outputs.K8sNamespace,
 						},
