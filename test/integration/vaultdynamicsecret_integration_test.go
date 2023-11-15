@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -445,7 +446,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 				count++
 				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
 					obj := obj
-					expected := expected
+					expected := maps.Clone(expected)
 					expectedPresentOnly := expectedPresentOnly
 					t.Parallel()
 
