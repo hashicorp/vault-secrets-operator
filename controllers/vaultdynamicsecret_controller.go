@@ -70,8 +70,6 @@ type VaultDynamicSecretReconciler struct {
 // RolloutRestartTargets configured, then a request to "rollout restart"
 // the configured Deployment, StatefulSet, ReplicaSet will be made to Kubernetes.
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
 	if r.runtimePodUID == "" {
 		if val := os.Getenv("OPERATOR_POD_UID"); val != "" {
 			r.runtimePodUID = types.UID(val)
@@ -83,8 +81,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	logger.Info("Runtime Pod UID", "uid", r.runtimePodUID)
-
+	logger := log.FromContext(ctx).WithValues("podUID", r.runtimePodUID)
 	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
