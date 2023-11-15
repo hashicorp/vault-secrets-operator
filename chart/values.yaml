@@ -61,9 +61,9 @@ controller:
     # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
     image:
       repository: gcr.io/kubebuilder/kube-rbac-proxy
-      tag: v0.14.4
       pullPolicy: IfNotPresent
       tag: v0.15.0
+      
     # Configures the default resources for the kube rbac proxy container.
     # For more information on configuring resources, see the K8s documentation:
     # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
@@ -101,8 +101,8 @@ controller:
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       repository: hashicorp/vault-secrets-operator
-      tag: 0.3.4
       pullPolicy: IfNotPresent
+      tag: 0.3.4
 
     # Configures the client cache which is used by the controller to cache (and potentially persist) vault tokens that
     # are the result of using the VaultAuthMethod. This enables re-use of Vault Tokens
