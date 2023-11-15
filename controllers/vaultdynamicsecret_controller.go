@@ -476,20 +476,26 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	}
 }
 
-// computePostSyncHorizon for a secretsv1beta1.VaultDynamicSecret. The duration computed
-// varies depending on the "type" of Vault secret being synced.
+// computePostSyncHorizon for a secretsv1beta1.VaultDynamicSecret. The duration
+// computed varies depending on the "type" of Vault secret being synced. In the
+// case the secret is from a "static-creds" role, the computed horizon will be
+// greater than the secret rotation period/TTL. For all other types, the horizon
+// is computed from the secret's lease duration, the o.Spec.RenewalPercent, minus
+// some jitter offset.
 func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) time.Duration {
 	logger := log.FromContext(ctx)
 	var horizon time.Duration
 
-	secretLease := &o.Status.SecretLease
+	secretLease := o.Status.SecretLease
 	if !o.Spec.AllowStaticCreds {
-		// renewable secret lease
 		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
 		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
 	} else {
 		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
 		staticCredsMeta := o.Status.StaticCredsMetaData
+		// the next sync should be scheduled in the future, Vault will be handling the
+		// secret rotation. We need to get new secret data after it has been rotated, so
+		// we always compute a horizon after staticCredsMeta.TTL.
 		if !r.isStaticCreds(&staticCredsMeta) {
 			horizon = 0
 			logger.Info("Vault response data does not support static-creds semantics",
@@ -540,9 +546,10 @@ func computeRelativeHorizon(o *secretsv1beta1.VaultDynamicSecret) (time.Duration
 	}
 }
 
-// computeRelativeHorizonWithJitter returns the duration minus some random jitter of the renewal window
-// based on the lease's last renewal time relative to now. Return true if the
-// associated lease is within its renewal window. Use minHorizon if it is less than computed horizon.
+// computeRelativeHorizonWithJitter returns the duration minus some random jitter
+// of the renewal window based on the lease's last renewal time relative to now.
+// Return true if the associated lease is within its renewal window. Use
+// minHorizon if it is less than computed horizon.
 func computeRelativeHorizonWithJitter(o *secretsv1beta1.VaultDynamicSecret, minHorizon time.Duration) (time.Duration, bool) {
 	horizon, inWindow := computeRelativeHorizon(o)
 	if horizon < minHorizon {

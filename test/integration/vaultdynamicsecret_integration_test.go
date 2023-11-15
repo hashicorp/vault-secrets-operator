@@ -197,15 +197,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                 string
-		authObj              *secretsv1beta1.VaultAuth
-		expected             map[string]int
-		expectedStatic       map[string]int
-		expectedNonRenewable map[string]int
-		create               int
-		createStatic         int
-		createNonRenewable   int
-		existing             int
+		name               string
+		authObj            *secretsv1beta1.VaultAuth
+		expected           map[string]int
+		expectedStatic     map[string]int
+		create             int
+		createStatic       int
+		createNonRenewable int
+		existing           int
 	}{
 		{
 			name:     "existing-only",
@@ -243,7 +242,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 				"rotation_period": 2,
 				"username":        24,
 			},
-			expectedNonRenewable: map[string]int{},
 		},
 		{
 			name:         "create-static",
@@ -257,9 +255,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:                 "create-non-renewable",
-			createNonRenewable:   5,
-			expectedNonRenewable: map[string]int{},
+			name:               "create-non-renewable",
+			createNonRenewable: 5,
 		},
 	}
 
@@ -434,7 +431,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 					)
 				} else if _, ok := obj.Annotations["non-renewable"]; ok {
 					nameFmt = "non-renewable-" + nameFmt
-					expected = tt.expectedNonRenewable
+					// the non-renewable test checks that all data keys are populated, so we expect
+					// the expected map to be empty.
+					expected = make(map[string]int)
 					expectedPresentOnly = append(expectedPresentOnly,
 						helpers.SecretDataKeyRaw,
 						"service_account_name",
