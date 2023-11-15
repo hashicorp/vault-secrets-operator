@@ -125,8 +125,8 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, fmt.Errorf("restored client's cacheKey %s does not match expected %s", cacheKey, entry.CacheKey)
 	}
 
-	if c.lastWatcherErr != nil {
-		return nil, fmt.Errorf("restored client failed to be renewed, err=%w", err)
+	if err := c.Validate(); err != nil {
+		return nil, err
 	}
 
 	return c, nil
@@ -169,6 +169,7 @@ type defaultClient struct {
 	targetNamespace    string
 	credentialProvider provider.CredentialProviderBase
 	watcher            *api.LifetimeWatcher
+	closed             bool
 	lastWatcherErr     error
 	once               sync.Once
 	mu                 sync.RWMutex
@@ -357,6 +358,10 @@ func (c *defaultClient) Close(revoke bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.closed {
+		return
+	}
+
 	logger := log.FromContext(nil)
 	logger.Info("Calling Client.Close()")
 	if c.watcher != nil {
@@ -369,8 +374,7 @@ func (c *defaultClient) Close(revoke bool) {
 				"Failed to revoke Vault client token", "err", err)
 		}
 	}
-
-	c.client = nil
+	c.closed = true
 }
 
 // startLifetimeWatcher starts an api.LifetimeWatcher in a Go routine for this Client.
@@ -379,6 +383,11 @@ func (c *defaultClient) Close(revoke bool) {
 func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 	if c.skipRenewal {
 		return nil
+	}
+	// try renewing the token as soon as possible, returning any renewal
+	// failure before starting the lifetimeWatcher
+	if err := c.renew(ctx); err != nil {
+		return err
 	}
 
 	if !c.authSecret.Auth.Renewable {
@@ -396,6 +405,8 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 		return err
 	}
 
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
 		logger := log.FromContext(nil).V(consts.LogLevelDebug).WithName("lifetimeWatcher").WithValues(
 			"entityID", c.authSecret.Auth.EntityID)
@@ -403,12 +414,12 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 		defer func() {
 			logger.Info("Stopping")
 			watcher.Stop()
-			c.watcher = nil
 		}()
 
 		go watcher.Start()
-		logger.Info("Started")
 		c.watcher = watcher
+		wg.Done()
+		logger.Info("Started")
 		for {
 			select {
 			case <-ctx.Done():
@@ -426,6 +437,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 			}
 		}
 	}(ctx, c, watcher)
+	wg.Wait()
 
 	return nil
 }

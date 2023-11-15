@@ -4,6 +4,7 @@
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
+KUBE_RBAC_PROXY_VERSION = v0.14.4
 
 GO_VERSION = $(shell cat .go-version)
 
@@ -23,7 +24,7 @@ VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
 K8S_VAULT_SERVICE_ACCOUNT ?= vault
-KIND_K8S_VERSION ?= v1.27.3
+KIND_K8S_VERSION ?= v1.28.0
 VAULT_HELM_VERSION ?= 0.25.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
@@ -46,6 +47,8 @@ SKIP_CLEANUP ?=
 # Cloud test options
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
+SKIP_GCP_TESTS ?= true
+
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
 # number of parallel bats to run
@@ -301,6 +304,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) K8S_VAULT_SERVICE_ACCOUNT=$(K8S_VAULT_SERVICE_ACCOUNT) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
+	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
@@ -333,7 +337,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
-	find $(INTEGRATION_TEST_ROOT)/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
+	find $(INTEGRATION_TEST_ROOT)/infra/state -type f -name '*tfstate*' | xargs rm &> /dev/null || true
 
 .PHONY: setup-integration-test
 ## Create Vault inside the cluster
@@ -640,4 +644,4 @@ endif
 
 .PHONY: check-versions
 check-versions:
-	VERSION=$(VERSION) ./scripts/check-versions.sh
+	VERSION=$(VERSION) KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) ./scripts/check-versions.sh
