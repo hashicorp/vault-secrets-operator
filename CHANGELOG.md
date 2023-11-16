@@ -1,7 +1,31 @@
-## Unreleased
+## 0.4.0 (November 16th, 2023)
 
 Features:
-* VaultAuth: Support for the GCP authentication method when using GKE workload identity [GH-411](https://github.com/hashicorp/vault-secrets-operator/pull/411)
+* VaultAuth: Support for the GCP authentication method when using GKE workload identity: [GH-411](https://github.com/hashicorp/vault-secrets-operator/pull/411)
+* VDS: Support rotation for non-renewable secrets: [GH-397](https://github.com/hashicorp/vault-secrets-operator/pull/397)
+
+Fix:
+* Remove unneeded instantiation of the VSO ConfigMap watcher: [GH-446](https://github.com/hashicorp/vault-secrets-operator/pull/446)
+* VDS: Correctly compute the lease renewal horizon after a new VSO leader has been elected and the lease is still within its renewal window: [GH-397](https://github.com/hashicorp/vault-secrets-operator/pull/397)
+
+Dependency Updates:
+* Upgrade kube-rbac-proxy to v0.15.0: [GH-458](https://github.com/hashicorp/vault-secrets-operator/pull/458)
+* Bump github.com/onsi/gomega from 1.29.0 to 1.30.0: [GH-456](https://github.com/hashicorp/vault-secrets-operator/pull/456)
+* Bump github.com/gruntwork-io/terratest from 0.46.5 to 0.46.6: [GH-455](https://github.com/hashicorp/vault-secrets-operator/pull/455)
+* Bump google.golang.org/api from 0.149.0 to 0.150.0: [GH-454](https://github.com/hashicorp/vault-secrets-operator/pull/454)
+* Bump ubi9/ubi-minimal from 9.2-750.1697625013 to 9.3-1361.1699548032: [GH-444](https://github.com/hashicorp/vault-secrets-operator/pull/444) [GH-460](https://github.com/hashicorp/vault-secrets-operator/pull/460)
+* Bump ubi9/ubi-micro from 9.2-15.1696515526 to 9.3-6: [GH-443](https://github.com/hashicorp/vault-secrets-operator/pull/443)
+* Bump github.com/gruntwork-io/terratest from 0.46.1 to 0.46.5: [GH-440](https://github.com/hashicorp/vault-secrets-operator/pull/440)
+* Bump google.golang.org/api from 0.148.0 to 0.149.0: [GH-439](https://github.com/hashicorp/vault-secrets-operator/pull/439)
+* Bump github.com/go-logr/logr from 1.2.4 to 1.3.0: [GH-435](https://github.com/hashicorp/vault-secrets-operator/pull/435)
+* Bump github.com/google/uuid from 1.3.1 to 1.4.0: [GH-434](https://github.com/hashicorp/vault-secrets-operator/pull/434)
+* Bump github.com/onsi/gomega from 1.28.1 to 1.29.0: [GH-433](https://github.com/hashicorp/vault-secrets-operator/pull/433)
+* Bump google.golang.org/grpc from 1.57.0 to 1.57.1: [GH-428](https://github.com/hashicorp/vault-secrets-operator/pull/428)
+* Bump k8s.io/apimachinery from 0.28.2 to 0.28.3: [GH-421](https://github.com/hashicorp/vault-secrets-operator/pull/421)
+* Bump github.com/onsi/gomega from 1.28.0 to 1.28.1: [GH-420](https://github.com/hashicorp/vault-secrets-operator/pull/420)
+* Bump k8s.io/api from 0.28.2 to 0.28.3: [GH-419](https://github.com/hashicorp/vault-secrets-operator/pull/419)
+* Bump github.com/gruntwork-io/terratest from 0.46.0 to 0.46.1: [GH-418](https://github.com/hashicorp/vault-secrets-operator/pull/418)
+* Bump sigs.k8s.io/controller-runtime from 0.16.2 to 0.16.3: [GH-417](https://github.com/hashicorp/vault-secrets-operator/pull/417)
 
 ## 0.3.4 (October 19th, 2023)
 Fix:
