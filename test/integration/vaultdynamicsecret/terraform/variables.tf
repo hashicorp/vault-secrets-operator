@@ -21,6 +21,14 @@ variable "k8s_host" {
   default = "https://kubernetes.default.svc"
 }
 
+variable "k8s_vault_namespace" {
+  type = string
+}
+
+variable "k8s_vault_service_account" {
+  type = string
+}
+
 variable "postgres_secret_name" {
   default = "postgres-postgresql"
 }

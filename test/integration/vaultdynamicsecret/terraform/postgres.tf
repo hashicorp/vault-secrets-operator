@@ -107,8 +107,5 @@ path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_back
 path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
   capabilities = ["read"]
 }
-path "sys/leases/revoke" {
-  capabilities = ["update"]
-}
 EOT
 }
