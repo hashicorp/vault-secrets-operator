@@ -26,7 +26,7 @@ provider "kubernetes" {
   config_path    = var.k8s_config_path
 }
 
-resource "kubernetes_namespace" "demo" {
+resource "kubernetes_namespace" "vault" {
   metadata {
     name = var.k8s_namespace
   }
@@ -35,7 +35,7 @@ resource "kubernetes_namespace" "demo" {
 resource "kubernetes_secret" "vault_license" {
   count = var.vault_enterprise ? 1 : 0
   metadata {
-    namespace = kubernetes_namespace.demo.metadata[0].name
+    namespace = kubernetes_namespace.vault.metadata[0].name
     name      = "vault-license"
   }
   data = {
@@ -46,7 +46,7 @@ resource "kubernetes_secret" "vault_license" {
 resource "helm_release" "vault" {
   version          = var.vault_chart_version
   name             = "vault"
-  namespace        = kubernetes_namespace.demo.metadata[0].name
+  namespace        = kubernetes_namespace.vault.metadata[0].name
   create_namespace = false
   wait             = true
   wait_for_jobs    = true
@@ -69,6 +69,10 @@ resource "helm_release" "vault" {
   set {
     name  = "server.logLevel"
     value = "debug"
+  }
+  set {
+    name  = "server.serviceAccount.name"
+    value = var.k8s_service_account
   }
   set {
     name  = "injector.enabled"
