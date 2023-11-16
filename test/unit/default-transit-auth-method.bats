@@ -378,7 +378,7 @@ load _helpers
     [ "${actual}" = null ]
     actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
     [ "${actual}" = null ]
-    actual=$(echo "$object" | yq '.spec.gcp.projectId' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.gcp.projectID' | tee /dev/stderr)
     [ "${actual}" = null ]
 }
 
@@ -395,7 +395,7 @@ load _helpers
         --set 'controller.manager.clientCache.storageEncryption.gcp.workloadIdentityServiceAccount=my-identity-sa' \
         --set 'controller.manager.clientCache.storageEncryption.gcp.region=us-test-2' \
         --set 'controller.manager.clientCache.storageEncryption.gcp.clusterName=test-cluster' \
-        --set 'controller.manager.clientCache.storageEncryption.gcp.projectId=my-project' \
+        --set 'controller.manager.clientCache.storageEncryption.gcp.projectID=my-project' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
@@ -415,6 +415,6 @@ load _helpers
     [ "${actual}" = "us-test-2" ]
     actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
     [ "${actual}" = "test-cluster" ]
-    actual=$(echo "$object" | yq '.spec.gcp.projectId' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.gcp.projectID' | tee /dev/stderr)
     [ "${actual}" = "my-project" ]
 }
