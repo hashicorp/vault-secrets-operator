@@ -10,7 +10,7 @@ Dependency Updates:
 * Upgrade kube-rbac-proxy to v0.15.0: [GH-458](https://github.com/hashicorp/vault-secrets-operator/pull/458)
 * Bump github.com/gruntwork-io/terratest from 0.46.5 to 0.46.6: [GH-455](https://github.com/hashicorp/vault-secrets-operator/pull/455)
 * Bump google.golang.org/api from 0.149.0 to 0.150.0: [GH-454](https://github.com/hashicorp/vault-secrets-operator/pull/454)
-* Bump ubi9/ubi-minimal from 9.2-750.1697625013 to 9.3-1361: [GH-444](https://github.com/hashicorp/vault-secrets-operator/pull/444)
+* Bump ubi9/ubi-minimal from 9.2-750.1697625013 to 9.3-1361.1699548032: [GH-444](https://github.com/hashicorp/vault-secrets-operator/pull/444) [GH-460](https://github.com/hashicorp/vault-secrets-operator/pull/460)
 * Bump ubi9/ubi-micro from 9.2-15.1696515526 to 9.3-6: [GH-443](https://github.com/hashicorp/vault-secrets-operator/pull/443)
 * Bump github.com/gruntwork-io/terratest from 0.46.1 to 0.46.5: [GH-440](https://github.com/hashicorp/vault-secrets-operator/pull/440)
 * Bump google.golang.org/api from 0.148.0 to 0.149.0: [GH-439](https://github.com/hashicorp/vault-secrets-operator/pull/439)
