@@ -23,7 +23,6 @@ CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-K8S_VAULT_SERVICE_ACCOUNT ?= vault
 KIND_K8S_VERSION ?= v1.28.0
 VAULT_HELM_VERSION ?= 0.25.0
 # Root directory to export kind cluster logs after each test run.
@@ -302,7 +301,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
 	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
-	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) K8S_VAULT_SERVICE_ACCOUNT=$(K8S_VAULT_SERVICE_ACCOUNT) \
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
@@ -362,7 +361,6 @@ endif
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
-		-var k8s_service_account=$(K8S_VAULT_SERVICE_ACCOUNT) \
 		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_VAULT_STATE_DIR)/*.tfvars

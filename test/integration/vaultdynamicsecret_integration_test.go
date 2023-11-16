@@ -64,9 +64,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"k8s_config_context":         k8sConfigContext,
-			"k8s_vault_namespace":        k8sVaultNamespace,
-			"k8s_vault_service_account":  k8sVaultServiceAccount,
+			"k8s_config_context":  k8sConfigContext,
+			"k8s_vault_namespace": k8sVaultNamespace,
+			// the service account is created in test/integration/infra/main.tf
+			"k8s_vault_service_account":  "vault",
 			"name_prefix":                testID,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),

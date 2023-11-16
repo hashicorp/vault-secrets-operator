@@ -50,13 +50,12 @@ import (
 )
 
 var (
-	testRoot               string
-	binDir                 string
-	chartPath              string
-	testVaultAddress       string
-	k8sVaultNamespace      string
-	k8sVaultServiceAccount string
-	kustomizeConfigRoot    string
+	testRoot            string
+	binDir              string
+	chartPath           string
+	testVaultAddress    string
+	k8sVaultNamespace   string
+	kustomizeConfigRoot string
 	// directory to store the kind logs after each test.
 	exportKindLogsRoot = os.Getenv("EXPORT_KIND_LOGS_ROOT")
 	entTests           = os.Getenv("ENT_TESTS") != ""
@@ -96,7 +95,6 @@ func init() {
 	if k8sVaultNamespace == "" {
 		k8sVaultNamespace = "vault"
 	}
-	k8sVaultServiceAccount = os.Getenv("K8S_VAULT_SERVICE_ACCOUNT")
 
 	testVaultAddress = fmt.Sprintf("http://vault.%s.svc.cluster.local:8200", k8sVaultNamespace)
 }
