@@ -110,9 +110,9 @@ type VaultAuthConfigGCP struct {
 	// pod's local metadata server.
 	ClusterName string `json:"clusterName,omitempty"`
 
-	// GCP project id. Defaults to the project-id returned from the operator
+	// GCP project ID. Defaults to the project-id returned from the operator
 	// pod's local metadata server.
-	ProjectID string `json:"projectId,omitempty"`
+	ProjectID string `json:"projectID,omitempty"`
 }
 
 // VaultAuthSpec defines the desired state of VaultAuth
