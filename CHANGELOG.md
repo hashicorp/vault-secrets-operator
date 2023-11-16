@@ -1,13 +1,16 @@
-## 0.4.0 (November 15th, 2023)
+## 0.4.0 (November 16th, 2023)
 
 Features:
 * VaultAuth: Support for the GCP authentication method when using GKE workload identity: [GH-411](https://github.com/hashicorp/vault-secrets-operator/pull/411)
+* VDS: Support rotation for non-renewable secrets: [GH-397](https://github.com/hashicorp/vault-secrets-operator/pull/397)
 
 Fix:
 * Remove unneeded instantiation of the VSO ConfigMap watcher: [GH-446](https://github.com/hashicorp/vault-secrets-operator/pull/446)
+* VDS: Correctly compute the lease renewal horizon after a new VSO leader has been elected and the lease is still within its renewal window: [GH-397](https://github.com/hashicorp/vault-secrets-operator/pull/397)
 
 Dependency Updates:
 * Upgrade kube-rbac-proxy to v0.15.0: [GH-458](https://github.com/hashicorp/vault-secrets-operator/pull/458)
+* Bump github.com/onsi/gomega from 1.29.0 to 1.30.0: [GH-456](https://github.com/hashicorp/vault-secrets-operator/pull/456)
 * Bump github.com/gruntwork-io/terratest from 0.46.5 to 0.46.6: [GH-455](https://github.com/hashicorp/vault-secrets-operator/pull/455)
 * Bump google.golang.org/api from 0.149.0 to 0.150.0: [GH-454](https://github.com/hashicorp/vault-secrets-operator/pull/454)
 * Bump ubi9/ubi-minimal from 9.2-750.1697625013 to 9.3-1361.1699548032: [GH-444](https://github.com/hashicorp/vault-secrets-operator/pull/444) [GH-460](https://github.com/hashicorp/vault-secrets-operator/pull/460)
