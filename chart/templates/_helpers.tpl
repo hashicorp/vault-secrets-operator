@@ -139,8 +139,8 @@ VaultAuthMethod Spec
     {{- if $cur.gcp.clusterName }}
     clusterName: {{ $cur.gcp.clusterName }}
     {{- end }}
-    {{- if $cur.gcp.projectId }}
-    projectId: {{ $cur.gcp.projectId }}
+    {{- if $cur.gcp.projectID }}
+    projectID: {{ $cur.gcp.projectID }}
     {{- end }}
   {{- end }}
 {{- end}}
