@@ -23,7 +23,7 @@ require (
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/client_model v0.5.0
 	github.com/stretchr/testify v1.8.4
-	google.golang.org/api v0.150.0
+	google.golang.org/api v0.151.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.28.3
 	k8s.io/apimachinery v0.28.3
