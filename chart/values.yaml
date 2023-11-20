@@ -97,7 +97,6 @@ controller:
 
   # Settings related to the vault-secrets-operator container.
   manager:
-
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       repository: hashicorp/vault-secrets-operator
