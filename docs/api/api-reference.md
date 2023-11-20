@@ -269,7 +269,7 @@ _Appears in:_
 | `workloadIdentityServiceAccount` _string_ | WorkloadIdentityServiceAccount is the name of a Kubernetes service account (in the same Kubernetes namespace as the Vault*Secret referencing this resource) which has been configured for workload identity in GKE. Should be annotated with "iam.gke.io/gcp-service-account". |
 | `region` _string_ | GCP Region of the GKE cluster's identity provider. Defaults to the region returned from the operator pod's local metadata server. |
 | `clusterName` _string_ | GKE cluster name. Defaults to the cluster-name returned from the operator pod's local metadata server. |
-| `projectId` _string_ | GCP project id. Defaults to the project-id returned from the operator pod's local metadata server. |
+| `projectID` _string_ | GCP project ID. Defaults to the project-id returned from the operator pod's local metadata server. |
 
 
 #### VaultAuthConfigJWT

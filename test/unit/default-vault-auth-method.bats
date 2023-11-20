@@ -340,7 +340,7 @@ load _helpers
     [ "${actual}" = null ]
     actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
     [ "${actual}" = null ]
-    actual=$(echo "$object" | yq '.spec.gcp.projectId' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.gcp.projectID' | tee /dev/stderr)
     [ "${actual}" = null ]
 }
 
@@ -356,7 +356,7 @@ load _helpers
         --set 'defaultAuthMethod.gcp.workloadIdentityServiceAccount=my-identity-sa' \
         --set 'defaultAuthMethod.gcp.region=us-test-2' \
         --set 'defaultAuthMethod.gcp.clusterName=test-cluster' \
-        --set 'defaultAuthMethod.gcp.projectId=my-project' \
+        --set 'defaultAuthMethod.gcp.projectID=my-project' \
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
@@ -376,6 +376,6 @@ load _helpers
     [ "${actual}" = "us-test-2" ]
     actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
     [ "${actual}" = "test-cluster" ]
-    actual=$(echo "$object" | yq '.spec.gcp.projectId' | tee /dev/stderr)
+    actual=$(echo "$object" | yq '.spec.gcp.projectID' | tee /dev/stderr)
     [ "${actual}" = "my-project" ]
 }

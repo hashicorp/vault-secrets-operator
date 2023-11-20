@@ -295,7 +295,7 @@ controller:
           # GCP project id. Defaults to the project-id returned from the
           # operator pod's local metadata server if unspecified.
           # @type: string
-          projectId: ""
+          projectID: ""
 
         # Params to use when authenticating to Vault using this auth method.
         # params:
@@ -580,7 +580,7 @@ defaultAuthMethod:
     # GCP project id. Defaults to the project-id returned from the
     # operator pod's local metadata server if unspecified.
     # @type: string
-    projectId: ""
+    projectID: ""
 
   # Params to use when authenticating to Vault
   # params:
