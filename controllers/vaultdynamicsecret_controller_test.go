@@ -694,3 +694,102 @@ func Test_computeRotationTime(t *testing.T) {
 		})
 	}
 }
+
+func Test_artificialDelay(t *testing.T) {
+	type fields struct {
+		Client        client.Client
+		runtimePodUID types.UID
+	}
+	type args struct {
+		ctx     context.Context
+		vClient *vault.MockRecordingVaultClient
+		o       *secretsv1beta1.VaultDynamicSecret
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    int
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "no-delay",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &vault.MockRecordingVaultClient{},
+				o: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Mount: "baz",
+						Path:  "foo",
+						Destination: secretsv1beta1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+						Delay: 0,
+					},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
+				},
+			},
+			wantErr: assert.NoError,
+			want:    0,
+		},
+		{
+			name: "with-ten-second-delay",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &vault.MockRecordingVaultClient{},
+				o: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Mount: "baz",
+						Path:  "foo",
+						Destination: secretsv1beta1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+						Delay: 10,
+					},
+
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
+				},
+			},
+			want:    10,
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &VaultDynamicSecretReconciler{
+				Client: tt.fields.Client,
+			}
+			start := time.Now()
+			_, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o)
+			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o)) {
+				return
+			}
+
+			duration := time.Since(start).Round(time.Second).Seconds()
+
+			fmt.Println(duration)
+			if duration != float64(tt.want) {
+				fmt.Println(duration != float64(tt.want))
+				t.Error("Sleep length not correct")
+			}
+		})
+	}
+}

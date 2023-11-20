@@ -459,6 +459,7 @@ _Appears in:_
 | `allowStaticCreds` _boolean_ | AllowStaticCreds should be set when syncing credentials that are periodically rotated by the Vault server, rather than created upon request. These secrets are sometimes referred to as "static roles", or "static credentials", with a request path that contains "static-creds". |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does not support dynamically reloading a rotated secret. In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events. See RolloutRestartTarget for more details. |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |
+| `delay` _integer_ | Delay adds an artifical delay between fetching the secret and writing it to Kubernetes. This is to cater for services that are eventually consistent |
 
 
 
