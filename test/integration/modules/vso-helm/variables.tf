@@ -13,6 +13,11 @@ variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }
 
+variable "operator_allowednamespaces" {
+  type    = list(string)
+  default = []
+}
+
 variable "operator_image_repo" {
   default = "hashicorp/vault-secrets-operator"
 }
