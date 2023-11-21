@@ -446,6 +446,10 @@ defaultAuthMethod:
   # Vault namespace for the VaultAuthMethod CR
   # @type: string
   namespace: ""
+  
+  # Kubernetes namespaces which are allow-listed for use with this AuthMethod.
+  # @type: array<string>
+  allowedNamespaces: []
 
   # Vault Auth method to be used with the VaultAuthMethod CR
   # @type: string

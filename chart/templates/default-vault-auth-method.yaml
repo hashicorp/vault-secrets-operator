@@ -16,6 +16,9 @@ metadata:
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   namespace: {{ .Values.defaultAuthMethod.namespace }}
+  {{- if .Values.defaultAuthMethod.allowedNamespaces }}
+  allowedNamespaces: {{ .Values.defaultAuthMethod.allowedNamespaces | quote }}
+  {{- end }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
   {{- $kubeServiceAccount := .Values.defaultAuthMethod.kubernetes.serviceAccount }}
