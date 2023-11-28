@@ -43,6 +43,13 @@ var (
 	cleanupLog = ctrl.Log.WithName("cleanup")
 )
 
+const (
+	// The default MaxConcurrentReconciles for the VDS controller.
+	defaultVaultDynamicSecretsConcurrency = 100
+	// The default MaxConcurrentReconciles for Syncable Secrets controllers.
+	defaultSyncableSecretsConcurrency = 100
+)
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
@@ -56,6 +63,7 @@ func main() {
 	persistenceModelDirectEncrypted := "direct-encrypted"
 	defaultPersistenceModel := persistenceModelNone
 	controllerOptions := controller.Options{}
+	vdsOptions := controller.Options{}
 	cfc := vclient.DefaultCachingClientFactoryConfig()
 	startTime := time.Now()
 
@@ -83,7 +91,9 @@ func main() {
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed."+
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
-	flag.IntVar(&controllerOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-global", 100,
+	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", defaultVaultDynamicSecretsConcurrency,
+		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
+	flag.IntVar(&controllerOptions.MaxConcurrentReconciles, "max-concurrent-reconciles", defaultSyncableSecretsConcurrency,
 		"Maximum number of concurrent reconciles for each controller.")
 	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 60,
@@ -226,7 +236,7 @@ func main() {
 		SecretDataBuilder: secretDataBuilder,
 		HMACValidator:     hmacValidator,
 		ClientFactory:     clientFactory,
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
@@ -257,13 +267,22 @@ func main() {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultConnection")
 		os.Exit(1)
 	}
+	// This allows the user to customize VDS concurrency independently.
+	// It is mostly here to allow for backward compatibility from when we introduced the flag
+	// `--max-concurrent-reconciles`.
+	vdsOverrideOpts := controller.Options{}
+	if vdsOptions.MaxConcurrentReconciles != defaultVaultDynamicSecretsConcurrency {
+		vdsOverrideOpts = vdsOptions
+	} else {
+		vdsOverrideOpts = controllerOptions
+	}
 	if err = (&controllers.VaultDynamicSecretReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		Recorder:      mgr.GetEventRecorderFor("VaultDynamicSecret"),
 		ClientFactory: clientFactory,
 		HMACValidator: hmacValidator,
-	}).SetupWithManager(mgr, controllerOptions); err != nil {
+	}).SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
 	}
@@ -281,7 +300,7 @@ func main() {
 		SecretDataBuilder: secretDataBuilder,
 		HMACValidator:     hmacValidator,
 		MinRefreshAfter:   minRefreshAfterHVSA,
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
 		os.Exit(1)
 	}
