@@ -5,12 +5,13 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/operator-framework/operator-lib/handler"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,11 +31,18 @@ import (
 
 const vaultPKIFinalizer = "vaultpkisecrets.secrets.hashicorp.com/finalizer"
 
+var (
+	// used by monkey patching unit tests
+	nowFunc    = time.Now
+	minHorizon = time.Second * 1
+)
+
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
 	ClientFactory vault.ClientFactory
+	HMACValidator helpers.HMACValidator
 	Recorder      record.EventRecorder
 }
 
@@ -61,6 +69,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o := &secretsv1beta1.VaultPKISecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
+			logger.V(consts.LogLevelDebug).Info("VaultPKISecret resource not found", "req", req)
 			return ctrl.Result{}, nil
 		}
 
@@ -68,90 +77,74 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	path := r.getPath(o.Spec)
-	if o.GetDeletionTimestamp() != nil {
-		if err := r.handleDeletion(ctx, logger, o); err != nil {
-			msg := "Failed to handle deletion"
-			logger.Error(err, msg)
-			r.recordEvent(o, o.Status.Error, msg+": %s", err)
+	if o.GetDeletionTimestamp() == nil {
+		if _, err := r.addFinalizer(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, nil
+	} else {
+		logger.Info("Got deletion timestamp", "obj", o)
+		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
+	path := r.getPath(o.Spec)
+	destinationExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
+	// In the case where the secret should exist already, check that it does
+	// before proceeding to issue a cert
+	if !o.Spec.Destination.Create && !destinationExists {
+		horizon := computeHorizonWithJitter(requeueDurationOnError)
+		msg := fmt.Sprintf("Kubernetes secret %q does not exist yet, horizon=%s",
+			o.Spec.Destination.Name, horizon)
+		logger.Info(msg)
+		o.Status.Error = consts.ReasonK8sClientError
+		r.recordEvent(o, o.Status.Error, msg)
+		if err := r.updateStatus(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{
+			RequeueAfter: horizon,
+		}, nil
+	}
+
+	var syncReason string
+	switch {
+	case o.Status.SerialNumber == "":
+		syncReason = consts.ReasonInitialSync
+	case o.GetGeneration() != o.Status.LastGeneration:
+		syncReason = consts.ReasonResourceUpdated
+	case o.Spec.Destination.Create && !destinationExists:
+		logger.Info("Destination secret does not exist, do sync")
+		syncReason = consts.ReasonInexistentDestination
+	case destinationExists:
+		if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
+			r.HMACValidator, o); err == nil && !matched {
+			syncReason = consts.ReasonSecretDataDrift
+		}
+	}
+
+	if syncReason == "" {
+		logger.Info("Check renewal window")
+		horizon, inWindow := computePKIRenewalWindow(ctx, o, 0.05)
+		if !inWindow {
+			logger.Info("Not in renewal window", "horizon", horizon)
+			return ctrl.Result{
+				RequeueAfter: horizon,
+			}, nil
+		} else {
+			syncReason = consts.ReasonInRenewalWindow
+		}
 	}
 
 	// assume that status is always invalid
 	o.Status.Valid = false
-
-	var expiryOffset time.Duration
-	if o.Spec.ExpiryOffset != "" {
-		d, err := time.ParseDuration(o.Spec.ExpiryOffset)
-		if err != nil {
-			o.Status.Error = consts.ReasonInvalidConfiguration
-			msg := fmt.Sprintf("Failed to parse ExpiryOffset %q", o.Spec.ExpiryOffset)
-			logger.Error(err, msg)
-			r.recordEvent(o, o.Status.Error, msg+": %s", err)
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
-		}
-		expiryOffset = d
-	}
-
-	timeToRenew := false
-	if o.Status.SerialNumber != "" {
-		if expiryOffset > 0 {
-			// check if within the certificate renewal window
-			if checkPKICertExpiry(o.Status.Expiration, expiryOffset) {
-				logger.Info("Setting renewal for certificate expiry")
-				timeToRenew = true
-			} else {
-				// Not time to renew yet, requeue closer to (Expiration - expiryOffset)
-				return ctrl.Result{
-					RequeueAfter: computeHorizonWithJitter(getRenewTime(o.Status.Expiration, expiryOffset)),
-				}, nil
-			}
-		} else {
-			// Since renewal was not requested (ExpiryOffset: 0), return without
-			// requeuing
-			return ctrl.Result{}, nil
-		}
-	}
-
-	// In the case where the secret should exist already, check that it does
-	// before proceeding to issue a cert
-	if !o.Spec.Destination.Create {
-		exists, err := helpers.CheckSecretExists(ctx, r.Client, o)
-		if err != nil {
-			msg := fmt.Sprintf("Error checking if the destination secret %q exists: %s",
-				o.Spec.Destination.Name, err)
-			o.Status.Error = consts.ReasonK8sClientError
-			r.recordEvent(o, o.Status.Error, msg)
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
-		}
-
-		if !exists {
-			horizon := computeHorizonWithJitter(time.Second * 10)
-			msg := fmt.Sprintf("Kubernetes secret %q does not exist yet, retry_horizon %s",
-				o.Spec.Destination.Name, horizon)
-			logger.Info(msg)
-			o.Status.Error = consts.ReasonK8sClientError
-			r.recordEvent(o, o.Status.Error, msg)
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{
-				RequeueAfter: horizon,
-			}, nil
-		}
-	}
-
+	logger.Info("Must sync", "reason", syncReason)
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
-		return ctrl.Result{}, err
+		o.Status.Error = consts.ReasonK8sClientError
+		logger.Error(err, "Get Vault client")
+		return ctrl.Result{
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+		}, nil
 	}
 
 	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
@@ -163,19 +156,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
-	}
-
-	if resp == nil {
-		o.Status.Error = consts.ReasonK8sClientError
-		msg := fmt.Sprintf("Empty Vault secret at path %s", path)
-		logger.Error(nil, msg)
-		r.recordEvent(o, o.Status.Error, msg)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{
-			RequeueAfter: time.Second * 30,
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
 	}
 
@@ -188,7 +170,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
+		return ctrl.Result{
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+		}, nil
 	}
 
 	if certResp.SerialNumber == "" {
@@ -199,7 +183,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
+		return ctrl.Result{
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+		}, nil
 	}
 
 	data, err := resp.SecretK8sData()
@@ -211,8 +197,11 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
+		return ctrl.Result{
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+		}, nil
 	}
+
 	// Fix ca_chain formatting since it's a slice
 	if len(data["ca_chain"]) > 0 {
 		data["ca_chain"] = []byte(strings.Join(certResp.CAChain, "\n"))
@@ -229,12 +218,35 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		data[corev1.TLSPrivateKeyKey] = data["private_key"]
 	}
+
+	if b, err := json.Marshal(data); err == nil {
+		newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+		if err != nil {
+			logger.Error(err, "HMAC data")
+			o.Status.Error = consts.ReasonHMACDataError
+			if err := r.updateStatus(ctx, o); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{
+				RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+			}, nil
+		}
+		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(newMAC)
+	}
+
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
-		return ctrl.Result{}, err
+		logger.Error(err, "Sync secret")
+		o.Status.Error = consts.ReasonSecretSyncError
+		if err := r.updateStatus(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+		}, nil
 	}
 
 	reason := consts.ReasonSecretSynced
-	if timeToRenew {
+	if o.Status.SerialNumber != "" {
 		reason = consts.ReasonSecretRotated
 		// rollout-restart errors are not retryable
 		// all error reporting is handled by helpers.HandleRolloutRestarts
@@ -242,9 +254,13 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// revoke the certificate on renewal
-	if o.Spec.Revoke && timeToRenew && o.Status.SerialNumber != "" {
+	if o.Spec.Revoke && o.Status.SerialNumber != "" {
 		if err := r.revokeCertificate(ctx, logger, o); err != nil {
-			return ctrl.Result{}, err
+			logger.Error(err, "Certificate revocation")
+			o.Status.Error = consts.ReasonCertificateRevocationError
+			return ctrl.Result{
+				RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+			}, nil
 		}
 	}
 
@@ -252,38 +268,39 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o.Status.Error = ""
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
+	o.Status.LastRotation = time.Now().Unix()
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.updateStatus(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the status")
-		return ctrl.Result{}, err
-	}
-
-	if err := r.addFinalizer(ctx, logger, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	logger.Info("Successfully updated the secret")
 	r.recordEvent(o, reason, "Secret synced")
 
+	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
+	logger.Info("Requeue", "horizon", horizon)
 	return ctrl.Result{
-		RequeueAfter: computeHorizonWithJitter(getRenewTime(o.Status.Expiration, expiryOffset)),
+		RequeueAfter: horizon,
 	}, nil
 }
 
-func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
-	l.Info("In deletion")
-	if controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
-		if err := r.finalizePKI(ctx, l, s); err != nil {
-			l.Error(err, "Failed to finalize")
-			return err
-		}
-
-		l.Info("Removing finalizer")
+func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
+	finalizerSet := controllerutil.ContainsFinalizer(s, vaultPKIFinalizer)
+	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
+		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
+	logger.V(consts.LogLevelDebug).Info("In deletion")
+	if finalizerSet {
+		logger.V(consts.LogLevelDebug).Info("Remove finalizer")
 		if controllerutil.RemoveFinalizer(s, vaultPKIFinalizer) {
 			if err := r.Update(ctx, s); err != nil {
-				l.Error(err, "Failed to remove the finalizer")
+				logger.Error(err, "Failed to remove the finalizer")
 				return err
 			}
-			l.Info("Successfully removed the finalizer")
+			logger.V(consts.LogLevelDebug).Info("Finalizers successfully removed")
+		}
+		if err := r.finalizePKI(ctx, logger, s); err != nil {
+			logger.Error(err, "Failed")
 		}
 
 		return nil
@@ -292,25 +309,26 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, l logr.Lo
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv1beta1.VaultPKISecret) (bool, error) {
+	logger := log.FromContext(ctx).WithValues("finalizer", vaultPKIFinalizer)
 	if !controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		controllerutil.AddFinalizer(s, vaultPKIFinalizer)
+		logger.V(consts.LogLevelDebug).Info("Adding finalizer")
 		if err := r.Client.Update(ctx, s); err != nil {
-			l.Error(err, "error updating VaultPKISecret resource")
-			return err
+			logger.Error(err, "Adding finalizer")
+			return false, err
 		}
+		return true, nil
+	} else {
+		logger.V(consts.LogLevelDebug).Info("Finalizer already added")
+		return false, nil
 	}
-
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
-		// Add metrics for create/update/delete of the resource
-		Watches(&secretsv1beta1.VaultPKISecret{},
-			&handler.InstrumentedEnqueueRequestForObject{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
@@ -374,12 +392,13 @@ func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1beta1.VaultPKISecret,
 	r.Recorder.Eventf(p, eventType, reason, msg, i...)
 }
 
-func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, p *secretsv1beta1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultpkisecret", p, p.Status.Valid)
-	if err := r.Status().Update(ctx, p); err != nil {
+	logger.V(consts.LogLevelDebug).Info("Update status called")
+	metrics.SetResourceStatus("vaultpkisecret", o, o.Status.Valid)
+	if err := r.Status().Update(ctx, o); err != nil {
 		msg := "Failed to update the resource's status"
-		r.recordEvent(p, consts.ReasonStatusUpdateError, "%s: %s", msg, err)
+		r.recordEvent(o, consts.ReasonStatusUpdateError, "%s: %s", msg, err)
 		logger.Error(err, msg)
 		return err
 	}
@@ -387,14 +406,44 @@ func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, p *secretsv
 	return nil
 }
 
-func checkPKICertExpiry(expiration int64, offset time.Duration) bool {
-	expiry := time.Unix(expiration-int64(offset.Seconds()), 0)
-	now := time.Now()
-
-	return now.After(expiry)
+func computeExpirationTimePKI(o *secretsv1beta1.VaultPKISecret, offset int64) time.Time {
+	return time.Unix(o.Status.Expiration-offset, 0)
 }
 
-func getRenewTime(expiration int64, offset time.Duration) time.Duration {
-	renewTime := time.Unix(expiration-int64(offset.Seconds()), 0)
-	return renewTime.Sub(time.Now())
+func computePKIRenewalWindow(ctx context.Context, o *secretsv1beta1.VaultPKISecret,
+	jitterPercent float64,
+) (time.Duration, bool) {
+	logger := log.FromContext(ctx).WithValues("expiryOffset", o.Spec.ExpiryOffset)
+	lastRotation := time.Unix(o.Status.LastRotation, 0)
+	offset, err := parseDurationString(o.Spec.ExpiryOffset, ".spec.expiryOffset", 0)
+	if err != nil {
+		logger.Info("Warning: tolerating invalid expiryOffset",
+			"err", err, "effectiveOffset", offset)
+	}
+
+	now := nowFunc()
+	rotationTime := computeExpirationTimePKI(o, int64(offset.Seconds()))
+	horizon := rotationTime.Sub(now)
+	var inWindow bool
+	if isInWindow(now, rotationTime) || horizon < minHorizon {
+		horizon = minHorizon
+		inWindow = true
+	}
+
+	// compute the horizon for the next renewal check add/subtract some jitter to
+	// ensure that the next scheduled check will be in the renewal window.
+	_, jitter := computeMaxJitterDurationWithPercent(horizon, jitterPercent)
+	if offset > 0 || inWindow {
+		horizon += jitter
+	} else {
+		horizon -= jitter
+	}
+
+	logger.V(consts.LogLevelDebug).WithValues(
+		"expiresWhen", rotationTime, "now", now,
+		"serialNumber", o.Status.SerialNumber,
+		"lastRotation", lastRotation,
+		"horizon", horizon).Info("Computed certificate renewal window with spec.expiryOffset")
+
+	return horizon, inWindow
 }
