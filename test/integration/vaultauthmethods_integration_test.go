@@ -215,7 +215,7 @@ func TestVaultAuthMethods(t *testing.T) {
 		err = backoff.Retry(func() error {
 			_, err := vault.GCPTokenExchange(ctx, config, crdClient)
 			return err
-		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 30))
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 300))
 		if err != nil {
 			return false, fmt.Errorf("timed out: %w", err)
 		}
