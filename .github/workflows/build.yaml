@@ -147,8 +147,8 @@ jobs:
             exit 1
           fi
 
-  build-docker-ubi-dockerhub:
-    name: UBI ${{ matrix.arch }} build for dockerhub
+  build-docker-ubi:
+    name: UBI ${{ matrix.arch }} build
     needs: [get-product-version, build-pre-checks, build]
     runs-on: ubuntu-latest
     strategy:
@@ -173,50 +173,13 @@ jobs:
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
-
-      - name: Check binary version in container
-        shell: bash
-        run: |
-          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
-          echo $version_output
-          git_version=$(echo $version_output | jq -r .gitVersion)
-
-          if [ "$git_version" != "${{ env.version }}" ]; then
-            echo "$gitVersion expected to be ${{ env.version }}"
-            exit 1
-          fi
-
-  build-docker-ubi-redhat-registry:
-    name: UBI ${{ matrix.arch }} build for redhat's registry (quay.io)
-    needs: [get-product-version, build-pre-checks, build]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # CRT does not support multi-arch images for redhat's registry
-        arch: ["amd64"]
-    env:
-      repo: ${{github.event.repository.name}}
-      version: ${{needs.get-product-version.outputs.product-version}}
-      image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
-
-    steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Docker Build (Action)
-        uses: hashicorp/actions-docker-build@v1
-        env:
-          VERSION: ${{ needs.get-product-version.outputs.product-version }}
-          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
-        with:
-          version: ${{env.version}}
-          target: release-ubi
-          arch: ${{matrix.arch}}
           # The quay id here corresponds to the project id on RedHat's portal
           redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
 
       - name: Check binary version in container
         shell: bash
         run: |
-          version_output=$(docker run quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
+          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
           echo $version_output
           git_version=$(echo $version_output | jq -r .gitVersion)
 
