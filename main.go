@@ -55,7 +55,7 @@ func main() {
 	persistenceModelDirectUnencrypted := "direct-unencrypted"
 	persistenceModelDirectEncrypted := "direct-encrypted"
 	defaultPersistenceModel := persistenceModelNone
-	vdsOptions := controller.Options{}
+	controllerOptions := controller.Options{}
 	cfc := vclient.DefaultCachingClientFactoryConfig()
 	startTime := time.Now()
 
@@ -83,8 +83,8 @@ func main() {
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed."+
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
-	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
-		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
+	flag.IntVar(&controllerOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-global", 100,
+		"Maximum number of concurrent reconciles for each controller.")
 	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 60,
 		"Pre-delete hook timeout in seconds")
@@ -235,7 +235,7 @@ func main() {
 		Scheme:        mgr.GetScheme(),
 		ClientFactory: clientFactory,
 		Recorder:      mgr.GetEventRecorderFor("VaultPKISecret"),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
 	}
@@ -263,7 +263,7 @@ func main() {
 		Recorder:      mgr.GetEventRecorderFor("VaultDynamicSecret"),
 		ClientFactory: clientFactory,
 		HMACValidator: hmacValidator,
-	}).SetupWithManager(mgr, vdsOptions); err != nil {
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
 	}

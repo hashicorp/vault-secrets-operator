@@ -162,7 +162,7 @@ load _helpers
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds"])' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-global"])' | tee /dev/stderr)
     [ "${actual}" = "false" ]
 }
 
@@ -174,7 +174,7 @@ load _helpers
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds=5"])' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-global=5"])' | tee /dev/stderr)
     [ "${actual}" = "true" ]
 }
 
