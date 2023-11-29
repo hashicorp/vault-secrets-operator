@@ -272,6 +272,7 @@ func main() {
 	// `--max-concurrent-reconciles`.
 	vdsOverrideOpts := controller.Options{}
 	if vdsOptions.MaxConcurrentReconciles != defaultVaultDynamicSecretsConcurrency {
+		setupLog.Info("The flag --max-concurrent-reconciles-vds has been deprecated, but will still be honored to set the VDS controller concurrency, please use --max-concurrent-reconciles.")
 		vdsOverrideOpts = vdsOptions
 	} else {
 		vdsOverrideOpts = controllerOptions
