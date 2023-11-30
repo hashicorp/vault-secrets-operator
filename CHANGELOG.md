@@ -1,3 +1,8 @@
+## Unreleased
+
+Improvements:
+* Manager: setting `controller.manager.maxConcurrentReconciles` now applies to all Syncable Secret controllers. The previous flag for the manager `--max-concurrent-reconciles-vds` is now deprecated and replaced by `--max-concurrent-reconciles` which applies to all controllers. [GH-483](https://github.com/hashicorp/vault-secrets-operator/pull/483)
+
 ## 0.4.0 (November 16th, 2023)
 
 Features:
