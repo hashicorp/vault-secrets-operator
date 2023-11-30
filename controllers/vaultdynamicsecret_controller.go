@@ -36,6 +36,10 @@ const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
 )
 
+// staticCredsMinDurationForJitter should be used when computing the jitter
+// duration for the static-creds rotation time horizon.
+var staticCredsMinDurationForJitter = time.Second * 3
+
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
@@ -163,7 +167,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 			o.Status.StaticCredsMetaData = secretsv1beta1.VaultStaticCredsMetaData{}
 			o.Status.SecretLease = *secretLease
-			o.Status.LastRenewalTime = time.Now().Unix()
+			o.Status.LastRenewalTime = nowFunc().Unix()
 			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -207,7 +211,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || updated
 	o.Status.SecretLease = *secretLease
-	o.Status.LastRenewalTime = time.Now().Unix()
+	o.Status.LastRenewalTime = nowFunc().Unix()
 	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
@@ -510,7 +514,7 @@ func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Contex
 				horizon = time.Second * 1
 			}
 
-			_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
+			_, jitter := computeMaxJitterWithPercent(staticCredsMinDurationForJitter, 0.5)
 			horizon += time.Duration(jitter)
 		}
 	}
@@ -535,10 +539,10 @@ func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
 
 // computeRelativeHorizon returns the duration of the renewal window based on the
 // lease's last renewal time relative to now. Return true if the associated lease
-// is within its renewal window.
+// is within its renewal window
 func computeRelativeHorizon(o *secretsv1beta1.VaultDynamicSecret) (time.Duration, bool) {
 	ts := computeRotationTime(o)
-	now := time.Now()
+	now := nowFunc()
 	if o.Spec.AllowStaticCreds {
 		return ts.Sub(now), now.Before(ts)
 	} else {
@@ -555,10 +559,11 @@ func computeRelativeHorizonWithJitter(o *secretsv1beta1.VaultDynamicSecret, minH
 	if horizon < minHorizon {
 		horizon = minHorizon
 	}
-	_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
 	if o.Spec.AllowStaticCreds {
+		_, jitter := computeMaxJitterWithPercent(staticCredsMinDurationForJitter, 0.05)
 		horizon += time.Duration(jitter)
 	} else {
+		_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
 		horizon -= time.Duration(jitter)
 	}
 	return horizon, inWindow

@@ -21,6 +21,8 @@ var (
 	_                      error = (*LeaseTruncatedError)(nil)
 	random                       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 	requeueDurationOnError       = time.Second * 5
+	// used by monkey patching unit tests
+	nowFunc = time.Now
 )
 
 const renewalPercentCap = 90
