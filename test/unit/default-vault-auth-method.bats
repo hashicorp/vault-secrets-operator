@@ -43,6 +43,8 @@ load _helpers
     [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
     [ "${actual}" = "kubernetes" ]
+    actual=$(echo "$object" | yq '.spec.allowedNamespaces' | tee /dev/stderr)
+    [ "${actual}" = null ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
     [ "${actual}" = "default" ]
 }
@@ -54,6 +56,7 @@ load _helpers
         --set 'defaultAuthMethod.enabled=true' \
         --set 'defaultAuthMethod.namespace=tenant-2' \
         --set 'defaultAuthMethod.mount=foo' \
+        --set 'defaultAuthMethod.allowedNamespaces={tenant-1,tenant-2}' \
         --set 'defaultAuthMethod.kubernetes.role=role-1' \
         --set 'defaultAuthMethod.kubernetes.serviceAccount=tenant-1' \
         --set 'defaultAuthMethod.kubernetes.tokenAudiences={vault,foo}' \
@@ -70,6 +73,8 @@ load _helpers
     [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
     [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.allowedNamespaces' | tee /dev/stderr)
+    [ "${actual}" = '["tenant-1", "tenant-2"]' ]
     actual=$(echo "$object" | yq '.spec.kubernetes.role' | tee /dev/stderr)
     [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
@@ -272,6 +277,7 @@ load _helpers
         --set 'defaultAuthMethod.namespace=tenant-2' \
         --set 'defaultAuthMethod.method=aws' \
         --set 'defaultAuthMethod.mount=foo' \
+        --set 'defaultAuthMethod.allowedNamespaces={*}' \
         --set 'defaultAuthMethod.aws.role=role-1' \
         --set 'defaultAuthMethod.aws.region=us-test-2' \
         --set 'defaultAuthMethod.aws.headerValue=test-value' \
@@ -291,6 +297,8 @@ load _helpers
     [ "${actual}" = "aws" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
     [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.allowedNamespaces' | tee /dev/stderr)
+    [ "${actual}" = '["*"]' ]
     actual=$(echo "$object" | yq '.spec.aws.role' | tee /dev/stderr)
     [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.aws.region' | tee /dev/stderr)
@@ -352,6 +360,7 @@ load _helpers
         --set 'defaultAuthMethod.namespace=tenant-2' \
         --set 'defaultAuthMethod.method=gcp' \
         --set 'defaultAuthMethod.mount=foo' \
+        --set 'defaultAuthMethod.allowedNamespaces={tenant-2}' \
         --set 'defaultAuthMethod.gcp.role=role-1' \
         --set 'defaultAuthMethod.gcp.workloadIdentityServiceAccount=my-identity-sa' \
         --set 'defaultAuthMethod.gcp.region=us-test-2' \
@@ -368,6 +377,8 @@ load _helpers
     [ "${actual}" = "gcp" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
     [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.allowedNamespaces' | tee /dev/stderr)
+    [ "${actual}" = '["tenant-2"]' ]
     actual=$(echo "$object" | yq '.spec.gcp.role' | tee /dev/stderr)
     [ "${actual}" = "role-1" ]
     actual=$(echo "$object" | yq '.spec.gcp.workloadIdentityServiceAccount' | tee /dev/stderr)
