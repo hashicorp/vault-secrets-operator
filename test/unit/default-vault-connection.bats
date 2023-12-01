@@ -39,8 +39,8 @@ load _helpers
     actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 
-    actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
-     [ -z "${actual}" ]
+    actual=$(echo "$object" | yq 'has(.spec.tlsServerName)' | tee /dev/stderr)
+     [ "${actual}" = "false" ]
 }
 
 @test "defaultConnection/CR: skipTLSVerify false for vault connection" {
@@ -56,8 +56,8 @@ load _helpers
     actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
      [ "${actual}" = "default" ]
 
-    actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
-     [ -z "${actual}" ]
+    actual=$(echo "$object" | yq 'has(.spec.tlsServerName)' | tee /dev/stderr)
+     [ "${actual}" = "false" ]
 }
 
 @test "defaultConnection/CR: settings can be modified for vault connect" {

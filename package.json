@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "bats": "^1.10.0"
+  }
+}
