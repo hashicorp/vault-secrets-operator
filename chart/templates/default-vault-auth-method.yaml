@@ -17,7 +17,7 @@ metadata:
 spec:
   namespace: {{ .Values.defaultAuthMethod.namespace }}
   {{- if .Values.defaultAuthMethod.allowedNamespaces }}
-  allowedNamespaces: {{ .Values.defaultAuthMethod.allowedNamespaces | quote }}
+  allowedNamespaces: {{ .Values.defaultAuthMethod.allowedNamespaces | toJson  }}
   {{- end }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
