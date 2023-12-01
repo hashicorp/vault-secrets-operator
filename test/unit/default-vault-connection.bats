@@ -40,7 +40,24 @@ load _helpers
      [ "${actual}" = "default" ]
 
     actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
-     [ "${actual}" = "false" ]
+     [ -z "${actual}" ]
+}
+
+@test "defaultConnection/CR: skipTLSVerify false for vault connection" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-vault-connection.yaml  \
+        --set 'defaultVaultConnection.enabled=true' \
+        --set 'defaultVaultConnection.skipTLSVerify=false' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
+     [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+     [ "${actual}" = "default" ]
+
+    actual=$(echo "$object" | yq '.spec.skipTLSVerify' | tee /dev/stderr)
+     [ -z "${actual}" ]
 }
 
 @test "defaultConnection/CR: settings can be modified for vault connect" {
