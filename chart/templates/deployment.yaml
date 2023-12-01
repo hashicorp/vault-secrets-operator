@@ -71,7 +71,7 @@ spec:
         - --client-cache-size={{ .Values.controller.manager.clientCache.cacheSize }}
         {{- end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
-        - --max-concurrent-reconciles-vds={{ .Values.controller.manager.maxConcurrentReconciles }}
+        - --max-concurrent-reconciles={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
         {{- if .Values.controller.manager.extraArgs }}
         {{- toYaml .Values.controller.manager.extraArgs | nindent 8 }}

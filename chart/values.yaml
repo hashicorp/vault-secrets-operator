@@ -307,8 +307,7 @@ controller:
         # @type:  map
         headers: {}
 
-    # Defines the maximum number of concurrent reconciles by the controller.
-    # NOTE: Currently this is only used by the reconciliation logic of dynamic secrets.
+    # Defines the maximum number of concurrent reconciles for each controller.
     #
     # default: 100
     # @type: integer
