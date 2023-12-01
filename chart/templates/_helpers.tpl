@@ -1,6 +1,6 @@
 {{/*
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 */}}
 
 {{/*
@@ -128,6 +128,19 @@ VaultAuthMethod Spec
     {{- end }}
     {{- if $cur.aws.irsaServiceAccount }}
     irsaServiceAccount: {{ $cur.aws.irsaServiceAccount }}
+    {{- end }}
+  {{- else if eq $cur.method "gcp" }}
+  gcp:
+    role: {{ $cur.gcp.role }}
+    workloadIdentityServiceAccount: {{ $cur.gcp.workloadIdentityServiceAccount }}
+    {{- if $cur.gcp.region }}
+    region: {{ $cur.gcp.region }}
+    {{- end }}
+    {{- if $cur.gcp.clusterName }}
+    clusterName: {{ $cur.gcp.clusterName }}
+    {{- end }}
+    {{- if $cur.gcp.projectID }}
+    projectID: {{ $cur.gcp.projectID }}
     {{- end }}
   {{- end }}
 {{- end}}

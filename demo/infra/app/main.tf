@@ -1,11 +1,11 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.8.0"
+      version = "2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"

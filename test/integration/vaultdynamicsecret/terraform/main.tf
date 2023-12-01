@@ -1,11 +1,11 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.8.0"
+      version = "2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -78,7 +78,51 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
   bound_service_account_namespaces = [kubernetes_namespace.dev.metadata[0].name]
   token_period                     = var.vault_token_period
   token_policies = [
+    vault_policy.revocation.name,
     vault_policy.db.name,
+    vault_policy.k8s_secrets.name,
   ]
   audience = "vault"
+}
+
+resource "vault_policy" "revocation" {
+  namespace = local.namespace
+  name      = "${local.auth_policy}-revocation"
+  policy    = <<EOT
+path "sys/leases/revoke" {
+  capabilities = ["update"]
+}
+EOT
+}
+
+module "vso-helm" {
+  count                            = var.deploy_operator_via_helm ? 1 : 0
+  source                           = "../../modules/vso-helm"
+  operator_namespace               = var.operator_namespace
+  operator_image_repo              = var.operator_image_repo
+  operator_image_tag               = var.operator_image_tag
+  enable_default_auth_method       = var.enable_default_auth_method
+  enable_default_connection        = var.enable_default_connection
+  operator_helm_chart_path         = var.operator_helm_chart_path
+  k8s_auth_default_mount           = local.auth_mount
+  k8s_auth_default_role            = vault_kubernetes_auth_backend_role.dev.role_name
+  k8s_auth_default_token_audiences = [vault_kubernetes_auth_backend_role.dev.audience]
+  k8s_vault_connection_address     = var.k8s_vault_connection_address
+  vault_test_namespace             = local.namespace
+  client_cache_config = {
+    persistence_model                = "direct-encrypted"
+    revoke_client_cache_on_uninstall = false
+    storage_encryption = {
+      enabled                         = true
+      vault_connection_ref            = ""
+      namespace                       = local.namespace
+      method                          = vault_auth_backend.default.type
+      mount                           = vault_auth_backend.default.path
+      transit_mount                   = vault_transit_secret_cache_config.cache.backend
+      key_name                        = vault_transit_secret_backend_key.cache.name
+      kubernetes_auth_role            = vault_kubernetes_auth_backend_role.operator.role_name
+      kubernetes_auth_service_account = local.operator_service_account_name
+      kubernetes_auth_token_audiences = "{${vault_kubernetes_auth_backend_role.operator.audience}}"
+    }
+  }
 }

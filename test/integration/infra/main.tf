@@ -1,23 +1,17 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.8.0"
+      version = "2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "2.16.1"
     }
   }
-}
-
-locals {
-  vault_image_tag        = var.vault_image_tag
-  vault_image_repository = var.vault_enterprise ? var.vault_image_repo_ent : var.vault_image_repo
-  vault_license          = var.vault_enterprise ? (var.vault_license != "" ? var.vault_license : file(var.vault_license_path)) : ""
 }
 
 provider "helm" {
@@ -32,7 +26,7 @@ provider "kubernetes" {
   config_path    = var.k8s_config_path
 }
 
-resource "kubernetes_namespace" "demo" {
+resource "kubernetes_namespace" "vault" {
   metadata {
     name = var.k8s_namespace
   }
@@ -41,7 +35,7 @@ resource "kubernetes_namespace" "demo" {
 resource "kubernetes_secret" "vault_license" {
   count = var.vault_enterprise ? 1 : 0
   metadata {
-    namespace = kubernetes_namespace.demo.metadata[0].name
+    namespace = kubernetes_namespace.vault.metadata[0].name
     name      = "vault-license"
   }
   data = {
@@ -52,7 +46,7 @@ resource "kubernetes_secret" "vault_license" {
 resource "helm_release" "vault" {
   version          = var.vault_chart_version
   name             = "vault"
-  namespace        = kubernetes_namespace.demo.metadata[0].name
+  namespace        = kubernetes_namespace.vault.metadata[0].name
   create_namespace = false
   wait             = true
   wait_for_jobs    = true
@@ -75,6 +69,10 @@ resource "helm_release" "vault" {
   set {
     name  = "server.logLevel"
     value = "debug"
+  }
+  set {
+    name  = "server.serviceAccount.name"
+    value = var.k8s_service_account
   }
   set {
     name  = "injector.enabled"
@@ -104,4 +102,3 @@ resource "kubernetes_cluster_role_binding" "oidc-reviewer" {
     name = "system:unauthenticated"
   }
 }
-

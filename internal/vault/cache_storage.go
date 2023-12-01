@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -28,6 +28,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
@@ -60,6 +61,10 @@ type ClientCacheStorageStoreRequest struct {
 type ClientCacheStoragePruneRequest struct {
 	MatchingLabels ctrlclient.MatchingLabels
 	Filter         PruneFilterFunc
+}
+
+type CachingClientFactoryShutDownRequest struct {
+	Revoke bool
 }
 
 type ClientCacheStorageRestoreRequest struct {
@@ -134,7 +139,6 @@ type ClientCacheStorage interface {
 }
 
 type defaultClientCacheStorage struct {
-	hmacSecretObjKey         ctrlclient.ObjectKey
 	hmacKey                  []byte
 	enforceEncryption        bool
 	logger                   logr.Logger
@@ -248,7 +252,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	}
 
 	var messageMAC []byte
-	messageMAC, err = macMessage(c.hmacKey, message)
+	messageMAC, err = helpers.MACMessage(c.hmacKey, message)
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +517,7 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 		return err
 	}
 
-	ok, _, err = validateMAC(message, messageMAC, c.hmacKey)
+	ok, _, err = helpers.ValidateMAC(message, messageMAC, c.hmacKey)
 	if err != nil {
 		return err
 	}
@@ -587,6 +591,7 @@ type ClientCacheStorageConfig struct {
 	// configured before it will persist the Client to storage. This option requires Persist to be true.
 	EnforceEncryption bool
 	HMACSecretObjKey  ctrlclient.ObjectKey
+	OwnerRefs         []metav1.OwnerReference
 }
 
 func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
@@ -610,7 +615,7 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	s, err := createHMACKeySecret(ctx, client, config.HMACSecretObjKey)
+	s, err := helpers.CreateHMACKeySecret(ctx, client, config.HMACSecretObjKey)
 	if err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, err
@@ -618,15 +623,14 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	}
 
 	if s == nil {
-		s, err = getHMACKeySecret(ctx, client, config.HMACSecretObjKey)
+		s, err = helpers.GetHMACKeySecret(ctx, client, config.HMACSecretObjKey)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	cacheStorage := &defaultClientCacheStorage{
-		hmacSecretObjKey:  config.HMACSecretObjKey,
-		hmacKey:           s.Data[hmacKeyName],
+		hmacKey:           s.Data[helpers.HMACKeyName],
 		enforceEncryption: config.EnforceEncryption,
 		logger:            zap.New().WithName("ClientCacheStorage"),
 		requestCounterVec: prometheus.NewCounterVec(

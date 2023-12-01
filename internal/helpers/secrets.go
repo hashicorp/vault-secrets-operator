@@ -1,26 +1,31 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package helpers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
+
+const SecretDataKeyRaw = "_raw"
+
+var SecretDataErrorContainsRaw = fmt.Errorf("key '%s' not permitted in Secret data", SecretDataKeyRaw)
 
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by
 // a specific VSO object. It should be included in every Secret that is created
@@ -36,71 +41,6 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/name":       "vault-secrets-operator",
 	"app.kubernetes.io/managed-by": "hashicorp-vso",
 	"app.kubernetes.io/component":  "secret-sync",
-}
-
-// SyncOptions to provide to SyncSecret().
-type SyncOptions struct {
-	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
-	PruneOrphans bool
-}
-
-// SyncableSecretMetaData provides common data structure that extracts the bits pertinent
-// when handling any of the sync-able secret custom resource types.
-//
-// See NewSyncableSecretMetaData for the supported object types.
-type SyncableSecretMetaData struct {
-	// APIVersion of the syncable-secret object. Maps to obj.APIVersion.
-	APIVersion string
-	// Kind of the syncable-secret object. Maps to obj.Kind.
-	Kind string
-	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
-	Destination *secretsv1beta1.Destination
-}
-
-// NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
-// An error will be returned of obj is not a supported type.
-//
-// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
-func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
-	switch t := obj.(type) {
-	case *secretsv1beta1.VaultDynamicSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	case *secretsv1beta1.VaultStaticSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	case *secretsv1beta1.VaultPKISecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported type %T", t)
-	}
-}
-
-func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
-	ownerRef := metav1.OwnerReference{
-		Name: owner.GetName(),
-		UID:  owner.GetUID(),
-	}
-
-	gvk, err := apiutil.GVKForObject(owner, scheme)
-	if err != nil {
-		return ownerRef, err
-	}
-
-	apiVersion, kind := gvk.ToAPIVersionAndKind()
-	ownerRef.APIVersion = apiVersion
-	ownerRef.Kind = kind
-	return ownerRef, nil
 }
 
 // OwnerLabelsForObj returns the canonical set of labels that should be set on
@@ -142,7 +82,7 @@ func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, err
 // Those are secrets that have a copy of OwnerLabels, and exactly one metav1.OwnerReference
 // that matches obj.
 func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) ([]corev1.Secret, error) {
-	ownerRef, err := getOwnerRefFromObj(obj, client.Scheme())
+	ownerRef, err := utils.GetOwnerRefFromObj(obj, client.Scheme())
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +114,12 @@ func DefaultSyncOptions() SyncOptions {
 	}
 }
 
+// SyncOptions to provide to SyncSecret().
+type SyncOptions struct {
+	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
+	PruneOrphans bool
+}
+
 // SyncSecret writes data to a Kubernetes Secret for obj. All configuring is
 // derived from the object's Spec.Destination configuration. Note: in order to
 // keep the interface simpler opts is a variadic argument, only the first element
@@ -188,7 +134,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		options = DefaultSyncOptions()
 	}
 
-	meta, err := NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return err
 	}
@@ -356,13 +302,13 @@ func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlcl
 	return ok, err
 }
 
-// GetSecret
-func GetSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
+// GetSyncableSecret
+func GetSyncableSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
 	return getSecretExists(ctx, client, obj)
 }
 
 func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
-	meta, err := NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, false, err
 	}
@@ -370,7 +316,7 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
 		"secretName", meta.Destination.Name, "create", meta.Destination.Create)
 	objKey := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.Destination.Name}
-	s, err := getSecret(ctx, client, objKey)
+	s, err := GetSecret(ctx, client, objKey)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
@@ -384,7 +330,7 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	return s, true, nil
 }
 
-func getSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
+func GetSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	var s corev1.Secret
 	err := client.Get(ctx, objKey, &s)
 
@@ -419,4 +365,81 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 		errs = errors.Join(errs, fmt.Errorf("not the owner of the destination Secret %s", key))
 	}
 	return errs
+}
+
+// SecretDataBuilder constructs K8s Secret data from various sources.
+type SecretDataBuilder struct{}
+
+// WithVaultData returns the K8s Secret data from a Vault Secret data.
+func (s *SecretDataBuilder) WithVaultData(d, raw map[string]any) (map[string][]byte, error) {
+	return s.makeData(
+		func() ([]byte, map[string][]byte, error) {
+			data := make(map[string][]byte)
+
+			b, err := json.Marshal(raw)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			for k, v := range d {
+				switch x := v.(type) {
+				case string:
+					data[k] = []byte(x)
+				default:
+					b, err := json.Marshal(v)
+					if err != nil {
+						return nil, nil, err
+					}
+					data[k] = b
+				}
+			}
+			return b, data, nil
+		})
+}
+
+// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
+func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK) (map[string][]byte, error) {
+	return s.makeData(
+		func() ([]byte, map[string][]byte, error) {
+			p := resp.GetPayload()
+			data := make(map[string][]byte)
+			raw, err := p.MarshalBinary()
+			if err != nil {
+				return nil, nil, err
+			}
+
+			for _, v := range p.Secrets {
+				ver := v.Version
+				if ver == nil {
+					continue
+				}
+
+				if ver.Type != "kv" {
+					continue
+				}
+
+				data[v.Name] = []byte(ver.Value)
+			}
+
+			return raw, data, nil
+		})
+}
+
+func (s *SecretDataBuilder) makeData(dataFunc func() ([]byte, map[string][]byte, error)) (map[string][]byte, error) {
+	raw, data, err := dataFunc()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := data[SecretDataKeyRaw]; ok {
+		return nil, SecretDataErrorContainsRaw
+	}
+
+	data[SecretDataKeyRaw] = raw
+
+	return data, nil
+}
+
+func NewSecretsDataBuilder() *SecretDataBuilder {
+	return &SecretDataBuilder{}
 }

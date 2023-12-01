@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package main
 
@@ -17,6 +17,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -28,6 +30,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
@@ -35,9 +38,16 @@ import (
 )
 
 var (
-	scheme              = runtime.NewScheme()
-	setupLog            = ctrl.Log.WithName("setup")
-	finalizerCleanupLog = ctrl.Log.WithName("cleanup")
+	scheme     = runtime.NewScheme()
+	setupLog   = ctrl.Log.WithName("setup")
+	cleanupLog = ctrl.Log.WithName("cleanup")
+)
+
+const (
+	// The default MaxConcurrentReconciles for the VDS controller.
+	defaultVaultDynamicSecretsConcurrency = 100
+	// The default MaxConcurrentReconciles for Syncable Secrets controllers.
+	defaultSyncableSecretsConcurrency = 100
 )
 
 func init() {
@@ -52,8 +62,10 @@ func main() {
 	persistenceModelDirectUnencrypted := "direct-unencrypted"
 	persistenceModelDirectEncrypted := "direct-encrypted"
 	defaultPersistenceModel := persistenceModelNone
+	controllerOptions := controller.Options{}
 	vdsOptions := controller.Options{}
 	cfc := vclient.DefaultCachingClientFactoryConfig()
+	startTime := time.Now()
 
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -61,7 +73,11 @@ func main() {
 	var clientCachePersistenceModel string
 	var printVersion bool
 	var outputFormat string
-	var finalizerCleanup bool
+	var uninstall bool
+	var preDeleteHookTimeoutSeconds int
+	var minRefreshAfterHVSA time.Duration
+
+	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
 	flag.StringVar(&outputFormat, "output", "", "Output format for the operator version information (yaml or json)")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -75,9 +91,15 @@ func main() {
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed."+
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
-	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", 100,
+	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", defaultVaultDynamicSecretsConcurrency,
 		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
-	flag.BoolVar(&finalizerCleanup, "finalizer-cleanup", false, "Remove finalizers from all CRs in preparation for shutdown.")
+	flag.IntVar(&controllerOptions.MaxConcurrentReconciles, "max-concurrent-reconciles", defaultSyncableSecretsConcurrency,
+		"Maximum number of concurrent reconciles for each controller.")
+	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
+	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 60,
+		"Pre-delete hook timeout in seconds")
+	flag.DurationVar(&minRefreshAfterHVSA, "min-refresh-after-hvsa", time.Second*30,
+		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -118,33 +140,47 @@ func main() {
 
 	config := ctrl.GetConfigOrDie()
 
-	// This flag is passed by the pre-delete hook on helm uninstall.
-	if finalizerCleanup {
-		finalizerCleanupLog.Info("commencing cleanup of finalizers")
-		var finalizerCleanupClient client.Client
-		finalizerCleanupClient, err := client.New(config, client.Options{
-			Scheme: scheme,
-		})
+	defaultClient, err := client.NewWithWatch(config, client.Options{
+		Scheme: scheme,
+	})
+	if err != nil {
+		setupLog.Error(err, "Failed to instantiate a default Client")
+		os.Exit(1)
+	}
 
-		d := time.Now().Add(time.Second * 60)
-		shutdownCtx, cancel := context.WithDeadline(context.Background(), d)
+	// This is the code path where we do Helm uninstall, and decide the shutdownMode for ClientFactory
+	if uninstall {
+		cleanupLog.Info("commencing cleanup of finalizers")
+		preDeleteDeadline := startTime.Add(time.Second * time.Duration(preDeleteHookTimeoutSeconds))
+		preDeleteDeadlineCtx, cancel := context.WithDeadline(context.Background(), preDeleteDeadline)
 		// Even though ctx will be expired, it is good practice to call its
-		// cancellation function in any case. Failure to do so may keep the
+		// cancellation functions in any case. Failure to do so may keep the
 		// context and its parent alive longer than necessary.
 		defer cancel()
 
-		finalizerCleanupLog.Info("deleting finalizers")
-		if err = controllers.RemoveAllFinalizers(shutdownCtx, finalizerCleanupClient, finalizerCleanupLog); err != nil {
-			finalizerCleanupLog.Error(err, "unable to remove finalizers")
+		cleanupLog.Info("deleting finalizers")
+		if err = controllers.RemoveAllFinalizers(preDeleteDeadlineCtx, defaultClient, cleanupLog); err != nil {
+			cleanupLog.Error(err, "unable to remove finalizers")
 			os.Exit(1)
 		}
-		return
+
+		os.Exit(0)
+	}
+
+	collectMetrics := metricsAddr != ""
+	if collectMetrics {
+		cfc.MetricsRegistry.MustRegister(
+			metrics.NewBuildInfoGauge(versionInfo),
+		)
+		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Scheme: scheme,
+		Metrics: server.Options{
+			BindAddress: metricsAddr,
+		},
+		WebhookServer:          webhook.NewServer(webhook.Options{Port: 9443}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "b0d477c0.hashicorp.com",
@@ -164,16 +200,8 @@ func main() {
 		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
-
 	ctx := ctrl.SetupSignalHandler()
 
-	collectMetrics := metricsAddr != ""
-	if collectMetrics {
-		cfc.MetricsRegistry.MustRegister(
-			metrics.NewBuildInfoGauge(versionInfo),
-		)
-		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
-	}
 	var clientFactory vclient.CachingClientFactory
 	{
 		switch clientCachePersistenceModel {
@@ -190,14 +218,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		defaultClient, err := client.New(config, client.Options{
-			Scheme: mgr.GetScheme(),
-		})
-		if err != nil {
-			setupLog.Error(err, "Failed to instantiate a default Client")
-			os.Exit(1)
-		}
-
 		cfc.CollectClientCacheMetrics = collectMetrics
 		cfc.Recorder = mgr.GetEventRecorderFor("vaultClientFactory")
 		clientFactory, err = vclient.InitCachingClientFactory(ctx, defaultClient, cfc)
@@ -207,14 +227,16 @@ func main() {
 		}
 	}
 
-	hmacValidator := vclient.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
+	hmacValidator := helpers.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
+	secretDataBuilder := helpers.NewSecretsDataBuilder()
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultStaticSecret"),
-		HMACValidator: hmacValidator,
-		ClientFactory: clientFactory,
-	}).SetupWithManager(mgr); err != nil {
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("VaultStaticSecret"),
+		SecretDataBuilder: secretDataBuilder,
+		HMACValidator:     hmacValidator,
+		ClientFactory:     clientFactory,
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
@@ -223,7 +245,7 @@ func main() {
 		Scheme:        mgr.GetScheme(),
 		ClientFactory: clientFactory,
 		Recorder:      mgr.GetEventRecorderFor("VaultPKISecret"),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
 	}
@@ -245,14 +267,42 @@ func main() {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultConnection")
 		os.Exit(1)
 	}
+	// This allows the user to customize VDS concurrency independently.
+	// It is mostly here to allow for backward compatibility from when we introduced the flag
+	// `--max-concurrent-reconciles`.
+	vdsOverrideOpts := controller.Options{}
+	if vdsOptions.MaxConcurrentReconciles != defaultVaultDynamicSecretsConcurrency {
+		setupLog.Info("The flag --max-concurrent-reconciles-vds has been deprecated, but will still be honored to set the VDS controller concurrency, please use --max-concurrent-reconciles.")
+		vdsOverrideOpts = vdsOptions
+	} else {
+		vdsOverrideOpts = controllerOptions
+	}
 	if err = (&controllers.VaultDynamicSecretReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		Recorder:      mgr.GetEventRecorderFor("VaultDynamicSecret"),
 		ClientFactory: clientFactory,
 		HMACValidator: hmacValidator,
-	}).SetupWithManager(mgr, vdsOptions); err != nil {
+	}).SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
+		os.Exit(1)
+	}
+	if err = (&controllers.HCPAuthReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "HCPAuth")
+		os.Exit(1)
+	}
+	if err = (&controllers.HCPVaultSecretsAppReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
+		SecretDataBuilder: secretDataBuilder,
+		HMACValidator:     hmacValidator,
+		MinRefreshAfter:   minRefreshAfterHVSA,
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
@@ -270,10 +320,44 @@ func main() {
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
 	)
-
 	mgr.GetCache()
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
+	}
+}
+
+func shutDownOperator(ctx context.Context, c client.Client, mode vclient.ShutDownMode) error {
+	cm, err := vclient.GetManagerConfigMap(ctx, c)
+	if err != nil {
+		return err
+	}
+
+	if err = vclient.SetShutDownMode(ctx, c, cm, mode); err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() != nil {
+				return fmt.Errorf("shutdown context canceled err=%s", ctx.Err())
+			}
+			return nil
+		default:
+			// Periodically check for shutDownStatus updates as the ClientFactory shutdown process can take a while
+			time.Sleep(500 * time.Millisecond)
+			cm, err = vclient.GetManagerConfigMap(ctx, c)
+			if err != nil {
+				return fmt.Errorf("failed to get the manager configmap err=%s", err)
+			}
+			status := vclient.GetShutDownStatus(cm)
+			switch status {
+			case vclient.ShutDownStatusDone:
+				return nil
+			case vclient.ShutDownStatusFailed:
+				return fmt.Errorf("failed to shut down")
+			}
+		}
 	}
 }

@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/files"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -27,15 +27,22 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 const (
 	envSkipAWS            = "SKIP_AWS_TESTS"
 	envSkipAWSStaticCreds = "SKIP_AWS_STATIC_CREDS_TEST"
 	defaultAWSRegion      = "us-east-2"
+	envSkipGCP            = "SKIP_GCP_TESTS"
 )
 
 func TestVaultAuthMethods(t *testing.T) {
+	if !testWithHelm {
+		t.Skipf("Helm only test, and testWithHelm=%t", testWithHelm)
+	}
+
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
@@ -68,24 +75,25 @@ func TestVaultAuthMethods(t *testing.T) {
 	if r := os.Getenv("AWS_REGION"); r != "" {
 		awsRegion = r
 	}
+	runGCPTests := true
+	if run, _ := runGCP(t); !run {
+		runGCPTests = false
+	}
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
-	// TF related setup
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "vaultauthmethods/terraform"),
-		tempDir,
-		"terraform",
-	)
-	require.Nil(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultauthmethods/terraform"), tempDir)
+	copyModulesDir(t, tfDir)
+	chartDestDir := copyChartDir(t, tfDir)
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
-	terraformOptions := &terraform.Options{
+	tfOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
@@ -93,7 +101,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           k8sConfigContext,
 			"vault_kvv2_mount_path":        testKvv2MountPath,
-			"operator_helm_chart_path":     chartPath,
+			"operator_helm_chart_path":     chartDestDir,
 			"approle_mount_path":           appRoleMountPath,
 			"vault_oidc_discovery_url":     vault_oidc_discovery_url,
 			"vault_oidc_ca":                vault_oidc_ca,
@@ -109,17 +117,17 @@ func TestVaultAuthMethods(t *testing.T) {
 		},
 	}
 	if operatorImageRepo != "" {
-		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
+		tfOptions.Vars["operator_image_repo"] = operatorImageRepo
 	}
 	if operatorImageTag != "" {
-		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
+		tfOptions.Vars["operator_image_tag"] = operatorImageTag
 	}
 	if entTests {
 		testVaultNamespace = "vault-tenant-" + testID
-		terraformOptions.Vars["vault_enterprise"] = true
-		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		tfOptions.Vars["vault_enterprise"] = true
+		tfOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
-	terraformOptions = setCommonTFOptions(t, terraformOptions)
+	tfOptions = setCommonTFOptions(t, tfOptions)
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -132,19 +140,53 @@ func TestVaultAuthMethods(t *testing.T) {
 		}
 		exportKindLogs(t)
 		// Clean up resources with "terraform destroy" at the end of the test.
-		terraform.Destroy(t, terraformOptions)
+		terraform.Destroy(t, tfOptions)
 		assert.NoError(t, os.RemoveAll(tempDir))
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
-	terraform.InitAndApply(t, terraformOptions)
+	terraform.InitAndApply(t, tfOptions)
 
 	// Parse terraform output
-	b, err := json.Marshal(terraform.OutputAll(t, terraformOptions))
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
 	require.Nil(t, err)
 
 	var outputs authMethodsK8sOutputs
 	require.Nil(t, json.Unmarshal(b, &outputs))
+
+	if runGCPTests {
+		gcpTempDir, err := os.MkdirTemp(os.TempDir(), t.Name()+"-gcp")
+		require.Nil(t, err)
+		gcpTfDir := copyTerraformDir(t, path.Join(testRoot, "vaultauthmethods/terraform-gcp"), gcpTempDir)
+
+		// Construct the terraform options with default retryable errors to handle the most common
+		// retryable errors in terraform testing.
+		gcpTfOptions := &terraform.Options{
+			// Set the path to the Terraform code that will be tested.
+			TerraformDir: gcpTfDir,
+			Vars: map[string]interface{}{
+				"test_id":                      testID,
+				"k8s_vault_connection_address": testVaultAddress,
+				"k8s_test_namespace":           testK8sNamespace,
+				"k8s_config_context":           k8sConfigContext,
+				"run_gcp_tests":                runGCPTests,
+				"gcp_project_id":               os.Getenv("GCP_PROJECT"),
+				"gcp_region":                   os.Getenv("GCP_REGION"),
+				"vault_policy":                 outputs.VaultPolicy,
+			},
+		}
+		if entTests {
+			gcpTfOptions.Vars["vault_enterprise"] = true
+			gcpTfOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		}
+		gcpTfOptions = setCommonTFOptions(t, gcpTfOptions)
+		t.Cleanup(func() {
+			// Clean up GCP resources with "terraform destroy" at the end of the test
+			terraform.Destroy(t, gcpTfOptions)
+			assert.NoError(t, os.RemoveAll(gcpTempDir))
+		})
+		terraform.InitAndApply(t, gcpTfOptions)
+	}
 
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
@@ -154,11 +196,38 @@ func TestVaultAuthMethods(t *testing.T) {
 	secretObj := createJWTTokenSecret(t, ctx, crdClient, testK8sNamespace, secretName)
 	created = append(created, secretObj)
 
-	auths := []struct {
+	// canRun function that waits a minute for eventual consistency with token
+	// create permission in GCP
+	waitForGCPConsistency := func() (bool, error) {
+		key := ctrlclient.ObjectKey{
+			Namespace: testK8sNamespace,
+			Name:      "workload-identity-sa-" + testID,
+		}
+		sa, err := helpers.GetServiceAccount(ctx, crdClient, key)
+		require.NoError(t, err)
+		config := vault.GCPTokenExchangeConfig{
+			KSA:            sa,
+			GKEClusterName: os.Getenv("GKE_CLUSTER_NAME"),
+			GCPProject:     os.Getenv("GCP_PROJECT"),
+			Region:         os.Getenv("GCP_REGION"),
+			VaultRole:      "consistency-check",
+		}
+		err = backoff.Retry(func() error {
+			_, err := vault.GCPTokenExchange(ctx, config, crdClient)
+			return err
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 300))
+		if err != nil {
+			return false, fmt.Errorf("timed out: %w", err)
+		}
+		return true, nil
+	}
+
+	type testCase struct {
 		shouldRun func(*testing.T) (bool, string)
 		canRun    func() (bool, error)
 		vaultAuth *secretsv1beta1.VaultAuth
-	}{
+	}
+	auths := []testCase{
 		{
 			shouldRun: alwaysRun,
 			canRun:    noRequirements,
@@ -317,6 +386,47 @@ func TestVaultAuthMethods(t *testing.T) {
 				},
 			},
 		},
+		{
+			shouldRun: runGCP,
+			canRun:    waitForGCPConsistency,
+			vaultAuth: &secretsv1beta1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-gcp-workload-identity",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "gcp",
+					Mount:     "gcp",
+					GCP: &secretsv1beta1.VaultAuthConfigGCP{
+						Role:                           outputs.AuthRole + "-gcp",
+						WorkloadIdentityServiceAccount: "workload-identity-sa-" + testID,
+					},
+				},
+			},
+		},
+		{
+			shouldRun: runGCP,
+			canRun:    waitForGCPConsistency,
+			vaultAuth: &secretsv1beta1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-gcp-workload-identity-all-options",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "gcp",
+					Mount:     "gcp",
+					GCP: &secretsv1beta1.VaultAuthConfigGCP{
+						Role:                           outputs.AuthRole + "-gcp",
+						Region:                         os.Getenv("GCP_REGION"),
+						WorkloadIdentityServiceAccount: "workload-identity-sa-" + testID,
+						ClusterName:                    os.Getenv("GKE_CLUSTER_NAME"),
+						ProjectID:                      os.Getenv("GCP_PROJECT"),
+					},
+				},
+			},
+		},
 	}
 	expectedData := map[string]interface{}{"foo": "bar"}
 
@@ -331,33 +441,31 @@ func TestVaultAuthMethods(t *testing.T) {
 	secrets := []*secretsv1beta1.VaultStaticSecret{}
 	// create the VSS secrets
 	for _, a := range auths {
-		if run, _ := a.shouldRun(t); !run {
-			continue
-		}
 		dest := fmt.Sprintf("kv-%s", a.vaultAuth.Name)
 		secretName := fmt.Sprintf("test-secret-%s", a.vaultAuth.Name)
-		secrets = append(secrets,
-			&secretsv1beta1.VaultStaticSecret{
-				ObjectMeta: v1.ObjectMeta{
-					Name:      secretName,
-					Namespace: testK8sNamespace,
+		secret := &secretsv1beta1.VaultStaticSecret{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      secretName,
+				Namespace: a.vaultAuth.Namespace,
+			},
+			Spec: secretsv1beta1.VaultStaticSecretSpec{
+				VaultAuthRef: a.vaultAuth.Name,
+				Namespace:    testVaultNamespace,
+				Mount:        testKvv2MountPath,
+				Type:         consts.KVSecretTypeV2,
+				Path:         dest,
+				Destination: secretsv1beta1.Destination{
+					Name:   dest,
+					Create: true,
 				},
-				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					VaultAuthRef: a.vaultAuth.Name,
-					Namespace:    testVaultNamespace,
-					Mount:        testKvv2MountPath,
-					Type:         consts.KVSecretTypeV2,
-					Path:         dest,
-					Destination: secretsv1beta1.Destination{
-						Name:   dest,
-						Create: true,
-					},
-				},
-			})
-	}
-	// Add to the created for cleanup
-	for _, secret := range secrets {
-		created = append(created, secret)
+			},
+		}
+		secrets = append(secrets, secret)
+
+		// Add to the created for cleanup
+		if run, _ := a.shouldRun(t); run {
+			created = append(created, secret)
+		}
 	}
 
 	putKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret) {
@@ -470,4 +578,14 @@ func requiredAWSStaticCreds() (bool, error) {
 		return false, errs
 	}
 	return true, nil
+}
+
+// checks whether or not to run the gcp tests
+func runGCP(t *testing.T) (bool, string) {
+	t.Helper()
+
+	if v := os.Getenv(envSkipGCP); v == "true" {
+		return false, "skipping because " + envSkipGCP + " is set to 'true'"
+	}
+	return true, ""
 }

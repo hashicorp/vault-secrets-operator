@@ -1,11 +1,10 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 variable "k8s_test_namespace" {
   default = "testing"
 }
 
-variable "k8s_vault_connection_address" {}
 
 variable "k8s_config_context" {
   default = "kind-kind"
@@ -44,6 +43,20 @@ variable "deploy_operator_via_helm" {
 
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
+}
+
+variable "enable_default_connection" {
+  type    = bool
+  default = false
+}
+
+variable "enable_default_auth_method" {
+  type    = bool
+  default = false
+}
+
+variable "k8s_vault_connection_address" {
+  default = ""
 }
 
 variable "operator_image_repo" {

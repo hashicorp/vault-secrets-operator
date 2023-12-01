@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -16,7 +16,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
 )
 
 var (
@@ -55,7 +55,7 @@ func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
 //
 // See computeClientCacheKey for more details on how the client cache is derived.
 func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (ClientCacheKey, error) {
-	authObj, target, err := common.GetVaultAuthAndTarget(ctx, client, obj)
+	authObj, err := common.GetVaultAuthNamespaced(ctx, client, obj)
 	if err != nil {
 		return "", err
 	}
@@ -70,7 +70,7 @@ func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client,
 		return "", err
 	}
 
-	provider, err := credentials.NewCredentialProvider(ctx, client, authObj, target.Namespace)
+	provider, err := credentials.NewCredentialProvider(ctx, client, authObj, obj.GetNamespace())
 	if err != nil {
 		return "", err
 	}
@@ -128,7 +128,7 @@ func computeClientCacheKey(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1
 		connObj.GetUID(), connObj.GetGeneration(), providerUID)
 
 	sum := sha256.Sum256([]byte(input))
-	key := method + "-" + fmt.Sprintf("%x%x", sum[0:7], sum[len(sum)-4:])
+	key := strings.ToLower(method + "-" + fmt.Sprintf("%x%x", sum[0:7], sum[len(sum)-4:]))
 	if len(key) > 63 {
 		return "", errorKeyLengthExceeded
 	}

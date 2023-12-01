@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 )
 
 func Test_clientCacheCollector_Collect(t *testing.T) {
@@ -62,7 +62,7 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 							Generation: 0,
 						},
 					},
-					credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
+					credentialProvider: vault.NewKubernetesCredentialProvider(nil, "",
 						types.UID(uuid.New().String())),
 				})
 				require.NoError(t, err)
@@ -193,7 +193,7 @@ func Test_clientCache_Metrics(t *testing.T) {
 							Generation: 0,
 						},
 						Spec: secretsv1beta1.VaultAuthSpec{
-							Method: credentials.ProviderMethodKubernetes,
+							Method: vault.ProviderMethodKubernetes,
 						},
 					},
 					connObj: &secretsv1beta1.VaultConnection{
@@ -203,7 +203,7 @@ func Test_clientCache_Metrics(t *testing.T) {
 							Generation: 0,
 						},
 					},
-					credentialProvider: credentials.NewKubernetesCredentialProvider(nil, "",
+					credentialProvider: vault.NewKubernetesCredentialProvider(nil, "",
 						types.UID(uuid.New().String())),
 				}
 

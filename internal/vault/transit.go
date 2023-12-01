@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -26,11 +26,10 @@ type (
 // EncryptWithTransit encrypts data using Vault Transit.
 func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte) ([]byte, error) {
 	path := fmt.Sprintf("%s/encrypt/%s", mount, key)
-	resp, err := vaultClient.Write(ctx, path,
-		map[string]interface{}{
-			"name":      key,
-			"plaintext": base64.StdEncoding.EncodeToString(data),
-		},
+	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, map[string]any{
+		"name":      key,
+		"plaintext": base64.StdEncoding.EncodeToString(data),
+	}),
 	)
 	if err != nil {
 		return nil, err
@@ -39,7 +38,7 @@ func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 		return nil, fmt.Errorf("nil response from Vault, path=%s", path)
 	}
 
-	return json.Marshal(resp.Data)
+	return json.Marshal(resp.Data())
 }
 
 // DecryptWithTransit decrypts data using Vault Transit.
@@ -56,7 +55,7 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 		"ciphertext": v.Ciphertext,
 	}
 
-	resp, err := vaultClient.Write(ctx, path, params)
+	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params))
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +63,7 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 		return nil, fmt.Errorf("nil response from Vault, path=%s", path)
 	}
 
-	b, err := json.Marshal(resp.Data)
+	b, err := json.Marshal(resp.Data())
 	if err != nil {
 		return nil, err
 	}

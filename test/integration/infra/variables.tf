@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 variable "vault_license_path" {
   default = ""
@@ -10,7 +10,11 @@ variable "vault_license" {
 }
 
 variable "k8s_namespace" {
-  default = "demo"
+  default = "vault"
+}
+
+variable "k8s_service_account" {
+  default = "vault"
 }
 
 variable "k8s_config_context" {
@@ -30,11 +34,11 @@ variable "vault_image_repo_ent" {
 }
 
 variable "vault_image_tag" {
-  default = "1.13"
+  default = "1.15"
 }
 
 variable "vault_image_tag_ent" {
-  default = "1.13-ent"
+  default = "1.15-ent"
 }
 
 variable "vault_enterprise" {

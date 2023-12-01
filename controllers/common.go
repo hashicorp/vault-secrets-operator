@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package controllers
 
@@ -9,18 +9,21 @@ import (
 	"math/rand"
 	"time"
 
-	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 )
 
 var (
-	_      error = (*LeaseTruncatedError)(nil)
-	random       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	_                      error = (*LeaseTruncatedError)(nil)
+	random                       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	requeueDurationOnError       = time.Second * 5
 )
+
+const renewalPercentCap = 90
 
 // LeaseTruncatedError indicates that the requested lease renewal duration is
 // less than expected
@@ -66,8 +69,8 @@ func computeHorizonWithJitter(minDuration time.Duration) time.Duration {
 // inclusively
 func capRenewalPercent(renewalPercent int) (rp int) {
 	switch {
-	case renewalPercent > 90:
-		rp = 90
+	case renewalPercent > renewalPercentCap:
+		rp = renewalPercentCap
 	case renewalPercent < 0:
 		rp = 0
 	default:
@@ -80,13 +83,15 @@ func capRenewalPercent(renewalPercent int) (rp int) {
 // percentage of the lease duration, plus additional random jitter (up to 10% of
 // the lease), to ensure the horizon falls within the specified renewal window
 func computeDynamicHorizonWithJitter(leaseDuration time.Duration, renewalPercent int) time.Duration {
-	cappedRenewalPercent := capRenewalPercent(renewalPercent)
-
 	max, jitter := computeMaxJitter(leaseDuration)
 
-	startRenewingAt := time.Duration(float64(leaseDuration.Nanoseconds()) * float64(cappedRenewalPercent) / 100)
+	return computeStartRenewingAt(leaseDuration, renewalPercent) + time.Duration(max) - time.Duration(jitter)
+}
 
-	return startRenewingAt + time.Duration(max) - time.Duration(jitter)
+// computeStartRenewingAt returns a time.Duration that is the specified
+// percentage of the lease duration.
+func computeStartRenewingAt(leaseDuration time.Duration, renewalPercent int) time.Duration {
+	return time.Duration(float64(leaseDuration.Nanoseconds()) * float64(capRenewalPercent(renewalPercent)) / 100)
 }
 
 // RemoveAllFinalizers is responsible for removing all finalizers added by the controller to prevent
@@ -182,4 +187,23 @@ func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, obj
 		}
 	}
 	log.Info(fmt.Sprintf("Removed %d finalizers", cnt))
+}
+
+func parseDurationString(duration, path string, min time.Duration) (time.Duration, error) {
+	var err error
+	var d time.Duration
+	if duration != "" {
+		d, err = time.ParseDuration(duration)
+		if err != nil {
+			return 0, fmt.Errorf(
+				"invalid value %q for %s, %w",
+				duration, path, err)
+		}
+		if d < min {
+			return 0, fmt.Errorf(
+				"invalid value %q for %s, below the minimum allowed value %s",
+				duration, path, min)
+		}
+	}
+	return d, nil
 }

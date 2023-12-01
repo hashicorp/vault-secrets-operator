@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 resource "helm_release" "postgres" {
   namespace        = kubernetes_namespace.postgres.metadata[0].name
@@ -30,14 +30,6 @@ data "kubernetes_service" "postgres" {
   metadata {
     namespace = helm_release.postgres.namespace
     name      = "${helm_release.postgres.name}-${helm_release.postgres.chart}"
-  }
-}
-
-resource "kubernetes_secret" "db" {
-  count = var.k8s_db_secret_count
-  metadata {
-    name      = "db-secret-${count.index}"
-    namespace = kubernetes_namespace.dev.metadata[0].name
   }
 }
 
@@ -114,9 +106,6 @@ path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_back
 }
 path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
   capabilities = ["read"]
-}
-path "sys/leases/revoke" {
-  capabilities = ["update"]
 }
 EOT
 }

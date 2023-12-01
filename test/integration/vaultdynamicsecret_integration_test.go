@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -8,15 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/terraform"
@@ -29,12 +28,10 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 func TestVaultDynamicSecret(t *testing.T) {
-	if testWithHelm {
-		t.Skipf("Test is not compatiable with Helm")
-	}
 	testID := fmt.Sprintf("vds")
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
@@ -49,12 +46,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "vaultdynamicsecret/terraform"),
-		tempDir,
-		"terraform",
-	)
-	require.Nil(t, err)
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
+	copyModulesDir(t, tfDir)
+	chartDestDir := copyChartDir(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
@@ -64,26 +58,17 @@ func TestVaultDynamicSecret(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted")
-	deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-
-	k8sDBSecretsCountFromTF := 5
-	if v := os.Getenv("K8S_DB_SECRET_COUNT"); v != "" {
-		count, err := strconv.Atoi(v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		k8sDBSecretsCountFromTF = count
-	}
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	tfOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"k8s_config_context":         k8sConfigContext,
+			"k8s_config_context":  k8sConfigContext,
+			"k8s_vault_namespace": k8sVaultNamespace,
+			// the service account is created in test/integration/infra/main.tf
+			"k8s_vault_service_account":  "vault",
 			"name_prefix":                testID,
-			"k8s_db_secret_count":        k8sDBSecretsCountFromTF,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
@@ -93,6 +78,24 @@ func TestVaultDynamicSecret(t *testing.T) {
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
+
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted")
+	if !testWithHelm {
+		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	} else {
+		tfOptions.Vars["deploy_operator_via_helm"] = true
+		tfOptions.Vars["operator_helm_chart_path"] = chartDestDir
+		if operatorImageRepo != "" {
+			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
+		}
+		if operatorImageTag != "" {
+			tfOptions.Vars["operator_image_tag"] = operatorImageTag
+		}
+		tfOptions.Vars["enable_default_auth_method"] = true
+		tfOptions.Vars["enable_default_connection"] = true
+		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
+	}
+
 	tfOptions = setCommonTFOptions(t, tfOptions)
 
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
@@ -109,10 +112,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
-			os.RemoveAll(tempDir)
 
 			// Undeploy Kustomize
-			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			if !testWithHelm {
+				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			} else {
+				// Helm does not delete the CRDs on uninstall, so we have to do it manually using
+				// kubectl.
+				k8s.RunKubectl(t, &k8s.KubectlOptions{
+					ContextName: k8sConfigContext,
+				}, "delete", "--recursive", "--filename", path.Join(chartDestDir, "crds"))
+			}
+
+			os.RemoveAll(tempDir)
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
@@ -142,9 +154,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 	// Set the secrets in vault to be synced to kubernetes
 	// vClient := getVaultClient(t, testVaultNamespace)
 	// Create a VaultConnection CR
-	conns := []*secretsv1beta1.VaultConnection{
-		// Create the default VaultConnection CR in the Operator's namespace
-		{
+	var conns []*secretsv1beta1.VaultConnection
+	var auths []*secretsv1beta1.VaultAuth
+	if !testWithHelm {
+		conns = append(conns, &secretsv1beta1.VaultConnection{
+			// Create the default VaultConnection CR in the Operator's namespace
 			ObjectMeta: v1.ObjectMeta{
 				Name:      consts.NameDefault,
 				Namespace: operatorNS,
@@ -152,10 +166,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
 			},
-		},
-	}
-	auths := []*secretsv1beta1.VaultAuth{
-		{
+		})
+
+		auths = append(auths, &secretsv1beta1.VaultAuth{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      consts.NameDefault,
 				Namespace: operatorNS,
@@ -170,7 +183,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					TokenAudiences: []string{"vault"},
 				},
 			},
-		},
+		})
 	}
 
 	create := func(o ctrlclient.Object) {
@@ -186,44 +199,43 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		authObj        *secretsv1beta1.VaultAuth
-		expected       map[string]int
-		expectedStatic map[string]int
-		create         int
-		createStatic   int
-		existing       []string
+		name               string
+		authObj            *secretsv1beta1.VaultAuth
+		expected           map[string]int
+		expectedStatic     map[string]int
+		create             int
+		createStatic       int
+		createNonRenewable int
+		existing           int
 	}{
 		{
 			name:     "existing-only",
-			existing: outputs.K8sDBSecrets,
-			authObj:  auths[0],
+			existing: 5,
 			expected: map[string]int{
-				"_raw":     100,
-				"username": 51,
-				"password": 20,
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
 			},
 		},
 		{
-			name:    "create-only",
-			create:  5,
-			authObj: auths[0],
+			name:   "create-only",
+			create: 5,
 			expected: map[string]int{
-				"_raw":     100,
-				"username": 51,
-				"password": 20,
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
 			},
 		},
 		{
-			name:         "mixed",
-			create:       5,
-			createStatic: 5,
-			existing:     outputs.K8sDBSecrets,
-			authObj:      auths[0],
+			name:               "mixed",
+			create:             5,
+			createStatic:       5,
+			createNonRenewable: 5,
+			existing:           5,
 			expected: map[string]int{
-				"_raw":     100,
-				"username": 51,
-				"password": 20,
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
 			},
 			expectedStatic: map[string]int{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
@@ -236,7 +248,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		{
 			name:         "create-static",
 			createStatic: 5,
-			authObj:      auths[0],
 			expectedStatic: map[string]int{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
 				// assertDynamicSecret, so no need to include them here.
@@ -245,21 +256,38 @@ func TestVaultDynamicSecret(t *testing.T) {
 				"username":        24,
 			},
 		},
+		{
+			name:               "create-non-renewable",
+			createNonRenewable: 5,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var objsCreated []*secretsv1beta1.VaultDynamicSecret
+			var otherObjsCreated []ctrlclient.Object
 
 			t.Cleanup(func() {
 				if !skipCleanup {
 					for _, obj := range objsCreated {
 						assert.NoError(t, crdClient.Delete(ctx, obj))
 					}
+					for _, obj := range otherObjsCreated {
+						assert.NoError(t, crdClient.Delete(ctx, obj))
+					}
 				}
 			})
 			// pre-created secrets test
-			for idx, dest := range tt.existing {
+			for idx := 0; idx < tt.existing; idx++ {
+				dest := fmt.Sprintf("%s-dest-exists-%d", tt.name, idx)
+				s := &corev1.Secret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+				}
+				require.NoError(t, crdClient.Create(ctx, s))
+				otherObjsCreated = append(otherObjsCreated, s)
 				vdsObj := &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
@@ -276,13 +304,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 						},
 					},
 				}
-				if idx == 0 {
-					vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
-						{
-							Kind: "Deployment",
-							Name: outputs.DeploymentName,
-						},
-					}
+				depObj := createDeployment(t, ctx, crdClient,
+					ctrlclient.ObjectKey{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+				)
+				otherObjsCreated = append(otherObjsCreated, depObj)
+
+				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
+					},
 				}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
@@ -306,6 +340,20 @@ func TestVaultDynamicSecret(t *testing.T) {
 							Name:   dest,
 							Create: true,
 						},
+					},
+				}
+				depObj := createDeployment(t, ctx, crdClient,
+					ctrlclient.ObjectKey{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+				)
+				otherObjsCreated = append(otherObjsCreated, depObj)
+
+				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
 					},
 				}
 
@@ -337,26 +385,74 @@ func TestVaultDynamicSecret(t *testing.T) {
 				objsCreated = append(objsCreated, vdsObj)
 			}
 
+			for idx := 0; idx < tt.createNonRenewable; idx++ {
+				dest := fmt.Sprintf("%s-create-nr-creds-%d", tt.name, idx)
+				vdsObj := &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+						// used to denote the expected secret "type"
+						Annotations: map[string]string{
+							"non-renewable": "true",
+						},
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Namespace: outputs.Namespace,
+						Mount:     outputs.K8SSecretPath,
+						Params: map[string]string{
+							"kubernetes_namespace": outputs.K8sNamespace,
+						},
+						RenewalPercent: 5,
+						Path:           "creds/" + outputs.K8SSecretRole,
+						Destination: secretsv1beta1.Destination{
+							Name:   dest,
+							Create: true,
+						},
+					},
+				}
+
+				assert.NoError(t, crdClient.Create(ctx, vdsObj))
+				objsCreated = append(objsCreated, vdsObj)
+			}
 			var count int
 			for idx, obj := range objsCreated {
 				nameFmt := "existing-dest-%d"
 				if obj.Spec.Destination.Create {
 					nameFmt = "create-dest-%d"
 				}
+
+				expected := tt.expected
+				var expectedPresentOnly []string
 				if obj.Spec.AllowStaticCreds {
 					nameFmt = "static-" + nameFmt
+					expected = tt.expectedStatic
+					expectedPresentOnly = append(expectedPresentOnly,
+						helpers.SecretDataKeyRaw,
+						"last_vault_rotation",
+						"ttl",
+					)
+				} else if _, ok := obj.Annotations["non-renewable"]; ok {
+					nameFmt = "non-renewable-" + nameFmt
+					// the non-renewable test checks that all data keys are populated, so we expect
+					// the expected map to be empty.
+					expected = make(map[string]int)
+					expectedPresentOnly = append(expectedPresentOnly,
+						helpers.SecretDataKeyRaw,
+						"service_account_name",
+						"service_account_namespace",
+						"service_account_token",
+					)
 				}
+
 				count++
 				t.Run(fmt.Sprintf(nameFmt, idx), func(t *testing.T) {
-					// capture obj for parallel test
 					obj := obj
+					expected := maps.Clone(expected)
+					expectedPresentOnly := expectedPresentOnly
 					t.Parallel()
-					if obj.Spec.AllowStaticCreds {
-						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expectedStatic)
-					} else {
-						assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj, tt.expected)
-					}
 
+					assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, obj,
+						expected, expectedPresentOnly...)
 					if t.Failed() {
 						return
 					}

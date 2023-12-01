@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package vault
 
@@ -31,29 +31,4 @@ func UnmarshalPKIIssueResponse(resp *api.Secret) (*PKICertResponse, error) {
 	}
 
 	return result, nil
-}
-
-func MarshalSecretData(resp *api.Secret) (map[string][]byte, error) {
-	data := make(map[string][]byte)
-
-	b, err := json.Marshal(resp.Data)
-	if err != nil {
-		return nil, err
-	}
-	data["_raw"] = b
-
-	for k, v := range resp.Data {
-		switch x := v.(type) {
-		case string:
-			data[k] = []byte(x)
-		default:
-			b, err := json.Marshal(v)
-			if err != nil {
-				return nil, err
-			}
-			data[k] = b
-		}
-	}
-
-	return data, nil
 }

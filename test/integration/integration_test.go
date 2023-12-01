@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
@@ -33,16 +34,19 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 var (
@@ -91,6 +95,7 @@ func init() {
 	if k8sVaultNamespace == "" {
 		k8sVaultNamespace = "vault"
 	}
+
 	testVaultAddress = fmt.Sprintf("http://vault.%s.svc.cluster.local:8200", k8sVaultNamespace)
 }
 
@@ -174,12 +179,12 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				return "", err
 			}
 
-			if _, ok := destSecret.Data["_raw"]; !ok {
-				return "", fmt.Errorf("secret hasn't been synced yet, missing '_raw' field")
+			if _, ok := destSecret.Data[helpers.SecretDataKeyRaw]; !ok {
+				return "", fmt.Errorf("secret hasn't been synced yet, missing '%s' field", helpers.SecretDataKeyRaw)
 			}
 
 			var rawSecret map[string]interface{}
-			err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
+			err = json.Unmarshal(destSecret.Data[helpers.SecretDataKeyRaw], &rawSecret)
 			require.NoError(t, err)
 			if _, ok := rawSecret["data"]; ok {
 				rawSecret = rawSecret["data"].(map[string]interface{})
@@ -187,7 +192,8 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 			for k, v := range expectedData {
 				// compare expected secret data to _raw in the k8s secret
 				if !reflect.DeepEqual(v, rawSecret[k]) {
-					err = errors.Join(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
+					err = errors.Join(err,
+						fmt.Errorf("expected data '%s:%s' missing from %s: %#v", k, v, helpers.SecretDataKeyRaw, rawSecret))
 				}
 				// compare expected secret k/v to the top level items in the k8s secret
 				if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
@@ -195,7 +201,9 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				}
 			}
 			if len(expectedData) != len(rawSecret) {
-				err = errors.Join(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
+				err = errors.Join(err,
+					fmt.Errorf("expected data length %d does not match %s length %d",
+						len(expectedData), helpers.SecretDataKeyRaw, len(rawSecret)))
 			}
 			// the k8s secret has an extra key because of the "_raw" item
 			if len(expectedData) != len(destSecret.Data)-1 {
@@ -292,32 +300,41 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 	return true, nil
 }
 
+type revocationK8sOutputs struct {
+	AuthRole   string `json:"auth_role"`
+	PolicyName string `json:"policy_name"`
+}
+
 type authMethodsK8sOutputs struct {
 	AuthRole      string `json:"auth_role"`
 	AppRoleRoleID string `json:"role_id"`
+	GSAEmail      string `json:"gsa_email"`
+	VaultPolicy   string `json:"vault_policy"`
 }
 
 type dynamicK8SOutputs struct {
-	NamePrefix       string   `json:"name_prefix"`
-	Namespace        string   `json:"namespace"`
-	K8sNamespace     string   `json:"k8s_namespace"`
-	K8sConfigContext string   `json:"k8s_config_context"`
-	AuthMount        string   `json:"auth_mount"`
-	AuthPolicy       string   `json:"auth_policy"`
-	AuthRole         string   `json:"auth_role"`
-	DBRole           string   `json:"db_role"`
-	DBRoleStatic     string   `json:"db_role_static"`
-	DBRoleStaticUser string   `json:"db_role_static_user"`
-	DBPath           string   `json:"db_path"`
-	TransitPath      string   `json:"transit_path"`
-	TransitKeyName   string   `json:"transit_key_name"`
-	TransitRef       string   `json:"transit_ref"`
-	K8sDBSecrets     []string `json:"k8s_db_secret"`
-	DeploymentName   string   `json:"deployment_name"`
+	NamePrefix       string `json:"name_prefix"`
+	Namespace        string `json:"namespace"`
+	K8sNamespace     string `json:"k8s_namespace"`
+	K8sConfigContext string `json:"k8s_config_context"`
+	AuthMount        string `json:"auth_mount"`
+	AuthPolicy       string `json:"auth_policy"`
+	AuthRole         string `json:"auth_role"`
+	DBRole           string `json:"db_role"`
+	DBRoleStatic     string `json:"db_role_static"`
+	DBRoleStaticUser string `json:"db_role_static_user"`
+	// should always be non-renewable
+	K8SSecretPath  string `json:"k8s_secret_path"`
+	K8SSecretRole  string `json:"k8s_secret_role"`
+	DBPath         string `json:"db_path"`
+	TransitPath    string `json:"transit_path"`
+	TransitKeyName string `json:"transit_key_name"`
+	TransitRef     string `json:"transit_ref"`
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 	delay time.Duration, vdsObj *secretsv1beta1.VaultDynamicSecret, expected map[string]int,
+	expectedPresentOnly ...string,
 ) {
 	t.Helper()
 
@@ -327,14 +344,9 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 		Namespace: namespace,
 	}
 
-	expectedPresentOnly := make(map[string]int)
-	if vdsObj.Spec.AllowStaticCreds {
-		// these keys typically have variable values that make them difficult to compare,
-		// we can ensure that they are at least present and have a length > 0 in the
-		// resulting Secret data.
-		expectedPresentOnly["_raw"] = 1
-		expectedPresentOnly["last_vault_rotation"] = 1
-		expectedPresentOnly["ttl"] = 1
+	presentOnly := make(map[string]int)
+	for _, v := range expectedPresentOnly {
+		presentOnly[v] = 1
 	}
 
 	retry.DoWithRetry(t,
@@ -351,7 +363,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 			actualPresentOnly := make(map[string]int)
 			actual := make(map[string]int)
 			for f, b := range sec.Data {
-				if v, ok := expectedPresentOnly[f]; ok {
+				if v, ok := presentOnly[f]; ok {
 					if len(b) > 0 {
 						actualPresentOnly[f] = v
 					}
@@ -360,7 +372,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 				actual[f] = len(b)
 			}
 
-			assert.Equal(t, expectedPresentOnly, actualPresentOnly)
+			assert.Equal(t, presentOnly, actualPresentOnly)
 			assert.Equal(t, expected, actual, "actual %#v, expected %#v", actual, expected)
 
 			assertSyncableSecret(t, client, vdsObj, sec)
@@ -372,7 +384,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient.Object, sec *corev1.Secret) {
 	t.Helper()
 
-	meta, err := helpers.NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	require.NoError(t, err)
 
 	if meta.Destination.Create {
@@ -497,7 +509,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 60),
 	))
 }
 
@@ -507,7 +519,13 @@ func assertRolloutRestarts(
 ) error {
 	t.Helper()
 
+	type status struct {
+		Replicas      *int32
+		ReadyReplicas int32
+	}
 	var errs error
+	var s *status
+
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
 	for _, target := range targets {
@@ -524,18 +542,21 @@ func assertRolloutRestarts(
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "StatefulSet":
 			var o appsv1.StatefulSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "ReplicaSet":
 			var o appsv1.ReplicaSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -562,6 +583,9 @@ func assertRolloutRestarts(
 		}
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
+		if s.ReadyReplicas != *s.Replicas {
+			errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
+		}
 	}
 	return errs
 }
@@ -590,10 +614,143 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			credentials.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
+			vault.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))
 
 	return secretObj
+}
+
+func awaitSecretSynced(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, expectedData map[string][]byte,
+) (*corev1.Secret, error) {
+	t.Helper()
+
+	var s *corev1.Secret
+	err := backoff.Retry(
+		func() error {
+			m, err := common.NewSyncableSecretMetaData(obj)
+			if err != nil {
+				return backoff.Permanent(err)
+			}
+
+			sec, exists, err := helpers.GetSyncableSecret(ctx, client, obj)
+			if err != nil {
+				return err
+			} else if !exists {
+				return fmt.Errorf("expected secret '%s/%s' inexistent",
+					obj.GetNamespace(), m.Destination.Name,
+				)
+			}
+
+			if _, ok := sec.Data[helpers.SecretDataKeyRaw]; !ok {
+				return fmt.Errorf("secret hasn't been synced yet, missing '%s' field",
+					helpers.SecretDataKeyRaw,
+				)
+			}
+
+			actualData := make(map[string][]byte)
+			for k, v := range sec.Data {
+				if k == helpers.SecretDataKeyRaw {
+					continue
+				}
+				actualData[k] = v
+			}
+
+			if !reflect.DeepEqual(actualData, expectedData) {
+				return fmt.Errorf(
+					"incomplete Secret data, expected=%#v, actual=%#v", expectedData, actualData)
+			}
+
+			s = sec
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+	)
+
+	return s, err
+}
+
+func copyTerraformDir(t *testing.T, src, tempDest string) string {
+	t.Helper()
+	dir, err := files.CopyTerraformFolderToDest(src, tempDest, "terraform")
+	require.NoError(t, err)
+	return dir
+}
+
+func copyModulesDir(t *testing.T, tfDir string) string {
+	t.Helper()
+	modulesDestDir := path.Join(tfDir, "..", "..", "modules")
+	require.NoError(t, os.Mkdir(modulesDestDir, 0o755))
+	require.NoError(t,
+		files.CopyFolderContents(
+			path.Join(testRoot, "modules"),
+			modulesDestDir,
+		))
+
+	return modulesDestDir
+}
+
+func copyChartDir(t *testing.T, tfDir string) string {
+	t.Helper()
+	chartDestDir := path.Join(tfDir, "..", "..", "chart")
+	require.NoError(t, os.Mkdir(chartDestDir, 0o755))
+	require.NoError(t,
+		files.CopyFolderContents(
+			path.Join(testRoot, "..", "..", "chart"),
+			chartDestDir,
+		))
+	return chartDestDir
+}
+
+func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) *appsv1.Deployment {
+	t.Helper()
+	depObj := &appsv1.Deployment{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: key.Namespace,
+			Name:      key.Name,
+			Labels: map[string]string{
+				"test": key.Name,
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &v1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": key.Name,
+				},
+			},
+			Replicas: pointer.Int32(3),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: v1.ObjectMeta{
+					Labels: map[string]string{
+						"test": key.Name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  key.Name,
+							Image: "busybox:latest",
+							Command: []string{
+								"sh", "-c", "while : ; do sleep 10; done",
+							},
+						},
+					},
+					TerminationGracePeriodSeconds: pointer.Int64(2),
+				},
+			},
+			Strategy: appsv1.DeploymentStrategy{
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxUnavailable: &intstr.IntOrString{
+						Type:   intstr.String,
+						StrVal: "25%",
+					},
+				},
+			},
+		},
+	}
+	require.NoError(t, client.Create(ctx, depObj), "failed to create %#v", depObj)
+
+	return depObj
 }

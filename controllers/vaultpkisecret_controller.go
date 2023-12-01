@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package controllers
 
@@ -17,10 +17,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -155,7 +155,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	resp, err := c.Write(ctx, path, o.GetIssuerAPIData())
+	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to issue certificate from Vault"
@@ -180,7 +180,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	certResp, err := vault.UnmarshalPKIIssueResponse(resp)
+	certResp, err := vault.UnmarshalPKIIssueResponse(resp.Secret())
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to unmarshal PKI response"
@@ -203,7 +203,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	data, err := vault.MarshalSecretData(resp)
+	data, err := resp.SecretK8sData()
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to marshal Vault secret data"
@@ -305,14 +305,14 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, l logr.Logg
 	return nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
 		// Add metrics for create/update/delete of the resource
-		Watches(&source.Kind{Type: &secretsv1beta1.VaultPKISecret{}},
+		Watches(&secretsv1beta1.VaultPKISecret{},
 			&handler.InstrumentedEnqueueRequestForObject{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithOptions(opts).
 		Complete(r)
 }
 
@@ -344,9 +344,9 @@ func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr
 
 	l.Info(fmt.Sprintf("Revoking certificate %q", s.Status.SerialNumber))
 
-	if _, err := c.Write(ctx, fmt.Sprintf("%s/revoke", s.Spec.Mount), map[string]interface{}{
+	if _, err := c.Write(ctx, vault.NewWriteRequest(fmt.Sprintf("%s/revoke", s.Spec.Mount), map[string]any{
 		"serial_number": s.Status.SerialNumber,
-	}); err != nil {
+	})); err != nil {
 		l.Error(err, "Failed to revoke certificate", "serial_number", s.Status.SerialNumber)
 		return err
 	}

@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
@@ -37,6 +36,7 @@ import (
 func TestVaultStaticSecret_kv(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
+	testK8sNamespace2 := testK8sNamespace + "-test"
 	testKvMountPath := consts.KVSecretTypeV1 + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
 	testVaultNamespace := ""
@@ -49,12 +49,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "vaultstaticsecret/terraform"),
-		tempDir,
-		"terraform",
-	)
-	require.Nil(t, err)
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultstaticsecret/terraform"), tempDir)
+	copyModulesDir(t, tfDir)
+	chartDestDir := copyChartDir(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
@@ -64,39 +61,42 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		ContextName: k8sConfigContext,
 		Namespace:   operatorNS,
 	}
+	// Construct the terraform options with default retryable errors to handle the most common
+	// retryable errors in terraform testing.
+	tfOptions := &terraform.Options{
+		// Set the path to the Terraform code that will be tested.
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_test_namespace":    testK8sNamespace,
+			"k8s_config_context":    k8sConfigContext,
+			"vault_kv_mount_path":   testKvMountPath,
+			"vault_kvv2_mount_path": testKvv2MountPath,
+		},
+	}
+	if entTests {
+		testVaultNamespace = "vault-tenant-" + testID
+		tfOptions.Vars["vault_enterprise"] = true
+		tfOptions.Vars["vault_test_namespace"] = testVaultNamespace
+	}
+	tfOptions = setCommonTFOptions(t, tfOptions)
+
 	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
 	if !testWithHelm {
 		// deploy the Operator with Kustomize
 		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
+	} else {
+		tfOptions.Vars["deploy_operator_via_helm"] = true
+		tfOptions.Vars["operator_helm_chart_path"] = chartDestDir
+		if operatorImageRepo != "" {
+			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
+		}
+		if operatorImageTag != "" {
+			tfOptions.Vars["operator_image_tag"] = operatorImageTag
+		}
+		tfOptions.Vars["enable_default_auth_method"] = true
+		tfOptions.Vars["enable_default_connection"] = true
+		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
 	}
-
-	// Construct the terraform options with default retryable errors to handle the most common
-	// retryable errors in terraform testing.
-	terraformOptions := &terraform.Options{
-		// Set the path to the Terraform code that will be tested.
-		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"deploy_operator_via_helm":     testWithHelm,
-			"k8s_vault_connection_address": testVaultAddress,
-			"k8s_test_namespace":           testK8sNamespace,
-			"k8s_config_context":           k8sConfigContext,
-			"vault_kv_mount_path":          testKvMountPath,
-			"vault_kvv2_mount_path":        testKvv2MountPath,
-			"operator_helm_chart_path":     chartPath,
-		},
-	}
-	if operatorImageRepo != "" {
-		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
-	}
-	if operatorImageTag != "" {
-		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
-	}
-	if entTests {
-		testVaultNamespace = "vault-tenant-" + testID
-		terraformOptions.Vars["vault_enterprise"] = true
-		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
-	}
-	terraformOptions = setCommonTFOptions(t, terraformOptions)
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -117,7 +117,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		exportKindLogs(t)
 
 		// Clean up resources with "terraform destroy" at the end of the test.
-		terraform.Destroy(t, terraformOptions)
+		terraform.Destroy(t, tfOptions)
 		assert.NoError(t, os.RemoveAll(tempDir))
 
 		// Undeploy Kustomize
@@ -127,7 +127,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
-	terraform.InitAndApply(t, terraformOptions)
+	terraform.InitAndApply(t, tfOptions)
 
 	// Set the secrets in vault to be synced to kubernetes
 	vClient := getVaultClient(t, testVaultNamespace)
@@ -136,7 +136,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultconnection-test-tenant-1",
-				Namespace: testK8sNamespace,
+				Namespace: testK8sNamespace2,
 			},
 			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
@@ -163,7 +163,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 				Namespace: testK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
-				VaultConnectionRef: "vaultconnection-test-tenant-1",
+				// This VaultAuth references a VaultConnection in its own namespace.
+				VaultConnectionRef: fmt.Sprintf("%s/vaultconnection-test-tenant-1", testK8sNamespace2),
 				Namespace:          testVaultNamespace,
 				Method:             "kubernetes",
 				Mount:              "kubernetes",
@@ -172,6 +173,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
 				},
+				AllowedNamespaces: []string{"*"},
 			},
 		},
 	}
@@ -221,7 +223,8 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					VaultAuthRef: auths[0].ObjectMeta.Name,
+					// This Secret references an Auth Method in a different namespace.
+					VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 					Namespace:    testVaultNamespace,
 					Mount:        testKvMountPath,
 					Type:         consts.KVSecretTypeV1,
@@ -247,6 +250,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 					Namespace: testK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
+					// This Secret references the default Auth Method.
 					Namespace: testVaultNamespace,
 					Mount:     testKvv2MountPath,
 					Type:      consts.KVSecretTypeV2,
@@ -380,7 +384,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			}
 
 			if obj.Spec.Destination.Create {
-				sec, _, err := helpers.GetSecret(ctx, crdClient, obj)
+				sec, _, err := helpers.GetSyncableSecret(ctx, crdClient, obj)
 				if assert.NoError(t, err) {
 					// ensure that a Secret deleted out-of-band is properly restored
 					if assert.NoError(t, crdClient.Delete(ctx, sec)) {
@@ -438,7 +442,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 								Namespace: testK8sNamespace,
 							},
 							Spec: secretsv1beta1.VaultStaticSecretSpec{
-								VaultAuthRef: auths[0].ObjectMeta.Name,
+								VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 								Namespace:    testVaultNamespace,
 								Mount:        mount,
 								Type:         kvType,
@@ -574,7 +578,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.C
 			return backoff.Permanent(fmt.Errorf("could not marshal Secret.Data, should never happen: %w", err))
 		}
 
-		validator := vault.NewHMACValidator(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
+		validator := helpers.NewHMACValidator(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
 		valid, actualMAC, err := validator.Validate(ctx, client, message, expectedMAC)
 		if err != nil {
 			return backoff.Permanent(err)

@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 terraform {
   required_providers {
@@ -13,7 +13,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.8.0"
+      version = "2.11.0"
     }
   }
 }
@@ -126,46 +126,18 @@ path "${vault_mount.pki.path}/*" {
 EOT
 }
 
-resource "helm_release" "vault-secrets-operator" {
-  count            = var.deploy_operator_via_helm ? 1 : 0
-  name             = "test"
-  namespace        = var.operator_namespace
-  create_namespace = true
-  wait             = true
-  chart            = var.operator_helm_chart_path
-
-  # Connection Configuration
-  set {
-    name  = "defaultVaultConnection.enabled"
-    value = "true"
-  }
-  set {
-    name  = "defaultVaultConnection.address"
-    value = var.k8s_vault_connection_address
-  }
-  # Auth Method Configuration
-  set {
-    name  = "defaultAuthMethod.enabled"
-    value = "true"
-  }
-  set {
-    name  = "defaultAuthMethod.namespace"
-    value = var.vault_test_namespace
-  }
-  set {
-    name  = "defaultAuthMethod.kubernetes.role"
-    value = vault_kubernetes_auth_backend_role.default.role_name
-  }
-  set {
-    name  = "defaultAuthMethod.kubernetes.tokenAudiences"
-    value = "{${vault_kubernetes_auth_backend_role.default.audience}}"
-  }
-  set {
-    name  = "controller.manager.image.repository"
-    value = var.operator_image_repo
-  }
-  set {
-    name  = "controller.manager.image.tag"
-    value = var.operator_image_tag
-  }
+module "vso-helm" {
+  count                            = var.deploy_operator_via_helm ? 1 : 0
+  source                           = "../../modules/vso-helm"
+  operator_namespace               = var.operator_namespace
+  operator_image_repo              = var.operator_image_repo
+  operator_image_tag               = var.operator_image_tag
+  enable_default_auth_method       = var.enable_default_auth_method
+  enable_default_connection        = var.enable_default_connection
+  operator_helm_chart_path         = var.operator_helm_chart_path
+  k8s_auth_default_mount           = vault_kubernetes_auth_backend_role.default.backend
+  k8s_auth_default_role            = vault_kubernetes_auth_backend_role.default.role_name
+  k8s_auth_default_token_audiences = [vault_kubernetes_auth_backend_role.default.audience]
+  k8s_vault_connection_address     = var.k8s_vault_connection_address
+  vault_test_namespace             = var.vault_test_namespace
 }
