@@ -446,7 +446,7 @@ defaultAuthMethod:
   # @type: string
   namespace: ""
   
-  # Kubernetes namespaces which are allow-listed for use with this AuthMethod.
+  # Kubernetes namespaces which are allow-listed for use with the default AuthMethod.
   # @type: array<string>
   allowedNamespaces: []
 
