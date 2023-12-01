@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"time"
@@ -201,7 +202,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// sync the secret
-	secretLease, updated, err := r.syncSecret(ctx, vClient, o)
+	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
 		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
 		return ctrl.Result{
@@ -209,7 +210,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || updated
+	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = nowFunc().Unix()
 	o.Status.LastGeneration = o.GetGeneration()
@@ -251,7 +252,7 @@ func (r *VaultDynamicSecretReconciler) isRenewableLease(secretLease *secretsv1be
 func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultStaticCredsMetaData) bool {
 	// the ldap and database engines have minimum rotation period of 5s, requiring a
 	// minimum of 1s should be okay here.
-	return meta.LastVaultRotation > 0 && (meta.RotationPeriod > 1 || meta.RotationSchedule != "")
+	return meta.LastVaultRotation > 0 && (meta.RotationPeriod >= 1 || meta.RotationSchedule != "")
 }
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (*secretsv1beta1.VaultSecretLease, bool, error) {
@@ -305,7 +306,6 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	secretLease := r.getVaultSecretLease(resp.Secret())
 	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
 		respData := resp.Data()
-
 		if v, ok := respData["last_vault_rotation"]; ok && v != nil {
 			ts, err := time.Parse(time.RFC3339Nano, v.(string))
 			if err == nil {
@@ -337,7 +337,12 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		}
 
 		if r.isStaticCreds(&o.Status.StaticCredsMetaData) {
-			macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
+			dataToMAC := maps.Clone(data)
+			for _, k := range []string{"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", "_raw"} {
+				delete(dataToMAC, k)
+			}
+
+			macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, dataToMAC)
 			if err != nil {
 				return nil, false, err
 			}
@@ -487,13 +492,15 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 // is computed from the secret's lease duration, the o.Spec.RenewalPercent, minus
 // some jitter offset.
 func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) time.Duration {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithName("computePostSyncHorizon")
 	var horizon time.Duration
 
 	secretLease := o.Status.SecretLease
 	if !o.Spec.AllowStaticCreds {
 		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
 		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
+		logger.V(consts.LogLevelDebug).Info("Leased",
+			"secretLease", secretLease, "horizon", horizon)
 	} else {
 		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
 		staticCredsMeta := o.Status.StaticCredsMetaData
@@ -509,13 +516,15 @@ func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Contex
 			)
 		} else {
 			if staticCredsMeta.TTL > 0 {
-				horizon = time.Duration(staticCredsMeta.TTL) * time.Second
+				// give Vault an extra .5 seconds to perform the rotation
+				horizon = time.Duration(staticCredsMeta.TTL)*time.Second + 500*time.Millisecond
 			} else {
 				horizon = time.Second * 1
 			}
-
-			_, jitter := computeMaxJitterWithPercent(staticCredsMinDurationForJitter, 0.5)
+			_, jitter := computeMaxJitterWithPercent(staticCredsMinDurationForJitter, 0.05)
 			horizon += time.Duration(jitter)
+			logger.V(consts.LogLevelDebug).Info("StaticCreds",
+				"staticCredsMeta", staticCredsMeta, "horizon", horizon)
 		}
 	}
 
