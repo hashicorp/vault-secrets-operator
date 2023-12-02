@@ -37,9 +37,12 @@ const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
 )
 
-// staticCredsMinDurationForJitter should be used when computing the jitter
+// staticCredsMaxDurationForJitter should be used when computing the jitter
 // duration for the static-creds rotation time horizon.
-var staticCredsMinDurationForJitter = time.Second * 3
+var (
+	staticCredsMaxDurationForJitter = time.Second * 3
+	vdsJitterFactor                 = 0.05
+)
 
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
@@ -122,6 +125,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"allowStaticCreds", o.Spec.AllowStaticCreds)
 		if !o.Spec.AllowStaticCreds {
 			if !inWindow {
+				// means that we are not in the lease renewal window.
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 					leaseID, horizon)
@@ -131,8 +135,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{RequeueAfter: horizon}, nil
 			}
 		} else if inWindow {
+			// TODO: decouple the static-creds in-window/horizon computation from lease
+			// renewal. means that we are in the rotation period.
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
-				"Not in rotation period after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
+				"In rotation period after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 				leaseID, horizon)
 			if err := r.updateStatus(ctx, o); err != nil {
 				return ctrl.Result{}, err
@@ -145,7 +151,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
-
 		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
 		return ctrl.Result{
 			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
@@ -521,7 +526,7 @@ func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Contex
 			} else {
 				horizon = time.Second * 1
 			}
-			_, jitter := computeMaxJitterWithPercent(staticCredsMinDurationForJitter, 0.05)
+			_, jitter := computeMaxJitterWithPercent(staticCredsMaxDurationForJitter, vdsJitterFactor)
 			horizon += time.Duration(jitter)
 			logger.V(consts.LogLevelDebug).Info("StaticCreds",
 				"staticCredsMeta", staticCredsMeta, "horizon", horizon)
@@ -547,8 +552,11 @@ func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
 }
 
 // computeRelativeHorizon returns the duration of the renewal window based on the
-// lease's last renewal time relative to now. Return true if the associated lease
-// is within its renewal window
+// lease's last renewal time relative to now.
+// For non-static creds, return true if the associated lease is within its
+// renewal window.
+// For static creds, return true if the VDS object is in Vault the rotation
+// window.
 func computeRelativeHorizon(o *secretsv1beta1.VaultDynamicSecret) (time.Duration, bool) {
 	ts := computeRotationTime(o)
 	now := nowFunc()
@@ -560,16 +568,20 @@ func computeRelativeHorizon(o *secretsv1beta1.VaultDynamicSecret) (time.Duration
 }
 
 // computeRelativeHorizonWithJitter returns the duration minus some random jitter
-// of the renewal window based on the lease's last renewal time relative to now.
-// Return true if the associated lease is within its renewal window. Use
-// minHorizon if it is less than computed horizon.
+// of the renewal/rotation window based on the lease's last renewal time relative
+// to now.
+// For non-static creds, return true if the associated lease is within its
+// renewal window.
+// For static creds, return true if the VDS object is in Vault the rotation
+// window.
+// Use minHorizon if it is less than computed horizon.
 func computeRelativeHorizonWithJitter(o *secretsv1beta1.VaultDynamicSecret, minHorizon time.Duration) (time.Duration, bool) {
 	horizon, inWindow := computeRelativeHorizon(o)
 	if horizon < minHorizon {
 		horizon = minHorizon
 	}
 	if o.Spec.AllowStaticCreds {
-		_, jitter := computeMaxJitterWithPercent(staticCredsMinDurationForJitter, 0.05)
+		_, jitter := computeMaxJitterWithPercent(staticCredsMaxDurationForJitter, vdsJitterFactor)
 		horizon += time.Duration(jitter)
 	} else {
 		_, jitter := computeMaxJitterWithPercent(horizon, 0.05)

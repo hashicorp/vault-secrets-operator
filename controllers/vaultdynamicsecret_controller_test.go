@@ -713,7 +713,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				},
 			},
 			wantMinHorizon: 30 * time.Second,
-			wantMaxHorizon: 30*time.Second + staticCredsMinDurationForJitter,
+			wantMaxHorizon: 30*time.Second + staticCredsMaxDurationForJitter,
 			wantInWindow:   true,
 		},
 		{
@@ -892,14 +892,8 @@ func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{}
 			got := r.computePostSyncHorizon(ctx, tt.o)
-			if tt.o.Spec.AllowStaticCreds {
-				assert.LessOrEqualf(t, tt.wantMinHorizon, got, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
-				assert.LessOrEqualf(t, got, tt.wantMaxHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
-			} else {
-				assert.LessOrEqualf(t, tt.wantMinHorizon, got, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
-				assert.GreaterOrEqualf(t, tt.wantMaxHorizon, got, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
-
-			}
+			assert.GreaterOrEqualf(t, got, tt.wantMinHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
+			assert.LessOrEqualf(t, got, tt.wantMaxHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
 		})
 	}
 }
