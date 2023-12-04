@@ -21,6 +21,8 @@ var (
 	_                      error = (*LeaseTruncatedError)(nil)
 	random                       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 	requeueDurationOnError       = time.Second * 5
+	// used by monkey patching unit tests
+	nowFunc = time.Now
 )
 
 const renewalPercentCap = 90
@@ -39,30 +41,31 @@ func (l *LeaseTruncatedError) Error() string {
 
 // computeMaxJitter with max as 10% of the duration, and jitter a random amount
 // between 0-10%
-func computeMaxJitter(duration time.Duration) (max float64, jitter uint64) {
-	return computeMaxJitterWithPercent(duration, 0.1)
+func computeMaxJitter(duration time.Duration) (maxHorizon float64, jitter uint64) {
+	return computeMaxJitterWithPercent(duration, 0.10)
 }
 
 // computeMaxJitter with max as a percentage (percent) of the duration, and
 // jitter a random amount between 0 up to percent
-func computeMaxJitterWithPercent(duration time.Duration, percent float64) (max float64, jitter uint64) {
-	max = percent * float64(duration.Nanoseconds())
-	u := uint64(max)
+func computeMaxJitterWithPercent(duration time.Duration, percent float64) (maxHorizon float64, jitter uint64) {
+	nanos := duration.Nanoseconds()
+	maxHorizon = percent * float64(nanos)
+	u := uint64(maxHorizon)
 	if u == 0 {
 		jitter = 0
 	} else {
 		jitter = uint64(random.Int63()) % u
 	}
-	return max, jitter
+	return maxHorizon, jitter
 }
 
 // computeHorizonWithJitter returns a time.Duration minus a random offset, with an
 // additional random jitter added to reduce pressure on the Reconciler.
 // based https://github.com/hashicorp/vault/blob/03d2be4cb943115af1bcddacf5b8d79f3ec7c210/api/lifetime_watcher.go#L381
 func computeHorizonWithJitter(minDuration time.Duration) time.Duration {
-	max, jitter := computeMaxJitter(minDuration)
+	maxHorizon, jitter := computeMaxJitter(minDuration)
 
-	return minDuration - (time.Duration(max) + time.Duration(jitter))
+	return minDuration - (time.Duration(maxHorizon) + time.Duration(jitter))
 }
 
 // capRenewalPercent returns a renewalPercent capped between 0 and 90
@@ -80,12 +83,12 @@ func capRenewalPercent(renewalPercent int) (rp int) {
 }
 
 // computeDynamicHorizonWithJitter returns a time.Duration that is the specified
-// percentage of the lease duration, plus additional random jitter (up to 10% of
-// the lease), to ensure the horizon falls within the specified renewal window
+// percentage of the lease duration, minus some random jitter (up to 10% of
+// leaseDuration), to ensure the horizon falls within the specified renewal window
 func computeDynamicHorizonWithJitter(leaseDuration time.Duration, renewalPercent int) time.Duration {
-	max, jitter := computeMaxJitter(leaseDuration)
+	maxHorizon, jitter := computeMaxJitter(leaseDuration)
 
-	return computeStartRenewingAt(leaseDuration, renewalPercent) + time.Duration(max) - time.Duration(jitter)
+	return computeStartRenewingAt(leaseDuration, renewalPercent) + time.Duration(maxHorizon) - time.Duration(jitter)
 }
 
 // computeStartRenewingAt returns a time.Duration that is the specified
