@@ -713,7 +713,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				},
 			},
 			wantMinHorizon: 30 * time.Second,
-			wantMaxHorizon: 30*time.Second + staticCredsMaxDurationForJitter,
+			wantMaxHorizon: 30*time.Second + staticCredsJitterHorizon,
 			wantInWindow:   true,
 		},
 		{

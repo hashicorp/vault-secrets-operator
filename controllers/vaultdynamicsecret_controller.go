@@ -37,11 +37,11 @@ const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
 )
 
-// staticCredsMaxDurationForJitter should be used when computing the jitter
+// staticCredsJitterHorizon should be used when computing the jitter
 // duration for the static-creds rotation time horizon.
 var (
-	staticCredsMaxDurationForJitter = time.Second * 3
-	vdsJitterFactor                 = 0.05
+	staticCredsJitterHorizon = time.Second * 3
+	vdsJitterFactor          = 0.05
 )
 
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
@@ -526,7 +526,7 @@ func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Contex
 			} else {
 				horizon = time.Second * 1
 			}
-			_, jitter := computeMaxJitterWithPercent(staticCredsMaxDurationForJitter, vdsJitterFactor)
+			_, jitter := computeMaxJitterWithPercent(staticCredsJitterHorizon, vdsJitterFactor)
 			horizon += time.Duration(jitter)
 			logger.V(consts.LogLevelDebug).Info("StaticCreds",
 				"staticCredsMeta", staticCredsMeta, "horizon", horizon)
@@ -581,7 +581,7 @@ func computeRelativeHorizonWithJitter(o *secretsv1beta1.VaultDynamicSecret, minH
 		horizon = minHorizon
 	}
 	if o.Spec.AllowStaticCreds {
-		_, jitter := computeMaxJitterWithPercent(staticCredsMaxDurationForJitter, vdsJitterFactor)
+		_, jitter := computeMaxJitterWithPercent(staticCredsJitterHorizon, vdsJitterFactor)
 		horizon += time.Duration(jitter)
 	} else {
 		_, jitter := computeMaxJitterWithPercent(horizon, 0.05)
