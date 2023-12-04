@@ -34,14 +34,14 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: time.Now().Unix() - 600,
+					LastRenewalTime: nowFunc().Unix() - 600,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Until(time.Unix(time.Now().Unix()-600, 0).Add(
+			expectedHorizon: time.Until(time.Unix(nowFunc().Unix()-600, 0).Add(
 				computeStartRenewingAt(time.Second*600, 67))),
 		},
 		"two thirds elapsed": {
@@ -50,15 +50,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: time.Now().Unix() - 450,
+					LastRenewalTime: nowFunc().Unix() - 450,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(time.Now().Unix()-450, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
+			expectedHorizon: time.Unix(nowFunc().Unix()-450, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
 		},
 		"one third elapsed": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -66,15 +66,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: time.Now().Unix() - 200,
+					LastRenewalTime: nowFunc().Unix() - 200,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(time.Now().Unix()-200, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
+			expectedHorizon: time.Unix(nowFunc().Unix()-200, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
 		},
 		"past end of lease": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -82,15 +82,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: time.Now().Unix() - 800,
+					LastRenewalTime: nowFunc().Unix() - 800,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(time.Now().Unix()-800, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(time.Now()),
+			expectedHorizon: time.Unix(nowFunc().Unix()-800, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
 		},
 		"renewalPercent is 0": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -98,15 +98,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: time.Now().Unix() - 400,
+					LastRenewalTime: nowFunc().Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 0,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(time.Now().Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, 0)).Sub(time.Now()),
+			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, 0)).Sub(nowFunc()),
 		},
 		"renewalPercent is cap": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -114,15 +114,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: time.Now().Unix() - 400,
+					LastRenewalTime: nowFunc().Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: renewalPercentCap,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(time.Now().Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, renewalPercentCap)).Sub(time.Now()),
+			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap)).Sub(nowFunc()),
 		},
 		"renewalPercent exceeds cap": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -130,15 +130,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: time.Now().Unix() - 400,
+					LastRenewalTime: nowFunc().Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: renewalPercentCap + 1,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(time.Now().Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, renewalPercentCap+1)).Sub(time.Now()),
+			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap+1)).Sub(nowFunc()),
 		},
 	}
 
@@ -557,18 +557,18 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 	}
 }
 
-// Test_isStaticCreds tests that we can appropriately identify if a vault
-// credential is "static" by checking the LastVaultRotation, RotationPeriod,
-// and RotationSchedule fields
-func Test_isStaticCreds(t *testing.T) {
+// TestVaultDynamicSecretReconciler_isStaticCreds tests that we can appropriately
+// identify if a vault credential is "static" by checking the LastVaultRotation,
+// RotationPeriod, and RotationSchedule fields
+func TestVaultDynamicSecretReconciler_isStaticCreds(t *testing.T) {
 	tests := []struct {
 		name     string
-		metaData v1beta1.VaultStaticCredsMetaData
+		metaData *v1beta1.VaultStaticCredsMetaData
 		want     bool
 	}{
 		{
 			name: "static-cred-with-rotation-period",
-			metaData: v1beta1.VaultStaticCredsMetaData{
+			metaData: &v1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 1695430611,
 				RotationPeriod:    300,
 			},
@@ -576,7 +576,7 @@ func Test_isStaticCreds(t *testing.T) {
 		},
 		{
 			name: "not-static-cred-with-rotation-period",
-			metaData: v1beta1.VaultStaticCredsMetaData{
+			metaData: &v1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 0,
 				RotationPeriod:    0,
 			},
@@ -584,7 +584,7 @@ func Test_isStaticCreds(t *testing.T) {
 		},
 		{
 			name: "static-cred-with-rotation-schedule",
-			metaData: v1beta1.VaultStaticCredsMetaData{
+			metaData: &v1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 1695430611,
 				RotationSchedule:  "1 0 * * *",
 			},
@@ -592,7 +592,7 @@ func Test_isStaticCreds(t *testing.T) {
 		},
 		{
 			name: "not-static-cred-with-rotation-schedule",
-			metaData: v1beta1.VaultStaticCredsMetaData{
+			metaData: &v1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 0,
 				RotationSchedule:  "",
 			},
@@ -602,25 +602,16 @@ func Test_isStaticCreds(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := &VaultDynamicSecretReconciler{
-				Client: fake.NewClientBuilder().Build(),
-			}
-
-			got := r.isStaticCreds(&tt.metaData)
-			assert.Equal(t, tt.want, got)
+			r := &VaultDynamicSecretReconciler{}
+			got := r.isStaticCreds(tt.metaData)
+			assert.Equalf(t, tt.want, got, "isStaticCreds(%v)", tt.metaData)
 		})
 	}
 }
 
-type mockRequest struct {
-	method string
-	path   string
-	params map[string]any
-}
-
 func Test_computeRotationTime(t *testing.T) {
 	// time without nanos, for ease of comparison
-	then := time.Unix(time.Now().Unix(), 0)
+	then := time.Unix(nowFunc().Unix(), 0)
 	tests := []struct {
 		name string
 		vds  *secretsv1beta1.VaultDynamicSecret
@@ -691,6 +682,218 @@ func Test_computeRotationTime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			actual := computeRotationTime(tt.vds)
 			assert.Equalf(t, tt.want, actual, "computeRotationTime(%v)", tt.vds)
+		})
+	}
+}
+
+func Test_computeRelativeHorizonWithJitter(t *testing.T) {
+	staticNow := time.Unix(nowFunc().Unix(), 0)
+	defaultNowFunc := func() time.Time { return staticNow }
+
+	tests := []struct {
+		name           string
+		o              *secretsv1beta1.VaultDynamicSecret
+		minHorizon     time.Duration
+		wantMinHorizon time.Duration
+		wantMaxHorizon time.Duration
+		wantInWindow   bool
+	}{
+		{
+			// between Vault rotations, will enqueue with a new time horizon
+			name: "static-creds-in-rotation-window-after-sync",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					AllowStaticCreds: true,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: defaultNowFunc().Unix(),
+						TTL:               30,
+					},
+				},
+			},
+			wantMinHorizon: 30 * time.Second,
+			wantMaxHorizon: 30*time.Second + staticCredsJitterHorizon,
+			wantInWindow:   true,
+		},
+		{
+			// between Vault rotations, will enqueue with a new time horizon
+			name: "static-creds-in-rotation-window-by-1s",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					AllowStaticCreds: true,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						TTL:               30,
+						LastVaultRotation: defaultNowFunc().Unix() - 29,
+					},
+				},
+			},
+			minHorizon:     1 * time.Second,
+			wantMinHorizon: 1 * time.Second,
+			wantMaxHorizon: time.Duration(1.2 * float64(time.Second)),
+			wantInWindow:   true,
+		},
+		{
+			// not in Vault rotation window, will rotate.
+			name: "static-creds-not-in-rotation-window",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					AllowStaticCreds: true,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						TTL:               30,
+						LastVaultRotation: defaultNowFunc().Unix() - 30,
+					},
+				},
+			},
+			minHorizon:     1 * time.Second,
+			wantMinHorizon: 1 * time.Second,
+			wantMaxHorizon: time.Duration(1.2 * float64(time.Second)),
+			wantInWindow:   false,
+		},
+		{
+			name: "lease-not-in-window-now",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 90,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					LastRenewalTime: defaultNowFunc().Unix(),
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 100,
+					},
+				},
+			},
+			minHorizon:     1 * time.Second,
+			wantMinHorizon: time.Duration(85.5 * float64(time.Second)),
+			wantMaxHorizon: 90 * time.Second,
+			wantInWindow:   false,
+		},
+		{
+			name: "lease-in-window",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 89,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					LastRenewalTime: defaultNowFunc().Unix() - 90,
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 100,
+					},
+				},
+			},
+			minHorizon:     1 * time.Second,
+			wantMinHorizon: time.Duration(.8 * float64(time.Second)),
+			wantMaxHorizon: time.Duration(1 * time.Second),
+			wantInWindow:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isStatic := tt.o.Status.StaticCredsMetaData.TTL > 0
+
+			nowFuncOrig := nowFunc
+			t.Cleanup(func() {
+				nowFunc = nowFuncOrig
+			})
+			nowFunc = defaultNowFunc
+			gotHorizon, gotInWindow := computeRelativeHorizonWithJitter(tt.o, tt.minHorizon)
+			assert.Equalf(t, tt.wantInWindow, gotInWindow, "computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+			if isStatic {
+				assert.LessOrEqualf(t, tt.wantMinHorizon, gotHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+				assert.GreaterOrEqualf(t, tt.wantMaxHorizon, gotHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+			} else {
+				assert.LessOrEqualf(t, gotHorizon, tt.wantMaxHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+				assert.GreaterOrEqualf(t, gotHorizon, tt.wantMinHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+			}
+		})
+	}
+}
+
+func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name           string
+		o              *secretsv1beta1.VaultDynamicSecret
+		wantMinHorizon time.Duration
+		wantMaxHorizon time.Duration
+	}{
+		{
+			name: "static-creds",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					AllowStaticCreds: true,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: nowFunc().Unix() - 30,
+						RotationPeriod:    60,
+						TTL:               30,
+					},
+				},
+			},
+			wantMinHorizon: time.Duration(30.5 * float64(time.Second)),
+			// max jitter 150000000
+			wantMaxHorizon: time.Duration(30.65 * float64(time.Second)),
+		},
+		{
+			name: "static-creds-ttl-0",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					AllowStaticCreds: true,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: nowFunc().Unix() - 30,
+						RotationPeriod:    60,
+						TTL:               0,
+					},
+				},
+			},
+			wantMinHorizon: time.Duration(1 * float64(time.Second)),
+			// max jitter 150000000
+			wantMaxHorizon: time.Duration(1.15 * float64(time.Second)),
+		},
+		{
+			name: "allowed-but-not-static-creds-response",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					AllowStaticCreds: true,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{},
+			},
+			wantMinHorizon: 0,
+			wantMaxHorizon: 0,
+		},
+		{
+			name: "leased",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 100,
+					},
+				},
+			},
+			wantMaxHorizon: time.Second * 70,
+			wantMinHorizon: time.Second * 60,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &VaultDynamicSecretReconciler{}
+			got := r.computePostSyncHorizon(ctx, tt.o)
+			assert.GreaterOrEqualf(t, got, tt.wantMinHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
+			assert.LessOrEqualf(t, got, tt.wantMaxHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
 		})
 	}
 }
