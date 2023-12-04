@@ -6,27 +6,27 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "chart.fullname" . }}-controller-manager
+  name: {{ include "vso.chart.fullname" . }}-controller-manager
   namespace: {{ .Release.Namespace }}
   labels:
-  {{- include "chart.labels" . | nindent 4 }}
-{{ include "imagePullSecrets" .}}
+  {{- include "vso.chart.labels" . | nindent 4 }}
+{{ include "vso.imagePullSecrets" .}}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "chart.fullname" . }}-controller-manager
+  name: {{ include "vso.chart.fullname" . }}-controller-manager
   namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
     app.kubernetes.io/component: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.controller.replicas }}
   selector:
     matchLabels:
       control-plane: controller-manager
-    {{- include "chart.selectorLabels" . | nindent 6 }}
+    {{- include "vso.chart.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
@@ -34,7 +34,7 @@ spec:
       {{- if  .Values.controller.extraLabels }}
         {{- toYaml .Values.controller.extraLabels | nindent 8 }}
       {{- end }}
-      {{- include "chart.selectorLabels" . | nindent 8 }}
+      {{- include "vso.chart.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
       {{- if .Values.controller.annotations }}
@@ -115,7 +115,7 @@ spec:
           name: podinfo
       securityContext:
         {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
-      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
       {{- if .Values.controller.hostAliases }}
       hostAliases:
@@ -147,10 +147,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
+  name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
   namespace: {{ .Release.Namespace }}
   labels:
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
   annotations:
     # This is what defines this resource as a hook. Without this line, the
     # job is considered part of the release.
@@ -159,9 +159,9 @@ metadata:
 spec:
   template:
     metadata:
-      name: {{ include "chart.fullname" . }}-pre-delete-controller-cleanup
+      name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
     spec:
-      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
       securityContext:
         {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
       containers:
