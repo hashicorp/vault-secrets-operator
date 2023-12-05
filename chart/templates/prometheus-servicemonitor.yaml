@@ -8,12 +8,12 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "chart.fullname" . }}-controller-manager-metrics-monitor
+  name: {{ include "vso.chart.fullname" . }}-controller-manager-metrics-monitor
   namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
     app.kubernetes.io/component: controller-manager
-    {{- include "chart.labels" . | nindent 4 }}
+    {{- include "vso.chart.labels" . | nindent 4 }}
     {{- /* update the selectors docs in values.yaml whenever the defaults below change. */ -}}
     {{- $selectors := .Values.telemetry.serviceMonitor.selectors }}
     {{- if $selectors }}

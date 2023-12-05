@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -105,7 +106,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	var doRolloutRestart bool
-	syncSecret := true
+	doSync := true
 	if o.Spec.HMACSecretData {
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
@@ -122,7 +123,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		syncSecret = !macsEqual
+		// skip the next sync if the data has not changed since the last sync, and the
+		// resource has not been updated.
+		if o.Status.LastGeneration == o.GetGeneration() {
+			doSync = !macsEqual
+		}
 
 		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
 	} else if len(o.Spec.RolloutRestartTargets) > 0 {
@@ -131,7 +136,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"targets", o.Spec.RolloutRestartTargets)
 	}
 
-	if syncSecret {
+	if doSync {
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Failed to update k8s secret: %s", err)
@@ -149,6 +154,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -158,10 +164,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
-func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
 		WithEventFilter(syncableSecretPredicate()).
+		WithOptions(opts).
 		Complete(r)
 }
 

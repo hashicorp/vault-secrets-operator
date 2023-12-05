@@ -56,6 +56,8 @@ type VaultStaticSecretSpec struct {
 
 // VaultStaticSecretStatus defines the observed state of VaultStaticSecret
 type VaultStaticSecretStatus struct {
+	// LastGeneration is the Generation of the last reconciled resource.
+	LastGeneration int64 `json:"lastGeneration"`
 	// SecretMAC used when deciding whether new Vault secret data should be synced.
 	//
 	// The controller will compare the "new" Vault secret data to this value using HMAC,
