@@ -85,6 +85,8 @@ variable "client_cache_config" {
 }
 
 variable "manager_extra_args" {
-  type    = list(string)
-  default = ["-zap-log-level=5"]
+  type = list(string)
+  default = [
+    "-zap-log-level=5"
+  ]
 }

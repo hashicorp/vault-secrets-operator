@@ -6,11 +6,11 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: {{ template "chart.fullname" . }}-test
+  name: {{ template "vso.chart.fullname" . }}-test
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ template "chart.name" . }}
-    chart: {{ template "chart.chart" . }}
+    app: {{ template "vso.chart.name" . }}
+    chart: {{ template "vso.chart.chart" . }}
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
   annotations:

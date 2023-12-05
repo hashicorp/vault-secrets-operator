@@ -13,7 +13,7 @@ metadata:
     control-plane: controller-manager
     component: controller-manager
     app.kubernetes.io/component: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
   address: {{ .Values.defaultVaultConnection.address }}
   skipTLSVerify: {{ .Values.defaultVaultConnection.skipTLSVerify }}
