@@ -182,7 +182,7 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
-	$(MAKE) sync-crds gen-api-ref-docs
+	$(MAKE) sync-crds sync-rbac gen-api-ref-docs
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -194,6 +194,10 @@ sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DI
 	@rm -rf $(CHART_CRDS_DIR)
 	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: sync-rbac
+sync-rbac: ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/rbac to CHART_ROOT/templates. Called from the manifests target.
+	./scripts/sync-rbac.sh
 
 .PHONY: gen-api-ref-docs
 gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
