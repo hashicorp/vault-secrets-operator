@@ -58,6 +58,9 @@ controller:
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
+    # toggles the use of kubeRbacProxy to control access to metrics endpoint
+    # @type: boolean
+    enabled: true
     # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
     image:
       repository: gcr.io/kubebuilder/kube-rbac-proxy

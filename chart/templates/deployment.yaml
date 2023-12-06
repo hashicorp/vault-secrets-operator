@@ -42,6 +42,7 @@ spec:
       {{- end }}
     spec:
       containers:
+      {{- if .Values.controller.kubeRbacProxy.enabled }}
       - name: kube-rbac-proxy
         args:
         - --secure-listen-address=0.0.0.0:8443
@@ -59,10 +60,13 @@ spec:
         resources: {{- toYaml .Values.controller.kubeRbacProxy.resources | nindent 10 }}
         securityContext:
           {{- toYaml .Values.controller.securityContext | nindent 10 }}
+      {{- end }}
       - name: manager
         args:
+        {{- if .Values.controller.kubeRbacProxy.enabled }}
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
+        {{- end }}
         - --leader-elect
         {{- if .Values.controller.manager.clientCache.persistenceModel }}
         - --client-cache-persistence-model={{ .Values.controller.manager.clientCache.persistenceModel }}

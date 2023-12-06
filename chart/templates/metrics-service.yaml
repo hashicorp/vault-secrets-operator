@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 */}}
 
+{{- if .Values.controller.kubeRbacProxy.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -19,3 +20,4 @@ spec:
   {{- include "vso.chart.selectorLabels" . | nindent 4 }}
   ports:
 	{{- .Values.metricsService.ports | toYaml | nindent 2 -}}
+{{- end }}

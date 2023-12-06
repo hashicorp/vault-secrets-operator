@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 */}}
 
+{{- if .Values.controller.kubeRbacProxy.enabled }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -39,3 +40,4 @@ subjects:
 - kind: ServiceAccount
   name: '{{ include "vso.chart.fullname" . }}-controller-manager'
   namespace: {{ .Release.Namespace }}
+{{- end }}
