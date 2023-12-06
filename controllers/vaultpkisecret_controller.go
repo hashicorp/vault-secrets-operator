@@ -231,21 +231,19 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		data[corev1.TLSPrivateKeyKey] = data["private_key"]
 	}
 
-	if schemaEpoch > 0 {
-		if b, err := json.Marshal(data); err == nil {
-			newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
-			if err != nil {
-				logger.Error(err, "HMAC data")
-				o.Status.Error = consts.ReasonHMACDataError
-				if err := r.updateStatus(ctx, o); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{
-					RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
-				}, nil
+	if b, err := json.Marshal(data); err == nil {
+		newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+		if err != nil {
+			logger.Error(err, "HMAC data")
+			o.Status.Error = consts.ReasonHMACDataError
+			if err := r.updateStatus(ctx, o); err != nil {
+				return ctrl.Result{}, err
 			}
-			o.Status.SecretMAC = base64.StdEncoding.EncodeToString(newMAC)
+			return ctrl.Result{
+				RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+			}, nil
 		}
+		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(newMAC)
 	}
 
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
