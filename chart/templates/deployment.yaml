@@ -147,7 +147,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "vso.chart.fullname" . | trunc 33 | trimSuffix "-" }}-pre-delete-controller-cleanup
+  name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "vso.chart.labels" . | nindent 4 }}
@@ -159,7 +159,7 @@ metadata:
 spec:
   template:
     metadata:
-      name: {{ include "vso.chart.fullname" . | trunc 33 | trimSuffix "-" }}-pre-delete-controller-cleanup
+      name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
     spec:
       serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
       securityContext:
