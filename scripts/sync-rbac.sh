@@ -52,6 +52,7 @@ kind: ${kind}
 metadata:
   name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "${metadataName}" | trunc 63 | trimSuffix "-" }}
   labels:
+    app.kubernetes.io/component: rbac
     # allow for selecting on the canonical name
     vso.hashicorp.com/role-instance: ${metadataName}
   {{- include "vso.chart.labels" . | nindent 4 }}
