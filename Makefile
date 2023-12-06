@@ -504,7 +504,7 @@ sdk-generate:
 	operator-sdk generate kustomize manifests -q
 
 .PHONY: bundle
-bundle: manifests kustomize sdk-generate set-image-ubi ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize sdk-generate set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
 	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
