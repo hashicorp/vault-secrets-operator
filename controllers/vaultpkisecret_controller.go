@@ -32,11 +32,7 @@ import (
 
 const vaultPKIFinalizer = "vaultpkisecrets.secrets.hashicorp.com/finalizer"
 
-var (
-	// used by monkey patching unit tests
-	nowFunc    = time.Now
-	minHorizon = time.Second * 1
-)
+var minHorizon = time.Second * 1
 
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {

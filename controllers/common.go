@@ -59,6 +59,13 @@ func computeMaxJitterWithPercent(duration time.Duration, percent float64) (maxHo
 	return maxHorizon, jitter
 }
 
+// computeMaxJitterDurationWithPercent with max as a percentage (percent) of the duration, and
+// jitter a random amount between 0 up to percent
+func computeMaxJitterDurationWithPercent(duration time.Duration, percent float64) (float64, time.Duration) {
+	maxDuration, jitter := computeMaxJitterWithPercent(duration, percent)
+	return maxDuration, time.Duration(jitter)
+}
+
 // computeHorizonWithJitter returns a time.Duration minus a random offset, with an
 // additional random jitter added to reduce pressure on the Reconciler.
 // based https://github.com/hashicorp/vault/blob/03d2be4cb943115af1bcddacf5b8d79f3ec7c210/api/lifetime_watcher.go#L381
