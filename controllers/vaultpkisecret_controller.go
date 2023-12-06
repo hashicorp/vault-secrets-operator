@@ -130,6 +130,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
 				r.HMACValidator, o); err == nil && !matched {
 				syncReason = consts.ReasonSecretDataDrift
+			} else if err != nil {
+				logger.Error(err, "Failed to HMAC destination secret")
 			}
 		}
 	}
