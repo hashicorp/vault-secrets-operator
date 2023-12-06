@@ -507,23 +507,24 @@ func TestVaultDynamicSecret(t *testing.T) {
 	c, err := api.NewClient(cfg)
 	assert.NoError(t, err)
 	c.SetToken(vaultToken)
-	// Check to be sure all leases have been revoked.
-	retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
-		// ensure that all leases have been revoked.
-		resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/%s", outputs.DBPath, outputs.DBRole))
-		if err != nil {
-			return "", err
-		}
-		if resp == nil {
+	if !skipCleanup {
+		// Ensure that all leases have been revoked.
+		retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
+			resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/%s", outputs.DBPath, outputs.DBRole))
+			if err != nil {
+				return "", err
+			}
+			if resp == nil {
+				return "", nil
+			}
+			keys := resp.Data["keys"].([]interface{})
+			if len(keys) > 0 {
+				// Print out the lease ids that are still found to make debugging easier.
+				return "", fmt.Errorf("leases still found: %v", keys)
+			}
 			return "", nil
-		}
-		keys := resp.Data["keys"].([]interface{})
-		if len(keys) > 0 {
-			// Print out the lease ids that are still found to make debugging easier.
-			return "", fmt.Errorf("leases still found: %v", keys)
-		}
-		return "", nil
-	})
+		})
+	}
 }
 
 func assertLastRuntimePodUID(t *testing.T,

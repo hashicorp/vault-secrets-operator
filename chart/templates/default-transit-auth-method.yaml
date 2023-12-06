@@ -7,21 +7,21 @@
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
-  name: {{ include "chart.fullname" . }}-default-transit-auth
+  name: {{ include "vso.chart.fullname" . }}-default-transit-auth
   namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
     component: controller-manager
     app.kubernetes.io/component: controller-manager
     cacheStorageEncryption: "true"
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
   vaultConnectionRef: {{ .Values.controller.manager.clientCache.storageEncryption.vaultConnectionRef }}
   namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
   method: {{ .Values.controller.manager.clientCache.storageEncryption.method }}
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
-  {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "chart.fullname" .)) -}}
-  {{- include "operator.vaultAuthMethod" (list .Values.controller.manager.clientCache.storageEncryption $kubeServiceAccount . ) }}
+  {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "vso.chart.fullname" .)) -}}
+  {{- include "vso.vaultAuthMethod" (list .Values.controller.manager.clientCache.storageEncryption $kubeServiceAccount . ) }}
   storageEncryption:
     keyName: {{ .Values.controller.manager.clientCache.storageEncryption.keyName }}
     mount: {{ .Values.controller.manager.clientCache.storageEncryption.transitMount }}
