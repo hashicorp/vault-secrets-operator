@@ -75,7 +75,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if o.GetDeletionTimestamp() == nil {
-		if _, err := r.addFinalizer(ctx, o); err != nil {
+		if err := r.addFinalizer(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
 	} else {
@@ -110,7 +110,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	case o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = consts.ReasonResourceUpdated
 	case o.Spec.Destination.Create && !destinationExists:
-		logger.Info("Destination secret does not exist, do sync")
+		logger.Info("Destination secret does not exist",
+			"create", o.Spec.Clear,
+			"destination", o.Spec.Destination.Name)
 		syncReason = consts.ReasonInexistentDestination
 	case destinationExists:
 		if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
@@ -120,7 +122,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if syncReason == "" {
-		logger.Info("Check renewal window")
+		logger.V(consts.LogLevelTrace).Info("Check renewal window")
 		horizon, inWindow := computePKIRenewalWindow(ctx, o, 0.05)
 		if !inWindow {
 			logger.Info("Not in renewal window", "horizon", horizon)
@@ -272,11 +274,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Successfully updated the secret")
-	r.recordEvent(o, reason, "Secret synced")
-
 	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
-	logger.Info("Requeue", "horizon", horizon)
+	r.recordEvent(o, reason, fmt.Sprintf("Secret synced, horizon=%s", horizon))
+	logger.Info("Successfully updated the secret", "horizon", horizon)
 	return ctrl.Result{
 		RequeueAfter: horizon,
 	}, nil
@@ -286,7 +286,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, s *secret
 	finalizerSet := controllerutil.ContainsFinalizer(s, vaultPKIFinalizer)
 	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
-	logger.V(consts.LogLevelDebug).Info("In deletion")
+	logger.V(consts.LogLevelTrace).Info("In deletion")
 	if finalizerSet {
 		logger.V(consts.LogLevelDebug).Info("Remove finalizer")
 		if controllerutil.RemoveFinalizer(s, vaultPKIFinalizer) {
@@ -306,19 +306,19 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, s *secret
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv1beta1.VaultPKISecret) (bool, error) {
+func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
 	logger := log.FromContext(ctx).WithValues("finalizer", vaultPKIFinalizer)
 	if !controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
 		controllerutil.AddFinalizer(s, vaultPKIFinalizer)
 		logger.V(consts.LogLevelDebug).Info("Adding finalizer")
 		if err := r.Client.Update(ctx, s); err != nil {
 			logger.Error(err, "Adding finalizer")
-			return false, err
+			return err
 		}
-		return true, nil
+		return nil
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Finalizer already added")
-		return false, nil
+		return nil
 	}
 }
 
@@ -391,7 +391,7 @@ func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1beta1.VaultPKISecret,
 
 func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
-	logger.V(consts.LogLevelDebug).Info("Update status called")
+	logger.V(consts.LogLevelTrace).Info("Update status called")
 	metrics.SetResourceStatus("vaultpkisecret", o, o.Status.Valid)
 	if err := r.Status().Update(ctx, o); err != nil {
 		msg := "Failed to update the resource's status"
