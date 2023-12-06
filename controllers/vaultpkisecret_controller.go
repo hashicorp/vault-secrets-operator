@@ -103,11 +103,22 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
+	// Since the status fields LastGeneration, SecretMAC, and LastRotation were added
+	// together we can use the value of LastRotation to determine if VSO is running
+	// with the expected schema. If the CRD schema has not been updated, then
+	// LastRotation will always be 0, since an update to this field's value will be
+	// dropped.
+	// Note: LastRotation will be used in the future when the PKI expiry offset
+	// can be expressed as a percentage.
+	var schemaEpoch int
+	if o.Status.LastRotation > 0 {
+		schemaEpoch = 1
+	}
 	var syncReason string
 	switch {
 	case o.Status.SerialNumber == "":
 		syncReason = consts.ReasonInitialSync
-	case o.GetGeneration() != o.Status.LastGeneration:
+	case schemaEpoch > 0 && o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = consts.ReasonResourceUpdated
 	case o.Spec.Destination.Create && !destinationExists:
 		logger.Info("Destination secret does not exist",
@@ -115,9 +126,11 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			"destination", o.Spec.Destination.Name)
 		syncReason = consts.ReasonInexistentDestination
 	case destinationExists:
-		if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
-			r.HMACValidator, o); err == nil && !matched {
-			syncReason = consts.ReasonSecretDataDrift
+		if schemaEpoch > 0 {
+			if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
+				r.HMACValidator, o); err == nil && !matched {
+				syncReason = consts.ReasonSecretDataDrift
+			}
 		}
 	}
 
@@ -218,19 +231,21 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		data[corev1.TLSPrivateKeyKey] = data["private_key"]
 	}
 
-	if b, err := json.Marshal(data); err == nil {
-		newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
-		if err != nil {
-			logger.Error(err, "HMAC data")
-			o.Status.Error = consts.ReasonHMACDataError
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
+	if schemaEpoch > 0 {
+		if b, err := json.Marshal(data); err == nil {
+			newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+			if err != nil {
+				logger.Error(err, "HMAC data")
+				o.Status.Error = consts.ReasonHMACDataError
+				if err := r.updateStatus(ctx, o); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{
+					RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+				}, nil
 			}
-			return ctrl.Result{
-				RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
-			}, nil
+			o.Status.SecretMAC = base64.StdEncoding.EncodeToString(newMAC)
 		}
-		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(newMAC)
 	}
 
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
@@ -411,7 +426,11 @@ func computePKIRenewalWindow(ctx context.Context, o *secretsv1beta1.VaultPKISecr
 	jitterPercent float64,
 ) (time.Duration, bool) {
 	logger := log.FromContext(ctx).WithValues("expiryOffset", o.Spec.ExpiryOffset)
-	lastRotation := time.Unix(o.Status.LastRotation, 0)
+	if o.Status.LastRotation > 0 {
+		// TODO: factor out lastRotation when we add support for spec.renewalPercent
+		logger = logger.WithValues("lastRotation", time.Unix(o.Status.LastRotation, 0))
+	}
+
 	offset, err := parseDurationString(o.Spec.ExpiryOffset, ".spec.expiryOffset", 0)
 	if err != nil {
 		logger.Info("Warning: tolerating invalid expiryOffset",
@@ -439,7 +458,6 @@ func computePKIRenewalWindow(ctx context.Context, o *secretsv1beta1.VaultPKISecr
 	logger.V(consts.LogLevelDebug).WithValues(
 		"expiresWhen", rotationTime, "now", now,
 		"serialNumber", o.Status.SerialNumber,
-		"lastRotation", lastRotation,
 		"horizon", horizon).Info("Computed certificate renewal window with spec.expiryOffset")
 
 	return horizon, inWindow
