@@ -11,6 +11,9 @@
 set -e -o pipefail
 
 ROOT_DIR="${0%/*}"
+# yq should be in the PATH after running 'make yq'
+export PATH="${ROOT_DIR?}/../bin:$PATH"
+
 tempdir=$(mktemp -d)
 function cleanup {
   rm -rf "${tempdir}"
@@ -36,7 +39,6 @@ function mungeIt {
   local output="$(cat ${infile})"
   local apiVersion="$(echo "${output}" | yq .apiVersion)"
   local kind="$(echo "${output}" | yq .kind)"
-  local kindLower="$(echo "${kind}" | tr A-Z a-z)"
   local metadataName="$(echo "${output}" | yq .metadata.name)"
   local rules="$(echo "${output}"| yq .rules)"
   cat <<HERE > ${outfile}

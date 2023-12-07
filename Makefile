@@ -196,7 +196,7 @@ sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DI
 	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: sync-rbac
-sync-rbac: ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/rbac to CHART_ROOT/templates. Called from the manifests target.
+sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/rbac to CHART_ROOT/templates. Called from the manifests target.
 	./scripts/sync-rbac.sh
 
 .PHONY: gen-api-ref-docs
