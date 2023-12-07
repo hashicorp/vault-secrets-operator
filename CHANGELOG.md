@@ -1,3 +1,13 @@
+## 0.4.2 (December 7th, 2023)
+
+Fix:
+* Include viewer and editor RBAC roles in the chart: [GH-501](https://github.com/hashicorp/vault-secrets-operator/pull/501)
+* Build: image/ubi: add separate target and build job for RedHat: [GH-503](https://github.com/hashicorp/vault-secrets-operator/pull/503)
+
+Dependency Updates:
+* Bump github.com/go-openapi/strfmt from 0.21.7 to 0.21.8: [GH-490](https://github.com/hashicorp/vault-secrets-operator/pull/490)
+* Bump google.golang.org/api from 0.151.0 to 0.152.0: [GH-489](https://github.com/hashicorp/vault-secrets-operator/pull/489)
+
 ## 0.4.1 (December 4th, 2023)
 
 Improvements:
