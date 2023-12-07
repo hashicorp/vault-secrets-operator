@@ -24,7 +24,7 @@ esac
 
 ROOT_DIR="${0%/*}"
 # update PATH to prefer scripts relative to this one e.g. yq
-export PATH="${ROOT_DIR}:${PATH}"
+export PATH="${ROOT_DIR}:${ROOT_DIR}/../bin:${PATH}"
 
 CHART_ROOT="${CHART_ROOT-$(readlink -f ${ROOT_DIR}/../chart)}"
 KUSTOMIZE_ROOT="${KUSTOMIZE_ROOT-$(readlink -f ${ROOT_DIR}/../config)}"
