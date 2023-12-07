@@ -6,7 +6,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-proxy-role
+  name: {{ include "vso.resourceNameWithTruncation" (dict "root" . "name" "proxy-role") }}
   labels:
     app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
@@ -27,15 +27,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-proxy-rolebinding
+  name: {{ include "vso.resourceNameWithTruncation" (dict "root" . "name" "proxy-rolebinding") }}
   labels:
     app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: '{{ include "vso.chart.fullname" . }}-proxy-role'
+  name: {{ include "vso.resourceNameWithTruncation" (dict "root" . "name" "proxy-role") }}
 subjects:
 - kind: ServiceAccount
-  name: '{{ include "vso.chart.fullname" . }}-controller-manager'
+  name: {{ include "vso.resourceNameWithTruncation" (dict "root" . "name" "controller-manager") }}
   namespace: {{ .Release.Namespace }}

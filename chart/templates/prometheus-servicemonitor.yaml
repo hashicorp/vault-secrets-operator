@@ -8,7 +8,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-controller-manager-metrics-monitor
+  name: {{ include "vso.resourceNameWithTruncation" (dict "root" . "name" "controller-manager-metrics-monitor") }}
   namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager

@@ -7,7 +7,7 @@
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-default-transit-auth
+  name: {{ include "vso.resourceNameWithTruncation" (dict "root" . "name" "default-transit-auth") }}
   namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
@@ -20,7 +20,7 @@ spec:
   namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
   method: {{ .Values.controller.manager.clientCache.storageEncryption.method }}
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
-  {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "vso.chart.fullname" .)) -}}
+  {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (include "vso.resourceNameWithTruncation" (dict "root" . "name" "controller-manager")) -}}
   {{- include "vso.vaultAuthMethod" (list .Values.controller.manager.clientCache.storageEncryption $kubeServiceAccount . ) }}
   storageEncryption:
     keyName: {{ .Values.controller.manager.clientCache.storageEncryption.keyName }}
