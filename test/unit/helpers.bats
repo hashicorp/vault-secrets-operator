@@ -8,13 +8,13 @@ load _helpers
 # These tests use test-runner.yaml to test the chart.fullname helper
 # since we need an existing template that calls the chart.fullname helper.
 
-@test "helper/chart.fullname: defaults to release-name-vault-secrets-operator-test" {
+@test "helper/chart.fullname: defaults to release-name-vault-secrets-test" {
   cd `chart_dir`
   local actual=$(helm template \
       -s templates/tests/test-runner.yaml \
       . | tee /dev/stderr |
       yq -r '.metadata.name' | tee /dev/stderr)
-  [ "${actual}" = "release-name-vault-secrets-operator-test" ]
+  [ "${actual}" = "release-name-vault-secrets-test" ]
 }
 
 @test "helper/chart.fullname: fullnameOverride overrides the name" {
@@ -27,14 +27,14 @@ load _helpers
   [ "${actual}" = "override-test" ]
 }
 
-@test "helper/chart.fullname: fullnameOverride is truncated to 63 chars" {
+@test "helper/chart.fullname: fullnameOverride is truncated to 27 chars" {
   cd `chart_dir`
   local actual=$(helm template \
       -s templates/tests/test-runner.yaml \
       --set fullnameOverride=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz \
       . | tee /dev/stderr |
       yq -r '.metadata.name' | tee /dev/stderr)
-  [ "${actual}" = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk-test" ]
+  [ "${actual}" = "abcdefghijklmnopqrstuvwxyza-test" ]
 }
 
 @test "helper/chart.fullname: fullnameOverride has trailing '-' trimmed" {

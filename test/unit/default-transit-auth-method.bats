@@ -35,7 +35,7 @@ load _helpers
         . | tee /dev/stderr)
 
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
-    [ "${actual}" = "release-name-vault-secrets-operator-controller-manager" ]
+    [ "${actual}" = "release-name-vault-secrets-controller-manager" ]
 }
 
 @test "defaultTransitAuthMethod/CR: default vaultConnectionRef is used by default" {
@@ -58,7 +58,7 @@ load _helpers
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-    [ "${actual}" = "release-name-vault-secrets-operator-default-transit-auth" ]
+    [ "${actual}" = "release-name-vault-secrets-default-transit-auth" ]
     actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
     [ "${actual}" = "default" ]
 
@@ -67,7 +67,7 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
     [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
-    [ "${actual}" = "release-name-vault-secrets-operator-controller-manager" ]
+    [ "${actual}" = "release-name-vault-secrets-controller-manager" ]
 }
 
 @test "defaultTransitAuthMethod/CR: settings can be modified for kubernetes auth method" {
@@ -122,7 +122,7 @@ load _helpers
         . | tee /dev/stderr)
 
     local actual=$(echo "$object" | yq '.metadata.name' | tee /dev/stderr)
-    [ "${actual}" = "release-name-vault-secrets-operator-default-transit-auth" ]
+    [ "${actual}" = "release-name-vault-secrets-default-transit-auth" ]
     actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
     [ "${actual}" = "default" ]
 

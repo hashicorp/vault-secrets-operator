@@ -6,7 +6,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-controller-manager
+  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "controller-manager" | trunc 63 | trimSuffix "-" }}
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "vso.chart.labels" . | nindent 4 }}
@@ -15,7 +15,7 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-controller-manager
+  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "controller-manager" | trunc 63 | trimSuffix "-" }}
   namespace: {{ .Release.Namespace }}
   labels:
     control-plane: controller-manager
@@ -115,7 +115,7 @@ spec:
           name: podinfo
       securityContext:
         {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
-      serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
+      serviceAccountName: {{ printf "%s-%s" (include "vso.chart.fullname" .) "controller-manager" | trunc 63 | trimSuffix "-" }}
       terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
       {{- if .Values.controller.hostAliases }}
       hostAliases:
@@ -147,7 +147,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
+  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "pre-delete-controller-cleanup" | trunc 63 | trimSuffix "-" }}
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "vso.chart.labels" . | nindent 4 }}
@@ -159,9 +159,9 @@ metadata:
 spec:
   template:
     metadata:
-      name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
+      name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "pre-delete-controller-cleanup" | trunc 63 | trimSuffix "-" }}
     spec:
-      serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
+      serviceAccountName: {{ printf "%s-%s" (include "vso.chart.fullname" .) "controller-manager" | trunc 63 | trimSuffix "-" }}
       securityContext:
         {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
       containers:

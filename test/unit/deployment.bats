@@ -25,6 +25,61 @@ load _helpers
 }
 
 #--------------------------------------------------------------------
+# resource names
+
+@test "controller/Deployment: resource names are correct when release name is short" {
+  cd `chart_dir`
+  local actual=$(helm template \
+      -s templates/deployment.yaml  \
+      --set fullnameOverride=foo \
+      . | tee /dev/stderr)
+
+  # ServiceAccount
+  local object=$(echo "$actual" | yq 'select(.kind == "ServiceAccount") .metadata.name' | tee /dev/stderr)
+  [ "${object}" = "foo-controller-manager" ]
+
+  # Deployment
+  object=$(echo "$actual" | yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .metadata.name' | tee /dev/stderr)
+  [ "${object}" = "foo-controller-manager" ]
+  object=$(echo "$actual" | yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .spec.template.spec.serviceAccountName' | tee /dev/stderr)
+  [ "${object}" = "foo-controller-manager" ]
+
+  # Pre-Delete Job
+  object=$(echo "$actual" | yq 'select(.kind == "Job") .metadata.name' | tee /dev/stderr)
+  [ "${object}" = "foo-pre-delete-controller-cleanup" ]
+  object=$(echo "$actual" | yq 'select(.kind == "Job") .spec.template.metadata.name' | tee /dev/stderr)
+  [ "${object}" = "foo-pre-delete-controller-cleanup" ]
+  object=$(echo "$actual" | yq 'select(.kind == "Job") .spec.template.spec.serviceAccountName' | tee /dev/stderr)
+  [ "${object}" = "foo-controller-manager" ]
+}
+
+@test "controller/Deployment: resource names are correct when release name is >30 chars" {
+  cd `chart_dir`
+  local actual=$(helm template \
+      -s templates/deployment.yaml  \
+      --set fullnameOverride=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz \
+      . | tee /dev/stderr)
+
+  # ServiceAccount
+  local object=$(echo "$actual" | yq 'select(.kind == "ServiceAccount") .metadata.name' | tee /dev/stderr)
+  [ "${object}" = "abcdefghijklmnopqrstuvwxyza-controller-manager" ]
+
+  # Deployment
+  object=$(echo "$actual" | yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .metadata.name' | tee /dev/stderr)
+  [ "${object}" = "abcdefghijklmnopqrstuvwxyza-controller-manager" ]
+  object=$(echo "$actual" | yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") .spec.template.spec.serviceAccountName' | tee /dev/stderr)
+  [ "${object}" = "abcdefghijklmnopqrstuvwxyza-controller-manager" ]
+
+  # Pre-Delete Job
+  object=$(echo "$actual" | yq 'select(.kind == "Job") .metadata.name' | tee /dev/stderr)
+  [ "${object}" = "abcdefghijklmnopqrstuvwxyza-pre-delete-controller-cleanup" ]
+  object=$(echo "$actual" | yq 'select(.kind == "Job") .spec.template.metadata.name' | tee /dev/stderr)
+  [ "${object}" = "abcdefghijklmnopqrstuvwxyza-pre-delete-controller-cleanup" ]
+  object=$(echo "$actual" | yq 'select(.kind == "Job") .spec.template.spec.serviceAccountName' | tee /dev/stderr)
+  [ "${object}" = "abcdefghijklmnopqrstuvwxyza-controller-manager" ]
+}
+
+#--------------------------------------------------------------------
 # resources
 
 @test "controller/Deployment: default resources for kubeRbacProxy" {
