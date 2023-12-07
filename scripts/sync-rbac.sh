@@ -52,7 +52,7 @@ function mungeIt {
 apiVersion: ${apiVersion}
 kind: ${kind}
 metadata:
-  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "${metadataName}" | trunc 63 | trimSuffix "-" }}
+  name: {{ include "vso.resourceNameWithTruncation" (dict "root" . "name" "${metadataName}") }}
   labels:
     app.kubernetes.io/component: rbac
     # allow for selecting on the canonical name
