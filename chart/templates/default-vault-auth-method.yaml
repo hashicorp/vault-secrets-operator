@@ -13,7 +13,7 @@ metadata:
     control-plane: controller-manager
     component: controller-manager
     app.kubernetes.io/component: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
   namespace: {{ .Values.defaultAuthMethod.namespace }}
   {{- if .Values.defaultAuthMethod.allowedNamespaces }}
@@ -22,5 +22,5 @@ spec:
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
   {{- $kubeServiceAccount := .Values.defaultAuthMethod.kubernetes.serviceAccount }}
-  {{- include "operator.vaultAuthMethod" (list .Values.defaultAuthMethod $kubeServiceAccount . ) }}
+  {{- include "vso.vaultAuthMethod" (list .Values.defaultAuthMethod $kubeServiceAccount . ) }}
 {{- end }}

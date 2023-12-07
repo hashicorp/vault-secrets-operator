@@ -1,7 +1,17 @@
-## Unreleased
+## 0.4.1 (December 4th, 2023)
 
 Improvements:
 * Manager: setting `controller.manager.maxConcurrentReconciles` now applies to all Syncable Secret controllers. The previous flag for the manager `--max-concurrent-reconciles-vds` is now deprecated and replaced by `--max-concurrent-reconciles` which applies to all controllers. [GH-483](https://github.com/hashicorp/vault-secrets-operator/pull/483)
+
+Fix:
+* Helm: prefix all helper functions with `vso` to avoid subchart name collisions: [GH-487](https://github.com/hashicorp/vault-secrets-operator/pull/487)
+* VSS: Ensure all resource updates are synced: [GH-492](https://github.com/hashicorp/vault-secrets-operator/pull/492)
+* VDS: Fix compute static-creds rotation horizon: [GH-488](https://github.com/hashicorp/vault-secrets-operator/pull/488)
+
+Dependency Updates:
+* Bump github.com/go-jose/go-jose/v3 from 3.0.0 to 3.0.1: [GH-475](https://github.com/hashicorp/vault-secrets-operator/pull/475)
+* Bump google.golang.org/api from 0.150.0 to 0.151.0: [GH-470](https://github.com/hashicorp/vault-secrets-operator/pull/470)
+* Bump k8s.io/client-go from 0.28.3 to 0.28.4: [GH-469](https://github.com/hashicorp/vault-secrets-operator/pull/469)
 
 ## 0.4.0 (November 16th, 2023)
 

@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -30,6 +31,9 @@ var (
 )
 
 func TestAPIs(t *testing.T) {
+	if os.Getenv("SKIP_TEST_SUITE") != "" {
+		t.Skip("SKIP_TEST_SUITE is set")
+	}
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Controller Suite")
 }
