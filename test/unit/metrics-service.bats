@@ -65,3 +65,24 @@ load _helpers
     [ "${actual}" = "http" ]
 }
 
+#--------------------------------------------------------------------
+# kubeRbacProxy enable
+@test "metrics/Service: created by default" {
+    cd `chart_dir`
+    local actual=$( (helm template \
+        --show-only templates/metrics-service.yaml  \
+        . || echo "---") | tee /dev/stderr |
+        yq 'length > 0' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+  }
+
+
+  @test "metrics/Service: not created if kubeRbacProxy is not enabled" {
+    cd `chart_dir`
+    local actual=$( (helm template \
+        --show-only templates/metrics-service.yaml  \
+        --set 'controller.kubeRbacProxy.enabled=false' \
+        . || echo "---") | tee /dev/stderr |
+        yq 'length > 0' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+  }

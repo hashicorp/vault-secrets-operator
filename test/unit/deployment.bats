@@ -719,3 +719,57 @@ load _helpers
   [ "${actual}" = "pdcc-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdef" ]
   [ "${#actual}" -eq 63 ]
 }
+
+#--------------------------------------------------------------------
+# kubeRbacProxy enable
+
+@test "controller/Deployment: kubeRbacProxy container is present by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy")' | tee /dev/stderr)
+
+  local actual=$(echo "$object" |
+      yq -r '. | length > 0' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: kubeRbacProxy container is not present if not enabled" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.kubeRbacProxy.enabled=false' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy")' | tee /dev/stderr)
+
+  local actual=$(echo "$object" |
+      yq -r '. | length > 0' | tee /dev/stderr)
+  [ "${actual}" = "false" ]
+}
+
+@test "controller/Deployment: Use extra manager options if kubeRbacProxy is enabled" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq -r '. | length > 1' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: Use default manager options if kubeRbacProxy is not enabled" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.kubeRbacProxy.enabled=false' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq -r '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+
+  local actual=$(echo "$object" | yq -r '.[0]' | tee /dev/stderr)
+  [ "${actual}" = "--leader-elect" ]
+}
