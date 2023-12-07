@@ -182,7 +182,7 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
-	$(MAKE) sync-crds gen-api-ref-docs
+	$(MAKE) sync-crds sync-rbac gen-api-ref-docs
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -194,6 +194,10 @@ sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DI
 	@rm -rf $(CHART_CRDS_DIR)
 	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: sync-rbac
+sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/rbac to CHART_ROOT/templates. Called from the manifests target.
+	./scripts/sync-rbac.sh
 
 .PHONY: gen-api-ref-docs
 gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
@@ -414,8 +418,8 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 	rm -rf $(TF_VAULT_STATE_DIR)
 
 .PHONY: unit-test
-unit-test: bats-parallel ## Run unit tests for the helm chart
-	PATH="$(CURDIR)/scripts:$(PATH)" bats $(BATS_PARALLEL_ARGS) -f $(BATS_TESTS_FILTER) test/unit/
+unit-test: bats-parallel yq ## Run unit tests for the helm chart
+	PATH="$(CURDIR)/bin:$(CURDIR)/scripts:$(PATH)" bats $(BATS_PARALLEL_ARGS) -f $(BATS_TESTS_FILTER) test/unit/
 
 .PHONY: port-forward
 port-forward:
@@ -504,7 +508,7 @@ sdk-generate:
 	operator-sdk generate kustomize manifests -q
 
 .PHONY: bundle
-bundle: manifests kustomize sdk-generate set-image-ubi ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize sdk-generate set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
 	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
@@ -579,6 +583,10 @@ copywrite: ## Download copywrite locally if necessary.
 	@./hack/install_copywrite.sh
 	$(eval COPYWRITE=./bin/copywrite)
 
+.PHONY: yq
+yq: ## Download yq locally if necessary.
+	@./hack/install_yq.sh
+
 .PHONY: crd-ref-docs
 CRD_REF_DOCS = ./bin/crd-ref-docs
 crd-ref-docs: ## Install crd-ref-docs locally if necessary.
@@ -641,5 +649,5 @@ ifneq (,$(shell which parallel 2>/dev/null))
 endif
 
 .PHONY: check-versions
-check-versions:
+check-versions: yq
 	VERSION=$(VERSION) KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) ./scripts/check-versions.sh
