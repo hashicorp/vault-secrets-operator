@@ -8,4 +8,5 @@ package consts
 const (
 	LogLevelWarning = 4
 	LogLevelDebug   = 5
+	LogLevelTrace   = 6
 )

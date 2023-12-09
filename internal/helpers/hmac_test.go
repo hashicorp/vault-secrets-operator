@@ -4,13 +4,39 @@
 package helpers
 
 import (
+	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
+
+var (
+	clientBuilder     = newClientBuilder()
+	defaultHMACKey    []byte
+	defaultHMACObjKey = client.ObjectKey{
+		Namespace: "vso",
+		Name:      "hmac",
+	}
+)
+
+func init() {
+	var err error
+	defaultHMACKey, err = generateHMACKey()
+	if err != nil {
+		panic(err)
+	}
+}
 
 func Test_generateHMACKey(t *testing.T) {
 	tests := []struct {
@@ -66,6 +92,495 @@ func Test_generateHMACKey(t *testing.T) {
 					assert.NotEqual(t, got, last, "generateHMACKey() generated a duplicate key")
 				}
 				last = got
+			}
+		})
+	}
+}
+
+func TestCreateHMACKeySecret(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name    string
+		objKey  client.ObjectKey
+		want    *corev1.Secret
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "success",
+			objKey: client.ObjectKey{
+				Namespace: "vso",
+				Name:      "hmac",
+			},
+			want: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "vso",
+					Name:      "hmac",
+				},
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := clientBuilder.Build()
+			got, err := CreateHMACKeySecret(ctx, c, tt.objKey)
+			if !tt.wantErr(t, err, fmt.Sprintf("CreateHMACKeySecret(%v, %v, %v)", ctx, c, tt.objKey)) {
+				return
+			}
+
+			if err != nil {
+				assert.Nil(t, got, "CreateHMACKeySecret(%v, %v, %v)", ctx, c, tt.objKey)
+				return
+			}
+
+			require.NotNil(t, got, "CreateHMACKeySecret(%v, %v, %v)", ctx, c, tt.objKey)
+			assert.Equal(t, tt.want.GetName(), got.GetName(), "CreateHMACKeySecret(%v, %v, %v)", ctx, c, tt.objKey)
+			assert.Equal(t, tt.want.GetNamespace(), got.GetNamespace(), "CreateHMACKeySecret(%v, %v, %v)", ctx, c, tt.objKey)
+			assert.NoError(t, validateKeyLength(got.Data[HMACKeyName]))
+			assert.Equal(t, got.Labels, hmacSecretLabels)
+		})
+	}
+}
+
+// handleSecretHMACTest is a subtest structure of hmacSecretTestCase
+type handleSecretHMACTest struct {
+	data    map[string][]byte
+	wantMAC []byte
+}
+
+type hmacSecretTestCase struct {
+	name               string
+	objMeta            metav1.ObjectMeta
+	validator          HMACValidator
+	want               bool
+	data               map[string][]byte
+	hmacKey            []byte
+	secretMAC          string
+	invalidObjKind     bool
+	noCreateHMACSecret bool
+	destination        secretsv1beta1.Destination
+	wantErr            assert.ErrorAssertionFunc
+	handleSecretHMAC   handleSecretHMACTest
+}
+
+func getHMACObjsMap(t *testing.T, tt hmacSecretTestCase) map[string]client.Object {
+	t.Helper()
+	m := make(map[string]client.Object)
+
+	if tt.invalidObjKind {
+		m["invalid"] = &corev1.Secret{}
+		return m
+	}
+
+	for _, objKind := range []string{"vds", "vps", "vss", "hcpvs"} {
+		d := tt.destination.DeepCopy()
+		if tt.destination.Name != "" {
+			d.Name = d.Name + "_" + objKind
+		}
+		switch objKind {
+		case "vds":
+			m[objKind] = &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: tt.objMeta,
+				Spec:       secretsv1beta1.VaultDynamicSecretSpec{Destination: *d},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretMAC: tt.secretMAC,
+				},
+			}
+		case "vps":
+			m[objKind] = &secretsv1beta1.VaultPKISecret{
+				ObjectMeta: tt.objMeta,
+				Spec: secretsv1beta1.VaultPKISecretSpec{
+					Destination: *d,
+				},
+				Status: secretsv1beta1.VaultPKISecretStatus{
+					SecretMAC: tt.secretMAC,
+				},
+			}
+		case "vss":
+			m[objKind] = &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: tt.objMeta,
+				Spec: secretsv1beta1.VaultStaticSecretSpec{
+					Destination: *d,
+				},
+				Status: secretsv1beta1.VaultStaticSecretStatus{
+					SecretMAC: tt.secretMAC,
+				},
+			}
+		case "hcpvs":
+			m[objKind] = &secretsv1beta1.HCPVaultSecretsApp{
+				ObjectMeta: tt.objMeta,
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					Destination: *d,
+				},
+				Status: secretsv1beta1.HCPVaultSecretsAppStatus{
+					SecretMAC: tt.secretMAC,
+				},
+			}
+		}
+	}
+
+	return m
+}
+
+func TestHMACDestinationSecret(t *testing.T) {
+	defaultData := map[string][]byte{
+		"foo": []byte(`baz`),
+	}
+
+	b := marshalRaw(t, defaultData)
+	defaultHMAC, err := MACMessage(defaultHMACKey, b)
+	require.NoError(t, err)
+	defaultSecretMAC := base64.StdEncoding.EncodeToString(defaultHMAC)
+	otherHMAC, err := MACMessage(defaultHMACKey, []byte(`bbb`))
+	require.NoError(t, err)
+	otherSecretMac := base64.StdEncoding.EncodeToString(otherHMAC)
+
+	objMeta := metav1.ObjectMeta{
+		Namespace: "foo",
+		Name:      "bar",
+	}
+
+	tests := []hmacSecretTestCase{
+		{
+			name:      "matched",
+			secretMAC: defaultSecretMAC,
+			objMeta:   objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			data:    defaultData,
+			wantErr: assert.NoError,
+			want:    true,
+		},
+		{
+			name:    "mismatch-empty-secretMAC",
+			objMeta: objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			data:    defaultData,
+			want:    false,
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "mismatch-secretMAC",
+			objMeta: objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			secretMAC: otherSecretMac,
+			data:      defaultData,
+			want:      false,
+			wantErr:   assert.NoError,
+		},
+		{
+			name:    "mismatch-destination-inexistent",
+			objMeta: objMeta,
+			data:    defaultData,
+			want:    false,
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "error-invalid-secretMAC",
+			objMeta: objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			secretMAC: "bbb" + defaultSecretMAC,
+			data:      defaultData,
+			want:      false,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "illegal base64 data at input byte 47", i...)
+			},
+		},
+		{
+			name:           "error-invalid-objKind",
+			invalidObjKind: true,
+			want:           false,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "unsupported object type *v1.Secret", i...)
+			},
+		},
+		{
+			name:               "error-no-HMAC-k8s-Secret",
+			noCreateHMACSecret: true,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			secretMAC: defaultSecretMAC,
+			want:      false,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if assert.EqualError(t, err, fmt.Sprintf(
+					`encountered an error getting %q: secrets "%s" not found`,
+					defaultHMACObjKey, defaultHMACObjKey.Name), i...) {
+					return assert.True(t, errors.IsNotFound(err))
+				}
+				return false
+			},
+		},
+		{
+			name: "error-invalid-HMAC-key",
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			secretMAC: defaultSecretMAC,
+			want:      false,
+			hmacKey:   []byte(`bb`),
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, `invalid key length 2`, i...)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertSecretHMAC(t, tt, clientBuilder.Build())
+		})
+	}
+}
+
+func TestHandleDestinationSecret(t *testing.T) {
+	defaultData := map[string][]byte{
+		"foo": []byte(`baz`),
+	}
+
+	newData := map[string][]byte{
+		"buz": []byte(`qux`),
+	}
+
+	b := marshalRaw(t, defaultData)
+	defaultHMAC, err := MACMessage(defaultHMACKey, b)
+	require.NoError(t, err)
+	defaultSecretMAC := base64.StdEncoding.EncodeToString(defaultHMAC)
+
+	newDataHMAC, err := MACMessage(defaultHMACKey, marshalRaw(t, newData))
+	require.NoError(t, err)
+
+	objMeta := metav1.ObjectMeta{
+		Namespace: "foo",
+		Name:      "bar",
+	}
+
+	tests := []hmacSecretTestCase{
+		{
+			name:      "matched",
+			secretMAC: defaultSecretMAC,
+			objMeta:   objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			data: defaultData,
+			handleSecretHMAC: handleSecretHMACTest{
+				data:    defaultData,
+				wantMAC: defaultHMAC,
+			},
+			wantErr: assert.NoError,
+			want:    true,
+		},
+		{
+			name:      "mis-matched-new-data",
+			secretMAC: defaultSecretMAC,
+			objMeta:   objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			data: defaultData,
+			handleSecretHMAC: handleSecretHMACTest{
+				data:    newData,
+				wantMAC: newDataHMAC,
+			},
+			wantErr: assert.NoError,
+			want:    false,
+		},
+		{
+			name:      "mis-matched-new-data",
+			secretMAC: defaultSecretMAC,
+			objMeta:   objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			data: defaultData,
+			handleSecretHMAC: handleSecretHMACTest{
+				data:    newData,
+				wantMAC: newDataHMAC,
+			},
+			wantErr: assert.NoError,
+			want:    false,
+		},
+		{
+			name:    "mismatch-empty-secretMAC",
+			objMeta: objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			handleSecretHMAC: handleSecretHMACTest{
+				data:    newData,
+				wantMAC: newDataHMAC,
+			},
+			want:    false,
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "error-invalid-secretMAC",
+			objMeta: objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			secretMAC: "bbb" + defaultSecretMAC,
+			data:      defaultData,
+			want:      false,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "illegal base64 data at input byte 47", i...)
+			},
+		},
+		{
+			name:           "error-invalid-objKind",
+			invalidObjKind: true,
+			want:           false,
+			handleSecretHMAC: handleSecretHMACTest{
+				data: defaultData,
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "unsupported object type *v1.Secret", i...)
+			},
+		},
+		{
+			name:               "error-no-HMAC-k8s-Secret",
+			noCreateHMACSecret: true,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			secretMAC: defaultSecretMAC,
+			handleSecretHMAC: handleSecretHMACTest{
+				data: defaultData,
+			},
+			want: false,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if assert.EqualError(t, err, fmt.Sprintf(
+					`encountered an error getting %q: secrets "%s" not found`,
+					defaultHMACObjKey, defaultHMACObjKey.Name), i...) {
+					return assert.True(t, errors.IsNotFound(err))
+				}
+				return false
+			},
+		},
+		{
+			name: "error-invalid-HMAC-key",
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			secretMAC: defaultSecretMAC,
+			want:      false,
+			hmacKey:   []byte(`bb`),
+			handleSecretHMAC: handleSecretHMACTest{
+				data: defaultData,
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, `invalid key length 2`, i...)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertSecretHMAC(t, tt, clientBuilder.Build())
+		})
+	}
+}
+
+// assertSecretHMAC is used to test either HandleSecretHMAC() or
+// HMACDestinationSecret().
+func assertSecretHMAC(t *testing.T, tt hmacSecretTestCase, c client.Client) {
+	t.Helper()
+
+	ctx := context.Background()
+	if !tt.noCreateHMACSecret {
+		hmacKey := tt.hmacKey
+		if len(hmacKey) == 0 {
+			hmacKey = defaultHMACKey
+		}
+		_, err := createHMACKeySecret(ctx, c, defaultHMACObjKey, hmacKey)
+		require.NoError(t, err)
+	}
+
+	for objKind, obj := range getHMACObjsMap(t, tt) {
+		t.Run(tt.name+"_"+objKind, func(t *testing.T) {
+			tt.validator = NewHMACValidator(defaultHMACObjKey)
+			if tt.destination.Name != "" {
+				name := tt.destination.Name + "_" + objKind
+				require.NoError(t, c.Create(ctx, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      name,
+						Namespace: obj.GetNamespace(),
+					},
+					Data: tt.data,
+				}))
+			}
+			if len(tt.handleSecretHMAC.data) > 0 || tt.handleSecretHMAC.wantMAC != nil {
+				got, gotMAC, err := HandleSecretHMAC(ctx, c, tt.validator, obj, tt.handleSecretHMAC.data)
+				if !tt.wantErr(t, err, fmt.Sprintf("HandleSecretHMAC(%v, %v, %v, %v)", ctx, c, tt.validator, obj)) {
+					return
+				}
+				assert.Equalf(t, tt.want, got, "HandleSecretHMAC(%v, %v, %v, %v)", ctx, c, tt.validator, obj)
+				assert.Equalf(t, tt.handleSecretHMAC.wantMAC, gotMAC, "HandleSecretHMAC(%v, %v, %v, %v)", ctx, c, tt.validator, obj)
+			} else {
+				got, err := HMACDestinationSecret(ctx, c, tt.validator, obj)
+				if !tt.wantErr(t, err, fmt.Sprintf("HMACDestinationSecret(%v, %v, %v, %v)", ctx, c, tt.validator, obj)) {
+					return
+				}
+				assert.Equalf(t, tt.want, got, "HMACDestinationSecret(%v, %v, %v, %v)", ctx, c, tt.validator, obj)
 			}
 		})
 	}
