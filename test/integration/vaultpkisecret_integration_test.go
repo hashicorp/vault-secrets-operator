@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -102,28 +103,44 @@ func TestVaultPKISecret(t *testing.T) {
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
 	var created []ctrlclient.Object
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	// Clean up resources with "terraform destroy" at the end of the test.
 	t.Cleanup(func() {
 		exportKindLogs(t)
 
-		for _, c := range created {
-			// test that the custom resources can be deleted before tf destroy
-			// removes the k8s namespace
-			assert.Nil(t, crdClient.Delete(ctx, c))
-		}
+		if !skipCleanup {
+			for _, c := range created {
+				// test that the custom resources can be deleted before tf destroy
+				// removes the k8s namespace
+				assert.Nil(t, crdClient.Delete(ctx, c))
+			}
 
-		terraform.Destroy(t, tfOptions)
-		os.RemoveAll(tempDir)
+			terraform.Destroy(t, tfOptions)
+			os.RemoveAll(tempDir)
 
-		// Undeploy Kustomize
-		if !testWithHelm {
-			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			// Undeploy Kustomize
+			if !testWithHelm {
+				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			}
+		} else {
+			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
 	terraform.InitAndApply(t, tfOptions)
 
+	if skipCleanup {
+		// save vars to re-run terraform, useful when SKIP_CLEANUP is set.
+		b, err := json.Marshal(tfOptions.Vars)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(tfOptions.TerraformDir, "terraform.tfvars.json"), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// When we deploy the operator with Helm it will also deploy default VaultConnection/AuthMethod
 	// resources, so these are not needed. In this case, we will also clear the VaultAuthRef field of
 	// the target secret so that the controller uses the default AuthMethod.
@@ -183,7 +200,7 @@ func TestVaultPKISecret(t *testing.T) {
 					Revoke:       true,
 					Clear:        true,
 					ExpiryOffset: "1s",
-					TTL:          "30s",
+					TTL:          "10s",
 					AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 					URISans:      []string{"uri1.example.com", "uri2.example.com"},
 					IPSans:       []string{"127.1.1.1", "127.0.0.1"},
@@ -252,7 +269,7 @@ func TestVaultPKISecret(t *testing.T) {
 						Format:       "pem",
 						Revoke:       true,
 						ExpiryOffset: "1s",
-						TTL:          "30s",
+						TTL:          "10s",
 						VaultAuthRef: testVaultAuthMethodName,
 						AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 						URISans:      []string{"uri1.example.com", "uri2.example.com"},
@@ -278,7 +295,9 @@ func TestVaultPKISecret(t *testing.T) {
 					t.Parallel()
 
 					t.Cleanup(func() {
-						assert.NoError(t, crdClient.Delete(ctx, vpsObj))
+						if !skipCleanup {
+							assert.NoError(t, crdClient.Delete(ctx, vpsObj))
+						}
 					})
 					require.NoError(t, crdClient.Create(ctx, vpsObj))
 

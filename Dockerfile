@@ -101,6 +101,10 @@ USER 65532:65532
 
 ENTRYPOINT ["/vault-secrets-operator"]
 
+# Duplicate ubi release image target for RedHat registry builds
+# -------------------------------------------------------------
+FROM release-ubi as release-ubi-redhat
+
 # ===================================
 #
 #   Set default target to 'dev'.

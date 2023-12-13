@@ -7,11 +7,11 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-logr/logr v1.3.0
-	github.com/go-openapi/runtime v0.26.0
-	github.com/go-openapi/strfmt v0.21.8
+	github.com/go-openapi/runtime v0.26.2
+	github.com/go-openapi/strfmt v0.21.9
 	github.com/google/uuid v1.4.0
-	github.com/gruntwork-io/terratest v0.46.6
-	github.com/hashicorp/go-hclog v1.5.0
+	github.com/gruntwork-io/terratest v0.46.8
+	github.com/hashicorp/go-hclog v1.6.1
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.2.3-0.20230606170242-1a4b95565d57
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -20,11 +20,10 @@ require (
 	github.com/hashicorp/vault/sdk v0.10.2
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.30.0
-	github.com/operator-framework/operator-lib v0.11.1-0.20230717184314-6efbe3a22f6f
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/client_model v0.5.0
 	github.com/stretchr/testify v1.8.4
-	google.golang.org/api v0.152.0
+	google.golang.org/api v0.153.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.28.4
 	k8s.io/apimachinery v0.28.4
@@ -61,13 +60,13 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.2.4 // indirect
 	github.com/go-openapi/analysis v0.21.4 // indirect
-	github.com/go-openapi/errors v0.20.3 // indirect
-	github.com/go-openapi/jsonpointer v0.19.6 // indirect
+	github.com/go-openapi/errors v0.20.4 // indirect
+	github.com/go-openapi/jsonpointer v0.20.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/loads v0.21.2 // indirect
-	github.com/go-openapi/spec v0.20.8 // indirect
-	github.com/go-openapi/swag v0.22.3 // indirect
-	github.com/go-openapi/validate v0.22.1 // indirect
+	github.com/go-openapi/spec v0.20.11 // indirect
+	github.com/go-openapi/swag v0.22.4 // indirect
+	github.com/go-openapi/validate v0.22.3 // indirect
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -75,6 +74,7 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
+	github.com/google/pprof v0.0.0-20230510103437-eeec1cb781c3 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
@@ -134,10 +134,11 @@ require (
 	github.com/urfave/cli v1.22.2 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/zclconf/go-cty v1.9.1 // indirect
-	go.mongodb.org/mongo-driver v1.11.3 // indirect
+	go.mongodb.org/mongo-driver v1.13.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/otel v1.14.0 // indirect
-	go.opentelemetry.io/otel/trace v1.14.0 // indirect
+	go.opentelemetry.io/otel v1.17.0 // indirect
+	go.opentelemetry.io/otel/metric v1.17.0 // indirect
+	go.opentelemetry.io/otel/trace v1.17.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.25.0 // indirect
 	golang.org/x/crypto v0.15.0 // indirect

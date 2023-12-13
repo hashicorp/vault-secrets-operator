@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_dynamicHorizon(t *testing.T) {
@@ -149,6 +150,55 @@ func Test_computeStartRenewingAt(t *testing.T) {
 				computeStartRenewingAt(tt.leaseDuration, tt.renewalPercent), "computeStartRenewingAt(%v, %v)",
 				tt.leaseDuration, tt.renewalPercent,
 			)
+		})
+	}
+}
+
+func Test_isInWindow(t *testing.T) {
+	epoch := time.Now().Unix()
+	tests := []struct {
+		name  string
+		t1    time.Time
+		t2    time.Time
+		want  bool
+		equal bool
+		after bool
+	}{
+		{
+			name:  "in-window-equal",
+			t1:    time.Unix(epoch, 0),
+			t2:    time.Unix(epoch, 0),
+			equal: true,
+			want:  true,
+		},
+		{
+			name:  "in-window-after",
+			t1:    time.Unix(epoch+1, 0),
+			t2:    time.Unix(epoch, 0),
+			after: true,
+			want:  true,
+		},
+		{
+			name: "not-in-window",
+			t1:   time.Unix(epoch, 0),
+			t2:   time.Unix(epoch+1, 0),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, isInWindow(tt.t1, tt.t2), "isInWindow(%v, %v)", tt.t1, tt.t2)
+			if tt.equal && tt.after {
+				require.FailNow(t, "tt.equal and tt.after are mutually exclusive")
+			}
+
+			if tt.equal {
+				assert.Equal(t, tt.t1, tt.t2)
+			}
+
+			if tt.after {
+				assert.True(t, tt.t1.After(tt.t2))
+			}
 		})
 	}
 }

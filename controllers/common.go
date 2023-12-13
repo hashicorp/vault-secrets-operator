@@ -60,6 +60,13 @@ func computeMaxJitterWithPercent(duration time.Duration, percent float64) (maxHo
 	return maxHorizon, jitter
 }
 
+// computeMaxJitterDurationWithPercent with max as a percentage (percent) of the duration, and
+// jitter a random amount between 0 up to percent
+func computeMaxJitterDurationWithPercent(duration time.Duration, percent float64) (float64, time.Duration) {
+	maxDuration, jitter := computeMaxJitterWithPercent(duration, percent)
+	return maxDuration, time.Duration(jitter)
+}
+
 // computeHorizonWithJitter returns a time.Duration minus a random offset, with an
 // additional random jitter added to reduce pressure on the Reconciler.
 // based https://github.com/hashicorp/vault/blob/03d2be4cb943115af1bcddacf5b8d79f3ec7c210/api/lifetime_watcher.go#L381
@@ -144,7 +151,7 @@ func RemoveAllFinalizers(ctx context.Context, c client.Client, log logr.Logger) 
 }
 
 // removeFinalizers removes specific finalizers from each CR type and updates the resource if necessary.
-// Errors are ignored in this case so that we can do a best effort attempt to remove *all* finalizers, even
+// Errors are ignored in this case so that we can do the best effort attempt to remove *all* finalizers, even
 // if one or two have problems.
 func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, objs client.ObjectList) {
 	cnt := 0
@@ -210,6 +217,10 @@ func parseDurationString(duration, path string, min time.Duration) (time.Duratio
 		}
 	}
 	return d, nil
+}
+
+func isInWindow(t1, t2 time.Time) bool {
+	return t1.After(t2) || t1.Equal(t2)
 }
 
 func syncableSecretPredicate() predicate.Predicate {
