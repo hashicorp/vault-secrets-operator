@@ -591,7 +591,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateSpecRef{
+							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
 								"default": {
 									Name: "default",
 									Key:  "default",
@@ -742,7 +742,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateSpecRef{
+							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
 								"default": {
 									Source: true,
 								},
@@ -780,7 +780,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateSpecRef{
+							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
 								"default": {
 									Key: "other",
 								},
@@ -789,7 +789,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateSpecRef{
+							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
 								"default": {
 									Key: "other",
 								},
@@ -824,7 +824,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateSpecRef{
+							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
 								"default": {},
 							},
 						},
@@ -861,7 +861,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateSpecRef{
+							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
 								"default": {
 									Source: true,
 								},
@@ -870,7 +870,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "dupe",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateSpecRef{
+							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
 								"default": {
 									Source: true,
 								},

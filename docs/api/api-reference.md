@@ -249,7 +249,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `templateSpecs` _object (keys:string, values:[TemplateSpec](#templatespec))_ | TODO: add support for configuring allowed referring namespaces TemplateSpecs maps a template name to its TemplateSpec. |
+| `templateSpecs` _object (keys:string, values:[TemplateSpec](#templatespec))_ | TemplateSpecs maps a template name to its TemplateSpec. |
 | `fieldFilter` _[FieldFilter](#fieldfilter)_ | FieldFilter provides filtering of the source secret data before it is stored. Templated fields are not affected by filtering. |
 
 
@@ -270,6 +270,22 @@ _Appears in:_
 | `keyName` _string_ | KeyName to use for encrypt/decrypt operations via Vault Transit. |
 
 
+#### TemplateRefSpec
+
+
+
+TemplateRefSpec points to templating text that is stored in a SecretTransformation custom resource.
+
+_Appears in:_
+- [TransformationRef](#transformationref)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the TemplateSpec in SecretTransformationSpec.TemplateSpecs. the rendered secret data. |
+| `key` _string_ | Key to the rendered template in the Destination secret. If Key is empty, then the Key from reference spec will be used. Set this to override the Key set from the reference spec. |
+| `source` _boolean_ | Source the template when true, this spec will not be rendered to the K8s Secret data. |
+
+
 #### TemplateSpec
 
 
@@ -285,22 +301,6 @@ _Appears in:_
 | `key` _string_ | Key that the rendered Text will be stored with in the K8s Destination Secret. An empty value is allowed to be empty when Source is true. If Source is false, then a value must be provided. |
 | `source` _boolean_ | Source the template, the spec will not be rendered to the K8s Secret data. |
 | `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
-
-
-#### TemplateSpecRef
-
-
-
-TemplateSpecRef points to templating text that is stored in an external K8s resource.
-
-_Appears in:_
-- [TransformationRef](#transformationref)
-
-| Field | Description |
-| --- | --- |
-| `name` _string_ | Name of the TemplateSpec in SecretTransformationSpec.TemplateSpecs. the rendered secret data. |
-| `key` _string_ | Key to the rendered template in the Destination secret. If Key is empty, then the Key from reference spec will be used. Set this to override the Key set from the reference spec. |
-| `source` _boolean_ | Source the template when true, this spec will not be rendered to the K8s Secret data. |
 
 
 #### Transformation
@@ -332,7 +332,7 @@ _Appears in:_
 | --- | --- |
 | `namespace` _string_ | Namespace of the SecretTransformation resource. |
 | `name` _string_ | Name of the SecretTransformation resource. |
-| `templateRefSpecs` _object (keys:string, values:[TemplateSpecRef](#templatespecref))_ | TemplateRefSpecs map to a TemplateSpec found in this TransformationRef. |
+| `templateRefSpecs` _object (keys:string, values:[TemplateRefSpec](#templaterefspec))_ | TemplateRefSpecs map to a TemplateSpec found in this TransformationRef. |
 
 
 #### VaultAuth

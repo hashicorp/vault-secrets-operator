@@ -51,6 +51,32 @@ type Transformation struct {
 	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
 }
 
+// TransformationRef contains the configuration for accessing templates from an
+// SecretTransformation resource. TransformationRefs can be shared across all
+// syncable secret custom resources.
+type TransformationRef struct {
+	// Namespace of the SecretTransformation resource.
+	Namespace string `json:"namespace,omitempty"`
+	// Name of the SecretTransformation resource.
+	Name string `json:"name"`
+	// TemplateRefSpecs map to a TemplateSpec found in this TransformationRef.
+	TemplateRefSpecs map[string]TemplateRefSpec `json:"templateRefSpecs"`
+}
+
+// TemplateRefSpec points to templating text that is stored in a
+// SecretTransformation custom resource.
+type TemplateRefSpec struct {
+	// Name of the TemplateSpec in SecretTransformationSpec.TemplateSpecs.
+	// the rendered secret data.
+	Name string `json:"name"`
+	// Key to the rendered template in the Destination secret. If Key is empty, then
+	// the Key from reference spec will be used. Set this to override the Key set from
+	// the reference spec.
+	Key string `json:"key,omitempty"`
+	// Source the template when true, this spec will not be rendered to the K8s Secret data.
+	Source bool `json:"source,omitempty"`
+}
+
 // TemplateSpec provides inline templating configuration.
 type TemplateSpec struct {
 	// Key that the rendered Text will be stored with in the K8s Destination Secret.
@@ -63,32 +89,6 @@ type TemplateSpec struct {
 	// references attributes from the data structure of the source secret.
 	// Refer to https://pkg.go.dev/text/template for more information.
 	Text string `json:"text"`
-}
-
-// TemplateSpecRef points to templating text that is stored in an external K8s
-// resource.
-type TemplateSpecRef struct {
-	// Name of the TemplateSpec in SecretTransformationSpec.TemplateSpecs.
-	// the rendered secret data.
-	Name string `json:"name"`
-	// Key to the rendered template in the Destination secret. If Key is empty, then
-	// the Key from reference spec will be used. Set this to override the Key set from
-	// the reference spec.
-	Key string `json:"key,omitempty"`
-	// Source the template when true, this spec will not be rendered to the K8s Secret data.
-	Source bool `json:"source,omitempty"`
-}
-
-// TransformationRef contains the configuration for accessing templates from an
-// SecretTransformation resource. TransformationRefs can be shared across all
-// syncable secret custom resources.
-type TransformationRef struct {
-	// Namespace of the SecretTransformation resource.
-	Namespace string `json:"namespace,omitempty"`
-	// Name of the SecretTransformation resource.
-	Name string `json:"name"`
-	// TemplateRefSpecs map to a TemplateSpec found in this TransformationRef.
-	TemplateRefSpecs map[string]TemplateSpecRef `json:"templateRefSpecs"`
 }
 
 // FieldFilter can be used to filter the secret data that is stored in the K8s

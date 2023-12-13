@@ -7,16 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// SecretTransformationSpec defines the desired state of SecretTransformation
-type SecretTransformationSpec struct {
-	// TODO: add support for configuring allowed referring namespaces
-	// TemplateSpecs maps a template name to its TemplateSpec.
-	TemplateSpecs map[string]TemplateSpec `json:"templateSpecs,omitempty"`
-	// FieldFilter provides filtering of the source secret data before it is stored.
-	// Templated fields are not affected by filtering.
-	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
-}
-
 // SecretTransformationStatus defines the observed state of SecretTransformation
 type SecretTransformationStatus struct {
 	Valid bool   `json:"valid"`
@@ -33,6 +23,15 @@ type SecretTransformation struct {
 
 	Spec   SecretTransformationSpec   `json:"spec,omitempty"`
 	Status SecretTransformationStatus `json:"status,omitempty"`
+}
+
+// SecretTransformationSpec defines the desired state of SecretTransformation
+type SecretTransformationSpec struct {
+	// TemplateSpecs maps a template name to its TemplateSpec.
+	TemplateSpecs map[string]TemplateSpec `json:"templateSpecs,omitempty"`
+	// FieldFilter provides filtering of the source secret data before it is stored.
+	// Templated fields are not affected by filtering.
+	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
 }
 
 //+kubebuilder:object:root=true
