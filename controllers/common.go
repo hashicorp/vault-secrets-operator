@@ -223,6 +223,10 @@ func isInWindow(t1, t2 time.Time) bool {
 	return t1.After(t2) || t1.Equal(t2)
 }
 
+func isInWindow(t1, t2 time.Time) bool {
+	return t1.After(t2) || t1.Equal(t2)
+}
+
 func syncableSecretPredicate() predicate.Predicate {
 	return predicate.Or(
 		predicate.GenerationChangedPredicate{},
