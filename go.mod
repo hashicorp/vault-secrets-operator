@@ -10,7 +10,7 @@ require (
 	github.com/go-openapi/strfmt v0.21.9
 	github.com/google/uuid v1.4.0
 	github.com/gruntwork-io/terratest v0.46.8
-	github.com/hashicorp/go-hclog v1.6.1
+	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.2.3-0.20230606170242-1a4b95565d57
 	github.com/hashicorp/golang-lru/v2 v2.0.7
