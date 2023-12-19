@@ -1,3 +1,8 @@
+## Unreleased
+
+Fix:
+* Helm: rename and truncate the pre-delete cleanup job to 63 characters: [GH-506](https://github.com/hashicorp/vault-secrets-operator/pull/501)
+
 ## 0.4.2 (December 7th, 2023)
 
 Fix:
