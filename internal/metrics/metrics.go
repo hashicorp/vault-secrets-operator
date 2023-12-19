@@ -24,6 +24,7 @@ const (
 	OperationRestore    = "restore"
 	OperationRestoreAll = "restore_all"
 	OperationPrune      = "prune"
+	OperationDelete     = "delete"
 	OperationPurge      = "purge"
 	OperationLogin      = "login"
 	OperationRenew      = "renew"

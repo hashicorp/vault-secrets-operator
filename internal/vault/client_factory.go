@@ -218,7 +218,7 @@ func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient
 		errs = err
 		return errs
 	}
-	if entries == nil {
+	if len(entries) == 0 {
 		return nil
 	}
 
