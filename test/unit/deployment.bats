@@ -703,8 +703,8 @@ load _helpers
       . | tee /dev/stderr |
       yq 'select(.kind == "Job") | .metadata' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
-    [ "${actual}" = "pdcc-release-name-vault-secrets-operator" ]
+  local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
+  [ "${actual}" = "pdcc-release-name-vault-secrets-operator" ]
 }
 
 @test "controller/Deployment: pre-delete-controller Job name is truncated to 63 characters" {
@@ -715,6 +715,7 @@ load _helpers
       . | tee /dev/stderr |
       yq 'select(.kind == "Job") | .metadata' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
-    [ "${actual}" = "pdcc-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdef" ]
+  local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
+  [ "${actual}" = "pdcc-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdef" ]
+  [ "${#actual}" -eq 63 ]
 }
