@@ -6,7 +6,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "leader-election-role" | trunc 63 | trimSuffix "-" }}
+  name: {{ include "vso.chart.fullname" . }}-leader-election-role
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/component: controller-manager
@@ -47,7 +47,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "leader-election-rolebinding" | trunc 63 | trimSuffix "-" }}
+  name: {{ include "vso.chart.fullname" . }}-leader-election-rolebinding
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/component: controller-manager
@@ -55,8 +55,8 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "leader-election-role" | trunc 63 | trimSuffix "-" }}
+  name: '{{ include "vso.chart.fullname" . }}-leader-election-role'
 subjects:
 - kind: ServiceAccount
-  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "controller-manager" | trunc 63 | trimSuffix "-" }}
+  name: '{{ include "vso.chart.fullname" . }}-controller-manager'
   namespace: {{ .Release.Namespace }}

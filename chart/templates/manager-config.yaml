@@ -6,7 +6,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "manager-config" | trunc 63 | trimSuffix "-" }}
+  name: {{ include "vso.chart.fullname" . }}-manager-config
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/component: controller-manager
