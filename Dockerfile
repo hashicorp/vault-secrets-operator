@@ -68,12 +68,12 @@ ENTRYPOINT ["/vault-secrets-operator"]
 
 # ubi build image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3-1361.1699548032 as build-ubi
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3-1475 as build-ubi
 RUN microdnf --refresh --assumeyes upgrade ca-certificates
 
 # ubi release image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-micro:9.3-6 as release-ubi
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.3-9 as release-ubi
 
 ENV BIN_NAME=vault-secrets-operator
 ARG PRODUCT_VERSION
@@ -100,6 +100,10 @@ COPY --from=build-ubi /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/pki
 USER 65532:65532
 
 ENTRYPOINT ["/vault-secrets-operator"]
+
+# Duplicate ubi release image target for RedHat registry builds
+# -------------------------------------------------------------
+FROM release-ubi as release-ubi-redhat
 
 # ===================================
 #
