@@ -8,7 +8,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "vaultauth-editor-role" | trunc 63 | trimSuffix "-" }}
+  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "vaultauth-editor-role" }}
   labels:
     app.kubernetes.io/component: rbac
     # allow for selecting on the canonical name
