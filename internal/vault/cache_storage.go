@@ -58,6 +58,10 @@ var commonMatchingLabels = ctrlclient.MatchingLabels{
 	"app.kubernetes.io/component":  "client-cache-storage",
 }
 
+func IsStorageEntryNotFoundErr(err error) bool {
+	return apierrors.IsNotFound(err)
+}
+
 type ClientCacheStorageStoreRequest struct {
 	OwnerReferences     []metav1.OwnerReference
 	Client              Client

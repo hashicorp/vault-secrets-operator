@@ -363,11 +363,13 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	if !ok && m.storageEnabled() {
 		// try and restore from Client storage cache, if properly configured to do so.
 		restored, err := m.restoreClientFromCacheKey(ctx, client, cacheKey)
-		if err == nil {
+		if restored != nil {
 			return namespacedClient(restored)
 		}
 
-		logger.Error(err, "Failed to restore client from storage")
+		if !IsStorageEntryNotFoundErr(err) {
+			logger.Error(err, "Failed to restore client from storage")
+		}
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
