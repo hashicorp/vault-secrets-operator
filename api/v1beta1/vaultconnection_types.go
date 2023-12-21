@@ -21,7 +21,8 @@ type VaultConnectionSpec struct {
 	// CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`.
 	CACertSecretRef string `json:"caCertSecretRef,omitempty"`
 	// SkipTLSVerify for TLS connections.
-	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
+	// +kubebuilder:default=false
+	SkipTLSVerify bool `json:"skipTLSVerify"`
 }
 
 // VaultConnectionStatus defines the observed state of VaultConnection
