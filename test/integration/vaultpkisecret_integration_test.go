@@ -268,7 +268,7 @@ func TestVaultPKISecret(t *testing.T) {
 						CommonName:   fmt.Sprintf("%s.example.com", dest),
 						Format:       "pem",
 						Revoke:       true,
-						ExpiryOffset: "1s",
+						ExpiryOffset: "2s",
 						TTL:          "10s",
 						VaultAuthRef: testVaultAuthMethodName,
 						AltNames:     []string{"alt1.example.com", "alt2.example.com"},
@@ -331,6 +331,14 @@ func TestVaultPKISecret(t *testing.T) {
 
 					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
 						awaitRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
+					}
+
+					if vpsObj.Spec.Destination.Create && !t.Failed() {
+						d, err := time.ParseDuration(vpsObj.Spec.TTL)
+						if assert.NoError(t, err) {
+							assertRemediationOnDestinationDeletion(t, ctx, crdClient, vpsObj,
+								time.Millisecond*500, uint64(d.Seconds()*3))
+						}
 					}
 				})
 			}
