@@ -32,6 +32,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -61,6 +62,8 @@ var (
 	entTests           = os.Getenv("ENT_TESTS") != ""
 	// use the Helm chart to deploy the operator. The default is to use Kustomize.
 	testWithHelm = os.Getenv("TEST_WITH_HELM") != ""
+	// make tests more verbose
+	withExtraVerbosity = os.Getenv("WITH_EXTRA_VERBOSITY") != ""
 	// set in TestMain
 	clusterName       string
 	operatorImageRepo string
@@ -139,7 +142,11 @@ func setCommonTFOptions(t *testing.T, opts *terraform.Options) *terraform.Option
 	if os.Getenv("SUPPRESS_TF_OUTPUT") != "" {
 		opts.Logger = logger.Discard
 	}
-	return terraform.WithDefaultRetryableErrors(t, opts)
+
+	opts = terraform.WithDefaultRetryableErrors(t, opts)
+	opts.MaxRetries = 30
+	opts.TimeBetweenRetries = time.Millisecond * 500
+	return opts
 }
 
 func getVaultClient(t *testing.T, namespace string) *api.Client {
@@ -313,16 +320,19 @@ type authMethodsK8sOutputs struct {
 }
 
 type dynamicK8SOutputs struct {
-	NamePrefix       string `json:"name_prefix"`
-	Namespace        string `json:"namespace"`
-	K8sNamespace     string `json:"k8s_namespace"`
-	K8sConfigContext string `json:"k8s_config_context"`
-	AuthMount        string `json:"auth_mount"`
-	AuthPolicy       string `json:"auth_policy"`
-	AuthRole         string `json:"auth_role"`
-	DBRole           string `json:"db_role"`
-	DBRoleStatic     string `json:"db_role_static"`
-	DBRoleStaticUser string `json:"db_role_static_user"`
+	NamePrefix              string `json:"name_prefix"`
+	Namespace               string `json:"namespace"`
+	K8sNamespace            string `json:"k8s_namespace"`
+	K8sConfigContext        string `json:"k8s_config_context"`
+	AuthMount               string `json:"auth_mount"`
+	AuthPolicy              string `json:"auth_policy"`
+	AuthRole                string `json:"auth_role"`
+	DBRole                  string `json:"db_role"`
+	DBRoleStatic            string `json:"db_role_static"`
+	DefaultLeaseTTLSeconds  int    `json:"default_lease_ttl_seconds"`
+	DBRoleStaticUser        string `json:"db_role_static_user"`
+	StaticRotationPeriod    int    `json:"static_rotation_period"`
+	NonRenewableK8STokenTTL int    `json:"non_renewable_k8s_token_ttl"`
 	// should always be non-renewable
 	K8SSecretPath  string `json:"k8s_secret_path"`
 	K8SSecretRole  string `json:"k8s_secret_role"`
@@ -753,4 +763,67 @@ func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Clien
 	require.NoError(t, client.Create(ctx, depObj), "failed to create %#v", depObj)
 
 	return depObj
+}
+
+func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, delay time.Duration, maxTries uint64,
+) bool {
+	t.Helper()
+
+	m, err := common.NewSyncableSecretMetaData(obj)
+	if !assert.NoError(t, err, "common.NewSyncableSecretMetaData(%v)", obj) {
+		return false
+	}
+
+	objKey := ctrlclient.ObjectKey{
+		Namespace: obj.GetNamespace(),
+		Name:      m.Destination.Name,
+	}
+
+	t.Logf("assertRemediationOnDestinationDeletion() objKey=%s, delay=%s, maxTries=%d", objKey, delay, maxTries)
+	orig, err := helpers.GetSecret(ctx, client, objKey)
+	if !assert.NoErrorf(t, err,
+		"helpers.GetSecret(%v, %v, %v)", ctx, objKey, &orig) {
+		return false
+	}
+
+	if !assert.NoError(t, client.Delete(ctx, orig)) {
+		return false
+	}
+
+	return assert.NoError(t, backoff.RetryNotify(func() error {
+		got, err := helpers.GetSecret(ctx, client, objKey)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return err
+			} else {
+				return backoff.Permanent(err)
+			}
+		}
+
+		if got == nil {
+			return backoff.Permanent(fmt.Errorf(
+				"both secret and error are nil, should not be possible"))
+		}
+
+		if orig.GetUID() == got.GetUID() {
+			return fmt.Errorf("got the same secret after deletion %s", objKey)
+		}
+
+		assert.Equal(t, orig.Labels, got.Labels)
+		assert.NotEmpty(t, orig.GetUID(), "invalid Secret %v", orig)
+		assert.NotEmpty(t, got.GetUID(), "invalid Secret %v", got)
+		if !t.Failed() {
+			assert.NotEqual(t, orig.GetUID(), got.GetUID(),
+				"new Secret %v has the same UID as its predecessor %v", got, orig)
+		}
+
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(delay), maxTries),
+		func(err error, d time.Duration) {
+			if withExtraVerbosity {
+				t.Logf("assertRemediationOnDestinationDeletion() got error %v, retry delay=%s", err, d)
+			}
+		},
+	))
 }

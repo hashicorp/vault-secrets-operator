@@ -72,7 +72,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 30,
+			"vault_db_default_lease_ttl": 15,
 		},
 	}
 	if entTests {
@@ -402,7 +402,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Params: map[string]string{
 							"kubernetes_namespace": outputs.K8sNamespace,
 						},
-						RenewalPercent: 5,
+						RenewalPercent: 1,
 						Path:           "creds/" + outputs.K8SSecretRole,
 						Destination: secretsv1beta1.Destination{
 							Name:   dest,
@@ -484,17 +484,33 @@ func TestVaultDynamicSecret(t *testing.T) {
 						"expected Status.LastGeneration")
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
+
+					// for a 1s interval between tries
+					var maxRetriesForRemediation uint64
 					if vdsObjFinal.Spec.AllowStaticCreds {
 						assert.Empty(t, vdsObjFinal.Status.SecretLease.ID)
+						maxRetriesForRemediation = uint64(outputs.StaticRotationPeriod)
 					} else {
 						assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+						var ttl float64
+						if vdsObjFinal.Status.SecretLease.Renewable {
+							ttl = float64(outputs.DefaultLeaseTTLSeconds)
+						} else {
+							ttl = float64(outputs.NonRenewableK8STokenTTL)
+						}
+						maxRetriesForRemediation = uint64(ttl*.10 + (ttl * (float64(vdsObjFinal.Spec.RenewalPercent) / 100)))
 					}
 
 					assertLastRuntimePodUID(t, ctx, crdClient, operatorNS, vdsObjFinal)
 					assertDynamicSecretRotation(t, ctx, crdClient, vdsObjFinal)
 
 					if vdsObjFinal.Spec.Destination.Create && !t.Failed() {
-						assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
+						// must be called before assertDynamicSecretNewGeneration, since
+						// that function changes the destination secret's name.
+						if assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj,
+							time.Millisecond*500, maxRetriesForRemediation*3) {
+							assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
+						}
 					}
 				})
 			}
@@ -579,7 +595,7 @@ func assertDynamicSecretNewGeneration(t *testing.T,
 				}
 				return nil
 			},
-				backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10)),
+				backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 20)),
 			)
 
 			if !t.Failed() {

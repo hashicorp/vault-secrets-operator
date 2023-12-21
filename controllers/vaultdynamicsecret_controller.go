@@ -111,9 +111,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
+	if !o.Spec.Destination.Create && !destExists {
+		logger.Info("Destination secret does not exist, either create it or "+
+			"set .spec.destination.create=true", "destination", o.Spec.Destination)
+		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
+	}
+
 	// doSync indicates that the controller should perform the secret sync,
 	// skipping any lease renewals.
-	doSync := o.GetGeneration() != o.Status.LastGeneration
+	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists)
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
