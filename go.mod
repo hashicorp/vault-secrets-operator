@@ -7,7 +7,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-logr/logr v1.3.0
 	github.com/go-openapi/runtime v0.26.2
-	github.com/go-openapi/strfmt v0.21.9
+	github.com/go-openapi/strfmt v0.21.10
 	github.com/google/uuid v1.5.0
 	github.com/gruntwork-io/terratest v0.46.8
 	github.com/hashicorp/go-hclog v1.6.2
@@ -58,7 +58,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.2.4 // indirect
 	github.com/go-openapi/analysis v0.21.4 // indirect
-	github.com/go-openapi/errors v0.20.4 // indirect
+	github.com/go-openapi/errors v0.21.0 // indirect
 	github.com/go-openapi/jsonpointer v0.20.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/loads v0.21.2 // indirect
