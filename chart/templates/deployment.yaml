@@ -147,7 +147,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
+  # This name is truncated because kubernetes applies labels to the job which contain the job and pod
+  # name, and labels are limited to 63 characters. If we do not truncate the user will not have any
+  # feedback until after runtime.
+  name: {{ printf "%s-%s" "pdcc" (include "vso.chart.fullname" .) | trunc 63 | trimSuffix "-" }}
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "vso.chart.labels" . | nindent 4 }}
@@ -159,7 +162,10 @@ metadata:
 spec:
   template:
     metadata:
-      name: {{ include "vso.chart.fullname" . }}-pre-delete-controller-cleanup
+      # This name is truncated because kubernetes applies labels to the job which contain the job and pod
+      # name, and labels are limited to 63 characters. If we do not truncate the user will not have any
+      # feedback until after runtime.
+      name: {{ printf "%s-%s" "pdcc" (include "vso.chart.fullname" .) | trunc 63 | trimSuffix "-" }}
     spec:
       serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
       securityContext:

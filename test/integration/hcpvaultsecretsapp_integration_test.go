@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gruntwork-io/terratest/modules/k8s"
@@ -332,6 +333,12 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 						}
 					}
 				}
+			}
+
+			d, err := time.ParseDuration(obj.Spec.RefreshAfter)
+			if assert.NoError(t, err, "time.ParseDuration(%v)", obj.Spec.RefreshAfter) {
+				assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj,
+					time.Millisecond*500, uint64(d.Seconds()*3))
 			}
 		})
 	}

@@ -9,7 +9,7 @@ resources:
 - secrets_v1beta1_vaultauth.yaml
 - secrets_v1beta1_vaultconnection.yaml
 - secrets_v1beta1_vaultdynamicsecret.yaml
-- secrets_v1beta1_hcpsecretsapp.yaml
+- secrets_v1beta1_hcpvaultsecretsapp.yaml
 - secrets_v1beta1_hcpauth.yaml
 - secrets_v1beta1_secrettransformation.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples
