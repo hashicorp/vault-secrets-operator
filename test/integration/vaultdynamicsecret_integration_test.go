@@ -598,7 +598,7 @@ func assertDynamicSecretNewGeneration(t *testing.T,
 		return
 	}
 
-	// wait for the object ot be reconciled
+	// wait for the object to be reconciled
 	err = backoff.RetryNotify(func() error {
 		var obj secretsv1beta1.VaultDynamicSecret
 		if err := client.Get(ctx, objKey, &obj); err != nil {
