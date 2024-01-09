@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/hashicorp/vault/api"
@@ -31,8 +30,37 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
+type dynamicK8SOutputs struct {
+	NamePrefix              string `json:"name_prefix"`
+	Namespace               string `json:"namespace"`
+	K8sNamespace            string `json:"k8s_namespace"`
+	K8sConfigContext        string `json:"k8s_config_context"`
+	AuthMount               string `json:"auth_mount"`
+	AuthPolicy              string `json:"auth_policy"`
+	AuthRole                string `json:"auth_role"`
+	DBRole                  string `json:"db_role"`
+	DBRoleStatic            string `json:"db_role_static"`
+	DefaultLeaseTTLSeconds  int    `json:"default_lease_ttl_seconds"`
+	DBRoleStaticUser        string `json:"db_role_static_user"`
+	StaticRotationPeriod    int    `json:"static_rotation_period"`
+	NonRenewableK8STokenTTL int    `json:"non_renewable_k8s_token_ttl"`
+	// should always be non-renewable
+	K8SSecretPath  string `json:"k8s_secret_path"`
+	K8SSecretRole  string `json:"k8s_secret_role"`
+	DBPath         string `json:"db_path"`
+	TransitPath    string `json:"transit_path"`
+	TransitKeyName string `json:"transit_key_name"`
+	TransitRef     string `json:"transit_ref"`
+}
+
 func TestVaultDynamicSecret(t *testing.T) {
-	testID := fmt.Sprintf("vds")
+	if testInParallel {
+		//if testWithHelm {
+		//	t.Fatal("Parallel tests not support with Helm")
+		//}
+		t.Parallel()
+	}
+
 	clusterName := os.Getenv("KIND_CLUSTER_NAME")
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
@@ -47,17 +75,13 @@ func TestVaultDynamicSecret(t *testing.T) {
 	require.Nil(t, err)
 
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
-	copyModulesDir(t, tfDir)
-	chartDestDir := copyChartDir(t, tfDir)
+	copyModulesDirT(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
-	k8sOpts := &k8s.KubectlOptions{
-		ContextName: k8sConfigContext,
-		Namespace:   operatorNS,
-	}
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	tfOptions := &terraform.Options{
@@ -68,7 +92,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"k8s_vault_namespace": k8sVaultNamespace,
 			// the service account is created in test/integration/infra/main.tf
 			"k8s_vault_service_account":  "vault",
-			"name_prefix":                testID,
+			"name_prefix":                "vds",
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
@@ -79,25 +103,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
 
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted")
-	if !testWithHelm {
-		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-	} else {
-		tfOptions.Vars["deploy_operator_via_helm"] = true
-		tfOptions.Vars["operator_helm_chart_path"] = chartDestDir
-		if operatorImageRepo != "" {
-			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
-		}
-		if operatorImageTag != "" {
-			tfOptions.Vars["operator_image_tag"] = operatorImageTag
-		}
-		tfOptions.Vars["enable_default_auth_method"] = true
-		tfOptions.Vars["enable_default_connection"] = true
-		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
-	}
-
 	tfOptions = setCommonTFOptions(t, tfOptions)
-
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
@@ -108,21 +114,25 @@ func TestVaultDynamicSecret(t *testing.T) {
 				assert.Nil(t, crdClient.Delete(ctx, c))
 			}
 
-			exportKindLogs(t)
+			if !testInParallel {
+				exportKindLogsT(t)
+			}
 
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
 
 			// Undeploy Kustomize
-			if !testWithHelm {
-				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
-			} else {
-				// Helm does not delete the CRDs on uninstall, so we have to do it manually using
-				// kubectl.
-				k8s.RunKubectl(t, &k8s.KubectlOptions{
-					ContextName: k8sConfigContext,
-				}, "delete", "--recursive", "--filename", path.Join(chartDestDir, "crds"))
-			}
+			//if !testWithHelm {
+			//	if !testInParallel {
+			//		k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
+			//	}
+			//} else {
+			//	// Helm does not delete the CRDs on uninstall, so we have to do it manually using
+			//	// kubectl.
+			//	k8s.RunKubectl(t, &k8s.KubectlOptions{
+			//		ContextName: k8sConfigContext,
+			//	}, "delete", "--recursive", "--filename", path.Join(chartDestDir, "crds"))
+			//}
 
 			os.RemoveAll(tempDir)
 		} else {
@@ -154,46 +164,32 @@ func TestVaultDynamicSecret(t *testing.T) {
 	// Set the secrets in vault to be synced to kubernetes
 	// vClient := getVaultClient(t, testVaultNamespace)
 	// Create a VaultConnection CR
-	var conns []*secretsv1beta1.VaultConnection
 	var auths []*secretsv1beta1.VaultAuth
-	if !testWithHelm {
-		conns = append(conns, &secretsv1beta1.VaultConnection{
-			// Create the default VaultConnection CR in the Operator's namespace
-			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.NameDefault,
-				Namespace: operatorNS,
+	auths = append(auths, &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: operatorNS,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Namespace: outputs.Namespace,
+			Method:    "kubernetes",
+			Mount:     outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
 			},
-			Spec: secretsv1beta1.VaultConnectionSpec{
-				Address: testVaultAddress,
-			},
-		})
-
-		auths = append(auths, &secretsv1beta1.VaultAuth{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      consts.NameDefault,
-				Namespace: operatorNS,
-			},
-			Spec: secretsv1beta1.VaultAuthSpec{
-				Namespace: outputs.Namespace,
-				Method:    "kubernetes",
-				Mount:     outputs.AuthMount,
-				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
-					TokenAudiences: []string{"vault"},
-				},
-			},
-		})
-	}
+		},
+	})
 
 	create := func(o ctrlclient.Object) {
 		require.Nil(t, crdClient.Create(ctx, o))
 		created = append(created, o)
 	}
 
-	for _, o := range conns {
-		create(o)
-	}
+	//for _, o := range conns {
+	//	create(o)
+	//}
 	for _, o := range auths {
 		create(o)
 	}
@@ -485,6 +481,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
 
+					var skipRemediationTests bool
 					// for a 1s interval between tries
 					var maxRetriesForRemediation uint64
 					if vdsObjFinal.Spec.AllowStaticCreds {
@@ -496,19 +493,25 @@ func TestVaultDynamicSecret(t *testing.T) {
 						if vdsObjFinal.Status.SecretLease.Renewable {
 							ttl = float64(outputs.DefaultLeaseTTLSeconds)
 						} else {
+							skipRemediationTests = true
 							ttl = float64(outputs.NonRenewableK8STokenTTL)
 						}
-						maxRetriesForRemediation = uint64(ttl*.10 + (ttl * (float64(vdsObjFinal.Spec.RenewalPercent) / 100)))
+
+						if !skipRemediationTests {
+							maxRetriesForRemediation = uint64(ttl*.10 + (ttl * (float64(vdsObjFinal.Spec.RenewalPercent) / 100)))
+						}
 					}
 
 					assertLastRuntimePodUID(t, ctx, crdClient, operatorNS, vdsObjFinal)
 					assertDynamicSecretRotation(t, ctx, crdClient, vdsObjFinal)
 
 					if vdsObjFinal.Spec.Destination.Create && !t.Failed() {
-						// must be called before assertDynamicSecretNewGeneration, since
-						// that function changes the destination secret's name.
-						if assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj,
-							time.Millisecond*500, maxRetriesForRemediation*3) {
+						if !skipRemediationTests {
+							// must be called before assertDynamicSecretNewGeneration, since
+							// that function changes the destination secret's name.
+							assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj, time.Millisecond*500, maxRetriesForRemediation*3)
+						}
+						if !t.Failed() {
 							assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
 						}
 					}

@@ -38,6 +38,8 @@ TESTARGS ?= -test.v -count=$(TESTCOUNT)
 # Run integration tests against a Helm installed Operator
 TEST_WITH_HELM ?=
 
+INTEGRATION_TESTS_PARALLEL ?=
+
 # Suppress the output from terraform when running the integration tests.
 SUPPRESS_TF_OUTPUT ?=
 # Skip the integration test cleanup.
@@ -308,6 +310,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
+	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm

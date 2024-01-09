@@ -23,6 +23,6 @@ locals {
   k8s_secret_role     = "k8s-secret"
 
   # transit locals
-  operator_service_account_name = "${local.name_prefix}-operator"
-  operator_namespace            = var.deploy_operator_via_helm ? one(module.vso-helm[*].operator_namespace) : one(data.kubernetes_namespace.operator[*].metadata[0].name)
+  #operator_service_account_name = "${local.name_prefix}-operator"
+  #operator_namespace            = var.deploy_operator_via_helm ? one(module.vso-helm[*].operator_namespace) : one(data.kubernetes_namespace.operator[*].metadata[0].name)
 }
