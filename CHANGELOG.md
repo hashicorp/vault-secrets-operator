@@ -10,7 +10,6 @@ Fix:
 * VPS: Sync on any update: [GH-479](https://github.com/hashicorp/vault-secrets-operator/pull/479)
 
 Dependency Updates:
-
 * update go version to fix CVE-2023-45284,CVE-2023-39326,CVE-2023-48795: [GH-541](https://github.com/hashicorp/vault-secrets-operator/pull/541)
 * Bump google.golang.org/api from 0.154.0 to 0.155.0: [GH-542](https://github.com/hashicorp/vault-secrets-operator/pull/542)
 * Bump github.com/prometheus/client_golang from 1.17.0 to 1.18.0: [GH-540](https://github.com/hashicorp/vault-secrets-operator/pull/540)
