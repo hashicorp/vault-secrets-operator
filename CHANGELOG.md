@@ -1,7 +1,32 @@
-## Unreleased
+## 0.4.3 (January 10th, 2024)
 
 Fix:
-* Helm: rename and truncate the pre-delete cleanup job to 63 characters: [GH-506](https://github.com/hashicorp/vault-secrets-operator/pull/501)
+* Helm: rename and truncate the pre-delete cleanup job to 63 characters: [GH-506](https://github.com/hashicorp/vault-secrets-operator/pull/506)
+* VDS: remediate deleted destination secret: [GH-532](https://github.com/hashicorp/vault-secrets-operator/pull/532)
+* Update paused deployment error message: [GH-528](https://github.com/hashicorp/vault-secrets-operator/pull/528)
+* VC: provide default value for spec.skipTLSVerify: [GH-527](https://github.com/hashicorp/vault-secrets-operator/pull/527)
+* CCS: ensure invalid storage objects are deleted: [GH-525](https://github.com/hashicorp/vault-secrets-operator/pull/525)
+* VDS: Log and record Vault request failures: [GH-508](https://github.com/hashicorp/vault-secrets-operator/pull/508)
+* VPS: Sync on any update: [GH-479](https://github.com/hashicorp/vault-secrets-operator/pull/479)
+
+Dependency Updates:
+* update go version to fix CVE-2023-45284,CVE-2023-39326,CVE-2023-48795: [GH-541](https://github.com/hashicorp/vault-secrets-operator/pull/541)
+* Bump google.golang.org/api from 0.154.0 to 0.155.0: [GH-542](https://github.com/hashicorp/vault-secrets-operator/pull/542)
+* Bump github.com/prometheus/client_golang from 1.17.0 to 1.18.0: [GH-540](https://github.com/hashicorp/vault-secrets-operator/pull/540)
+* Bump github.com/go-openapi/strfmt from 0.21.9 to 0.22.0: [GH-539](https://github.com/hashicorp/vault-secrets-operator/pull/539)
+* Bump github.com/go-logr/logr from 1.3.0 to 1.4.1: [GH-536](https://github.com/hashicorp/vault-secrets-operator/pull/536)
+* Bump golang.org/x/crypto from 0.16.0 to 0.17.0: [GH-524](https://github.com/hashicorp/vault-secrets-operator/pull/524)
+* Bump k8s.io/client-go from 0.28.4 to 0.29.0: [GH-523](https://github.com/hashicorp/vault-secrets-operator/pull/523)
+* Bump google.golang.org/api from 0.153.0 to 0.154.0: [GH-522](https://github.com/hashicorp/vault-secrets-operator/pull/522)
+* Bump github.com/hashicorp/go-hclog from 1.6.1 to 1.6.2: [GH-521](https://github.com/hashicorp/vault-secrets-operator/pull/521)
+* Bump github.com/google/uuid from 1.4.0 to 1.5.0: [GH-520](https://github.com/hashicorp/vault-secrets-operator/pull/520)
+* Bump ubi9/ubi-minimal from 9.3-1361.1699548032 to 9.3-1475: [GH-516](https://github.com/hashicorp/vault-secrets-operator/pull/516)
+* Bump ubi9/ubi-micro from 9.3-6 to 9.3-9: [GH-515](https://github.com/hashicorp/vault-secrets-operator/pull/515)
+* Bump github.com/go-openapi/strfmt from 0.21.8 to 0.21.9: [GH-514](https://github.com/hashicorp/vault-secrets-operator/pull/514)
+* Bump github.com/hashicorp/go-hclog from 1.5.0 to 1.6.1: [GH-513](https://github.com/hashicorp/vault-secrets-operator/pull/513)
+* Bump github.com/go-openapi/runtime from 0.26.0 to 0.26.2: [GH-512](https://github.com/hashicorp/vault-secrets-operator/pull/512)
+* Bump github.com/gruntwork-io/terratest from 0.46.6 to 0.46.8: [GH-497](https://github.com/hashicorp/vault-secrets-operator/pull/497)
+* Bump google.golang.org/api from 0.152.0 to 0.153.0: [GH-496](https://github.com/hashicorp/vault-secrets-operator/pull/496)
 
 ## 0.4.2 (December 7th, 2023)
 
