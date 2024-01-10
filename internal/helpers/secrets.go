@@ -396,7 +396,7 @@ func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *Sec
 		}
 	}
 
-	return makeK8sData(d, data, raw, &opt.FieldFilter)
+	return makeK8sData(d, data, raw, opt)
 }
 
 func marshalJSON(value any) ([]byte, error) {
@@ -463,7 +463,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 		}
 	}
 
-	return makeK8sData(secrets, data, raw, &opt.FieldFilter)
+	return makeK8sData(secrets, data, raw, opt)
 }
 
 func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret) (map[string]any, error) {
@@ -497,25 +497,24 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret)
 // response. Any extraData will always be included in the result data. Returns a
 // SecretDataErrorContainsRaw error if either secretData or extraData contain
 // SecretDataKeyRaw .
-func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, raw []byte,
-	filter *secretsv1beta1.FieldFilter,
-) (map[string][]byte, error) {
+func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, raw []byte, opt *SecretRenderOption) (map[string][]byte, error) {
 	if _, ok := secretData[SecretDataKeyRaw]; ok {
 		return nil, SecretDataErrorContainsRaw
 	}
 
-	if _, ok := extraData[SecretDataKeyRaw]; ok {
-		return nil, SecretDataErrorContainsRaw
-	}
+	data := make(map[string][]byte)
+	if !opt.ExcludeRaw {
+		if _, ok := extraData[SecretDataKeyRaw]; ok {
+			return nil, SecretDataErrorContainsRaw
+		}
 
-	data := map[string][]byte{
-		SecretDataKeyRaw: raw,
+		data[SecretDataKeyRaw] = raw
 	}
 	for k, v := range extraData {
 		data[k] = v
 	}
 
-	filtered, err := filterFields(filter, secretData)
+	filtered, err := filterFields(&opt.FieldFilter, secretData)
 	if err != nil {
 		return nil, err
 	}

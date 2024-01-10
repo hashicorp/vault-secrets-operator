@@ -49,6 +49,9 @@ type Transformation struct {
 	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
 	// TransformationRefs contain references to template configuration from SecretTransformation
 	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
+	// ExcludeRaw data from the destination Secret.
+	// +kubebuilder:default=false
+	ExcludeRaw bool `json:"excludeRaw"`
 }
 
 // TransformationRef contains the configuration for accessing templates from an

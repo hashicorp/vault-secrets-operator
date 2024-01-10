@@ -34,6 +34,7 @@ type SecretRenderOption struct {
 	Specs       map[string]secretsv1beta1.TemplateSpec
 	Annotations map[string]string
 	Labels      map[string]string
+	ExcludeRaw  bool
 }
 
 func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
