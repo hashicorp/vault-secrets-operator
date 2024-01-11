@@ -17,6 +17,11 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/template"
 )
 
+// RenderOptionExcludeRaw sets the global sync option for controlling the exclusion
+// of _raw from the destination secret.
+// This is usually set from main via the command line arg --global-rendering-options
+var RenderOptionExcludeRaw bool
+
 var regexCache *lru.Cache[string, *regexp.Regexp]
 
 func init() {
@@ -51,6 +56,7 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 	}
 
 	return &SecretRenderOption{
+		ExcludeRaw:  RenderOptionExcludeRaw || meta.Destination.Transformation.ExcludeRaw,
 		FieldFilter: meta.Destination.Transformation.FieldFilter,
 		Specs:       specs,
 		Annotations: obj.GetAnnotations(),

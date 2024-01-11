@@ -317,7 +317,7 @@ _Appears in:_
 | `templateSpecs` _object (keys:string, values:[TemplateSpec](#templatespec))_ | TemplateSpecs map a template name to a TemplateSpec. |
 | `fieldFilter` _[FieldFilter](#fieldfilter)_ | FieldFilter provides filtering of the source secret data before it is stored. Templated fields are not affected by filtering. |
 | `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation |
-| `excludeRaw` _boolean_ | ExcludeRaw data from the destination Secret. |
+| `excludeRaw` _boolean_ | ExcludeRaw data from the destination Secret. Exclusion policy can be set globally by including 'exclude-raw` in the '--global-rendering-options' command line flag. The global policy always takes precedence over this configuration. |
 
 
 #### TransformationRef

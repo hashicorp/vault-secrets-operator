@@ -73,6 +73,10 @@ spec:
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
+        {{- $opts := include "vso.globalRenderingOptions" . -}}
+        {{- if $opts }}
+        - --global-rendering-options={{ $opts }}
+        {{- end }}
         {{- if .Values.controller.manager.extraArgs }}
         {{- toYaml .Values.controller.manager.extraArgs | nindent 8 }}
         {{- end }}

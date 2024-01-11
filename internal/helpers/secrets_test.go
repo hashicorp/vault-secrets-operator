@@ -1112,6 +1112,53 @@ META_QUX=biff
 			},
 			wantErr: assert.NoError,
 		},
+		{
+			name: "filter-both-greedy-exclude-raw",
+			opt: &SecretRenderOption{
+				ExcludeRaw: true,
+				FieldFilter: secretsv1beta1.FieldFilter{
+					Includes: []string{
+						`.*b.*`,
+					},
+					Excludes: []string{
+						`.*z.*`,
+					},
+				},
+			},
+			data: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+				"buz": 1,
+			},
+			raw: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+				"buz": 1,
+			},
+			want: map[string][]byte{
+				"fab": []byte("biff"),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "exclude-raw",
+			opt: &SecretRenderOption{
+				ExcludeRaw: true,
+			},
+			data: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+			},
+			raw: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+			},
+			want: map[string][]byte{
+				"baz": []byte("qux"),
+				"fab": []byte("biff"),
+			},
+			wantErr: assert.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1388,6 +1435,18 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.ErrorIs(t, err, SecretDataErrorContainsRaw)
 			},
+		},
+		{
+			name: "exclude-raw",
+			resp: respValid,
+			opt: &SecretRenderOption{
+				ExcludeRaw: true,
+			},
+			want: map[string][]byte{
+				"bar": []byte("foo"),
+				"foo": []byte("qux"),
+			},
+			wantErr: assert.NoError,
 		},
 	}
 	for _, tt := range tests {

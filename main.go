@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -76,6 +77,7 @@ func main() {
 	var uninstall bool
 	var preDeleteHookTimeoutSeconds int
 	var minRefreshAfterHVSA time.Duration
+	var globalRenderingOptions string
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -100,6 +102,9 @@ func main() {
 		"Pre-delete hook timeout in seconds")
 	flag.DurationVar(&minRefreshAfterHVSA, "min-refresh-after-hvsa", time.Second*30,
 		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
+	flag.StringVar(&globalRenderingOptions, "global-rendering-options", "",
+		fmt.Sprintf("Set global rendering options as a comma delimited string. "+
+			"Valid values are: %v", []string{"exclude-raw"}))
 	opts := zap.Options{
 		Development: true,
 	}
@@ -137,6 +142,19 @@ func main() {
 		os.Exit(0)
 	}
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if globalRenderingOptions != "" {
+		for _, v := range strings.Split(globalRenderingOptions, ",") {
+			switch v {
+			case "exclude-raw":
+				helpers.RenderOptionExcludeRaw = true
+			default:
+				setupLog.Error(fmt.Errorf("unsupported rendering option %q", v),
+					"Invalid argument for --global-rendering-options")
+				os.Exit(1)
+			}
+		}
+	}
 
 	config := ctrl.GetConfigOrDie()
 
@@ -273,7 +291,8 @@ func main() {
 	// `--max-concurrent-reconciles`.
 	vdsOverrideOpts := controller.Options{}
 	if vdsOptions.MaxConcurrentReconciles != defaultVaultDynamicSecretsConcurrency {
-		setupLog.Info("The flag --max-concurrent-reconciles-vds has been deprecated, but will still be honored to set the VDS controller concurrency, please use --max-concurrent-reconciles.")
+		setupLog.Info("The flag --max-concurrent-reconciles-vds has been deprecated, but will " +
+			"still be honored to set the VDS controller concurrency, please use --max-concurrent-reconciles.")
 		vdsOverrideOpts = vdsOptions
 	} else {
 		vdsOverrideOpts = controllerOptions

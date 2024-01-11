@@ -49,7 +49,10 @@ type Transformation struct {
 	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
 	// TransformationRefs contain references to template configuration from SecretTransformation
 	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
-	// ExcludeRaw data from the destination Secret.
+	// ExcludeRaw data from the destination Secret. Exclusion policy can be set
+	// globally by including 'exclude-raw` in the '--global-rendering-options'
+	// command line flag. The global policy always takes precedence over this
+	// configuration.
 	// +kubebuilder:default=false
 	ExcludeRaw bool `json:"excludeRaw"`
 }
