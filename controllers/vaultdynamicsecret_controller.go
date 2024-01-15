@@ -215,7 +215,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
-			"Failed setting up SecretRenderOption: %s", err)
+			"Failed setting up SecretTransformationOption: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
@@ -279,7 +279,7 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 }
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
-	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretRenderOption,
+	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error

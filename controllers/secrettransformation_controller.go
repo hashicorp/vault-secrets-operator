@@ -55,7 +55,7 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 
 	var errs error
 	tmpl := template.NewSecretTemplate(o.Name)
-	for name, spec := range o.Spec.TemplateSpecs {
+	for name, spec := range o.Spec.Templates {
 		if err := tmpl.Parse(name, spec.Text); err != nil {
 			errs = errors.Join(errs, err)
 		}

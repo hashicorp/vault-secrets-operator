@@ -372,9 +372,9 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 type SecretDataBuilder struct{}
 
 // WithVaultData returns the K8s Secret data from a Vault Secret data.
-func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *SecretRenderOption) (map[string][]byte, error) {
+func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
-		opt = &SecretRenderOption{}
+		opt = &SecretTransformationOption{}
 	}
 
 	raw, err := json.Marshal(secretData)
@@ -396,7 +396,7 @@ func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *Sec
 		}
 	}
 
-	return makeK8sData(d, data, raw, &opt.FieldFilter)
+	return makeK8sData(d, data, raw, opt)
 }
 
 func marshalJSON(value any) ([]byte, error) {
@@ -415,9 +415,9 @@ func marshalJSON(value any) ([]byte, error) {
 }
 
 // WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
-func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretRenderOption) (map[string][]byte, error) {
+func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
-		opt = &SecretRenderOption{}
+		opt = &SecretTransformationOption{}
 	}
 
 	p := resp.GetPayload()
@@ -463,7 +463,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 		}
 	}
 
-	return makeK8sData(secrets, data, raw, &opt.FieldFilter)
+	return makeK8sData(secrets, data, raw, opt)
 }
 
 func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret) (map[string]any, error) {
@@ -497,8 +497,8 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret)
 // response. Any extraData will always be included in the result data. Returns a
 // SecretDataErrorContainsRaw error if either secretData or extraData contain
 // SecretDataKeyRaw .
-func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, raw []byte,
-	filter *secretsv1beta1.FieldFilter,
+func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
+	raw []byte, filter *SecretTransformationOption,
 ) (map[string][]byte, error) {
 	if _, ok := secretData[SecretDataKeyRaw]; ok {
 		return nil, SecretDataErrorContainsRaw

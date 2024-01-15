@@ -19,14 +19,14 @@ var (
 type Response interface {
 	Secret() *api.Secret
 	Data() map[string]any
-	SecretK8sData(*helpers.SecretRenderOption) (map[string][]byte, error)
+	SecretK8sData(*helpers.SecretTransformationOption) (map[string][]byte, error)
 }
 
 type defaultResponse struct {
 	secret *api.Secret
 }
 
-func (r *defaultResponse) SecretK8sData(opt *helpers.SecretRenderOption) (map[string][]byte, error) {
+func (r *defaultResponse) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
 		rawData = r.secret.Data
@@ -51,7 +51,7 @@ type kvV1Response struct {
 	secret *api.Secret
 }
 
-func (r *kvV1Response) SecretK8sData(opt *helpers.SecretRenderOption) (map[string][]byte, error) {
+func (r *kvV1Response) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
 		rawData = r.secret.Data
@@ -80,7 +80,7 @@ type kvV2Response struct {
 	secret *api.Secret
 }
 
-func (r *kvV2Response) SecretK8sData(opt *helpers.SecretRenderOption) (map[string][]byte, error) {
+func (r *kvV2Response) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
 		rawData = r.secret.Data

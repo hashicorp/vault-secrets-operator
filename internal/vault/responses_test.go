@@ -32,7 +32,7 @@ type testResponseSecretK8sData struct {
 	name     string
 	respFunc func(tt testResponseSecretK8sData) Response
 	secret   *api.Secret
-	opt      *helpers.SecretRenderOption
+	opt      *helpers.SecretTransformationOption
 	want     map[string][]byte
 	wantErr  assert.ErrorAssertionFunc
 }
@@ -371,11 +371,10 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 					"baz": "qux",
 				},
 			},
-			opt: &helpers.SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{},
-				Specs: map[string]secretsv1beta1.TemplateSpec{
+			opt: &helpers.SecretTransformationOption{
+				Specs: map[string]secretsv1beta1.Template{
 					"tmpl1": {
-						Key: "foo",
+						KeyOverride: "foo",
 						Text: `{{- $key := "baz" -}}
 {{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
 					},
@@ -590,11 +589,10 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 					},
 				},
 			},
-			opt: &helpers.SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{},
-				Specs: map[string]secretsv1beta1.TemplateSpec{
+			opt: &helpers.SecretTransformationOption{
+				Specs: map[string]secretsv1beta1.Template{
 					"tmpl1": {
-						Key: "foo",
+						KeyOverride: "foo",
 						Text: `{{- $key := "baz" -}}
 {{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
 					},

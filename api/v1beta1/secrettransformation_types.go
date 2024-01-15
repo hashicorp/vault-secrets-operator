@@ -27,11 +27,14 @@ type SecretTransformation struct {
 
 // SecretTransformationSpec defines the desired state of SecretTransformation
 type SecretTransformationSpec struct {
-	// TemplateSpecs maps a template name to its TemplateSpec.
-	TemplateSpecs map[string]TemplateSpec `json:"templateSpecs,omitempty"`
-	// FieldFilter provides filtering of the source secret data before it is stored.
-	// Templated fields are not affected by filtering.
-	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
+	// Templates maps a template name to its Template.
+	Templates map[string]Template `json:"templates,omitempty"`
+	// Includes contains regex patterns of keys that should be included in the K8s
+	// Secret Data.
+	Includes []string `json:"includes,omitempty"`
+	// Excludes contains regex pattern for keys that should be excluded from the K8s
+	// Secret Data.
+	Excludes []string `json:"excludes,omitempty"`
 }
 
 //+kubebuilder:object:root=true

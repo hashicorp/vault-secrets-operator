@@ -27,18 +27,19 @@ func init() {
 	}
 }
 
-// SecretRenderOption holds all TemplateSpecs and field filters for a given
+// SecretTransformationOption holds all Templates and field filters for a given
 // Destination
-type SecretRenderOption struct {
-	FieldFilter secretsv1beta1.FieldFilter
-	Specs       map[string]secretsv1beta1.TemplateSpec
+type SecretTransformationOption struct {
+	Excludes    []string
+	Includes    []string
+	Specs       map[string]secretsv1beta1.Template
 	Annotations map[string]string
 	Labels      map[string]string
 }
 
 func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 	obj ctrlclient.Object,
-) (*SecretRenderOption, error) {
+) (*SecretTransformationOption, error) {
 	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, err
@@ -49,22 +50,23 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	return &SecretRenderOption{
-		FieldFilter: meta.Destination.Transformation.FieldFilter,
+	return &SecretTransformationOption{
+		Excludes:    meta.Destination.Transformation.Excludes,
+		Includes:    meta.Destination.Transformation.Includes,
 		Specs:       specs,
 		Annotations: obj.GetAnnotations(),
 		Labels:      obj.GetLabels(),
 	}, nil
 }
 
-// gatherTemplateSpecs attempts to collect all v1beta1.TemplateSpec for the
+// gatherTemplateSpecs attempts to collect all v1beta1.Template for the
 // syncable secret object.
 func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	meta *common.SyncableSecretMetaData,
-) (map[string]secretsv1beta1.TemplateSpec, error) {
+) (map[string]secretsv1beta1.Template, error) {
 	var errs error
-	specs := make(map[string]secretsv1beta1.TemplateSpec)
-	addSpec := func(name string, spec secretsv1beta1.TemplateSpec, replace bool) {
+	specs := make(map[string]secretsv1beta1.Template)
+	addSpec := func(name string, spec secretsv1beta1.Template, replace bool) {
 		if !replace {
 			// spec.Name is the name of the template, which are not allowed
 			// to collide when taking the union of all templates.
@@ -86,9 +88,9 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 
 	transformation := meta.Destination.Transformation
 	// get the in-line template specs
-	for name, spec := range transformation.TemplateSpecs {
-		if !spec.Source && spec.Key == "" {
-			spec.Key = name
+	for name, spec := range transformation.Templates {
+		if !spec.Source && spec.KeyOverride == "" {
+			spec.KeyOverride = name
 		}
 		addSpec(name, spec, false)
 	}
@@ -120,18 +122,18 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 			continue
 		}
 
-		// hasOverrides means that only a subset of TemplateSpecs are needed, we still
-		// need to include all the reference TemplateSpecs when rendering the subset of
+		// hasOverrides means that only a subset of Templates are needed, we still
+		// need to include all the reference Templates when rendering the subset of
 		// all specs. We treat those specs as being a template source only.
 		hasOverrides := len(ref.TemplateRefSpecs) > 0
-		for name, s := range obj.Spec.TemplateSpecs {
-			if _, ok := transformation.TemplateSpecs[name]; ok {
+		for name, s := range obj.Spec.Templates {
+			if _, ok := transformation.Templates[name]; ok {
 				// inline specs take precedence
 				continue
 			}
 
 			if hasOverrides {
-				// if we have TemplateRefSpecs then all referenced TemplateSpecs are treated as a
+				// if we have TemplateRefSpecs then all referenced Templates are treated as a
 				// template source.
 				// s = *s.DeepCopy()
 				s.Source = true
@@ -140,12 +142,12 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 		}
 
 		for name, refSpec := range ref.TemplateRefSpecs {
-			if _, ok := transformation.TemplateSpecs[name]; ok {
+			if _, ok := transformation.Templates[name]; ok {
 				// inline specs take precedence over
 				continue
 			}
 
-			spec, ok := obj.Spec.TemplateSpecs[name]
+			spec, ok := obj.Spec.Templates[name]
 			// get the template spec
 			if !ok {
 				errs = errors.Join(errs,
@@ -155,9 +157,9 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 				continue
 			}
 
-			key := spec.Key
+			key := spec.KeyOverride
 			if key == "" {
-				// spec.Key is empty, then set it from spec's
+				// spec.KeyOverride is empty, then set it from spec's
 				key = refSpec.Key
 			}
 
@@ -166,10 +168,10 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 				source = spec.Source
 			}
 
-			addSpec(name, secretsv1beta1.TemplateSpec{
-				Key:    key,
-				Text:   spec.Text,
-				Source: source,
+			addSpec(name, secretsv1beta1.Template{
+				KeyOverride: key,
+				Text:        spec.Text,
+				Source:      source,
 			}, true)
 		}
 	}
@@ -181,10 +183,10 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	return specs, nil
 }
 
-// loadTemplates parses all v1beta1.TemplateSpec into a single
+// loadTemplates parses all v1beta1.Template into a single
 // template.SecretTemplate. It should normally be called before rendering any of
 // the template.
-func loadTemplates(opt *SecretRenderOption) (template.SecretTemplate, error) {
+func loadTemplates(opt *SecretTransformationOption) (template.SecretTemplate, error) {
 	var t template.SecretTemplate
 	for name, spec := range opt.Specs {
 		if t == nil {
@@ -199,8 +201,8 @@ func loadTemplates(opt *SecretRenderOption) (template.SecretTemplate, error) {
 	return t, nil
 }
 
-// renderTemplates from the SecretRenderOption and SecretInput.
-func renderTemplates(opt *SecretRenderOption,
+// renderTemplates from the SecretTransformationOption and SecretInput.
+func renderTemplates(opt *SecretTransformationOption,
 	input *SecretInput,
 ) (map[string][]byte, error) {
 	if len(opt.Specs) == 0 {
@@ -226,7 +228,7 @@ func renderTemplates(opt *SecretRenderOption,
 		if err != nil {
 			return nil, err
 		}
-		data[spec.Key] = b
+		data[spec.KeyOverride] = b
 	}
 
 	return data, nil
@@ -246,12 +248,10 @@ func matchField(pat, f string) (bool, error) {
 	return re.MatchString(f), nil
 }
 
-// filterFields filters data using v1beta1.FieldFilter's exclude/include regex
-// patterns, with processing done in that order. If filter is nil, return all
-// data, unfiltered.
-func filterFields[V any](filter *secretsv1beta1.FieldFilter,
-	data map[string]V,
-) (map[string]V, error) {
+// filterFields filters data using SecretTransformationOption's exclude/include
+// regex patterns, with processing done in that order. If filter is nil, return
+// all data, unfiltered.
+func filterFields[V any](filter *SecretTransformationOption, data map[string]V) (map[string]V, error) {
 	if filter == nil {
 		return data, nil
 	}
@@ -336,8 +336,8 @@ func NewSecretInput[A, L any](secrets, metadata map[string]any,
 	}
 }
 
-func validateTemplateSpec(spec secretsv1beta1.TemplateSpec) error {
-	if !spec.Source && spec.Key == "" {
+func validateTemplateSpec(spec secretsv1beta1.Template) error {
+	if !spec.Source && spec.KeyOverride == "" {
 		// TODO: add more context to this error
 		return fmt.Errorf(
 			"key cannot be empty when source is false")
