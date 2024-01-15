@@ -373,12 +373,7 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 	// checking for Secret ownership relies on first checking the Secret's labels,
 	// then verifying that its OwnerReferences match the SyncableSecret.
 	errs := checkOwnerLabels(dest)
-	for k, v := range OwnerLabels {
-		if o, ok := dest.Labels[k]; o != v || !ok {
-			errs = errors.Join(errs, fmt.Errorf(
-				"invalid owner label, key=%s, present=%t", k, ok))
-		}
-	}
+
 	// check that obj is the Secret's true Owner
 	key := ctrlclient.ObjectKeyFromObject(dest)
 	if len(dest.OwnerReferences) > 0 {
