@@ -215,14 +215,14 @@ func TestSyncSecret(t *testing.T) {
 	ownerWithDest.DeepCopyInto(ownerWithDestNoCreate)
 	ownerWithDestNoCreate.Spec.Destination.Create = false
 
-	ownerWithDestNoCreateClobber := &secretsv1beta1.VaultDynamicSecret{}
-	ownerWithDest.DeepCopyInto(ownerWithDestNoCreateClobber)
-	ownerWithDestNoCreateClobber.Spec.Destination.Create = false
-	ownerWithDestNoCreateClobber.Spec.Destination.Overwrite = true
+	ownerWithDestNoCreateOverwrite := &secretsv1beta1.VaultDynamicSecret{}
+	ownerWithDest.DeepCopyInto(ownerWithDestNoCreateOverwrite)
+	ownerWithDestNoCreateOverwrite.Spec.Destination.Create = false
+	ownerWithDestNoCreateOverwrite.Spec.Destination.Overwrite = true
 
-	ownerWithDestClobber := &secretsv1beta1.VaultDynamicSecret{}
-	ownerWithDest.DeepCopyInto(ownerWithDestClobber)
-	ownerWithDestClobber.Spec.Destination.Overwrite = true
+	ownerWithDestOverwrite := &secretsv1beta1.VaultDynamicSecret{}
+	ownerWithDest.DeepCopyInto(ownerWithDestOverwrite)
+	ownerWithDestOverwrite.Spec.Destination.Overwrite = true
 
 	invalidNoDest := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta:   defaultOwner.TypeMeta,
@@ -403,7 +403,7 @@ func TestSyncSecret(t *testing.T) {
 		{
 			name:               "invalid-dest-exists-no-create-overwrite",
 			client:             clientBuilder.Build(),
-			obj:                ownerWithDestNoCreateClobber,
+			obj:                ownerWithDestNoCreateOverwrite,
 			createDest:         false,
 			expectSecretsCount: 0,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -414,7 +414,7 @@ func TestSyncSecret(t *testing.T) {
 		{
 			name:               "dest-exists-not-owned-overwrite-true",
 			client:             clientBuilder.Build(),
-			obj:                ownerWithDestClobber,
+			obj:                ownerWithDestOverwrite,
 			createDest:         true,
 			expectSecretsCount: 1,
 			wantErr:            assert.NoError,
@@ -422,7 +422,7 @@ func TestSyncSecret(t *testing.T) {
 		{
 			name:               "dest-exists-owned-overwrite-true",
 			client:             clientBuilder.Build(),
-			obj:                ownerWithDestClobber,
+			obj:                ownerWithDestOverwrite,
 			createDest:         true,
 			destLabels:         OwnerLabels,
 			expectSecretsCount: 1,
