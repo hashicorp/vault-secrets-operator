@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"time"
 
+	rolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -97,6 +98,10 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 		obj = &appsv1.StatefulSet{
 			ObjectMeta: objectMeta,
 		}
+	case "Rollout":
+		obj = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: objectMeta,
+		}
 	default:
 		return fmt.Errorf("unsupported Kind %q for %T", target.Kind, target)
 	}
@@ -129,6 +134,14 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 		return client.Patch(ctx, t, patch)
 	case *appsv1.DaemonSet:
+		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		if t.Spec.Template.ObjectMeta.Annotations == nil {
+			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+		}
+		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
+		return client.Patch(ctx, t, patch)
+
+	case *rolloutsv1alpha1.Rollout:
 		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
