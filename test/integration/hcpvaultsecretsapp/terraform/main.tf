@@ -60,5 +60,8 @@ module "vso-helm" {
   operator_helm_chart_path   = var.operator_helm_chart_path
   operator_image_repo        = var.operator_image_repo
   operator_image_tag         = var.operator_image_tag
-  manager_extra_args         = ["-min-refresh-after-hvsa=3s"]
+  manager_extra_args = [
+    "-min-refresh-after-hvsa=3s",
+    "-zap-log-level=5"
+  ]
 }

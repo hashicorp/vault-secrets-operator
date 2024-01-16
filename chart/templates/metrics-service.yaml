@@ -6,16 +6,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "chart.fullname" . }}-metrics-service
+  name: {{ include "vso.chart.fullname" . }}-metrics-service
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/component: controller-manager
     control-plane: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.metricsService.type }}
   selector:
     control-plane: controller-manager
-  {{- include "chart.selectorLabels" . | nindent 4 }}
+  {{- include "vso.chart.selectorLabels" . | nindent 4 }}
   ports:
 	{{- .Values.metricsService.ports | toYaml | nindent 2 -}}

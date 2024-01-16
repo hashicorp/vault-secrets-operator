@@ -132,7 +132,12 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			Value: pointer.String(metrics.OperationPrune),
 		},
 	}
-
+	deleteLabelPairs := []*io_prometheus_client.LabelPair{
+		{
+			Name:  pointer.String(metrics.LabelOperation),
+			Value: pointer.String(metrics.OperationDelete),
+		},
+	}
 	configLabelPairs := []*io_prometheus_client.LabelPair{
 		{
 			Name:  pointer.String(metricsLabelEnforceEncryption),
@@ -154,6 +159,7 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 		store      *expected
 		purge      *expected
 		prune      *expected
+		delete     *expected
 		restore    *expected
 		restoreAll *expected
 	}
@@ -249,6 +255,18 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 						total:       pointer.Float64(2),
 						errorsTotal: pointer.Float64(1),
 						labelPairs:  pruneLabelPairs,
+					},
+				},
+				delete: &expected{
+					reqs: &expectedMetricVec{
+						total:       pointer.Float64(2),
+						errorsTotal: pointer.Float64(1),
+						labelPairs:  deleteLabelPairs,
+					},
+					ops: &expectedMetricVec{
+						total:       pointer.Float64(2),
+						errorsTotal: pointer.Float64(1),
+						labelPairs:  deleteLabelPairs,
 					},
 				},
 			},
@@ -417,6 +435,7 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 						case metrics.OperationPrune:
 							_, err := storage.Prune(ctx, client, ClientCacheStoragePruneRequest{})
 							assert.Error(t, err)
+						case metrics.OperationDelete:
 						default:
 							assert.Fail(t, "unsupported metrics operation type %q", opType)
 						}
@@ -470,10 +489,14 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 							e = tt.expectMetrics.purge
 						case metrics.OperationPrune:
 							e = tt.expectMetrics.prune
+						case metrics.OperationDelete:
+							e = tt.expectMetrics.delete
 						default:
-							assert.Fail(t, "unsupported metrics operation type %s", opType)
+							require.Failf(t, "unsupported metrics operation", "type %s", opType)
+
 						}
 					}
+
 					if e.reqs != nil {
 						assertCounterMetricVec(t, e.reqs, name, opType, m, checkErrors)
 					}
@@ -487,7 +510,7 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 
 			mfs, err := reg.Gather()
 			require.NoError(t, err)
-			assert.Len(t, mfs, tt.expectedMetricCount)
+			require.Len(t, mfs, tt.expectedMetricCount)
 			for _, mf := range mfs {
 				m := mf.GetMetric()
 				msgFmt := "unexpected metric %s for %s"

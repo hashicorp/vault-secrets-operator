@@ -147,8 +147,8 @@ jobs:
             exit 1
           fi
 
-  build-docker-ubi-dockerhub:
-    name: UBI ${{ matrix.arch }} build for dockerhub
+  build-docker-ubi:
+    name: UBI ${{ matrix.arch }} build
     needs: [get-product-version, build-pre-checks, build]
     runs-on: ubuntu-latest
     strategy:
@@ -186,13 +186,13 @@ jobs:
             exit 1
           fi
 
-  build-docker-ubi-redhat-registry:
-    name: UBI ${{ matrix.arch }} build for redhat's registry (quay.io)
+  build-docker-ubi-redhat:
+    name: UBI ${{ matrix.arch }} RedHat build
     needs: [get-product-version, build-pre-checks, build]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # CRT does not support multi-arch images for redhat's registry
+        # Building only amd64 for the RedHat registry for now
         arch: ["amd64"]
     env:
       repo: ${{github.event.repository.name}}
@@ -208,7 +208,7 @@ jobs:
           GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
         with:
           version: ${{env.version}}
-          target: release-ubi
+          target: release-ubi-redhat
           arch: ${{matrix.arch}}
           # The quay id here corresponds to the project id on RedHat's portal
           redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}

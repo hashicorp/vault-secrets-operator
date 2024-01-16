@@ -162,7 +162,7 @@ load _helpers
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds"])' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles"])' | tee /dev/stderr)
     [ "${actual}" = "false" ]
 }
 
@@ -174,7 +174,7 @@ load _helpers
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
-   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles-vds=5"])' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq 'contains(["--max-concurrent-reconciles=5"])' | tee /dev/stderr)
     [ "${actual}" = "true" ]
 }
 
@@ -690,4 +690,32 @@ load _helpers
    [ "${actual}" = "--foo=baz" ]
    local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
    [ "${actual}" = "--bar=qux" ]
+}
+
+
+#--------------------------------------------------------------------
+# pre-delete-controller
+
+@test "controller/Deployment: pre-delete-controller Job name is not truncated by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Job") | .metadata' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
+  [ "${actual}" = "pdcc-release-name-vault-secrets-operator" ]
+}
+
+@test "controller/Deployment: pre-delete-controller Job name is truncated to 63 characters" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set fullnameOverride=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Job") | .metadata' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq '.name' | tee /dev/stderr)
+  [ "${actual}" = "pdcc-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdef" ]
+  [ "${#actual}" -eq 63 ]
 }

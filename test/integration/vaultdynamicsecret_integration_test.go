@@ -72,7 +72,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 30,
+			"vault_db_default_lease_ttl": 15,
 		},
 	}
 	if entTests {
@@ -402,7 +402,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Params: map[string]string{
 							"kubernetes_namespace": outputs.K8sNamespace,
 						},
-						RenewalPercent: 5,
+						RenewalPercent: 1,
 						Path:           "creds/" + outputs.K8SSecretRole,
 						Destination: secretsv1beta1.Destination{
 							Name:   dest,
@@ -484,17 +484,33 @@ func TestVaultDynamicSecret(t *testing.T) {
 						"expected Status.LastGeneration")
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRuntimePodUID)
 					assert.NotEmpty(t, vdsObjFinal.Status.LastRenewalTime)
+
+					// for a 1s interval between tries
+					var maxRetriesForRemediation uint64
 					if vdsObjFinal.Spec.AllowStaticCreds {
 						assert.Empty(t, vdsObjFinal.Status.SecretLease.ID)
+						maxRetriesForRemediation = uint64(outputs.StaticRotationPeriod)
 					} else {
 						assert.NotEmpty(t, vdsObjFinal.Status.SecretLease.ID)
+						var ttl float64
+						if vdsObjFinal.Status.SecretLease.Renewable {
+							ttl = float64(outputs.DefaultLeaseTTLSeconds)
+						} else {
+							ttl = float64(outputs.NonRenewableK8STokenTTL)
+						}
+						maxRetriesForRemediation = uint64(ttl*.10 + (ttl * (float64(vdsObjFinal.Spec.RenewalPercent) / 100)))
 					}
 
 					assertLastRuntimePodUID(t, ctx, crdClient, operatorNS, vdsObjFinal)
 					assertDynamicSecretRotation(t, ctx, crdClient, vdsObjFinal)
 
 					if vdsObjFinal.Spec.Destination.Create && !t.Failed() {
-						assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
+						// must be called before assertDynamicSecretNewGeneration, since
+						// that function changes the destination secret's name.
+						if assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj,
+							time.Millisecond*500, maxRetriesForRemediation*3) {
+							assertDynamicSecretNewGeneration(t, ctx, crdClient, vdsObjFinal)
+						}
 					}
 				})
 			}
@@ -507,23 +523,24 @@ func TestVaultDynamicSecret(t *testing.T) {
 	c, err := api.NewClient(cfg)
 	assert.NoError(t, err)
 	c.SetToken(vaultToken)
-	// Check to be sure all leases have been revoked.
-	retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
-		// ensure that all leases have been revoked.
-		resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/%s", outputs.DBPath, outputs.DBRole))
-		if err != nil {
-			return "", err
-		}
-		if resp == nil {
+	if !skipCleanup {
+		// Ensure that all leases have been revoked.
+		retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
+			resp, err := c.Logical().ListWithContext(ctx, fmt.Sprintf("sys/leases/lookup/%s/creds/%s", outputs.DBPath, outputs.DBRole))
+			if err != nil {
+				return "", err
+			}
+			if resp == nil {
+				return "", nil
+			}
+			keys := resp.Data["keys"].([]interface{})
+			if len(keys) > 0 {
+				// Print out the lease ids that are still found to make debugging easier.
+				return "", fmt.Errorf("leases still found: %v", keys)
+			}
 			return "", nil
-		}
-		keys := resp.Data["keys"].([]interface{})
-		if len(keys) > 0 {
-			// Print out the lease ids that are still found to make debugging easier.
-			return "", fmt.Errorf("leases still found: %v", keys)
-		}
-		return "", nil
-	})
+		})
+	}
 }
 
 func assertLastRuntimePodUID(t *testing.T,
@@ -552,45 +569,75 @@ func assertDynamicSecretNewGeneration(t *testing.T,
 	t.Helper()
 
 	objKey := ctrlclient.ObjectKeyFromObject(vdsObjOrig)
-	vdsObjLatest := &secretsv1beta1.VaultDynamicSecret{}
-	if assert.NoError(t, client.Get(ctx, objKey, vdsObjLatest)) {
-		vdsObjLatest.Spec.Destination.Name += "-new"
-		var vdsObjUpdated secretsv1beta1.VaultDynamicSecret
-		if assert.NoError(t, client.Update(ctx, vdsObjLatest)) {
-			// await last generation updated after update
-			assert.NoError(t, backoff.Retry(func() error {
-				if err := client.Get(ctx, objKey, &vdsObjUpdated); err != nil {
-					return backoff.Permanent(err)
-				}
 
-				if vdsObjUpdated.GetGeneration() < vdsObjOrig.GetGeneration() {
-					return backoff.Permanent(fmt.Errorf(
-						"unexpected, the updated's generation was less than the original's"))
-				}
-
-				if vdsObjUpdated.GetGeneration() == vdsObjOrig.GetGeneration() {
-					return fmt.Errorf("generation has not been updated")
-				}
-
-				if vdsObjUpdated.GetGeneration() != vdsObjUpdated.Status.LastGeneration {
-					return fmt.Errorf("last generation %d, does match current %d",
-						vdsObjUpdated.Status.LastGeneration, vdsObjUpdated.GetGeneration())
-				}
-				return nil
-			},
-				backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10)),
-			)
-
-			if !t.Failed() {
-				if vdsObjUpdated.Spec.AllowStaticCreds {
-					assert.Empty(t, vdsObjUpdated.Status.SecretLease.ID)
-				} else {
-					assert.NotEmpty(t, vdsObjUpdated.Status.SecretLease.ID)
-					assert.NotEqual(t, vdsObjUpdated.Status.SecretLease.ID, vdsObjOrig.Status.SecretLease.ID)
-				}
+	// try and update the object, sometimes there are update races, so we want to
+	// retry this operation.
+	err := backoff.RetryNotify(
+		func() error {
+			var obj secretsv1beta1.VaultDynamicSecret
+			if err := client.Get(ctx, objKey, &obj); err != nil {
+				return backoff.Permanent(err)
 			}
-		}
+
+			obj.Spec.Destination.Name = vdsObjOrig.Spec.Destination.Name + "-new"
+			if err := client.Update(ctx, &obj); err != nil {
+				return err
+			}
+			return nil
+		},
+		backoff.WithMaxRetries(
+			backoff.NewConstantBackOff(time.Millisecond*500),
+			4),
+		func(err error, d time.Duration) {
+			t.Logf(
+				"Retrying client.Update() of %s, err=%s, delay=%s", objKey, err, d)
+		},
+	)
+
+	if !assert.NoError(t, err) {
+		return
 	}
+
+	// wait for the object to be reconciled
+	err = backoff.RetryNotify(func() error {
+		var obj secretsv1beta1.VaultDynamicSecret
+		if err := client.Get(ctx, objKey, &obj); err != nil {
+			return backoff.Permanent(err)
+		}
+		if obj.GetGeneration() < vdsObjOrig.GetGeneration() {
+			return backoff.Permanent(fmt.Errorf(
+				"unexpected, the updated's generation was less than the original's"))
+		}
+
+		if obj.GetGeneration() == vdsObjOrig.GetGeneration() {
+			return fmt.Errorf("generation has not been updated")
+		}
+
+		if obj.GetGeneration() != obj.Status.LastGeneration {
+			return fmt.Errorf(
+				"last generation %d, does not match current %d: obj=%#v",
+				obj.Status.LastGeneration, obj.GetGeneration(), obj)
+		}
+
+		// check updated destination secret exists
+		_, exists, err := helpers.GetSyncableSecret(ctx, client, &obj)
+		if err != nil {
+			return backoff.Permanent(err)
+		}
+
+		assert.True(t, exists)
+		return nil
+	},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 20),
+		func(err error, d time.Duration) {
+			if withExtraVerbosity {
+				t.Logf(
+					"Retrying wait reonciliation of %s, err=%s, delay=%s", objKey, err, d)
+			}
+		},
+	)
+
+	assert.NoError(t, err)
 }
 
 // assertDynamicSecretRotation revokes the lease of vdsObjFinal,
