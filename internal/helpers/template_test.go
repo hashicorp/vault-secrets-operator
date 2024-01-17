@@ -548,8 +548,8 @@ func TestNewSecretRenderOption(t *testing.T) {
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
 					Templates: map[string]secretsv1beta1.Template{
-						"default": {
-							Name: "default",
+						"default-1": {
+							Name: "default-1",
 							Text: "{{- -}}",
 						},
 						"default-2": {
@@ -563,9 +563,9 @@ func TestNewSecretRenderOption(t *testing.T) {
 			), want: &SecretTransformationOption{
 				KeyedTemplates: []KeyedTemplate{
 					{
-						Key: "default",
+						Key: "default-1",
 						Template: secretsv1beta1.Template{
-							Name: "default",
+							Name: "default-1",
 							Text: "{{- -}}",
 						},
 					},
@@ -650,6 +650,10 @@ func TestNewSecretRenderOption(t *testing.T) {
 								Name: "other",
 								Text: "{{- foo -}}",
 							},
+							{
+								Name: "another",
+								Text: "{{- qux -}}",
+							},
 						},
 						Templates: map[string]secretsv1beta1.Template{
 							"default": {
@@ -665,16 +669,22 @@ func TestNewSecretRenderOption(t *testing.T) {
 				Includes: []string{`^good.+`},
 				KeyedTemplates: []KeyedTemplate{
 					{
-						Key: "default",
 						Template: secretsv1beta1.Template{
-							Name: "default",
-							Text: "{{- baz -}}",
+							Name: "another",
+							Text: "{{- qux -}}",
 						},
 					},
 					{
 						Template: secretsv1beta1.Template{
 							Name: "other",
 							Text: "{{- foo -}}",
+						},
+					},
+					{
+						Key: "default",
+						Template: secretsv1beta1.Template{
+							Name: "default",
+							Text: "{{- baz -}}",
 						},
 					},
 				},
