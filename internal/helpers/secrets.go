@@ -383,7 +383,7 @@ func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *Sec
 	}
 
 	data := make(map[string][]byte)
-	if len(opt.Specs) > 0 {
+	if len(opt.KeyedTemplates) > 0 {
 		metadata, ok := secretData["metadata"].(map[string]any)
 		if !ok {
 			metadata = make(map[string]any)
@@ -432,7 +432,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	metadata := make(map[string]any)
 	// secret data returned to the caller
 	data := make(map[string][]byte)
-	hasTemplates := len(opt.Specs) > 0
+	hasTemplates := len(opt.KeyedTemplates) > 0
 	for _, v := range p.Secrets {
 		ver := v.Version
 		if ver == nil {

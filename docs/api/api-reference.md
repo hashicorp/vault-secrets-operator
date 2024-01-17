@@ -233,11 +233,27 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret with the specified key. |
+| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered K8s Secret, they can be used to provide common template definitions, etc. |
 | `includes` _string array_ | Includes contains regex patterns of keys that should be included in the K8s Secret Data. |
 | `excludes` _string array_ | Excludes contains regex pattern for keys that should be excluded from the K8s Secret Data. |
 
 
+
+
+#### SourceTemplate
+
+
+
+SourceTemplate provides source templating configuration.
+
+_Appears in:_
+- [SecretTransformationSpec](#secrettransformationspec)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ |  |
+| `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
 
 
 #### StorageEncryption
@@ -259,7 +275,7 @@ _Appears in:_
 
 
 
-Template provides inline templating configuration.
+Template provides templating configuration.
 
 _Appears in:_
 - [SecretTransformationSpec](#secrettransformationspec)
@@ -267,16 +283,15 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `keyOverride` _string_ | KeyOverride that the rendered Text will be stored with in the K8s Destination Secret. An empty value is allowed to be empty when Source is true. If Source is false, then a value must be provided. |
-| `source` _boolean_ | Source the template, the spec will not be rendered to the K8s Secret data. |
+| `name` _string_ | Name of the Template |
 | `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
 
 
-#### TemplateRefSpec
+#### TemplateRef
 
 
 
-TemplateRefSpec points to templating text that is stored in a SecretTransformation custom resource.
+TemplateRef points to templating text that is stored in a SecretTransformation custom resource.
 
 _Appears in:_
 - [TransformationRef](#transformationref)
@@ -284,8 +299,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `name` _string_ | Name of the Template in SecretTransformationSpec.Templates. the rendered secret data. |
-| `key` _string_ | Key to the rendered template in the Destination secret. If Key is empty, then the Key from reference spec will be used. Set this to override the Key set from the reference spec. |
-| `source` _boolean_ | Source the template when true, this spec will not be rendered to the K8s Secret data. |
+| `keyOverride` _string_ | KeyOverride to the rendered template in the Destination secret. If Key is empty, then the Key from reference spec will be used. Set this to override the Key set from the reference spec. |
 
 
 #### Transformation
@@ -299,10 +313,10 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `templates` _object (keys:string, values:[Template](#template))_ | Templates map a template name to a Template. |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret, and take precedence over templates defined in a SecretTransformation. |
+| `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation |
 | `includes` _string array_ | Includes contains regex patterns of keys that should be included in the K8s Secret Data. FieldFilter can be used to filter the secret data that is stored in the K8s Secret Destination. Filters will not be applied to templated fields, those will always be included in the Destination K8s Secret. Exclusion filters are always applied first. |
 | `excludes` _string array_ | Excludes contains regex pattern for keys that should be excluded from the K8s Secret Data. FieldFilter can be used to filter the secret data that is stored in the K8s Secret Destination. Filters will not be applied to templated fields, those will always be included in the Destination K8s Secret. Exclusion filters are always applied first. |
-| `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation |
 
 
 #### TransformationRef
@@ -318,7 +332,7 @@ _Appears in:_
 | --- | --- |
 | `namespace` _string_ | Namespace of the SecretTransformation resource. |
 | `name` _string_ | Name of the SecretTransformation resource. |
-| `templateRefSpecs` _object (keys:string, values:[TemplateRefSpec](#templaterefspec))_ | TemplateRefSpecs map to a Template found in this TransformationRef. |
+| `templateRefSpecsSlice` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then all templates from the SecretTransformation will be rendered to the K8s Secret. |
 
 
 #### VaultAuth

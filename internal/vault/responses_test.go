@@ -372,11 +372,14 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 				},
 			},
 			opt: &helpers.SecretTransformationOption{
-				Specs: map[string]secretsv1beta1.Template{
-					"tmpl1": {
-						KeyOverride: "foo",
-						Text: `{{- $key := "baz" -}}
+				KeyedTemplates: []helpers.KeyedTemplate{
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- $key := "baz" -}}
 {{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
+						},
 					},
 				},
 			},
@@ -590,11 +593,14 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 				},
 			},
 			opt: &helpers.SecretTransformationOption{
-				Specs: map[string]secretsv1beta1.Template{
-					"tmpl1": {
-						KeyOverride: "foo",
-						Text: `{{- $key := "baz" -}}
+				KeyedTemplates: []helpers.KeyedTemplate{
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- $key := "baz" -}}
 {{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
+						},
 					},
 				},
 			},

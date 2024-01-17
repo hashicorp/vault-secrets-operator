@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,12 +55,23 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 	o.Status.Valid = true
 
 	var errs error
-	tmpl := template.NewSecretTemplate(o.Name)
-	for name, spec := range o.Spec.Templates {
-		if err := tmpl.Parse(name, spec.Text); err != nil {
+	stmpl := template.NewSecretTemplate(o.Name)
+	for idx, tmpl := range o.Spec.SourceTemplates {
+		name := tmpl.Name
+		if name == "" {
+			name = fmt.Sprintf("%s/%d", client.ObjectKeyFromObject(o), idx)
+		}
+		if err := stmpl.Parse(name, tmpl.Text); err != nil {
 			errs = errors.Join(errs, err)
 		}
 	}
+
+	for _, tmpl := range o.Spec.Templates {
+		if err := stmpl.Parse(tmpl.Name, tmpl.Text); err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+
 	o.Status.Valid = true
 	o.Status.Error = ""
 	if errs != nil {
