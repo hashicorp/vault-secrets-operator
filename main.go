@@ -32,6 +32,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/controllers"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
+	"github.com/hashicorp/vault-secrets-operator/internal/options"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	//+kubebuilder:scaffold:imports
@@ -67,6 +68,7 @@ func main() {
 	cfc := vclient.DefaultCachingClientFactoryConfig()
 	startTime := time.Now()
 
+	var vsoEnvOptions options.VSOEnvOptions
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -105,6 +107,32 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// Parse environment variable options, prefixed with "VSO_"
+	if err := vsoEnvOptions.Parse(); err != nil {
+		os.Stderr.WriteString(fmt.Sprintf("Failed to process environment variable options: %q\n", err))
+		os.Exit(1)
+	}
+
+	// Set options from env if any are set
+	if vsoEnvOptions.OutputFormat != "" {
+		outputFormat = vsoEnvOptions.OutputFormat
+	}
+	if vsoEnvOptions.ClientCacheSize != nil {
+		cfc.ClientCacheSize = *vsoEnvOptions.ClientCacheSize
+	}
+	if vsoEnvOptions.ClientCachePersistenceModel != "" {
+		clientCachePersistenceModel = vsoEnvOptions.ClientCachePersistenceModel
+	}
+	if vsoEnvOptions.MaxConcurrentReconciles != nil {
+		controllerOptions.MaxConcurrentReconciles = *vsoEnvOptions.MaxConcurrentReconciles
+	}
+	if vsoEnvOptions.MaxConcurrentReconcilesVDS != nil {
+		vdsOptions.MaxConcurrentReconciles = *vsoEnvOptions.MaxConcurrentReconcilesVDS
+	}
+	if vsoEnvOptions.MinRefreshAfterHVSA != 0 {
+		minRefreshAfterHVSA = vsoEnvOptions.MinRefreshAfterHVSA
+	}
 
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
@@ -214,7 +242,7 @@ func main() {
 			cfc.Persist = false
 		default:
 			setupLog.Error(errors.New("invalid option"),
-				fmt.Sprintf("Invalid cache pesistence model %q", clientCachePersistenceModel))
+				fmt.Sprintf("Invalid cache persistence model %q", clientCachePersistenceModel))
 			os.Exit(1)
 		}
 
