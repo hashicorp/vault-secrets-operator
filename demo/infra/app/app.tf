@@ -77,29 +77,27 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
         create = true
         name   = "vso-db-demo"
         transformation = {
-          templateSpecs = {
+          templates = {
             "app.props" = {
+              name = "app.props"
               text = "{{- template \"appProps\" . -}}"
             }
             "app.json" = {
+              name = "app.json"
               text = "{{- template \"appJson\" . -}}"
             },
-            "url" = {
-              text = "{{- template \"dbUrl\" . -}}"
-            },
             "app.name" = {
+              name = "app.name"
               text = "{{- template \"appName\" . -}}"
             }
+            "url" = {
+              name = "url"
+              text = "{{- template \"dbUrl\" . -}}"
+            },
           }
           transformationRefs = [
             {
               name = kubernetes_manifest.templates.manifest.metadata.name
-              templateRefSpecs = {
-                helpers = {
-                  name   = "helpers"
-                  source = true
-                }
-              }
             }
           ]
         }
@@ -124,10 +122,10 @@ resource "kubernetes_manifest" "templates" {
       namespace = kubernetes_namespace.dev.metadata[0].name
     }
     spec = {
-      templateSpecs = {
-        helpers = {
-          source = true
-          text   = <<EOF
+      sourceTemplates = [
+        {
+          name = "helpers"
+          text = <<EOF
 {{/*
   create a Java props from SecretInput for this app
 */}}
@@ -162,7 +160,7 @@ resource "kubernetes_manifest" "templates" {
 {{- end -}}
 EOF
         }
-      }
+      ]
     }
   }
 

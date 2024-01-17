@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 
@@ -32,11 +33,18 @@ func init() {
 // SecretTransformationOption holds all Templates and field filters for a given
 // Destination
 type SecretTransformationOption struct {
-	Excludes       []string
-	Includes       []string
-	KeyedTemplates []KeyedTemplate
-	Annotations    map[string]string
-	Labels         map[string]string
+	// Excludes contains regex patterns that are applied to the raw secret data. All
+	// matches will be excluded for resulting K8s Secret data.
+	Excludes []string
+	// Includes contains regex patterns that are applied to the raw secret data. All
+	// matches will be included in the resulting K8s Secret data.
+	Includes []string
+	// Annotations to include in the SecretInput.
+	Annotations map[string]string
+	// Labels to include in the SecretInput.
+	Labels map[string]string
+	// KeyedTemplates contains the derived set of all templates.
+	KeyedTemplates []*KeyedTemplate
 }
 
 type KeyedTemplate struct {
@@ -46,6 +54,14 @@ type KeyedTemplate struct {
 	Key string
 	// Template that will be rendered for Key
 	Template secretsv1beta1.Template
+}
+
+func (k *KeyedTemplate) Cmp(other *KeyedTemplate) int {
+	return cmp.Compare(
+		// source templates should come first, e.g key == ""
+		k.Key+"0"+k.Template.Name,
+		other.Key+"0"+other.Template.Name,
+	)
 }
 
 func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
@@ -74,11 +90,12 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 // syncable secret object.
 func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	meta *common.SyncableSecretMetaData,
-) ([]KeyedTemplate, error) {
+) ([]*KeyedTemplate, error) {
 	var errs error
 	templates := make(map[string]secretsv1beta1.Template)
-	var keyedTemplates []KeyedTemplate
-	addTemplate := func(tmpl secretsv1beta1.Template) {
+	var keyedTemplates []*KeyedTemplate
+
+	addTemplate := func(tmpl secretsv1beta1.Template, key string) {
 		if _, ok := templates[tmpl.Name]; ok {
 			errs = errors.Join(errs,
 				fmt.Errorf("failed to gather templates, "+
@@ -92,11 +109,7 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 		}
 
 		templates[tmpl.Name] = tmpl
-	}
-
-	addKeyedTemplate := func(tmpl secretsv1beta1.Template, key string) {
-		addTemplate(tmpl)
-		keyedTemplates = append(keyedTemplates, KeyedTemplate{
+		keyedTemplates = append(keyedTemplates, &KeyedTemplate{
 			Key:      key,
 			Template: tmpl,
 		})
@@ -108,9 +121,10 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	for key, tmpl := range transformation.Templates {
 		name := tmpl.Name
 		if name == "" {
-			name = key
+			tmpl = *tmpl.DeepCopy()
+			tmpl.Name = fmt.Sprintf("%s/%s/%s", meta.Namespace, meta.Name, key)
 		}
-		addKeyedTemplate(tmpl, key)
+		addTemplate(tmpl, key)
 	}
 
 	seenRefs := make(map[string]bool)
@@ -164,19 +178,19 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 				key = tmplRef.Name
 			}
 
-			addKeyedTemplate(tmpl, key)
+			addTemplate(tmpl, key)
 		}
 
-		// TODO: does the templating naming scheme make sense?
+		// add all source templates
 		for idx, tmpl := range obj.Spec.SourceTemplates {
 			name := tmpl.Name
 			if name == "" {
 				name = fmt.Sprintf("%s/%d", objKey, idx)
 			}
 
-			addKeyedTemplate(
+			addTemplate(
 				secretsv1beta1.Template{
-					Name: tmpl.Name,
+					Name: name,
 					Text: tmpl.Text,
 				}, "",
 			)
@@ -189,7 +203,12 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 				continue
 			}
 
-			addKeyedTemplate(tmpl, key)
+			if tmpl.Name == "" {
+				tmpl = *tmpl.DeepCopy()
+				tmpl.Name = fmt.Sprintf("%s/%s", objKey, key)
+			}
+
+			addTemplate(tmpl, key)
 		}
 	}
 
@@ -197,12 +216,8 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 		return nil, errs
 	}
 
-	slices.SortFunc(keyedTemplates, func(a, b KeyedTemplate) int {
-		return cmp.Compare(
-			// source templates should come first, e.g key == ""
-			a.Key+"0"+a.Template.Name,
-			b.Key+"0"+b.Template.Name,
-		)
+	slices.SortFunc(keyedTemplates, func(a, b *KeyedTemplate) int {
+		return a.Cmp(b)
 	})
 
 	return keyedTemplates, nil
@@ -272,47 +287,64 @@ func matchField(pat, f string) (bool, error) {
 		regexCache.Add(pat, re)
 	}
 
-	return re.MatchString(f), nil
+	matched := re.MatchString(f)
+	return matched, nil
 }
 
-// filterFields filters data using SecretTransformationOption's exclude/include
+func filter[V any](d map[string]V, pats []string, f func(matched bool, k string)) error {
+	if len(pats) == 0 {
+		return nil
+	}
+
+	for k := range d {
+		var matched bool
+		var err error
+		for _, pat := range pats {
+			matched, err = matchField(pat, k)
+			if err != nil {
+				return err
+			}
+			if matched {
+				break
+			}
+		}
+		f(matched, k)
+	}
+	return nil
+}
+
+// filterData filters data using SecretTransformationOption's exclude/include
 // regex patterns, with processing done in that order. If filter is nil, return
 // all data, unfiltered.
-func filterFields[V any](filter *SecretTransformationOption, data map[string]V) (map[string]V, error) {
-	if filter == nil {
+func filterData[V any](opt *SecretTransformationOption, data map[string]V) (map[string]V, error) {
+	if opt == nil {
 		return data, nil
 	}
 
-	hasExcludes := len(filter.Excludes) > 0
-	if !hasExcludes && len(filter.Includes) == 0 {
+	hasExcludes := len(opt.Excludes) > 0
+	if !hasExcludes && len(opt.Includes) == 0 {
 		return data, nil
 	}
 
 	m := make(map[string]V)
-	for k := range data {
-		if !hasExcludes {
-			// copy d -> m
-			m[k] = data[k]
-			continue
-		}
-
-		for _, pat := range filter.Excludes {
-			if matched, err := matchField(pat, k); err != nil {
-				return nil, err
-			} else if !matched {
+	if hasExcludes {
+		if err := filter(data, opt.Excludes, func(matched bool, k string) {
+			if !matched {
 				m[k] = data[k]
 			}
+		}); err != nil {
+			return nil, err
 		}
+	} else {
+		m = maps.Clone(data)
 	}
 
-	for k := range m {
-		for _, pat := range filter.Includes {
-			if matched, err := matchField(pat, k); err != nil {
-				return nil, err
-			} else if !matched {
-				delete(m, k)
-			}
+	if err := filter(m, opt.Includes, func(matched bool, k string) {
+		if !matched {
+			delete(m, k)
 		}
+	}); err != nil {
+		return nil, err
 	}
 
 	return m, nil

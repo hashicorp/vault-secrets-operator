@@ -43,7 +43,7 @@ func Test_renderTemplates(t *testing.T) {
 			name:  "multi-with-helpers-2",
 			input: NewSecretInput[string, string](secrets, nil, nil, nil),
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Template: secretsv1beta1.Template{
 							Name: "t1s",
@@ -90,7 +90,7 @@ func Test_renderTemplates(t *testing.T) {
 			name:  "multi-with-helper",
 			input: NewSecretInput[any, any](secrets, nil, nil, nil),
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Template: secretsv1beta1.Template{
 							Name: "helper",
@@ -141,7 +141,7 @@ func Test_renderTemplates(t *testing.T) {
 					"myapp/name": "db",
 				}),
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Template: secretsv1beta1.Template{
 							Name: "helper",
@@ -224,7 +224,7 @@ db.username=alice
 			name:  "single-with-metadata-only",
 			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "tmpl",
 						Template: secretsv1beta1.Template{
@@ -244,7 +244,7 @@ db.username=alice
 			name:  "single-with-both",
 			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "tmpl",
 						Template: secretsv1beta1.Template{
@@ -286,7 +286,7 @@ db.username=alice
 	}
 }
 
-func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
+func TestSecretDataBuilder_filterData_with_bytes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -394,18 +394,18 @@ func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt := tt
 			t.Parallel()
-			got, err := filterFields[[]byte](tt.opt, tt.d)
+			got, err := filterData[[]byte](tt.opt, tt.d)
 			if !tt.wantErr(t, err, fmt.Sprintf(
-				"filterFields(%v, %v)", tt.opt, tt.d)) {
+				"filterData(%v, %v)", tt.opt, tt.d)) {
 				return
 			}
 			assert.Equalf(t, tt.want, got,
-				"filterFields(%v, %v)", tt.opt, tt.d)
+				"filterData(%v, %v)", tt.opt, tt.d)
 		})
 	}
 }
 
-func TestSecretDataBuilder_filterFields_with_any(t *testing.T) {
+func TestSecretDataBuilder_filterData_with_any(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -418,16 +418,21 @@ func TestSecretDataBuilder_filterFields_with_any(t *testing.T) {
 		{
 			name: "includes",
 			opt: &SecretTransformationOption{
-				Includes: []string{"^prefix_1.+"},
+				Includes: []string{
+					"^prefix_1.+",
+					"^other_1.+",
+				},
 			},
 			d: map[string]any{
 				"prefix_1_foo": "baz",
 				"prefix_1_qux": "bar",
 				"prefix_2_buz": "foo",
+				"other_1_baz":  "qux",
 			},
 			want: map[string]any{
 				"prefix_1_foo": "baz",
 				"prefix_1_qux": "bar",
+				"other_1_baz":  "qux",
 			},
 			wantErr: assert.NoError,
 		},
@@ -483,13 +488,13 @@ func TestSecretDataBuilder_filterFields_with_any(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt := tt
 			t.Parallel()
-			got, err := filterFields[any](tt.opt, tt.d)
+			got, err := filterData[any](tt.opt, tt.d)
 			if !tt.wantErr(t, err, fmt.Sprintf(
-				"filterFields(%v, %v)", tt.opt, tt.d)) {
+				"filterData(%v, %v)", tt.opt, tt.d)) {
 				return
 			}
 			assert.Equalf(t, tt.want, got,
-				"filterFields(%v, %v)", tt.opt, tt.d)
+				"filterData(%v, %v)", tt.opt, tt.d)
 		})
 	}
 }
@@ -561,7 +566,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 					Includes: []string{`^good.+`},
 				},
 			), want: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "default-1",
 						Template: secretsv1beta1.Template{
@@ -597,7 +602,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 				},
 			),
 			want: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "default",
 						Template: secretsv1beta1.Template{
@@ -647,12 +652,11 @@ func TestNewSecretRenderOption(t *testing.T) {
 					secretsv1beta1.SecretTransformationSpec{
 						SourceTemplates: []secretsv1beta1.SourceTemplate{
 							{
-								Name: "other",
-								Text: "{{- foo -}}",
+								Text: "{{- qux -}}",
+								Name: "named",
 							},
 							{
-								Name: "another",
-								Text: "{{- qux -}}",
+								Text: "{{- foo -}}",
 							},
 						},
 						Templates: map[string]secretsv1beta1.Template{
@@ -667,17 +671,17 @@ func TestNewSecretRenderOption(t *testing.T) {
 			want: &SecretTransformationOption{
 				Excludes: []string{`^bad.+`},
 				Includes: []string{`^good.+`},
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Template: secretsv1beta1.Template{
-							Name: "another",
-							Text: "{{- qux -}}",
+							Name: "default/templates/1",
+							Text: "{{- foo -}}",
 						},
 					},
 					{
 						Template: secretsv1beta1.Template{
-							Name: "other",
-							Text: "{{- foo -}}",
+							Name: "named",
+							Text: "{{- qux -}}",
 						},
 					},
 					{
@@ -711,11 +715,9 @@ func TestNewSecretRenderOption(t *testing.T) {
 					secretsv1beta1.SecretTransformationSpec{
 						Templates: map[string]secretsv1beta1.Template{
 							"baz": {
-								Name: "other",
 								Text: "{{- baz -}}",
 							},
 							"foo": {
-								Name: "foo",
 								Text: "{{- foo -}}",
 							},
 						},
@@ -725,18 +727,18 @@ func TestNewSecretRenderOption(t *testing.T) {
 			want: &SecretTransformationOption{
 				Excludes: []string{`^bad.+`},
 				Includes: []string{`^good.+`},
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "baz",
 						Template: secretsv1beta1.Template{
-							Name: "other",
+							Name: "default/templates/baz",
 							Text: "{{- baz -}}",
 						},
 					},
 					{
 						Key: "foo",
 						Template: secretsv1beta1.Template{
-							Name: "foo",
+							Name: "default/templates/foo",
 							Text: "{{- foo -}}",
 						},
 					},
@@ -900,7 +902,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 			want: &SecretTransformationOption{
 				Excludes: []string{`^bad.+`},
 				Includes: []string{`^good.+`},
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "foo",
 						Template: secretsv1beta1.Template{

@@ -332,7 +332,7 @@ _Appears in:_
 | --- | --- |
 | `namespace` _string_ | Namespace of the SecretTransformation resource. |
 | `name` _string_ | Name of the SecretTransformation resource. |
-| `templateRefSpecsSlice` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then all templates from the SecretTransformation will be rendered to the K8s Secret. |
+| `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then all templates from the SecretTransformation will be rendered to the K8s Secret. |
 
 
 #### VaultAuth

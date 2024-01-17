@@ -136,9 +136,9 @@ type VaultAuthSpec struct {
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws;gcp
-	Method string `json:"method"`
+	Method string `json:"method,omitempty"`
 	// Mount to use when authenticating to auth method.
-	Mount string `json:"mount"`
+	Mount string `json:"mount,omitempty"`
 	// Params to use when authenticating to Vault
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.

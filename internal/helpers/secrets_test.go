@@ -615,7 +615,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-equal-raw-data",
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -657,7 +657,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-b64enc-values",
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -696,7 +696,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-b64dec-values",
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -733,7 +733,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		{
 			name: "tmpl-with-metadata",
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -785,7 +785,7 @@ META_QUX=biff
 		{
 			name: "tmpl-mixed",
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -823,7 +823,7 @@ META_QUX=biff
 			name: "tmpl-filter-includes-mixed",
 			opt: &SecretTransformationOption{
 				Includes: []string{`^buz$`},
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -859,7 +859,7 @@ META_QUX=biff
 			name: "tmpl-filter-subset-includes-mixed",
 			opt: &SecretTransformationOption{
 				Includes: []string{`^foo$`},
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -895,7 +895,7 @@ META_QUX=biff
 		{
 			name: "tmpl-render-range-over-error",
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -923,7 +923,7 @@ META_QUX=biff
 		{
 			name: "tmpl-render-function-not-defined-error",
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -952,9 +952,11 @@ META_QUX=biff
 			opt: &SecretTransformationOption{
 				// buz should not be excluded since it is a rendered template field.
 				Excludes: []string{
-					`^(buz|baz|foo)$`,
+					`^buz$'`,
+					`^baz$`,
+					`^foo$`,
 				},
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "buz",
 						Template: secretsv1beta1.Template{
@@ -1016,7 +1018,8 @@ META_QUX=biff
 			name: "filter-include",
 			opt: &SecretTransformationOption{
 				Includes: []string{
-					`^(baz|foo)$`,
+					`^foo$`,
+					`^baz$`,
 				},
 			},
 			data: map[string]interface{}{
@@ -1262,7 +1265,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			name: "tmpl-valid",
 			resp: respValid,
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "bar",
 						Template: secretsv1beta1.Template{
@@ -1283,7 +1286,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			name: "tmpl-with-metadata-valid",
 			resp: respValid,
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "metadata.json",
 						Template: secretsv1beta1.Template{
@@ -1336,7 +1339,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			name: "tmpl-filter-excludes-valid",
 			resp: respValid,
 			opt: &SecretTransformationOption{
-				KeyedTemplates: []KeyedTemplate{
+				KeyedTemplates: []*KeyedTemplate{
 					{
 						Key: "bar",
 						Template: secretsv1beta1.Template{

@@ -372,7 +372,7 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 				},
 			},
 			opt: &helpers.SecretTransformationOption{
-				KeyedTemplates: []helpers.KeyedTemplate{
+				KeyedTemplates: []*helpers.KeyedTemplate{
 					{
 						Key: "foo",
 						Template: secretsv1beta1.Template{
@@ -593,7 +593,7 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 				},
 			},
 			opt: &helpers.SecretTransformationOption{
-				KeyedTemplates: []helpers.KeyedTemplate{
+				KeyedTemplates: []*helpers.KeyedTemplate{
 					{
 						Key: "foo",
 						Template: secretsv1beta1.Template{

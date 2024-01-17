@@ -515,7 +515,7 @@ func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
 		data[k] = v
 	}
 
-	filtered, err := filterFields(filter, secretData)
+	filtered, err := filterData(filter, secretData)
 	if err != nil {
 		return nil, err
 	}
