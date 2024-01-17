@@ -35,31 +35,88 @@ func Test_renderTemplates(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   *SecretInput
-		opt     *SecretRenderOption
+		opt     *SecretTransformationOption
 		want    map[string][]byte
 		wantErr assert.ErrorAssertionFunc
 	}{
 		{
+			name:  "multi-with-helpers-2",
+			input: NewSecretInput[string, string](secrets, nil, nil, nil),
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Template: secretsv1beta1.Template{
+							Name: "t1s",
+							Text: `{{define "helper1"}}{{- get .Secrets "baz" | b64dec -}}{{end}}`,
+						},
+					},
+					{
+						Template: secretsv1beta1.Template{
+							Name: "t2s",
+							Text: `{{define "helper2"}}{{- get .Secrets "foo" -}}{{end}}`,
+						},
+					},
+					{
+						Key: "t1r",
+						Template: secretsv1beta1.Template{
+							Name: "t1r",
+							Text: `{{- template "helper1" . -}}`,
+						},
+					},
+					{
+						Key: "t2r",
+						Template: secretsv1beta1.Template{
+							Name: "t2r",
+							Text: `{{- template "helper2" . -}}`,
+						},
+					},
+					{
+						Key: "t3r",
+						Template: secretsv1beta1.Template{
+							Name: "t3r",
+							Text: `{{template "helper1" . }}_{{template "helper2" . }}`,
+						},
+					},
+				},
+			},
+			want: map[string][]byte{
+				"t1r": []byte(`foo`),
+				"t2r": marshalRaw(t, 1),
+				"t3r": []byte(`foo_1`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name:  "multi-with-helper",
 			input: NewSecretInput[any, any](secrets, nil, nil, nil),
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"helper": {
-						// source template should not be rendered to the K8s Secret
-						Source: true,
-						Text:   `{{define "helper"}}{{- . | b64dec -}}{{end}}`,
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Template: secretsv1beta1.Template{
+							Name: "helper",
+							Text: `{{define "helper"}}{{- . | b64dec -}}{{end}}`,
+						},
 					},
-					"t1r": {
-						Key:  "t1r",
-						Text: `{{- template "helper" get .Secrets "baz" -}}`,
+					{
+						Key: "t1r",
+						Template: secretsv1beta1.Template{
+							Name: "t1r",
+							Text: `{{- template "helper" get .Secrets "baz" -}}`,
+						},
 					},
-					"t2r": {
-						Key:  "t2r",
-						Text: `{{- template "helper" get .Secrets "bar" -}}`,
+					{
+						Key: "t2r",
+						Template: secretsv1beta1.Template{
+							Name: "t2r",
+							Text: `{{- template "helper" get .Secrets "bar" -}}`,
+						},
 					},
-					"t3r": {
-						Key:  "t3r",
-						Text: `{{- get .Secrets "foo" -}}`,
+					{
+						Key: "t3r",
+						Template: secretsv1beta1.Template{
+							Name: "t3r",
+							Text: `{{- get .Secrets "foo" -}}`,
+						},
 					},
 				},
 			},
@@ -83,13 +140,14 @@ func Test_renderTemplates(t *testing.T) {
 				map[string]string{
 					"myapp/name": "db",
 				}),
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"helpers": {
-						Source: true,
-						Text: `
-{{/* 
-compose a Postgres URL from SecretInput for this app 
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Template: secretsv1beta1.Template{
+							Name: "helper",
+							Text: `
+{{/*
+compose a Postgres URL from SecretInput for this app
 */}}
 {{- define "getPgUrl" -}}
 {{- $host := get .Annotations "myapp.config/postgres-host" -}}
@@ -105,7 +163,7 @@ create a Java props from SecretInput for this app
 {{- printf "db.%s=%s\n" $k $v -}}
 {{- end -}}
 {{- end -}}
-{{/* 
+{{/*
 create a JSON config from SecretInput for this app
 */}}
 {{- define "getAppJson" -}}
@@ -115,22 +173,35 @@ create a JSON config from SecretInput for this app
 {{- mustToPrettyJson $copy -}}
 {{- end -}}
 `,
+						},
 					},
-					"url": {
-						Key:  "url",
-						Text: `{{- template "getPgUrl" . -}}`,
+					{
+						Key: "url",
+						Template: secretsv1beta1.Template{
+							Name: "url",
+							Text: `{{- template "getPgUrl" . -}}`,
+						},
 					},
-					"app.props": {
-						Key:  "app.props",
-						Text: `{{- template "getAppProps" . -}}`,
+					{
+						Key: "app.props",
+						Template: secretsv1beta1.Template{
+							Name: "app.props",
+							Text: `{{- template "getAppProps" . -}}`,
+						},
 					},
-					"app.json": {
-						Key:  "app.json",
-						Text: `{{- template "getAppJson" . -}}`,
+					{
+						Key: "app.json",
+						Template: secretsv1beta1.Template{
+							Name: "app.json",
+							Text: `{{- template "getAppJson" . -}}`,
+						},
 					},
-					"app.name": {
-						Key:  "app.name",
-						Text: `{{- get .Labels "myapp/name" -}}`,
+					{
+						Key: "app.name",
+						Template: secretsv1beta1.Template{
+							Name: "app.name",
+							Text: `{{- get .Labels "myapp/name" -}}`,
+						},
 					},
 				},
 			},
@@ -150,52 +221,17 @@ db.username=alice
 			wantErr: assert.NoError,
 		},
 		{
-			name:  "multi-with-helpers",
-			input: NewSecretInput[string, string](secrets, nil, nil, nil),
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"t1s": {
-						// source template should not be rendered to the K8s Secret
-						Source: true,
-						Text: `{{define "helper1"}}{{- get .Secrets "baz" | b64dec -}}{{end}}
-`,
-					},
-					"ts2": {
-						// source template should not be rendered to the K8s Secret
-						Source: true,
-						Text:   `{{define "helper2"}}{{- get .Secrets "foo" -}}{{end}}`,
-					},
-					"t1r": {
-						Key:  "t1r",
-						Text: `{{- template "helper1" . -}}`,
-					},
-					"t2r": {
-						Key:  "t2r",
-						Text: `{{- template "helper2" . -}}`,
-					},
-					"t3r": {
-						Key:  "t3r",
-						Text: `{{template "helper1" . }}_{{template "helper2" . }}`,
-					},
-				},
-			},
-			want: map[string][]byte{
-				"t1r": []byte(`foo`),
-				"t2r": marshalRaw(t, 1),
-				"t3r": []byte(`foo_1`),
-			},
-			wantErr: assert.NoError,
-		},
-		{
 			name:  "single-with-metadata-only",
 			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "tmpl",
-						Text: `{{- $custom := get .Metadata "custom" -}}
-{{- get $custom "super" -}}
-`,
+						Template: secretsv1beta1.Template{
+							Name: "tmpl",
+							Text: `{{- $custom := get .Metadata "custom" -}}
+			{{- get $custom "super" -}}`,
+						},
 					},
 				},
 			},
@@ -207,13 +243,16 @@ db.username=alice
 		{
 			name:  "single-with-both",
 			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "tmpl",
-						Text: `{{- $custom := get .Metadata "custom" -}}
-{{- printf "%s_%s" (get $custom "super") (get .Secrets "bar" | b64dec) -}}
-`,
+						Template: secretsv1beta1.Template{
+							Name: "tmpl",
+							Text: `{{- $custom := get .Metadata "custom" -}}
+			{{- printf "%s_%s" (get $custom "super") (get .Secrets "bar" | b64dec) -}}
+			`,
+						},
 					},
 				},
 			},
@@ -225,10 +264,10 @@ db.username=alice
 		{
 			name:  "no-specs-error",
 			input: NewSecretInput[string, string](nil, nil, nil, nil),
-			opt:   &SecretRenderOption{},
+			opt:   &SecretTransformationOption{},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`no template specs configured`, i...)
+					`no templates configured`, i...)
 			},
 		},
 	}
@@ -252,14 +291,14 @@ func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		opt     *secretsv1beta1.FieldFilter
+		opt     *SecretTransformationOption
 		d       map[string][]byte
 		want    map[string][]byte
 		wantErr assert.ErrorAssertionFunc
 	}{
 		{
 			name: "includes",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Includes: []string{"^prefix_1.+"},
 			},
 			d: map[string][]byte{
@@ -275,7 +314,7 @@ func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
 		},
 		{
 			name: "excludes",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Excludes: []string{"^prefix_1.+"},
 			},
 			d: map[string][]byte{
@@ -290,7 +329,7 @@ func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
 		},
 		{
 			name: "both",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Includes: []string{"^prefix_.+"},
 				Excludes: []string{"^prefix_1.+"},
 			},
@@ -309,7 +348,7 @@ func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
 		},
 		{
 			name: "both-mutually-exclusive",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Includes: []string{"^prefix_1.+"},
 				Excludes: []string{"^prefix_1.+"},
 			},
@@ -322,7 +361,7 @@ func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
 		},
 		{
 			name: "invalid-includes-regex-error",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Includes: []string{"^(prefix_1.+"},
 			},
 			d: map[string][]byte{
@@ -337,7 +376,7 @@ func TestSecretDataBuilder_filterFields_with_bytes(t *testing.T) {
 		},
 		{
 			name: "invalid-excludes-regex-error",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Excludes: []string{"^(prefix_1.+"},
 			},
 			d: map[string][]byte{
@@ -371,14 +410,14 @@ func TestSecretDataBuilder_filterFields_with_any(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		opt     *secretsv1beta1.FieldFilter
+		opt     *SecretTransformationOption
 		d       map[string]any
 		want    map[string]any
 		wantErr assert.ErrorAssertionFunc
 	}{
 		{
 			name: "includes",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Includes: []string{"^prefix_1.+"},
 			},
 			d: map[string]any{
@@ -394,7 +433,7 @@ func TestSecretDataBuilder_filterFields_with_any(t *testing.T) {
 		},
 		{
 			name: "excludes",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Excludes: []string{"^prefix_1.+"},
 			},
 			d: map[string]any{
@@ -409,7 +448,7 @@ func TestSecretDataBuilder_filterFields_with_any(t *testing.T) {
 		},
 		{
 			name: "both",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Includes: []string{"^prefix_.+"},
 				Excludes: []string{"^prefix_1.+"},
 			},
@@ -428,7 +467,7 @@ func TestSecretDataBuilder_filterFields_with_any(t *testing.T) {
 		},
 		{
 			name: "both-mutually-exclusive",
-			opt: &secretsv1beta1.FieldFilter{
+			opt: &SecretTransformationOption{
 				Includes: []string{"^prefix_1.+"},
 				Excludes: []string{"^prefix_1.+"},
 			},
@@ -484,7 +523,9 @@ func TestNewSecretRenderOption(t *testing.T) {
 		}
 	}
 
-	newTransObj := func(t *testing.T, objMeta metav1.ObjectMeta, s secretsv1beta1.SecretTransformationSpec) *secretsv1beta1.SecretTransformation {
+	newTransObj := func(t *testing.T, objMeta metav1.ObjectMeta,
+		s secretsv1beta1.SecretTransformationSpec,
+	) *secretsv1beta1.SecretTransformation {
 		t.Helper()
 
 		return &secretsv1beta1.SecretTransformation{
@@ -499,42 +540,45 @@ func TestNewSecretRenderOption(t *testing.T) {
 		name            string
 		obj             ctrlclient.Object
 		secretTransObjs []*secretsv1beta1.SecretTransformation
-		want            *SecretRenderOption
+		want            *SecretTransformationOption
 		wantErr         assert.ErrorAssertionFunc
 	}{
 		{
 			name: "inline-default-2",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
-					TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+					Templates: map[string]secretsv1beta1.Template{
 						"default": {
+							Name: "default",
 							Text: "{{- -}}",
 						},
 						"default-2": {
+							Name: "default-2",
 							Text: "{{- -}}",
 						},
 					},
-					FieldFilter: secretsv1beta1.FieldFilter{
-						Excludes: []string{`^bad.+`},
-						Includes: []string{`^good.+`},
-					},
-				},
-			),
-			want: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"default": {
-						Key:  "default",
-						Text: "{{- -}}",
-					},
-					"default-2": {
-						Key:  "default-2",
-						Text: "{{- -}}",
-					},
-				},
-				FieldFilter: secretsv1beta1.FieldFilter{
 					Excludes: []string{`^bad.+`},
 					Includes: []string{`^good.+`},
 				},
+			), want: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "default",
+						Template: secretsv1beta1.Template{
+							Name: "default",
+							Text: "{{- -}}",
+						},
+					},
+					{
+						Key: "default-2",
+						Template: secretsv1beta1.Template{
+							Name: "default-2",
+							Text: "{{- -}}",
+						},
+					},
+				},
+				Excludes: []string{`^bad.+`},
+				Includes: []string{`^good.+`},
 			},
 			wantErr: assert.NoError,
 		},
@@ -542,28 +586,28 @@ func TestNewSecretRenderOption(t *testing.T) {
 			name: "inline-default",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
-					TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+					Templates: map[string]secretsv1beta1.Template{
 						"default": {
+							Name: "default",
 							Text: "{{- -}}",
 						},
 					},
-					FieldFilter: secretsv1beta1.FieldFilter{
-						Excludes: []string{`^bad.+`},
-						Includes: []string{`^good.+`},
-					},
-				},
-			),
-			want: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"default": {
-						Key:  "default",
-						Text: "{{- -}}",
-					},
-				},
-				FieldFilter: secretsv1beta1.FieldFilter{
 					Excludes: []string{`^bad.+`},
 					Includes: []string{`^good.+`},
 				},
+			),
+			want: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "default",
+						Template: secretsv1beta1.Template{
+							Name: "default",
+							Text: "{{- -}}",
+						},
+					},
+				},
+				Excludes: []string{`^bad.+`},
+				Includes: []string{`^good.+`},
 			},
 			wantErr: assert.NoError,
 		},
@@ -571,15 +615,10 @@ func TestNewSecretRenderOption(t *testing.T) {
 			name: "filter-only",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
-					FieldFilter: secretsv1beta1.FieldFilter{
-						Includes: []string{".+"},
-					},
-				}),
-			want: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{},
-				FieldFilter: secretsv1beta1.FieldFilter{
 					Includes: []string{".+"},
-				},
+				}),
+			want: &SecretTransformationOption{
+				Includes: []string{".+"},
 			},
 			wantErr: assert.NoError,
 		},
@@ -591,50 +630,52 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
-								"default": {
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
 									Name: "default",
-									Key:  "default",
 								},
 							},
 						},
 					},
-					FieldFilter: secretsv1beta1.FieldFilter{
-						Excludes: []string{`^bad.+`},
-						Includes: []string{`^good.+`},
-					},
+					Excludes: []string{`^bad.+`},
+					Includes: []string{`^good.+`},
 				},
 			),
 			secretTransObjs: []*secretsv1beta1.SecretTransformation{
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{
-						TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
-							"other": {
-								Text:   "{{- -}}",
-								Source: false,
+						SourceTemplates: []secretsv1beta1.SourceTemplate{
+							{
+								Name: "other",
+								Text: "{{- foo -}}",
 							},
+						},
+						Templates: map[string]secretsv1beta1.Template{
 							"default": {
-								Text:   "{{- -}}",
-								Source: false,
+								Name: "default",
+								Text: "{{- baz -}}",
 							},
 						},
 					},
 				),
 			},
-			want: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Excludes: []string{`^bad.+`},
-					Includes: []string{`^good.+`},
-				},
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"default": {
-						Key:  "default",
-						Text: "{{- -}}",
+			want: &SecretTransformationOption{
+				Excludes: []string{`^bad.+`},
+				Includes: []string{`^good.+`},
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "default",
+						Template: secretsv1beta1.Template{
+							Name: "default",
+							Text: "{{- baz -}}",
+						},
 					},
-					"other": {
-						Source: true,
-						Text:   "{{- -}}",
+					{
+						Template: secretsv1beta1.Template{
+							Name: "other",
+							Text: "{{- foo -}}",
+						},
 					},
 				},
 			},
@@ -650,46 +691,44 @@ func TestNewSecretRenderOption(t *testing.T) {
 							Name:      "templates",
 						},
 					},
-					FieldFilter: secretsv1beta1.FieldFilter{
-						Excludes: []string{`^bad.+`},
-						Includes: []string{`^good.+`},
-					},
+					Excludes: []string{`^bad.+`},
+					Includes: []string{`^good.+`},
 				},
 			),
 			secretTransObjs: []*secretsv1beta1.SecretTransformation{
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{
-						TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
-							"other": {
-								Key:    "baz",
-								Text:   "{{- baz -}}",
-								Source: false,
+						Templates: map[string]secretsv1beta1.Template{
+							"baz": {
+								Name: "other",
+								Text: "{{- baz -}}",
 							},
-							"default": {
-								Key:    "foo",
-								Text:   "{{- foo -}}",
-								Source: false,
+							"foo": {
+								Name: "foo",
+								Text: "{{- foo -}}",
 							},
 						},
 					},
 				),
 			},
-			want: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Excludes: []string{`^bad.+`},
-					Includes: []string{`^good.+`},
-				},
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"other": {
-						Key:    "baz",
-						Text:   "{{- baz -}}",
-						Source: false,
+			want: &SecretTransformationOption{
+				Excludes: []string{`^bad.+`},
+				Includes: []string{`^good.+`},
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "baz",
+						Template: secretsv1beta1.Template{
+							Name: "other",
+							Text: "{{- baz -}}",
+						},
 					},
-					"default": {
-						Key:    "foo",
-						Text:   "{{- foo -}}",
-						Source: false,
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "foo",
+							Text: "{{- foo -}}",
+						},
 					},
 				},
 			},
@@ -713,9 +752,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 					secretsv1beta1.SecretTransformationSpec{},
 				),
 			},
-			want: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{},
-			},
+			want:    &SecretTransformationOption{},
 			wantErr: assert.NoError,
 		},
 		{
@@ -742,9 +779,9 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
-								"default": {
-									Source: true,
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Name: "default",
 								},
 							},
 						},
@@ -755,11 +792,10 @@ func TestNewSecretRenderOption(t *testing.T) {
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{
-						TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+						Templates: map[string]secretsv1beta1.Template{
 							"other": {
-								Key:    "baz",
-								Text:   "{{- baz -}}",
-								Source: false,
+								Name: "other",
+								Text: "{{- baz -}}",
 							},
 						},
 					},
@@ -780,18 +816,20 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
-								"default": {
-									Key: "other",
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Name:        "default",
+									KeyOverride: "other",
 								},
 							},
 						},
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
-								"default": {
-									Key: "other",
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Name:        "default",
+									KeyOverride: "other",
 								},
 							},
 						},
@@ -802,10 +840,10 @@ func TestNewSecretRenderOption(t *testing.T) {
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{
-						TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+						Templates: map[string]secretsv1beta1.Template{
 							"default": {
-								Text:   "{{- -}}",
-								Source: false,
+								Name: "default",
+								Text: "{{- -}}",
 							},
 						},
 					},
@@ -817,41 +855,52 @@ func TestNewSecretRenderOption(t *testing.T) {
 			},
 		},
 		{
-			name: "refs-key-empty-error",
+			name: "refs-key-override",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
 					TransformationRefs: []secretsv1beta1.TransformationRef{
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
-								"default": {},
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Name:        "default",
+									KeyOverride: "foo",
+								},
 							},
 						},
 					},
-					FieldFilter: secretsv1beta1.FieldFilter{
-						Excludes: []string{`^bad.+`},
-						Includes: []string{`^good.+`},
-					},
+					Excludes: []string{`^bad.+`},
+					Includes: []string{`^good.+`},
 				},
 			),
 			secretTransObjs: []*secretsv1beta1.SecretTransformation{
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{
-						TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+						Templates: map[string]secretsv1beta1.Template{
 							"default": {
-								Text:   "{{- -}}",
-								Source: false,
+								Name: "default",
+								Text: "{{- -}}",
 							},
 						},
 					},
 				),
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err,
-					`key cannot be empty when source is false`)
+			want: &SecretTransformationOption{
+				Excludes: []string{`^bad.+`},
+				Includes: []string{`^good.+`},
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "default",
+							Text: "{{- -}}",
+						},
+					},
+				},
 			},
+			wantErr: assert.NoError,
 		},
 		{
 			name: "duplicate-template-name-error",
@@ -861,36 +910,34 @@ func TestNewSecretRenderOption(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "templates",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
-								"default": {
-									Source: true,
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Name: "default",
 								},
 							},
 						},
 						{
 							Namespace: "default",
 							Name:      "dupe",
-							TemplateRefSpecs: map[string]secretsv1beta1.TemplateRefSpec{
-								"default": {
-									Source: true,
+							TemplateRefs: []secretsv1beta1.TemplateRef{
+								{
+									Name: "default",
 								},
 							},
 						},
 					},
-					FieldFilter: secretsv1beta1.FieldFilter{
-						Excludes: []string{`^bad.+`},
-						Includes: []string{`^good.+`},
-					},
+					Excludes: []string{`^bad.+`},
+					Includes: []string{`^good.+`},
 				},
 			),
 			secretTransObjs: []*secretsv1beta1.SecretTransformation{
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{
-						TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+						Templates: map[string]secretsv1beta1.Template{
 							"default": {
-								Text:   "{{- -}}",
-								Source: true,
+								Name: "default",
+								Text: "{{- -}}",
 							},
 						},
 					},
@@ -898,9 +945,10 @@ func TestNewSecretRenderOption(t *testing.T) {
 				newTransObj(t,
 					dupeTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{
-						TemplateSpecs: map[string]secretsv1beta1.TemplateSpec{
+						Templates: map[string]secretsv1beta1.Template{
 							"default": {
-								Text: "{{- -}}", Source: true,
+								Name: "default",
+								Text: "{{- -}}",
 							},
 						},
 					},
@@ -909,7 +957,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
 					`failed to gather templates, `+
-						`duplicate template spec name "default"`)
+						`duplicate template name "default"`)
 			},
 		},
 		{

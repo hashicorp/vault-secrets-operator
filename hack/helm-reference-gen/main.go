@@ -66,9 +66,9 @@ var (
 	docNodeTmpl = template.Must(
 		template.New("").Funcs(funcMap).Parse(
 			strings.Replace(
-				`{{- if eq .Column 1 }}### {{ .Key }} ((#h-{{ .Key | ToLower }}))
+				`{{- if eq .Column 1 }}### {{ .KeyOverride }} ((#h-{{ .KeyOverride | ToLower }}))
 
-{{ end }}{{ .LeadingIndent }}- ${{ .Key }}$ ((#v{{ .HTMLAnchor }})){{ if ne .FormattedKind "" }} (${{ .FormattedKind }}{{ if .FormattedDefault }}: {{ .FormattedDefault }}{{ end }}$){{ end }}{{ if .FormattedDocumentation}} - {{ .FormattedDocumentation }}{{ end }}`,
+{{ end }}{{ .LeadingIndent }}- ${{ .KeyOverride }}$ ((#v{{ .HTMLAnchor }})){{ if ne .FormattedKind "" }} (${{ .FormattedKind }}{{ if .FormattedDefault }}: {{ .FormattedDefault }}{{ end }}$){{ end }}{{ if .FormattedDocumentation}} - {{ .FormattedDocumentation }}{{ end }}`,
 				"$", "`", -1)),
 	)
 )

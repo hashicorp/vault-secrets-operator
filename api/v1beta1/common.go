@@ -42,13 +42,27 @@ type RolloutRestartTarget struct {
 }
 
 type Transformation struct {
-	// TemplateSpecs map a template name to a TemplateSpec.
-	TemplateSpecs map[string]TemplateSpec `json:"templateSpecs,omitempty"`
-	// FieldFilter provides filtering of the source secret data before it is stored.
-	// Templated fields are not affected by filtering.
-	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
-	// TransformationRefs contain references to template configuration from SecretTransformation
+	// Templates maps a template name to its Template. Templates are always included
+	// in the rendered K8s Secret, and take precedence over templates defined in a
+	// SecretTransformation.
+	Templates map[string]Template `json:"templates,omitempty"`
+	// TransformationRefs contain references to template configuration from
+	// SecretTransformation
 	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
+	// Includes contains regex patterns of keys that should be included in the K8s
+	// Secret Data.
+	// FieldFilter can be used to filter the secret data that is stored in the K8s
+	// Secret Destination. Filters will not be applied to templated fields, those
+	// will always be included in the Destination K8s Secret. Exclusion filters are
+	// always applied first.
+	Includes []string `json:"includes,omitempty"`
+	// Excludes contains regex pattern for keys that should be excluded from the K8s
+	// Secret Data.
+	// FieldFilter can be used to filter the secret data that is stored in the K8s
+	// Secret Destination. Filters will not be applied to templated fields, those
+	// will always be included in the Destination K8s Secret. Exclusion filters are
+	// always applied first.
+	Excludes []string `json:"excludes,omitempty"`
 	// ExcludeRaw data from the destination Secret. Exclusion policy can be set
 	// globally by including 'exclude-raw` in the '--global-rendering-options'
 	// command line flag. The global policy always takes precedence over this
@@ -65,47 +79,29 @@ type TransformationRef struct {
 	Namespace string `json:"namespace,omitempty"`
 	// Name of the SecretTransformation resource.
 	Name string `json:"name"`
-	// TemplateRefSpecs map to a TemplateSpec found in this TransformationRef.
-	TemplateRefSpecs map[string]TemplateRefSpec `json:"templateRefSpecs"`
+	// TemplateRefs map to a Template found in this TransformationRef. If empty, then
+	// all templates from the SecretTransformation will be rendered to the K8s Secret.
+	TemplateRefs []TemplateRef `json:"templateRefSpecsSlice,omitempty"`
 }
 
-// TemplateRefSpec points to templating text that is stored in a
+// TemplateRef points to templating text that is stored in a
 // SecretTransformation custom resource.
-type TemplateRefSpec struct {
-	// Name of the TemplateSpec in SecretTransformationSpec.TemplateSpecs.
+type TemplateRef struct {
+	// Name of the Template in SecretTransformationSpec.Templates.
 	// the rendered secret data.
 	Name string `json:"name"`
-	// Key to the rendered template in the Destination secret. If Key is empty, then
-	// the Key from reference spec will be used. Set this to override the Key set from
-	// the reference spec.
-	Key string `json:"key,omitempty"`
-	// Source the template when true, this spec will not be rendered to the K8s Secret data.
-	Source bool `json:"source,omitempty"`
+	// KeyOverride to the rendered template in the Destination secret. If Key is
+	// empty, then the Key from reference spec will be used. Set this to override the
+	// Key set from the reference spec.
+	KeyOverride string `json:"keyOverride,omitempty"`
 }
 
-// TemplateSpec provides inline templating configuration.
-type TemplateSpec struct {
-	// Key that the rendered Text will be stored with in the K8s Destination Secret.
-	// An empty value is allowed to be empty when Source is true. If Source is false,
-	// then a value must be provided.
-	Key string `json:"key,omitempty"`
-	// Source the template, the spec will not be rendered to the K8s Secret data.
-	Source bool `json:"source,omitempty"`
+// Template provides templating configuration.
+type Template struct {
+	// Name of the Template
+	Name string `json:"name"`
 	// Text contains the Go text template format. The template
 	// references attributes from the data structure of the source secret.
 	// Refer to https://pkg.go.dev/text/template for more information.
 	Text string `json:"text"`
-}
-
-// FieldFilter can be used to filter the secret data that is stored in the K8s
-// Secret Destination. Filters will not be applied to templated fields, those
-// will always be included in the Destination K8s Secret. Exclusion filters are
-// always applied first.
-type FieldFilter struct {
-	// Includes contains regex patterns of keys that should be included in the K8s
-	// Secret Data.
-	Includes []string `json:"includes,omitempty"`
-	// Excludes contains regex pattern for keys that should be excluded from the K8s
-	// Secret Data.
-	Excludes []string `json:"excludes,omitempty"`
 }

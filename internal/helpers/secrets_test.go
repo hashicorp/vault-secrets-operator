@@ -493,7 +493,7 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 	tests := []struct {
 		name    string
 		data    map[string]interface{}
-		opt     *SecretRenderOption
+		opt     *SecretTransformationOption
 		raw     map[string]interface{}
 		want    map[string][]byte
 		wantErr assert.ErrorAssertionFunc
@@ -614,16 +614,22 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		},
 		{
 			name: "tmpl-equal-raw-data",
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }} {{- printf "%s=%s\n" $key $value -}}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }} {{- printf "%s=%s\n" $key $value -}}
 {{- end }}`,
+						},
 					},
-					"tmpl2": {
-						Key:  "qux",
-						Text: `it`,
+					{
+						Key: "qux",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `it`,
+						},
 					},
 				},
 			},
@@ -650,13 +656,16 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		},
 		{
 			name: "tmpl-b64enc-values",
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%s\n" $key ( $value | b64enc ) -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -686,13 +695,16 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		},
 		{
 			name: "tmpl-b64dec-values",
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%s\n" $key ( $value | b64dec ) -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -720,16 +732,19 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 		},
 		{
 			name: "tmpl-with-metadata",
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets -}}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets -}}
 {{- printf "SEC_%s=%s\n" ( $key | upper ) ( $value | b64dec ) -}}
 {{- end }}
 {{- range $key, $value := get .Metadata "custom_metadata" -}}
 {{- printf "META_%s=%s\n" ( $key | upper ) $value -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -769,13 +784,16 @@ META_QUX=biff
 		},
 		{
 			name: "tmpl-mixed",
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -803,16 +821,17 @@ META_QUX=biff
 		},
 		{
 			name: "tmpl-filter-includes-mixed",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{`^buz$`},
-				},
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				Includes: []string{`^buz$`},
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -838,16 +857,17 @@ META_QUX=biff
 		},
 		{
 			name: "tmpl-filter-subset-includes-mixed",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{`^foo$`},
-				},
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				Includes: []string{`^foo$`},
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -874,13 +894,16 @@ META_QUX=biff
 		},
 		{
 			name: "tmpl-render-range-over-error",
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := . }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := . }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -899,13 +922,16 @@ META_QUX=biff
 		},
 		{
 			name: "tmpl-render-function-not-defined-error",
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key ($value | bx2dec -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -923,19 +949,20 @@ META_QUX=biff
 		},
 		{
 			name: "tmpl-filtered-excludes-mixed",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					// buz should not be excluded since it is a rendered template field.
-					Excludes: []string{
-						`^(buz|baz|foo)$`,
-					},
+			opt: &SecretTransformationOption{
+				// buz should not be excluded since it is a rendered template field.
+				Excludes: []string{
+					`^(buz|baz|foo)$`,
 				},
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
+				KeyedTemplates: []KeyedTemplate{
+					{
 						Key: "buz",
-						Text: `{{- range $key, $value := .Secrets }}
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
 {{- printf "%s=%v\n" $key $value -}}
 {{- end }}`,
+						},
 					},
 				},
 			},
@@ -961,11 +988,9 @@ META_QUX=biff
 		},
 		{
 			name: "filter-exclude-all",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Excludes: []string{
-						`^(buz|baz|foo)$`,
-					},
+			opt: &SecretTransformationOption{
+				Excludes: []string{
+					`^(buz|baz|foo)$`,
 				},
 			},
 			data: map[string]interface{}{
@@ -989,11 +1014,9 @@ META_QUX=biff
 		},
 		{
 			name: "filter-include",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{
-						`^(baz|foo)$`,
-					},
+			opt: &SecretTransformationOption{
+				Includes: []string{
+					`^(baz|foo)$`,
 				},
 			},
 			data: map[string]interface{}{
@@ -1019,14 +1042,12 @@ META_QUX=biff
 		},
 		{
 			name: "filter-both-mutually-exclusive",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{
-						`^(baz|foo)$`,
-					},
-					Excludes: []string{
-						`^foo$`,
-					},
+			opt: &SecretTransformationOption{
+				Includes: []string{
+					`^(baz|foo)$`,
+				},
+				Excludes: []string{
+					`^foo$`,
 				},
 			},
 			data: map[string]interface{}{
@@ -1051,11 +1072,9 @@ META_QUX=biff
 		},
 		{
 			name: "filter-include-greedy",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{
-						`.*b.*`,
-					},
+			opt: &SecretTransformationOption{
+				Includes: []string{
+					`.*b.*`,
 				},
 			},
 			data: map[string]interface{}{
@@ -1082,14 +1101,12 @@ META_QUX=biff
 		},
 		{
 			name: "filter-both-greedy",
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{
-						`.*b.*`,
-					},
-					Excludes: []string{
-						`.*z.*`,
-					},
+			opt: &SecretTransformationOption{
+				Includes: []string{
+					`.*b.*`,
+				},
+				Excludes: []string{
+					`.*z.*`,
 				},
 			},
 			data: map[string]interface{}{
@@ -1114,15 +1131,13 @@ META_QUX=biff
 		},
 		{
 			name: "filter-both-greedy-exclude-raw",
-			opt: &SecretRenderOption{
+			opt: &SecretTransformationOption{
 				ExcludeRaw: true,
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{
-						`.*b.*`,
-					},
-					Excludes: []string{
-						`.*z.*`,
-					},
+				Includes: []string{
+					`.*b.*`,
+				},
+				Excludes: []string{
+					`.*z.*`,
 				},
 			},
 			data: map[string]interface{}{
@@ -1142,7 +1157,7 @@ META_QUX=biff
 		},
 		{
 			name: "exclude-raw",
-			opt: &SecretRenderOption{
+			opt: &SecretTransformationOption{
 				ExcludeRaw: true,
 			},
 			data: map[string]interface{}{
@@ -1274,7 +1289,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 	tests := []struct {
 		name    string
 		resp    *hvsclient.OpenAppSecretsOK
-		opt     *SecretRenderOption
+		opt     *SecretTransformationOption
 		want    map[string][]byte
 		wantErr assert.ErrorAssertionFunc
 	}{
@@ -1291,14 +1306,16 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 		{
 			name: "tmpl-valid",
 			resp: respValid,
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
-						Key:  "bar",
-						Text: `{{- get .Secrets "bar" | upper -}}`,
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "bar",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- get .Secrets "bar" | upper -}}`,
+						},
 					},
 				},
-				FieldFilter: secretsv1beta1.FieldFilter{},
 			},
 			want: map[string][]byte{
 				"bar":            []byte("FOO"),
@@ -1310,14 +1327,16 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 		{
 			name: "tmpl-with-metadata-valid",
 			resp: respValid,
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
-						Key:  "metadata.json",
-						Text: `{{- .Metadata | mustToPrettyJson -}}`,
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "metadata.json",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- .Metadata | mustToPrettyJson -}}`,
+						},
 					},
 				},
-				FieldFilter: secretsv1beta1.FieldFilter{},
 			},
 			want: map[string][]byte{
 				"metadata.json": []byte(`{
@@ -1361,16 +1380,17 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 		{
 			name: "tmpl-filter-excludes-valid",
 			resp: respValid,
-			opt: &SecretRenderOption{
-				Specs: map[string]secretsv1beta1.TemplateSpec{
-					"tmpl1": {
-						Key:  "bar",
-						Text: `{{- get .Secrets "bar" | upper -}}`,
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []KeyedTemplate{
+					{
+						Key: "bar",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- get .Secrets "bar" | upper -}}`,
+						},
 					},
 				},
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Excludes: []string{"foo"},
-				},
+				Excludes: []string{"foo"},
 			},
 			want: map[string][]byte{
 				"bar":            []byte("FOO"),
@@ -1381,10 +1401,8 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 		{
 			name: "filter-includes-valid",
 			resp: respValid,
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Includes: []string{"foo"},
-				},
+			opt: &SecretTransformationOption{
+				Includes: []string{"foo"},
 			},
 			want: map[string][]byte{
 				"foo":            []byte("qux"),
@@ -1395,10 +1413,8 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 		{
 			name: "filter-excludes-valid",
 			resp: respValid,
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Excludes: []string{"foo"},
-				},
+			opt: &SecretTransformationOption{
+				Excludes: []string{"foo"},
 			},
 			want: map[string][]byte{
 				"bar":            []byte("foo"),
@@ -1409,10 +1425,8 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 		{
 			name: "filter-error",
 			resp: respValid,
-			opt: &SecretRenderOption{
-				FieldFilter: secretsv1beta1.FieldFilter{
-					Excludes: []string{"(foo"},
-				},
+			opt: &SecretTransformationOption{
+				Excludes: []string{"(foo"},
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
@@ -1439,7 +1453,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 		{
 			name: "exclude-raw",
 			resp: respValid,
-			opt: &SecretRenderOption{
+			opt: &SecretTransformationOption{
 				ExcludeRaw: true,
 			},
 			want: map[string][]byte{

@@ -372,9 +372,9 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 type SecretDataBuilder struct{}
 
 // WithVaultData returns the K8s Secret data from a Vault Secret data.
-func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *SecretRenderOption) (map[string][]byte, error) {
+func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
-		opt = &SecretRenderOption{}
+		opt = &SecretTransformationOption{}
 	}
 
 	raw, err := json.Marshal(secretData)
@@ -383,7 +383,7 @@ func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *Sec
 	}
 
 	data := make(map[string][]byte)
-	if len(opt.Specs) > 0 {
+	if len(opt.KeyedTemplates) > 0 {
 		metadata, ok := secretData["metadata"].(map[string]any)
 		if !ok {
 			metadata = make(map[string]any)
@@ -415,9 +415,9 @@ func marshalJSON(value any) ([]byte, error) {
 }
 
 // WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
-func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretRenderOption) (map[string][]byte, error) {
+func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
-		opt = &SecretRenderOption{}
+		opt = &SecretTransformationOption{}
 	}
 
 	p := resp.GetPayload()
@@ -432,7 +432,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	metadata := make(map[string]any)
 	// secret data returned to the caller
 	data := make(map[string][]byte)
-	hasTemplates := len(opt.Specs) > 0
+	hasTemplates := len(opt.KeyedTemplates) > 0
 	for _, v := range p.Secrets {
 		ver := v.Version
 		if ver == nil {
@@ -497,7 +497,7 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret)
 // response. Any extraData will always be included in the result data. Returns a
 // SecretDataErrorContainsRaw error if either secretData or extraData contain
 // SecretDataKeyRaw .
-func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, raw []byte, opt *SecretRenderOption) (map[string][]byte, error) {
+func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, raw []byte, opt *SecretTransformationOption) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 	if !opt.ExcludeRaw {
 		if _, ok := secretData[SecretDataKeyRaw]; ok {
@@ -514,7 +514,7 @@ func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, ra
 		data[k] = v
 	}
 
-	filtered, err := filterFields(&opt.FieldFilter, secretData)
+	filtered, err := filterFields(opt, secretData)
 	if err != nil {
 		return nil, err
 	}

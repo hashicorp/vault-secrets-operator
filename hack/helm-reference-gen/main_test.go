@@ -65,8 +65,8 @@ enabled: true`,
 # Map line 1
 # Map line 2
 map:
-  # Key line 1
-  # Key line 2
+  # KeyOverride line 1
+  # KeyOverride line 2
   key: value`,
 			Exp: `- [$map$](#h-map)
 
@@ -76,7 +76,7 @@ map:
 
 - $map$ ((#v-map)) - Map line 1\n  Map line 2
 
-  - $key$ ((#v-map-key)) ($string: value$) - Key line 1\n    Key line 2
+  - $key$ ((#v-map-key)) ($string: value$) - KeyOverride line 1\n    KeyOverride line 2
 `,
 		},
 		"map with multiple keys": {
@@ -84,8 +84,8 @@ map:
 # Map line 1
 # Map line 2
 map:
-  # Key line 1
-  # Key line 2
+  # KeyOverride line 1
+  # KeyOverride line 2
   key: value
   # Int docs
   int: 1
@@ -99,8 +99,8 @@ map:
 
 - $map$ ((#v-map)) - Map line 1\n  Map line 2
 
-  - $key$ ((#v-map-key)) ($string: value$) - Key line 1
-    Key line 2
+  - $key$ ((#v-map-key)) ($string: value$) - KeyOverride line 1
+    KeyOverride line 2
 
   - $int$ ((#v-map-int)) ($integer: 1$) - Int docs
 

@@ -27,11 +27,27 @@ type SecretTransformation struct {
 
 // SecretTransformationSpec defines the desired state of SecretTransformation
 type SecretTransformationSpec struct {
-	// TemplateSpecs maps a template name to its TemplateSpec.
-	TemplateSpecs map[string]TemplateSpec `json:"templateSpecs,omitempty"`
-	// FieldFilter provides filtering of the source secret data before it is stored.
-	// Templated fields are not affected by filtering.
-	FieldFilter FieldFilter `json:"fieldFilter,omitempty"`
+	// Templates maps a template name to its Template. Templates are always included
+	// in the rendered K8s Secret with the specified key.
+	Templates map[string]Template `json:"templates,omitempty"`
+	// SourceTemplates are never included in the rendered K8s Secret, they can be
+	// used to provide common template definitions, etc.
+	SourceTemplates []SourceTemplate `json:"sourceTemplates,omitempty"`
+	// Includes contains regex patterns of keys that should be included in the K8s
+	// Secret Data.
+	Includes []string `json:"includes,omitempty"`
+	// Excludes contains regex pattern for keys that should be excluded from the K8s
+	// Secret Data.
+	Excludes []string `json:"excludes,omitempty"`
+}
+
+// SourceTemplate provides source templating configuration.
+type SourceTemplate struct {
+	Name string `json:"name,omitempty"`
+	// Text contains the Go text template format. The template
+	// references attributes from the data structure of the source secret.
+	// Refer to https://pkg.go.dev/text/template for more information.
+	Text string `json:"text"`
 }
 
 //+kubebuilder:object:root=true
