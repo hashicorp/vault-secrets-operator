@@ -4,10 +4,12 @@
 package helpers
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 
 	"github.com/hashicorp/golang-lru/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,7 +76,6 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 	}, nil
 }
 
-// lots of confusion between key name and template name...
 // gatherTemplateSpecs attempts to collect all v1beta1.Template(s) for the
 // syncable secret object.
 func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
@@ -201,6 +202,14 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	if errs != nil {
 		return nil, errs
 	}
+
+	slices.SortFunc(keyedTemplates, func(a, b KeyedTemplate) int {
+		return cmp.Compare(
+			// source templates should come first, e.g key == ""
+			a.Key+"0"+a.Template.Name,
+			b.Key+"0"+b.Template.Name,
+		)
+	})
 
 	return keyedTemplates, nil
 }
