@@ -76,6 +76,12 @@ type TransformationRef struct {
 	// TemplateRefs map to a Template found in this TransformationRef. If empty, then
 	// all templates from the SecretTransformation will be rendered to the K8s Secret.
 	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
+	// IgnoreIncludes controls whether to use the SecretTransformation's Includes
+	// data key filters.
+	IgnoreIncludes bool `json:"ignoreIncludes"`
+	// IgnoreExcludes controls whether to use the SecretTransformation's Excludes
+	// data key filters.
+	IgnoreExcludes bool `json:"ignoreExcludes"`
 }
 
 // TemplateRef points to templating text that is stored in a

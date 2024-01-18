@@ -11,6 +11,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"sync"
 
 	"github.com/hashicorp/golang-lru/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -72,29 +73,33 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	keyedTemplates, err := gatherTemplateSpecs(ctx, client, meta)
+	fieldFilter := &FieldFilterSet{}
+	fieldFilter.AddExcludes(meta.Destination.Transformation.Excludes...)
+	fieldFilter.AddIncludes(meta.Destination.Transformation.Includes...)
+
+	keyedTemplates, err := gatherTemplates(ctx, client, meta, fieldFilter)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SecretTransformationOption{
-		Excludes:       meta.Destination.Transformation.Excludes,
-		Includes:       meta.Destination.Transformation.Includes,
+		Excludes:       fieldFilter.Excludes(),
+		Includes:       fieldFilter.Includes(),
 		KeyedTemplates: keyedTemplates,
 		Annotations:    obj.GetAnnotations(),
 		Labels:         obj.GetLabels(),
 	}, nil
 }
 
-// gatherTemplateSpecs attempts to collect all v1beta1.Template(s) for the
+// gatherTemplates attempts to collect all v1beta1.Template(s) for the
 // syncable secret object.
-func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
-	meta *common.SyncableSecretMetaData,
+func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData,
+	fieldFilter *FieldFilterSet,
 ) ([]*KeyedTemplate, error) {
 	var errs error
-	templates := make(map[string]secretsv1beta1.Template)
 	var keyedTemplates []*KeyedTemplate
 
+	templates := make(map[string]secretsv1beta1.Template)
 	addTemplate := func(tmpl secretsv1beta1.Template, key string) {
 		if _, ok := templates[tmpl.Name]; ok {
 			errs = errors.Join(errs,
@@ -103,7 +108,7 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 			return
 		}
 
-		if err := validateTemplateSpec(tmpl); err != nil {
+		if err := validateTemplate(tmpl); err != nil {
 			errs = errors.Join(errs, err)
 			return
 		}
@@ -116,12 +121,10 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 	}
 
 	transformation := meta.Destination.Transformation
-
 	// get the in-line template templates
 	for key, tmpl := range transformation.Templates {
 		name := tmpl.Name
 		if name == "" {
-			tmpl = *tmpl.DeepCopy()
 			tmpl.Name = fmt.Sprintf("%s/%s/%s", meta.Namespace, meta.Name, key)
 		}
 		addTemplate(tmpl, key)
@@ -152,6 +155,13 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 		if err != nil {
 			errs = errors.Join(errs, err)
 			continue
+		}
+
+		if !ref.IgnoreExcludes {
+			fieldFilter.AddExcludes(obj.Spec.Excludes...)
+		}
+		if !ref.IgnoreIncludes {
+			fieldFilter.AddIncludes(obj.Spec.Includes...)
 		}
 
 		// add all configured templates for the Destination
@@ -204,7 +214,6 @@ func gatherTemplateSpecs(ctx context.Context, client ctrlclient.Client,
 			}
 
 			if tmpl.Name == "" {
-				tmpl = *tmpl.DeepCopy()
 				tmpl.Name = fmt.Sprintf("%s/%s", objKey, key)
 			}
 
@@ -262,7 +271,7 @@ func renderTemplates(opt *SecretTransformationOption,
 			continue
 		}
 
-		if err := validateTemplateSpec(spec.Template); err != nil {
+		if err := validateTemplate(spec.Template); err != nil {
 			return nil, err
 		}
 
@@ -314,8 +323,8 @@ func filter[V any](d map[string]V, pats []string, f func(matched bool, k string)
 }
 
 // filterData filters data using SecretTransformationOption's exclude/include
-// regex patterns, with processing done in that order. If filter is nil, return
-// all data, unfiltered.
+// regex patterns, with processing done in that order. If
+// SecretTransformationOption is nil, return all data, unfiltered.
 func filterData[V any](opt *SecretTransformationOption, data map[string]V) (map[string]V, error) {
 	if opt == nil {
 		return data, nil
@@ -395,12 +404,60 @@ func NewSecretInput[A, L any](secrets, metadata map[string]any,
 	}
 }
 
-func validateTemplateSpec(tmpl secretsv1beta1.Template) error {
+func validateTemplate(tmpl secretsv1beta1.Template) error {
 	if tmpl.Name == "" {
-		// TODO: add more context to this error
 		return fmt.Errorf(
-			"template name cannot empty")
+			"template name empty")
 	}
 
 	return nil
+}
+
+type FieldFilterSet struct {
+	excludes sync.Map
+	includes sync.Map
+}
+
+func (f *FieldFilterSet) AddExcludes(pats ...string) {
+	f.add(true, pats...)
+}
+
+func (f *FieldFilterSet) Excludes() []string {
+	return f.keys(true)
+}
+
+func (f *FieldFilterSet) AddIncludes(pats ...string) {
+	f.add(false, pats...)
+}
+
+func (f *FieldFilterSet) Includes() []string {
+	return f.keys(false)
+}
+
+func (f *FieldFilterSet) add(excludes bool, pats ...string) {
+	for _, pat := range pats {
+		if excludes {
+			f.excludes.LoadOrStore(pat, true)
+		} else {
+			f.includes.LoadOrStore(pat, true)
+		}
+	}
+}
+
+func (f *FieldFilterSet) keys(excludes bool) []string {
+	var result []string
+	fn := func(key, _ any) bool {
+		result = append(result, key.(string))
+		return true
+	}
+
+	if excludes {
+		f.excludes.Range(fn)
+	} else {
+		f.includes.Range(fn)
+	}
+
+	slices.Sort(result)
+
+	return result
 }

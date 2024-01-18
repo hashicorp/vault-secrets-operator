@@ -549,12 +549,11 @@ func TestNewSecretRenderOption(t *testing.T) {
 		wantErr         assert.ErrorAssertionFunc
 	}{
 		{
-			name: "inline-default-2",
+			name: "inline-default",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
 					Templates: map[string]secretsv1beta1.Template{
 						"default-1": {
-							Name: "default-1",
 							Text: "{{- -}}",
 						},
 						"default-2": {
@@ -570,7 +569,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 					{
 						Key: "default-1",
 						Template: secretsv1beta1.Template{
-							Name: "default-1",
+							Name: "default/default/default-1",
 							Text: "{{- -}}",
 						},
 					},
@@ -588,7 +587,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "inline-default",
+			name: "inline-duplicate-template-name",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{
 					Templates: map[string]secretsv1beta1.Template{
@@ -596,25 +595,14 @@ func TestNewSecretRenderOption(t *testing.T) {
 							Name: "default",
 							Text: "{{- -}}",
 						},
-					},
-					Excludes: []string{`^bad.+`},
-					Includes: []string{`^good.+`},
-				},
-			),
-			want: &SecretTransformationOption{
-				KeyedTemplates: []*KeyedTemplate{
-					{
-						Key: "default",
-						Template: secretsv1beta1.Template{
+						"baz": {
 							Name: "default",
 							Text: "{{- -}}",
 						},
 					},
 				},
-				Excludes: []string{`^bad.+`},
-				Includes: []string{`^good.+`},
-			},
-			wantErr: assert.NoError,
+			),
+			wantErr: assert.Error,
 		},
 		{
 			name: "filter-only",
@@ -705,7 +693,223 @@ func TestNewSecretRenderOption(t *testing.T) {
 							Name:      "templates",
 						},
 					},
-					Excludes: []string{`^bad.+`},
+					Excludes: []string{`^ugly.+`, `^bad.+`},
+					Includes: []string{`^good.+`},
+				},
+			),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						Excludes: []string{`^bad.+`, `^amiss`},
+						Includes: []string{`^good.+`, `^a+`},
+						Templates: map[string]secretsv1beta1.Template{
+							"baz": {
+								Text: "{{- baz -}}",
+							},
+							"foo": {
+								Text: "{{- foo -}}",
+							},
+						},
+					},
+				),
+			},
+			want: &SecretTransformationOption{
+				Excludes: []string{`^amiss`, `^bad.+`, `^ugly.+`},
+				Includes: []string{`^a+`, `^good.+`},
+				KeyedTemplates: []*KeyedTemplate{
+					{
+						Key: "baz",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/baz",
+							Text: "{{- baz -}}",
+						},
+					},
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/foo",
+							Text: "{{- foo -}}",
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "refs-ignore-excludes",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: []secretsv1beta1.TransformationRef{
+						{
+							Namespace:      "default",
+							Name:           "templates",
+							IgnoreExcludes: true,
+						},
+					},
+					Excludes: []string{`^ugly.+`, `^bad.+`},
+					Includes: []string{`^good.+`},
+				},
+			),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						Excludes: []string{`^bad.+`, `^amiss`},
+						Includes: []string{`^good.+`, `^a+`},
+						Templates: map[string]secretsv1beta1.Template{
+							"baz": {
+								Text: "{{- baz -}}",
+							},
+							"foo": {
+								Text: "{{- foo -}}",
+							},
+						},
+					},
+				),
+			},
+			want: &SecretTransformationOption{
+				Excludes: []string{`^bad.+`, `^ugly.+`},
+				Includes: []string{`^a+`, `^good.+`},
+				KeyedTemplates: []*KeyedTemplate{
+					{
+						Key: "baz",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/baz",
+							Text: "{{- baz -}}",
+						},
+					},
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/foo",
+							Text: "{{- foo -}}",
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "refs-ignore-includes",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: []secretsv1beta1.TransformationRef{
+						{
+							Namespace:      "default",
+							Name:           "templates",
+							IgnoreIncludes: true,
+						},
+					},
+					Excludes: []string{`^ugly.+`, `^bad.+`},
+					Includes: []string{`^good.+`},
+				},
+			),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						Excludes: []string{`^bad.+`, `^amiss`},
+						Includes: []string{`^good.+`, `^a+`},
+						Templates: map[string]secretsv1beta1.Template{
+							"baz": {
+								Text: "{{- baz -}}",
+							},
+							"foo": {
+								Text: "{{- foo -}}",
+							},
+						},
+					},
+				),
+			},
+			want: &SecretTransformationOption{
+				Excludes: []string{`^amiss`, `^bad.+`, `^ugly.+`},
+				Includes: []string{`^good.+`},
+				KeyedTemplates: []*KeyedTemplate{
+					{
+						Key: "baz",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/baz",
+							Text: "{{- baz -}}",
+						},
+					},
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/foo",
+							Text: "{{- foo -}}",
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "refs-ignore-excludes-includes",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: []secretsv1beta1.TransformationRef{
+						{
+							Namespace:      "default",
+							Name:           "templates",
+							IgnoreExcludes: true,
+							IgnoreIncludes: true,
+						},
+					},
+					Excludes: []string{`^ugly.+`, `^bad.+`},
+					Includes: []string{`^good.+`},
+				},
+			),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						Excludes: []string{`^bad.+`, `^amiss`},
+						Includes: []string{`^good.+`, `^a+`},
+						Templates: map[string]secretsv1beta1.Template{
+							"baz": {
+								Text: "{{- baz -}}",
+							},
+							"foo": {
+								Text: "{{- foo -}}",
+							},
+						},
+					},
+				),
+			},
+			want: &SecretTransformationOption{
+				Excludes: []string{`^bad.+`, `^ugly.+`},
+				Includes: []string{`^good.+`},
+				KeyedTemplates: []*KeyedTemplate{
+					{
+						Key: "baz",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/baz",
+							Text: "{{- baz -}}",
+						},
+					},
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/foo",
+							Text: "{{- foo -}}",
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "refs-ignore-excludes",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: []secretsv1beta1.TransformationRef{
+						{
+							Namespace: "default",
+							Name:      "templates",
+						},
+					},
+					Excludes: []string{`^ugly.+`, `^bad.+`},
 					Includes: []string{`^good.+`},
 				},
 			),
@@ -725,7 +929,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 				),
 			},
 			want: &SecretTransformationOption{
-				Excludes: []string{`^bad.+`},
+				Excludes: []string{`^bad.+`, `^ugly.+`},
 				Includes: []string{`^good.+`},
 				KeyedTemplates: []*KeyedTemplate{
 					{
@@ -1057,6 +1261,32 @@ func TestNewSecretInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equalf(t, tt.want, NewSecretInput(tt.secrets, tt.metadata, tt.annotations, tt.labels),
 				"NewSecretInput(%v, %v)", tt.secrets, tt.metadata)
+		})
+	}
+}
+
+func Test_validateTemplate(t *testing.T) {
+	tests := []struct {
+		name    string
+		tmpl    secretsv1beta1.Template
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "valid",
+			tmpl: secretsv1beta1.Template{
+				Name: "baz",
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "invalid",
+			tmpl:    secretsv1beta1.Template{},
+			wantErr: assert.Error,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.wantErr(t, validateTemplate(tt.tmpl), fmt.Sprintf("validateTemplate(%v)", tt.tmpl))
 		})
 	}
 }

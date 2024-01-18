@@ -333,6 +333,8 @@ _Appears in:_
 | `namespace` _string_ | Namespace of the SecretTransformation resource. |
 | `name` _string_ | Name of the SecretTransformation resource. |
 | `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then all templates from the SecretTransformation will be rendered to the K8s Secret. |
+| `ignoreIncludes` _boolean_ | IgnoreIncludes controls whether to use the SecretTransformation's Includes data key filters. |
+| `ignoreExcludes` _boolean_ | IgnoreExcludes controls whether to use the SecretTransformation's Excludes data key filters. |
 
 
 #### VaultAuth
