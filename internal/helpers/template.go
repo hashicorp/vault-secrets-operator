@@ -73,11 +73,7 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	fieldFilter := &FieldFilterSet{}
-	fieldFilter.AddExcludes(meta.Destination.Transformation.Excludes...)
-	fieldFilter.AddIncludes(meta.Destination.Transformation.Includes...)
-
-	keyedTemplates, err := gatherTemplates(ctx, client, meta, fieldFilter)
+	keyedTemplates, fieldFilter, err := gatherTemplates(ctx, client, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -93,9 +89,7 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 
 // gatherTemplates attempts to collect all v1beta1.Template(s) for the
 // syncable secret object.
-func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData,
-	fieldFilter *FieldFilterSet,
-) ([]*KeyedTemplate, error) {
+func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData) ([]*KeyedTemplate, *FieldFilterSet, error) {
 	var errs error
 	var keyedTemplates []*KeyedTemplate
 
@@ -119,6 +113,10 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 			Template: tmpl,
 		})
 	}
+
+	fieldFilter := &FieldFilterSet{}
+	fieldFilter.AddExcludes(meta.Destination.Transformation.Excludes...)
+	fieldFilter.AddIncludes(meta.Destination.Transformation.Includes...)
 
 	transformation := meta.Destination.Transformation
 	// get the in-line template templates
@@ -222,14 +220,14 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 	}
 
 	if errs != nil {
-		return nil, errs
+		return nil, nil, errs
 	}
 
 	slices.SortFunc(keyedTemplates, func(a, b *KeyedTemplate) int {
 		return a.Cmp(b)
 	})
 
-	return keyedTemplates, nil
+	return keyedTemplates, fieldFilter, nil
 }
 
 // loadTemplates parses all v1beta1.Template into a single
