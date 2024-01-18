@@ -737,6 +737,57 @@ func TestNewSecretRenderOption(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name: "refs-with-filters",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: []secretsv1beta1.TransformationRef{
+						{
+							Namespace: "default",
+							Name:      "templates",
+						},
+					},
+				},
+			),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						Excludes: []string{`^ugly.+`, `^bad.+`},
+						Includes: []string{`^good.+`},
+						Templates: map[string]secretsv1beta1.Template{
+							"baz": {
+								Text: "{{- baz -}}",
+							},
+							"foo": {
+								Text: "{{- foo -}}",
+							},
+						},
+					},
+				),
+			},
+			want: &SecretTransformationOption{
+				Excludes: []string{`^bad.+`, `^ugly.+`},
+				Includes: []string{`^good.+`},
+				KeyedTemplates: []*KeyedTemplate{
+					{
+						Key: "baz",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/baz",
+							Text: "{{- baz -}}",
+						},
+					},
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "default/templates/foo",
+							Text: "{{- foo -}}",
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name: "refs-ignore-excludes",
 			obj: newSecretObj(t,
 				secretsv1beta1.Transformation{

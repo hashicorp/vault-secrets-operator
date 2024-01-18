@@ -78,10 +78,10 @@ type TransformationRef struct {
 	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
 	// IgnoreIncludes controls whether to use the SecretTransformation's Includes
 	// data key filters.
-	IgnoreIncludes bool `json:"ignoreIncludes"`
+	IgnoreIncludes bool `json:"ignoreIncludes,omitempty"`
 	// IgnoreExcludes controls whether to use the SecretTransformation's Excludes
 	// data key filters.
-	IgnoreExcludes bool `json:"ignoreExcludes"`
+	IgnoreExcludes bool `json:"ignoreExcludes,omitempty"`
 }
 
 // TemplateRef points to templating text that is stored in a
