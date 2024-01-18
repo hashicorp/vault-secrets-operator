@@ -77,24 +77,6 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
         create = true
         name   = "vso-db-demo"
         transformation = {
-          templates = {
-            "app.props" = {
-              name = "app.props"
-              text = "{{- template \"appProps\" . -}}"
-            }
-            "app.json" = {
-              name = "app.json"
-              text = "{{- template \"appJson\" . -}}"
-            },
-            "app.name" = {
-              name = "app.name"
-              text = "{{- template \"appName\" . -}}"
-            }
-            "url" = {
-              name = "url"
-              text = "{{- template \"dbUrl\" . -}}"
-            },
-          }
           transformationRefs = [
             {
               name = kubernetes_manifest.templates.manifest.metadata.name
@@ -111,6 +93,11 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
       ]
     }
   }
+
+  field_manager {
+    # force field manager conflicts to be overridden
+    force_conflicts = true
+  }
 }
 
 resource "kubernetes_manifest" "templates" {
@@ -122,6 +109,24 @@ resource "kubernetes_manifest" "templates" {
       namespace = kubernetes_namespace.dev.metadata[0].name
     }
     spec = {
+      templates = {
+        "app.props" = {
+          name = "app.props"
+          text = "{{- template \"appProps\" . -}}"
+        }
+        "app.json" = {
+          name = "app.json"
+          text = "{{- template \"appJson\" . -}}"
+        },
+        "app.name" = {
+          name = "app.name"
+          text = "{{- template \"appName\" . -}}"
+        }
+        "url" = {
+          name = "url"
+          text = "{{- template \"dbUrl\" . -}}"
+        },
+      }
       sourceTemplates = [
         {
           name = "helpers"
