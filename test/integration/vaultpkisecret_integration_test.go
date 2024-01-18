@@ -204,6 +204,7 @@ func TestVaultPKISecret(t *testing.T) {
 					AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 					URISans:      []string{"uri1.example.com", "uri2.example.com"},
 					IPSans:       []string{"127.1.1.1", "127.0.0.1"},
+					UserIDs:      []string{"12345", "67890"},
 					Destination: secretsv1beta1.Destination{
 						Name:   "pki1",
 						Create: false,

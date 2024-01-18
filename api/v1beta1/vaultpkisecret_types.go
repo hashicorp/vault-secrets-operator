@@ -80,6 +80,10 @@ type VaultPKISecretSpec struct {
 	// oid;type:value for each entry.
 	OtherSans []string `json:"otherSans,omitempty"`
 
+	// User ID (OID 0.9.2342.19200300.100.1.1) Subject values to be placed on the
+	// signed certificate.
+	UserIDs []string `json:"userIDs,omitempty"`
+
 	// TTL for the certificate; sets the expiration date.
 	// If not specified the Vault role's default,
 	// backend default, or system default TTL is used, in that order.
@@ -154,6 +158,7 @@ func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 		"ip_sans":                 strings.Join(v.Spec.IPSans, ","),
 		"uri_sans":                strings.Join(v.Spec.URISans, ","),
 		"other_sans":              strings.Join(v.Spec.OtherSans, ","),
+		"user_ids":                strings.Join(v.Spec.UserIDs, ","),
 		"ttl":                     v.Spec.TTL,
 		"not_after":               v.Spec.NotAfter,
 		"exclude_cn_from_sans":    v.Spec.ExcludeCNFromSans,
