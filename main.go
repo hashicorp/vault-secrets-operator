@@ -81,22 +81,27 @@ func main() {
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
-	flag.StringVar(&outputFormat, "output", "", "Output format for the operator version information (yaml or json)")
+	flag.StringVar(&outputFormat, "output", "",
+		"Output format for the operator version information (yaml or json). "+
+			"Also set from environment variable VSO_OUTPUT_FORMAT.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.IntVar(&cfc.ClientCacheSize, "client-cache-size", cfc.ClientCacheSize,
-		"Size of the in-memory LRU client cache.")
+		"Size of the in-memory LRU client cache. "+
+			"Also set from environment variable VSO_CLIENT_CACHE_SIZE.")
 	flag.StringVar(&clientCachePersistenceModel, "client-cache-persistence-model", defaultPersistenceModel,
 		fmt.Sprintf(
-			"The type of client cache persistence model that should be employed."+
+			"The type of client cache persistence model that should be employed. "+
+				"Also set from environment variable VSO_CLIENT_CACHE_PERSISTENCE_MODEL. "+
 				"choices=%v", []string{persistenceModelDirectUnencrypted, persistenceModelDirectEncrypted, persistenceModelNone}))
 	flag.IntVar(&vdsOptions.MaxConcurrentReconciles, "max-concurrent-reconciles-vds", defaultVaultDynamicSecretsConcurrency,
-		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller.")
+		"Maximum number of concurrent reconciles for the VaultDynamicSecrets controller. Deprecated in favor of -max-concurrent-reconciles.")
 	flag.IntVar(&controllerOptions.MaxConcurrentReconciles, "max-concurrent-reconciles", defaultSyncableSecretsConcurrency,
-		"Maximum number of concurrent reconciles for each controller.")
+		"Maximum number of concurrent reconciles for each controller. "+
+			"Also set from environment variable VSO_MAX_CONCURRENT_RECONCILES.")
 	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 60,
 		"Pre-delete hook timeout in seconds")
@@ -126,12 +131,6 @@ func main() {
 	}
 	if vsoEnvOptions.MaxConcurrentReconciles != nil {
 		controllerOptions.MaxConcurrentReconciles = *vsoEnvOptions.MaxConcurrentReconciles
-	}
-	if vsoEnvOptions.MaxConcurrentReconcilesVDS != nil {
-		vdsOptions.MaxConcurrentReconciles = *vsoEnvOptions.MaxConcurrentReconcilesVDS
-	}
-	if vsoEnvOptions.MinRefreshAfterHVSA != 0 {
-		minRefreshAfterHVSA = vsoEnvOptions.MinRefreshAfterHVSA
 	}
 
 	// versionInfo is used when setting up the buildInfo metric below

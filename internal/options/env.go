@@ -4,8 +4,6 @@
 package options
 
 import (
-	"time"
-
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -25,12 +23,6 @@ type VSOEnvOptions struct {
 
 	// MaxConcurrentReconciles is the VSO_MAX_CONCURRENT_RECONCILES environment variable option
 	MaxConcurrentReconciles *int `split_words:"true"`
-
-	// MaxConcurrentReconcilesVDS is the VSO_MAX_CONCURRENT_RECONCILES_VDS environment variable option
-	MaxConcurrentReconcilesVDS *int `split_words:"true"`
-
-	// MinRefreshAfterHVSA is the VSO_MIN_REFRESH_AFTER_HVSA environment variable option
-	MinRefreshAfterHVSA time.Duration `envconfig:"min_refresh_after_hvsa"`
 }
 
 // Parse environment variable options, prefixed with "VSO_"

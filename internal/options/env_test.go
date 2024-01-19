@@ -6,7 +6,6 @@ package options
 import (
 	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,16 +26,12 @@ func TestParse(t *testing.T) {
 				"VSO_CLIENT_CACHE_SIZE":              "100",
 				"VSO_CLIENT_CACHE_PERSISTENCE_MODEL": "memory",
 				"VSO_MAX_CONCURRENT_RECONCILES":      "10",
-				"VSO_MAX_CONCURRENT_RECONCILES_VDS":  "20",
-				"VSO_MIN_REFRESH_AFTER_HVSA":         "1h",
 			},
 			wantOptions: VSOEnvOptions{
 				OutputFormat:                "json",
 				ClientCacheSize:             makeInt(t, 100),
 				ClientCachePersistenceModel: "memory",
 				MaxConcurrentReconciles:     makeInt(t, 10),
-				MaxConcurrentReconcilesVDS:  makeInt(t, 20),
-				MinRefreshAfterHVSA:         1 * time.Hour,
 			},
 		},
 	}
