@@ -14,8 +14,8 @@ type HCPVaultSecretsAppSpec struct {
 	// HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg:
 	// `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default
 	// to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the
-	// Operator will default to the `default` HCPAuth, configured in its own
-	// Kubernetes namespace. HCPAuthRef string `json:"hcpAuthRef,omitempty"`
+	// Operator will default to the `default` HCPAuth, configured in the operators
+	// namespace. HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:validation:Type=string
