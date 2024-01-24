@@ -190,7 +190,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 func (r *VaultStaticSecretReconciler) addFinalizer(ctx context.Context, o client.Object) error {
 	if !controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
-		controllerutil.AddFinalizer(o, hcpVaultSecretsAppFinalizer)
+		controllerutil.AddFinalizer(o, vaultStaticSecretFinalizer)
 		if err := r.Client.Update(ctx, o); err != nil {
 			return err
 		}
