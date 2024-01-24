@@ -63,6 +63,9 @@ type Transformation struct {
 	// will always be included in the Destination K8s Secret. Exclusion filters are
 	// always applied first.
 	Excludes []string `json:"excludes,omitempty"`
+	// Resync the Secret on updates to any configured TransformationRefs.
+	// +kubebuilder:default=true
+	Resync bool `json:"resync"`
 }
 
 // TransformationRef contains the configuration for accessing templates from an

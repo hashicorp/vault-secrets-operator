@@ -317,6 +317,7 @@ _Appears in:_
 | `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation |
 | `includes` _string array_ | Includes contains regex patterns of keys that should be included in the K8s Secret Data. FieldFilter can be used to filter the secret data that is stored in the K8s Secret Destination. Filters will not be applied to templated fields, those will always be included in the Destination K8s Secret. Exclusion filters are always applied first. |
 | `excludes` _string array_ | Excludes contains regex pattern for keys that should be excluded from the K8s Secret Data. FieldFilter can be used to filter the secret data that is stored in the K8s Secret Destination. Filters will not be applied to templated fields, those will always be included in the Destination K8s Secret. Exclusion filters are always applied first. |
+| `resync` _boolean_ | Resync the Secret on updates to any configured TransformationRefs. |
 
 
 #### TransformationRef

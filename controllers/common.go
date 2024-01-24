@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -27,6 +28,8 @@ var (
 )
 
 const renewalPercentCap = 90
+
+type empty struct{}
 
 // LeaseTruncatedError indicates that the requested lease renewal duration is
 // less than expected
@@ -230,4 +233,24 @@ func syncableSecretPredicate() predicate.Predicate {
 		predicate.AnnotationChangedPredicate{},
 		// needed for template rendering
 		predicate.LabelChangedPredicate{})
+}
+
+func syncableSecretPredicateWithRegistry(registry *SyncRegistry) predicate.Predicate {
+	return predicate.Or(
+		predicate.GenerationChangedPredicate{},
+		// needed for template rendering
+		predicate.AnnotationChangedPredicate{},
+		// needed for template rendering
+		predicate.LabelChangedPredicate{},
+		ResourceVersionChangedPredicate{registry: registry},
+	)
+}
+
+type ResourceVersionChangedPredicate struct {
+	predicate.Funcs
+	registry *SyncRegistry
+}
+
+func (p *ResourceVersionChangedPredicate) GenericFunc(e event.GenericEvent) bool {
+	return p.registry.Contains(client.ObjectKeyFromObject(e.Object))
 }

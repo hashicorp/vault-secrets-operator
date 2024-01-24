@@ -5,8 +5,6 @@ package controllers
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,7 +16,6 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-	"github.com/hashicorp/vault-secrets-operator/internal/template"
 )
 
 // SecretTransformationReconciler reconciles a SecretTransformation object
@@ -53,35 +50,12 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	o.Status.Valid = true
-
-	var errs error
-	stmpl := template.NewSecretTemplate(o.Name)
-	for idx, tmpl := range o.Spec.SourceTemplates {
-		name := tmpl.Name
-		if name == "" {
-			name = fmt.Sprintf("%s/%d", client.ObjectKeyFromObject(o), idx)
-		}
-		if err := stmpl.Parse(name, tmpl.Text); err != nil {
-			errs = errors.Join(errs, err)
-		}
-	}
-
-	for _, tmpl := range o.Spec.Templates {
-		if err := stmpl.Parse(tmpl.Name, tmpl.Text); err != nil {
-			errs = errors.Join(errs, err)
-		}
-	}
-
-	o.Status.Valid = true
 	o.Status.Error = ""
+	errs := ValidateSecretTransformation(ctx, o)
 	if errs != nil {
 		o.Status.Valid = false
 		o.Status.Error = errs.Error()
 		logger.Error(err, "Failed to validate template specs")
-	}
-
-	if o.Status.Valid {
-		// TODO: force reconcile all syncable secrets that reference this SecretTransformation
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
@@ -91,10 +65,10 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{}, nil
 }
 
-func (r *SecretTransformationReconciler) updateStatus(ctx context.Context, a *secretsv1beta1.SecretTransformation) error {
+func (r *SecretTransformationReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.SecretTransformation) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("secrettransformation", a, a.Status.Valid)
-	if err := r.Status().Update(ctx, a); err != nil {
+	metrics.SetResourceStatus("secrettransformation", o, o.Status.Valid)
+	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err
 	}

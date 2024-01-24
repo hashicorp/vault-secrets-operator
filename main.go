@@ -236,16 +236,19 @@ func main() {
 		SecretDataBuilder: secretDataBuilder,
 		HMACValidator:     hmacValidator,
 		ClientFactory:     clientFactory,
+		ReferenceCache:    controllers.NewResourceReferenceCache(),
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultPKISecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		ClientFactory: clientFactory,
-		HMACValidator: hmacValidator,
-		Recorder:      mgr.GetEventRecorderFor("VaultPKISecret"),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		ClientFactory:  clientFactory,
+		HMACValidator:  hmacValidator,
+		SyncRegistry:   controllers.NewSyncRegistry(),
+		ReferenceCache: controllers.NewResourceReferenceCache(),
+		Recorder:       mgr.GetEventRecorderFor("VaultPKISecret"),
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
@@ -279,11 +282,13 @@ func main() {
 		vdsOverrideOpts = controllerOptions
 	}
 	if err = (&controllers.VaultDynamicSecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultDynamicSecret"),
-		ClientFactory: clientFactory,
-		HMACValidator: hmacValidator,
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("VaultDynamicSecret"),
+		ClientFactory:  clientFactory,
+		HMACValidator:  hmacValidator,
+		SyncRegistry:   controllers.NewSyncRegistry(),
+		ReferenceCache: controllers.NewResourceReferenceCache(),
 	}).SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
@@ -301,6 +306,7 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
 		SecretDataBuilder: secretDataBuilder,
 		HMACValidator:     hmacValidator,
+		ReferenceCache:    controllers.NewResourceReferenceCache(),
 		MinRefreshAfter:   minRefreshAfterHVSA,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
