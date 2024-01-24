@@ -142,7 +142,7 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		return client.Patch(ctx, t, patch)
 
 	case *rolloutsv1alpha1.Rollout:
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch := ctrlclient.MergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
