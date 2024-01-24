@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
+	github.com/argoproj/argo-rollouts v1.6.4
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-logr/logr v1.4.1
 	github.com/go-openapi/runtime v0.26.2
@@ -38,7 +39,6 @@ require (
 	cloud.google.com/go/storage v1.30.1 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/apparentlymart/go-textseg/v13 v13.0.0 // indirect
-	github.com/argoproj/argo-rollouts v1.6.4 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aws/aws-sdk-go v1.44.122 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
