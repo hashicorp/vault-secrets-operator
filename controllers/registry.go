@@ -33,7 +33,7 @@ type resourceReferenceCache struct {
 	mu sync.RWMutex
 }
 
-func (c *resourceReferenceCache) Add(kind ResourceKind, ref client.ObjectKey, referrers ...client.ObjectKey) {
+func (c *resourceReferenceCache) Add(kind ResourceKind, referent client.ObjectKey, referrers ...client.ObjectKey) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -42,10 +42,10 @@ func (c *resourceReferenceCache) Add(kind ResourceKind, ref client.ObjectKey, re
 	}
 
 	scope, _ := c.scoped(kind, true)
-	refs, ok := scope[ref]
+	refs, ok := scope[referent]
 	if !ok {
 		refs = map[client.ObjectKey]empty{}
-		scope[ref] = refs
+		scope[referent] = refs
 	}
 
 	for _, r := range referrers {
@@ -82,7 +82,7 @@ func (c *resourceReferenceCache) Prune(kind ResourceKind, referrer client.Object
 }
 
 // Get all references to ref for ResourceKind. Returns true in ref is in the cache.
-func (c *resourceReferenceCache) Get(kind ResourceKind, ref client.ObjectKey) ([]client.ObjectKey, bool) {
+func (c *resourceReferenceCache) Get(kind ResourceKind, referent client.ObjectKey) ([]client.ObjectKey, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -91,7 +91,7 @@ func (c *resourceReferenceCache) Get(kind ResourceKind, ref client.ObjectKey) ([
 		return nil, false
 	}
 
-	r, ok := scope[ref]
+	r, ok := scope[referent]
 	if !ok {
 		return nil, false
 	}
@@ -106,7 +106,7 @@ func (c *resourceReferenceCache) Get(kind ResourceKind, ref client.ObjectKey) ([
 }
 
 // Remove ref and all of its referrers for ResourceKind.
-func (c *resourceReferenceCache) Remove(kind ResourceKind, ref client.ObjectKey) bool {
+func (c *resourceReferenceCache) Remove(kind ResourceKind, referent client.ObjectKey) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -115,8 +115,8 @@ func (c *resourceReferenceCache) Remove(kind ResourceKind, ref client.ObjectKey)
 		return false
 	}
 
-	_, ok = scope[ref]
-	delete(scope, ref)
+	_, ok = scope[referent]
+	delete(scope, referent)
 
 	// remove kind if the cache no longer has references of that kind
 	if len(scope) == 0 {
