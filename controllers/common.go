@@ -12,8 +12,6 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -224,33 +222,4 @@ func parseDurationString(duration, path string, min time.Duration) (time.Duratio
 
 func isInWindow(t1, t2 time.Time) bool {
 	return t1.After(t2) || t1.Equal(t2)
-}
-
-func syncableSecretPredicate() predicate.Predicate {
-	return predicate.Or(
-		predicate.GenerationChangedPredicate{},
-		// needed for template rendering
-		predicate.AnnotationChangedPredicate{},
-		// needed for template rendering
-		predicate.LabelChangedPredicate{})
-}
-
-func syncableSecretPredicateWithRegistry(registry *SyncRegistry) predicate.Predicate {
-	return predicate.Or(
-		predicate.GenerationChangedPredicate{},
-		// needed for template rendering
-		predicate.AnnotationChangedPredicate{},
-		// needed for template rendering
-		predicate.LabelChangedPredicate{},
-		ResourceVersionChangedPredicate{registry: registry},
-	)
-}
-
-type ResourceVersionChangedPredicate struct {
-	predicate.Funcs
-	registry *SyncRegistry
-}
-
-func (p *ResourceVersionChangedPredicate) GenericFunc(e event.GenericEvent) bool {
-	return p.registry.Contains(client.ObjectKeyFromObject(e.Object))
 }
