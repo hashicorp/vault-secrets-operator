@@ -338,21 +338,38 @@ func GetSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.
 	return &s, err
 }
 
+func HasOwnerLabels(o ctrlclient.Object) bool {
+	// check that all owner labels are present and valid, if not return false
+	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
+	return CheckOwnerLabels(o) == nil
+}
+
+func CheckOwnerLabels(o ctrlclient.Object) error {
+	// check that all owner labels are present and valid, if not return an error
+	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
+	var errs error
+
+	labels := o.GetLabels()
+	for k, v := range OwnerLabels {
+		if o, ok := labels[k]; o != v || !ok {
+			errs = errors.Join(errs, fmt.Errorf(
+				"invalid owner label, key=%s, present=%t", k, ok))
+		}
+	}
+
+	return errs
+}
+
 // checkSecretIsOwnedByObj validates the Secret is owned by obj by checking its Labels and OwnerReferences.
 func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerReference) error {
-	var errs error
 	// checking for Secret ownership relies on first checking the Secret's labels,
 	// then verifying that its OwnerReferences match the SyncableSecret.
 
 	// check that all owner labels are present and valid, if not return an error
 	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
+
+	errs := CheckOwnerLabels(dest)
 	key := ctrlclient.ObjectKeyFromObject(dest)
-	for k, v := range OwnerLabels {
-		if o, ok := dest.Labels[k]; o != v || !ok {
-			errs = errors.Join(errs, fmt.Errorf(
-				"invalid owner label, key=%s, present=%t", k, ok))
-		}
-	}
 	// check that obj is the Secret's true Owner
 	if len(dest.OwnerReferences) > 0 {
 		if !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {

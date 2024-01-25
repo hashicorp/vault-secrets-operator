@@ -12,7 +12,13 @@ import (
 type ResourceKind string
 
 // SecretTransformation maps to SecretTransformation custom resource.
-const SecretTransformation ResourceKind = "SecretTransformation"
+const (
+	SecretTransformation ResourceKind = "SecretTransformation"
+	VaultDynamicSecret   ResourceKind = "VaultDynamicSecret"
+	VaultStaticSecret    ResourceKind = "VaultStaticSecret"
+	VaultPKISecret       ResourceKind = "VaultStaticSecret"
+	HCPVaultSecretsApp   ResourceKind = "HCPVaultSecretsApp"
+)
 
 type ResourceReferenceCache interface {
 	Add(ResourceKind, client.ObjectKey, ...client.ObjectKey)

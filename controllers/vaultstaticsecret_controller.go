@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -222,6 +223,13 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, nil),
+		).
+		Watches(
+			&corev1.Secret{},
+			&enqueueSecretsRequestsHandler{
+				gvk: secretsv1beta1.GroupVersion.WithKind(string(VaultStaticSecret)),
+			},
+			builder.WithPredicates(&secretsPredicate{}),
 		).
 		Complete(r)
 }

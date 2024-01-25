@@ -6,6 +6,8 @@ package controllers
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -88,4 +90,45 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.Rat
 			}
 		}
 	}
+}
+
+type enqueueSecretsRequestsHandler struct {
+	gvk schema.GroupVersionKind
+}
+
+func (e *enqueueSecretsRequestsHandler) Create(_ context.Context, _ event.CreateEvent, q workqueue.RateLimitingInterface) {
+	return
+}
+
+func (e *enqueueSecretsRequestsHandler) Update(_ context.Context, _ event.UpdateEvent, q workqueue.RateLimitingInterface) {
+	return
+}
+
+func (e *enqueueSecretsRequestsHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+	logger := log.FromContext(ctx).WithName("enqueueSecretsRequestsHandler").
+		WithValues("forGvk", e.gvk)
+	reqs := map[reconcile.Request]empty{}
+	evt.Object.GetObjectKind()
+	for _, ref := range evt.Object.GetOwnerReferences() {
+		if ref.APIVersion == e.gvk.GroupVersion().String() && ref.Kind == e.gvk.Kind {
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: evt.Object.GetNamespace(),
+					Name:      ref.Name,
+				},
+			}
+			if _, ok := reqs[req]; !ok {
+				logger.V(consts.LogLevelTrace).Info(
+					"Enqueuing", "obj", ref, "kind", ref.Kind)
+				q.Add(req)
+				reqs[req] = empty{}
+			}
+		} else {
+			logger.V(consts.LogLevelTrace).Info("No match", "ref", ref)
+		}
+	}
+}
+
+func (e *enqueueSecretsRequestsHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+	return
 }
