@@ -16,7 +16,7 @@ const (
 	SecretTransformation ResourceKind = "SecretTransformation"
 	VaultDynamicSecret   ResourceKind = "VaultDynamicSecret"
 	VaultStaticSecret    ResourceKind = "VaultStaticSecret"
-	VaultPKISecret       ResourceKind = "VaultStaticSecret"
+	VaultPKISecret       ResourceKind = "VaultPKISecret"
 	HCPVaultSecretsApp   ResourceKind = "HCPVaultSecretsApp"
 )
 
