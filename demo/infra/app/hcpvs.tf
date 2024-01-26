@@ -30,7 +30,7 @@ resource "kubernetes_secret" "hcp-vsa-sp" {
   count = var.with_hcp_vault_secrets ? 1 : 0
   metadata {
     name      = "vso-db-demo-hcp-vsa-sp"
-    namespace = kubernetes_namespace.dev.metadata[0].name
+    namespace = local.k8s_namespace
   }
   data = {
     "clientID"     = var.hcp_client_id
@@ -45,7 +45,7 @@ resource "kubernetes_manifest" "hcp-vsa-secret" {
     kind       = "HCPVaultSecretsApp"
     metadata = {
       name      = "vso-db-demo-hcp-vsa"
-      namespace = kubernetes_namespace.dev.metadata[0].name
+      namespace = local.k8s_namespace
     }
     spec = {
       appName      = var.hcp_hvs_app_name
