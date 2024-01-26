@@ -14,8 +14,8 @@ import (
 type VaultAuthConfigKubernetes struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// ServiceAccount to use when authenticating to Vault's kubernetes
-	// authentication backend.
+	// ServiceAccount to use when authenticating to Vault's
+	// authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace.
 	ServiceAccount string `json:"serviceAccount"`
 	// TokenAudiences to include in the ServiceAccount token.
 	TokenAudiences []string `json:"audiences,omitempty"`
@@ -78,8 +78,8 @@ type VaultAuthConfigAWS struct {
 	// The IAM endpoint to use; if not set will use the default
 	IAMEndpoint string `json:"iamEndpoint,omitempty"`
 
-	// SecretRef is the name of a Kubernetes Secret which holds credentials for
-	// AWS. Expected keys include `access_key_id`, `secret_access_key`,
+	// SecretRef is the name of a Kubernetes Secret in the consumer's (VDS/VSS/PKI) namespace
+	// which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`,
 	// `session_token`
 	SecretRef string `json:"secretRef,omitempty"`
 
@@ -120,7 +120,7 @@ type VaultAuthSpec struct {
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
 	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
-	// Operator will default to	`default` VaultConnection, configured in its own Kubernetes namespace.
+	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
@@ -136,9 +136,9 @@ type VaultAuthSpec struct {
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws;gcp
-	Method string `json:"method"`
+	Method string `json:"method,omitempty"`
 	// Mount to use when authenticating to auth method.
-	Mount string `json:"mount"`
+	Mount string `json:"mount,omitempty"`
 	// Params to use when authenticating to Vault
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.

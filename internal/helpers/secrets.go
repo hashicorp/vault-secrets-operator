@@ -497,7 +497,9 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret)
 // response. Any extraData will always be included in the result data. Returns a
 // SecretDataErrorContainsRaw error if either secretData or extraData contain
 // SecretDataKeyRaw .
-func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, raw []byte, opt *SecretTransformationOption) (map[string][]byte, error) {
+func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
+	raw []byte, opt *SecretTransformationOption,
+) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 	if !opt.ExcludeRaw {
 		if _, ok := secretData[SecretDataKeyRaw]; ok {
@@ -514,7 +516,7 @@ func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte, ra
 		data[k] = v
 	}
 
-	filtered, err := filterFields(opt, secretData)
+	filtered, err := filterData(opt, secretData)
 	if err != nil {
 		return nil, err
 	}

@@ -81,7 +81,13 @@ type TransformationRef struct {
 	Name string `json:"name"`
 	// TemplateRefs map to a Template found in this TransformationRef. If empty, then
 	// all templates from the SecretTransformation will be rendered to the K8s Secret.
-	TemplateRefs []TemplateRef `json:"templateRefSpecsSlice,omitempty"`
+	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
+	// IgnoreIncludes controls whether to use the SecretTransformation's Includes
+	// data key filters.
+	IgnoreIncludes bool `json:"ignoreIncludes,omitempty"`
+	// IgnoreExcludes controls whether to use the SecretTransformation's Excludes
+	// data key filters.
+	IgnoreExcludes bool `json:"ignoreExcludes,omitempty"`
 }
 
 // TemplateRef points to templating text that is stored in a
@@ -99,7 +105,7 @@ type TemplateRef struct {
 // Template provides templating configuration.
 type Template struct {
 	// Name of the Template
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 	// Text contains the Go text template format. The template
 	// references attributes from the data structure of the source secret.
 	// Refer to https://pkg.go.dev/text/template for more information.

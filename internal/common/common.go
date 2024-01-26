@@ -389,22 +389,22 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 
 	switch t := obj.(type) {
 	case *secretsv1beta1.VaultDynamicSecret:
-		meta.Destination = &t.Spec.Destination
+		meta.Destination = t.Spec.Destination.DeepCopy()
 		meta.APIVersion = t.APIVersion
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.VaultStaticSecret:
-		meta.Destination = &t.Spec.Destination
+		meta.Destination = t.Spec.Destination.DeepCopy()
 		meta.APIVersion = t.APIVersion
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.VaultPKISecret:
-		meta.Destination = &t.Spec.Destination
+		meta.Destination = t.Spec.Destination.DeepCopy()
 		meta.APIVersion = t.APIVersion
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.HCPVaultSecretsApp:
-		meta.Destination = &t.Spec.Destination
+		meta.Destination = t.Spec.Destination.DeepCopy()
 		meta.APIVersion = t.APIVersion
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.HCPAuthRef

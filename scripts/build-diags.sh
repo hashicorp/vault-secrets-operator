@@ -4,8 +4,12 @@
 
 set -e
 
-output_dir="$(git rev-parse --show-toplevel || echo .)/build/docs/diags"
-rm -rf ${output_dir}
-mkdir -p ${output_dir}
-plantuml -o "${output_dir}" -progress ./docs/diags/*.puml
-echo -e "\nWrote images to ${output_dir}"
+root="$(git rev-parse --show-toplevel || echo .)"
+output_base_dir='build/docs/diags'
+
+pushd ${root} > /dev/null
+rm -rf ${output_base_dir}
+mkdir -p ${output_base_dir}
+docker run --rm -v .:/source plantuml/plantuml -o "/source/${output_base_dir}" '/source/docs/diags/*.puml'
+echo -e "\nWrote images to ${root}/${output_base_dir}"
+popd > /dev/null
