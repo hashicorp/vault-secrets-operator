@@ -525,7 +525,7 @@ func TestSecretDataBuilder_filterData_with_any(t *testing.T) {
 	}
 }
 
-func TestNewSecretRenderOption(t *testing.T) {
+func TestNewSecretTransformationOption(t *testing.T) {
 	t.Parallel()
 
 	defaultTransObjMeta := metav1.ObjectMeta{
@@ -1168,14 +1168,14 @@ func TestNewSecretRenderOption(t *testing.T) {
 				require.NoError(t, client.Create(ctx, obj))
 			}
 
-			got, err := NewSecretRenderOption(ctx, client, tt.obj)
+			got, err := NewSecretTransformationOption(ctx, client, tt.obj)
 			if !tt.wantErr(t, err,
 				fmt.Sprintf(
-					"NewSecretRenderOption(%v, %v, %v)", ctx, client, tt.obj)) {
+					"NewSecretTransformationOption(%v, %v, %v)", ctx, client, tt.obj)) {
 				return
 			}
 			assert.Equalf(t, tt.want, got,
-				"NewSecretRenderOption(%v, %v, %v)", ctx, client, tt.obj)
+				"NewSecretTransformationOption(%v, %v, %v)", ctx, client, tt.obj)
 		})
 	}
 }
