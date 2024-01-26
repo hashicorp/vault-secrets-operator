@@ -85,12 +85,18 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
+	excludeRaw := RenderOptionExcludeRaw
+	if meta.Destination.Transformation.ExcludeRaw {
+		excludeRaw = meta.Destination.Transformation.ExcludeRaw
+	}
+
 	return &SecretTransformationOption{
 		Excludes:       fieldFilter.Excludes(),
 		Includes:       fieldFilter.Includes(),
 		KeyedTemplates: keyedTemplates,
 		Annotations:    obj.GetAnnotations(),
 		Labels:         obj.GetLabels(),
+		ExcludeRaw:     excludeRaw,
 	}, nil
 }
 
