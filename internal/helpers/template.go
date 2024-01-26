@@ -80,7 +80,7 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 		return nil, err
 	}
 
-	keyedTemplates, fieldFilter, err := gatherTemplates(ctx, client, meta)
+	keyedTemplates, ff, err := gatherTemplates(ctx, client, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +91,8 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 	}
 
 	return &SecretTransformationOption{
-		Excludes:       fieldFilter.Excludes(),
-		Includes:       fieldFilter.Includes(),
+		Excludes:       ff.excludes(),
+		Includes:       ff.includes(),
 		KeyedTemplates: keyedTemplates,
 		Annotations:    obj.GetAnnotations(),
 		Labels:         obj.GetLabels(),
@@ -102,7 +102,7 @@ func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
 
 // gatherTemplates attempts to collect all v1beta1.Template(s) for the
 // syncable secret object.
-func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData) ([]*KeyedTemplate, *FieldFilterSet, error) {
+func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData) ([]*KeyedTemplate, *fieldFilter, error) {
 	var errs error
 	var keyedTemplates []*KeyedTemplate
 
@@ -127,9 +127,9 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 		})
 	}
 
-	fieldFilter := &FieldFilterSet{}
-	fieldFilter.AddExcludes(meta.Destination.Transformation.Excludes...)
-	fieldFilter.AddIncludes(meta.Destination.Transformation.Includes...)
+	ff := &fieldFilter{}
+	ff.addExcludes(meta.Destination.Transformation.Excludes...)
+	ff.addIncludes(meta.Destination.Transformation.Includes...)
 
 	transformation := meta.Destination.Transformation
 	// get the in-line template templates
@@ -169,10 +169,10 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 		}
 
 		if !ref.IgnoreExcludes {
-			fieldFilter.AddExcludes(obj.Spec.Excludes...)
+			ff.addExcludes(obj.Spec.Excludes...)
 		}
 		if !ref.IgnoreIncludes {
-			fieldFilter.AddIncludes(obj.Spec.Includes...)
+			ff.addIncludes(obj.Spec.Includes...)
 		}
 
 		// add all configured templates for the Destination
@@ -240,7 +240,7 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 		return a.Cmp(b)
 	})
 
-	return keyedTemplates, fieldFilter, nil
+	return keyedTemplates, ff, nil
 }
 
 // loadTemplates parses all v1beta1.Template into a single
@@ -424,51 +424,42 @@ func validateTemplate(tmpl secretsv1beta1.Template) error {
 	return nil
 }
 
-type FieldFilterSet struct {
-	excludes sync.Map
-	includes sync.Map
+type fieldFilter struct {
+	exc sync.Map
+	inc sync.Map
 }
 
-func (f *FieldFilterSet) AddExcludes(pats ...string) {
-	f.add(true, pats...)
+func (f *fieldFilter) addExcludes(pats ...string) {
+	f.add(&f.exc, pats...)
 }
 
-func (f *FieldFilterSet) Excludes() []string {
-	return f.keys(true)
+func (f *fieldFilter) excludes() []string {
+	return f.keys(&f.exc)
 }
 
-func (f *FieldFilterSet) AddIncludes(pats ...string) {
-	f.add(false, pats...)
+func (f *fieldFilter) addIncludes(pats ...string) {
+	f.add(&f.inc, pats...)
 }
 
-func (f *FieldFilterSet) Includes() []string {
-	return f.keys(false)
+func (f *fieldFilter) includes() []string {
+	return f.keys(&f.inc)
 }
 
-func (f *FieldFilterSet) add(excludes bool, pats ...string) {
+func (f *fieldFilter) add(m *sync.Map, pats ...string) {
 	for _, pat := range pats {
-		if excludes {
-			f.excludes.LoadOrStore(pat, true)
-		} else {
-			f.includes.LoadOrStore(pat, true)
-		}
+		m.LoadOrStore(pat, true)
 	}
 }
 
-func (f *FieldFilterSet) keys(excludes bool) []string {
+func (f *fieldFilter) keys(m *sync.Map) []string {
 	var result []string
 	fn := func(key, _ any) bool {
 		result = append(result, key.(string))
 		return true
 	}
 
-	if excludes {
-		f.excludes.Range(fn)
-	} else {
-		f.includes.Range(fn)
-	}
+	m.Range(fn)
 
 	slices.Sort(result)
-
 	return result
 }
