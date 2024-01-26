@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// tests to ensure all allowedSpringFuncs are registered in the funcMap
+// tests to ensure all allowedSprigFuncs are registered in the funcMap
 func Test_funcMap(t *testing.T) {
-	expected := allowedSpringFuncs
+	expected := allowedSprigFuncs
 	var actual []string
 	for k := range funcMap {
 		actual = append(actual, k)
