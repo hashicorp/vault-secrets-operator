@@ -68,7 +68,7 @@ ENTRYPOINT ["/vault-secrets-operator"]
 
 # ubi build image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3-1475 as build-ubi
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3-1552 as build-ubi
 RUN microdnf --refresh --assumeyes upgrade ca-certificates
 
 # ubi release image
