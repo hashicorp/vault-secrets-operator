@@ -12,18 +12,18 @@ var funcMap = map[string]any{}
 
 func init() {
 	springFuncs := sprig.HermeticTxtFuncMap()
-	for _, k := range allowedSpringFuncs {
+	for _, k := range allowedSprigFuncs {
 		if _, ok := springFuncs[k]; ok {
 			funcMap[k] = springFuncs[k]
 		} // missing functions are detected in Test_funcMap()
 	}
 }
 
-// allowedSpringFuncs contains the set of all sprig functions allowed. it is a
+// allowedSprigFuncs contains the set of all sprig functions allowed. it is a
 // subset of sprig.HermeticTxtFuncMap, with all crypto related functions being
 // removed. It should only contain functions that are both secure and fit to
 // purpose.
-var allowedSpringFuncs = []string{
+var allowedSprigFuncs = []string{
 	"abbrev",
 	"abbrevboth",
 	"add",
