@@ -65,7 +65,7 @@ func (k *KeyedTemplate) Cmp(other *KeyedTemplate) int {
 	)
 }
 
-func NewSecretRenderOption(ctx context.Context, client ctrlclient.Client,
+func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client,
 	obj ctrlclient.Object,
 ) (*SecretTransformationOption, error) {
 	meta, err := common.NewSyncableSecretMetaData(obj)
@@ -128,7 +128,7 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 		addTemplate(tmpl, key)
 	}
 
-	seenRefs := make(map[string]bool)
+	seenRefs := make(map[ctrlclient.ObjectKey]bool)
 	// TODO: cache ref results
 	// get the remote ref template templates
 	for _, ref := range transformation.TransformationRefs {
@@ -141,13 +141,13 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 		}
 
 		objKey := ctrlclient.ObjectKey{Namespace: ns, Name: ref.Name}
-		if _, ok := seenRefs[objKey.String()]; ok {
+		if _, ok := seenRefs[objKey]; ok {
 			errs = errors.Join(errs,
 				fmt.Errorf("duplicate SecretTransformation ref %s", objKey))
 			continue
 		}
 
-		seenRefs[objKey.String()] = true
+		seenRefs[objKey] = true
 
 		obj, err := common.GetSecretTransformation(ctx, client, objKey)
 		if err != nil {
