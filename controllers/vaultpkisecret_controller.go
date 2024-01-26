@@ -151,7 +151,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			req.NamespacedName)
 	}
 
-	renderOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
@@ -224,7 +224,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	data, err := resp.SecretK8sData(renderOption)
+	data, err := resp.SecretK8sData(transOption)
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to marshal Vault secret data"

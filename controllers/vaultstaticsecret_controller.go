@@ -103,7 +103,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			req.NamespacedName)
 	}
 
-	renderOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
@@ -123,7 +123,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, renderOption)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, transOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
 			"Failed to build K8s secret data: %s", err)

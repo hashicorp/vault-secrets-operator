@@ -37,7 +37,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 			wantParseErr:  assert.NoError,
 		},
 		{
-			name:     "multi-first",
+			name:     "multi-render-first",
 			tmpl:     NewSecretTemplate("template"),
 			tmplName: "tmpl1",
 			texts: map[string]string{
@@ -49,7 +49,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 			wantParseErr:  assert.NoError,
 		},
 		{
-			name:     "multi-last",
+			name:     "multi-render-last",
 			tmpl:     NewSecretTemplate("template"),
 			tmplName: "tmpl2",
 			texts: map[string]string{
@@ -135,7 +135,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 			},
 		},
 		{
-			name:     "parse-error`",
+			name:     "parse-error",
 			tmpl:     NewSecretTemplate("template"),
 			tmplName: "tmpl1",
 			texts: map[string]string{
