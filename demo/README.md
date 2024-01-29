@@ -20,3 +20,16 @@ Run the following to tear down the demo cluster:
 ```shell
 make -f demo.mk demo-destroy
 ```
+
+### Vault Enterprise
+If you want to demo VSO's support for Vault Enterprise features like cross namespace authentication
+for multi-tenancy, you can extend the commands above by adding `VAULT_ENTERPRISE=true` to each.
+A valid Vault Enterprise license is required. You can set the license from any of the following
+environment variables:
+- VAULT_LICENSE
+- VAULT_LICENSE_PATH
+
+Deploy the demo app:
+```shell
+make -f demo.mk VAULT_ENTERPRISE=true demo
+```
