@@ -5,15 +5,15 @@ terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.11.0"
+      version = "2.12.1"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "2.17.0"
+      version = "2.25.2"
     }
     vault = {
       source  = "hashicorp/vault"
-      version = "3.12.0"
+      version = "3.24.0"
     }
   }
 }
@@ -38,11 +38,16 @@ provider "kubernetes" {
 
 resource "kubernetes_namespace" "dev" {
   metadata {
-    name = local.k8s_namespace
+    name = local.k8s_namespace_name
   }
 }
 
 resource "vault_namespace" "test" {
   count = var.vault_enterprise ? 1 : 0
   path  = "${local.name_prefix}-ns"
+}
+
+resource "vault_namespace" "tenant" {
+  count = var.vault_enterprise ? 1 : 0
+  path  = "${local.name_prefix}-tenant-ns"
 }
