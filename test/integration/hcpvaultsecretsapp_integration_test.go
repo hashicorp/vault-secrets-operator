@@ -335,11 +335,11 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 				}
 			}
 
-			d, err := time.ParseDuration(obj.Spec.RefreshAfter)
-			if assert.NoError(t, err, "time.ParseDuration(%v)", obj.Spec.RefreshAfter) {
-				assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj,
-					time.Millisecond*500, uint64(d.Seconds()*3))
-			}
+			// we set a fairly large value for maxTries to help mitigate the effects of the
+			// HVS' request rate limiter. Typically, the rate limiter is only ever triggered
+			// when we have four or more GH workflows running concurrently.
+			assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj,
+				time.Millisecond*500, uint64(160))
 		})
 	}
 }
