@@ -8,7 +8,7 @@ require (
 	github.com/go-logr/logr v1.4.1
 	github.com/go-openapi/runtime v0.27.1
 	github.com/go-openapi/strfmt v0.22.0
-	github.com/google/uuid v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/gruntwork-io/terratest v0.46.11
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-rootcerts v1.0.2
