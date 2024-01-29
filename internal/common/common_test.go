@@ -345,10 +345,6 @@ func TestGetHCPAuthForObj(t *testing.T) {
 				},
 			},
 			want: &secretsv1beta1.HCPAuth{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "HCPAuth",
-					APIVersion: "secrets.hashicorp.com/v1beta1",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:       "foo",
 					Name:            "baz",
@@ -382,10 +378,6 @@ func TestGetHCPAuthForObj(t *testing.T) {
 				},
 			},
 			want: &secretsv1beta1.HCPAuth{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "HCPAuth",
-					APIVersion: "secrets.hashicorp.com/v1beta1",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:       "ns1",
 					Name:            "baz",
@@ -422,10 +414,6 @@ func TestGetHCPAuthForObj(t *testing.T) {
 				},
 			},
 			want: &secretsv1beta1.HCPAuth{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "HCPAuth",
-					APIVersion: "secrets.hashicorp.com/v1beta1",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:       "ns1",
 					Name:            "baz",
