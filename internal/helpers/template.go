@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/hashicorp/golang-lru/v2"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -31,7 +32,43 @@ func init() {
 	}
 }
 
-// SecretTransformationOption holds all Templates and field filters for a given
+type DuplicateTemplateNameError struct {
+	name string
+}
+
+func (e *DuplicateTemplateNameError) Error() string {
+	return fmt.Sprintf("duplicate template name %q", e.name)
+}
+
+type DuplicateTransformationRefError struct {
+	objKey ctrlclient.ObjectKey
+}
+
+func (e *DuplicateTransformationRefError) Error() string {
+	return fmt.Sprintf("duplicate SecretTransformation ref %s", e.objKey)
+}
+
+type InvalidSecretTransformationRefError struct {
+	objKey ctrlclient.ObjectKey
+	gvk    schema.GroupVersionKind
+}
+
+func (e *InvalidSecretTransformationRefError) Error() string {
+	return fmt.Sprintf(
+		"%s is in an invalid state, %s", e.objKey, e.gvk)
+}
+
+type TemplateNotFoundError struct {
+	name   string
+	objKey ctrlclient.ObjectKey
+	gvk    schema.GroupVersionKind
+}
+
+func (e *TemplateNotFoundError) Error() string {
+	return fmt.Sprintf(
+		"template %q not found in object %s, %s", e.name, e.objKey, e.gvk)
+}
+
 // Destination
 type SecretTransformationOption struct {
 	// Excludes contains regex patterns that are applied to the raw secret data. All
@@ -48,6 +85,7 @@ type SecretTransformationOption struct {
 	KeyedTemplates []*KeyedTemplate
 }
 
+// KeyedTemplate maps a secret data key to its secretsv1beta1.Template
 type KeyedTemplate struct {
 	// Key that will be used as the K8s Secret data key. In the case where Key is
 	// empty, then Template is treated as source only, and will not be included in
@@ -57,6 +95,8 @@ type KeyedTemplate struct {
 	Template secretsv1beta1.Template
 }
 
+// IsSource returns true if the KeyedTemplate should be treated as a template
+// source only.
 func (k *KeyedTemplate) IsSource() bool {
 	return k.Key == ""
 }
@@ -97,12 +137,12 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 	var errs error
 	var keyedTemplates []*KeyedTemplate
 
-	templates := make(map[string]secretsv1beta1.Template)
+	// used to deduplicate templates by name
+	seenTemplates := make(map[string]secretsv1beta1.Template)
 	addTemplate := func(tmpl secretsv1beta1.Template, key string) {
-		if _, ok := templates[tmpl.Name]; ok {
+		if _, ok := seenTemplates[tmpl.Name]; ok {
 			errs = errors.Join(errs,
-				fmt.Errorf("failed to gather templates, "+
-					"duplicate template name %q", tmpl.Name))
+				&DuplicateTemplateNameError{name: tmpl.Name})
 			return
 		}
 
@@ -111,7 +151,7 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 			return
 		}
 
-		templates[tmpl.Name] = tmpl
+		seenTemplates[tmpl.Name] = tmpl
 		keyedTemplates = append(keyedTemplates, &KeyedTemplate{
 			Key:      key,
 			Template: tmpl,
@@ -133,12 +173,8 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 	}
 
 	seenRefs := make(map[ctrlclient.ObjectKey]bool)
-	// TODO: cache ref results
 	// get the remote ref template templates
 	for _, ref := range transformation.TransformationRefs {
-		// TODO: decide on a policy for restricting access to SecretTransformations
-		// TODO: support getting SecretTransformations by label, potentially
-		// TODO: consider only supporting a single SecretTransformation ref?
 		ns := meta.Namespace
 		if ref.Namespace != "" {
 			ns = ref.Namespace
@@ -147,7 +183,10 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 		objKey := ctrlclient.ObjectKey{Namespace: ns, Name: ref.Name}
 		if _, ok := seenRefs[objKey]; ok {
 			errs = errors.Join(errs,
-				fmt.Errorf("duplicate SecretTransformation ref %s", objKey))
+				&DuplicateTransformationRefError{
+					objKey: objKey,
+				},
+			)
 			continue
 		}
 
@@ -161,9 +200,10 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 
 		if !obj.Status.Valid {
 			errs = errors.Join(errs,
-				fmt.Errorf(
-					"%s is in an invalid state, %s",
-					objKey, obj.GetObjectKind().GroupVersionKind()))
+				&InvalidSecretTransformationRefError{
+					objKey: objKey,
+					gvk:    obj.GetObjectKind().GroupVersionKind(),
+				})
 			continue
 		}
 
@@ -176,20 +216,20 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 
 		// add all configured templates for the Destination
 		for _, tmplRef := range ref.TemplateRefs {
-			if _, ok := templates[tmplRef.Name]; ok {
+			if _, ok := seenTemplates[tmplRef.Name]; ok {
 				errs = errors.Join(errs,
-					fmt.Errorf("failed to gather templates, "+
-						"duplicate template name %q", tmplRef.Name))
+					&DuplicateTemplateNameError{name: tmplRef.Name})
 				continue
 			}
 
 			tmpl, ok := obj.Spec.Templates[tmplRef.Name]
-			// get the template tmpl
 			if !ok {
 				errs = errors.Join(errs,
-					fmt.Errorf(
-						"template %q not found in object %s, %s",
-						tmplRef.Name, objKey, obj.GetObjectKind().GroupVersionKind()))
+					&TemplateNotFoundError{
+						name:   tmplRef.Name,
+						objKey: objKey,
+						gvk:    obj.GetObjectKind().GroupVersionKind(),
+					})
 				continue
 			}
 
@@ -216,18 +256,15 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 			)
 		}
 
-		// add all configured templates from the SecretTransformation object
 		for key, tmpl := range obj.Spec.Templates {
-			if _, ok := templates[key]; ok {
-				// inline templates take precedence
-				continue
-			}
+			// only add key/templates that have not already been seen, first in takes precedence
+			if _, ok := seenTemplates[key]; !ok {
+				if tmpl.Name == "" {
+					tmpl.Name = fmt.Sprintf("%s/%s", objKey, key)
+				}
 
-			if tmpl.Name == "" {
-				tmpl.Name = fmt.Sprintf("%s/%s", objKey, key)
+				addTemplate(tmpl, key)
 			}
-
-			addTemplate(tmpl, key)
 		}
 	}
 

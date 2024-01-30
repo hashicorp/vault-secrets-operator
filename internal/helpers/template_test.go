@@ -1138,8 +1138,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`failed to gather templates, `+
-						`duplicate template name "default"`)
+					`duplicate template name "default"`)
 			},
 		},
 		{
@@ -1174,7 +1173,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 			),
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`failed to gather templates, duplicate template name "default"`, i...)
+					`duplicate template name "default"`, i...)
 			},
 		},
 		{
