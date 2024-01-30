@@ -51,10 +51,14 @@ type SecretTransformationOption struct {
 type KeyedTemplate struct {
 	// Key that will be used as the K8s Secret data key. In the case where Key is
 	// empty, then Template is treated as source only, and will not be included in
-	// the K8s Secret data.
+	// the final K8s Secret data.
 	Key string
 	// Template that will be rendered for Key
 	Template secretsv1beta1.Template
+}
+
+func (k *KeyedTemplate) IsSource() bool {
+	return k.Key == ""
 }
 
 func (k *KeyedTemplate) Cmp(other *KeyedTemplate) int {
@@ -155,6 +159,14 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 			continue
 		}
 
+		if !obj.Status.Valid {
+			errs = errors.Join(errs,
+				fmt.Errorf(
+					"%s is in an invalid state, %s",
+					objKey, obj.GetObjectKind().GroupVersionKind()))
+			continue
+		}
+
 		if !ref.IgnoreExcludes {
 			ff.addExcludes(obj.Spec.Excludes...)
 		}
@@ -235,12 +247,12 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 // the template.
 func loadTemplates(opt *SecretTransformationOption) (template.SecretTemplate, error) {
 	var t template.SecretTemplate
-	for _, spec := range opt.KeyedTemplates {
+	for _, tmpl := range opt.KeyedTemplates {
 		if t == nil {
 			t = template.NewSecretTemplate("")
 		}
 
-		if err := t.Parse(spec.Template.Name, spec.Template.Text); err != nil {
+		if err := t.Parse(tmpl.Template.Name, tmpl.Template.Text); err != nil {
 			return nil, err
 		}
 	}
@@ -263,7 +275,7 @@ func renderTemplates(opt *SecretTransformationOption,
 	}
 
 	for _, spec := range opt.KeyedTemplates {
-		if spec.Key == "" {
+		if spec.IsSource() {
 			// an empty key denotes that the template is source only, and will not be
 			// included in the final secret data.
 			continue

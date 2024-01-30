@@ -608,11 +608,12 @@ func TestNewSecretTransformationOption(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name            string
-		obj             ctrlclient.Object
-		secretTransObjs []*secretsv1beta1.SecretTransformation
-		want            *SecretTransformationOption
-		wantErr         assert.ErrorAssertionFunc
+		name              string
+		obj               ctrlclient.Object
+		secretTransObjs   []*secretsv1beta1.SecretTransformation
+		secretTransStatus []secretsv1beta1.SecretTransformationStatus
+		want              *SecretTransformationOption
+		wantErr           assert.ErrorAssertionFunc
 	}{
 		{
 			name: "inline-default",
@@ -694,6 +695,12 @@ func TestNewSecretTransformationOption(t *testing.T) {
 					},
 				),
 			},
+			secretTransStatus: []secretsv1beta1.SecretTransformationStatus{
+				{
+					Valid: false,
+					Error: "",
+				},
+			},
 			want: &SecretTransformationOption{
 				Excludes: []string{`^bad.+`},
 				Includes: defaultIncludes,
@@ -744,6 +751,12 @@ func TestNewSecretTransformationOption(t *testing.T) {
 						Templates: defaultTemplates1,
 					},
 				),
+			},
+			secretTransStatus: []secretsv1beta1.SecretTransformationStatus{
+				{
+					Valid: false,
+					Error: "parse error",
+				},
 			},
 			want: &SecretTransformationOption{
 				Excludes:       []string{`^amiss`, `^bad.+`, `^ugly.+`},
@@ -1164,8 +1177,21 @@ func TestNewSecretTransformationOption(t *testing.T) {
 			client := clientBuilder.Build()
 
 			t.Parallel()
-			for _, obj := range tt.secretTransObjs {
+
+			if len(tt.secretTransStatus) > 0 {
+				require.Equalf(t, len(tt.secretTransStatus), len(tt.secretTransObjs),
+					"invalid test input, len(tt.secretTransStatus) != len(tt.secretTransObj)")
+			}
+
+			for idx, obj := range tt.secretTransObjs {
 				require.NoError(t, client.Create(ctx, obj))
+				if len(tt.secretTransStatus) > 0 {
+					var o secretsv1beta1.SecretTransformation
+					require.NoError(t, client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &o))
+					status := tt.secretTransStatus[idx]
+					o.Status = status
+					require.NoErrorf(t, client.Status().Update(ctx, &o), "client.Status().Update(%v, %v)", ctx, &o)
+				}
 			}
 
 			got, err := NewSecretTransformationOption(ctx, client, tt.obj)
