@@ -188,7 +188,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
-		WithEventFilter(syncableSecretPredicate()).
+		WithEventFilter(syncableSecretPredicate(nil)).
 		WithOptions(opts).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},

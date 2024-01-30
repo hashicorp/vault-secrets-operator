@@ -217,7 +217,7 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
-		WithEventFilter(syncableSecretPredicate()).
+		WithEventFilter(syncableSecretPredicate(nil)).
 		WithOptions(opts).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},

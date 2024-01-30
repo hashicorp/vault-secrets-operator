@@ -464,7 +464,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
-		WithEventFilter(syncableSecretPredicate()).
+		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),

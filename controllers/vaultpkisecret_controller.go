@@ -367,7 +367,7 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
-		WithEventFilter(syncableSecretPredicate()).
+		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		WithOptions(opts).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
