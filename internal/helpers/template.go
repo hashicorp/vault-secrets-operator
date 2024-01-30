@@ -11,7 +11,6 @@ import (
 	"maps"
 	"regexp"
 	"slices"
-	"sync"
 
 	"github.com/hashicorp/golang-lru/v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -22,6 +21,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/template"
 )
 
+// regexCache provides a global LRU cache holding compiled regexes.
 var regexCache *lru.Cache[string, *regexp.Regexp]
 
 func init() {
@@ -69,7 +69,8 @@ func (e *TemplateNotFoundError) Error() string {
 		"template %q not found in object %s, %s", e.name, e.objKey, e.gvk)
 }
 
-// Destination
+// SecretTransformationOption provides the configuration necessary when
+// performing source secret data transformations.
 type SecretTransformationOption struct {
 	// Excludes contains regex patterns that are applied to the raw secret data. All
 	// matches will be excluded for resulting K8s Secret data.
@@ -81,7 +82,8 @@ type SecretTransformationOption struct {
 	Annotations map[string]string
 	// Labels to include in the SecretInput.
 	Labels map[string]string
-	// KeyedTemplates contains the derived set of all templates.
+	// KeyedTemplates contains the derived set of all templates that will be used
+	// during the secret data transformation.
 	KeyedTemplates []*KeyedTemplate
 }
 
@@ -133,7 +135,7 @@ func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client
 
 // gatherTemplates attempts to collect all v1beta1.Template(s) for the
 // syncable secret object.
-func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData) ([]*KeyedTemplate, *fieldFilter, error) {
+func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData) ([]*KeyedTemplate, *fieldFilters, error) {
 	var errs error
 	var keyedTemplates []*KeyedTemplate
 
@@ -158,7 +160,7 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 		})
 	}
 
-	ff := &fieldFilter{}
+	ff := newFieldFilters()
 	ff.addExcludes(meta.Destination.Transformation.Excludes...)
 	ff.addIncludes(meta.Destination.Transformation.Includes...)
 
@@ -279,9 +281,9 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 	return keyedTemplates, ff, nil
 }
 
-// loadTemplates parses all v1beta1.Template into a single
-// template.SecretTemplate. It should normally be called before rendering any of
-// the template.
+// loadTemplates parses all v1beta1.Template(s) into a single
+// template.SecretTemplate. It should normally be called before rendering any
+// templates
 func loadTemplates(opt *SecretTransformationOption) (template.SecretTemplate, error) {
 	var t template.SecretTemplate
 	for _, tmpl := range opt.KeyedTemplates {
@@ -297,7 +299,8 @@ func loadTemplates(opt *SecretTransformationOption) (template.SecretTemplate, er
 	return t, nil
 }
 
-// renderTemplates from the SecretTransformationOption and SecretInput.
+// renderTemplates from the SecretTransformationOption and SecretInput, returning
+// the rendered K8s Secret data.
 func renderTemplates(opt *SecretTransformationOption,
 	input *SecretInput,
 ) (map[string][]byte, error) {
@@ -460,42 +463,50 @@ func validateTemplate(tmpl secretsv1beta1.Template) error {
 	return nil
 }
 
-type fieldFilter struct {
-	exc sync.Map
-	inc sync.Map
+type empty struct{}
+
+// fieldFilters holds the exclude and exclude regex patterns used during secret
+// field filtering.
+type fieldFilters struct {
+	exc map[string]empty
+	inc map[string]empty
 }
 
-func (f *fieldFilter) addExcludes(pats ...string) {
-	f.add(&f.exc, pats...)
+func (f *fieldFilters) addExcludes(pats ...string) {
+	f.add(f.exc, pats...)
 }
 
-func (f *fieldFilter) excludes() []string {
-	return f.keys(&f.exc)
+func (f *fieldFilters) excludes() []string {
+	return f.keys(f.exc)
 }
 
-func (f *fieldFilter) addIncludes(pats ...string) {
-	f.add(&f.inc, pats...)
+func (f *fieldFilters) addIncludes(pats ...string) {
+	f.add(f.inc, pats...)
 }
 
-func (f *fieldFilter) includes() []string {
-	return f.keys(&f.inc)
+func (f *fieldFilters) includes() []string {
+	return f.keys(f.inc)
 }
 
-func (f *fieldFilter) add(m *sync.Map, pats ...string) {
+func (f *fieldFilters) add(m map[string]empty, pats ...string) {
 	for _, pat := range pats {
-		m.LoadOrStore(pat, true)
+		m[pat] = empty{}
 	}
 }
 
-func (f *fieldFilter) keys(m *sync.Map) []string {
+func (f *fieldFilters) keys(m map[string]empty) []string {
 	var result []string
-	fn := func(key, _ any) bool {
-		result = append(result, key.(string))
-		return true
+	for k := range m {
+		result = append(result, k)
 	}
-
-	m.Range(fn)
 
 	slices.Sort(result)
 	return result
+}
+
+func newFieldFilters() *fieldFilters {
+	return &fieldFilters{
+		exc: map[string]empty{},
+		inc: map[string]empty{},
+	}
 }
