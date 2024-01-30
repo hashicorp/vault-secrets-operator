@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -17,6 +19,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/template"
 )
@@ -24,7 +27,8 @@ import (
 // SecretTransformationReconciler reconciles a SecretTransformation object
 type SecretTransformationReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=secrettransformations,verbs=get;list;watch;create;update;patch;delete
@@ -77,11 +81,9 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 	if errs != nil {
 		o.Status.Valid = false
 		o.Status.Error = errs.Error()
-		logger.Error(err, "Failed to validate template specs")
-	}
-
-	if o.Status.Valid {
-		// TODO: force reconcile all syncable secrets that reference this SecretTransformation
+		logger.Error(err, "Failed to validate configured templates")
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonInvalidConfiguration,
+			"Failed to validate configured templates: %s", errs)
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
