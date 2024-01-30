@@ -555,13 +555,21 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	}
 
 	newTransObj := func(t *testing.T, objMeta metav1.ObjectMeta,
-		s secretsv1beta1.SecretTransformationSpec,
+		spec secretsv1beta1.SecretTransformationSpec,
+		status *secretsv1beta1.SecretTransformationStatus,
 	) *secretsv1beta1.SecretTransformation {
 		t.Helper()
 
+		if status == nil {
+			status = &secretsv1beta1.SecretTransformationStatus{
+				Valid: true,
+			}
+		}
+
 		return &secretsv1beta1.SecretTransformation{
 			ObjectMeta: *objMeta.DeepCopy(),
-			Spec:       s,
+			Spec:       spec,
+			Status:     *status,
 		}
 	}
 
@@ -608,12 +616,11 @@ func TestNewSecretTransformationOption(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name              string
-		obj               ctrlclient.Object
-		secretTransObjs   []*secretsv1beta1.SecretTransformation
-		secretTransStatus []secretsv1beta1.SecretTransformationStatus
-		want              *SecretTransformationOption
-		wantErr           assert.ErrorAssertionFunc
+		name            string
+		obj             ctrlclient.Object
+		secretTransObjs []*secretsv1beta1.SecretTransformation
+		want            *SecretTransformationOption
+		wantErr         assert.ErrorAssertionFunc
 	}{
 		{
 			name: "inline-default",
@@ -693,13 +700,8 @@ func TestNewSecretTransformationOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
-			},
-			secretTransStatus: []secretsv1beta1.SecretTransformationStatus{
-				{
-					Valid: false,
-					Error: "",
-				},
 			},
 			want: &SecretTransformationOption{
 				Excludes: []string{`^bad.+`},
@@ -750,13 +752,8 @@ func TestNewSecretTransformationOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
-			},
-			secretTransStatus: []secretsv1beta1.SecretTransformationStatus{
-				{
-					Valid: false,
-					Error: "parse error",
-				},
 			},
 			want: &SecretTransformationOption{
 				Excludes:       []string{`^amiss`, `^bad.+`, `^ugly.+`},
@@ -785,6 +782,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 						Includes:  defaultIncludes,
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -816,6 +814,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -848,6 +847,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -881,6 +881,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -910,6 +911,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 					secretsv1beta1.SecretTransformationSpec{
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -935,6 +937,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{},
+					nil,
 				),
 			},
 			want:    &SecretTransformationOption{},
@@ -974,13 +977,13 @@ func TestNewSecretTransformationOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err,
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
+				return assert.ErrorContains(t, err,
 					`template "default" not found in object `+
-						`default/templates, secrets.hashicorp.com/v1beta1, `+
-						`Kind=SecretTransformation`)
+						`default/templates`)
 			},
 		},
 		{
@@ -1022,6 +1025,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -1060,6 +1064,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -1116,6 +1121,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 				newTransObj(t,
 					dupeTransObjMeta,
@@ -1127,6 +1133,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -1170,6 +1177,45 @@ func TestNewSecretTransformationOption(t *testing.T) {
 					`failed to gather templates, duplicate template name "default"`, i...)
 			},
 		},
+		{
+			name: "trans-refs-invalid-state",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: transRefsSingleDefault,
+					Excludes:           []string{`^bad.+`},
+					Includes:           defaultIncludes,
+				},
+			),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						SourceTemplates: []secretsv1beta1.SourceTemplate{
+							{
+								Text: "{{- qux -}}",
+								Name: "named",
+							},
+							{
+								Text: "{{- foo -}}",
+							},
+						},
+						Templates: map[string]secretsv1beta1.Template{
+							"default": {
+								Name: "default",
+								Text: "{{- baz -}}",
+							},
+						},
+					},
+					&secretsv1beta1.SecretTransformationStatus{
+						Valid: false,
+						Error: "",
+					}),
+			},
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					`default/templates is in an invalid state`)
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1178,20 +1224,8 @@ func TestNewSecretTransformationOption(t *testing.T) {
 
 			t.Parallel()
 
-			if len(tt.secretTransStatus) > 0 {
-				require.Equalf(t, len(tt.secretTransStatus), len(tt.secretTransObjs),
-					"invalid test input, len(tt.secretTransStatus) != len(tt.secretTransObj)")
-			}
-
-			for idx, obj := range tt.secretTransObjs {
+			for _, obj := range tt.secretTransObjs {
 				require.NoError(t, client.Create(ctx, obj))
-				if len(tt.secretTransStatus) > 0 {
-					var o secretsv1beta1.SecretTransformation
-					require.NoError(t, client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &o))
-					status := tt.secretTransStatus[idx]
-					o.Status = status
-					require.NoErrorf(t, client.Status().Update(ctx, &o), "client.Status().Update(%v, %v)", ctx, &o)
-				}
 			}
 
 			got, err := NewSecretTransformationOption(ctx, client, tt.obj)
