@@ -24,6 +24,12 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
+var hmacSecretLabels = map[string]string{
+	"app.kubernetes.io/name":       "vault-secrets-operator",
+	"app.kubernetes.io/managed-by": "hashicorp-vso",
+	"app.kubernetes.io/component":  "client-cache-storage-verification",
+}
+
 // HandleSecretHMAC compares the HMAC of data to its previously computed value
 // stored in o.Status.SecretHMAC, returning true if they are equal. The computed
 // new-MAC will be returned so that o.Status.SecretHMAC can be updated.
@@ -32,18 +38,10 @@ import (
 func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 	validator HMACValidator, obj ctrlclient.Object, data map[string][]byte,
 ) (bool, []byte, error) {
-	var cur string
-	switch t := obj.(type) {
-	case *v1beta1.VaultDynamicSecret:
-		cur = t.Status.SecretMAC
-	case *v1beta1.VaultStaticSecret:
-		cur = t.Status.SecretMAC
-	case *v1beta1.HCPVaultSecretsApp:
-		cur = t.Status.SecretMAC
-	default:
-		return false, nil, fmt.Errorf("unsupported object type %T", t)
+	cur, err := getSecretMac(obj)
+	if err != nil {
+		return false, nil, err
 	}
-	logger := log.FromContext(ctx)
 
 	// HMAC the Vault secret data so that it can be compared to the what's in the
 	// destination Secret.
@@ -70,38 +68,84 @@ func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 
 	macsEqual := EqualMACS(lastMAC, newMAC)
 	if macsEqual {
-		// check to see if the Secret.Data has drifted since the last sync, if it has
-		// then it will be overwritten with the Vault secret data this would indicate an
-		// out-of-band change made to the Secret's data in this case the controller
-		// should do the sync.
-		if cur, ok, _ := GetSyncableSecret(ctx, client, obj); ok {
-			curMessage, err := json.Marshal(cur.Data)
-			if err != nil {
-				return false, nil, err
-			}
-
-			logger.V(consts.LogLevelDebug).Info(
-				"Doing Secret data drift detection", "lastMAC", lastMAC)
-			// we only care of the MAC has changed, it's new value is not important here.
-			valid, foundMAC, err := validator.Validate(ctx, client, curMessage, lastMAC)
-			if err != nil {
-				return false, nil, err
-			}
-			if !valid {
-				logger.V(consts.LogLevelDebug).Info("Secret data drift detected",
-					"lastMAC", lastMAC, "foundMAC", foundMAC,
-					"curMessage", curMessage, "message", message)
-			}
-
-			macsEqual = valid
-		} else {
-			// assume MACs are not equal if the secret does not exist or an error (ignored)
-			// has occurred
-			macsEqual = false
+		macsEqual, err = HMACDestinationSecret(ctx, client, validator, obj)
+		if err != nil {
+			return false, nil, err
 		}
 	}
 
 	return macsEqual, newMAC, nil
+}
+
+// HMACDestinationSecret compares the HMAC value stored in o.Status.SecretHMAC to
+// the HMAC of the destination K8s Secret data.
+// Supported types for obj are:
+// VaultDynamicSecret, VaultStaticSecret, VaultPKISecret
+func HMACDestinationSecret(ctx context.Context, client ctrlclient.Client,
+	validator HMACValidator, obj ctrlclient.Object,
+) (bool, error) {
+	cur, err := getSecretMac(obj)
+	if err != nil {
+		return false, err
+	}
+
+	logger := log.FromContext(ctx)
+
+	// we have never computed the Vault secret data HMAC,
+	// so there is no need to perform Secret data drift detection.
+	if cur == "" {
+		return false, nil
+	}
+
+	lastMAC, err := base64.StdEncoding.DecodeString(cur)
+	if err != nil {
+		return false, err
+	}
+
+	var macsEqual bool
+	// check to see if the Secret.Data has drifted since the last sync, if it has
+	// then it will be overwritten with the Vault secret data this would indicate an
+	// out-of-band change made to the Secret's data in this case the controller
+	// should do the sync.
+	if cur, ok, err := GetSyncableSecret(ctx, client, obj); ok {
+		curMessage, err := json.Marshal(cur.Data)
+		if err != nil {
+			return false, err
+		}
+
+		logger.V(consts.LogLevelDebug).Info(
+			"Doing Secret data drift detection", "lastMAC", lastMAC)
+		// we only care if the MAC has changed, it's new value is not important here.
+		if equal, foundMAC, err := validator.Validate(ctx, client, curMessage, lastMAC); err != nil {
+			return false, err
+		} else if !equal {
+			logger.V(consts.LogLevelDebug).Info("Secret data drift detected",
+				"lastMAC", lastMAC, "foundMAC", foundMAC)
+		} else {
+			macsEqual = true
+		}
+	} else if err != nil {
+		return false, err
+	}
+
+	return macsEqual, nil
+}
+
+func getSecretMac(obj ctrlclient.Object) (string, error) {
+	var cur string
+	switch t := obj.(type) {
+	case *v1beta1.VaultDynamicSecret:
+		cur = t.Status.SecretMAC
+	case *v1beta1.VaultStaticSecret:
+		cur = t.Status.SecretMAC
+	case *v1beta1.VaultPKISecret:
+		cur = t.Status.SecretMAC
+	case *v1beta1.HCPVaultSecretsApp:
+		cur = t.Status.SecretMAC
+	default:
+		return "", fmt.Errorf("unsupported object type %T", t)
+	}
+	return cur, nil
 }
 
 const (
@@ -149,15 +193,17 @@ func CreateHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey c
 		return nil, err
 	}
 
+	return createHMACKeySecret(ctx, client, objKey, key)
+}
+
+// createHMACKeySecret with a generated HMAC key stored in Secret.Data with HMACKeyName.
+// If the Secret already exist, or if the HMAC key could not be generated, an error will be returned.
+func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey, key []byte) (*corev1.Secret, error) {
 	s := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objKey.Name,
 			Namespace: objKey.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":       "vault-secrets-operator",
-				"app.kubernetes.io/managed-by": "hashicorp-vso",
-				"app.kubernetes.io/component":  "client-cache-storage-verification",
-			},
+			Labels:    hmacSecretLabels,
 		},
 		Immutable: pointer.Bool(true),
 		Data: map[string][]byte{
@@ -180,7 +226,7 @@ func GetHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey ctrl
 
 	s, err := GetSecret(ctx, client, objKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encountered an error getting %q: %w", objKey, err)
 	}
 
 	_, err = validateHMACKeySecret(s)

@@ -15,7 +15,7 @@ case "${VERSION}" in
     ;;
 esac
 
-case "{KUBE_RBAC_PROXY_VERSION}" in
+case "${KUBE_RBAC_PROXY_VERSION}" in
   "")
     echo "KUBE_RBAC_PROXY_VERSION variable must be set" >&2
     exit 1

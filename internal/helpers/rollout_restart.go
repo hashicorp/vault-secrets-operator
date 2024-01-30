@@ -113,7 +113,7 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 	switch t := obj.(type) {
 	case *appsv1.Deployment:
 		if t.Spec.Paused {
-			return fmt.Errorf("deployment %s is restart, cannot restart it", obj)
+			return fmt.Errorf("deployment %s is paused, cannot restart it", obj)
 		}
 		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {

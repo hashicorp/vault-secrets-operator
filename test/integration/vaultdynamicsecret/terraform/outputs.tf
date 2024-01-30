@@ -52,3 +52,15 @@ output "k8s_config_context" {
 output "namespace" {
   value = local.namespace
 }
+
+output "static_rotation_period" {
+  value = vault_database_secret_backend_static_role.postgres.rotation_period
+}
+
+output "default_lease_ttl_seconds" {
+  value = vault_database_secrets_mount.db.default_lease_ttl_seconds
+}
+
+output "non_renewable_k8s_token_ttl" {
+  value = vault_kubernetes_secret_backend_role.k8s_secrets.token_default_ttl
+}

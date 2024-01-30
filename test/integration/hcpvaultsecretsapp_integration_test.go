@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gruntwork-io/terratest/modules/k8s"
@@ -333,6 +334,12 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 					}
 				}
 			}
+
+			// we set a fairly large value for maxTries to help mitigate the effects of the
+			// HVS' request rate limiter. Typically, the rate limiter is only ever triggered
+			// when we have four or more GH workflows running concurrently.
+			assertRemediationOnDestinationDeletion(t, ctx, crdClient, obj,
+				time.Millisecond*500, uint64(160))
 		})
 	}
 }

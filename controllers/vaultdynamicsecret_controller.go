@@ -111,9 +111,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
+	if !o.Spec.Destination.Create && !destExists {
+		logger.Info("Destination secret does not exist, either create it or "+
+			"set .spec.destination.create=true", "destination", o.Spec.Destination)
+		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
+	}
+
 	// doSync indicates that the controller should perform the secret sync,
 	// skipping any lease renewals.
-	doSync := o.GetGeneration() != o.Status.LastGeneration
+	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists)
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -210,8 +217,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o)
 	if err != nil {
 		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
+		horizon := requeueDurationOnError + time.Duration(jitter)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
+			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)
 		return ctrl.Result{
-			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
+			RequeueAfter: horizon,
 		}, nil
 	}
 
@@ -274,9 +284,10 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	}
 
 	method := o.Spec.RequestHTTPMethod
+	logger := log.FromContext(ctx).WithName("syncSecret")
 	if params != nil {
 		if !(method == http.MethodPost || method == http.MethodPut) {
-			log.FromContext(ctx).V(consts.LogLevelWarning).Info(
+			logger.V(consts.LogLevelWarning).Info(
 				"Params provided, ignoring specified method",
 				"requestHTTPMethod", o.Spec.RequestHTTPMethod)
 		}
@@ -286,6 +297,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		method = http.MethodGet
 	}
 
+	logger = logger.WithValues("path", path, "method", method)
 	switch method {
 	case http.MethodPut, http.MethodPost:
 		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params))
@@ -296,6 +308,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	}
 
 	if err != nil {
+		logger.Error(err, "Vault request failed")
 		return nil, false, err
 	}
 
@@ -360,6 +373,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	}
 
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
+		logger.Error(err, "Destination sync failed")
 		return nil, false, err
 	}
 

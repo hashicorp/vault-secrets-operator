@@ -33,7 +33,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
-func TestVaultStaticSecret_kv(t *testing.T) {
+func TestVaultStaticSecret(t *testing.T) {
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testK8sNamespace2 := testK8sNamespace + "-test"
@@ -468,6 +468,14 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 
 						assertSync(t, vssObj, expected, true)
 						assertSync(t, vssObj, expected, false)
+
+						if vssObj.Spec.RefreshAfter != "" && !t.Failed() {
+							d, err := time.ParseDuration(vssObj.Spec.RefreshAfter)
+							if assert.NoError(t, err, "time.ParseDuration(%v)", vssObj.Spec.RefreshAfter) {
+								assertRemediationOnDestinationDeletion(t, ctx, crdClient, vssObj,
+									time.Millisecond*500, uint64(d.Seconds()*3))
+							}
+						}
 					})
 				}
 			}

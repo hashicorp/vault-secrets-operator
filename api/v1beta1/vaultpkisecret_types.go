@@ -17,7 +17,7 @@ type VaultPKISecretSpec struct {
 	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
 	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
-	// default to the `default` VaultAuth, configured in its own Kubernetes namespace.
+	// default to the `default` VaultAuth, configured in the operator's namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
 	// Namespace to get the secret from in Vault
@@ -38,7 +38,8 @@ type VaultPKISecretSpec struct {
 	// ExpiryOffset to use for computing when the certificate should be renewed.
 	// The rotation time will be difference between the expiration and the offset.
 	// Should be in duration notation e.g. 30s, 120s, etc.
-	// Set to empty string "" to prevent certificate rotation.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
 	ExpiryOffset string `json:"expiryOffset,omitempty"`
 
 	// IssuerRef reference to an existing PKI issuer, either by Vault-generated
@@ -86,6 +87,8 @@ type VaultPKISecretSpec struct {
 	// Note: this only has an effect when generating a CA cert or signing a CA cert,
 	// not when generating a CSR for an intermediate CA.
 	// Should be in duration notation e.g. 120s, 2h, etc.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
 	TTL string `json:"ttl,omitempty"`
 
 	// Format for the certificate. Choices: "pem", "der", "pem_bundle".
@@ -116,8 +119,20 @@ type VaultPKISecretSpec struct {
 type VaultPKISecretStatus struct {
 	SerialNumber string `json:"serialNumber,omitempty"`
 	Expiration   int64  `json:"expiration,omitempty"`
-	Valid        bool   `json:"valid"`
-	Error        string `json:"error"`
+	// LastGeneration is the Generation of the last reconciled resource.
+	LastGeneration int64 `json:"lastGeneration"`
+	// LastLastRotation of the certificate.
+	LastRotation int64 `json:"lastRotation"`
+	// SecretMAC used when deciding whether new Vault secret data should be synced.
+	//
+	// The controller will compare the "new" Vault secret data to this value using HMAC,
+	// if they are different, then the data will be synced to the Destination.
+	//
+	// The SecretMac is also used to detect drift in the Destination Secret's Data.
+	// If drift is detected the data will be synced to the Destination.
+	SecretMAC string `json:"secretMAC,omitempty"`
+	Valid     bool   `json:"valid"`
+	Error     string `json:"error"`
 }
 
 //+kubebuilder:object:root=true

@@ -49,7 +49,18 @@ const (
 	labelProviderNamespace    = "provider/namespace"
 )
 
-var EncryptionRequiredError = fmt.Errorf("encryption required")
+// commonMatchingLabels are included in all stored Clients. They are used for
+// nearly all client cache functions. Ideally they should never be altered,
+// since it could lead to orphaned cache entries and possibly other issues.
+var commonMatchingLabels = ctrlclient.MatchingLabels{
+	"app.kubernetes.io/name":       "vault-secrets-operator",
+	"app.kubernetes.io/managed-by": "vso",
+	"app.kubernetes.io/component":  "client-cache-storage",
+}
+
+func IsStorageEntryNotFoundErr(err error) bool {
+	return apierrors.IsNotFound(err)
+}
 
 type ClientCacheStorageStoreRequest struct {
 	OwnerReferences     []metav1.OwnerReference
@@ -72,11 +83,15 @@ type ClientCacheStorageRestoreRequest struct {
 	CacheKey            ClientCacheKey
 	DecryptionClient    Client
 	DecryptionVaultAuth *secretsv1beta1.VaultAuth
+	// NoPruneOnError preserves the storage entry on restoration error.
+	NoPruneOnError bool
 }
 
 type ClientCacheStorageRestoreAllRequest struct {
 	DecryptionClient    Client
 	DecryptionVaultAuth *secretsv1beta1.VaultAuth
+	// NoPruneOnError preserves the storage entry on restoration error.
+	NoPruneOnError bool
 }
 
 // clientCacheStorageEntry represents a single Vault Client.
@@ -260,8 +275,8 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	s.Data[fieldMACMessage] = messageMAC
 	if e := client.Create(ctx, s); e != nil {
 		if apierrors.IsAlreadyExists(e) {
-			// since the Secret is immutable we need to always recreate it.
-			err = client.Delete(ctx, s)
+			// since the Secret is immutable we need to always recreate it
+			err = c.delete(ctx, client, s)
 			if err != nil {
 				return nil, err
 			}
@@ -305,7 +320,7 @@ func (c *defaultClientCacheStorage) Restore(ctx context.Context, client ctrlclie
 	}
 
 	var entry *clientCacheStorageEntry
-	entry, err = c.restore(ctx, req, secret)
+	entry, err = c.restore(ctx, client, req, secret)
 	return entry, err
 }
 
@@ -318,18 +333,28 @@ func (c *defaultClientCacheStorage) Len(ctx context.Context, client ctrlclient.C
 	return len(found), nil
 }
 
-func (c *defaultClientCacheStorage) restore(ctx context.Context, req ClientCacheStorageRestoreRequest, s *corev1.Secret) (*clientCacheStorageEntry, error) {
+func (c *defaultClientCacheStorage) restore(ctx context.Context, client ctrlclient.Client,
+	req ClientCacheStorageRestoreRequest, s *corev1.Secret,
+) (*clientCacheStorageEntry, error) {
 	var err error
 	defer func() {
-		c.incrementOperationCounter(metrics.OperationRestore, err)
+		var errs error
+		if err != nil {
+			errs = errors.Join(errs, err)
+			if !req.NoPruneOnError {
+				errs = errors.Join(errs, c.delete(ctx, client, s))
+			}
+		}
+
+		c.incrementOperationCounter(metrics.OperationRestore, errs)
 	}()
 
+	var secret *api.Secret
 	err = c.validateSecretMAC(req, s)
 	if err != nil {
 		return nil, err
 	}
 
-	var secret *api.Secret
 	if b, ok := s.Data[fieldCachedSecret]; ok {
 		transitRef := s.Labels["vaultTransitRef"]
 		if transitRef != "" {
@@ -417,25 +442,37 @@ func (c *defaultClientCacheStorage) Prune(ctx context.Context, client ctrlclient
 			continue
 		}
 
-		if err := client.Delete(ctx, &item); err != nil {
-			if err != nil {
-				c.incrementOperationCounter(metrics.OperationPrune, err)
-			}
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-
+		if err := c.delete(ctx, client, &item); err != nil {
 			errs = errors.Join(errs, err)
 			continue
 		}
 
-		c.incrementOperationCounter(metrics.OperationPrune, nil)
 		count++
 	}
 
 	c.logger.V(consts.LogLevelDebug).Info("Pruned storage cache", "count", count, "total", len(secrets))
 
 	return count, errs
+}
+
+func (c *defaultClientCacheStorage) delete(ctx context.Context, client ctrlclient.Client, secret *corev1.Secret) error {
+	var errs error
+	defer func() {
+		c.incrementRequestCounter(metrics.OperationDelete, errs)
+	}()
+
+	if secret == nil {
+		errs = errors.Join(errs, fmt.Errorf("secret cannot be nil"))
+		return errs
+	}
+
+	if err := client.Delete(ctx, secret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			errs = errors.Join(errs, err)
+		}
+	}
+
+	return errs
 }
 
 func (c *defaultClientCacheStorage) listSecrets(ctx context.Context, client ctrlclient.Client, listOptions ...ctrlclient.ListOption) ([]corev1.Secret, error) {
@@ -483,11 +520,13 @@ func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlc
 			CacheKey:            cacheKey,
 			DecryptionClient:    req.DecryptionClient,
 			DecryptionVaultAuth: req.DecryptionVaultAuth,
+			NoPruneOnError:      req.NoPruneOnError,
 		}
 
-		entry, err := c.restore(ctx, req, &s)
+		entry, err := c.restore(ctx, client, req, &s)
 		if err != nil {
 			errs = errors.Join(errs, err)
+			continue
 		}
 
 		result = append(result, entry)
@@ -497,19 +536,24 @@ func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlc
 }
 
 func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRestoreRequest, s *corev1.Secret) error {
-	var err error
+	if s == nil {
+		return fmt.Errorf("secret is nil")
+	}
+
+	var missingFields []string
 	b, ok := s.Data[fieldCachedSecret]
 	if !ok {
-		err = errors.Join(err, fmt.Errorf("entry missing required %q field", fieldCachedSecret))
+		missingFields = append(missingFields, fieldCachedSecret)
 	}
 
 	messageMAC, ok := s.Data[fieldMACMessage]
 	if !ok {
-		err = errors.Join(err, fmt.Errorf("entry missing required %q field", fieldCachedSecret))
+		missingFields = append(missingFields, fieldMACMessage)
 	}
 
-	if err != nil {
-		return err
+	if len(missingFields) > 0 {
+		return fmt.Errorf("secret data for %q missing required fields: %v",
+			ctrlclient.ObjectKeyFromObject(s), missingFields)
 	}
 
 	message, err := c.message(s.Name, req.CacheKey.String(), b)
@@ -523,7 +567,8 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 	}
 
 	if !ok {
-		return fmt.Errorf("storage entry message MAC is invalid")
+		return fmt.Errorf("invalid message MAC for secret %q",
+			ctrlclient.ObjectKeyFromObject(s))
 	}
 
 	return nil
@@ -531,7 +576,7 @@ func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRest
 
 func (c *defaultClientCacheStorage) message(name, cacheKey string, secretData []byte) ([]byte, error) {
 	if name == "" || cacheKey == "" {
-		return nil, fmt.Errorf("invalid empty name and cacheKey")
+		return nil, fmt.Errorf("invalid empty name or cacheKey")
 	}
 
 	return append([]byte(name+cacheKey), secretData...), nil
@@ -555,11 +600,7 @@ func (c *defaultClientCacheStorage) listOptions() []ctrlclient.ListOption {
 }
 
 func (c *defaultClientCacheStorage) commonMatchingLabels() ctrlclient.MatchingLabels {
-	return ctrlclient.MatchingLabels{
-		"app.kubernetes.io/name":       "vault-secrets-operator",
-		"app.kubernetes.io/managed-by": "vso",
-		"app.kubernetes.io/component":  "client-cache-storage",
-	}
+	return commonMatchingLabels
 }
 
 func (c *defaultClientCacheStorage) addCommonMatchingLabels(labels ctrlclient.MatchingLabels) ctrlclient.MatchingLabels {
@@ -592,6 +633,9 @@ type ClientCacheStorageConfig struct {
 	EnforceEncryption bool
 	HMACSecretObjKey  ctrlclient.ObjectKey
 	OwnerRefs         []metav1.OwnerReference
+	// skipHMACSecret is used for unit tests, which need to control various aspects
+	// of HMAC secret creation.
+	skipHMACSecret bool
 }
 
 func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
@@ -607,30 +651,17 @@ func DefaultClientCacheStorageConfig() *ClientCacheStorageConfig {
 func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 	config *ClientCacheStorageConfig, metricsRegistry prometheus.Registerer,
 ) (ClientCacheStorage, error) {
+	return newDefaultClientCacheStorage(ctx, client, config, metricsRegistry)
+}
+
+func newDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
+	config *ClientCacheStorageConfig, metricsRegistry prometheus.Registerer,
+) (*defaultClientCacheStorage, error) {
 	if config == nil {
 		config = DefaultClientCacheStorageConfig()
 	}
 
-	if err := common.ValidateObjectKey(config.HMACSecretObjKey); err != nil {
-		return nil, err
-	}
-
-	s, err := helpers.CreateHMACKeySecret(ctx, client, config.HMACSecretObjKey)
-	if err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return nil, err
-		}
-	}
-
-	if s == nil {
-		s, err = helpers.GetHMACKeySecret(ctx, client, config.HMACSecretObjKey)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	cacheStorage := &defaultClientCacheStorage{
-		hmacKey:           s.Data[helpers.HMACKeyName],
 		enforceEncryption: config.EnforceEncryption,
 		logger:            zap.New().WithName("ClientCacheStorage"),
 		requestCounterVec: prometheus.NewCounterVec(
@@ -665,6 +696,28 @@ func NewDefaultClientCacheStorage(ctx context.Context, client ctrlclient.Client,
 				metrics.LabelOperation,
 			},
 		),
+	}
+
+	if !config.skipHMACSecret {
+		if err := common.ValidateObjectKey(config.HMACSecretObjKey); err != nil {
+			return nil, err
+		}
+
+		s, err := helpers.CreateHMACKeySecret(ctx, client, config.HMACSecretObjKey)
+		if err != nil {
+			if !apierrors.IsAlreadyExists(err) {
+				return nil, err
+			}
+		}
+
+		if s == nil {
+			s, err = helpers.GetHMACKeySecret(ctx, client, config.HMACSecretObjKey)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		cacheStorage.hmacKey = s.Data[helpers.HMACKeyName]
 	}
 
 	if metricsRegistry != nil {
