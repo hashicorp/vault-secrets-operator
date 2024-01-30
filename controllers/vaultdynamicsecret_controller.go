@@ -212,7 +212,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = consts.ReasonSecretRotated
 	}
 
-	renderOption, err := helpers.NewSecretRenderOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
@@ -220,7 +220,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// sync the secret
-	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, renderOption)
+	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 			"Failed to sync secret: %s", err)

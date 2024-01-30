@@ -525,7 +525,7 @@ func TestSecretDataBuilder_filterData_with_any(t *testing.T) {
 	}
 }
 
-func TestNewSecretRenderOption(t *testing.T) {
+func TestNewSecretTransformationOption(t *testing.T) {
 	t.Parallel()
 
 	defaultTransObjMeta := metav1.ObjectMeta{
@@ -555,13 +555,21 @@ func TestNewSecretRenderOption(t *testing.T) {
 	}
 
 	newTransObj := func(t *testing.T, objMeta metav1.ObjectMeta,
-		s secretsv1beta1.SecretTransformationSpec,
+		spec secretsv1beta1.SecretTransformationSpec,
+		status *secretsv1beta1.SecretTransformationStatus,
 	) *secretsv1beta1.SecretTransformation {
 		t.Helper()
 
+		if status == nil {
+			status = &secretsv1beta1.SecretTransformationStatus{
+				Valid: true,
+			}
+		}
+
 		return &secretsv1beta1.SecretTransformation{
 			ObjectMeta: *objMeta.DeepCopy(),
-			Spec:       s,
+			Spec:       spec,
+			Status:     *status,
 		}
 	}
 
@@ -692,6 +700,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -743,6 +752,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -772,6 +782,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						Includes:  defaultIncludes,
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -803,6 +814,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -835,6 +847,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -868,6 +881,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 						Includes:  []string{`^good.+`, `^a+`},
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -897,6 +911,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 					secretsv1beta1.SecretTransformationSpec{
 						Templates: defaultTemplates1,
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -922,6 +937,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 				newTransObj(t,
 					defaultTransObjMeta,
 					secretsv1beta1.SecretTransformationSpec{},
+					nil,
 				),
 			},
 			want:    &SecretTransformationOption{},
@@ -961,13 +977,13 @@ func TestNewSecretRenderOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err,
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
+				return assert.ErrorContains(t, err,
 					`template "default" not found in object `+
-						`default/templates, secrets.hashicorp.com/v1beta1, `+
-						`Kind=SecretTransformation`)
+						`default/templates`)
 			},
 		},
 		{
@@ -1009,6 +1025,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -1047,6 +1064,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
 			want: &SecretTransformationOption{
@@ -1103,6 +1121,7 @@ func TestNewSecretRenderOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 				newTransObj(t,
 					dupeTransObjMeta,
@@ -1114,12 +1133,12 @@ func TestNewSecretRenderOption(t *testing.T) {
 							},
 						},
 					},
+					nil,
 				),
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`failed to gather templates, `+
-						`duplicate template name "default"`)
+					`duplicate template name "default"`)
 			},
 		},
 		{
@@ -1154,7 +1173,46 @@ func TestNewSecretRenderOption(t *testing.T) {
 			),
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`failed to gather templates, duplicate template name "default"`, i...)
+					`duplicate template name "default"`, i...)
+			},
+		},
+		{
+			name: "trans-refs-invalid-state",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: transRefsSingleDefault,
+					Excludes:           []string{`^bad.+`},
+					Includes:           defaultIncludes,
+				},
+			),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						SourceTemplates: []secretsv1beta1.SourceTemplate{
+							{
+								Text: "{{- qux -}}",
+								Name: "named",
+							},
+							{
+								Text: "{{- foo -}}",
+							},
+						},
+						Templates: map[string]secretsv1beta1.Template{
+							"default": {
+								Name: "default",
+								Text: "{{- baz -}}",
+							},
+						},
+					},
+					&secretsv1beta1.SecretTransformationStatus{
+						Valid: false,
+						Error: "",
+					}),
+			},
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					`default/templates is in an invalid state`)
 			},
 		},
 	}
@@ -1164,18 +1222,19 @@ func TestNewSecretRenderOption(t *testing.T) {
 			client := clientBuilder.Build()
 
 			t.Parallel()
+
 			for _, obj := range tt.secretTransObjs {
 				require.NoError(t, client.Create(ctx, obj))
 			}
 
-			got, err := NewSecretRenderOption(ctx, client, tt.obj)
+			got, err := NewSecretTransformationOption(ctx, client, tt.obj)
 			if !tt.wantErr(t, err,
 				fmt.Sprintf(
-					"NewSecretRenderOption(%v, %v, %v)", ctx, client, tt.obj)) {
+					"NewSecretTransformationOption(%v, %v, %v)", ctx, client, tt.obj)) {
 				return
 			}
 			assert.Equalf(t, tt.want, got,
-				"NewSecretRenderOption(%v, %v, %v)", ctx, client, tt.obj)
+				"NewSecretTransformationOption(%v, %v, %v)", ctx, client, tt.obj)
 		})
 	}
 }

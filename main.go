@@ -353,8 +353,9 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.SecretTransformationReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("SecretTransformation"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SecretTransformation")
 		os.Exit(1)
