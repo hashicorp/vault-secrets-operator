@@ -111,6 +111,7 @@ func main() {
 		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
 	flag.StringVar(&globalRenderingOptions, "global-rendering-options", "",
 		fmt.Sprintf("Set global rendering options as a comma delimited string. "+
+			"Also set from environment variable VSO_GLOBAL_RENDERING_OPTIONS."+
 			"Valid values are: %v", []string{"exclude-raw"}))
 	opts := zap.Options{
 		Development: true,
@@ -136,6 +137,9 @@ func main() {
 	}
 	if vsoEnvOptions.MaxConcurrentReconciles != nil {
 		controllerOptions.MaxConcurrentReconciles = *vsoEnvOptions.MaxConcurrentReconciles
+	}
+	if vsoEnvOptions.GlobalRenderingOptions != "" {
+		globalRenderingOptions = vsoEnvOptions.GlobalRenderingOptions
 	}
 
 	// versionInfo is used when setting up the buildInfo metric below
