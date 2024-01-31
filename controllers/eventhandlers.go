@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
+
+var maxRequeueAfter = time.Second * 1
 
 func NewEnqueueRefRequestsHandlerST(refCache ResourceReferenceCache, syncReg *SyncRegistry) handler.EventHandler {
 	return NewEnqueueRefRequestsHandler(
@@ -33,10 +36,11 @@ func NewEnqueueRefRequestsHandler(kind ResourceKind, refCache ResourceReferenceC
 }
 
 type enqueueRefRequestsHandler struct {
-	kind      ResourceKind
-	refCache  ResourceReferenceCache
-	syncReg   *SyncRegistry
-	validator ValidatorFunc
+	kind            ResourceKind
+	refCache        ResourceReferenceCache
+	syncReg         *SyncRegistry
+	validator       ValidatorFunc
+	maxRequeueAfter time.Duration
 }
 
 func (e *enqueueRefRequestsHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
@@ -44,6 +48,13 @@ func (e *enqueueRefRequestsHandler) Create(ctx context.Context, evt event.Create
 }
 
 func (e *enqueueRefRequestsHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+	if evt.ObjectOld == nil {
+		return
+	}
+	if evt.ObjectNew == nil {
+		return
+	}
+
 	if evt.ObjectNew.GetGeneration() != evt.ObjectOld.GetGeneration() {
 		e.enqueue(ctx, q, evt.ObjectNew)
 	}
@@ -60,6 +71,10 @@ func (e *enqueueRefRequestsHandler) Generic(ctx context.Context, evt event.Gener
 func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.RateLimitingInterface, o client.Object) {
 	logger := log.FromContext(ctx).WithName("enqueueRefRequestsHandler")
 	reqs := map[reconcile.Request]empty{}
+	d := e.maxRequeueAfter
+	if d == 0 {
+		d = maxRequeueAfter
+	}
 	if refs, ok := e.refCache.Get(e.kind, client.ObjectKeyFromObject(o)); ok {
 		if len(refs) == 0 {
 			return
@@ -81,9 +96,10 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.Rat
 				NamespacedName: ref,
 			}
 			if _, ok := reqs[req]; !ok {
+				_, jitter := computeMaxJitterDuration(d)
 				logger.V(consts.LogLevelTrace).Info(
 					"Enqueuing", "obj", ref, "refKind", e.kind)
-				q.Add(req)
+				q.AddAfter(req, jitter)
 				reqs[req] = empty{}
 			}
 		}
