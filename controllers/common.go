@@ -47,6 +47,16 @@ func computeMaxJitter(duration time.Duration) (maxHorizon float64, jitter uint64
 	return computeMaxJitterWithPercent(duration, 0.10)
 }
 
+// computeMaxJitterDuration with max as 10% of the duration, and jitter a random amount
+// between 0-10% as time.Duration.
+func computeMaxJitterDuration(duration time.Duration) (maxHorizon float64, jitter time.Duration) {
+	var j uint64
+	maxHorizon, j = computeMaxJitterWithPercent(duration, 0.10)
+	jitter = time.Duration(j)
+
+	return
+}
+
 // computeMaxJitter with max as a percentage (percent) of the duration, and
 // jitter a random amount between 0 up to percent
 func computeMaxJitterWithPercent(duration time.Duration, percent float64) (maxHorizon float64, jitter uint64) {
