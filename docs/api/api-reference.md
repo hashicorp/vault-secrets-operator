@@ -42,6 +42,7 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name of the Secret |
 | `create` _boolean_ | Create the destination Secret. If the Secret already exists this should be set to false. |
+| `overwrite` _boolean_ | Overwrite the destination Secret if it exists and Create is true. This is useful when migrating to VSO from a previous secret deployment strategy. |
 | `labels` _object (keys:string, values:string)_ | Labels to apply to the Secret. Requires Create to be set to true. |
 | `annotations` _object (keys:string, values:string)_ | Annotations to apply to the Secret. Requires Create to be set to true. |
 | `type` _[SecretType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secrettype-v1-core)_ | Type of Kubernetes Secret. Requires Create to be set to true. Defaults to Opaque. |
