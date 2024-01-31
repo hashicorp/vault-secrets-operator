@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -369,4 +370,140 @@ func (q *DelegatingQueue) Forget(item interface{}) {}
 
 func (q *DelegatingQueue) NumRequeues(item interface{}) int {
 	return 0
+}
+
+func Test_enqueueSecretsRequestsHandler_Delete(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	kind := VaultStaticSecret
+	ownerRefsSupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       string(kind),
+			Name:       "baz",
+		},
+	}
+
+	ownerRefsUnsupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       "Unknown",
+			Name:       "foo",
+		},
+	}
+	deleteEventSupported := event.DeleteEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+	}
+
+	deleteEventUnsupported := event.DeleteEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+	}
+
+	wantAddedAfterValid := []any{
+		reconcile.Request{
+			NamespacedName: client.ObjectKey{
+				Namespace: "default",
+				Name:      "baz",
+			},
+		},
+	}
+
+	gvk := secretsv1beta1.GroupVersion.WithKind(string(kind))
+	tests := []testCaseEnqueueSecretsRequestHandler{
+		{
+			name: "enqueued",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:             gvk,
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * 10,
+		},
+		{
+			name: "enqueued-mixed",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:             gvk,
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * 10,
+		},
+		{
+			name: "not-enqueued",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk: gvk,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertEnqueueSecretsRequestsHandler(t, ctx, tt)
+		})
+	}
+}
+
+type testCaseEnqueueSecretsRequestHandler struct {
+	name            string
+	kind            ResourceKind
+	q               *DelegatingQueue
+	deleteEvents    []event.DeleteEvent
+	wantAddedAfter  []any
+	maxRequeueAfter time.Duration
+	gvk             schema.GroupVersionKind
+}
+
+func assertEnqueueSecretsRequestsHandler(t *testing.T, ctx context.Context, tt testCaseEnqueueSecretsRequestHandler) {
+	t.Helper()
+
+	e := &enqueueSecretsRequestsHandler{
+		gvk: tt.gvk,
+	}
+
+	m := tt.maxRequeueAfter
+	if tt.maxRequeueAfter == 0 {
+		m = maxRequeueAfter
+	}
+
+	for _, evt := range tt.deleteEvents {
+		e.Delete(ctx, evt, tt.q)
+	}
+
+	if assert.Equal(t, tt.wantAddedAfter, tt.q.AddedAfter) {
+		if assert.Equal(t, len(tt.q.AddedAfter), len(tt.q.AddedAfterDuration)) {
+			for _, d := range tt.q.AddedAfterDuration {
+				assert.Greater(t, d.Seconds(), float64(0))
+				assert.LessOrEqual(t, d.Seconds(), float64(m))
+			}
+		}
+	}
 }

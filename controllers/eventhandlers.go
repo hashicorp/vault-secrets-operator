@@ -109,7 +109,8 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.Rat
 }
 
 type enqueueSecretsRequestsHandler struct {
-	gvk schema.GroupVersionKind
+	gvk             schema.GroupVersionKind
+	maxRequeueAfter time.Duration
 }
 
 func (e *enqueueSecretsRequestsHandler) Create(_ context.Context, _ event.CreateEvent, q workqueue.RateLimitingInterface) {
@@ -125,6 +126,10 @@ func (e *enqueueSecretsRequestsHandler) Delete(ctx context.Context, evt event.De
 		WithValues("forGvk", e.gvk)
 	reqs := map[reconcile.Request]empty{}
 	evt.Object.GetObjectKind()
+	d := e.maxRequeueAfter
+	if d == 0 {
+		d = maxRequeueAfter
+	}
 	for _, ref := range evt.Object.GetOwnerReferences() {
 		if ref.APIVersion == e.gvk.GroupVersion().String() && ref.Kind == e.gvk.Kind {
 			req := reconcile.Request{
@@ -136,7 +141,10 @@ func (e *enqueueSecretsRequestsHandler) Delete(ctx context.Context, evt event.De
 			if _, ok := reqs[req]; !ok {
 				logger.V(consts.LogLevelTrace).Info(
 					"Enqueuing", "obj", ref, "kind", ref.Kind)
-				q.Add(req)
+				_, horizon := computeMaxJitterDuration(d)
+				logger.V(consts.LogLevelTrace).Info(
+					"Enqueuing", "obj", ref, "refKind", ref.Kind, "horizon", horizon)
+				q.AddAfter(req, horizon)
 				reqs[req] = empty{}
 			}
 		} else {
