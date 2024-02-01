@@ -151,14 +151,9 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		return fmt.Errorf("invalid Destination, err=%w", err)
 	}
 
-	var dest corev1.Secret
-	exists := true
-	if err := client.Get(ctx, key, &dest); err != nil {
-		if apierrors.IsNotFound(err) {
-			exists = false
-		} else {
-			return err
-		}
+	dest, exists, err := getSecretExists(ctx, client, key)
+	if err != nil {
+		return err
 	}
 
 	pruneOrphans := func() {
@@ -187,7 +182,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		// syncable-secret's Status, but...
 		dest.Data = data
 		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		if err := client.Update(ctx, &dest); err != nil {
+		if err := client.Update(ctx, dest); err != nil {
 			return err
 		}
 
@@ -214,21 +209,28 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	}
 	if exists {
 		logger.V(consts.LogLevelDebug).Info("Found pre-existing secret",
-			"secret", ctrlclient.ObjectKeyFromObject(&dest))
-		if err := checkSecretIsOwnedByObj(&dest, references); err != nil {
-			return err
+			"secret", ctrlclient.ObjectKeyFromObject(dest))
+
+		checkOwnerShip := true
+		if meta.Destination.Overwrite {
+			checkOwnerShip = HasOwnerLabels(dest)
 		}
 
+		if checkOwnerShip {
+			if err := checkSecretIsOwnedByObj(dest, references); err != nil {
+				return err
+			}
+		}
 	} else {
 		// secret does not exist, so we are going to create it.
-		dest = corev1.Secret{
+		dest = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      meta.Destination.Name,
 				Namespace: obj.GetNamespace(),
 			},
 		}
 		logger.V(consts.LogLevelDebug).Info("Creating new secret",
-			"secret", ctrlclient.ObjectKeyFromObject(&dest))
+			"secret", ctrlclient.ObjectKeyFromObject(dest))
 	}
 
 	// common setup/updates
@@ -258,12 +260,12 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 
 	if exists {
 		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		if err := client.Update(ctx, &dest); err != nil {
+		if err := client.Update(ctx, dest); err != nil {
 			return err
 		}
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Creating secret")
-		if err := client.Create(ctx, &dest); err != nil {
+		if err := client.Create(ctx, dest); err != nil {
 			return err
 		}
 	}
@@ -299,16 +301,16 @@ func pruneOrphanSecrets(ctx context.Context, client ctrlclient.Client, obj ctrlc
 //
 // See NewSyncableSecretMetaData for the supported types for obj.
 func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (bool, error) {
-	_, ok, err := getSecretExists(ctx, client, obj)
+	_, ok, err := getSecretExistsForObj(ctx, client, obj)
 	return ok, err
 }
 
 // GetSyncableSecret returns K8s Secret for obj.
 func GetSyncableSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
-	return getSecretExists(ctx, client, obj)
+	return getSecretExistsForObj(ctx, client, obj)
 }
 
-func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
+func getSecretExistsForObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
 	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, false, err
@@ -317,18 +319,14 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
 		"secretName", meta.Destination.Name, "create", meta.Destination.Create)
 	objKey := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.Destination.Name}
-	s, err := GetSecret(ctx, client, objKey)
+	s, exists, err := getSecretExists(ctx, client, objKey)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
-			return nil, false, nil
-		}
 		// let the caller log the error
 		return nil, false, err
 	}
 
 	logger.V(consts.LogLevelDebug).Info("Secret exists")
-	return s, true, nil
+	return s, exists, nil
 }
 
 func GetSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
@@ -338,12 +336,30 @@ func GetSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.
 	return &s, err
 }
 
+func getSecretExists(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, bool, error) {
+	s, err := GetSecret(ctx, client, objKey)
+	var exists bool
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			err = nil
+		}
+	} else {
+		exists = true
+	}
+	return s, exists, err
+}
+
+// HasOwnerLabels returns true if all owner labels are present and valid, if not
+// it returns false.
+// Note: this may cause issues if we ever add new "owner"
+// labels, but for now this check should be good enough.
 func HasOwnerLabels(o ctrlclient.Object) bool {
-	// check that all owner labels are present and valid, if not return false
-	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
 	return CheckOwnerLabels(o) == nil
 }
 
+// CheckOwnerLabels checks that all owner labels are present and valid.
+// Note: this may cause issues if we ever add new "owner" labels,
+// but for now this check should be good enough.
 func CheckOwnerLabels(o ctrlclient.Object) error {
 	// check that all owner labels are present and valid, if not return an error
 	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
