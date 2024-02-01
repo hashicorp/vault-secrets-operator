@@ -643,7 +643,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 					{
 						Key: "default-1",
 						Template: secretsv1beta1.Template{
-							Name: "default/default/default-1",
+							Name: "default/basic/default-1",
 							Text: "{{- -}}",
 						},
 					},
