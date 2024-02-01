@@ -39,7 +39,7 @@ resource "kubernetes_manifest" "vault-auth-default" {
       namespace = vault_auth_backend.default.namespace
       mount     = vault_auth_backend.default.path
       kubernetes = {
-        role           = vault_kubernetes_auth_backend_role.dev.role_name
+        role           = vault_kubernetes_auth_backend_role.default.role_name
         serviceAccount = "default"
         audiences = [
           "vault",
@@ -117,7 +117,7 @@ resource "kubernetes_secret" "db" {
 resource "kubernetes_deployment" "example" {
   metadata {
     name      = "vso-db-demo"
-    namespace = kubernetes_namespace.dev.metadata[0].name
+    namespace = local.k8s_namespace
     labels = {
       test = "vso-db-demo"
     }

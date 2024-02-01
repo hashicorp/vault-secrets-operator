@@ -5,7 +5,7 @@ output "name_prefix" {
   value = local.name_prefix
 }
 output "k8s_namespace" {
-  value = local.k8s_namespace
+  value = local.k8s_namespace_name
 }
 output "auth_mount" {
   value = local.auth_mount

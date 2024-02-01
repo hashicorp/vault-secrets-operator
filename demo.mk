@@ -36,6 +36,7 @@ demo-destroy: demo-delete-kind ## delete the kind cluster
 .PHONY: demo-infra-vault
 demo-infra-vault: ## Deploy Vault for the demo
 	$(MAKE) setup-vault \
+		VAULT_ENTERPRISE=$(VAULT_ENTERPRISE) \
 		TF_VAULT_STATE_DIR=$(TF_VAULT_STATE_DIR) \
 		TF_INFRA_STATE_DIR=$(TF_VAULT_STATE_DIR) \
 		K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT)
@@ -47,6 +48,19 @@ demo-infra-app: demo-setup-kind ## Deploy Postgres for the demo
 	cp $(DEMO_ROOT)/infra/app/*.tf $(TF_APP_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_APP_STATE_DIR) init -upgrade
 	$(TERRAFORM) -chdir=$(TF_APP_STATE_DIR) apply -auto-approve \
+		-var vault_enterprise=$(VAULT_ENTERPRISE) \
+		-var vault_address=http://127.0.0.1:38302 \
+		-var vault_token=root \
+		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
+		$(EXTRA_VARS) || exit 1 \
+
+.PHONY: demo-infra-app-plan
+demo-infra-app-plan: demo-setup-kind ## Deploy Postgres for the demo
+	@mkdir -p $(TF_APP_STATE_DIR)
+	rm -f $(TF_APP_STATE_DIR)/*.tf
+	cp $(DEMO_ROOT)/infra/app/*.tf $(TF_APP_STATE_DIR)/.
+	$(TERRAFORM) -chdir=$(TF_APP_STATE_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_APP_STATE_DIR) plan \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
 		-var vault_address=http://127.0.0.1:38302 \
 		-var vault_token=root \
