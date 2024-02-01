@@ -216,6 +216,15 @@ func TestSyncSecret(t *testing.T) {
 	ownerWithDest.DeepCopyInto(ownerWithDestNoCreate)
 	ownerWithDestNoCreate.Spec.Destination.Create = false
 
+	ownerWithDestNoCreateOverwrite := &secretsv1beta1.VaultDynamicSecret{}
+	ownerWithDest.DeepCopyInto(ownerWithDestNoCreateOverwrite)
+	ownerWithDestNoCreateOverwrite.Spec.Destination.Create = false
+	ownerWithDestNoCreateOverwrite.Spec.Destination.Overwrite = true
+
+	ownerWithDestOverwrite := &secretsv1beta1.VaultDynamicSecret{}
+	ownerWithDest.DeepCopyInto(ownerWithDestOverwrite)
+	ownerWithDestOverwrite.Spec.Destination.Overwrite = true
+
 	invalidNoDest := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta:   defaultOwner.TypeMeta,
 		ObjectMeta: defaultOwner.ObjectMeta,
@@ -252,6 +261,7 @@ func TestSyncSecret(t *testing.T) {
 		data               map[string][]byte
 		orphans            int
 		createDest         bool
+		destLabels         map[string]string
 		expectSecretsCount int
 		opts               []SyncOptions
 		wantErr            assert.ErrorAssertionFunc
@@ -391,6 +401,37 @@ func TestSyncSecret(t *testing.T) {
 					"not the owner of the destination Secret foo/baz")
 			},
 		},
+		{
+			name:               "invalid-dest-exists-no-create-overwrite",
+			client:             clientBuilder.Build(),
+			obj:                ownerWithDestNoCreateOverwrite,
+			createDest:         false,
+			expectSecretsCount: 0,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					"destination secret foo/baz does not exist, and create=false")
+			},
+		},
+		{
+			name:               "dest-exists-not-owned-overwrite-true",
+			client:             clientBuilder.Build(),
+			obj:                ownerWithDestOverwrite,
+			createDest:         true,
+			expectSecretsCount: 1,
+			wantErr:            assert.NoError,
+		},
+		{
+			name:               "dest-exists-owned-overwrite-true",
+			client:             clientBuilder.Build(),
+			obj:                ownerWithDestOverwrite,
+			createDest:         true,
+			destLabels:         OwnerLabels,
+			expectSecretsCount: 1,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					"not the owner of the destination Secret foo/baz")
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -404,6 +445,7 @@ func TestSyncSecret(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      tt.obj.Spec.Destination.Name,
 						Namespace: tt.obj.GetNamespace(),
+						Labels:    tt.destLabels,
 					},
 				}
 				require.NoError(t, tt.client.Create(ctx, s))

@@ -14,7 +14,12 @@ type Destination struct {
 	Name string `json:"name"`
 	// Create the destination Secret.
 	// If the Secret already exists this should be set to false.
-	Create bool `json:"create,omitempty"`
+	// +kubebuilder:default=false
+	Create bool `json:"create"`
+	// Overwrite the destination Secret if it exists and Create is true. This is
+	// useful when migrating to VSO from a previous secret deployment strategy.
+	// +kubebuilder:default=false
+	Overwrite bool `json:"overwrite"`
 	// Labels to apply to the Secret. Requires Create to be set to true.
 	Labels map[string]string `json:"labels,omitempty"`
 	// Annotations to apply to the Secret. Requires Create to be set to true.
