@@ -285,7 +285,7 @@ jobs:
         exclude:
           # vault version N-2
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_28 }}
-            vault-version: ${{ needs.vault-versions.outputs.VAULT_N_1 }}
+            vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_27 }}
             vault-version: ${{ needs.vault-versions.outputs.VAULT_N_2 }}
           - kind-k8s-version: ${{ needs.k8s-versions.outputs.K8S_1_26 }}
