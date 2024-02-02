@@ -721,9 +721,9 @@ load _helpers
 }
 
 #--------------------------------------------------------------------
-# globalRenderingOptions
+# globalTransformationOptions
 
-@test "controller/Deployment: globalRenderingOptions not set by default" {
+@test "controller/Deployment: globalTransformationOptions not set by default" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml  \
@@ -734,11 +734,11 @@ load _helpers
    [ "${actual}" = "3" ]
 }
 
-@test "controller/Deployment: with globalRenderingOptions.excludeRaw" {
+@test "controller/Deployment: with globalTransformationOptions.excludeRaw" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml \
-      --set 'controller.manager.globalRenderingOptions.excludeRaw=true' \
+      --set 'controller.manager.globalTransformationOptions.excludeRaw=true' \
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
@@ -746,15 +746,15 @@ load _helpers
    [ "${actual}" = "4" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
-   [ "${actual}" = "--global-rendering-options=exclude-raw" ]
+   [ "${actual}" = "--global-transformation-options=exclude-raw" ]
 }
 
-@test "controller/Deployment: with globalRenderingOptions.excludeRaw and extraArgs" {
+@test "controller/Deployment: with globalTransformationOptions.excludeRaw and extraArgs" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml \
       --set 'controller.manager.extraArgs={--foo=baz,--bar=qux}' \
-      --set 'controller.manager.globalRenderingOptions.excludeRaw=true' \
+      --set 'controller.manager.globalTransformationOptions.excludeRaw=true' \
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
@@ -762,7 +762,7 @@ load _helpers
    [ "${actual}" = "6" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
-   [ "${actual}" = "--global-rendering-options=exclude-raw" ]
+   [ "${actual}" = "--global-transformation-options=exclude-raw" ]
    local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
    [ "${actual}" = "--foo=baz" ]
    local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)

@@ -164,11 +164,11 @@ imagePullSecrets:
 
 
 {{/*
-globalRenderingOptions configures the manager's --global-rendering-options
+globalTransformationOptions configures the manager's --global-transformation-options
 */}}
-{{- define "vso.globalRenderingOptions" -}}
+{{- define "vso.globalTransformationOptions" -}}
 {{- $opts := list -}}
-{{- if .Values.controller.manager.globalRenderingOptions.excludeRaw }}
+{{- if .Values.controller.manager.globalTransformationOptions.excludeRaw }}
 {{- $opts = mustAppend $opts "exclude-raw" -}}
 {{- end -}}
 {{- if $opts -}}

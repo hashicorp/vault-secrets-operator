@@ -69,9 +69,9 @@ type Transformation struct {
 	// always applied first.
 	Excludes []string `json:"excludes,omitempty"`
 	// ExcludeRaw data from the destination Secret. Exclusion policy can be set
-	// globally by including 'exclude-raw` in the '--global-rendering-options'
-	// command line flag. The global policy always takes precedence over this
-	// configuration.
+	// globally by including 'exclude-raw` in the '--global-transformation-options'
+	// command line flag. If set, the command line flag always takes precedence over
+	// this configuration.
 	// +kubebuilder:default=false
 	ExcludeRaw bool `json:"excludeRaw"`
 }

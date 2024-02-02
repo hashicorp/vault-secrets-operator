@@ -24,8 +24,8 @@ type VSOEnvOptions struct {
 	// MaxConcurrentReconciles is the VSO_MAX_CONCURRENT_RECONCILES environment variable option
 	MaxConcurrentReconciles *int `split_words:"true"`
 
-	// GlobalRenderingOptions is VSO_GLOBAL_RENDERING_OPTIONS environment variable option
-	GlobalRenderingOptions string `split_words:"true"`
+	// GlobalTransformationOptions is VSO_GLOBAL_TRANSFORMATION_OPTIONS environment variable option
+	GlobalTransformationOptions string `split_words:"true"`
 }
 
 // Parse environment variable options, prefixed with "VSO_"

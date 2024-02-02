@@ -21,14 +21,8 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/template"
 )
 
-var (
-	// RenderOptionExcludeRaw sets the global sync option for controlling the exclusion
-	// of _raw from the destination secret.
-	// This is usually set from main via the command line arg --global-rendering-options
-	RenderOptionExcludeRaw bool
-	// regexCache provides a global LRU cache holding compiled regexes.
-	regexCache *lru.Cache[string, *regexp.Regexp]
-)
+// regexCache provides a global LRU cache holding compiled regexes.
+var regexCache *lru.Cache[string, *regexp.Regexp]
 
 func init() {
 	var err error
@@ -119,9 +113,14 @@ func (k *KeyedTemplate) Cmp(other *KeyedTemplate) int {
 	)
 }
 
-func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client,
-	obj ctrlclient.Object,
-) (*SecretTransformationOption, error) {
+type GlobalTransformationOption struct {
+	// RenderOptionExcludeRaw sets the global sync option for controlling the exclusion
+	// of _raw from the destination secret.
+	// This is usually set from main via the command line arg --global-transformation-options
+	ExcludeRaw bool
+}
+
+func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, globalOpt *GlobalTransformationOption) (*SecretTransformationOption, error) {
 	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, err
@@ -132,19 +131,23 @@ func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client
 		return nil, err
 	}
 
-	excludeRaw := RenderOptionExcludeRaw
-	if meta.Destination.Transformation.ExcludeRaw {
-		excludeRaw = meta.Destination.Transformation.ExcludeRaw
-	}
-
-	return &SecretTransformationOption{
+	opt := &SecretTransformationOption{
 		Excludes:       ff.excludes(),
 		Includes:       ff.includes(),
 		KeyedTemplates: keyedTemplates,
 		Annotations:    obj.GetAnnotations(),
 		Labels:         obj.GetLabels(),
-		ExcludeRaw:     excludeRaw,
-	}, nil
+	}
+
+	if globalOpt != nil {
+		opt.ExcludeRaw = globalOpt.ExcludeRaw
+	}
+
+	if meta.Destination.Transformation.ExcludeRaw {
+		opt.ExcludeRaw = meta.Destination.Transformation.ExcludeRaw
+	}
+
+	return opt, nil
 }
 
 // gatherTemplates attempts to collect all v1beta1.Template(s) for the

@@ -43,11 +43,12 @@ var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
 type HCPVaultSecretsAppReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	SecretDataBuilder *helpers.SecretDataBuilder
-	HMACValidator     helpers.HMACValidator
-	MinRefreshAfter   time.Duration
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	SecretDataBuilder          *helpers.SecretDataBuilder
+	HMACValidator              helpers.HMACValidator
+	MinRefreshAfter            time.Duration
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -106,7 +107,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)

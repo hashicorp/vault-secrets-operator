@@ -318,7 +318,7 @@ _Appears in:_
 | `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation |
 | `includes` _string array_ | Includes contains regex patterns of keys that should be included in the K8s Secret Data. FieldFilter can be used to filter the secret data that is stored in the K8s Secret Destination. Filters will not be applied to templated fields, those will always be included in the Destination K8s Secret. Exclusion filters are always applied first. |
 | `excludes` _string array_ | Excludes contains regex pattern for keys that should be excluded from the K8s Secret Data. FieldFilter can be used to filter the secret data that is stored in the K8s Secret Destination. Filters will not be applied to templated fields, those will always be included in the Destination K8s Secret. Exclusion filters are always applied first. |
-| `excludeRaw` _boolean_ | ExcludeRaw data from the destination Secret. Exclusion policy can be set globally by including 'exclude-raw` in the '--global-rendering-options' command line flag. The global policy always takes precedence over this configuration. |
+| `excludeRaw` _boolean_ | ExcludeRaw data from the destination Secret. Exclusion policy can be set globally by including 'exclude-raw` in the '--global-transformation-options' command line flag. If set, the command line flag always takes precedence over this configuration. |
 
 
 #### TransformationRef
