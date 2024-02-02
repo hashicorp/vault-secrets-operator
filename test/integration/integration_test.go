@@ -220,7 +220,6 @@ func TestMain(m *testing.M) {
 	log.Printf("tfDir=%s", tfDir)
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 
-	// TODO: add signal handler to ensure proper cleanup
 	cleanupFunc = func() {
 		if !skipCleanup {
 			_, err := terraform.DestroyE(t, tfOptions)

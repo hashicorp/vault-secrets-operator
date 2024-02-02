@@ -120,20 +120,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
-
-			// Undeploy Kustomize
-			//if !testWithHelm {
-			//	if !testInParallel {
-			//		k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
-			//	}
-			//} else {
-			//	// Helm does not delete the CRDs on uninstall, so we have to do it manually using
-			//	// kubectl.
-			//	k8s.RunKubectl(t, &k8s.KubectlOptions{
-			//		ContextName: k8sConfigContext,
-			//	}, "delete", "--recursive", "--filename", path.Join(chartDestDir, "crds"))
-			//}
-
 			os.RemoveAll(tempDir)
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
