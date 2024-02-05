@@ -4,7 +4,7 @@
 resource "kubernetes_deployment" "vso" {
   metadata {
     name      = "vso"
-    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    namespace = kubernetes_namespace.app.metadata[0].name
     labels = {
       test = "vso"
     }

@@ -251,14 +251,3 @@ resource "kubernetes_secret" "static-creds" {
     "session_token"     = var.test_aws_session_token
   }
 }
-
-module "vso-helm" {
-  source                       = "../../modules/vso-helm"
-  operator_namespace           = var.operator_namespace
-  operator_image_repo          = var.operator_image_repo
-  operator_image_tag           = var.operator_image_tag
-  enable_default_connection    = true
-  enable_default_auth_method   = false
-  operator_helm_chart_path     = var.operator_helm_chart_path
-  k8s_vault_connection_address = var.k8s_vault_connection_address
-}

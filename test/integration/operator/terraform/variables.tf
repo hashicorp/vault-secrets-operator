@@ -1,16 +1,12 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-variable "name_prefix" {
-  type = string
-}
-
-variable "k8s_test_namespace" {
-  default = "testing"
+variable "operator_namespace" {
+  default = "vault-secrets-operator-system"
 }
 
 variable "k8s_config_context" {
-  default = "kind-kind"
+  default = "kind-vault-secrets-operator"
 }
 
 variable "k8s_config_path" {
@@ -21,12 +17,8 @@ variable "k8s_host" {
   default = "https://kubernetes.default.svc"
 }
 
-variable "vault_pki_mount_path" {
-  default = "pki"
-}
-
-variable "vault_test_namespace" {
-  default = "tenant-1"
+variable "k8s_vault_namespace" {
+  type = string
 }
 
 variable "vault_enterprise" {
@@ -34,18 +26,24 @@ variable "vault_enterprise" {
   default = false
 }
 
-# The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
-variable "operator_helm_chart_path" {
-  default = "../../../../chart"
+variable "vault_token_period" {
+  default = 30
 }
+
+variable "vault_db_default_lease_ttl" {
+  default = 60
+}
+
+variable "vault_address" {}
+variable "vault_token" {}
 
 variable "deploy_operator_via_helm" {
   type    = bool
   default = false
 }
 
-variable "operator_namespace" {
-  default = "vault-secrets-operator-system"
+variable "operator_helm_chart_path" {
+  default = "../../../chart"
 }
 
 variable "enable_default_connection" {

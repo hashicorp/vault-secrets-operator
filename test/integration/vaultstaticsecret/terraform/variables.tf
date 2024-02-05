@@ -26,10 +26,6 @@ variable "vault_kvv2_mount_path" {
   default = "kvv2"
 }
 
-variable "vault_test_namespace" {
-  default = "tenant-1"
-}
-
 variable "vault_enterprise" {
   type    = bool
   default = false
@@ -69,4 +65,9 @@ variable "operator_image_repo" {
 
 variable "operator_image_tag" {
   default = "0.0.0-dev"
+}
+
+variable "name_prefix" {
+  type    = string
+  default = "vss"
 }
