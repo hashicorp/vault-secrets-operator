@@ -261,7 +261,7 @@ _Appears in:_
 
 
 
-StorageEncryption provides the necessary configuration need to encrypt the storage cache entries using Vault's Transit engine. It only supports Kubernetes Auth for now.
+StorageEncryption provides the necessary configuration need to encrypt the storage cache entries using Vault's Transit engine.
 
 _Appears in:_
 - [VaultAuthSpec](#vaultauthspec)

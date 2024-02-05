@@ -115,6 +115,7 @@ controller:
     # Persistence is only useful in the context of Dynamic Secrets, so "none" is an okay default.
     clientCache:
       # Defines the `-client-cache-persistence-model` which caches+persists vault tokens.
+      # May also be set via the `VSO_CLIENT_CACHE_PERSISTENCE_MODEL` environment variable.
       # Valid values are:
       # "none" - in-memory client cache is used, no tokens are persisted.
       # "direct-unencrypted" - in-memory client cache is persisted, unencrypted. This is NOT recommended for any production workload.
@@ -128,6 +129,7 @@ controller:
       persistenceModel: ""
 
       # Defines the size of the in-memory LRU cache *in entries*, that is used by the client cache controller.
+      # May also be set via the `VSO_CLIENT_CACHE_SIZE` environment variable.
       # Larger numbers will increase memory usage by the controller, lower numbers will cause more frequent evictions
       # of the client cache which can result in additional Vault client counts.
       #
@@ -315,16 +317,29 @@ controller:
         headers: {}
 
     # Defines the maximum number of concurrent reconciles for each controller.
+    # May also be set via the `VSO_MAX_CONCURRENT_RECONCILES` environment variable.
     #
     # default: 100
     # @type: integer
     maxConcurrentReconciles:
 
     # Defines additional environment variables to be added to the
-    # vault-secrets-opearator manager container.
+    # vault-secrets-operator manager container.
+    # Example:
+    #
+    # ```yaml
     # extraEnv:
     #   - name: HTTP_PROXY
     #     value: http://proxy.example.com
+    #   - name: VSO_OUTPUT_FORMAT
+    #     value: json
+    #   - name: VSO_CLIENT_CACHE_SIZE
+    #     value: "20000"
+    #   - name: VSO_CLIENT_CACHE_PERSISTENCE_MODEL
+    #     value: "direct-encrypted"
+    #   - name: VSO_MAX_CONCURRENT_RECONCILES
+    #     value: "30"
+    # ```
     # @type: array<map>
     extraEnv: []
 
