@@ -472,11 +472,186 @@ func Test_enqueueSecretsRequestsHandler_Delete(t *testing.T) {
 	}
 }
 
+func Test_enqueueSecretsRequestsHandler_Create(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	kind := VaultStaticSecret
+	ownerRefsSupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       kind.String(),
+			Name:       "baz",
+		},
+	}
+
+	ownerRefsUnsupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       "Unknown",
+			Name:       "foo",
+		},
+	}
+	createEvent := event.CreateEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+	}
+
+	createEventUnsupported := event.CreateEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+	}
+
+	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
+	tests := []testCaseEnqueueSecretsRequestHandler{
+		{
+			name: "supported-not-enqueued",
+			kind: kind,
+			createEvents: []event.CreateEvent{
+				createEvent,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+		{
+			name: "unsupported-not-enqueued",
+			kind: kind,
+			createEvents: []event.CreateEvent{
+				createEventUnsupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertEnqueueSecretsRequestsHandler(t, ctx, tt)
+		})
+	}
+}
+
+func Test_enqueueSecretsRequestsHandler_Update(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	kind := VaultStaticSecret
+	ownerRefsSupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       kind.String(),
+			Name:       "baz",
+		},
+	}
+
+	ownerRefsUnsupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       "Unknown",
+			Name:       "foo",
+		},
+	}
+
+	updateEvent := event.UpdateEvent{
+		ObjectOld: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      1,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+		ObjectNew: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      2,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+	}
+
+	updateEventUnsupported := event.UpdateEvent{
+		ObjectOld: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      1,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+		ObjectNew: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      2,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+	}
+
+	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
+	tests := []testCaseEnqueueSecretsRequestHandler{
+		{
+			name: "supported-not-enqueued",
+			kind: kind,
+			updateEvents: []event.UpdateEvent{
+				updateEvent,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+		{
+			name: "unsupported-not-enqueued",
+			kind: kind,
+			updateEvents: []event.UpdateEvent{
+				updateEventUnsupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertEnqueueSecretsRequestsHandler(t, ctx, tt)
+		})
+	}
+}
+
 type testCaseEnqueueSecretsRequestHandler struct {
 	name            string
 	kind            ResourceKind
 	q               *DelegatingQueue
 	deleteEvents    []event.DeleteEvent
+	createEvents    []event.CreateEvent
+	updateEvents    []event.UpdateEvent
 	wantAddedAfter  []any
 	maxRequeueAfter time.Duration
 	gvk             schema.GroupVersionKind
@@ -492,6 +667,14 @@ func assertEnqueueSecretsRequestsHandler(t *testing.T, ctx context.Context, tt t
 	m := tt.maxRequeueAfter
 	if tt.maxRequeueAfter == 0 {
 		m = maxRequeueAfter
+	}
+
+	for _, evt := range tt.createEvents {
+		e.Create(ctx, evt, tt.q)
+	}
+
+	for _, evt := range tt.updateEvents {
+		e.Update(ctx, evt, tt.q)
 	}
 
 	for _, evt := range tt.deleteEvents {
