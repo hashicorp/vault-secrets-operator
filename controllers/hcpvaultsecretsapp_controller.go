@@ -198,7 +198,7 @@ func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		Watches(
 			&corev1.Secret{},
 			&enqueueSecretsRequestsHandler{
-				gvk: secretsv1beta1.GroupVersion.WithKind(string(HCPVaultSecretsApp)),
+				gvk: secretsv1beta1.GroupVersion.WithKind(HCPVaultSecretsApp.String()),
 			},
 			builder.WithPredicates(&secretsPredicate{}),
 		).

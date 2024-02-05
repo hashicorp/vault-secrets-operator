@@ -380,7 +380,7 @@ func Test_enqueueSecretsRequestsHandler_Delete(t *testing.T) {
 	ownerRefsSupported := []metav1.OwnerReference{
 		{
 			APIVersion: secretsv1beta1.GroupVersion.String(),
-			Kind:       string(kind),
+			Kind:       kind.String(),
 			Name:       "baz",
 		},
 	}
@@ -421,7 +421,7 @@ func Test_enqueueSecretsRequestsHandler_Delete(t *testing.T) {
 		},
 	}
 
-	gvk := secretsv1beta1.GroupVersion.WithKind(string(kind))
+	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
 	tests := []testCaseEnqueueSecretsRequestHandler{
 		{
 			name: "enqueued",

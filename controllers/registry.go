@@ -9,16 +9,33 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type ResourceKind string
+type ResourceKind int
 
 // SecretTransformation maps to SecretTransformation custom resource.
 const (
-	SecretTransformation ResourceKind = "SecretTransformation"
-	VaultDynamicSecret   ResourceKind = "VaultDynamicSecret"
-	VaultStaticSecret    ResourceKind = "VaultStaticSecret"
-	VaultPKISecret       ResourceKind = "VaultPKISecret"
-	HCPVaultSecretsApp   ResourceKind = "HCPVaultSecretsApp"
+	SecretTransformation ResourceKind = iota
+	VaultDynamicSecret
+	VaultStaticSecret
+	VaultPKISecret
+	HCPVaultSecretsApp
 )
+
+func (k ResourceKind) String() string {
+	switch k {
+	case SecretTransformation:
+		return "SecretTransformation"
+	case VaultDynamicSecret:
+		return "VaultDynamicSecret"
+	case VaultStaticSecret:
+		return "VaultStaticSecret"
+	case VaultPKISecret:
+		return "VaultPKISecret"
+	case HCPVaultSecretsApp:
+		return "HCPVaultSecretsApp"
+	default:
+		return "unknown"
+	}
+}
 
 type ResourceReferenceCache interface {
 	Add(ResourceKind, client.ObjectKey, ...client.ObjectKey)
