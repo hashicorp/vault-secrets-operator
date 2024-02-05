@@ -9,10 +9,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type ResourceKind string
+type ResourceKind int
 
 // SecretTransformation maps to SecretTransformation custom resource.
-const SecretTransformation ResourceKind = "SecretTransformation"
+const SecretTransformation ResourceKind = iota
+
+func (k ResourceKind) String() string {
+	switch k {
+	case SecretTransformation:
+		return "SecretTransformation"
+	default:
+		return "unknown"
+	}
+}
 
 type ResourceReferenceCache interface {
 	Add(ResourceKind, client.ObjectKey, ...client.ObjectKey)
