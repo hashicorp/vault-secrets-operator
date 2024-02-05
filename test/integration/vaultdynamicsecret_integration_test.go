@@ -55,9 +55,6 @@ type dynamicK8SOutputs struct {
 
 func TestVaultDynamicSecret(t *testing.T) {
 	if testInParallel {
-		//if testWithHelm {
-		//	t.Fatal("Parallel tests not support with Helm")
-		//}
 		t.Parallel()
 	}
 
