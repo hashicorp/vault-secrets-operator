@@ -514,9 +514,6 @@ func newFieldFilters() *fieldFilters {
 func GetTransformationRefObjKeys(t secretsv1beta1.Transformation, defaultNS string) []ctrlclient.ObjectKey {
 	var result []ctrlclient.ObjectKey
 	for _, ref := range t.TransformationRefs {
-		// TODO: decide on a policy for restricting access to SecretTransformations
-		// TODO: support getting SecretTransformations by label, potentially
-		// TODO: consider only supporting a single SecretTransformation ref?
 		ns := defaultNS
 		if ref.Namespace != "" {
 			ns = ref.Namespace
