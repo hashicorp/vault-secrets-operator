@@ -129,7 +129,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
-	forceSync := o.Spec.Destination.Transformation.Resync && r.SyncRegistry.Contains(req.NamespacedName)
+	forceSync := o.Spec.Destination.Transformation.Resync && r.SyncRegistry.Has(req.NamespacedName)
 
 	// doSync indicates that the controller should perform the secret sync,
 	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists) || forceSync
@@ -264,7 +264,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	r.SyncRegistry.Remove(req.NamespacedName)
+	r.SyncRegistry.Delete(req.NamespacedName)
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -492,7 +492,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.revokeLease(ctx, o, "")
 
 	objKey := client.ObjectKeyFromObject(o)
-	r.SyncRegistry.Remove(objKey)
+	r.SyncRegistry.Delete(objKey)
 	r.ReferenceCache.Prune(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
