@@ -33,11 +33,16 @@ type SecretTransformationSpec struct {
 	// SourceTemplates are never included in the rendered K8s Secret, they can be
 	// used to provide common template definitions, etc.
 	SourceTemplates []SourceTemplate `json:"sourceTemplates,omitempty"`
-	// Includes contains regex patterns of keys that should be included in the K8s
-	// Secret Data.
+	// Includes contains regex patterns used to filter top-level source secret data
+	// fields for inclusion in the final K8s Secret data. These pattern filters are
+	// never applied to templated fields as defined in Templates. They are always
+	// applied last.
 	Includes []string `json:"includes,omitempty"`
-	// Excludes contains regex pattern for keys that should be excluded from the K8s
-	// Secret Data.
+	// Excludes contains regex patterns used to filter top-level source secret data
+	// fields for exclusion from the final K8s Secret data. These pattern filters are
+	// never applied to templated fields as defined in Templates. They are always
+	// applied before any inclusion patterns. To exclude all source secret data
+	// fields, you can configure the single pattern ".*".
 	Excludes []string `json:"excludes,omitempty"`
 }
 

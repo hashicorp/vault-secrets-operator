@@ -19,6 +19,10 @@ import (
 
 var maxRequeueAfter = time.Second * 1
 
+// NewEnqueueRefRequestsHandlerST returns a handler.EventHandler suitable for
+// triggering a secret sync based on changes to a SecretTransformation resource
+// instance. It includes a ValidatorFunc that prevents the referring objects from
+// being queued for reconciliation.
 func NewEnqueueRefRequestsHandlerST(refCache ResourceReferenceCache, syncReg *SyncRegistry) handler.EventHandler {
 	return NewEnqueueRefRequestsHandler(
 		SecretTransformation, refCache, syncReg,

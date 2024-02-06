@@ -9,10 +9,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type ResourceKind string
+type ResourceKind int
 
 // SecretTransformation maps to SecretTransformation custom resource.
-const SecretTransformation ResourceKind = "SecretTransformation"
+const SecretTransformation ResourceKind = iota
+
+func (k ResourceKind) String() string {
+	switch k {
+	case SecretTransformation:
+		return "SecretTransformation"
+	default:
+		return "unknown"
+	}
+}
 
 type ResourceReferenceCache interface {
 	Add(ResourceKind, client.ObjectKey, ...client.ObjectKey)
@@ -21,18 +30,22 @@ type ResourceReferenceCache interface {
 	Prune(ResourceKind, client.ObjectKey) int
 }
 
+// NewResourceReferenceCache returns the default ReferenceCache that be used to
+// store object references for quick access by secret controllers.
 func NewResourceReferenceCache() ResourceReferenceCache {
 	return &resourceReferenceCache{
 		m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{},
 	}
 }
 
-// resourceReferenceCache provides caching of resource references by ResourceKind.
+// resourceReferenceCache provides caching of resource references by
+// ResourceKind.
 type resourceReferenceCache struct {
 	m  map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty
 	mu sync.RWMutex
 }
 
+// Add referrers for the referent object with kind.
 func (c *resourceReferenceCache) Add(kind ResourceKind, referent client.ObjectKey, referrers ...client.ObjectKey) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -53,7 +66,7 @@ func (c *resourceReferenceCache) Add(kind ResourceKind, referent client.ObjectKe
 	}
 }
 
-// Prune removes referrer from all references of ResourceKind.
+// Prune removes referrer from all references to kind.
 func (c *resourceReferenceCache) Prune(kind ResourceKind, referrer client.ObjectKey) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -81,7 +94,8 @@ func (c *resourceReferenceCache) Prune(kind ResourceKind, referrer client.Object
 	return count
 }
 
-// Get all references to ref for ResourceKind. Returns true in ref is in the cache.
+// Get all references to ref for kind. Returns true if ref was found in the
+// cache.
 func (c *resourceReferenceCache) Get(kind ResourceKind, referent client.ObjectKey) ([]client.ObjectKey, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -135,17 +149,24 @@ func (c *resourceReferenceCache) scoped(kind ResourceKind, init bool) (map[clien
 	return scope, ok
 }
 
+// NewSyncRegistry returns a SyncRegistry.
 func NewSyncRegistry() *SyncRegistry {
 	return &SyncRegistry{
 		m: map[client.ObjectKey]empty{},
 	}
 }
 
+// SyncRegistry returns a SyncRegistry that stores sync requests for a
+// client.Object. When an object is found in the registry it must be synced by
+// the corresponding secret controller. Typically, the SyncRegistry is only
+// needed by controllers that support renewing a Vault secret lease during
+// reconciliation, or have some sync window detection.
 type SyncRegistry struct {
 	m  map[client.ObjectKey]empty
 	mu sync.RWMutex
 }
 
+// Add objKey to the set of registered objects.
 func (r *SyncRegistry) Add(objKey client.ObjectKey) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -153,14 +174,16 @@ func (r *SyncRegistry) Add(objKey client.ObjectKey) {
 	r.m[objKey] = empty{}
 }
 
-func (r *SyncRegistry) Remove(objKey client.ObjectKey) {
+// Delete objKey to the set of registered objects.
+func (r *SyncRegistry) Delete(objKey client.ObjectKey) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	delete(r.m, objKey)
 }
 
-func (r *SyncRegistry) Contains(objKey client.ObjectKey) bool {
+// Has returns true if objKey is in the set of registered objects.
+func (r *SyncRegistry) Has(objKey client.ObjectKey) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

@@ -21,8 +21,4 @@ locals {
   db_role_static      = "${local.db_role}-static"
   db_role_static_user = "${local.db_role_static}-user"
   k8s_secret_role     = "k8s-secret"
-
-  # transit locals
-  operator_service_account_name = "${local.name_prefix}-operator"
-  operator_namespace            = var.deploy_operator_via_helm ? one(module.vso-helm[*].operator_namespace) : one(data.kubernetes_namespace.operator[*].metadata[0].name)
 }

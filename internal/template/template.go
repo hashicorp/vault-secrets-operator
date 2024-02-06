@@ -110,10 +110,6 @@ func (v *defaultSecretTemplate) maybeRedactError(err error) error {
 	for _, re := range tmplErrorRegexes {
 		m := re.FindStringSubmatch(err.Error())
 		if len(m) > 0 {
-			if len(m) > 1 {
-				// handle any extra capture groups
-				m = m[0:]
-			}
 			// include the matching messages for context.
 			err = fmt.Errorf("%s <redacted>", strings.Join(m, " "))
 			break

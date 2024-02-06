@@ -10,12 +10,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/k8s"
-	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,14 +23,24 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
+type vpsK8SOutputs struct {
+	NamePrefix        string `json:"name_prefix"`
+	Namespace         string `json:"namespace"`
+	K8sNamespace      string `json:"k8s_namespace"`
+	K8sConfigContext  string `json:"k8s_config_context"`
+	AuthMount         string `json:"auth_mount"`
+	AuthPolicy        string `json:"auth_policy"`
+	AuthRole          string `json:"auth_role"`
+	PKIMount          string `json:"pki_mount"`
+	PKIRole           string `json:"pki_role"`
+	AppK8sNamespace   string `json:"app_k8s_namespace"`
+	AppVaultNamespace string `json:"app_vault_namespace,omitempty"`
+}
+
 func TestVaultPKISecret(t *testing.T) {
-	testID := strings.ToLower(random.UniqueId())
-	testK8sNamespace := "k8s-tenant-" + testID
-	testPKIMountPath := "pki-" + testID
-	testVaultNamespace := ""
-	testVaultConnectionName := "vaultconnection-test-tenant-1"
-	testVaultAuthMethodName := "vaultauth-test-tenant-1"
-	testVaultAuthMethodRole := "role1"
+	if testInParallel {
+		t.Parallel()
+	}
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
@@ -44,23 +51,12 @@ func TestVaultPKISecret(t *testing.T) {
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
-	k8sOpts := &k8s.KubectlOptions{
-		ContextName: k8sConfigContext,
-		Namespace:   operatorNS,
-	}
-
-	// The Helm based integration test is expecting to use the default VaultAuthMethod+VaultConnection
-	// so in order to get the controller to use the deployed default VaultAuthMethod we need set the VaultAuthRef to "".
-	if testWithHelm {
-		testVaultAuthMethodName = ""
-	}
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultpkisecret/terraform"), tempDir)
-	copyModulesDir(t, tfDir)
-	chartDestDir := copyChartDir(t, tfDir)
+	copyModulesDirT(t, tfDir)
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -68,37 +64,15 @@ func TestVaultPKISecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm":     testWithHelm,
+			"name_prefix":                  "vps",
 			"k8s_vault_connection_address": testVaultAddress,
-			"k8s_test_namespace":           testK8sNamespace,
 			"k8s_config_context":           k8sConfigContext,
-			"vault_pki_mount_path":         testPKIMountPath,
 		},
 	}
 	if entTests {
-		testVaultNamespace = "vault-tenant-" + testID
 		tfOptions.Vars["vault_enterprise"] = true
-		tfOptions.Vars["vault_test_namespace"] = testVaultNamespace
 	}
 	tfOptions = setCommonTFOptions(t, tfOptions)
-
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
-	if !testWithHelm {
-		// deploy the Operator with Kustomize
-		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-	} else {
-		tfOptions.Vars["deploy_operator_via_helm"] = true
-		tfOptions.Vars["operator_helm_chart_path"] = chartDestDir
-		if operatorImageRepo != "" {
-			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
-		}
-		if operatorImageTag != "" {
-			tfOptions.Vars["operator_image_tag"] = operatorImageTag
-		}
-		tfOptions.Vars["enable_default_auth_method"] = true
-		tfOptions.Vars["enable_default_connection"] = true
-		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
-	}
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -106,7 +80,9 @@ func TestVaultPKISecret(t *testing.T) {
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	// Clean up resources with "terraform destroy" at the end of the test.
 	t.Cleanup(func() {
-		exportKindLogs(t)
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
 
 		if !skipCleanup {
 			for _, c := range created {
@@ -117,11 +93,6 @@ func TestVaultPKISecret(t *testing.T) {
 
 			terraform.Destroy(t, tfOptions)
 			os.RemoveAll(tempDir)
-
-			// Undeploy Kustomize
-			if !testWithHelm {
-				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
-			}
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
@@ -141,46 +112,51 @@ func TestVaultPKISecret(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// When we deploy the operator with Helm it will also deploy default VaultConnection/AuthMethod
-	// resources, so these are not needed. In this case, we will also clear the VaultAuthRef field of
-	// the target secret so that the controller uses the default AuthMethod.
-	if !testWithHelm {
-		// Create a VaultConnection CR
-		testVaultConnection := &secretsv1beta1.VaultConnection{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      testVaultConnectionName,
-				Namespace: testK8sNamespace,
-			},
-			Spec: secretsv1beta1.VaultConnectionSpec{
-				Address: testVaultAddress,
-			},
-		}
 
-		require.NoError(t, crdClient.Create(ctx, testVaultConnection))
-		created = append(created, testVaultConnection)
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.Nil(t, err)
 
-		// Create a VaultAuth CR
-		testVaultAuth := &secretsv1beta1.VaultAuth{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      testVaultAuthMethodName,
-				Namespace: testK8sNamespace,
-			},
-			Spec: secretsv1beta1.VaultAuthSpec{
-				VaultConnectionRef: testVaultConnectionName,
-				Namespace:          testVaultNamespace,
-				Method:             "kubernetes",
-				Mount:              "kubernetes",
-				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-					Role:           testVaultAuthMethodRole,
-					ServiceAccount: "default",
-					TokenAudiences: []string{"vault"},
-				},
-			},
-		}
+	var outputs vpsK8SOutputs
+	require.Nil(t, json.Unmarshal(b, &outputs))
+	appK8sNamespace := outputs.AppK8sNamespace
+	appVaultNamespace := outputs.AppVaultNamespace
+	testVaultConnectionName := outputs.NamePrefix + "-app"
+	testVaultAuthName := outputs.NamePrefix + "-app"
 
-		require.NoError(t, crdClient.Create(ctx, testVaultAuth))
-		created = append(created, testVaultAuth)
+	// Create a VaultConnection CR
+	testVaultConnection := &secretsv1beta1.VaultConnection{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      testVaultConnectionName,
+			Namespace: appK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: testVaultAddress,
+		},
 	}
+	require.NoError(t, crdClient.Create(ctx, testVaultConnection))
+	created = append(created, testVaultConnection)
+
+	// Create a VaultAuth CR
+	testVaultAuth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      testVaultAuthName,
+			Namespace: appK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: testVaultConnectionName,
+			Namespace:          appVaultNamespace,
+			Method:             "kubernetes",
+			Mount:              outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+		},
+	}
+
+	require.NoError(t, crdClient.Create(ctx, testVaultAuth))
+	created = append(created, testVaultAuth)
 
 	// Create a VaultPKI CR to trigger the sync
 	getExisting := func() []*secretsv1beta1.VaultPKISecret {
@@ -188,13 +164,13 @@ func TestVaultPKISecret(t *testing.T) {
 			{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultpki-test-tenant-1",
-					Namespace: testK8sNamespace,
+					Namespace: appK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultPKISecretSpec{
-					VaultAuthRef: testVaultAuthMethodName,
-					Namespace:    testVaultNamespace,
-					Mount:        testPKIMountPath,
-					Role:         "secret",
+					VaultAuthRef: testVaultAuthName,
+					Namespace:    appVaultNamespace,
+					Mount:        outputs.PKIMount,
+					Role:         outputs.PKIRole,
 					CommonName:   "test1.example.com",
 					Format:       "pem",
 					Revoke:       true,
@@ -231,7 +207,7 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 		{
 			name:   "create-only",
-			create: 10,
+			create: 1,
 		},
 		{
 			name:     "mixed",
@@ -259,18 +235,18 @@ func TestVaultPKISecret(t *testing.T) {
 				toTest = append(toTest, &secretsv1beta1.VaultPKISecret{
 					ObjectMeta: v1.ObjectMeta{
 						Name:      dest,
-						Namespace: testK8sNamespace,
+						Namespace: appK8sNamespace,
 					},
 					Spec: secretsv1beta1.VaultPKISecretSpec{
-						Role:         "secret",
-						Namespace:    testVaultNamespace,
-						Mount:        testPKIMountPath,
+						VaultAuthRef: testVaultAuthName,
+						Role:         outputs.PKIRole,
+						Namespace:    appVaultNamespace,
+						Mount:        outputs.PKIMount,
 						CommonName:   fmt.Sprintf("%s.example.com", dest),
 						Format:       "pem",
 						Revoke:       true,
 						ExpiryOffset: "2s",
 						TTL:          "10s",
-						VaultAuthRef: testVaultAuthMethodName,
 						AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 						URISans:      []string{"uri1.example.com", "uri2.example.com"},
 						IPSans:       []string{"127.1.1.1", "127.0.0.1"},
@@ -294,6 +270,9 @@ func TestVaultPKISecret(t *testing.T) {
 					vpsObj := vpsObj
 					t.Parallel()
 
+					d, err := time.ParseDuration(vpsObj.Spec.TTL)
+					require.NoError(t, err)
+
 					t.Cleanup(func() {
 						if !skipCleanup {
 							assert.NoError(t, crdClient.Delete(ctx, vpsObj))
@@ -301,9 +280,10 @@ func TestVaultPKISecret(t *testing.T) {
 					})
 					require.NoError(t, crdClient.Create(ctx, vpsObj))
 
+					maxTries := int(d.Seconds() * 3)
 					// Wait for the operator to sync Vault PKI --> k8s Secret, and return the
 					// serial number of the generated cert
-					serialNumber, secret, err := waitForPKIData(t, 30, 2*time.Second,
+					serialNumber, secret, err := waitForPKIData(t, maxTries, time.Millisecond*500,
 						vpsObj, "",
 					)
 					require.NoError(t, err)
@@ -321,7 +301,7 @@ func TestVaultPKISecret(t *testing.T) {
 
 					// Use the serial number of the first generated cert to check that the cert
 					// is updated
-					newSerialNumber, secret, err := waitForPKIData(t, 30, 2*time.Second,
+					newSerialNumber, secret, err := waitForPKIData(t, maxTries, time.Millisecond*500,
 						vpsObj, serialNumber,
 					)
 					require.NoError(t, err)
@@ -334,7 +314,6 @@ func TestVaultPKISecret(t *testing.T) {
 					}
 
 					if vpsObj.Spec.Destination.Create && !t.Failed() {
-						d, err := time.ParseDuration(vpsObj.Spec.TTL)
 						if assert.NoError(t, err) {
 							assertRemediationOnDestinationDeletion(t, ctx, crdClient, vpsObj,
 								time.Millisecond*500, uint64(d.Seconds()*3))
