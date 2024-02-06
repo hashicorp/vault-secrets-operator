@@ -54,19 +54,16 @@ type Transformation struct {
 	// TransformationRefs contain references to template configuration from
 	// SecretTransformation
 	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
-	// Includes contains regex patterns of keys that should be included in the K8s
-	// Secret Data.
-	// FieldFilter can be used to filter the secret data that is stored in the K8s
-	// Secret Destination. Filters will not be applied to templated fields, those
-	// will always be included in the Destination K8s Secret. Exclusion filters are
-	// always applied first.
+	// Includes contains regex patterns used to filter top-level source secret data
+	// fields for inclusion in the final K8s Secret data. These pattern filters are
+	// never applied to templated fields as defined in Templates. They are always
+	// applied last.
 	Includes []string `json:"includes,omitempty"`
-	// Excludes contains regex pattern for keys that should be excluded from the K8s
-	// Secret Data.
-	// FieldFilter can be used to filter the secret data that is stored in the K8s
-	// Secret Destination. Filters will not be applied to templated fields, those
-	// will always be included in the Destination K8s Secret. Exclusion filters are
-	// always applied first.
+	// Excludes contains regex patterns used to filter top-level source secret data
+	// fields for exclusion from the final K8s Secret data. These pattern filters are
+	// never applied to templated fields as defined in Templates. They are always
+	// applied before any inclusion patterns. To exclude all source secret data
+	// fields, you can configure the single pattern ".*".
 	Excludes []string `json:"excludes,omitempty"`
 }
 
