@@ -1,0 +1,17 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        args:
+        - "-client-cache-persistence-model=direct-encrypted"
+        - "-min-refresh-after-hvsa=3s"
+        - "-zap-log-level=5"

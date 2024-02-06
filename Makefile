@@ -23,7 +23,7 @@ CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-KIND_K8S_VERSION ?= v1.28.0
+KIND_K8S_VERSION ?= v1.29.0
 VAULT_HELM_VERSION ?= 0.25.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
@@ -37,6 +37,8 @@ TESTARGS ?= -test.v -count=$(TESTCOUNT)
 
 # Run integration tests against a Helm installed Operator
 TEST_WITH_HELM ?=
+
+INTEGRATION_TESTS_PARALLEL ?=
 
 # Suppress the output from terraform when running the integration tests.
 SUPPRESS_TF_OUTPUT ?=
@@ -308,6 +310,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
+	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm

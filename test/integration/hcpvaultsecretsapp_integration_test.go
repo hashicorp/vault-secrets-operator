@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
 	hcpconfig "github.com/hashicorp/hcp-sdk-go/config"
@@ -42,6 +41,10 @@ type hcpVSOutputs struct {
 func TestHCPVaultSecretsApp(t *testing.T) {
 	if os.Getenv("SKIP_HCPVSAPPS_TESTS") != "" {
 		t.Skipf("Skipping test, SKIP_HCPVSAPPS_TESTS is set")
+	}
+
+	if testInParallel {
+		t.Parallel()
 	}
 
 	testID := "hvs"
@@ -95,16 +98,12 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 		path.Join(testRoot, "hcpvaultsecretsapp/terraform"),
 		tempDir,
 	)
-	copyModulesDir(t, tfDir)
-	chartDestDir := copyChartDir(t, tfDir)
+	copyModulesDirT(t, tfDir)
+	chartDestDir := copyChartDirT(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
-	}
-	k8sOpts := &k8s.KubectlOptions{
-		ContextName: k8sConfigContext,
-		Namespace:   operatorNS,
 	}
 
 	// Construct the terraform options with default retryable errors to handle the most common
@@ -119,26 +118,12 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 			"hcp_project_id":           hcpProjectID,
 			"hcp_client_id":            hcpClientID,
 			"hcp_client_secret":        hcpClientSecret,
-			"deploy_operator_via_helm": testWithHelm,
 			"operator_helm_chart_path": chartDestDir,
 			"operator_namespace":       operatorNS,
 		},
 	}
 
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "hvsa-tests")
-	if !testWithHelm {
-		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-	} else {
-		if operatorImageRepo != "" {
-			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
-		}
-		if operatorImageTag != "" {
-			tfOptions.Vars["operator_image_tag"] = operatorImageTag
-		}
-	}
-
 	tfOptions = setCommonTFOptions(t, tfOptions)
-
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
@@ -148,16 +133,13 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 				assert.Nil(t, crdClient.Delete(ctx, c))
 			}
 
-			exportKindLogs(t)
+			if !testInParallel {
+				exportKindLogsT(t)
+			}
 
 			// Clean up resources with "terraform destroy" at the end of the test.
 			terraform.Destroy(t, tfOptions)
 			os.RemoveAll(tempDir)
-
-			// Undeploy Kustomize
-			if !testWithHelm {
-				k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
-			}
 		} else {
 			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
 		}
