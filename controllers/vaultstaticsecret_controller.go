@@ -27,11 +27,12 @@ import (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	ClientFactory     vault.ClientFactory
-	SecretDataBuilder *helpers.SecretDataBuilder
-	HMACValidator     helpers.HMACValidator
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	ClientFactory              vault.ClientFactory
+	SecretDataBuilder          *helpers.SecretDataBuilder
+	HMACValidator              helpers.HMACValidator
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -78,7 +79,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
