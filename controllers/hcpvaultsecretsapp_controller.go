@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -107,9 +106,18 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
 	if err != nil {
-		logger.Error(err, "Failed to build K8s Secret data from HVS response", "appName", o.Spec.AppName)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
+	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp, transOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
+			"Failed to build K8s secret data: %s", err)
+		logger.Error(err, "Failed to build K8s Secret data", "appName", o.Spec.AppName)
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -156,7 +164,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate()).
 		WithOptions(opts).
 		Complete(r)
 }

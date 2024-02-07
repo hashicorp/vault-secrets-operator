@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -136,6 +135,13 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
 	if syncReason == "" {
 		logger.V(consts.LogLevelTrace).Info("Check renewal window")
 		horizon, inWindow := computePKIRenewalWindow(ctx, o, 0.05)
@@ -202,7 +208,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	data, err := resp.SecretK8sData()
+	data, err := resp.SecretK8sData(transOption)
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to marshal Vault secret data"
@@ -340,7 +346,7 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate()).
 		WithOptions(opts).
 		Complete(r)
 }

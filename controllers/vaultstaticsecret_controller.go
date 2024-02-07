@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -79,6 +78,13 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
 	kvReq, err := newKVRequest(o.Spec)
 	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
@@ -92,10 +98,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, transOption)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Invalid Vault Secret data: %s", err)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
+			"Failed to build K8s secret data: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
@@ -145,7 +151,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
 	} else {
-		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
+		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
@@ -161,7 +167,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate()).
 		WithOptions(opts).
 		Complete(r)
 }

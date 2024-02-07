@@ -19,20 +19,20 @@ var (
 type Response interface {
 	Secret() *api.Secret
 	Data() map[string]any
-	SecretK8sData() (map[string][]byte, error)
+	SecretK8sData(*helpers.SecretTransformationOption) (map[string][]byte, error)
 }
 
 type defaultResponse struct {
 	secret *api.Secret
 }
 
-func (r *defaultResponse) SecretK8sData() (map[string][]byte, error) {
+func (r *defaultResponse) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
 		rawData = r.secret.Data
 	}
 
-	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, opt)
 }
 
 func (r *defaultResponse) Secret() *api.Secret {
@@ -51,7 +51,7 @@ type kvV1Response struct {
 	secret *api.Secret
 }
 
-func (r *kvV1Response) SecretK8sData() (map[string][]byte, error) {
+func (r *kvV1Response) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
 		rawData = r.secret.Data
@@ -61,7 +61,7 @@ func (r *kvV1Response) SecretK8sData() (map[string][]byte, error) {
 		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
 	}
 
-	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, opt)
 }
 
 func (r *kvV1Response) Secret() *api.Secret {
@@ -80,7 +80,7 @@ type kvV2Response struct {
 	secret *api.Secret
 }
 
-func (r *kvV2Response) SecretK8sData() (map[string][]byte, error) {
+func (r *kvV2Response) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
 		rawData = r.secret.Data
@@ -90,7 +90,7 @@ func (r *kvV2Response) SecretK8sData() (map[string][]byte, error) {
 		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
 	}
 
-	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, opt)
 }
 
 func (r *kvV2Response) Secret() *api.Secret {

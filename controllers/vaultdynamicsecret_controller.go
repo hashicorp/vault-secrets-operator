@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -213,9 +212,18 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = consts.ReasonSecretRotated
 	}
 
-	// sync the secret
-	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
 	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
+	// sync the secret
+	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
+			"Failed to sync secret: %s", err)
 		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
 		horizon := requeueDurationOnError + time.Duration(jitter)
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
@@ -270,7 +278,9 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 	return meta.LastVaultRotation > 0 && (meta.RotationPeriod >= 1 || meta.RotationSchedule != "")
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (*secretsv1beta1.VaultSecretLease, bool, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
+	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
+) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp vault.Response
@@ -316,7 +326,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
-	data, err := resp.SecretK8sData()
+	data, err := resp.SecretK8sData(opt)
 	if err != nil {
 		return nil, false, err
 	}
@@ -439,7 +449,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate()).
 		Complete(r)
 }
 
