@@ -80,7 +80,7 @@ func (v *defaultSecretTemplate) Parse(name, text string) error {
 
 	_, err := tmpl.Parse(text)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse error: %w", err)
 	}
 
 	return nil

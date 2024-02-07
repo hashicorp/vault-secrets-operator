@@ -161,3 +161,17 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end }}
+
+
+{{/*
+globalTransformationOptions configures the manager's --global-transformation-options
+*/}}
+{{- define "vso.globalTransformationOptions" -}}
+{{- $opts := list -}}
+{{- if .Values.controller.manager.globalTransformationOptions.excludeRaw }}
+{{- $opts = mustAppend $opts "exclude-raw" -}}
+{{- end -}}
+{{- if $opts -}}
+{{- $opts | join "," -}}
+{{- end -}}
+{{- end -}}
