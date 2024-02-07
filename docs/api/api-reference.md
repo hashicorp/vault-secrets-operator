@@ -315,10 +315,9 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret, and take precedence over templates defined in a SecretTransformation. |
-| `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation |
+| `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation. |
 | `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data fields for inclusion in the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied last. |
 | `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data fields for exclusion from the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied before any inclusion patterns. To exclude all source secret data fields, you can configure the single pattern ".*". |
-| `resync` _boolean_ | Resync the Secret on updates to any configured TransformationRefs. |
 
 
 #### TransformationRef
