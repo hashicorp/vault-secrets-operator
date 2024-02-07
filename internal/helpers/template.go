@@ -85,6 +85,8 @@ type SecretTransformationOption struct {
 	// KeyedTemplates contains the derived set of all templates that will be used
 	// during the secret data transformation.
 	KeyedTemplates []*KeyedTemplate
+	// ExcludeRaw data from the resulting K8s Secret data.
+	ExcludeRaw bool
 }
 
 // KeyedTemplate maps a secret data key to its secretsv1beta1.Template
@@ -111,9 +113,14 @@ func (k *KeyedTemplate) Cmp(other *KeyedTemplate) int {
 	)
 }
 
-func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client,
-	obj ctrlclient.Object,
-) (*SecretTransformationOption, error) {
+type GlobalTransformationOption struct {
+	// RenderOptionExcludeRaw sets the global sync option for controlling the exclusion
+	// of _raw from the destination secret.
+	// This is usually set from main via the command line arg --global-transformation-options
+	ExcludeRaw bool
+}
+
+func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, globalOpt *GlobalTransformationOption) (*SecretTransformationOption, error) {
 	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, err
@@ -124,13 +131,23 @@ func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client
 		return nil, err
 	}
 
-	return &SecretTransformationOption{
+	opt := &SecretTransformationOption{
 		Excludes:       ff.excludes(),
 		Includes:       ff.includes(),
 		KeyedTemplates: keyedTemplates,
 		Annotations:    obj.GetAnnotations(),
 		Labels:         obj.GetLabels(),
-	}, nil
+	}
+
+	if globalOpt != nil {
+		opt.ExcludeRaw = globalOpt.ExcludeRaw
+	}
+
+	if meta.Destination.Transformation.ExcludeRaw {
+		opt.ExcludeRaw = meta.Destination.Transformation.ExcludeRaw
+	}
+
+	return opt, nil
 }
 
 // gatherTemplates attempts to collect all v1beta1.Template(s) for the

@@ -523,16 +523,17 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret)
 func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
 	raw []byte, opt *SecretTransformationOption,
 ) (map[string][]byte, error) {
-	if _, ok := secretData[SecretDataKeyRaw]; ok {
-		return nil, SecretDataErrorContainsRaw
-	}
+	data := make(map[string][]byte)
+	if !opt.ExcludeRaw {
+		if _, ok := secretData[SecretDataKeyRaw]; ok {
+			return nil, SecretDataErrorContainsRaw
+		}
 
-	if _, ok := extraData[SecretDataKeyRaw]; ok {
-		return nil, SecretDataErrorContainsRaw
-	}
+		if _, ok := extraData[SecretDataKeyRaw]; ok {
+			return nil, SecretDataErrorContainsRaw
+		}
 
-	data := map[string][]byte{
-		SecretDataKeyRaw: raw,
+		data[SecretDataKeyRaw] = raw
 	}
 	for k, v := range extraData {
 		data[k] = v

@@ -36,10 +36,11 @@ var minHorizon = time.Second * 1
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	ClientFactory vault.ClientFactory
-	HMACValidator helpers.HMACValidator
-	Recorder      record.EventRecorder
+	Scheme                     *runtime.Scheme
+	ClientFactory              vault.ClientFactory
+	HMACValidator              helpers.HMACValidator
+	Recorder                   record.EventRecorder
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -135,7 +136,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)

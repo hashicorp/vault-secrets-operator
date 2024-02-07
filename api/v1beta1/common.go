@@ -65,6 +65,12 @@ type Transformation struct {
 	// applied before any inclusion patterns. To exclude all source secret data
 	// fields, you can configure the single pattern ".*".
 	Excludes []string `json:"excludes,omitempty"`
+	// ExcludeRaw data from the destination Secret. Exclusion policy can be set
+	// globally by including 'exclude-raw` in the '--global-transformation-options'
+	// command line flag. If set, the command line flag always takes precedence over
+	// this configuration.
+	// +kubebuilder:default=false
+	ExcludeRaw bool `json:"excludeRaw"`
 }
 
 // TransformationRef contains the configuration for accessing templates from an

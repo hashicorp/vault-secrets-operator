@@ -46,10 +46,11 @@ var (
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.ClientFactory
-	HMACValidator helpers.HMACValidator
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	ClientFactory              vault.ClientFactory
+	HMACValidator              helpers.HMACValidator
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
@@ -212,7 +213,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = consts.ReasonSecretRotated
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
