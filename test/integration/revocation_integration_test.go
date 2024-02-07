@@ -52,8 +52,8 @@ func TestRevocation(t *testing.T) {
 	require.Nil(t, err)
 
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "revocation/terraform"), tempDir)
-	copyModulesDir(t, tfDir)
-	chartDestDir := copyChartDir(t, tfDir)
+	copyModulesDirT(t, tfDir)
+	chartDestDir := copyChartDirT(t, tfDir)
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -154,7 +154,9 @@ func TestRevocation(t *testing.T) {
 			// removes the k8s namespace
 			assert.Nil(t, crdClient.Delete(ctx, c))
 		}
-		exportKindLogs(t)
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
 
 		// Clean up resources with "terraform destroy" at the end of the test.
 		terraform.Destroy(t, tfOptions)
@@ -272,7 +274,10 @@ func TestRevocation(t *testing.T) {
 	}
 	require.Len(t, testTokenSecrets, len(auths))
 
-	exportKindLogs(t)
+	if !testInParallel {
+		exportKindLogsT(t)
+	}
+
 	// Uninstall vso resource
 	terraform.Destroy(t, &terraform.Options{
 		// Set the path to the Terraform code that will be tested.

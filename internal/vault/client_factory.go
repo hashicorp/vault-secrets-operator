@@ -312,6 +312,8 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, errs
 	}
 
+	logger = logger.WithValues("cacheKey", cacheKey)
+	logger.V(consts.LogLevelDebug).Info("Get Client")
 	ns, err := common.GetVaultNamespace(obj)
 	if err != nil {
 		return nil, err

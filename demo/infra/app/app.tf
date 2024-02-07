@@ -62,7 +62,7 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
       name      = "vso-db-demo"
       namespace = kubernetes_namespace.dev.metadata[0].name
       annotations = {
-        "myapp.config/postgres-host" = "${local.postgres_host}:5432"
+        "myapp.config/postgres-host" = "${local.postgres_host}"
       }
       labels = {
         "myapp/name" : "db"
