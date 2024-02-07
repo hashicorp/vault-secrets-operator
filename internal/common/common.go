@@ -220,6 +220,15 @@ func GetHCPAuthWithRetry(ctx context.Context, c client.Client, key types.Namespa
 	return &obj, nil
 }
 
+func GetSecretTransformation(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.SecretTransformation, error) {
+	var obj secretsv1beta1.SecretTransformation
+	if err := c.Get(ctx, key, &obj); err != nil {
+		return nil, err
+	}
+
+	return &obj, nil
+}
+
 func setVaultConnectionRef(obj *secretsv1beta1.VaultAuth) {
 	if obj.Namespace == OperatorNamespace && obj.Name == consts.NameDefault && obj.Spec.VaultConnectionRef == "" {
 		obj.Spec.VaultConnectionRef = consts.NameDefault
@@ -359,6 +368,10 @@ type SyncableSecretMetaData struct {
 	APIVersion string
 	// Kind of the syncable-secret object. Maps to obj.Kind.
 	Kind string
+	// Name
+	Name string
+	// Namespace
+	Namespace string
 	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
 	Destination *secretsv1beta1.Destination
 	AuthRef     string
@@ -369,36 +382,35 @@ type SyncableSecretMetaData struct {
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
+	meta := &SyncableSecretMetaData{
+		Name:      obj.GetName(),
+		Namespace: obj.GetNamespace(),
+	}
+
 	switch t := obj.(type) {
 	case *secretsv1beta1.VaultDynamicSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.VaultAuthRef,
-		}, nil
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.VaultStaticSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.VaultAuthRef,
-		}, nil
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.VaultPKISecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.VaultAuthRef,
-		}, nil
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
 	case *secretsv1beta1.HCPVaultSecretsApp:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-			AuthRef:     t.Spec.HCPAuthRef,
-		}, nil
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.HCPAuthRef
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}
+
+	return meta, nil
 }

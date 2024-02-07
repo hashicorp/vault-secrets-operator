@@ -30,4 +30,6 @@ const (
 	ReasonInRenewalWindow            = "InRenewalWindow"
 	ReasonHMACDataError              = "HMACDataError"
 	ReasonCertificateRevocationError = "CertificateRevocationError"
+	ReasonTransformationError        = "TransformationError"
+	ReasonSecretDataBuilderError     = "SecretDataBuilderError"
 )

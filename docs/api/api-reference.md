@@ -13,6 +13,8 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 - [HCPAuthList](#hcpauthlist)
 - [HCPVaultSecretsApp](#hcpvaultsecretsapp)
 - [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
+- [SecretTransformation](#secrettransformation)
+- [SecretTransformationList](#secrettransformationlist)
 - [VaultAuth](#vaultauth)
 - [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
@@ -46,6 +48,7 @@ _Appears in:_
 | `labels` _object (keys:string, values:string)_ | Labels to apply to the Secret. Requires Create to be set to true. |
 | `annotations` _object (keys:string, values:string)_ | Annotations to apply to the Secret. Requires Create to be set to true. |
 | `type` _[SecretType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secrettype-v1-core)_ | Type of Kubernetes Secret. Requires Create to be set to true. Defaults to Opaque. |
+| `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before it is stored in the Destination. |
 
 
 #### HCPAuth
@@ -187,6 +190,73 @@ _Appears in:_
 | `name` _string_ |  |
 
 
+#### SecretTransformation
+
+
+
+SecretTransformation is the Schema for the secrettransformations API
+
+_Appears in:_
+- [SecretTransformationList](#secrettransformationlist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `SecretTransformation`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[SecretTransformationSpec](#secrettransformationspec)_ |  |
+
+
+#### SecretTransformationList
+
+
+
+SecretTransformationList contains a list of SecretTransformation
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `SecretTransformationList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[SecretTransformation](#secrettransformation) array_ |  |
+
+
+#### SecretTransformationSpec
+
+
+
+SecretTransformationSpec defines the desired state of SecretTransformation
+
+_Appears in:_
+- [SecretTransformation](#secrettransformation)
+
+| Field | Description |
+| --- | --- |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret with the specified key. |
+| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered K8s Secret, they can be used to provide common template definitions, etc. |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data fields for inclusion in the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied last. |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data fields for exclusion from the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied before any inclusion patterns. To exclude all source secret data fields, you can configure the single pattern ".*". |
+
+
+
+
+#### SourceTemplate
+
+
+
+SourceTemplate provides source templating configuration.
+
+_Appears in:_
+- [SecretTransformationSpec](#secrettransformationspec)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ |  |
+| `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
+
+
 #### StorageEncryption
 
 
@@ -200,6 +270,72 @@ _Appears in:_
 | --- | --- |
 | `mount` _string_ | Mount path of the Transit engine in Vault. |
 | `keyName` _string_ | KeyName to use for encrypt/decrypt operations via Vault Transit. |
+
+
+#### Template
+
+
+
+Template provides templating configuration.
+
+_Appears in:_
+- [SecretTransformationSpec](#secrettransformationspec)
+- [Transformation](#transformation)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the Template |
+| `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
+
+
+#### TemplateRef
+
+
+
+TemplateRef points to templating text that is stored in a SecretTransformation custom resource.
+
+_Appears in:_
+- [TransformationRef](#transformationref)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the Template in SecretTransformationSpec.Templates. the rendered secret data. |
+| `keyOverride` _string_ | KeyOverride to the rendered template in the Destination secret. If Key is empty, then the Key from reference spec will be used. Set this to override the Key set from the reference spec. |
+
+
+#### Transformation
+
+
+
+
+
+_Appears in:_
+- [Destination](#destination)
+
+| Field | Description |
+| --- | --- |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret, and take precedence over templates defined in a SecretTransformation. |
+| `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data fields for inclusion in the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied last. |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data fields for exclusion from the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied before any inclusion patterns. To exclude all source secret data fields, you can configure the single pattern ".*". |
+
+
+#### TransformationRef
+
+
+
+TransformationRef contains the configuration for accessing templates from an SecretTransformation resource. TransformationRefs can be shared across all syncable secret custom resources.
+
+_Appears in:_
+- [Transformation](#transformation)
+
+| Field | Description |
+| --- | --- |
+| `namespace` _string_ | Namespace of the SecretTransformation resource. |
+| `name` _string_ | Name of the SecretTransformation resource. |
+| `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then all templates from the SecretTransformation will be rendered to the K8s Secret. |
+| `ignoreIncludes` _boolean_ | IgnoreIncludes controls whether to use the SecretTransformation's Includes data key filters. |
+| `ignoreExcludes` _boolean_ | IgnoreExcludes controls whether to use the SecretTransformation's Excludes data key filters. |
 
 
 #### VaultAuth

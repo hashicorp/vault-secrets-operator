@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
@@ -31,11 +32,14 @@ type testResponseSecretK8sData struct {
 	name     string
 	respFunc func(tt testResponseSecretK8sData) Response
 	secret   *api.Secret
+	opt      *helpers.SecretTransformationOption
 	want     map[string][]byte
 	wantErr  assert.ErrorAssertionFunc
 }
 
 func Test_defaultResponse_Data(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseData) Response {
 		return &defaultResponse{
 			secret: tt.secret,
@@ -89,12 +93,17 @@ func Test_defaultResponse_Data(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseData(t, tt)
 		})
 	}
 }
 
 func Test_defaultResponse_Secret(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseSecret) Response {
 		return &defaultResponse{
 			secret: tt.secret,
@@ -128,12 +137,17 @@ func Test_defaultResponse_Secret(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseSecret(t, tt)
 		})
 	}
 }
 
 func Test_defaultResponse_SecretK8sData(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseSecretK8sData) Response {
 		return &defaultResponse{
 			secret: tt.secret,
@@ -209,12 +223,17 @@ func Test_defaultResponse_SecretK8sData(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseSecretK8sData(t, tt)
 		})
 	}
 }
 
 func Test_kvV1Response_Data(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseData) Response {
 		return &kvV1Response{
 			secret: tt.secret,
@@ -268,12 +287,17 @@ func Test_kvV1Response_Data(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseData(t, tt)
 		})
 	}
 }
 
 func Test_kvV1Response_Secret(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseSecret) Response {
 		return &kvV1Response{
 			secret: tt.secret,
@@ -307,12 +331,17 @@ func Test_kvV1Response_Secret(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseSecret(t, tt)
 		})
 	}
 }
 
 func Test_kvV1Response_SecretK8sData(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseSecretK8sData) Response {
 		return &kvV1Response{
 			secret: tt.secret,
@@ -330,6 +359,33 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 			},
 			want: map[string][]byte{
 				"baz":                    []byte("qux"),
+				helpers.SecretDataKeyRaw: []byte(`{"baz":"qux"}`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:     "basic-templated",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"baz": "qux",
+				},
+			},
+			opt: &helpers.SecretTransformationOption{
+				KeyedTemplates: []*helpers.KeyedTemplate{
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- $key := "baz" -}}
+{{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
+						},
+					},
+				},
+			},
+			want: map[string][]byte{
+				"baz":                    []byte("qux"),
+				"foo":                    []byte("ENV_BAZ=qux"),
 				helpers.SecretDataKeyRaw: []byte(`{"baz":"qux"}`),
 			},
 			wantErr: assert.NoError,
@@ -390,12 +446,17 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseSecretK8sData(t, tt)
 		})
 	}
 }
 
 func Test_kvV2Response_Data(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseData) Response {
 		return &kvV2Response{
 			secret: tt.secret,
@@ -443,12 +504,17 @@ func Test_kvV2Response_Data(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseData(t, tt)
 		})
 	}
 }
 
 func Test_kvV2Response_Secret(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseSecret) Response {
 		return &kvV2Response{
 			secret: tt.secret,
@@ -482,12 +548,17 @@ func Test_kvV2Response_Secret(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseSecret(t, tt)
 		})
 	}
 }
 
 func Test_kvV2Response_SecretK8sData(t *testing.T) {
+	t.Parallel()
+
 	respFunc := func(tt testResponseSecretK8sData) Response {
 		return &kvV2Response{
 			secret: tt.secret,
@@ -507,6 +578,35 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 			},
 			want: map[string][]byte{
 				"baz":                    []byte("qux"),
+				helpers.SecretDataKeyRaw: []byte(`{"data":{"baz":"qux"}}`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:     "basic-templated",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"data": map[string]interface{}{
+						"baz": "qux",
+					},
+				},
+			},
+			opt: &helpers.SecretTransformationOption{
+				KeyedTemplates: []*helpers.KeyedTemplate{
+					{
+						Key: "foo",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- $key := "baz" -}}
+{{- printf "ENV_%s=%s" ( $key | upper ) ( get .Secrets $key ) -}}`,
+						},
+					},
+				},
+			},
+			want: map[string][]byte{
+				"baz":                    []byte("qux"),
+				"foo":                    []byte("ENV_BAZ=qux"),
 				helpers.SecretDataKeyRaw: []byte(`{"data":{"baz":"qux"}}`),
 			},
 			wantErr: assert.NoError,
@@ -569,6 +669,9 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assertResponseSecretK8sData(t, tt)
 		})
 	}
@@ -589,7 +692,7 @@ func assertResponseSecret(t *testing.T, tt testResponseSecret) {
 func assertResponseSecretK8sData(t *testing.T, tt testResponseSecretK8sData) {
 	t.Helper()
 	resp := tt.respFunc(tt)
-	got, err := resp.SecretK8sData()
+	got, err := resp.SecretK8sData(tt.opt)
 	if !tt.wantErr(t, err, fmt.Sprintf("SecretK8sData()")) {
 		return
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -568,6 +569,112 @@ func TestGetHCPAuthForObj(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "GetHCPAuthForObj(%v, %v, %v)", ctx, tt.client, tt.obj)
+		})
+	}
+}
+
+func TestNewSyncableSecretMetaData(t *testing.T) {
+	namespace := "qux"
+	name := "foo"
+	newTypeMeta := func(kind string) metav1.TypeMeta {
+		return metav1.TypeMeta{
+			Kind:       kind,
+			APIVersion: secretsv1beta1.GroupVersion.Version,
+		}
+	}
+	objectMeta := metav1.ObjectMeta{
+		Namespace: namespace,
+		Name:      name,
+	}
+	destination := secretsv1beta1.Destination{
+		Name:   "baz",
+		Create: true,
+	}
+	authRef := "default"
+	newSecretMetaData := func(kind string) *SyncableSecretMetaData {
+		return &SyncableSecretMetaData{
+			Kind:        kind,
+			APIVersion:  secretsv1beta1.GroupVersion.Version,
+			Namespace:   namespace,
+			Name:        name,
+			Destination: &destination,
+			AuthRef:     authRef,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		obj     client.Object
+		want    *SyncableSecretMetaData
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "hcpvsa",
+			obj: &secretsv1beta1.HCPVaultSecretsApp{
+				TypeMeta:   newTypeMeta("HCPVaultSecretsApp"),
+				ObjectMeta: objectMeta,
+				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
+					HCPAuthRef:  authRef,
+					Destination: destination,
+				},
+			},
+			want:    newSecretMetaData("HCPVaultSecretsApp"),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "vds",
+			obj: &secretsv1beta1.VaultDynamicSecret{
+				TypeMeta:   newTypeMeta("VaultDynamicSecret"),
+				ObjectMeta: objectMeta,
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					VaultAuthRef: authRef,
+					Destination:  destination,
+				},
+			},
+			want:    newSecretMetaData("VaultDynamicSecret"),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "vps",
+			obj: &secretsv1beta1.VaultPKISecret{
+				TypeMeta:   newTypeMeta("VaultPKISecret"),
+				ObjectMeta: objectMeta,
+				Spec: secretsv1beta1.VaultPKISecretSpec{
+					VaultAuthRef: authRef,
+					Destination:  destination,
+				},
+			},
+			want:    newSecretMetaData("VaultPKISecret"),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "vss",
+			obj: &secretsv1beta1.VaultStaticSecret{
+				TypeMeta:   newTypeMeta("VaultStaticSecret"),
+				ObjectMeta: objectMeta,
+				Spec: secretsv1beta1.VaultStaticSecretSpec{
+					VaultAuthRef: authRef,
+					Destination:  destination,
+				},
+			},
+			want:    newSecretMetaData("VaultStaticSecret"),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "unsupported-type",
+			obj:  &corev1.Secret{},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, fmt.Sprintf("unsupported type %T", &corev1.Secret{}))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewSyncableSecretMetaData(tt.obj)
+			if !tt.wantErr(t, err, fmt.Sprintf("NewSyncableSecretMetaData(%v)", tt.obj)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "NewSyncableSecretMetaData(%v)", tt.obj)
 		})
 	}
 }
