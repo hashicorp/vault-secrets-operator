@@ -477,7 +477,7 @@ func (q *DelegatingQueue) NumRequeues(item interface{}) int {
 	return 0
 }
 
-func Test_enqueueOwnerOnObjectDeletionRequestHandler_Delete(t *testing.T) {
+func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -527,7 +527,7 @@ func Test_enqueueOwnerOnObjectDeletionRequestHandler_Delete(t *testing.T) {
 	}
 
 	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
-	tests := []testCaseEnqueueSecretsRequestHandler{
+	tests := []testCaseEnqueueOnDeletionRequestHandler{
 		{
 			name: "enqueued",
 			kind: kind,
@@ -572,12 +572,12 @@ func Test_enqueueOwnerOnObjectDeletionRequestHandler_Delete(t *testing.T) {
 			tt := tt
 			t.Parallel()
 
-			assertEnqueueSecretsRequestsHandler(t, ctx, tt)
+			assertEnqueueOnDeletionRequestHandler(t, ctx, tt)
 		})
 	}
 }
 
-func Test_enqueueOwnerOnObjectDeletionRequestHandler_Create(t *testing.T) {
+func Test_enqueueOnDeletionRequestHandler_Create(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -618,7 +618,7 @@ func Test_enqueueOwnerOnObjectDeletionRequestHandler_Create(t *testing.T) {
 	}
 
 	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
-	tests := []testCaseEnqueueSecretsRequestHandler{
+	tests := []testCaseEnqueueOnDeletionRequestHandler{
 		{
 			name: "supported-not-enqueued",
 			kind: kind,
@@ -649,12 +649,12 @@ func Test_enqueueOwnerOnObjectDeletionRequestHandler_Create(t *testing.T) {
 			tt := tt
 			t.Parallel()
 
-			assertEnqueueSecretsRequestsHandler(t, ctx, tt)
+			assertEnqueueOnDeletionRequestHandler(t, ctx, tt)
 		})
 	}
 }
 
-func Test_enqueueOwnerOnObjectDeletionRequestHandler_Update(t *testing.T) {
+func Test_enqueueOnDeletionRequestHandler_Update(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -714,7 +714,7 @@ func Test_enqueueOwnerOnObjectDeletionRequestHandler_Update(t *testing.T) {
 	}
 
 	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
-	tests := []testCaseEnqueueSecretsRequestHandler{
+	tests := []testCaseEnqueueOnDeletionRequestHandler{
 		{
 			name: "supported-not-enqueued",
 			kind: kind,
@@ -745,12 +745,12 @@ func Test_enqueueOwnerOnObjectDeletionRequestHandler_Update(t *testing.T) {
 			tt := tt
 			t.Parallel()
 
-			assertEnqueueSecretsRequestsHandler(t, ctx, tt)
+			assertEnqueueOnDeletionRequestHandler(t, ctx, tt)
 		})
 	}
 }
 
-type testCaseEnqueueSecretsRequestHandler struct {
+type testCaseEnqueueOnDeletionRequestHandler struct {
 	name            string
 	kind            ResourceKind
 	q               *DelegatingQueue
@@ -762,10 +762,12 @@ type testCaseEnqueueSecretsRequestHandler struct {
 	gvk             schema.GroupVersionKind
 }
 
-func assertEnqueueSecretsRequestsHandler(t *testing.T, ctx context.Context, tt testCaseEnqueueSecretsRequestHandler) {
+func assertEnqueueOnDeletionRequestHandler(t *testing.T, ctx context.Context,
+	tt testCaseEnqueueOnDeletionRequestHandler,
+) {
 	t.Helper()
 
-	e := &enqueueOwnerOnObjectDeletionRequestHandler{
+	e := &enqueueOnDeletionRequestHandler{
 		gvk: tt.gvk,
 	}
 

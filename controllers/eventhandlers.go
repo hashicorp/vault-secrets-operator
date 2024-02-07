@@ -122,30 +122,30 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 	}
 }
 
-// enqueueOwnerOnObjectDeletionRequestHandler enqueues objects whenever the
+// enqueueOnDeletionRequestHandler enqueues objects whenever the
 // watched/dependent object is deleted. All OwnerReferences matching gvk will be
 // enqueued after a some randomly computed duration up to maxRequeueAfter.
-type enqueueOwnerOnObjectDeletionRequestHandler struct {
+type enqueueOnDeletionRequestHandler struct {
 	gvk             schema.GroupVersionKind
 	maxRequeueAfter time.Duration
 }
 
-func (e *enqueueOwnerOnObjectDeletionRequestHandler) Create(_ context.Context,
+func (e *enqueueOnDeletionRequestHandler) Create(_ context.Context,
 	_ event.CreateEvent, _ workqueue.RateLimitingInterface,
 ) {
 	return
 }
 
-func (e *enqueueOwnerOnObjectDeletionRequestHandler) Update(_ context.Context,
+func (e *enqueueOnDeletionRequestHandler) Update(_ context.Context,
 	_ event.UpdateEvent, _ workqueue.RateLimitingInterface,
 ) {
 	return
 }
 
-func (e *enqueueOwnerOnObjectDeletionRequestHandler) Delete(ctx context.Context,
+func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
 	evt event.DeleteEvent, q workqueue.RateLimitingInterface,
 ) {
-	logger := log.FromContext(ctx).WithName("enqueueOwnerOnObjectDeletionRequestHandler").
+	logger := log.FromContext(ctx).WithName("enqueueOnDeletionRequestHandler").
 		WithValues("ownerGVK", e.gvk)
 	reqs := map[reconcile.Request]empty{}
 	d := e.maxRequeueAfter
@@ -173,7 +173,7 @@ func (e *enqueueOwnerOnObjectDeletionRequestHandler) Delete(ctx context.Context,
 	}
 }
 
-func (e *enqueueOwnerOnObjectDeletionRequestHandler) Generic(ctx context.Context,
+func (e *enqueueOnDeletionRequestHandler) Generic(ctx context.Context,
 	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
 ) {
 	return
