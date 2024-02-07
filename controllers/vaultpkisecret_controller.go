@@ -36,12 +36,13 @@ var minHorizon = time.Second * 1
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	ClientFactory  vault.ClientFactory
-	HMACValidator  helpers.HMACValidator
-	Recorder       record.EventRecorder
-	SyncRegistry   *SyncRegistry
-	ReferenceCache ResourceReferenceCache
+	Scheme                     *runtime.Scheme
+	ClientFactory              vault.ClientFactory
+	HMACValidator              helpers.HMACValidator
+	Recorder                   record.EventRecorder
+	SyncRegistry               *SyncRegistry
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -150,7 +151,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			req.NamespacedName)
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
@@ -369,10 +370,6 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts contr
 		For(&secretsv1beta1.VaultPKISecret{}).
 		WithEventFilter(syncableSecretPredicate()).
 		WithOptions(opts).
-		Watches(
-			&secretsv1beta1.SecretTransformation{},
-			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),
-		).
 		Complete(r)
 }
 
