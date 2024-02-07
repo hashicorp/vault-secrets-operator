@@ -37,12 +37,13 @@ var minHorizon = time.Second * 1
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	ClientFactory  vault.ClientFactory
-	HMACValidator  helpers.HMACValidator
-	Recorder       record.EventRecorder
-	SyncRegistry   *SyncRegistry
-	ReferenceCache ResourceReferenceCache
+	Scheme                     *runtime.Scheme
+	ClientFactory              vault.ClientFactory
+	HMACValidator              helpers.HMACValidator
+	Recorder                   record.EventRecorder
+	SyncRegistry               *SyncRegistry
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -120,7 +121,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	switch {
 	case o.Status.SerialNumber == "":
 		syncReason = consts.ReasonInitialSync
-	case r.SyncRegistry.Contains(req.NamespacedName):
+	case r.SyncRegistry.Has(req.NamespacedName):
 		syncReason = consts.ReasonSyncOnRefUpdate
 	case schemaEpoch > 0 && o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = consts.ReasonResourceUpdated
@@ -151,7 +152,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			req.NamespacedName)
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
@@ -311,7 +312,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	r.SyncRegistry.Remove(req.NamespacedName)
+	r.SyncRegistry.Delete(req.NamespacedName)
 
 	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
 	r.recordEvent(o, reason, fmt.Sprintf("Secret synced, horizon=%s", horizon))
@@ -323,7 +324,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	objKey := client.ObjectKeyFromObject(o)
-	r.SyncRegistry.Remove(objKey)
+	r.SyncRegistry.Delete(objKey)
 
 	r.ReferenceCache.Prune(SecretTransformation, objKey)
 	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
@@ -331,7 +332,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
 	logger.V(consts.LogLevelTrace).Info("In deletion")
 	if finalizerSet {
-		logger.V(consts.LogLevelDebug).Info("Remove finalizer")
+		logger.V(consts.LogLevelDebug).Info("Delete finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultPKIFinalizer) {
 			if err := r.Update(ctx, o); err != nil {
 				logger.Error(err, "Failed to remove the finalizer")

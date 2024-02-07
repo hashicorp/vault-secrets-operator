@@ -275,3 +275,147 @@ func Test_resourceReferenceCache_Get(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncRegistry(t *testing.T) {
+	t.Parallel()
+
+	objKey1 := client.ObjectKey{
+		Namespace: "foo",
+		Name:      "qux",
+	}
+	objKey2 := client.ObjectKey{
+		Namespace: "foo",
+		Name:      "bar",
+	}
+	type objKeyTest struct {
+		objKey  client.ObjectKey
+		action  int
+		wantHas bool
+	}
+	tests := []struct {
+		name        string
+		objKeyTests []objKeyTest
+		m           map[client.ObjectKey]empty
+		want        *SyncRegistry
+	}{
+		{
+			name: "add",
+			m:    map[client.ObjectKey]empty{},
+			objKeyTests: []objKeyTest{
+				{
+					objKey: objKey1,
+					action: 0,
+				},
+				{
+					objKey: objKey1,
+					action: 0,
+				},
+				{
+					objKey: objKey1,
+					action: 0,
+				},
+			},
+			want: &SyncRegistry{
+				m: map[client.ObjectKey]empty{
+					objKey1: {},
+				},
+			},
+		},
+		{
+			name: "delete",
+			m: map[client.ObjectKey]empty{
+				objKey1: {},
+				objKey2: {},
+			},
+			objKeyTests: []objKeyTest{
+				{
+					objKey: objKey1,
+					action: 1,
+				},
+				{
+					objKey: objKey2,
+					action: 1,
+				},
+			},
+			want: &SyncRegistry{
+				m: map[client.ObjectKey]empty{},
+			},
+		},
+		{
+			name: "has",
+			m: map[client.ObjectKey]empty{
+				objKey1: {},
+			},
+			objKeyTests: []objKeyTest{
+				{
+					objKey:  objKey1,
+					action:  2,
+					wantHas: true,
+				},
+				{
+					objKey: objKey2,
+					action: 2,
+				},
+			},
+			want: &SyncRegistry{
+				m: map[client.ObjectKey]empty{
+					objKey1: {},
+				},
+			},
+		},
+		{
+			name: "all-actions",
+			m: map[client.ObjectKey]empty{
+				objKey2: {},
+			},
+			objKeyTests: []objKeyTest{
+				{
+					objKey: objKey1,
+					action: 0,
+				},
+				{
+					objKey: objKey2,
+					action: 1,
+				},
+				{
+					objKey:  objKey2,
+					action:  2,
+					wantHas: true,
+				},
+			},
+			want: &SyncRegistry{
+				m: map[client.ObjectKey]empty{
+					objKey1: {},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &SyncRegistry{
+				m: tt.m,
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(len(tt.objKeyTests))
+			for _, ttt := range tt.objKeyTests {
+				go func(r *SyncRegistry, ttt objKeyTest) {
+					defer wg.Done()
+					switch ttt.action {
+					case 0:
+						r.Add(ttt.objKey)
+					case 1:
+						r.Delete(ttt.objKey)
+					case 2:
+						assert.Equal(t, ttt.wantHas, r.Has(ttt.objKey))
+					default:
+						assert.Fail(t, "invalid test action %d", ttt.action)
+					}
+				}(r, ttt)
+			}
+			wg.Wait()
+
+			assert.Equal(t, tt.want, r)
+		})
+	}
+}

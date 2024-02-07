@@ -31,6 +31,7 @@ type testCaseEnqueueRefRequestHandler struct {
 	validator          *validatorFunc
 	createEvents       []event.CreateEvent
 	updateEvents       []event.UpdateEvent
+	deleteEvents       []event.DeleteEvent
 	q                  *DelegatingQueue
 	wantQueue          []api.Request
 	wantAddedAfter     []any
@@ -38,6 +39,7 @@ type testCaseEnqueueRefRequestHandler struct {
 	wantValidObjects   []client.Object
 	wantInvalidCount   int
 	wantInvalidObjects []client.Object
+	wantRefCache       *resourceReferenceCache
 	maxRequeueAfter    time.Duration
 }
 
@@ -115,6 +117,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			},
 			wantAddedAfter:  wantAddedAfterValid,
 			maxRequeueAfter: time.Second * 10,
+			wantRefCache:    cache,
 		},
 		{
 			name:         "enqueued-with-validator",
@@ -130,6 +133,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			},
 			wantValidCount: 1,
 			wantAddedAfter: wantAddedAfterValid,
+			wantRefCache:   cache,
 		},
 		{
 			name:         "not-enqueued-with-validator",
@@ -144,6 +148,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 				createEvent.Object,
 			},
 			wantInvalidCount: 1,
+			wantRefCache:     cache,
 		},
 		{
 			name: "empty-ref-cache",
@@ -231,6 +236,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 				Interface: workqueue.New(),
 			},
 			wantAddedAfter: wantAddedAfterValid,
+			wantRefCache:   cache,
 		},
 		{
 			name:         "enqueued-with-validator",
@@ -246,6 +252,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			},
 			wantValidCount: 1,
 			wantAddedAfter: wantAddedAfterValid,
+			wantRefCache:   cache,
 		},
 		{
 			name:         "not-enqueued-with-validator",
@@ -260,6 +267,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 				objectNew,
 			},
 			wantInvalidCount: 1,
+			wantRefCache:     cache,
 		},
 		{
 			name: "no-enqueue-empty-ref-cache",
@@ -280,6 +288,95 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			q: &DelegatingQueue{
 				Interface: workqueue.New(),
 			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertEnqueueRefRequestHandler(t, ctx, tt)
+		})
+	}
+}
+
+func Test_enqueueRefRequestsHandler_Delete(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	objectOne := &secretsv1beta1.SecretTransformation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "templates",
+		},
+	}
+	objectTwo := &secretsv1beta1.SecretTransformation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "templates2",
+		},
+	}
+
+	cache := &resourceReferenceCache{
+		m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{
+			SecretTransformation: {
+				client.ObjectKeyFromObject(objectOne): map[client.ObjectKey]empty{
+					{
+						Namespace: "foo",
+						Name:      "baz",
+					}: {},
+				},
+			},
+		},
+	}
+
+	tests := []testCaseEnqueueRefRequestHandler{
+		{
+			name:     "not-enqueued-removed-from-cache",
+			kind:     SecretTransformation,
+			refCache: cache,
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			deleteEvents: []event.DeleteEvent{
+				{
+					Object: objectOne,
+				},
+			},
+			wantRefCache: &resourceReferenceCache{
+				m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{},
+			},
+		},
+		{
+			name:     "not-enqueued-cache-unchanged",
+			kind:     SecretTransformation,
+			refCache: cache,
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			deleteEvents: []event.DeleteEvent{
+				{
+					Object: objectTwo,
+				},
+			},
+			wantRefCache: cache,
+		},
+		{
+			name:     "not-enqueued-cache-update-combined",
+			kind:     SecretTransformation,
+			refCache: cache,
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			deleteEvents: []event.DeleteEvent{
+				{
+					Object: objectOne,
+				},
+				{
+					Object: objectTwo,
+				},
+			},
+			wantRefCache: cache,
 		},
 	}
 	for _, tt := range tests {
@@ -329,6 +426,10 @@ func assertEnqueueRefRequestHandler(t *testing.T, ctx context.Context, tt testCa
 		e.Update(ctx, evt, tt.q)
 	}
 
+	for _, evt := range tt.deleteEvents {
+		e.Delete(ctx, evt, tt.q)
+	}
+
 	if assert.Equal(t, tt.wantAddedAfter, tt.q.AddedAfter) {
 		if assert.Equal(t, len(tt.q.AddedAfter), len(tt.q.AddedAfterDuration)) {
 			for _, d := range tt.q.AddedAfterDuration {
@@ -343,6 +444,10 @@ func assertEnqueueRefRequestHandler(t *testing.T, ctx context.Context, tt testCa
 
 		assert.Equal(t, tt.wantValidCount, tt.validator.validCount)
 		assert.Equal(t, tt.wantValidObjects, tt.validator.validObjects)
+	}
+
+	if tt.wantRefCache != nil {
+		assert.Equal(t, tt.wantRefCache, e.refCache)
 	}
 }
 

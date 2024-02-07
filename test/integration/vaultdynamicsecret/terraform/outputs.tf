@@ -37,15 +37,6 @@ output "k8s_secret_role" {
 output "db_path" {
   value = vault_database_secrets_mount.db.path
 }
-output "transit_ref" {
-  value = one(kubernetes_manifest.vault-auth-operator[*].manifest.metadata.name)
-}
-output "transit_path" {
-  value = vault_mount.transit.path
-}
-output "transit_key_name" {
-  value = vault_transit_secret_backend_key.cache.name
-}
 output "k8s_config_context" {
   value = var.k8s_config_context
 }

@@ -383,7 +383,7 @@ type SyncableSecretMetaData struct {
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
 	meta := &SyncableSecretMetaData{
-		Name:      obj.GetNamespace(),
+		Name:      obj.GetName(),
 		Namespace: obj.GetNamespace(),
 	}
 

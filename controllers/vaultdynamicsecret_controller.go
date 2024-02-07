@@ -47,12 +47,13 @@ var (
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Recorder       record.EventRecorder
-	ClientFactory  vault.ClientFactory
-	HMACValidator  helpers.HMACValidator
-	SyncRegistry   *SyncRegistry
-	ReferenceCache ResourceReferenceCache
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	ClientFactory              vault.ClientFactory
+	HMACValidator              helpers.HMACValidator
+	SyncRegistry               *SyncRegistry
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
@@ -92,7 +93,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	logger := log.FromContext(ctx).WithValues("podUID", r.runtimePodUID)
-
 	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -130,7 +130,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
-	forceSync := o.Spec.Destination.Transformation.Resync && r.SyncRegistry.Contains(req.NamespacedName)
+	forceSync := o.Spec.Destination.Transformation.Resync && r.SyncRegistry.Has(req.NamespacedName)
 
 	// doSync indicates that the controller should perform the secret sync,
 	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists) || forceSync
@@ -226,7 +226,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = consts.ReasonSecretRotated
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
@@ -265,7 +265,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	r.SyncRegistry.Remove(req.NamespacedName)
+	r.SyncRegistry.Delete(req.NamespacedName)
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -500,7 +500,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.revokeLease(ctx, o, "")
 
 	objKey := client.ObjectKeyFromObject(o)
-	r.SyncRegistry.Remove(objKey)
+	r.SyncRegistry.Delete(objKey)
 	r.ReferenceCache.Prune(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")

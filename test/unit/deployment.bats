@@ -719,3 +719,52 @@ load _helpers
   [ "${actual}" = "pdcc-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdef" ]
   [ "${#actual}" -eq 63 ]
 }
+
+#--------------------------------------------------------------------
+# globalTransformationOptions
+
+@test "controller/Deployment: globalTransformationOptions not set by default" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "3" ]
+}
+
+@test "controller/Deployment: with globalTransformationOptions.excludeRaw" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.globalTransformationOptions.excludeRaw=true' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "4" ]
+
+   local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+   [ "${actual}" = "--global-transformation-options=exclude-raw" ]
+}
+
+@test "controller/Deployment: with globalTransformationOptions.excludeRaw and extraArgs" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.extraArgs={--foo=baz,--bar=qux}' \
+      --set 'controller.manager.globalTransformationOptions.excludeRaw=true' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "6" ]
+
+   local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+   [ "${actual}" = "--global-transformation-options=exclude-raw" ]
+   local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
+   [ "${actual}" = "--foo=baz" ]
+   local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
+   [ "${actual}" = "--bar=qux" ]
+}

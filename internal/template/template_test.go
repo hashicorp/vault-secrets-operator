@@ -147,7 +147,7 @@ func Test_defaultSecretTemplate_ExecuteTemplate(t *testing.T) {
 			want: nil,
 			wantParseErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`template: tmpl1:1: illegal number syntax: "-"`,
+					`parse error: template: tmpl1:1: illegal number syntax: "-"`,
 				)
 			},
 			wantRenderErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -229,7 +229,7 @@ func Test_defaultSecretTemplate_Parse(t *testing.T) {
 			text: `{{- print "foo"`,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					"template: parse-error`:1: unclosed action",
+					"parse error: template: parse-error`:1: unclosed action",
 				)
 			},
 			wantName: "tmpl1",

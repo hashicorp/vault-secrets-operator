@@ -618,6 +618,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	tests := []struct {
 		name            string
 		obj             ctrlclient.Object
+		globalOpt       *GlobalTransformationOption
 		secretTransObjs []*secretsv1beta1.SecretTransformation
 		want            *SecretTransformationOption
 		wantErr         assert.ErrorAssertionFunc
@@ -643,7 +644,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 					{
 						Key: "default-1",
 						Template: secretsv1beta1.Template{
-							Name: "default/default/default-1",
+							Name: "default/basic/default-1",
 							Text: "{{- -}}",
 						},
 					},
@@ -1215,6 +1216,31 @@ func TestNewSecretTransformationOption(t *testing.T) {
 					`default/templates is in an invalid state`)
 			},
 		},
+		{
+			name: "exclude-raw-from-global-opt",
+			globalOpt: &GlobalTransformationOption{
+				ExcludeRaw: true,
+			},
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{},
+			),
+			want: &SecretTransformationOption{
+				ExcludeRaw: true,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "exclude-raw-from-obj",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					ExcludeRaw: true,
+				},
+			),
+			want: &SecretTransformationOption{
+				ExcludeRaw: true,
+			},
+			wantErr: assert.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1227,7 +1253,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 				require.NoError(t, client.Create(ctx, obj))
 			}
 
-			got, err := NewSecretTransformationOption(ctx, client, tt.obj)
+			got, err := NewSecretTransformationOption(ctx, client, tt.obj, tt.globalOpt)
 			if !tt.wantErr(t, err,
 				fmt.Sprintf(
 					"NewSecretTransformationOption(%v, %v, %v)", ctx, client, tt.obj)) {

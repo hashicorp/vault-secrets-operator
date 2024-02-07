@@ -985,7 +985,7 @@ META_QUX=biff
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`template: tmpl1:2: function "bx2dec" not defined`,
+					`parse error: template: tmpl1:2: function "bx2dec" not defined`,
 				)
 			},
 		},
@@ -1171,6 +1171,51 @@ META_QUX=biff
 					"fab": "biff",
 					"buz": 1,
 				}),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "filter-both-greedy-exclude-raw",
+			opt: &SecretTransformationOption{
+				ExcludeRaw: true,
+				Includes: []string{
+					`.*b.*`,
+				},
+				Excludes: []string{
+					`.*z.*`,
+				},
+			},
+			data: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+				"buz": 1,
+			},
+			raw: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+				"buz": 1,
+			},
+			want: map[string][]byte{
+				"fab": []byte("biff"),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "exclude-raw",
+			opt: &SecretTransformationOption{
+				ExcludeRaw: true,
+			},
+			data: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+			},
+			raw: map[string]interface{}{
+				"baz": "qux",
+				"fab": "biff",
+			},
+			want: map[string][]byte{
+				"baz": []byte("qux"),
+				"fab": []byte("biff"),
 			},
 			wantErr: assert.NoError,
 		},
@@ -1449,6 +1494,18 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.ErrorIs(t, err, SecretDataErrorContainsRaw)
 			},
+		},
+		{
+			name: "exclude-raw",
+			resp: respValid,
+			opt: &SecretTransformationOption{
+				ExcludeRaw: true,
+			},
+			want: map[string][]byte{
+				"bar": []byte("foo"),
+				"foo": []byte("qux"),
+			},
+			wantErr: assert.NoError,
 		},
 	}
 	for _, tt := range tests {

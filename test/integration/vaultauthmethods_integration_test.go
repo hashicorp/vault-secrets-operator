@@ -39,10 +39,6 @@ const (
 )
 
 func TestVaultAuthMethods(t *testing.T) {
-	if !testWithHelm {
-		t.Skipf("Helm only test, and testWithHelm=%t", testWithHelm)
-	}
-
 	testID := strings.ToLower(random.UniqueId())
 	testK8sNamespace := "k8s-tenant-" + testID
 	testKvv2MountPath := consts.KVSecretTypeV2 + testID
@@ -88,8 +84,8 @@ func TestVaultAuthMethods(t *testing.T) {
 	require.Nil(t, err)
 
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultauthmethods/terraform"), tempDir)
-	copyModulesDir(t, tfDir)
-	chartDestDir := copyChartDir(t, tfDir)
+	copyModulesDirT(t, tfDir)
+	chartDestDir := copyChartDirT(t, tfDir)
 
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
@@ -138,7 +134,9 @@ func TestVaultAuthMethods(t *testing.T) {
 			// removes the k8s namespace
 			assert.Nil(t, crdClient.Delete(ctx, c))
 		}
-		exportKindLogs(t)
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
 		// Clean up resources with "terraform destroy" at the end of the test.
 		terraform.Destroy(t, tfOptions)
 		assert.NoError(t, os.RemoveAll(tempDir))
@@ -580,7 +578,7 @@ func requiredAWSStaticCreds() (bool, error) {
 	return true, nil
 }
 
-// checks whether or not to run the gcp tests
+// checks whether to run the gcp tests
 func runGCP(t *testing.T) (bool, string) {
 	t.Helper()
 
