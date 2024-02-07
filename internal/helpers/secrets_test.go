@@ -985,7 +985,7 @@ META_QUX=biff
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
-					`template: tmpl1:2: function "bx2dec" not defined`,
+					`parse error: template: tmpl1:2: function "bx2dec" not defined`,
 				)
 			},
 		},
