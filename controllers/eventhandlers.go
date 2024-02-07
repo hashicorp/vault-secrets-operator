@@ -49,11 +49,15 @@ type enqueueRefRequestsHandler struct {
 	maxRequeueAfter time.Duration
 }
 
-func (e *enqueueRefRequestsHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueRefRequestsHandler) Create(ctx context.Context,
+	evt event.CreateEvent, q workqueue.RateLimitingInterface,
+) {
 	e.enqueue(ctx, q, evt.Object)
 }
 
-func (e *enqueueRefRequestsHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueRefRequestsHandler) Update(ctx context.Context,
+	evt event.UpdateEvent, q workqueue.RateLimitingInterface,
+) {
 	if evt.ObjectOld == nil {
 		return
 	}
@@ -66,15 +70,21 @@ func (e *enqueueRefRequestsHandler) Update(ctx context.Context, evt event.Update
 	}
 }
 
-func (e *enqueueRefRequestsHandler) Delete(ctx context.Context, evt event.DeleteEvent, _ workqueue.RateLimitingInterface) {
+func (e *enqueueRefRequestsHandler) Delete(ctx context.Context,
+	evt event.DeleteEvent, _ workqueue.RateLimitingInterface,
+) {
 	e.refCache.Remove(e.kind, client.ObjectKeyFromObject(evt.Object))
 }
 
-func (e *enqueueRefRequestsHandler) Generic(ctx context.Context, evt event.GenericEvent, _ workqueue.RateLimitingInterface) {
+func (e *enqueueRefRequestsHandler) Generic(ctx context.Context,
+	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
+) {
 	return
 }
 
-func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.RateLimitingInterface, o client.Object) {
+func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
+	q workqueue.RateLimitingInterface, o client.Object,
+) {
 	logger := log.FromContext(ctx).WithName("enqueueRefRequestsHandler")
 	reqs := map[reconcile.Request]empty{}
 	d := e.maxRequeueAfter
@@ -112,24 +122,32 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.Rat
 	}
 }
 
-type enqueueSecretsRequestsHandler struct {
+// enqueueOwnerOnObjectDeletionRequestHandler enqueues objects whenever the
+// watched/dependent object is deleted. All OwnerReferences matching gvk will be
+// enqueued after a some randomly computed duration up to maxRequeueAfter.
+type enqueueOwnerOnObjectDeletionRequestHandler struct {
 	gvk             schema.GroupVersionKind
 	maxRequeueAfter time.Duration
 }
 
-func (e *enqueueSecretsRequestsHandler) Create(_ context.Context, _ event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueOwnerOnObjectDeletionRequestHandler) Create(_ context.Context,
+	_ event.CreateEvent, _ workqueue.RateLimitingInterface,
+) {
 	return
 }
 
-func (e *enqueueSecretsRequestsHandler) Update(_ context.Context, _ event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueOwnerOnObjectDeletionRequestHandler) Update(_ context.Context,
+	_ event.UpdateEvent, _ workqueue.RateLimitingInterface,
+) {
 	return
 }
 
-func (e *enqueueSecretsRequestsHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	logger := log.FromContext(ctx).WithName("enqueueSecretsRequestsHandler").
-		WithValues("forGvk", e.gvk)
+func (e *enqueueOwnerOnObjectDeletionRequestHandler) Delete(ctx context.Context,
+	evt event.DeleteEvent, q workqueue.RateLimitingInterface,
+) {
+	logger := log.FromContext(ctx).WithName("enqueueOwnerOnObjectDeletionRequestHandler").
+		WithValues("ownerGVK", e.gvk)
 	reqs := map[reconcile.Request]empty{}
-	evt.Object.GetObjectKind()
 	d := e.maxRequeueAfter
 	if d == 0 {
 		d = maxRequeueAfter
@@ -143,8 +161,6 @@ func (e *enqueueSecretsRequestsHandler) Delete(ctx context.Context, evt event.De
 				},
 			}
 			if _, ok := reqs[req]; !ok {
-				logger.V(consts.LogLevelTrace).Info(
-					"Enqueuing", "obj", ref, "kind", ref.Kind)
 				_, horizon := computeMaxJitterDuration(d)
 				logger.V(consts.LogLevelTrace).Info(
 					"Enqueuing", "obj", ref, "refKind", ref.Kind, "horizon", horizon)
@@ -157,6 +173,8 @@ func (e *enqueueSecretsRequestsHandler) Delete(ctx context.Context, evt event.De
 	}
 }
 
-func (e *enqueueSecretsRequestsHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueOwnerOnObjectDeletionRequestHandler) Generic(ctx context.Context,
+	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
+) {
 	return
 }

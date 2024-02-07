@@ -477,7 +477,7 @@ func (q *DelegatingQueue) NumRequeues(item interface{}) int {
 	return 0
 }
 
-func Test_enqueueSecretsRequestsHandler_Delete(t *testing.T) {
+func Test_enqueueOwnerOnObjectDeletionRequestHandler_Delete(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -577,7 +577,7 @@ func Test_enqueueSecretsRequestsHandler_Delete(t *testing.T) {
 	}
 }
 
-func Test_enqueueSecretsRequestsHandler_Create(t *testing.T) {
+func Test_enqueueOwnerOnObjectDeletionRequestHandler_Create(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -654,7 +654,7 @@ func Test_enqueueSecretsRequestsHandler_Create(t *testing.T) {
 	}
 }
 
-func Test_enqueueSecretsRequestsHandler_Update(t *testing.T) {
+func Test_enqueueOwnerOnObjectDeletionRequestHandler_Update(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -765,7 +765,7 @@ type testCaseEnqueueSecretsRequestHandler struct {
 func assertEnqueueSecretsRequestsHandler(t *testing.T, ctx context.Context, tt testCaseEnqueueSecretsRequestHandler) {
 	t.Helper()
 
-	e := &enqueueSecretsRequestsHandler{
+	e := &enqueueOwnerOnObjectDeletionRequestHandler{
 		gvk: tt.gvk,
 	}
 

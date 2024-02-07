@@ -472,7 +472,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		).
 		Watches(
 			&corev1.Secret{},
-			&enqueueSecretsRequestsHandler{
+			&enqueueOwnerOnObjectDeletionRequestHandler{
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultDynamicSecret.String()),
 			},
 			builder.WithPredicates(&secretsPredicate{}),

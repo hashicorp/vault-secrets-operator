@@ -227,7 +227,7 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 		).
 		Watches(
 			&corev1.Secret{},
-			&enqueueSecretsRequestsHandler{
+			&enqueueOwnerOnObjectDeletionRequestHandler{
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultStaticSecret.String()),
 			},
 			builder.WithPredicates(&secretsPredicate{}),
