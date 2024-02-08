@@ -52,7 +52,7 @@ type Transformation struct {
 	// SecretTransformation.
 	Templates map[string]Template `json:"templates,omitempty"`
 	// TransformationRefs contain references to template configuration from
-	// SecretTransformation
+	// SecretTransformation.
 	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
 	// Includes contains regex patterns used to filter top-level source secret data
 	// fields for inclusion in the final K8s Secret data. These pattern filters are

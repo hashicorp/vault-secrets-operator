@@ -191,3 +191,15 @@ func (r *SyncRegistry) Has(objKey client.ObjectKey) bool {
 
 	return ok
 }
+
+func (r *SyncRegistry) ObjectKeys() []client.ObjectKey {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var result []client.ObjectKey
+	for k := range r.m {
+		result = append(result, k)
+	}
+
+	return result
+}

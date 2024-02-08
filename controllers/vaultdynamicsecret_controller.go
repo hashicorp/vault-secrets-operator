@@ -110,16 +110,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
 
-	if o.Spec.Destination.Transformation.Resync {
-		for _, ref := range helpers.GetTransformationRefObjKeys(
-			o.Spec.Destination.Transformation, o.Namespace) {
+	transRefObjKeys := helpers.GetTransformationRefObjKeys(
+		o.Spec.Destination.Transformation, o.Namespace)
+	if len(transRefObjKeys) > 0 {
+		for _, ref := range transRefObjKeys {
 			r.ReferenceCache.Add(SecretTransformation, ref,
 				req.NamespacedName)
 		}
 	} else {
-		// TODO: re-evaluate the cost of always calling this.
-		r.ReferenceCache.Prune(SecretTransformation,
-			req.NamespacedName)
+		r.ReferenceCache.Remove(SecretTransformation, req.NamespacedName)
 	}
 
 	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
@@ -129,10 +128,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
-	forceSync := o.Spec.Destination.Transformation.Resync && r.SyncRegistry.Has(req.NamespacedName)
-
 	// doSync indicates that the controller should perform the secret sync,
-	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists) || forceSync
+	doSync := (o.GetGeneration() != o.Status.LastGeneration) ||
+		(o.Spec.Destination.Create && !destExists) ||
+		r.SyncRegistry.Has(req.NamespacedName)
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -464,7 +463,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
-		WithEventFilter(syncableSecretPredicate()).
+		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),
