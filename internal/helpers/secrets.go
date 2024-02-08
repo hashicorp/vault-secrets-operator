@@ -213,7 +213,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 
 		checkOwnerShip := true
 		if meta.Destination.Overwrite {
-			checkOwnerShip = hasOwnerLabels(dest)
+			checkOwnerShip = HasOwnerLabels(dest)
 		}
 
 		if checkOwnerShip {
@@ -349,16 +349,23 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, objKey ctrlc
 	return s, exists, err
 }
 
-func hasOwnerLabels(obj ctrlclient.Object) bool {
-	return checkOwnerLabels(obj) == nil
+// HasOwnerLabels returns true if all owner labels are present and valid, if not
+// it returns false.
+// Note: this may cause issues if we ever add new "owner"
+// labels, but for now this check should be good enough.
+func HasOwnerLabels(o ctrlclient.Object) bool {
+	return CheckOwnerLabels(o) == nil
 }
 
-func checkOwnerLabels(obj ctrlclient.Object) error {
+// CheckOwnerLabels checks that all owner labels are present and valid.
+// Note: this may cause issues if we ever add new "owner" labels,
+// but for now this check should be good enough.
+func CheckOwnerLabels(o ctrlclient.Object) error {
 	// check that all owner labels are present and valid, if not return an error
 	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
 	var errs error
 
-	labels := obj.GetLabels()
+	labels := o.GetLabels()
 	for k, v := range OwnerLabels {
 		if o, ok := labels[k]; o != v || !ok {
 			errs = errors.Join(errs, fmt.Errorf(
@@ -373,10 +380,13 @@ func checkOwnerLabels(obj ctrlclient.Object) error {
 func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerReference) error {
 	// checking for Secret ownership relies on first checking the Secret's labels,
 	// then verifying that its OwnerReferences match the SyncableSecret.
-	errs := checkOwnerLabels(dest)
 
-	// check that obj is the Secret's true Owner
+	// check that all owner labels are present and valid, if not return an error
+	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
+
+	errs := CheckOwnerLabels(dest)
 	key := ctrlclient.ObjectKeyFromObject(dest)
+	// check that obj is the Secret's true Owner
 	if len(dest.OwnerReferences) > 0 {
 		if !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {
 			// we are not the owner, perhaps another syncable-secret resource owns this secret?

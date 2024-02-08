@@ -12,12 +12,26 @@ import (
 type ResourceKind int
 
 // SecretTransformation maps to SecretTransformation custom resource.
-const SecretTransformation ResourceKind = iota
+const (
+	SecretTransformation ResourceKind = iota
+	VaultDynamicSecret
+	VaultStaticSecret
+	VaultPKISecret
+	HCPVaultSecretsApp
+)
 
 func (k ResourceKind) String() string {
 	switch k {
 	case SecretTransformation:
 		return "SecretTransformation"
+	case VaultDynamicSecret:
+		return "VaultDynamicSecret"
+	case VaultStaticSecret:
+		return "VaultStaticSecret"
+	case VaultPKISecret:
+		return "VaultPKISecret"
+	case HCPVaultSecretsApp:
+		return "HCPVaultSecretsApp"
 	default:
 		return "unknown"
 	}
