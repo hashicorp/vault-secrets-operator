@@ -12,7 +12,6 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -27,6 +26,8 @@ var (
 )
 
 const renewalPercentCap = 90
+
+type empty struct{}
 
 // LeaseTruncatedError indicates that the requested lease renewal duration is
 // less than expected
@@ -44,6 +45,16 @@ func (l *LeaseTruncatedError) Error() string {
 // between 0-10%
 func computeMaxJitter(duration time.Duration) (maxHorizon float64, jitter uint64) {
 	return computeMaxJitterWithPercent(duration, 0.10)
+}
+
+// computeMaxJitterDuration with max as 10% of the duration, and jitter a random amount
+// between 0-10% as time.Duration.
+func computeMaxJitterDuration(duration time.Duration) (maxHorizon float64, jitter time.Duration) {
+	var j uint64
+	maxHorizon, j = computeMaxJitterWithPercent(duration, 0.10)
+	jitter = time.Duration(j)
+
+	return
 }
 
 // computeMaxJitter with max as a percentage (percent) of the duration, and
@@ -221,13 +232,4 @@ func parseDurationString(duration, path string, min time.Duration) (time.Duratio
 
 func isInWindow(t1, t2 time.Time) bool {
 	return t1.After(t2) || t1.Equal(t2)
-}
-
-func syncableSecretPredicate() predicate.Predicate {
-	return predicate.Or(
-		predicate.GenerationChangedPredicate{},
-		// needed for template rendering
-		predicate.AnnotationChangedPredicate{},
-		// needed for template rendering
-		predicate.LabelChangedPredicate{})
 }

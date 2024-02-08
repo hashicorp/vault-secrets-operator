@@ -3,9 +3,7 @@
 
 package controllers
 
-import (
-	"sigs.k8s.io/controller-runtime/pkg/client"
-)
+import "sigs.k8s.io/controller-runtime/pkg/client"
 
 func filterOldCacheRefs(cur, other client.Object) bool {
 	return cur.GetUID() == other.GetUID() && cur.GetGeneration() > other.GetGeneration()

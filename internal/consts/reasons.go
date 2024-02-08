@@ -32,4 +32,5 @@ const (
 	ReasonCertificateRevocationError = "CertificateRevocationError"
 	ReasonTransformationError        = "TransformationError"
 	ReasonSecretDataBuilderError     = "SecretDataBuilderError"
+	ReasonSyncOnRefUpdate            = "SyncOnRefUpdate"
 )

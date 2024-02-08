@@ -527,3 +527,16 @@ func newFieldFilters() *fieldFilters {
 		inc: map[string]empty{},
 	}
 }
+
+func GetTransformationRefObjKeys(t secretsv1beta1.Transformation, defaultNS string) []ctrlclient.ObjectKey {
+	var result []ctrlclient.ObjectKey
+	for _, ref := range t.TransformationRefs {
+		ns := defaultNS
+		if ref.Namespace != "" {
+			ns = ref.Namespace
+		}
+		result = append(result, ctrlclient.ObjectKey{Namespace: ns, Name: ref.Name})
+	}
+
+	return result
+}
