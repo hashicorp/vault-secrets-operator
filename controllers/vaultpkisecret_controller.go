@@ -140,15 +140,15 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	if o.Spec.Destination.Transformation.Resync {
-		for _, ref := range helpers.GetTransformationRefObjKeys(
-			o.Spec.Destination.Transformation, o.Namespace) {
+	transRefObjKeys := helpers.GetTransformationRefObjKeys(
+		o.Spec.Destination.Transformation, o.Namespace)
+	if len(transRefObjKeys) > 0 {
+		for _, ref := range transRefObjKeys {
 			r.ReferenceCache.Add(SecretTransformation, ref,
 				req.NamespacedName)
 		}
 	} else {
-		r.ReferenceCache.Prune(SecretTransformation,
-			req.NamespacedName)
+		r.ReferenceCache.Remove(SecretTransformation, req.NamespacedName)
 	}
 
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
@@ -368,7 +368,7 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
-		WithEventFilter(syncableSecretPredicate()).
+		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		WithOptions(opts).
 		Complete(r)
 }
