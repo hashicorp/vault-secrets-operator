@@ -50,6 +50,8 @@ type VaultDynamicSecretReconciler struct {
 	Recorder                   record.EventRecorder
 	ClientFactory              vault.ClientFactory
 	HMACValidator              helpers.HMACValidator
+	SyncRegistry               *SyncRegistry
+	ReferenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
@@ -98,17 +100,26 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Error(err, "error getting resource from k8s", "obj", o)
 		return ctrl.Result{}, err
 	}
-	// Add a finalizer on the VDS resource if we intend to Revoke on cleanup path.
-	// Otherwise, there isn't a need for it since we are not managing anything on deletion.
-	if o.Spec.Revoke {
-		if o.GetDeletionTimestamp() == nil {
-			if err := r.addFinalizer(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
-		} else {
-			logger.Info("Got deletion timestamp", "obj", o)
-			return ctrl.Result{}, r.handleDeletion(ctx, o)
+
+	if o.GetDeletionTimestamp() == nil {
+		if err := r.addFinalizer(ctx, o); err != nil {
+			return ctrl.Result{}, err
 		}
+	} else {
+		logger.Info("Got deletion timestamp", "obj", o)
+		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
+	if o.Spec.Destination.Transformation.Resync {
+		for _, ref := range helpers.GetTransformationRefObjKeys(
+			o.Spec.Destination.Transformation, o.Namespace) {
+			r.ReferenceCache.Add(SecretTransformation, ref,
+				req.NamespacedName)
+		}
+	} else {
+		// TODO: re-evaluate the cost of always calling this.
+		r.ReferenceCache.Prune(SecretTransformation,
+			req.NamespacedName)
 	}
 
 	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
@@ -118,9 +129,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
+	forceSync := o.Spec.Destination.Transformation.Resync && r.SyncRegistry.Has(req.NamespacedName)
+
 	// doSync indicates that the controller should perform the secret sync,
-	// skipping any lease renewals.
-	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists)
+	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists) || forceSync
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -251,6 +263,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// all error reporting is handled by helpers.HandleRolloutRestarts
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
+
+	r.SyncRegistry.Delete(req.NamespacedName)
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -451,6 +465,10 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
 		WithEventFilter(syncableSecretPredicate()).
+		Watches(
+			&secretsv1beta1.SecretTransformation{},
+			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),
+		).
 		Complete(r)
 }
 
@@ -472,6 +490,10 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	// Worst case at this point we will leave a dangling lease instead of a secret which
 	// cannot be deleted. Events are emitted in these cases.
 	r.revokeLease(ctx, o, "")
+
+	objKey := client.ObjectKeyFromObject(o)
+	r.SyncRegistry.Delete(objKey)
+	r.ReferenceCache.Prune(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {

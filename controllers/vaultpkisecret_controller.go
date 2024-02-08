@@ -40,6 +40,8 @@ type VaultPKISecretReconciler struct {
 	ClientFactory              vault.ClientFactory
 	HMACValidator              helpers.HMACValidator
 	Recorder                   record.EventRecorder
+	SyncRegistry               *SyncRegistry
+	ReferenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
@@ -118,6 +120,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	switch {
 	case o.Status.SerialNumber == "":
 		syncReason = consts.ReasonInitialSync
+	case r.SyncRegistry.Has(req.NamespacedName):
+		syncReason = consts.ReasonSyncOnRefUpdate
 	case schemaEpoch > 0 && o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = consts.ReasonResourceUpdated
 	case o.Spec.Destination.Create && !destinationExists:
@@ -134,6 +138,17 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				logger.Error(err, "Failed to HMAC destination secret")
 			}
 		}
+	}
+
+	if o.Spec.Destination.Transformation.Resync {
+		for _, ref := range helpers.GetTransformationRefObjKeys(
+			o.Spec.Destination.Transformation, o.Namespace) {
+			r.ReferenceCache.Add(SecretTransformation, ref,
+				req.NamespacedName)
+		}
+	} else {
+		r.ReferenceCache.Prune(SecretTransformation,
+			req.NamespacedName)
 	}
 
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
@@ -296,6 +311,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	r.SyncRegistry.Delete(req.NamespacedName)
+
 	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
 	r.recordEvent(o, reason, fmt.Sprintf("Secret synced, horizon=%s", horizon))
 	logger.Info("Successfully updated the secret", "horizon", horizon)
@@ -304,21 +321,25 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}, nil
 }
 
-func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
-	finalizerSet := controllerutil.ContainsFinalizer(s, vaultPKIFinalizer)
+func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
+	objKey := client.ObjectKeyFromObject(o)
+	r.SyncRegistry.Delete(objKey)
+
+	r.ReferenceCache.Prune(SecretTransformation, objKey)
+	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
 	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
 	logger.V(consts.LogLevelTrace).Info("In deletion")
 	if finalizerSet {
-		logger.V(consts.LogLevelDebug).Info("Remove finalizer")
-		if controllerutil.RemoveFinalizer(s, vaultPKIFinalizer) {
-			if err := r.Update(ctx, s); err != nil {
+		logger.V(consts.LogLevelDebug).Info("Delete finalizer")
+		if controllerutil.RemoveFinalizer(o, vaultPKIFinalizer) {
+			if err := r.Update(ctx, o); err != nil {
 				logger.Error(err, "Failed to remove the finalizer")
 				return err
 			}
 			logger.V(consts.LogLevelDebug).Info("Finalizers successfully removed")
 		}
-		if err := r.finalizePKI(ctx, logger, s); err != nil {
+		if err := r.finalizePKI(ctx, logger, o); err != nil {
 			logger.Error(err, "Failed")
 		}
 

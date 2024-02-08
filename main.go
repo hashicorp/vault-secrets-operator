@@ -286,6 +286,7 @@ func main() {
 		SecretDataBuilder:          secretDataBuilder,
 		HMACValidator:              hmacValidator,
 		ClientFactory:              clientFactory,
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
 		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
@@ -296,6 +297,8 @@ func main() {
 		Scheme:                     mgr.GetScheme(),
 		ClientFactory:              clientFactory,
 		HMACValidator:              hmacValidator,
+		SyncRegistry:               controllers.NewSyncRegistry(),
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
 		Recorder:                   mgr.GetEventRecorderFor("VaultPKISecret"),
 		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
@@ -337,6 +340,8 @@ func main() {
 		Recorder:                   mgr.GetEventRecorderFor("VaultDynamicSecret"),
 		ClientFactory:              clientFactory,
 		HMACValidator:              hmacValidator,
+		SyncRegistry:               controllers.NewSyncRegistry(),
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
 		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
@@ -355,6 +360,7 @@ func main() {
 		Recorder:                   mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
 		SecretDataBuilder:          secretDataBuilder,
 		HMACValidator:              hmacValidator,
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
 		MinRefreshAfter:            minRefreshAfterHVSA,
 		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
