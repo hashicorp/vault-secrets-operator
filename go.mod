@@ -13,7 +13,7 @@ require (
 	github.com/gruntwork-io/terratest v0.46.11
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-rootcerts v1.0.2
-	github.com/hashicorp/go-secure-stdlib/awsutil v0.2.3-0.20230606170242-1a4b95565d57
+	github.com/hashicorp/go-secure-stdlib/awsutil v0.3.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/hcp-sdk-go v0.65.0
 	github.com/hashicorp/vault/api v1.11.0
