@@ -120,6 +120,29 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			wantRefCache:    cache,
 		},
 		{
+			name:         "enqueued-zero-max-horizon",
+			kind:         SecretTransformation,
+			refCache:     cache,
+			createEvents: createEvents,
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			wantAddedAfter: wantAddedAfterValid,
+			wantRefCache:   cache,
+		},
+		{
+			name:         "enqueued-negative-max-horizon",
+			kind:         SecretTransformation,
+			refCache:     cache,
+			createEvents: createEvents,
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * -1,
+			wantRefCache:    cache,
+		},
+		{
 			name:         "enqueued-with-validator",
 			kind:         SecretTransformation,
 			refCache:     cache,
@@ -393,9 +416,10 @@ func assertEnqueueRefRequestHandler(t *testing.T, ctx context.Context, tt testCa
 	t.Helper()
 
 	e := &enqueueRefRequestsHandler{
-		kind:     tt.kind,
-		refCache: tt.refCache,
-		syncReg:  tt.syncReg,
+		kind:            tt.kind,
+		refCache:        tt.refCache,
+		syncReg:         tt.syncReg,
+		maxRequeueAfter: tt.maxRequeueAfter,
 	}
 
 	if len(tt.createEvents) > 0 && len(tt.updateEvents) > 0 {
@@ -414,7 +438,7 @@ func assertEnqueueRefRequestHandler(t *testing.T, ctx context.Context, tt testCa
 	}
 
 	m := tt.maxRequeueAfter
-	if tt.maxRequeueAfter == 0 {
+	if tt.maxRequeueAfter <= 0 {
 		m = maxRequeueAfter
 	}
 
@@ -554,6 +578,33 @@ func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
 			gvk:             gvk,
 			wantAddedAfter:  wantAddedAfterValid,
 			maxRequeueAfter: time.Second * 10,
+		},
+		{
+			name: "enqueued-mixed-zero-max-horizon",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: wantAddedAfterValid,
+		},
+		{
+			name: "enqueued-mixed-negative-max-horizon",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:             gvk,
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * -1,
 		},
 		{
 			name: "not-enqueued",
@@ -772,7 +823,7 @@ func assertEnqueueOnDeletionRequestHandler(t *testing.T, ctx context.Context,
 	}
 
 	m := tt.maxRequeueAfter
-	if tt.maxRequeueAfter == 0 {
+	if tt.maxRequeueAfter <= 0 {
 		m = maxRequeueAfter
 	}
 

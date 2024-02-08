@@ -88,7 +88,7 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 	logger := log.FromContext(ctx).WithName("enqueueRefRequestsHandler")
 	reqs := map[reconcile.Request]empty{}
 	d := e.maxRequeueAfter
-	if d == 0 {
+	if d <= 0 {
 		d = maxRequeueAfter
 	}
 	if refs, ok := e.refCache.Get(e.kind, client.ObjectKeyFromObject(o)); ok {
@@ -150,7 +150,7 @@ func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
 		WithValues("ownerGVK", e.gvk)
 	reqs := map[reconcile.Request]empty{}
 	d := e.maxRequeueAfter
-	if d == 0 {
+	if d <= 0 {
 		d = maxRequeueAfter
 	}
 	for _, ref := range evt.Object.GetOwnerReferences() {
