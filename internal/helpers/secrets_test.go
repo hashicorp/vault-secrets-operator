@@ -1527,6 +1527,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 func TestHasOwnerLabels(t *testing.T) {
 	t.Parallel()
 
+	// label setup copied to controllers.Test_secretsPredicate_Delete()
 	require.Greater(t, len(OwnerLabels), 1, "OwnerLabels global is invalid,")
 
 	hasNotLabels := maps.Clone(OwnerLabels)
