@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
+set -e -o pipefail
 
 # Set the `spec.replaces` parameter in the ClusterServiceVersion (CSV) to the
 # previous version, so that the graph of CSVs is built correctly and previous
