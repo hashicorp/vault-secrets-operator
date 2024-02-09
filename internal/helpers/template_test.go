@@ -699,6 +699,10 @@ func TestNewSecretTransformationOption(t *testing.T) {
 								Name: "default",
 								Text: "{{- baz -}}",
 							},
+							"baz": {
+								Name: "baz",
+								Text: "{{- baz -}}",
+							},
 						},
 					},
 					nil,
