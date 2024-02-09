@@ -166,7 +166,9 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// skip the next sync if the data has not changed since the last sync, and the
 	// resource has not been updated.
-	if o.Status.LastGeneration == o.GetGeneration() {
+	// Note: spec.status.lastGeneration was added later, so we don't want to force a
+	// sync until we've updated it.
+	if o.Status.LastGeneration == 0 || o.Status.LastGeneration == o.GetGeneration() {
 		doSync = !macsEqual
 	}
 
