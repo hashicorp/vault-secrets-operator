@@ -124,8 +124,7 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 
 // enqueueOnDeletionRequestHandler enqueues objects whenever the
 // watched/dependent object is deleted. All OwnerReferences matching gvk will be
-// enqueued after some randomly computed duration up to maxRequeueAfter has
-// elapsed.
+// enqueued after some randomly computed duration up until maxRequeueAfter.
 type enqueueOnDeletionRequestHandler struct {
 	gvk             schema.GroupVersionKind
 	maxRequeueAfter time.Duration
