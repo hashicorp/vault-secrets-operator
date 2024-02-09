@@ -36,6 +36,8 @@ type HCPVaultSecretsAppSpec struct {
 
 // HCPVaultSecretsAppStatus defines the observed state of HCPVaultSecretsApp
 type HCPVaultSecretsAppStatus struct {
+	// LastGeneration is the Generation of the last reconciled resource.
+	LastGeneration int64 `json:"lastGeneration"`
 	// SecretMAC used when deciding whether new Vault secret data should be synced.
 	//
 	// The controller will compare the "new" HCP Vault Secrets App data to this value
