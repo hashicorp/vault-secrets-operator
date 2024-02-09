@@ -31,6 +31,7 @@ EXPORT_KIND_LOGS_ROOT ?=
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
 COPYWRITE_VERSION ?= 0.16.3
+OPERATOR_SDK_VERSION ?= v1.33.0
 
 TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
@@ -507,20 +508,20 @@ set-image-ubi: kustomize copy-config ## Set the controller UBI image
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG_UBI)
 
 .PHONY: sdk-generate
-sdk-generate: copywrite
-	operator-sdk generate kustomize manifests -q
+sdk-generate: copywrite operator-sdk
+	$(OPERATOR_SDK) generate kustomize manifests -q
 	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: bundle
-bundle: manifests kustomize sdk-generate set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize sdk-generate set-image-ubi yq operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
 	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
-	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	@$(COPYWRITE) headers &> /dev/null
 	@./hack/set_openshift_minimum_version.sh
 	@./hack/set_containerImage.sh
 	mv bundle.Dockerfile $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
-	operator-sdk bundle validate $(BUNDLE_DIR)
+	$(OPERATOR_SDK) bundle validate $(BUNDLE_DIR)
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
@@ -590,6 +591,23 @@ copywrite: ## Download copywrite locally if necessary.
 .PHONY: yq
 yq: ## Download yq locally if necessary.
 	@./hack/install_yq.sh
+
+.PHONY: operator-sdk
+OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
+operator-sdk: ## Download operator-sdk locally if necessary.
+ifeq (,$(wildcard $(OPERATOR_SDK)))
+ifeq (,$(shell which $(notdir $(OPERATOR_SDK)) 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(OPERATOR_SDK)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+	chmod +x $(OPERATOR_SDK) ;\
+	}
+else
+OPERATOR_SDK = $(shell which operator-sdk)
+endif
+endif
 
 .PHONY: crd-ref-docs
 CRD_REF_DOCS = ./bin/crd-ref-docs
