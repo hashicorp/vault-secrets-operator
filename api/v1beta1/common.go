@@ -69,8 +69,7 @@ type Transformation struct {
 	// globally by including 'exclude-raw` in the '--global-transformation-options'
 	// command line flag. If set, the command line flag always takes precedence over
 	// this configuration.
-	// +kubebuilder:default=false
-	ExcludeRaw bool `json:"excludeRaw"`
+	ExcludeRaw bool `json:"excludeRaw,omitempty"`
 }
 
 // TransformationRef contains the configuration for accessing templates from an
