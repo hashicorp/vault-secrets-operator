@@ -507,8 +507,9 @@ set-image-ubi: kustomize copy-config ## Set the controller UBI image
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG_UBI)
 
 .PHONY: sdk-generate
-sdk-generate:
+sdk-generate: copywrite
 	operator-sdk generate kustomize manifests -q
+	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: bundle
 bundle: manifests kustomize sdk-generate set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.

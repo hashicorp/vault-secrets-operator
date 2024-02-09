@@ -21,4 +21,6 @@ const (
 	AWSRoleARN         = "role_arn"
 	AWSSessionName     = "session_name"
 	AWSSessionToken    = "session_token"
+
+	AnnotationResync = "vso/resync"
 )

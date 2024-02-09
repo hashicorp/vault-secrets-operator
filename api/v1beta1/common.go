@@ -27,6 +27,9 @@ type Destination struct {
 	// Type of Kubernetes Secret. Requires Create to be set to true.
 	// Defaults to Opaque.
 	Type v1.SecretType `json:"type,omitempty"`
+	// Transformation provides configuration for transforming the secret data before
+	// it is stored in the Destination.
+	Transformation Transformation `json:"transformation,omitempty"`
 }
 
 // RolloutRestartTarget provides the configuration required to perform a
@@ -41,4 +44,75 @@ type RolloutRestartTarget struct {
 	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet}
 	Kind string `json:"kind"`
 	Name string `json:"name"`
+}
+
+type Transformation struct {
+	// Templates maps a template name to its Template. Templates are always included
+	// in the rendered K8s Secret, and take precedence over templates defined in a
+	// SecretTransformation.
+	Templates map[string]Template `json:"templates,omitempty"`
+	// TransformationRefs contain references to template configuration from
+	// SecretTransformation.
+	TransformationRefs []TransformationRef `json:"transformationRefs,omitempty"`
+	// Includes contains regex patterns used to filter top-level source secret data
+	// fields for inclusion in the final K8s Secret data. These pattern filters are
+	// never applied to templated fields as defined in Templates. They are always
+	// applied last.
+	Includes []string `json:"includes,omitempty"`
+	// Excludes contains regex patterns used to filter top-level source secret data
+	// fields for exclusion from the final K8s Secret data. These pattern filters are
+	// never applied to templated fields as defined in Templates. They are always
+	// applied before any inclusion patterns. To exclude all source secret data
+	// fields, you can configure the single pattern ".*".
+	Excludes []string `json:"excludes,omitempty"`
+	// Resync the Secret on updates to any configured TransformationRefs.
+	// +kubebuilder:default=true
+	Resync bool `json:"resync"`
+	// ExcludeRaw data from the destination Secret. Exclusion policy can be set
+	// globally by including 'exclude-raw` in the '--global-transformation-options'
+	// command line flag. If set, the command line flag always takes precedence over
+	// this configuration.
+	// +kubebuilder:default=false
+	ExcludeRaw bool `json:"excludeRaw"`
+}
+
+// TransformationRef contains the configuration for accessing templates from an
+// SecretTransformation resource. TransformationRefs can be shared across all
+// syncable secret custom resources.
+type TransformationRef struct {
+	// Namespace of the SecretTransformation resource.
+	Namespace string `json:"namespace,omitempty"`
+	// Name of the SecretTransformation resource.
+	Name string `json:"name"`
+	// TemplateRefs map to a Template found in this TransformationRef. If empty, then
+	// all templates from the SecretTransformation will be rendered to the K8s Secret.
+	TemplateRefs []TemplateRef `json:"templateRefs,omitempty"`
+	// IgnoreIncludes controls whether to use the SecretTransformation's Includes
+	// data key filters.
+	IgnoreIncludes bool `json:"ignoreIncludes,omitempty"`
+	// IgnoreExcludes controls whether to use the SecretTransformation's Excludes
+	// data key filters.
+	IgnoreExcludes bool `json:"ignoreExcludes,omitempty"`
+}
+
+// TemplateRef points to templating text that is stored in a
+// SecretTransformation custom resource.
+type TemplateRef struct {
+	// Name of the Template in SecretTransformationSpec.Templates.
+	// the rendered secret data.
+	Name string `json:"name"`
+	// KeyOverride to the rendered template in the Destination secret. If Key is
+	// empty, then the Key from reference spec will be used. Set this to override the
+	// Key set from the reference spec.
+	KeyOverride string `json:"keyOverride,omitempty"`
+}
+
+// Template provides templating configuration.
+type Template struct {
+	// Name of the Template
+	Name string `json:"name,omitempty"`
+	// Text contains the Go text template format. The template
+	// references attributes from the data structure of the source secret.
+	// Refer to https://pkg.go.dev/text/template for more information.
+	Text string `json:"text"`
 }

@@ -22,8 +22,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -37,6 +37,8 @@ import (
 const (
 	headerHVSRequester = "X-HVS-Requester"
 	headerUserAgent    = "User-Agent"
+
+	hcpVaultSecretsAppFinalizer = "hcpvaultsecretsapp.secrets.hashicorp.com/finalizer"
 )
 
 var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
@@ -44,11 +46,13 @@ var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
 type HCPVaultSecretsAppReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	SecretDataBuilder *helpers.SecretDataBuilder
-	HMACValidator     helpers.HMACValidator
-	MinRefreshAfter   time.Duration
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	SecretDataBuilder          *helpers.SecretDataBuilder
+	HMACValidator              helpers.HMACValidator
+	MinRefreshAfter            time.Duration
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -72,6 +76,15 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	if o.GetDeletionTimestamp() == nil {
+		if err := r.addFinalizer(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		logger.Info("Got deletion timestamp", "obj", o)
+		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
 		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", r.MinRefreshAfter)
@@ -84,6 +97,13 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if d.Seconds() > 0 {
 			requeueAfter = computeHorizonWithJitter(d)
 		}
+	}
+
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	c, err := r.hvsClient(ctx, o)
@@ -107,9 +127,28 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp)
+	transRefObjKeys := helpers.GetTransformationRefObjKeys(
+		o.Spec.Destination.Transformation, o.Namespace)
+	if len(transRefObjKeys) > 0 {
+		for _, ref := range transRefObjKeys {
+			r.ReferenceCache.Add(SecretTransformation, ref,
+				req.NamespacedName)
+		}
+	} else {
+		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
+	}
+
 	if err != nil {
-		logger.Error(err, "Failed to build K8s Secret data from HVS response", "appName", o.Spec.AppName)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
+	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp, transOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
+			"Failed to build K8s secret data: %s", err)
+		logger.Error(err, "Failed to build K8s Secret data", "appName", o.Spec.AppName)
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -156,8 +195,12 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate(nil)).
 		WithOptions(opts).
+		Watches(
+			&secretsv1beta1.SecretTransformation{},
+			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, nil),
+		).
 		Complete(r)
 }
 
@@ -201,6 +244,32 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 	injectRequestInformation(cl)
 
 	return hvsclient.New(cl, nil), nil
+}
+
+func (r *HCPVaultSecretsAppReconciler) addFinalizer(ctx context.Context, o client.Object) error {
+	if !controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
+		controllerutil.AddFinalizer(o, hcpVaultSecretsAppFinalizer)
+		if err := r.Client.Update(ctx, o); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o client.Object) error {
+	logger := log.FromContext(ctx)
+	r.ReferenceCache.Prune(SecretTransformation, client.ObjectKeyFromObject(o))
+	if controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
+		logger.Info("Removing finalizer")
+		if controllerutil.RemoveFinalizer(o, hcpVaultSecretsAppFinalizer) {
+			if err := r.Update(ctx, o); err != nil {
+				logger.Error(err, "Failed to remove the finalizer")
+				return err
+			}
+			logger.Info("Successfully removed the finalizer")
+		}
+	}
+	return nil
 }
 
 // transport is copied from https://github.com/hashicorp/vlt/blob/f1f50c53433aa1c6dd0e7f0f929553bb4e5d2c63/internal/command/transport.go#L15

@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -47,10 +46,13 @@ var (
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.ClientFactory
-	HMACValidator helpers.HMACValidator
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	ClientFactory              vault.ClientFactory
+	HMACValidator              helpers.HMACValidator
+	SyncRegistry               *SyncRegistry
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
@@ -98,17 +100,25 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Error(err, "error getting resource from k8s", "obj", o)
 		return ctrl.Result{}, err
 	}
-	// Add a finalizer on the VDS resource if we intend to Revoke on cleanup path.
-	// Otherwise, there isn't a need for it since we are not managing anything on deletion.
-	if o.Spec.Revoke {
-		if o.GetDeletionTimestamp() == nil {
-			if err := r.addFinalizer(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
-		} else {
-			logger.Info("Got deletion timestamp", "obj", o)
-			return ctrl.Result{}, r.handleDeletion(ctx, o)
+
+	if o.GetDeletionTimestamp() == nil {
+		if err := r.addFinalizer(ctx, o); err != nil {
+			return ctrl.Result{}, err
 		}
+	} else {
+		logger.Info("Got deletion timestamp", "obj", o)
+		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
+	transRefObjKeys := helpers.GetTransformationRefObjKeys(
+		o.Spec.Destination.Transformation, o.Namespace)
+	if len(transRefObjKeys) > 0 {
+		for _, ref := range transRefObjKeys {
+			r.ReferenceCache.Add(SecretTransformation, ref,
+				req.NamespacedName)
+		}
+	} else {
+		r.ReferenceCache.Remove(SecretTransformation, req.NamespacedName)
 	}
 
 	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
@@ -119,8 +129,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// doSync indicates that the controller should perform the secret sync,
-	// skipping any lease renewals.
-	doSync := (o.GetGeneration() != o.Status.LastGeneration) || (o.Spec.Destination.Create && !destExists)
+	doSync := (o.GetGeneration() != o.Status.LastGeneration) ||
+		(o.Spec.Destination.Create && !destExists) ||
+		r.SyncRegistry.Has(req.NamespacedName)
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -213,9 +224,18 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = consts.ReasonSecretRotated
 	}
 
-	// sync the secret
-	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
+	// sync the secret
+	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
+			"Failed to sync secret: %s", err)
 		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
 		horizon := requeueDurationOnError + time.Duration(jitter)
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
@@ -242,6 +262,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// all error reporting is handled by helpers.HandleRolloutRestarts
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
+
+	r.SyncRegistry.Delete(req.NamespacedName)
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -270,7 +292,9 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 	return meta.LastVaultRotation > 0 && (meta.RotationPeriod >= 1 || meta.RotationSchedule != "")
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (*secretsv1beta1.VaultSecretLease, bool, error) {
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
+	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
+) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp vault.Response
@@ -316,7 +340,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
-	data, err := resp.SecretK8sData()
+	data, err := resp.SecretK8sData(opt)
 	if err != nil {
 		return nil, false, err
 	}
@@ -439,7 +463,11 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
+		Watches(
+			&secretsv1beta1.SecretTransformation{},
+			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),
+		).
 		Complete(r)
 }
 
@@ -461,6 +489,10 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	// Worst case at this point we will leave a dangling lease instead of a secret which
 	// cannot be deleted. Events are emitted in these cases.
 	r.revokeLease(ctx, o, "")
+
+	objKey := client.ObjectKeyFromObject(o)
+	r.SyncRegistry.Delete(objKey)
+	r.ReferenceCache.Prune(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {

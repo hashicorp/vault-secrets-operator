@@ -27,6 +27,8 @@ var (
 
 const renewalPercentCap = 90
 
+type empty struct{}
+
 // LeaseTruncatedError indicates that the requested lease renewal duration is
 // less than expected
 type LeaseTruncatedError struct {
@@ -43,6 +45,16 @@ func (l *LeaseTruncatedError) Error() string {
 // between 0-10%
 func computeMaxJitter(duration time.Duration) (maxHorizon float64, jitter uint64) {
 	return computeMaxJitterWithPercent(duration, 0.10)
+}
+
+// computeMaxJitterDuration with max as 10% of the duration, and jitter a random amount
+// between 0-10% as time.Duration.
+func computeMaxJitterDuration(duration time.Duration) (maxHorizon float64, jitter time.Duration) {
+	var j uint64
+	maxHorizon, j = computeMaxJitterWithPercent(duration, 0.10)
+	jitter = time.Duration(j)
+
+	return
 }
 
 // computeMaxJitter with max as a percentage (percent) of the duration, and
