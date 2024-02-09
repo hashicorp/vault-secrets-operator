@@ -275,14 +275,16 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 			)
 		}
 
-		for key, tmpl := range obj.Spec.Templates {
-			// only add key/templates that have not already been seen, first in takes precedence
-			if _, ok := seenTemplates[key]; !ok {
-				if tmpl.Name == "" {
-					tmpl.Name = fmt.Sprintf("%s/%s", objKey, key)
-				}
+		if len(ref.TemplateRefs) == 0 {
+			for key, tmpl := range obj.Spec.Templates {
+				// only add key/templates that have not already been seen, first in takes precedence
+				if _, ok := seenTemplates[key]; !ok {
+					if tmpl.Name == "" {
+						tmpl.Name = fmt.Sprintf("%s/%s", objKey, key)
+					}
 
-				addTemplate(tmpl, key)
+					addTemplate(tmpl, key)
+				}
 			}
 		}
 	}
