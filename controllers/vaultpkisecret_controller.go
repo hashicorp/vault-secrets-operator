@@ -148,7 +148,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				req.NamespacedName)
 		}
 	} else {
-		r.ReferenceCache.Remove(SecretTransformation, req.NamespacedName)
+		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
 	}
 
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)

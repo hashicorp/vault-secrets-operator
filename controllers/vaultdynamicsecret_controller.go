@@ -118,7 +118,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				req.NamespacedName)
 		}
 	} else {
-		r.ReferenceCache.Remove(SecretTransformation, req.NamespacedName)
+		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
 	}
 
 	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
