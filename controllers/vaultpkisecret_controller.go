@@ -369,6 +369,10 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts contr
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
+		Watches(
+			&secretsv1beta1.SecretTransformation{},
+			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),
+		).
 		WithOptions(opts).
 		Complete(r)
 }
