@@ -41,7 +41,7 @@ type VaultPKISecretReconciler struct {
 	HMACValidator              helpers.HMACValidator
 	Recorder                   record.EventRecorder
 	SyncRegistry               *SyncRegistry
-	ReferenceCache             ResourceReferenceCache
+	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
@@ -140,16 +140,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	transRefObjKeys := helpers.GetTransformationRefObjKeys(
-		o.Spec.Destination.Transformation, o.Namespace)
-	if len(transRefObjKeys) > 0 {
-		for _, ref := range transRefObjKeys {
-			r.ReferenceCache.Add(SecretTransformation, ref,
-				req.NamespacedName)
-		}
-	} else {
-		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
-	}
+	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
+		helpers.GetTransformationRefObjKeys(
+			o.Spec.Destination.Transformation, o.Namespace)...)
 
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
@@ -325,7 +318,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
 
-	r.ReferenceCache.Prune(SecretTransformation, objKey)
+	r.referenceCache.Remove(SecretTransformation, objKey)
 	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
 	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
@@ -366,12 +359,13 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv
 }
 
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
+	r.referenceCache = newResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
-			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),
+			NewEnqueueRefRequestsHandlerST(r.referenceCache, r.SyncRegistry),
 		).
 		WithOptions(opts).
 		Complete(r)

@@ -65,7 +65,7 @@ func (e *enqueueRefRequestsHandler) Update(ctx context.Context, evt event.Update
 }
 
 func (e *enqueueRefRequestsHandler) Delete(ctx context.Context, evt event.DeleteEvent, _ workqueue.RateLimitingInterface) {
-	e.refCache.Remove(e.kind, client.ObjectKeyFromObject(evt.Object))
+	e.refCache.Prune(e.kind, client.ObjectKeyFromObject(evt.Object))
 }
 
 func (e *enqueueRefRequestsHandler) Generic(ctx context.Context, evt event.GenericEvent, _ workqueue.RateLimitingInterface) {
@@ -79,11 +79,8 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.Rat
 	if d == 0 {
 		d = maxRequeueAfter
 	}
-	if refs, ok := e.refCache.Get(e.kind, client.ObjectKeyFromObject(o)); ok {
-		if len(refs) == 0 {
-			return
-		}
 
+	for _, ref := range e.refCache.Get(e.kind, client.ObjectKeyFromObject(o)) {
 		if e.validator != nil {
 			if err := e.validator(ctx, o); err != nil {
 				logger.Error(err, "Validation failed, skipping enqueue")
@@ -91,21 +88,19 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context, q workqueue.Rat
 			}
 		}
 
-		for _, ref := range refs {
-			if e.syncReg != nil {
-				e.syncReg.Add(ref)
-			}
+		if e.syncReg != nil {
+			e.syncReg.Add(ref)
+		}
 
-			req := reconcile.Request{
-				NamespacedName: ref,
-			}
-			if _, ok := reqs[req]; !ok {
-				_, jitter := computeMaxJitterDuration(d)
-				logger.V(consts.LogLevelTrace).Info(
-					"Enqueuing", "obj", ref, "refKind", e.kind)
-				q.AddAfter(req, jitter)
-				reqs[req] = empty{}
-			}
+		req := reconcile.Request{
+			NamespacedName: ref,
+		}
+		if _, ok := reqs[req]; !ok {
+			_, jitter := computeMaxJitterDuration(d)
+			logger.V(consts.LogLevelTrace).Info(
+				"Enqueuing", "obj", ref, "refKind", e.kind)
+			q.AddAfter(req, jitter)
+			reqs[req] = empty{}
 		}
 	}
 }

@@ -51,7 +51,7 @@ type VaultDynamicSecretReconciler struct {
 	ClientFactory              vault.ClientFactory
 	HMACValidator              helpers.HMACValidator
 	SyncRegistry               *SyncRegistry
-	ReferenceCache             ResourceReferenceCache
+	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
@@ -110,16 +110,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
 
-	transRefObjKeys := helpers.GetTransformationRefObjKeys(
-		o.Spec.Destination.Transformation, o.Namespace)
-	if len(transRefObjKeys) > 0 {
-		for _, ref := range transRefObjKeys {
-			r.ReferenceCache.Add(SecretTransformation, ref,
-				req.NamespacedName)
-		}
-	} else {
-		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
-	}
+	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
+		helpers.GetTransformationRefObjKeys(
+			o.Spec.Destination.Transformation, o.Namespace)...)
 
 	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
 	if !o.Spec.Destination.Create && !destExists {
@@ -460,13 +453,14 @@ func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secr
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
+	r.referenceCache = newResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
-			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, r.SyncRegistry),
+			NewEnqueueRefRequestsHandlerST(r.referenceCache, r.SyncRegistry),
 		).
 		Complete(r)
 }
@@ -492,7 +486,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
-	r.ReferenceCache.Prune(SecretTransformation, objKey)
+	r.referenceCache.Remove(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {

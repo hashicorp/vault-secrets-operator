@@ -71,26 +71,23 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cache := &resourceReferenceCache{
-		m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{
-			SecretTransformation: {
-				client.ObjectKey{
-					Namespace: "default",
-					Name:      "templates",
-				}: map[client.ObjectKey]empty{
-					{
-						Namespace: "foo",
-						Name:      "baz",
-					}: {},
-				},
-			},
-		},
-	}
 	createEvent := event.CreateEvent{
 		Object: &secretsv1beta1.SecretTransformation{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "default",
 				Name:      "templates",
+			},
+		},
+	}
+	cache := &resourceReferenceCache{
+		m: refCacheMap{
+			SecretTransformation: {
+				{
+					Namespace: "foo",
+					Name:      "baz",
+				}: map[client.ObjectKey]empty{
+					client.ObjectKeyFromObject(createEvent.Object): {},
+				},
 			},
 		},
 	}
@@ -153,7 +150,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			name: "empty-ref-cache",
 			kind: SecretTransformation,
 			refCache: &resourceReferenceCache{
-				m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{},
+				m: refCacheMap{},
 			},
 			createEvents: createEvents,
 			q: &DelegatingQueue{
@@ -175,21 +172,6 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cache := &resourceReferenceCache{
-		m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{
-			SecretTransformation: {
-				client.ObjectKey{
-					Namespace: "default",
-					Name:      "templates",
-				}: map[client.ObjectKey]empty{
-					{
-						Namespace: "foo",
-						Name:      "baz",
-					}: {},
-				},
-			},
-		},
-	}
 	objectOld := &secretsv1beta1.SecretTransformation{
 		ObjectMeta: metav1.ObjectMeta{
 			Generation: 1,
@@ -205,6 +187,18 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 		},
 	}
 
+	cache := &resourceReferenceCache{
+		m: refCacheMap{
+			SecretTransformation: {
+				{
+					Namespace: "foo",
+					Name:      "baz",
+				}: map[client.ObjectKey]empty{
+					client.ObjectKeyFromObject(objectNew): {},
+				},
+			},
+		},
+	}
 	updateEventsEnqueue := []event.UpdateEvent{
 		{
 			ObjectOld: objectOld,
@@ -272,7 +266,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			name: "no-enqueue-empty-ref-cache",
 			kind: SecretTransformation,
 			refCache: &resourceReferenceCache{
-				m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{},
+				m: refCacheMap{},
 			},
 			updateEvents: updateEventsEnqueue,
 			q: &DelegatingQueue{
@@ -317,13 +311,13 @@ func Test_enqueueRefRequestsHandler_Delete(t *testing.T) {
 	}
 
 	cache := &resourceReferenceCache{
-		m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{
+		m: refCacheMap{
 			SecretTransformation: {
-				client.ObjectKeyFromObject(objectOne): map[client.ObjectKey]empty{
-					{
-						Namespace: "foo",
-						Name:      "baz",
-					}: {},
+				{
+					Namespace: "foo",
+					Name:      "baz",
+				}: map[client.ObjectKey]empty{
+					client.ObjectKeyFromObject(objectOne): {},
 				},
 			},
 		},
@@ -343,7 +337,7 @@ func Test_enqueueRefRequestsHandler_Delete(t *testing.T) {
 				},
 			},
 			wantRefCache: &resourceReferenceCache{
-				m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{},
+				m: refCacheMap{},
 			},
 		},
 		{
