@@ -257,6 +257,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	dest.SetAnnotations(meta.Destination.Annotations)
 	dest.SetLabels(labels)
 	dest.SetOwnerReferences(references)
+	logger.V(consts.LogLevelTrace).Info("ObjectMeta", "objectMeta", dest.ObjectMeta)
 
 	if exists {
 		logger.V(consts.LogLevelDebug).Info("Updating secret")
