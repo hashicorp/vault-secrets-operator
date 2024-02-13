@@ -98,7 +98,7 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 		obj = &appsv1.StatefulSet{
 			ObjectMeta: objectMeta,
 		}
-	case "Rollout":
+	case "argo.Rollout":
 		obj = &rolloutsv1alpha1.Rollout{
 			ObjectMeta: objectMeta,
 		}

@@ -55,6 +55,7 @@ type VaultPKISecretReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
