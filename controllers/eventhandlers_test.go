@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -113,6 +114,29 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			},
 			wantAddedAfter:  wantAddedAfterValid,
 			maxRequeueAfter: time.Second * 10,
+			wantRefCache:    cache,
+		},
+		{
+			name:         "enqueued-zero-max-horizon",
+			kind:         SecretTransformation,
+			refCache:     cache,
+			createEvents: createEvents,
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			wantAddedAfter: wantAddedAfterValid,
+			wantRefCache:   cache,
+		},
+		{
+			name:         "enqueued-negative-max-horizon",
+			kind:         SecretTransformation,
+			refCache:     cache,
+			createEvents: createEvents,
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * -1,
 			wantRefCache:    cache,
 		},
 		{
@@ -386,9 +410,10 @@ func assertEnqueueRefRequestHandler(t *testing.T, ctx context.Context, tt testCa
 	t.Helper()
 
 	e := &enqueueRefRequestsHandler{
-		kind:     tt.kind,
-		refCache: tt.refCache,
-		syncReg:  tt.syncReg,
+		kind:            tt.kind,
+		refCache:        tt.refCache,
+		syncReg:         tt.syncReg,
+		maxRequeueAfter: tt.maxRequeueAfter,
 	}
 
 	if len(tt.createEvents) > 0 && len(tt.updateEvents) > 0 {
@@ -407,7 +432,7 @@ func assertEnqueueRefRequestHandler(t *testing.T, ctx context.Context, tt testCa
 	}
 
 	m := tt.maxRequeueAfter
-	if tt.maxRequeueAfter == 0 {
+	if tt.maxRequeueAfter <= 0 {
 		m = maxRequeueAfter
 	}
 
@@ -468,4 +493,352 @@ func (q *DelegatingQueue) Forget(item interface{}) {}
 
 func (q *DelegatingQueue) NumRequeues(item interface{}) int {
 	return 0
+}
+
+func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	kind := VaultStaticSecret
+	ownerRefsSupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       kind.String(),
+			Name:       "baz",
+		},
+	}
+
+	ownerRefsUnsupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       "Unknown",
+			Name:       "foo",
+		},
+	}
+	deleteEventSupported := event.DeleteEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+	}
+
+	deleteEventUnsupported := event.DeleteEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+	}
+
+	wantAddedAfterValid := []any{
+		reconcile.Request{
+			NamespacedName: client.ObjectKey{
+				Namespace: "default",
+				Name:      "baz",
+			},
+		},
+	}
+
+	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
+	tests := []testCaseEnqueueOnDeletionRequestHandler{
+		{
+			name: "enqueued",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:             gvk,
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * 10,
+		},
+		{
+			name: "enqueued-mixed",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:             gvk,
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * 10,
+		},
+		{
+			name: "enqueued-mixed-zero-max-horizon",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: wantAddedAfterValid,
+		},
+		{
+			name: "enqueued-mixed-negative-max-horizon",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+				deleteEventSupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:             gvk,
+			wantAddedAfter:  wantAddedAfterValid,
+			maxRequeueAfter: time.Second * -1,
+		},
+		{
+			name: "not-enqueued",
+			kind: kind,
+			deleteEvents: []event.DeleteEvent{
+				deleteEventUnsupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk: gvk,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertEnqueueOnDeletionRequestHandler(t, ctx, tt)
+		})
+	}
+}
+
+func Test_enqueueOnDeletionRequestHandler_Create(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	kind := VaultStaticSecret
+	ownerRefsSupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       kind.String(),
+			Name:       "baz",
+		},
+	}
+
+	ownerRefsUnsupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       "Unknown",
+			Name:       "foo",
+		},
+	}
+	createEvent := event.CreateEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+	}
+
+	createEventUnsupported := event.CreateEvent{
+		Object: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+	}
+
+	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
+	tests := []testCaseEnqueueOnDeletionRequestHandler{
+		{
+			name: "supported-not-enqueued",
+			kind: kind,
+			createEvents: []event.CreateEvent{
+				createEvent,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+		{
+			name: "unsupported-not-enqueued",
+			kind: kind,
+			createEvents: []event.CreateEvent{
+				createEventUnsupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertEnqueueOnDeletionRequestHandler(t, ctx, tt)
+		})
+	}
+}
+
+func Test_enqueueOnDeletionRequestHandler_Update(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	kind := VaultStaticSecret
+	ownerRefsSupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       kind.String(),
+			Name:       "baz",
+		},
+	}
+
+	ownerRefsUnsupported := []metav1.OwnerReference{
+		{
+			APIVersion: secretsv1beta1.GroupVersion.String(),
+			Kind:       "Unknown",
+			Name:       "foo",
+		},
+	}
+
+	updateEvent := event.UpdateEvent{
+		ObjectOld: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      1,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+		ObjectNew: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      2,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsSupported,
+			},
+		},
+	}
+
+	updateEventUnsupported := event.UpdateEvent{
+		ObjectOld: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      1,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+		ObjectNew: &secretsv1beta1.SecretTransformation{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation:      2,
+				Namespace:       "default",
+				Name:            "vso-secret",
+				OwnerReferences: ownerRefsUnsupported,
+			},
+		},
+	}
+
+	gvk := secretsv1beta1.GroupVersion.WithKind(kind.String())
+	tests := []testCaseEnqueueOnDeletionRequestHandler{
+		{
+			name: "supported-not-enqueued",
+			kind: kind,
+			updateEvents: []event.UpdateEvent{
+				updateEvent,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+		{
+			name: "unsupported-not-enqueued",
+			kind: kind,
+			updateEvents: []event.UpdateEvent{
+				updateEventUnsupported,
+			},
+			q: &DelegatingQueue{
+				Interface: workqueue.New(),
+			},
+			gvk:            gvk,
+			wantAddedAfter: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertEnqueueOnDeletionRequestHandler(t, ctx, tt)
+		})
+	}
+}
+
+type testCaseEnqueueOnDeletionRequestHandler struct {
+	name            string
+	kind            ResourceKind
+	q               *DelegatingQueue
+	deleteEvents    []event.DeleteEvent
+	createEvents    []event.CreateEvent
+	updateEvents    []event.UpdateEvent
+	wantAddedAfter  []any
+	maxRequeueAfter time.Duration
+	gvk             schema.GroupVersionKind
+}
+
+func assertEnqueueOnDeletionRequestHandler(t *testing.T, ctx context.Context,
+	tt testCaseEnqueueOnDeletionRequestHandler,
+) {
+	t.Helper()
+
+	e := &enqueueOnDeletionRequestHandler{
+		gvk: tt.gvk,
+	}
+
+	m := tt.maxRequeueAfter
+	if tt.maxRequeueAfter <= 0 {
+		m = maxRequeueAfter
+	}
+
+	for _, evt := range tt.createEvents {
+		e.Create(ctx, evt, tt.q)
+	}
+
+	for _, evt := range tt.updateEvents {
+		e.Update(ctx, evt, tt.q)
+	}
+
+	for _, evt := range tt.deleteEvents {
+		e.Delete(ctx, evt, tt.q)
+	}
+
+	if assert.Equal(t, tt.wantAddedAfter, tt.q.AddedAfter) {
+		if assert.Equal(t, len(tt.q.AddedAfter), len(tt.q.AddedAfterDuration)) {
+			for _, d := range tt.q.AddedAfterDuration {
+				assert.Greater(t, d.Seconds(), float64(0))
+				assert.LessOrEqual(t, d.Seconds(), float64(m))
+			}
+		}
+	}
 }
