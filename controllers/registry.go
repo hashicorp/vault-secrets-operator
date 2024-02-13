@@ -11,7 +11,6 @@ import (
 
 type ResourceKind int
 
-// SecretTransformation maps to SecretTransformation custom resource.
 const (
 	SecretTransformation ResourceKind = iota
 	VaultDynamicSecret
