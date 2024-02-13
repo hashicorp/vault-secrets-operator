@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/go-openapi/strfmt"
@@ -1519,6 +1520,52 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "WithHVSAppSecrets(%v, %v)", tt.resp, tt.opt)
+		})
+	}
+}
+
+func TestHasOwnerLabels(t *testing.T) {
+	t.Parallel()
+
+	// label setup copied to controllers.Test_secretsPredicate_Delete()
+	require.Greater(t, len(OwnerLabels), 1, "OwnerLabels global is invalid,")
+
+	hasNotLabels := maps.Clone(OwnerLabels)
+	for k := range hasNotLabels {
+		delete(hasNotLabels, k)
+		break
+	}
+
+	tests := []struct {
+		name string
+		o    ctrlclient.Object
+		want bool
+	}{
+		{
+			name: "has",
+			o: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: OwnerLabels,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "has-not",
+			o: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: hasNotLabels,
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assert.Equalf(t, tt.want, HasOwnerLabels(tt.o), "HasOwnerLabels(%v)", tt.o)
 		})
 	}
 }
