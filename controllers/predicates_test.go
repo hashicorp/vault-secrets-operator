@@ -4,16 +4,19 @@
 package controllers
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 type testCaseAnnoLabelChanged struct {
@@ -247,5 +250,52 @@ func assertAnnoLabelChangedOnUpdate(t *testing.T, tt testCaseAnnoLabelChanged) {
 	assert.Equalf(t, tt.want, tt.newPredicateFunc(tt.syncReg).Update(tt.evt), "Update(%v)", tt.evt)
 	if tt.syncReg != nil {
 		assert.ElementsMatchf(t, tt.wantRegistryObjectKeys, tt.syncReg.ObjectKeys(), "Update(%v)", tt.evt)
+	}
+}
+
+func Test_secretsPredicate_Delete(t *testing.T) {
+	t.Parallel()
+
+	// label setup copied from helpers.TestHasOwnerLabels()
+	require.Greater(t, len(helpers.OwnerLabels), 1, "OwnerLabels global is invalid,")
+
+	hasNotLabels := maps.Clone(helpers.OwnerLabels)
+	for k := range hasNotLabels {
+		delete(hasNotLabels, k)
+		break
+	}
+	tests := []struct {
+		name string
+		evt  event.DeleteEvent
+		want bool
+	}{
+		{
+			name: "has",
+			evt: event.DeleteEvent{
+				Object: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: helpers.OwnerLabels,
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "has-not",
+			evt: event.DeleteEvent{
+				Object: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: hasNotLabels,
+					},
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &secretsPredicate{}
+			assert.Equalf(t, tt.want, s.Delete(tt.evt), "Delete(%v)", tt.evt)
+		})
 	}
 }
