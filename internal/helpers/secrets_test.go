@@ -1562,6 +1562,9 @@ func TestHasOwnerLabels(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			assert.Equalf(t, tt.want, HasOwnerLabels(tt.o), "HasOwnerLabels(%v)", tt.o)
 		})
 	}

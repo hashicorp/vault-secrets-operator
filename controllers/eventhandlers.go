@@ -41,6 +41,8 @@ func NewEnqueueRefRequestsHandler(kind ResourceKind, refCache ResourceReferenceC
 	}
 }
 
+var _ handler.EventHandler = (*enqueueRefRequestsHandler)(nil)
+
 type enqueueRefRequestsHandler struct {
 	kind            ResourceKind
 	refCache        ResourceReferenceCache
@@ -79,7 +81,6 @@ func (e *enqueueRefRequestsHandler) Delete(ctx context.Context,
 func (e *enqueueRefRequestsHandler) Generic(ctx context.Context,
 	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
 ) {
-	return
 }
 
 func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
@@ -122,6 +123,8 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 	}
 }
 
+var _ handler.EventHandler = (*enqueueOnDeletionRequestHandler)(nil)
+
 // enqueueOnDeletionRequestHandler enqueues objects whenever the
 // watched/dependent object is deleted. All OwnerReferences matching gvk will be
 // enqueued after some randomly computed duration up until maxRequeueAfter.
@@ -133,13 +136,11 @@ type enqueueOnDeletionRequestHandler struct {
 func (e *enqueueOnDeletionRequestHandler) Create(_ context.Context,
 	_ event.CreateEvent, _ workqueue.RateLimitingInterface,
 ) {
-	return
 }
 
 func (e *enqueueOnDeletionRequestHandler) Update(_ context.Context,
 	_ event.UpdateEvent, _ workqueue.RateLimitingInterface,
 ) {
-	return
 }
 
 func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
@@ -176,5 +177,4 @@ func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
 func (e *enqueueOnDeletionRequestHandler) Generic(ctx context.Context,
 	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
 ) {
-	return
 }
