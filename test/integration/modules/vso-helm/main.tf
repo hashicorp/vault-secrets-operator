@@ -33,6 +33,10 @@ resource "helm_release" "vault-secrets-operator" {
       value = var.vault_test_namespace
     }
   }
+  set_list {
+    name  = "defaultAuthMethod.allowedNamespaces"
+    value = var.operator_allowednamespaces
+  }
   set {
     name  = "defaultAuthMethod.kubernetes.role"
     value = var.k8s_auth_default_role

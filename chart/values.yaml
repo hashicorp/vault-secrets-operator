@@ -453,6 +453,10 @@ defaultAuthMethod:
   # @type: string
   namespace: ""
 
+  # Kubernetes namespace glob patterns which are allow-listed for use with the default AuthMethod.
+  # @type: array<string>
+  allowedNamespaces: []
+
   # Vault Auth method to be used with the VaultAuthMethod CR
   # @type: string
   method: kubernetes
