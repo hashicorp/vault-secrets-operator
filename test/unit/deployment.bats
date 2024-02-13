@@ -707,6 +707,18 @@ load _helpers
   [ "${actual}" = "pdcc-release-name-vault-secrets-operator" ]
 }
 
+@test "controller/Deployment: pre-delete-controller Job receives extra controller annotations" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.annotations.testAnnotation=testValue' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Job") | .metadata.annotations' | tee /dev/stderr)
+
+  local actual=$(echo "$object" | yq '.testAnnotation' | tee /dev/stderr)
+  [ "${actual}" = "testValue" ]
+}
+
 @test "controller/Deployment: pre-delete-controller Job name is truncated to 63 characters" {
   cd `chart_dir`
   local object=$(helm template \
@@ -767,4 +779,39 @@ load _helpers
    [ "${actual}" = "--foo=baz" ]
    local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
    [ "${actual}" = "--bar=qux" ]
+}
+
+#--------------------------------------------------------------------
+# image.pullPolicy
+@test "controller/Deployment: imagePullPolicy default" {
+  cd `chart_dir`
+  local deployment=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager")' | tee /dev/stderr)
+
+  local actual=$(echo "${deployment}" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .imagePullPolicy' | tee /dev/stderr)
+  [ "${actual}" = "IfNotPresent" ]
+
+  actual=$(echo "${deployment}" | yq '.spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .imagePullPolicy' | tee /dev/stderr)
+  [ "${actual}" = "IfNotPresent" ]
+}
+
+@test "controller/Deployment: imagePullPolicy updated" {
+  cd `chart_dir`
+  local actual=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.image.pullPolicy=Always' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .imagePullPolicy' | tee /dev/stderr)
+
+   [ "${actual}" = "Always" ]
+
+  actual=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.kubeRbacProxy.image.pullPolicy=Never' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .imagePullPolicy' | tee /dev/stderr)
+
+   [ "${actual}" = "Never" ]
 }
