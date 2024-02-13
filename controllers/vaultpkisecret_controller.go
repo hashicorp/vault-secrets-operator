@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -37,10 +36,13 @@ var minHorizon = time.Second * 1
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	ClientFactory vault.ClientFactory
-	HMACValidator helpers.HMACValidator
-	Recorder      record.EventRecorder
+	Scheme                     *runtime.Scheme
+	ClientFactory              vault.ClientFactory
+	HMACValidator              helpers.HMACValidator
+	Recorder                   record.EventRecorder
+	SyncRegistry               *SyncRegistry
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -118,6 +120,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	switch {
 	case o.Status.SerialNumber == "":
 		syncReason = consts.ReasonInitialSync
+	case r.SyncRegistry.Has(req.NamespacedName):
+		syncReason = consts.ReasonSyncOnRefUpdate
 	case schemaEpoch > 0 && o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = consts.ReasonResourceUpdated
 	case o.Spec.Destination.Create && !destinationExists:
@@ -134,6 +138,24 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				logger.Error(err, "Failed to HMAC destination secret")
 			}
 		}
+	}
+
+	transRefObjKeys := helpers.GetTransformationRefObjKeys(
+		o.Spec.Destination.Transformation, o.Namespace)
+	if len(transRefObjKeys) > 0 {
+		for _, ref := range transRefObjKeys {
+			r.ReferenceCache.Add(SecretTransformation, ref,
+				req.NamespacedName)
+		}
+	} else {
+		r.ReferenceCache.Remove(SecretTransformation, req.NamespacedName)
+	}
+
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	if syncReason == "" {
@@ -202,7 +224,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	data, err := resp.SecretK8sData()
+	data, err := resp.SecretK8sData(transOption)
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to marshal Vault secret data"
@@ -289,6 +311,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	r.SyncRegistry.Delete(req.NamespacedName)
+
 	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
 	r.recordEvent(o, reason, fmt.Sprintf("Secret synced, horizon=%s", horizon))
 	logger.Info("Successfully updated the secret", "horizon", horizon)
@@ -297,21 +321,25 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}, nil
 }
 
-func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
-	finalizerSet := controllerutil.ContainsFinalizer(s, vaultPKIFinalizer)
+func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
+	objKey := client.ObjectKeyFromObject(o)
+	r.SyncRegistry.Delete(objKey)
+
+	r.ReferenceCache.Prune(SecretTransformation, objKey)
+	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
 	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
 	logger.V(consts.LogLevelTrace).Info("In deletion")
 	if finalizerSet {
-		logger.V(consts.LogLevelDebug).Info("Remove finalizer")
-		if controllerutil.RemoveFinalizer(s, vaultPKIFinalizer) {
-			if err := r.Update(ctx, s); err != nil {
+		logger.V(consts.LogLevelDebug).Info("Delete finalizer")
+		if controllerutil.RemoveFinalizer(o, vaultPKIFinalizer) {
+			if err := r.Update(ctx, o); err != nil {
 				logger.Error(err, "Failed to remove the finalizer")
 				return err
 			}
 			logger.V(consts.LogLevelDebug).Info("Finalizers successfully removed")
 		}
-		if err := r.finalizePKI(ctx, logger, s); err != nil {
+		if err := r.finalizePKI(ctx, logger, o); err != nil {
 			logger.Error(err, "Failed")
 		}
 
@@ -340,7 +368,7 @@ func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		WithOptions(opts).
 		Complete(r)
 }

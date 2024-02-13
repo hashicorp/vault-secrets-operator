@@ -30,16 +30,16 @@ provider "helm" {
   }
 }
 
-resource "kubernetes_namespace" "tenant-1" {
+resource "kubernetes_namespace" "app" {
   metadata {
-    name = var.k8s_test_namespace
+    name = local.app_k8s_namespace
   }
 }
 
 resource "kubernetes_secret" "pki1" {
   metadata {
     name      = "pki1"
-    namespace = kubernetes_namespace.tenant-1.metadata[0].name
+    namespace = kubernetes_namespace.app.metadata[0].name
   }
 }
 
@@ -47,19 +47,24 @@ provider "vault" {
   # Configuration options
 }
 
-locals {
-  namespace = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+resource "random_string" "prefix" {
+  length  = 16
+  upper   = false
+  special = false
+  keepers = {
+    name_prefix = var.name_prefix
+  }
 }
 
 // Vault Enterprise setup
-resource "vault_namespace" "test" {
+resource "vault_namespace" "app" {
   count = var.vault_enterprise ? 1 : 0
-  path  = var.vault_test_namespace
+  path  = local.vault_namespace
 }
 
 resource "vault_mount" "pki" {
   namespace                 = local.namespace
-  path                      = var.vault_pki_mount_path
+  path                      = local.pki_mount
   type                      = "pki"
   default_lease_ttl_seconds = 3600
   max_lease_ttl_seconds     = 86400
@@ -68,7 +73,7 @@ resource "vault_mount" "pki" {
 resource "vault_pki_secret_backend_role" "role" {
   namespace        = vault_mount.pki.namespace
   backend          = vault_mount.pki.path
-  name             = "secret"
+  name             = local.pki_role
   ttl              = 3600
   allow_ip_sans    = true
   key_type         = "rsa"
@@ -95,6 +100,7 @@ resource "vault_pki_secret_backend_root_cert" "test" {
 
 resource "vault_auth_backend" "default" {
   namespace = local.namespace
+  path      = local.auth_mount
   type      = "kubernetes"
 }
 
@@ -108,16 +114,16 @@ resource "vault_kubernetes_auth_backend_config" "default" {
 resource "vault_kubernetes_auth_backend_role" "default" {
   namespace                        = vault_auth_backend.default.namespace
   backend                          = vault_kubernetes_auth_backend_config.default.backend
-  role_name                        = "role1"
+  role_name                        = local.auth_role
   bound_service_account_names      = ["default"]
-  bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
+  bound_service_account_namespaces = [kubernetes_namespace.app.metadata[0].name]
   token_ttl                        = 3600
   token_policies                   = [vault_policy.default.name]
   audience                         = "vault"
 }
 
 resource "vault_policy" "default" {
-  name      = "dev"
+  name      = local.app_policy
   namespace = local.namespace
   policy    = <<EOT
 path "${vault_mount.pki.path}/*" {

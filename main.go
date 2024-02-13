@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -81,6 +82,7 @@ func main() {
 	var uninstall bool
 	var preDeleteHookTimeoutSeconds int
 	var minRefreshAfterHVSA time.Duration
+	var globalTransformationOpts string
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -110,6 +112,10 @@ func main() {
 		"Pre-delete hook timeout in seconds")
 	flag.DurationVar(&minRefreshAfterHVSA, "min-refresh-after-hvsa", time.Second*30,
 		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
+	flag.StringVar(&globalTransformationOpts, "global-transformation-options", "",
+		fmt.Sprintf("Set global secret transformation options as a comma delimited string. "+
+			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS."+
+			"Valid values are: %v", []string{"exclude-raw"}))
 	opts := zap.Options{
 		Development: true,
 	}
@@ -134,6 +140,9 @@ func main() {
 	}
 	if vsoEnvOptions.MaxConcurrentReconciles != nil {
 		controllerOptions.MaxConcurrentReconciles = *vsoEnvOptions.MaxConcurrentReconciles
+	}
+	if vsoEnvOptions.GlobalTransformationOptions != "" {
+		globalTransformationOpts = vsoEnvOptions.GlobalTransformationOptions
 	}
 
 	// versionInfo is used when setting up the buildInfo metric below
@@ -167,6 +176,20 @@ func main() {
 		os.Exit(0)
 	}
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	globalTransOpt := &helpers.GlobalTransformationOption{}
+	if globalTransformationOpts != "" {
+		for _, v := range strings.Split(globalTransformationOpts, ",") {
+			switch v {
+			case "exclude-raw":
+				globalTransOpt.ExcludeRaw = true
+			default:
+				setupLog.Error(fmt.Errorf("unsupported rendering option %q", v),
+					"Invalid argument for --global-transformation-options")
+				os.Exit(1)
+			}
+		}
+	}
 
 	config := ctrl.GetConfigOrDie()
 
@@ -260,22 +283,27 @@ func main() {
 	hmacValidator := helpers.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
 	secretDataBuilder := helpers.NewSecretsDataBuilder()
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		Recorder:          mgr.GetEventRecorderFor("VaultStaticSecret"),
-		SecretDataBuilder: secretDataBuilder,
-		HMACValidator:     hmacValidator,
-		ClientFactory:     clientFactory,
+		Client:                     mgr.GetClient(),
+		Scheme:                     mgr.GetScheme(),
+		Recorder:                   mgr.GetEventRecorderFor("VaultStaticSecret"),
+		SecretDataBuilder:          secretDataBuilder,
+		HMACValidator:              hmacValidator,
+		ClientFactory:              clientFactory,
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
+		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultPKISecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		ClientFactory: clientFactory,
-		HMACValidator: hmacValidator,
-		Recorder:      mgr.GetEventRecorderFor("VaultPKISecret"),
+		Client:                     mgr.GetClient(),
+		Scheme:                     mgr.GetScheme(),
+		ClientFactory:              clientFactory,
+		HMACValidator:              hmacValidator,
+		SyncRegistry:               controllers.NewSyncRegistry(),
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
+		Recorder:                   mgr.GetEventRecorderFor("VaultPKISecret"),
+		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
@@ -303,17 +331,21 @@ func main() {
 	// `--max-concurrent-reconciles`.
 	vdsOverrideOpts := controller.Options{}
 	if vdsOptions.MaxConcurrentReconciles != defaultVaultDynamicSecretsConcurrency {
-		setupLog.Info("The flag --max-concurrent-reconciles-vds has been deprecated, but will still be honored to set the VDS controller concurrency, please use --max-concurrent-reconciles.")
+		setupLog.Info("The flag --max-concurrent-reconciles-vds has been deprecated, but will " +
+			"still be honored to set the VDS controller concurrency, please use --max-concurrent-reconciles.")
 		vdsOverrideOpts = vdsOptions
 	} else {
 		vdsOverrideOpts = controllerOptions
 	}
 	if err = (&controllers.VaultDynamicSecretReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultDynamicSecret"),
-		ClientFactory: clientFactory,
-		HMACValidator: hmacValidator,
+		Client:                     mgr.GetClient(),
+		Scheme:                     mgr.GetScheme(),
+		Recorder:                   mgr.GetEventRecorderFor("VaultDynamicSecret"),
+		ClientFactory:              clientFactory,
+		HMACValidator:              hmacValidator,
+		SyncRegistry:               controllers.NewSyncRegistry(),
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
+		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
@@ -326,14 +358,24 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.HCPVaultSecretsAppReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		Recorder:          mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
-		SecretDataBuilder: secretDataBuilder,
-		HMACValidator:     hmacValidator,
-		MinRefreshAfter:   minRefreshAfterHVSA,
+		Client:                     mgr.GetClient(),
+		Scheme:                     mgr.GetScheme(),
+		Recorder:                   mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
+		SecretDataBuilder:          secretDataBuilder,
+		HMACValidator:              hmacValidator,
+		ReferenceCache:             controllers.NewResourceReferenceCache(),
+		MinRefreshAfter:            minRefreshAfterHVSA,
+		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
+		os.Exit(1)
+	}
+	if err = (&controllers.SecretTransformationReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("SecretTransformation"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SecretTransformation")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

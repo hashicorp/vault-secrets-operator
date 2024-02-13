@@ -1,10 +1,13 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
+variable "name_prefix" {
+  type = string
+}
+
 variable "k8s_test_namespace" {
   default = "testing"
 }
-
 
 variable "k8s_config_context" {
   default = "kind-kind"

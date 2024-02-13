@@ -16,8 +16,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -25,14 +25,18 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
+const vaultStaticSecretFinalizer = "vaultstaticsecret.secrets.hashicorp.com/finalizer"
+
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	ClientFactory     vault.ClientFactory
-	SecretDataBuilder *helpers.SecretDataBuilder
-	HMACValidator     helpers.HMACValidator
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	ClientFactory              vault.ClientFactory
+	SecretDataBuilder          *helpers.SecretDataBuilder
+	HMACValidator              helpers.HMACValidator
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -60,6 +64,15 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	if o.GetDeletionTimestamp() == nil {
+		if err := r.addFinalizer(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		logger.Info("Got deletion timestamp", "obj", o)
+		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
@@ -79,6 +92,24 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
+	transRefObjKeys := helpers.GetTransformationRefObjKeys(
+		o.Spec.Destination.Transformation, o.Namespace)
+	if len(transRefObjKeys) > 0 {
+		for _, ref := range transRefObjKeys {
+			r.ReferenceCache.Add(SecretTransformation, ref,
+				req.NamespacedName)
+		}
+	} else {
+		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
+	}
+
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
 	kvReq, err := newKVRequest(o.Spec)
 	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
@@ -92,10 +123,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, transOption)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Invalid Vault Secret data: %s", err)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
+			"Failed to build K8s secret data: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
@@ -145,7 +176,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
 	} else {
-		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
+		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
@@ -158,11 +189,41 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
+func (r *VaultStaticSecretReconciler) addFinalizer(ctx context.Context, o client.Object) error {
+	if !controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
+		controllerutil.AddFinalizer(o, vaultStaticSecretFinalizer)
+		if err := r.Client.Update(ctx, o); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o client.Object) error {
+	logger := log.FromContext(ctx)
+	r.ReferenceCache.Prune(SecretTransformation, client.ObjectKeyFromObject(o))
+	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
+		logger.Info("Removing finalizer")
+		if controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer) {
+			if err := r.Update(ctx, o); err != nil {
+				logger.Error(err, "Failed to remove the finalizer")
+				return err
+			}
+			logger.Info("Successfully removed the finalizer")
+		}
+	}
+	return nil
+}
+
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate(nil)).
 		WithOptions(opts).
+		Watches(
+			&secretsv1beta1.SecretTransformation{},
+			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, nil),
+		).
 		Complete(r)
 }
 

@@ -13,6 +13,8 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 - [HCPAuthList](#hcpauthlist)
 - [HCPVaultSecretsApp](#hcpvaultsecretsapp)
 - [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
+- [SecretTransformation](#secrettransformation)
+- [SecretTransformationList](#secrettransformationlist)
 - [VaultAuth](#vaultauth)
 - [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
@@ -42,9 +44,11 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name of the Secret |
 | `create` _boolean_ | Create the destination Secret. If the Secret already exists this should be set to false. |
+| `overwrite` _boolean_ | Overwrite the destination Secret if it exists and Create is true. This is useful when migrating to VSO from a previous secret deployment strategy. |
 | `labels` _object (keys:string, values:string)_ | Labels to apply to the Secret. Requires Create to be set to true. |
 | `annotations` _object (keys:string, values:string)_ | Annotations to apply to the Secret. Requires Create to be set to true. |
 | `type` _[SecretType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secrettype-v1-core)_ | Type of Kubernetes Secret. Requires Create to be set to true. Defaults to Opaque. |
+| `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before it is stored in the Destination. |
 
 
 #### HCPAuth
@@ -159,7 +163,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `appName` _string_ | AppName of the Vault Secrets Application that is to be synced. |
-| `hcpAuthRef` _string_ | HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the Operator will default to the `default` HCPAuth, configured in its own Kubernetes namespace. HCPAuthRef string `json:"hcpAuthRef,omitempty"` |
+| `hcpAuthRef` _string_ | HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the Operator will default to the `default` HCPAuth, configured in the operator's namespace. |
 | `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the HCP Vault Secrets App does not support dynamically reloading a rotated secret. In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events. See RolloutRestartTarget for more details. |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the HCP Vault Application secrets to Kubernetes. |
@@ -186,6 +190,73 @@ _Appears in:_
 | `name` _string_ |  |
 
 
+#### SecretTransformation
+
+
+
+SecretTransformation is the Schema for the secrettransformations API
+
+_Appears in:_
+- [SecretTransformationList](#secrettransformationlist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `SecretTransformation`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[SecretTransformationSpec](#secrettransformationspec)_ |  |
+
+
+#### SecretTransformationList
+
+
+
+SecretTransformationList contains a list of SecretTransformation
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `SecretTransformationList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[SecretTransformation](#secrettransformation) array_ |  |
+
+
+#### SecretTransformationSpec
+
+
+
+SecretTransformationSpec defines the desired state of SecretTransformation
+
+_Appears in:_
+- [SecretTransformation](#secrettransformation)
+
+| Field | Description |
+| --- | --- |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret with the specified key. |
+| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered K8s Secret, they can be used to provide common template definitions, etc. |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data fields for inclusion in the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied last. |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data fields for exclusion from the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied before any inclusion patterns. To exclude all source secret data fields, you can configure the single pattern ".*". |
+
+
+
+
+#### SourceTemplate
+
+
+
+SourceTemplate provides source templating configuration.
+
+_Appears in:_
+- [SecretTransformationSpec](#secrettransformationspec)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ |  |
+| `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
+
+
 #### StorageEncryption
 
 
@@ -199,6 +270,73 @@ _Appears in:_
 | --- | --- |
 | `mount` _string_ | Mount path of the Transit engine in Vault. |
 | `keyName` _string_ | KeyName to use for encrypt/decrypt operations via Vault Transit. |
+
+
+#### Template
+
+
+
+Template provides templating configuration.
+
+_Appears in:_
+- [SecretTransformationSpec](#secrettransformationspec)
+- [Transformation](#transformation)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the Template |
+| `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
+
+
+#### TemplateRef
+
+
+
+TemplateRef points to templating text that is stored in a SecretTransformation custom resource.
+
+_Appears in:_
+- [TransformationRef](#transformationref)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the Template in SecretTransformationSpec.Templates. the rendered secret data. |
+| `keyOverride` _string_ | KeyOverride to the rendered template in the Destination secret. If Key is empty, then the Key from reference spec will be used. Set this to override the Key set from the reference spec. |
+
+
+#### Transformation
+
+
+
+
+
+_Appears in:_
+- [Destination](#destination)
+
+| Field | Description |
+| --- | --- |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret, and take precedence over templates defined in a SecretTransformation. |
+| `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation. |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data fields for inclusion in the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied last. |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data fields for exclusion from the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied before any inclusion patterns. To exclude all source secret data fields, you can configure the single pattern ".*". |
+| `excludeRaw` _boolean_ | ExcludeRaw data from the destination Secret. Exclusion policy can be set globally by including 'exclude-raw` in the '--global-transformation-options' command line flag. If set, the command line flag always takes precedence over this configuration. |
+
+
+#### TransformationRef
+
+
+
+TransformationRef contains the configuration for accessing templates from an SecretTransformation resource. TransformationRefs can be shared across all syncable secret custom resources.
+
+_Appears in:_
+- [Transformation](#transformation)
+
+| Field | Description |
+| --- | --- |
+| `namespace` _string_ | Namespace of the SecretTransformation resource. |
+| `name` _string_ | Name of the SecretTransformation resource. |
+| `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then all templates from the SecretTransformation will be rendered to the K8s Secret. |
+| `ignoreIncludes` _boolean_ | IgnoreIncludes controls whether to use the SecretTransformation's Includes data key filters. |
+| `ignoreExcludes` _boolean_ | IgnoreExcludes controls whether to use the SecretTransformation's Excludes data key filters. |
 
 
 #### VaultAuth
@@ -235,7 +373,7 @@ _Appears in:_
 | `sessionName` _string_ | The role session name to use when creating a webidentity provider |
 | `stsEndpoint` _string_ | The STS endpoint to use; if not set will use the default |
 | `iamEndpoint` _string_ | The IAM endpoint to use; if not set will use the default |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes Secret which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`, `session_token` |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes Secret in the consumer's (VDS/VSS/PKI) namespace which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`, `session_token` |
 | `irsaServiceAccount` _string_ | IRSAServiceAccount name to use with IAM Roles for Service Accounts (IRSA), and should be annotated with "eks.amazonaws.com/role-arn". This ServiceAccount will be checked for other EKS annotations: eks.amazonaws.com/audience and eks.amazonaws.com/token-expiration |
 
 
@@ -302,7 +440,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `role` _string_ | Role to use for authenticating to Vault. |
-| `serviceAccount` _string_ | ServiceAccount to use when authenticating to Vault's kubernetes authentication backend. |
+| `serviceAccount` _string_ | ServiceAccount to use when authenticating to Vault's authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace. |
 | `audiences` _string array_ | TokenAudiences to include in the ServiceAccount token. |
 | `tokenExpirationSeconds` _integer_ | TokenExpirationSeconds to set the ServiceAccount token. |
 
@@ -334,7 +472,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace, eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the Operator will default to	`default` VaultConnection, configured in its own Kubernetes namespace. |
+| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace, eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the Operator will default to the `default` VaultConnection, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace to auth to in Vault |
 | `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod. This field allows administrators to customize which Kubernetes namespaces are authorized to use with this AuthMethod. While Vault will still enforce its own rules, this has the added configurability of restricting which VaultAuthMethods can be used by which namespaces. Accepted values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces. unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this is the default behavior. |
 | `method` _string_ | Method to use when authenticating to Vault. |
@@ -448,7 +586,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace where the secrets engine is mounted in Vault. |
 | `mount` _string_ | Mount path of the secret's engine in Vault. |
 | `requestHTTPMethod` _string_ | RequestHTTPMethod to use when syncing Secrets from Vault. Setting a value here is not typically required. If left unset the Operator will make requests using the GET method. In the case where Params are specified the Operator will use the PUT method. Please consult https://developer.hashicorp.com/vault/docs/secrets if you are uncertain about what method to use. Of note, the Vault client treats PUT and POST as being equivalent. The underlying Vault client implementation will always use the PUT method. |
@@ -507,7 +645,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace to get the secret from in Vault |
 | `mount` _string_ | Mount for the secret in Vault |
 | `role` _string_ | Role in Vault to use when issuing TLS certificates. |
@@ -609,7 +747,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace to get the secret from in Vault |
 | `mount` _string_ | Mount for the secret in Vault |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for, kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |
