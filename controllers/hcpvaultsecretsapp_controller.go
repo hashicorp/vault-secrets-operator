@@ -154,6 +154,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
+	doSync := true
 	// doRolloutRestart only if this is not the first time this secret has been synced
 	doRolloutRestart := o.Status.SecretMAC != ""
 	macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
@@ -163,8 +164,16 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
+	// skip the next sync if the data has not changed since the last sync, and the
+	// resource has not been updated.
+	// Note: spec.status.lastGeneration was added later, so we don't want to force a
+	// sync until we've updated it.
+	if o.Status.LastGeneration == 0 || o.Status.LastGeneration == o.GetGeneration() {
+		doSync = !macsEqual
+	}
+
 	o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
-	if !macsEqual {
+	if doSync {
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Failed to update k8s secret: %s", err)
@@ -182,6 +191,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
 	}
 
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
