@@ -513,7 +513,7 @@ sdk-generate: copywrite operator-sdk
 	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: bundle
-bundle: manifests kustomize sdk-generate set-image-ubi yq operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
 	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
@@ -595,19 +595,7 @@ yq: ## Download yq locally if necessary.
 .PHONY: operator-sdk
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
-ifeq (,$(wildcard $(OPERATOR_SDK)))
-ifeq (,$(shell which $(notdir $(OPERATOR_SDK)) 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(OPERATOR_SDK)) ;\
-	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
-	chmod +x $(OPERATOR_SDK) ;\
-	}
-else
-OPERATOR_SDK = $(shell which operator-sdk)
-endif
-endif
+	@./hack/install_operator_sdk.sh
 
 .PHONY: crd-ref-docs
 CRD_REF_DOCS = ./bin/crd-ref-docs
