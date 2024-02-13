@@ -1,13 +1,16 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 locals {
   # common locals
-  name_prefix = "demo"
-  namespace   = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+  name_prefix      = "demo"
+  namespace        = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+  tenant_namespace = var.vault_enterprise ? vault_namespace.tenant[0].path_fq : null
 
   # k8s locals
-  k8s_namespace = "${local.name_prefix}-ns"
+  k8s_namespace_name = "${local.name_prefix}-ns"
+  # used to avoid duplicate declarations in in referring resources
+  k8s_namespace = kubernetes_namespace.dev.metadata[0].name
 
   # auth locals
   auth_mount         = "${local.name_prefix}-auth-mount"

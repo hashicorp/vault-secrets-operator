@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
@@ -21,6 +21,14 @@ variable "k8s_host" {
   default = "https://kubernetes.default.svc"
 }
 
+variable "k8s_vault_namespace" {
+  type = string
+}
+
+variable "k8s_vault_service_account" {
+  type = string
+}
+
 variable "postgres_secret_name" {
   default = "postgres-postgresql"
 }
@@ -28,10 +36,6 @@ variable "postgres_secret_name" {
 variable "vault_enterprise" {
   type    = bool
   default = false
-}
-
-variable "k8s_db_secret_count" {
-  default = 50
 }
 
 variable "vault_token_period" {
@@ -44,3 +48,34 @@ variable "vault_db_default_lease_ttl" {
 
 variable "vault_address" {}
 variable "vault_token" {}
+
+variable "deploy_operator_via_helm" {
+  type    = bool
+  default = false
+}
+
+variable "operator_helm_chart_path" {
+  default = "../../../chart"
+}
+
+variable "enable_default_connection" {
+  type    = bool
+  default = false
+}
+
+variable "enable_default_auth_method" {
+  type    = bool
+  default = false
+}
+
+variable "k8s_vault_connection_address" {
+  default = ""
+}
+
+variable "operator_image_repo" {
+  default = "hashicorp/vault-secrets-operator"
+}
+
+variable "operator_image_tag" {
+  default = "0.0.0-dev"
+}

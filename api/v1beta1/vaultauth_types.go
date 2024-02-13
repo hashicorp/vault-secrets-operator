@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package v1beta1
 
@@ -14,8 +14,8 @@ import (
 type VaultAuthConfigKubernetes struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
-	// ServiceAccount to use when authenticating to Vault's kubernetes
-	// authentication backend.
+	// ServiceAccount to use when authenticating to Vault's
+	// authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace.
 	ServiceAccount string `json:"serviceAccount"`
 	// TokenAudiences to include in the ServiceAccount token.
 	TokenAudiences []string `json:"audiences,omitempty"`
@@ -78,8 +78,8 @@ type VaultAuthConfigAWS struct {
 	// The IAM endpoint to use; if not set will use the default
 	IAMEndpoint string `json:"iamEndpoint,omitempty"`
 
-	// SecretRef is the name of a Kubernetes Secret which holds credentials for
-	// AWS. Expected keys include `access_key_id`, `secret_access_key`,
+	// SecretRef is the name of a Kubernetes Secret in the consumer's (VDS/VSS/PKI) namespace
+	// which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`,
 	// `session_token`
 	SecretRef string `json:"secretRef,omitempty"`
 
@@ -90,16 +90,52 @@ type VaultAuthConfigAWS struct {
 	IRSAServiceAccount string `json:"irsaServiceAccount,omitempty"`
 }
 
+// VaultAuthConfigGCP provides VaultAuth configuration options needed for
+// authenticating to Vault via a GCP AuthMethod, using workload identity
+type VaultAuthConfigGCP struct {
+	// Vault role to use for authenticating
+	Role string `json:"role"`
+
+	// WorkloadIdentityServiceAccount is the name of a Kubernetes service
+	// account (in the same Kubernetes namespace as the Vault*Secret referencing
+	// this resource) which has been configured for workload identity in GKE.
+	// Should be annotated with "iam.gke.io/gcp-service-account".
+	WorkloadIdentityServiceAccount string `json:"workloadIdentityServiceAccount"`
+
+	// GCP Region of the GKE cluster's identity provider. Defaults to the region
+	// returned from the operator pod's local metadata server.
+	Region string `json:"region,omitempty"`
+
+	// GKE cluster name. Defaults to the cluster-name returned from the operator
+	// pod's local metadata server.
+	ClusterName string `json:"clusterName,omitempty"`
+
+	// GCP project ID. Defaults to the project-id returned from the operator
+	// pod's local metadata server.
+	ProjectID string `json:"projectID,omitempty"`
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
-	// VaultConnectionRef of the corresponding VaultConnection CustomResource.
-	// If no value is specified the Operator will default to the `default` VaultConnection,
-	// configured in its own Kubernetes namespace.
+	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
+	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
+	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
+	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
+	// This field allows administrators to customize which Kubernetes namespaces are authorized to
+	// use with this AuthMethod. While Vault will still enforce its own rules, this has the added
+	// configurability of restricting which VaultAuthMethods can be used by which namespaces.
+	// Accepted values:
+	// []{"*"} - wildcard, all namespaces.
+	// []{"a", "b"} - list of namespaces.
+	// unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this
+	// is the default behavior.
+	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
-	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws
+	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws;gcp
 	Method string `json:"method"`
 	// Mount to use when authenticating to auth method.
 	Mount string `json:"mount"`
@@ -115,10 +151,12 @@ type VaultAuthSpec struct {
 	JWT *VaultAuthConfigJWT `json:"jwt,omitempty"`
 	// AWS specific auth configuration, requires that Method be set to `aws`.
 	AWS *VaultAuthConfigAWS `json:"aws,omitempty"`
+	// GCP specific auth configuration, requires that Method be set to `gcp`.
+	GCP *VaultAuthConfigGCP `json:"gcp,omitempty"`
 	// StorageEncryption provides the necessary configuration to encrypt the client storage cache.
 	// This should only be configured when client cache persistence with encryption is enabled.
 	// This is done by passing setting the manager's commandline argument
-	// --client-cache-persistence-model=direct-encrypted. Typically there should only ever
+	// --client-cache-persistence-model=direct-encrypted. Typically, there should only ever
 	// be one VaultAuth configured with StorageEncryption in the Cluster, and it should have
 	// the label: cacheStorageEncryption=true
 	StorageEncryption *StorageEncryption `json:"storageEncryption,omitempty"`

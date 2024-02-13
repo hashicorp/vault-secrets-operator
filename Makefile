@@ -4,6 +4,7 @@
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
+KUBE_RBAC_PROXY_VERSION = v0.15.0
 
 GO_VERSION = $(shell cat .go-version)
 
@@ -13,6 +14,8 @@ CONFIG_MANAGER_DIR ?= $(CONFIG_BUILD_DIR)/manager
 CONFIG_CRD_BASES_DIR ?= $(CONFIG_SRC_DIR)/crd/bases
 KUSTOMIZATION ?= default
 KUSTOMIZE_BUILD_DIR ?= $(CONFIG_BUILD_DIR)/$(KUSTOMIZATION)
+OPERATOR_BUILD_DIR ?= build
+BUNDLE_DIR ?= $(OPERATOR_BUILD_DIR)/bundle
 
 CHART_ROOT ?= chart
 CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
@@ -20,8 +23,8 @@ CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-KIND_K8S_VERSION ?= v1.25.3
-VAULT_HELM_VERSION ?= 0.23.0
+KIND_K8S_VERSION ?= v1.29.0
+VAULT_HELM_VERSION ?= 0.25.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
 
@@ -35,21 +38,29 @@ TESTARGS ?= -test.v -count=$(TESTCOUNT)
 # Run integration tests against a Helm installed Operator
 TEST_WITH_HELM ?=
 
+INTEGRATION_TESTS_PARALLEL ?=
+
 # Suppress the output from terraform when running the integration tests.
 SUPPRESS_TF_OUTPUT ?=
 # Skip the integration test cleanup.
 SKIP_CLEANUP ?=
-# The number of k8s secrets to create in the VaultDynamicSecret's integration tests.
-K8S_DB_SECRET_COUNT ?=
 
 # Cloud test options
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
+SKIP_GCP_TESTS ?= true
+
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
+# number of parallel bats to run
+BATS_PARALLEL_JOBS ?= 30
+# set by the 'bats-parallel' target, requires that 'parallel'
+# be installed on the build host.
+BATS_PARALLEL_ARGS ?=
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
+CHANNELS = "stable"
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
 # - use the CHANNELS as arg of the bundle target (e.g make bundle CHANNELS=candidate,fast,stable)
 # - use environment variables to overwrite this value (e.g export CHANNELS="candidate,fast,stable")
@@ -59,6 +70,7 @@ endif
 
 # DEFAULT_CHANNEL defines the default channel used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
+DEFAULT_CHANNEL = "stable"
 # To re-generate a bundle for any other default channel without changing the default setup, you can:
 # - use the DEFAULT_CHANNEL as arg of the bundle target (e.g make bundle DEFAULT_CHANNEL=stable)
 # - use environment variables to overwrite this value (e.g export DEFAULT_CHANNEL="stable")
@@ -79,7 +91,7 @@ IMAGE_TAG_BASE ?= hashicorp/vault-secrets-operator
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
-BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+BUNDLE_GEN_FLAGS ?= -q --overwrite --output-dir $(BUNDLE_DIR) --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
 # USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
 # You can enable this value if you would like to use SHA Based Digests
@@ -91,6 +103,9 @@ endif
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
+
+# Redhat-certified image for use in the operator bundle
+IMG_UBI ?= registry.connect.redhat.com/hashicorp/vault-secrets-operator:$(VERSION)-ubi
 
 # Default path to saving and loading the Docker image for IMG.
 IMAGE_ARCHIVE_FILE ?= $(BUILD_DIR)/$(subst /,_,$(IMAGE_TAG_BASE))-$(VERSION).tar
@@ -118,6 +133,9 @@ INTEGRATION_TEST_ROOT = ./test/integration
 
 # directory containing Kubernetes patches to be applied after Vault is been brought up in K8s.
 VAULT_PATCH_ROOT = $(INTEGRATION_TEST_ROOT)/vault
+
+# avoid kubectl patching vault in k8s.
+SKIP_PATCH_VAULT ?=
 
 TF_INFRA_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra
 TF_VAULT_STATE_DIR ?= $(TF_INFRA_SRC_DIR)/state
@@ -166,7 +184,7 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
-	$(MAKE) sync-crds gen-api-ref-docs
+	$(MAKE) sync-crds sync-rbac gen-api-ref-docs
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -178,6 +196,10 @@ sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DI
 	@rm -rf $(CHART_CRDS_DIR)
 	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: sync-rbac
+sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/rbac to CHART_ROOT/templates. Called from the manifests target.
+	./scripts/sync-rbac.sh
 
 .PHONY: gen-api-ref-docs
 gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
@@ -250,17 +272,20 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: ci-build
 ci-build: ## Build operator binary (without generating assets).
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
 		-a \
-		-o $(BUILD_DIR)/$(BIN_NAME) \
+		-o $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME) \
 		.
 
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
-	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
-	cp $(BUILD_DIR)/$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/$(BIN_NAME)
 	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
+
+.PHONY: ci-docker-build-ubi
+ci-docker-build-ubi: ## Build docker ubi image with the operator (without generating assets)
+	docker build -t $(IMG)-ubi --platform $(GOOS)/$(GOARCH) . --target release-ubi --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
@@ -281,8 +306,11 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
-    INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
+	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
+	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
@@ -315,7 +343,7 @@ setup-kind: ## create a kind cluster for running the acceptance tests locally
 .PHONY: delete-kind
 delete-kind: ## delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER_NAME) || true
-	find $(INTEGRATION_TEST_ROOT)/infra -type f -name '*tfstate*' | xargs rm &> /dev/null || true
+	find $(INTEGRATION_TEST_ROOT)/infra/state -type f -name '*tfstate*' | xargs rm &> /dev/null || true
 
 .PHONY: setup-integration-test
 ## Create Vault inside the cluster
@@ -393,8 +421,8 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 	rm -rf $(TF_VAULT_STATE_DIR)
 
 .PHONY: unit-test
-unit-test: ## Run unit tests for the helm chart
-	PATH="$(CURDIR)/scripts:$(PATH)" bats -f $(BATS_TESTS_FILTER) test/unit/
+unit-test: bats-parallel yq ## Run unit tests for the helm chart
+	PATH="$(CURDIR)/bin:$(CURDIR)/scripts:$(PATH)" bats $(BATS_PARALLEL_ARGS) -f $(BATS_TESTS_FILTER) test/unit/
 
 .PHONY: port-forward
 port-forward:
@@ -456,7 +484,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.11.1
+CONTROLLER_TOOLS_VERSION ?= v0.13.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -474,15 +502,29 @@ envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
-.PHONY: bundle
-bundle: manifests kustomize set-image ## Generate bundle manifests and metadata, then validate generated files.
+.PHONY: set-image-ubi
+set-image-ubi: kustomize copy-config ## Set the controller UBI image
+	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG_UBI)
+
+.PHONY: sdk-generate
+sdk-generate: copywrite
 	operator-sdk generate kustomize manifests -q
-	$(KUSTOMIZE) build $(KUSTOMIZE_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
-	operator-sdk bundle validate ./bundle
+	@$(COPYWRITE) headers &> /dev/null
+
+.PHONY: bundle
+bundle: manifests kustomize sdk-generate set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
+	@rm -rf $(BUNDLE_DIR)
+	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
+	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+	@$(COPYWRITE) headers &> /dev/null
+	@./hack/set_openshift_minimum_version.sh
+	@./hack/set_containerImage.sh
+	mv bundle.Dockerfile $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
+	operator-sdk bundle validate $(BUNDLE_DIR)
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	docker build -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
@@ -545,6 +587,10 @@ copywrite: ## Download copywrite locally if necessary.
 	@./hack/install_copywrite.sh
 	$(eval COPYWRITE=./bin/copywrite)
 
+.PHONY: yq
+yq: ## Download yq locally if necessary.
+	@./hack/install_yq.sh
+
 .PHONY: crd-ref-docs
 CRD_REF_DOCS = ./bin/crd-ref-docs
 crd-ref-docs: ## Install crd-ref-docs locally if necessary.
@@ -590,7 +636,6 @@ build-diags:
 clean:
 	rm -rf build
 
-
 # Generate Helm reference docs from values.yaml and update Vault website.
 # Usage: make gen-helm-docs
 # If no options are given, helm.mdx from a local copy of the vault repository will be used.
@@ -598,3 +643,15 @@ clean:
 VAULT_DOCS_PATH ?= ../vault/website/content/docs/platform/k8s/vso/helm.mdx
 gen-helm-docs:
 	@cd hack/helm-reference-gen; go run ./... --vault=$(VAULT_DOCS_PATH)
+
+# bats-parallel sets bats to run tests in parallel whenever 'parallel' is installed
+# on the build host.
+.PHONY: bats-parallel
+bats-parallel:
+ifneq (,$(shell which parallel 2>/dev/null))
+	$(eval BATS_PARALLEL_ARGS=-j $(BATS_PARALLEL_JOBS))
+endif
+
+.PHONY: check-versions
+check-versions: yq
+	VERSION=$(VERSION) KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) ./scripts/check-versions.sh

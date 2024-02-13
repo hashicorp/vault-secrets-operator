@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 locals {
   # common locals
@@ -20,4 +20,5 @@ locals {
   db_role             = "dev-postgres"
   db_role_static      = "${local.db_role}-static"
   db_role_static_user = "${local.db_role_static}-user"
+  k8s_secret_role     = "k8s-secret"
 }

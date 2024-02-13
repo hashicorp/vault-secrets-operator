@@ -1,14 +1,14 @@
 {{/*
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "chart.fullname" . }}-manager-role
+  name: {{ include "vso.chart.fullname" . }}-manager-role
   labels:
     app.kubernetes.io/component: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
   - ""
@@ -212,19 +212,97 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpauths
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpauths/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpauths/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpvaultsecretsapps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpvaultsecretsapps/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - hcpvaultsecretsapps/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - secrettransformations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - secrettransformations/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - secrettransformations/status
+  verbs:
+  - get
+  - patch
+  - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "chart.fullname" . }}-manager-rolebinding
+  name: {{ include "vso.chart.fullname" . }}-manager-rolebinding
   labels:
     app.kubernetes.io/component: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: '{{ include "chart.fullname" . }}-manager-role'
+  name: '{{ include "vso.chart.fullname" . }}-manager-role'
 subjects:
 - kind: ServiceAccount
-  name: '{{ include "chart.fullname" . }}-controller-manager'
+  name: '{{ include "vso.chart.fullname" . }}-controller-manager'
   namespace: {{ .Release.Namespace }}

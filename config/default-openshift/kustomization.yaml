@@ -1,0 +1,9 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+bases:
+- ../default
+
+patchesStrategicMerge:
+- manager_ubi_auth_proxy_patch.yaml
+- manager_resource_patch.yaml

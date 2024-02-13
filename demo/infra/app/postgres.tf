@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 resource "helm_release" "postgres" {
   namespace        = kubernetes_namespace.postgres.metadata[0].name
@@ -45,7 +45,7 @@ data "kubernetes_service" "postgres" {
 resource "vault_database_secrets_mount" "db" {
   namespace                 = local.namespace
   path                      = "${local.name_prefix}-db"
-  default_lease_ttl_seconds = 15
+  default_lease_ttl_seconds = 300
 
   postgresql {
     name              = "postgres"

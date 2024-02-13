@@ -9,6 +9,12 @@
 Package v1beta1 contains API Schema definitions for the secrets v1beta1 API group
 
 ### Resource Types
+- [HCPAuth](#hcpauth)
+- [HCPAuthList](#hcpauthlist)
+- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
+- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
+- [SecretTransformation](#secrettransformation)
+- [SecretTransformationList](#secrettransformationlist)
 - [VaultAuth](#vaultauth)
 - [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
@@ -29,6 +35,7 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 Destination provides the configuration that will be applied to the destination Kubernetes Secret during a Vault Secret -> K8s Secret sync.
 
 _Appears in:_
+- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
@@ -37,9 +44,131 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name of the Secret |
 | `create` _boolean_ | Create the destination Secret. If the Secret already exists this should be set to false. |
+| `overwrite` _boolean_ | Overwrite the destination Secret if it exists and Create is true. This is useful when migrating to VSO from a previous secret deployment strategy. |
 | `labels` _object (keys:string, values:string)_ | Labels to apply to the Secret. Requires Create to be set to true. |
 | `annotations` _object (keys:string, values:string)_ | Annotations to apply to the Secret. Requires Create to be set to true. |
 | `type` _[SecretType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secrettype-v1-core)_ | Type of Kubernetes Secret. Requires Create to be set to true. Defaults to Opaque. |
+| `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before it is stored in the Destination. |
+
+
+#### HCPAuth
+
+
+
+HCPAuth is the Schema for the hcpauths API
+
+_Appears in:_
+- [HCPAuthList](#hcpauthlist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPAuth`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[HCPAuthSpec](#hcpauthspec)_ |  |
+
+
+#### HCPAuthList
+
+
+
+HCPAuthList contains a list of HCPAuth
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPAuthList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[HCPAuth](#hcpauth) array_ |  |
+
+
+#### HCPAuthServicePrincipal
+
+
+
+HCPAuthServicePrincipal provides HCPAuth configuration options needed for authenticating to HCP using a service principal configured in SecretRef.
+
+_Appears in:_
+- [HCPAuthSpec](#hcpauthspec)
+
+| Field | Description |
+| --- | --- |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID, and clientSecret. The secret data must have the following structure { "clientID": "clientID", "clientSecret": "clientSecret", } |
+
+
+#### HCPAuthSpec
+
+
+
+HCPAuthSpec defines the desired state of HCPAuth
+
+_Appears in:_
+- [HCPAuth](#hcpauth)
+
+| Field | Description |
+| --- | --- |
+| `organizationID` _string_ | OrganizationID of the HCP organization. |
+| `projectID` _string_ | ProjectID of the HCP project. |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod. This field allows administrators to customize which Kubernetes namespaces are authorized to use with this AuthMethod. While Vault will still enforce its own rules, this has the added configurability of restricting which HCPAuthMethods can be used by which namespaces. Accepted values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces. unset - disallow all namespaces except the Operator's the HCPAuthMethod's namespace, this is the default behavior. |
+| `method` _string_ | Method to use when authenticating to Vault. |
+| `servicePrincipal` _[HCPAuthServicePrincipal](#hcpauthserviceprincipal)_ | ServicePrincipal provides the necessary configuration for authenticating to HCP using a service principal. For security reasons, only project-level service principals should ever be used. |
+
+
+
+
+#### HCPVaultSecretsApp
+
+
+
+HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
+
+_Appears in:_
+- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPVaultSecretsApp`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)_ |  |
+
+
+#### HCPVaultSecretsAppList
+
+
+
+HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `HCPVaultSecretsAppList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[HCPVaultSecretsApp](#hcpvaultsecretsapp) array_ |  |
+
+
+#### HCPVaultSecretsAppSpec
+
+
+
+HCPVaultSecretsAppSpec defines the desired state of HCPVaultSecretsApp
+
+_Appears in:_
+- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
+
+| Field | Description |
+| --- | --- |
+| `appName` _string_ | AppName of the Vault Secrets Application that is to be synced. |
+| `hcpAuthRef` _string_ | HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the Operator will default to the `default` HCPAuth, configured in the operator's namespace. |
+| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h |
+| `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the HCP Vault Secrets App does not support dynamically reloading a rotated secret. In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events. See RolloutRestartTarget for more details. |
+| `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the HCP Vault Application secrets to Kubernetes. |
+
+
 
 
 #### RolloutRestartTarget
@@ -50,6 +179,7 @@ RolloutRestartTarget provides the configuration required to perform a rollout-re
  Supported resources: Deployment, DaemonSet, StatefulSet
 
 _Appears in:_
+- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
@@ -58,6 +188,73 @@ _Appears in:_
 | --- | --- |
 | `kind` _string_ |  |
 | `name` _string_ |  |
+
+
+#### SecretTransformation
+
+
+
+SecretTransformation is the Schema for the secrettransformations API
+
+_Appears in:_
+- [SecretTransformationList](#secrettransformationlist)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `SecretTransformation`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[SecretTransformationSpec](#secrettransformationspec)_ |  |
+
+
+#### SecretTransformationList
+
+
+
+SecretTransformationList contains a list of SecretTransformation
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
+| `kind` _string_ | `SecretTransformationList`
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `items` _[SecretTransformation](#secrettransformation) array_ |  |
+
+
+#### SecretTransformationSpec
+
+
+
+SecretTransformationSpec defines the desired state of SecretTransformation
+
+_Appears in:_
+- [SecretTransformation](#secrettransformation)
+
+| Field | Description |
+| --- | --- |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret with the specified key. |
+| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered K8s Secret, they can be used to provide common template definitions, etc. |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data fields for inclusion in the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied last. |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data fields for exclusion from the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied before any inclusion patterns. To exclude all source secret data fields, you can configure the single pattern ".*". |
+
+
+
+
+#### SourceTemplate
+
+
+
+SourceTemplate provides source templating configuration.
+
+_Appears in:_
+- [SecretTransformationSpec](#secrettransformationspec)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ |  |
+| `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
 
 
 #### StorageEncryption
@@ -73,6 +270,73 @@ _Appears in:_
 | --- | --- |
 | `mount` _string_ | Mount path of the Transit engine in Vault. |
 | `keyName` _string_ | KeyName to use for encrypt/decrypt operations via Vault Transit. |
+
+
+#### Template
+
+
+
+Template provides templating configuration.
+
+_Appears in:_
+- [SecretTransformationSpec](#secrettransformationspec)
+- [Transformation](#transformation)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the Template |
+| `text` _string_ | Text contains the Go text template format. The template references attributes from the data structure of the source secret. Refer to https://pkg.go.dev/text/template for more information. |
+
+
+#### TemplateRef
+
+
+
+TemplateRef points to templating text that is stored in a SecretTransformation custom resource.
+
+_Appears in:_
+- [TransformationRef](#transformationref)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name of the Template in SecretTransformationSpec.Templates. the rendered secret data. |
+| `keyOverride` _string_ | KeyOverride to the rendered template in the Destination secret. If Key is empty, then the Key from reference spec will be used. Set this to override the Key set from the reference spec. |
+
+
+#### Transformation
+
+
+
+
+
+_Appears in:_
+- [Destination](#destination)
+
+| Field | Description |
+| --- | --- |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included in the rendered K8s Secret, and take precedence over templates defined in a SecretTransformation. |
+| `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from SecretTransformation. |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data fields for inclusion in the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied last. |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data fields for exclusion from the final K8s Secret data. These pattern filters are never applied to templated fields as defined in Templates. They are always applied before any inclusion patterns. To exclude all source secret data fields, you can configure the single pattern ".*". |
+| `excludeRaw` _boolean_ | ExcludeRaw data from the destination Secret. Exclusion policy can be set globally by including 'exclude-raw` in the '--global-transformation-options' command line flag. If set, the command line flag always takes precedence over this configuration. |
+
+
+#### TransformationRef
+
+
+
+TransformationRef contains the configuration for accessing templates from an SecretTransformation resource. TransformationRefs can be shared across all syncable secret custom resources.
+
+_Appears in:_
+- [Transformation](#transformation)
+
+| Field | Description |
+| --- | --- |
+| `namespace` _string_ | Namespace of the SecretTransformation resource. |
+| `name` _string_ | Name of the SecretTransformation resource. |
+| `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then all templates from the SecretTransformation will be rendered to the K8s Secret. |
+| `ignoreIncludes` _boolean_ | IgnoreIncludes controls whether to use the SecretTransformation's Includes data key filters. |
+| `ignoreExcludes` _boolean_ | IgnoreExcludes controls whether to use the SecretTransformation's Excludes data key filters. |
 
 
 #### VaultAuth
@@ -109,7 +373,7 @@ _Appears in:_
 | `sessionName` _string_ | The role session name to use when creating a webidentity provider |
 | `stsEndpoint` _string_ | The STS endpoint to use; if not set will use the default |
 | `iamEndpoint` _string_ | The IAM endpoint to use; if not set will use the default |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes Secret which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`, `session_token` |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes Secret in the consumer's (VDS/VSS/PKI) namespace which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`, `session_token` |
 | `irsaServiceAccount` _string_ | IRSAServiceAccount name to use with IAM Roles for Service Accounts (IRSA), and should be annotated with "eks.amazonaws.com/role-arn". This ServiceAccount will be checked for other EKS annotations: eks.amazonaws.com/audience and eks.amazonaws.com/token-expiration |
 
 
@@ -126,6 +390,24 @@ _Appears in:_
 | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |
 | `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the AppRole Role's secretID. |
+
+
+#### VaultAuthConfigGCP
+
+
+
+VaultAuthConfigGCP provides VaultAuth configuration options needed for authenticating to Vault via a GCP AuthMethod, using workload identity
+
+_Appears in:_
+- [VaultAuthSpec](#vaultauthspec)
+
+| Field | Description |
+| --- | --- |
+| `role` _string_ | Vault role to use for authenticating |
+| `workloadIdentityServiceAccount` _string_ | WorkloadIdentityServiceAccount is the name of a Kubernetes service account (in the same Kubernetes namespace as the Vault*Secret referencing this resource) which has been configured for workload identity in GKE. Should be annotated with "iam.gke.io/gcp-service-account". |
+| `region` _string_ | GCP Region of the GKE cluster's identity provider. Defaults to the region returned from the operator pod's local metadata server. |
+| `clusterName` _string_ | GKE cluster name. Defaults to the cluster-name returned from the operator pod's local metadata server. |
+| `projectID` _string_ | GCP project ID. Defaults to the project-id returned from the operator pod's local metadata server. |
 
 
 #### VaultAuthConfigJWT
@@ -158,7 +440,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `role` _string_ | Role to use for authenticating to Vault. |
-| `serviceAccount` _string_ | ServiceAccount to use when authenticating to Vault's kubernetes authentication backend. |
+| `serviceAccount` _string_ | ServiceAccount to use when authenticating to Vault's authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace. |
 | `audiences` _string array_ | TokenAudiences to include in the ServiceAccount token. |
 | `tokenExpirationSeconds` _integer_ | TokenExpirationSeconds to set the ServiceAccount token. |
 
@@ -190,8 +472,9 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultConnectionRef` _string_ | VaultConnectionRef of the corresponding VaultConnection CustomResource. If no value is specified the Operator will default to the `default` VaultConnection, configured in its own Kubernetes namespace. |
+| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace, eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the Operator will default to the `default` VaultConnection, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace to auth to in Vault |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod. This field allows administrators to customize which Kubernetes namespaces are authorized to use with this AuthMethod. While Vault will still enforce its own rules, this has the added configurability of restricting which VaultAuthMethods can be used by which namespaces. Accepted values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces. unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this is the default behavior. |
 | `method` _string_ | Method to use when authenticating to Vault. |
 | `mount` _string_ | Mount to use when authenticating to auth method. |
 | `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |
@@ -200,7 +483,8 @@ _Appears in:_
 | `appRole` _[VaultAuthConfigAppRole](#vaultauthconfigapprole)_ | AppRole specific auth configuration, requires that the Method be set to `appRole`. |
 | `jwt` _[VaultAuthConfigJWT](#vaultauthconfigjwt)_ | JWT specific auth configuration, requires that the Method be set to `jwt`. |
 | `aws` _[VaultAuthConfigAWS](#vaultauthconfigaws)_ | AWS specific auth configuration, requires that Method be set to `aws`. |
-| `storageEncryption` _[StorageEncryption](#storageencryption)_ | StorageEncryption provides the necessary configuration to encrypt the client storage cache. This should only be configured when client cache persistence with encryption is enabled. This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted. Typically there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the label: cacheStorageEncryption=true |
+| `gcp` _[VaultAuthConfigGCP](#vaultauthconfiggcp)_ | GCP specific auth configuration, requires that Method be set to `gcp`. |
+| `storageEncryption` _[StorageEncryption](#storageencryption)_ | StorageEncryption provides the necessary configuration to encrypt the client storage cache. This should only be configured when client cache persistence with encryption is enabled. This is done by passing setting the manager's commandline argument --client-cache-persistence-model=direct-encrypted. Typically, there should only ever be one VaultAuth configured with StorageEncryption in the Cluster, and it should have the label: cacheStorageEncryption=true |
 
 
 
@@ -302,7 +586,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace where the secrets engine is mounted in Vault. |
 | `mount` _string_ | Mount path of the secret's engine in Vault. |
 | `requestHTTPMethod` _string_ | RequestHTTPMethod to use when syncing Secrets from Vault. Setting a value here is not typically required. If left unset the Operator will make requests using the GET method. In the case where Params are specified the Operator will use the PUT method. Please consult https://developer.hashicorp.com/vault/docs/secrets if you are uncertain about what method to use. Of note, the Vault client treats PUT and POST as being equivalent. The underlying Vault client implementation will always use the PUT method. |
@@ -361,13 +645,13 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef of the VaultAuth resource If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace to get the secret from in Vault |
 | `mount` _string_ | Mount for the secret in Vault |
 | `role` _string_ | Role in Vault to use when issuing TLS certificates. |
 | `revoke` _boolean_ | Revoke the certificate when the resource is deleted. |
 | `clear` _boolean_ | Clear the Kubernetes secret when the resource is deleted. |
-| `expiryOffset` _string_ | ExpiryOffset to use for computing when the certificate should be renewed. The rotation time will be difference between the expiration and the offset. Should be in duration notation e.g. 30s, 120s, etc. Set to empty string "" to prevent certificate rotation. |
+| `expiryOffset` _string_ | ExpiryOffset to use for computing when the certificate should be renewed. The rotation time will be difference between the expiration and the offset. Should be in duration notation e.g. 30s, 120s, etc. |
 | `issuerRef` _string_ | IssuerRef reference to an existing PKI issuer, either by Vault-generated identifier, the literal string default to refer to the currently configured default issuer, or the name assigned to an issuer. This parameter is part of the request URL. |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does not support dynamically reloading a rotated secret. In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events. See RolloutRestartTarget for more details. |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. If the type is set to "kubernetes.io/tls", "tls.key" will be set to the "private_key" response from Vault, and "tls.crt" will be set to "certificate" + "ca_chain" from the Vault response ("issuing_ca" is used when "ca_chain" is empty). The "remove_roots_from_chain=true" option is used with Vault to exclude the root CA from the Vault response. |
@@ -415,6 +699,7 @@ _Appears in:_
 | --- | --- |
 | `lastVaultRotation` _integer_ | LastVaultRotation represents the last time Vault rotated the password |
 | `rotationPeriod` _integer_ | RotationPeriod is number in seconds between each rotation, effectively a "time to live". This value is compared to the LastVaultRotation to determine if a password needs to be rotated |
+| `rotationSchedule` _string_ | RotationSchedule is a "cron style" string representing the allowed schedule for each rotation. e.g. "1 0 * * *" would rotate at one minute past midnight (00:01) every day. |
 | `ttl` _integer_ | TTL is the seconds remaining before the next rotation. |
 
 
@@ -462,13 +747,13 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef of the VaultAuth resource If no value is specified the Operator will default to the `default` VaultAuth, configured in its own Kubernetes namespace. |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |
 | `namespace` _string_ | Namespace to get the secret from in Vault |
 | `mount` _string_ | Mount for the secret in Vault |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for, kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |
 | `type` _string_ | Type of the Vault static secret |
-| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation |
+| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h |
 | `hmacSecretData` _boolean_ | HMACSecretData determines whether the Operator computes the HMAC of the Secret's data. The MAC value will be stored in the resource's Status.SecretMac field, and will be used for drift detection and during incoming Vault secret comparison. Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault. |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does not support dynamically reloading a rotated secret. In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events. All configured targets wil be ignored if HMACSecretData is set to false. See RolloutRestartTarget for more details. |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |

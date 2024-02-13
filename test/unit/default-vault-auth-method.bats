@@ -308,3 +308,74 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.aws.irsaServiceAccount' | tee /dev/stderr)
     [ "${actual}" = "iam-irsa-acct" ]
 }
+
+@test "defaultAuthMethod/CR: settings can be modified for gcp auth method - minimum" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.namespace=tenant-2' \
+        --set 'defaultAuthMethod.method=gcp' \
+        --set 'defaultAuthMethod.mount=foo' \
+        --set 'defaultAuthMethod.gcp.role=role-1' \
+        --set 'defaultAuthMethod.gcp.workloadIdentityServiceAccount=my-identity-sa' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+    [ "${actual}" = "tenant-2" ]
+
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    [ "${actual}" = "gcp" ]
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.gcp.role' | tee /dev/stderr)
+    [ "${actual}" = "role-1" ]
+    actual=$(echo "$object" | yq '.spec.gcp.workloadIdentityServiceAccount' | tee /dev/stderr)
+    [ "${actual}" = "my-identity-sa" ]
+
+    # the rest should not be set
+    actual=$(echo "$object" | yq '.spec.gcp.region' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
+    [ "${actual}" = null ]
+    actual=$(echo "$object" | yq '.spec.gcp.projectID' | tee /dev/stderr)
+    [ "${actual}" = null ]
+}
+
+@test "defaultAuthMethod/CR: settings can be modified for gcp auth method - everything" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.namespace=tenant-2' \
+        --set 'defaultAuthMethod.method=gcp' \
+        --set 'defaultAuthMethod.mount=foo' \
+        --set 'defaultAuthMethod.gcp.role=role-1' \
+        --set 'defaultAuthMethod.gcp.workloadIdentityServiceAccount=my-identity-sa' \
+        --set 'defaultAuthMethod.gcp.region=us-test-2' \
+        --set 'defaultAuthMethod.gcp.clusterName=test-cluster' \
+        --set 'defaultAuthMethod.gcp.projectID=my-project' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.metadata.namespace' | tee /dev/stderr)
+    [ "${actual}" = "default" ]
+    actual=$(echo "$object" | yq '.spec.namespace' | tee /dev/stderr)
+    [ "${actual}" = "tenant-2" ]
+
+    actual=$(echo "$object" | yq '.spec.method' | tee /dev/stderr)
+    [ "${actual}" = "gcp" ]
+    actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
+    [ "${actual}" = "foo" ]
+    actual=$(echo "$object" | yq '.spec.gcp.role' | tee /dev/stderr)
+    [ "${actual}" = "role-1" ]
+    actual=$(echo "$object" | yq '.spec.gcp.workloadIdentityServiceAccount' | tee /dev/stderr)
+    [ "${actual}" = "my-identity-sa" ]
+    actual=$(echo "$object" | yq '.spec.gcp.region' | tee /dev/stderr)
+    [ "${actual}" = "us-test-2" ]
+    actual=$(echo "$object" | yq '.spec.gcp.clusterName' | tee /dev/stderr)
+    [ "${actual}" = "test-cluster" ]
+    actual=$(echo "$object" | yq '.spec.gcp.projectID' | tee /dev/stderr)
+    [ "${actual}" = "my-project" ]
+}

@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package metrics
 
@@ -24,6 +24,7 @@ const (
 	OperationRestore    = "restore"
 	OperationRestoreAll = "restore_all"
 	OperationPrune      = "prune"
+	OperationDelete     = "delete"
 	OperationPurge      = "purge"
 	OperationLogin      = "login"
 	OperationRenew      = "renew"

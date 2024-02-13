@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package consts
 
@@ -8,4 +8,5 @@ package consts
 const (
 	LogLevelWarning = 4
 	LogLevelDebug   = 5
+	LogLevelTrace   = 6
 )

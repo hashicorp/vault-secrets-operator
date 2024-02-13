@@ -1,15 +1,15 @@
 {{/*
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 */}}
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "chart.fullname" . }}-metrics-reader
+  name: {{ include "vso.chart.fullname" . }}-metrics-reader
   labels:
     app.kubernetes.io/component: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- include "vso.chart.labels" . | nindent 4 }}
 rules:
 - nonResourceURLs:
   - /metrics

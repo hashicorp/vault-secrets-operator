@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 ARG GO_VERSION=latest
 
@@ -65,6 +65,45 @@ COPY LICENSE /licenses/copyright.txt
 USER 65532:65532
 
 ENTRYPOINT ["/vault-secrets-operator"]
+
+# ubi build image
+# -----------------------------------
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3-1552 as build-ubi
+RUN microdnf --refresh --assumeyes upgrade ca-certificates
+
+# ubi release image
+# -----------------------------------
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.3-13 as release-ubi
+
+ENV BIN_NAME=vault-secrets-operator
+ARG PRODUCT_VERSION
+ARG PRODUCT_REVISION
+ARG PRODUCT_NAME=$BIN_NAME
+# TARGETARCH and TARGETOS are set automatically when --platform is provided.
+ARG TARGETOS TARGETARCH
+
+LABEL name="Vault Secrets Operator" \
+      maintainer="Team Vault <vault@hashicorp.com>" \
+      vendor="HashiCorp" \
+      version=$PRODUCT_VERSION \
+      release=$PRODUCT_VERSION \
+      revision=$PRODUCT_REVISION \
+      summary="The Vault Secrets Operator (VSO) allows Pods to consume Vault secrets natively from Kubernetes Secrets." \
+      description="The Vault Secrets Operator (VSO) allows Pods to consume Vault secrets natively from Kubernetes Secrets."
+
+WORKDIR /
+
+COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /
+COPY LICENSE /licenses/copyright.txt
+COPY --from=build-ubi /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/pki/ca-trust/extracted/pem/
+
+USER 65532:65532
+
+ENTRYPOINT ["/vault-secrets-operator"]
+
+# Duplicate ubi release image target for RedHat registry builds
+# -------------------------------------------------------------
+FROM release-ubi as release-ubi-redhat
 
 # ===================================
 #

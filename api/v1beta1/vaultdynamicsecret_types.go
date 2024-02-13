@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package v1beta1
 
@@ -10,9 +10,10 @@ import (
 
 // VaultDynamicSecretSpec defines the desired state of VaultDynamicSecret
 type VaultDynamicSecretSpec struct {
-	// VaultAuthRef to the VaultAuth resource
-	// If no value is specified the Operator will default to the `default` VaultAuth,
-	// configured in its own Kubernetes namespace.
+	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
+	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
+	// default to the `default` VaultAuth, configured in the operator's namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 	// Namespace where the secrets engine is mounted in Vault.
 	Namespace string `json:"namespace,omitempty"`
@@ -103,6 +104,11 @@ type VaultStaticCredsMetaData struct {
 	// "time to live". This value is compared to the LastVaultRotation to
 	// determine if a password needs to be rotated
 	RotationPeriod int64 `json:"rotationPeriod"`
+	// RotationSchedule is a "cron style" string representing the allowed
+	// schedule for each rotation.
+	// e.g. "1 0 * * *" would rotate at one minute past midnight (00:01) every
+	// day.
+	RotationSchedule string `json:"rotationSchedule"`
 	// TTL is the seconds remaining before the next rotation.
 	TTL int64 `json:"ttl"`
 }

@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -11,15 +11,20 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/retry"
@@ -31,18 +36,22 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault/credentials"
 )
 
 var (
@@ -57,6 +66,9 @@ var (
 	entTests           = os.Getenv("ENT_TESTS") != ""
 	// use the Helm chart to deploy the operator. The default is to use Kustomize.
 	testWithHelm = os.Getenv("TEST_WITH_HELM") != ""
+	// make tests more verbose
+	withExtraVerbosity = os.Getenv("WITH_EXTRA_VERBOSITY") != ""
+	testInParallel     = os.Getenv("INTEGRATION_TESTS_PARALLEL") != ""
 	// set in TestMain
 	clusterName       string
 	operatorImageRepo string
@@ -91,6 +103,7 @@ func init() {
 	if k8sVaultNamespace == "" {
 		k8sVaultNamespace = "vault"
 	}
+
 	testVaultAddress = fmt.Sprintf("http://vault.%s.svc.cluster.local:8200", k8sVaultNamespace)
 }
 
@@ -125,8 +138,158 @@ func TestMain(m *testing.M) {
 		os.Setenv("VAULT_ADDR", vaultAddr)
 		os.Setenv("VAULT_TOKEN", vaultToken)
 		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
-		os.Exit(m.Run())
+
+	} else {
+		os.Exit(0)
 	}
+
+	cleanupFunc := func() {}
+	if err := os.Unsetenv("TF_PLUGIN_CACHE_DIR"); err != nil {
+		os.Exit(1)
+	}
+
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
+
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	if operatorNS == "" {
+		os.Exit(1)
+	}
+
+	// require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+	k8sOpts := &k8s.KubectlOptions{
+		ContextName: k8sConfigContext,
+		Namespace:   operatorNS,
+	}
+
+	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "persistence-encrypted-test")
+
+	tempDir, err := os.MkdirTemp(os.TempDir(), "main")
+	if err != nil {
+		// TODO: add log message
+		log.Printf("Failed to create main tempdir, err=%s", err)
+		os.Exit(1)
+	}
+
+	tfDir, err := files.CopyTerraformFolderToDest(
+		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
+
+	log.Printf("Test Root: %s", testRoot)
+	_, err = copyModulesDir(tfDir)
+	if err != nil {
+		// TODO: add log message
+		log.Printf("Failed to copy modules dir, err=%s", err)
+		os.Exit(1)
+	}
+	chartDestDir, err := copyChartDir(tfDir)
+	if err != nil {
+		// TODO: add log message
+		log.Printf("Failed to copy chart dir, err=%s", err)
+		os.Exit(1)
+	}
+
+	// empty test case to be used with test helper functions
+	t := &testing.T{}
+
+	// Construct the terraform options with default retryable errors to handle the most common
+	// retryable errors in terraform testing.
+	tfOptions := setCommonTFOptions(t, &terraform.Options{
+		// Set the path to the Terraform code that will be tested.
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_vault_connection_address": testVaultAddress,
+			"k8s_config_context":           k8sConfigContext,
+			"k8s_vault_namespace":          k8sVaultNamespace,
+			// the service account is created in test/integration/infra/main.tf
+			"vault_address": os.Getenv("VAULT_ADDRESS"),
+			"vault_token":   os.Getenv("VAULT_TOKEN"),
+		},
+	})
+
+	b, err := json.Marshal(tfOptions.Vars)
+	if err != nil {
+		os.Exit(1)
+	}
+	if err := os.WriteFile(
+		filepath.Join(tfOptions.TerraformDir, "terraform.tfvars.json"), b, 0o644); err != nil {
+		os.Exit(1)
+	}
+
+	log.Printf("tfDir=%s", tfDir)
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+
+	cleanupFunc = func() {
+		if !skipCleanup {
+			_, err := terraform.DestroyE(t, tfOptions)
+			if err != nil {
+				log.Printf(
+					"Failed to terraform.DestroyE(t, tfOptions), err=%s", err)
+			}
+
+			if !testWithHelm {
+				if err := k8s.KubectlDeleteFromKustomizeE(t, k8sOpts, kustomizeConfigPath); err != nil {
+					log.Printf(
+						"Failed to k8s.KubectlDeleteFromKustomizeE(t, k8sOpts, kustomizeConfigPath), err=%s", err)
+				}
+			}
+		}
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	ctx, cancel := setupSignalHandler()
+	{
+		go func() {
+			select {
+			case <-ctx.Done():
+				cleanupFunc()
+				wg.Done()
+			}
+		}()
+	}
+
+	var result int
+	if !testWithHelm {
+		if err := deployOperatorWithKustomizeE(t, k8sOpts, kustomizeConfigPath); err != nil {
+			log.Printf("Failed to deployOperatorWithKustomizeE(t, k8sOpts, kustomizeConfigPath), err=%s", err)
+			result = 1
+		}
+	} else {
+		tfOptions.Vars["deploy_operator_via_helm"] = true
+		tfOptions.Vars["operator_helm_chart_path"] = chartDestDir
+		if operatorImageRepo != "" {
+			tfOptions.Vars["operator_image_repo"] = operatorImageRepo
+		}
+		if operatorImageTag != "" {
+			tfOptions.Vars["operator_image_tag"] = operatorImageTag
+		}
+		tfOptions.Vars["enable_default_auth_method"] = true
+		tfOptions.Vars["enable_default_connection"] = true
+		tfOptions.Vars["k8s_vault_connection_address"] = testVaultAddress
+	}
+
+	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
+	if result == 0 {
+		if _, err := terraform.InitAndApplyE(t, tfOptions); err != nil {
+			log.Printf("Failed to terraform.InitAndApplyE(t, tfOptions), err=%s", err)
+			result = 1
+		} else {
+			result := m.Run()
+			failed := result != 0
+			if err := exportKindLogs("TestMainVSO", failed); err != nil {
+				log.Printf("Error failed to exportKindLogs(), err=%s", err)
+				if !failed {
+					result = 1
+				}
+			}
+		}
+	}
+
+	cancel()
+	wg.Wait()
+	os.Exit(result)
 }
 
 func setCommonTFOptions(t *testing.T, opts *terraform.Options) *terraform.Options {
@@ -134,7 +297,11 @@ func setCommonTFOptions(t *testing.T, opts *terraform.Options) *terraform.Option
 	if os.Getenv("SUPPRESS_TF_OUTPUT") != "" {
 		opts.Logger = logger.Discard
 	}
-	return terraform.WithDefaultRetryableErrors(t, opts)
+
+	opts = terraform.WithDefaultRetryableErrors(t, opts)
+	opts.MaxRetries = 30
+	opts.TimeBetweenRetries = time.Millisecond * 500
+	return opts
 }
 
 func getVaultClient(t *testing.T, namespace string) *api.Client {
@@ -174,12 +341,12 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				return "", err
 			}
 
-			if _, ok := destSecret.Data["_raw"]; !ok {
-				return "", fmt.Errorf("secret hasn't been synced yet, missing '_raw' field")
+			if _, ok := destSecret.Data[helpers.SecretDataKeyRaw]; !ok {
+				return "", fmt.Errorf("secret hasn't been synced yet, missing '%s' field", helpers.SecretDataKeyRaw)
 			}
 
 			var rawSecret map[string]interface{}
-			err = json.Unmarshal(destSecret.Data["_raw"], &rawSecret)
+			err = json.Unmarshal(destSecret.Data[helpers.SecretDataKeyRaw], &rawSecret)
 			require.NoError(t, err)
 			if _, ok := rawSecret["data"]; ok {
 				rawSecret = rawSecret["data"].(map[string]interface{})
@@ -187,7 +354,8 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 			for k, v := range expectedData {
 				// compare expected secret data to _raw in the k8s secret
 				if !reflect.DeepEqual(v, rawSecret[k]) {
-					err = errors.Join(err, fmt.Errorf("expected data '%s:%s' missing from _raw: %#v", k, v, rawSecret))
+					err = errors.Join(err,
+						fmt.Errorf("expected data '%s:%s' missing from %s: %#v", k, v, helpers.SecretDataKeyRaw, rawSecret))
 				}
 				// compare expected secret k/v to the top level items in the k8s secret
 				if !reflect.DeepEqual(v, string(destSecret.Data[k])) {
@@ -195,7 +363,9 @@ func waitForSecretData(t *testing.T, ctx context.Context, crdClient ctrlclient.C
 				}
 			}
 			if len(expectedData) != len(rawSecret) {
-				err = errors.Join(err, fmt.Errorf("expected data length %d does not match _raw length %d", len(expectedData), len(rawSecret)))
+				err = errors.Join(err,
+					fmt.Errorf("expected data length %d does not match %s length %d",
+						len(expectedData), helpers.SecretDataKeyRaw, len(rawSecret)))
 			}
 			// the k8s secret has an extra key because of the "_raw" item
 			if len(expectedData) != len(destSecret.Data)-1 {
@@ -292,32 +462,21 @@ func checkTLSFields(secret *corev1.Secret) (ok bool, err error) {
 	return true, nil
 }
 
+type revocationK8sOutputs struct {
+	AuthRole   string `json:"auth_role"`
+	PolicyName string `json:"policy_name"`
+}
+
 type authMethodsK8sOutputs struct {
 	AuthRole      string `json:"auth_role"`
 	AppRoleRoleID string `json:"role_id"`
-}
-
-type dynamicK8SOutputs struct {
-	NamePrefix       string   `json:"name_prefix"`
-	Namespace        string   `json:"namespace"`
-	K8sNamespace     string   `json:"k8s_namespace"`
-	K8sConfigContext string   `json:"k8s_config_context"`
-	AuthMount        string   `json:"auth_mount"`
-	AuthPolicy       string   `json:"auth_policy"`
-	AuthRole         string   `json:"auth_role"`
-	DBRole           string   `json:"db_role"`
-	DBRoleStatic     string   `json:"db_role_static"`
-	DBRoleStaticUser string   `json:"db_role_static_user"`
-	DBPath           string   `json:"db_path"`
-	TransitPath      string   `json:"transit_path"`
-	TransitKeyName   string   `json:"transit_key_name"`
-	TransitRef       string   `json:"transit_ref"`
-	K8sDBSecrets     []string `json:"k8s_db_secret"`
-	DeploymentName   string   `json:"deployment_name"`
+	GSAEmail      string `json:"gsa_email"`
+	VaultPolicy   string `json:"vault_policy"`
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 	delay time.Duration, vdsObj *secretsv1beta1.VaultDynamicSecret, expected map[string]int,
+	expectedPresentOnly ...string,
 ) {
 	t.Helper()
 
@@ -327,14 +486,9 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 		Namespace: namespace,
 	}
 
-	expectedPresentOnly := make(map[string]int)
-	if vdsObj.Spec.AllowStaticCreds {
-		// these keys typically have variable values that make them difficult to compare,
-		// we can ensure that they are at least present and have a length > 0 in the
-		// resulting Secret data.
-		expectedPresentOnly["_raw"] = 1
-		expectedPresentOnly["last_vault_rotation"] = 1
-		expectedPresentOnly["ttl"] = 1
+	presentOnly := make(map[string]int)
+	for _, v := range expectedPresentOnly {
+		presentOnly[v] = 1
 	}
 
 	retry.DoWithRetry(t,
@@ -351,7 +505,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 			actualPresentOnly := make(map[string]int)
 			actual := make(map[string]int)
 			for f, b := range sec.Data {
-				if v, ok := expectedPresentOnly[f]; ok {
+				if v, ok := presentOnly[f]; ok {
 					if len(b) > 0 {
 						actualPresentOnly[f] = v
 					}
@@ -360,7 +514,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 				actual[f] = len(b)
 			}
 
-			assert.Equal(t, expectedPresentOnly, actualPresentOnly)
+			assert.Equal(t, presentOnly, actualPresentOnly)
 			assert.Equal(t, expected, actual, "actual %#v, expected %#v", actual, expected)
 
 			assertSyncableSecret(t, client, vdsObj, sec)
@@ -372,7 +526,7 @@ func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
 func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient.Object, sec *corev1.Secret) {
 	t.Helper()
 
-	meta, err := helpers.NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	require.NoError(t, err)
 
 	if meta.Destination.Create {
@@ -416,22 +570,38 @@ func assertSyncableSecret(t *testing.T, client ctrlclient.Client, obj ctrlclient
 func deployOperatorWithKustomize(t *testing.T, k8sOpts *k8s.KubectlOptions, kustomizeConfigPath string) {
 	// deploy the Operator with Kustomize
 	t.Helper()
+	if err := deployOperatorWithKustomizeE(t, k8sOpts, kustomizeConfigPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func deployOperatorWithKustomizeE(t *testing.T, k8sOpts *k8s.KubectlOptions, kustomizeConfigPath string) error {
+	// deploy the Operator with Kustomize
+	t.Helper()
 	k8s.KubectlApplyFromKustomize(t, k8sOpts, kustomizeConfigPath)
-	retry.DoWithRetry(t, "waitOperatorPodReady", 30, time.Millisecond*500, func() (string, error) {
+	_, err := retry.DoWithRetryE(t, "waitOperatorPodReady", 30, time.Millisecond*500, func() (string, error) {
 		return "", k8s.RunKubectlE(t, k8sOpts,
 			"wait", "--for=condition=Ready",
 			"--timeout=2m", "pod", "-l", "control-plane=controller-manager")
 	},
 	)
+	return err
+}
+
+// exportKindLogsT exports the kind logs for t if exportKindLogsRoot is not empty.
+// All logs are stored under exportKindLogsRoot. Every test should call this before
+// undeploying the Operator from Kubernetes.
+func exportKindLogsT(t *testing.T) {
+	t.Helper()
+	require.NoError(t, exportKindLogs(t.Name(), t.Failed()))
 }
 
 // exportKindLogs exports the kind logs for t if exportKindLogsRoot is not empty.
 // All logs are stored under exportKindLogsRoot. Every test should call this before
 // undeploying the Operator from Kubernetes.
-func exportKindLogs(t *testing.T) {
-	t.Helper()
+func exportKindLogs(name string, failed bool) error {
 	if exportKindLogsRoot != "" {
-		exportDir := filepath.Join(exportKindLogsRoot, t.Name())
+		exportDir := filepath.Join(exportKindLogsRoot, name)
 		if testWithHelm {
 			exportDir += "-helm"
 		}
@@ -441,7 +611,7 @@ func exportKindLogs(t *testing.T) {
 			exportDir += "-oss"
 		}
 
-		if t.Failed() {
+		if failed {
 			exportDir += "-failed"
 		} else {
 			exportDir += "-passed"
@@ -449,36 +619,36 @@ func exportKindLogs(t *testing.T) {
 
 		st, err := os.Stat(exportDir)
 		if err != nil && !os.IsNotExist(err) {
-			assert.NoError(t, err)
-			return
+			return err
 		}
 
 		// target path exists
 		if st != nil {
 			if !st.IsDir() {
-				assert.Fail(t, "export path %s exists but is not a directory, cannot export logs", exportDir)
-				return
+				return fmt.Errorf("export path %s exists but is not a directory, cannot export logs", exportDir)
 			} else {
 				now := time.Now().Unix()
 				if err := os.Rename(exportDir, fmt.Sprintf("%s-%d", exportDir, now)); err != nil {
-					assert.NoError(t, err)
-					return
+					return err
 				}
 			}
 		}
 
 		err = os.MkdirAll(exportDir, 0o755)
 		if err != nil {
-			assert.NoError(t, err)
-			return
+			return err
 		}
 
 		command := shell.Command{
 			Command: "kind",
 			Args:    []string{"export", "logs", "-n", clusterName, exportDir},
 		}
-		shell.RunCommand(t, command)
+
+		if err := shell.RunCommandE(&testing.T{}, command); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func awaitRolloutRestarts(t *testing.T, ctx context.Context,
@@ -497,7 +667,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 60),
 	))
 }
 
@@ -507,7 +677,13 @@ func assertRolloutRestarts(
 ) error {
 	t.Helper()
 
+	type status struct {
+		Replicas      *int32
+		ReadyReplicas int32
+	}
 	var errs error
+	var s *status
+
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
 	for _, target := range targets {
@@ -524,18 +700,21 @@ func assertRolloutRestarts(
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "StatefulSet":
 			var o appsv1.StatefulSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "ReplicaSet":
 			var o appsv1.ReplicaSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -562,6 +741,23 @@ func assertRolloutRestarts(
 		}
 		assert.True(t, ts.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
+
+		t.Logf("Status %#v for target %#v", s, target)
+		//if s.ReadyReplicas != *s.Replicas {
+		//	errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
+		//}
+
+		/*
+				=== NAME  TestVaultPKISecret/mixed/mixed-existing-0
+				vaultpkisecret_integration_test.go:311:
+				Error Trace:	/home/runner/work/vault-secrets-operator/vault-secrets-operator/test/integration/integration_test.go:625
+				/home/runner/work/vault-secrets-operator/vault-secrets-operator/test/integration/vaultpkisecret_integration_test.go:311
+			Error:      	Received unexpected error:
+				expected ready replicas 824647905224, actual 2
+			Test:       	TestVaultPKISecret/mixed/mixed-existing-0
+
+		*/
+
 	}
 	return errs
 }
@@ -590,10 +786,248 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			credentials.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
+			vault.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))
 
 	return secretObj
+}
+
+func awaitSecretSynced(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, expectedData map[string][]byte,
+) (*corev1.Secret, error) {
+	t.Helper()
+
+	var s *corev1.Secret
+	err := backoff.Retry(
+		func() error {
+			m, err := common.NewSyncableSecretMetaData(obj)
+			if err != nil {
+				return backoff.Permanent(err)
+			}
+
+			sec, exists, err := helpers.GetSyncableSecret(ctx, client, obj)
+			if err != nil {
+				return err
+			} else if !exists {
+				return fmt.Errorf("expected secret '%s/%s' inexistent",
+					obj.GetNamespace(), m.Destination.Name,
+				)
+			}
+
+			if _, ok := sec.Data[helpers.SecretDataKeyRaw]; !ok {
+				return fmt.Errorf("secret hasn't been synced yet, missing '%s' field",
+					helpers.SecretDataKeyRaw,
+				)
+			}
+
+			actualData := make(map[string][]byte)
+			for k, v := range sec.Data {
+				if k == helpers.SecretDataKeyRaw {
+					continue
+				}
+				actualData[k] = v
+			}
+
+			if !reflect.DeepEqual(actualData, expectedData) {
+				return fmt.Errorf(
+					"incomplete Secret data, expected=%#v, actual=%#v", expectedData, actualData)
+			}
+
+			s = sec
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+	)
+
+	return s, err
+}
+
+func copyTerraformDir(t *testing.T, src, tempDest string) string {
+	t.Helper()
+	dir, err := files.CopyTerraformFolderToDest(src, tempDest, "terraform")
+	require.NoError(t, err)
+	return dir
+}
+
+func copyModulesDirT(t *testing.T, tfDir string) string {
+	t.Helper()
+	modulesDestDir, err := copyModulesDir(tfDir)
+	require.NoError(t, err)
+	return modulesDestDir
+}
+
+func copyModulesDir(tfDir string) (string, error) {
+	return copyDir(
+		path.Join(testRoot, "modules"),
+		path.Join(tfDir, "..", "..", "modules"),
+	)
+}
+
+func copyDir(srcDir, destDir string) (string, error) {
+	if err := os.Mkdir(destDir, 0o755); err != nil {
+		return "", err
+	}
+
+	// srcDir := path.Join(testRoot, filepath.Base(destDir))
+	log.Printf("copyDir() testRoot=%s src=%s, dest=%s", testRoot, srcDir, destDir)
+	if err := files.CopyFolderContents(srcDir, destDir); err != nil {
+		return "", err
+	}
+
+	return destDir, nil
+}
+
+func copyChartDirT(t *testing.T, tfDir string) string {
+	t.Helper()
+	chartDestDir, err := copyChartDir(tfDir)
+	require.NoError(t, err)
+	return chartDestDir
+}
+
+func copyChartDir(tfDir string) (string, error) {
+	return copyDir(
+		path.Join(testRoot, "..", "..", "chart"),
+		path.Join(tfDir, "..", "..", "chart"),
+	)
+}
+
+func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) *appsv1.Deployment {
+	t.Helper()
+	depObj := &appsv1.Deployment{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: key.Namespace,
+			Name:      key.Name,
+			Labels: map[string]string{
+				"test": key.Name,
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &v1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": key.Name,
+				},
+			},
+			Replicas: pointer.Int32(3),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: v1.ObjectMeta{
+					Labels: map[string]string{
+						"test": key.Name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  key.Name,
+							Image: "busybox:latest",
+							Command: []string{
+								"sh", "-c", "while : ; do sleep 10; done",
+							},
+						},
+					},
+					TerminationGracePeriodSeconds: pointer.Int64(2),
+				},
+			},
+			Strategy: appsv1.DeploymentStrategy{
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxUnavailable: &intstr.IntOrString{
+						Type:   intstr.String,
+						StrVal: "25%",
+					},
+				},
+			},
+		},
+	}
+	require.NoError(t, client.Create(ctx, depObj), "failed to create %#v", depObj)
+
+	return depObj
+}
+
+func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, delay time.Duration, maxTries uint64,
+) bool {
+	t.Helper()
+
+	m, err := common.NewSyncableSecretMetaData(obj)
+	if !assert.NoError(t, err, "common.NewSyncableSecretMetaData(%v)", obj) {
+		return false
+	}
+
+	objKey := ctrlclient.ObjectKey{
+		Namespace: obj.GetNamespace(),
+		Name:      m.Destination.Name,
+	}
+
+	t.Logf("assertRemediationOnDestinationDeletion() objKey=%s, delay=%s, maxTries=%d", objKey, delay, maxTries)
+	orig, err := helpers.GetSecret(ctx, client, objKey)
+	if !assert.NoErrorf(t, err,
+		"helpers.GetSecret(%v, %v, %v)", ctx, objKey, &orig) {
+		return false
+	}
+
+	if !assert.NoError(t, client.Delete(ctx, orig)) {
+		return false
+	}
+
+	return assert.NoError(t, backoff.RetryNotify(func() error {
+		got, err := helpers.GetSecret(ctx, client, objKey)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return err
+			} else {
+				return backoff.Permanent(err)
+			}
+		}
+
+		if got == nil {
+			return backoff.Permanent(fmt.Errorf(
+				"both secret and error are nil, should not be possible"))
+		}
+
+		if orig.GetUID() == got.GetUID() {
+			return fmt.Errorf("got the same secret after deletion %s", objKey)
+		}
+
+		assert.Equal(t, orig.Labels, got.Labels)
+		assert.NotEmpty(t, orig.GetUID(), "invalid Secret %v", orig)
+		assert.NotEmpty(t, got.GetUID(), "invalid Secret %v", got)
+		if !t.Failed() {
+			assert.NotEqual(t, orig.GetUID(), got.GetUID(),
+				"new Secret %v has the same UID as its predecessor %v", got, orig)
+		}
+
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(delay), maxTries),
+		func(err error, d time.Duration) {
+			if withExtraVerbosity {
+				t.Logf("assertRemediationOnDestinationDeletion() got error %v, retry delay=%s", err, d)
+			}
+		},
+	))
+}
+
+var (
+	onlyOneSignalHandler = make(chan struct{})
+	shutdownSignals      = []os.Signal{os.Interrupt, syscall.SIGTERM}
+)
+
+// // setupSignalHandler registers for SIGTERM and SIGINT. A context is returned
+// // which is canceled on one of these signals. If a second signal is caught, the program
+// // is terminated with exit code 1.
+func setupSignalHandler() (context.Context, context.CancelFunc) {
+	close(onlyOneSignalHandler) // panics when called twice
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	c := make(chan os.Signal, 2)
+	signal.Notify(c, shutdownSignals...)
+	go func() {
+		<-c
+		cancel()
+		<-c
+		os.Exit(1) // second signal. Exit directly.
+	}()
+
+	return ctx, cancel
 }

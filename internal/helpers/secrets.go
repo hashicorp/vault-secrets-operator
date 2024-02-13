@@ -1,26 +1,32 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package helpers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
+	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/models"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
+
+const SecretDataKeyRaw = "_raw"
+
+var SecretDataErrorContainsRaw = fmt.Errorf("key '%s' not permitted in Secret data", SecretDataKeyRaw)
 
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by
 // a specific VSO object. It should be included in every Secret that is created
@@ -36,71 +42,6 @@ var OwnerLabels = map[string]string{
 	"app.kubernetes.io/name":       "vault-secrets-operator",
 	"app.kubernetes.io/managed-by": "hashicorp-vso",
 	"app.kubernetes.io/component":  "secret-sync",
-}
-
-// SyncOptions to provide to SyncSecret().
-type SyncOptions struct {
-	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
-	PruneOrphans bool
-}
-
-// SyncableSecretMetaData provides common data structure that extracts the bits pertinent
-// when handling any of the sync-able secret custom resource types.
-//
-// See NewSyncableSecretMetaData for the supported object types.
-type SyncableSecretMetaData struct {
-	// APIVersion of the syncable-secret object. Maps to obj.APIVersion.
-	APIVersion string
-	// Kind of the syncable-secret object. Maps to obj.Kind.
-	Kind string
-	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
-	Destination *secretsv1beta1.Destination
-}
-
-// NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
-// An error will be returned of obj is not a supported type.
-//
-// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
-func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, error) {
-	switch t := obj.(type) {
-	case *secretsv1beta1.VaultDynamicSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	case *secretsv1beta1.VaultStaticSecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	case *secretsv1beta1.VaultPKISecret:
-		return &SyncableSecretMetaData{
-			Destination: &t.Spec.Destination,
-			APIVersion:  t.APIVersion,
-			Kind:        t.Kind,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported type %T", t)
-	}
-}
-
-func getOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1.OwnerReference, error) {
-	ownerRef := metav1.OwnerReference{
-		Name: owner.GetName(),
-		UID:  owner.GetUID(),
-	}
-
-	gvk, err := apiutil.GVKForObject(owner, scheme)
-	if err != nil {
-		return ownerRef, err
-	}
-
-	apiVersion, kind := gvk.ToAPIVersionAndKind()
-	ownerRef.APIVersion = apiVersion
-	ownerRef.Kind = kind
-	return ownerRef, nil
 }
 
 // OwnerLabelsForObj returns the canonical set of labels that should be set on
@@ -142,7 +83,7 @@ func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, err
 // Those are secrets that have a copy of OwnerLabels, and exactly one metav1.OwnerReference
 // that matches obj.
 func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) ([]corev1.Secret, error) {
-	ownerRef, err := getOwnerRefFromObj(obj, client.Scheme())
+	ownerRef, err := utils.GetOwnerRefFromObj(obj, client.Scheme())
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +115,12 @@ func DefaultSyncOptions() SyncOptions {
 	}
 }
 
+// SyncOptions to provide to SyncSecret().
+type SyncOptions struct {
+	// PruneOrphans controls whether to delete any previously synced k8s Secrets.
+	PruneOrphans bool
+}
+
 // SyncSecret writes data to a Kubernetes Secret for obj. All configuring is
 // derived from the object's Spec.Destination configuration. Note: in order to
 // keep the interface simpler opts is a variadic argument, only the first element
@@ -188,7 +135,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		options = DefaultSyncOptions()
 	}
 
-	meta, err := NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return err
 	}
@@ -204,14 +151,9 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		return fmt.Errorf("invalid Destination, err=%w", err)
 	}
 
-	var dest corev1.Secret
-	exists := true
-	if err := client.Get(ctx, key, &dest); err != nil {
-		if apierrors.IsNotFound(err) {
-			exists = false
-		} else {
-			return err
-		}
+	dest, exists, err := getSecretExists(ctx, client, key)
+	if err != nil {
+		return err
 	}
 
 	pruneOrphans := func() {
@@ -240,7 +182,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		// syncable-secret's Status, but...
 		dest.Data = data
 		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		if err := client.Update(ctx, &dest); err != nil {
+		if err := client.Update(ctx, dest); err != nil {
 			return err
 		}
 
@@ -267,21 +209,28 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	}
 	if exists {
 		logger.V(consts.LogLevelDebug).Info("Found pre-existing secret",
-			"secret", ctrlclient.ObjectKeyFromObject(&dest))
-		if err := checkSecretIsOwnedByObj(&dest, references); err != nil {
-			return err
+			"secret", ctrlclient.ObjectKeyFromObject(dest))
+
+		checkOwnerShip := true
+		if meta.Destination.Overwrite {
+			checkOwnerShip = HasOwnerLabels(dest)
 		}
 
+		if checkOwnerShip {
+			if err := checkSecretIsOwnedByObj(dest, references); err != nil {
+				return err
+			}
+		}
 	} else {
 		// secret does not exist, so we are going to create it.
-		dest = corev1.Secret{
+		dest = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      meta.Destination.Name,
 				Namespace: obj.GetNamespace(),
 			},
 		}
 		logger.V(consts.LogLevelDebug).Info("Creating new secret",
-			"secret", ctrlclient.ObjectKeyFromObject(&dest))
+			"secret", ctrlclient.ObjectKeyFromObject(dest))
 	}
 
 	// common setup/updates
@@ -308,15 +257,16 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	dest.SetAnnotations(meta.Destination.Annotations)
 	dest.SetLabels(labels)
 	dest.SetOwnerReferences(references)
+	logger.V(consts.LogLevelTrace).Info("ObjectMeta", "objectMeta", dest.ObjectMeta)
 
 	if exists {
 		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		if err := client.Update(ctx, &dest); err != nil {
+		if err := client.Update(ctx, dest); err != nil {
 			return err
 		}
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Creating secret")
-		if err := client.Create(ctx, &dest); err != nil {
+		if err := client.Create(ctx, dest); err != nil {
 			return err
 		}
 	}
@@ -352,17 +302,17 @@ func pruneOrphanSecrets(ctx context.Context, client ctrlclient.Client, obj ctrlc
 //
 // See NewSyncableSecretMetaData for the supported types for obj.
 func CheckSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (bool, error) {
-	_, ok, err := getSecretExists(ctx, client, obj)
+	_, ok, err := getSecretExistsForObj(ctx, client, obj)
 	return ok, err
 }
 
-// GetSecret
-func GetSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
-	return getSecretExists(ctx, client, obj)
+// GetSyncableSecret returns K8s Secret for obj.
+func GetSyncableSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
+	return getSecretExistsForObj(ctx, client, obj)
 }
 
-func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
-	meta, err := NewSyncableSecretMetaData(obj)
+func getSecretExistsForObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (*corev1.Secret, bool, error) {
+	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, false, err
 	}
@@ -370,42 +320,73 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	logger := log.FromContext(ctx).WithName("syncSecret").WithValues(
 		"secretName", meta.Destination.Name, "create", meta.Destination.Create)
 	objKey := ctrlclient.ObjectKey{Namespace: obj.GetNamespace(), Name: meta.Destination.Name}
-	s, err := getSecret(ctx, client, objKey)
+	s, exists, err := getSecretExists(ctx, client, objKey)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.V(consts.LogLevelDebug).Info("Secret does not exist")
-			return nil, false, nil
-		}
 		// let the caller log the error
 		return nil, false, err
 	}
 
 	logger.V(consts.LogLevelDebug).Info("Secret exists")
-	return s, true, nil
+	return s, exists, nil
 }
 
-func getSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
+func GetSecret(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, error) {
 	var s corev1.Secret
 	err := client.Get(ctx, objKey, &s)
 
 	return &s, err
 }
 
+func getSecretExists(ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*corev1.Secret, bool, error) {
+	s, err := GetSecret(ctx, client, objKey)
+	var exists bool
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			err = nil
+		}
+	} else {
+		exists = true
+	}
+	return s, exists, err
+}
+
+// HasOwnerLabels returns true if all owner labels are present and valid, if not
+// it returns false.
+// Note: this may cause issues if we ever add new "owner"
+// labels, but for now this check should be good enough.
+func HasOwnerLabels(o ctrlclient.Object) bool {
+	return CheckOwnerLabels(o) == nil
+}
+
+// CheckOwnerLabels checks that all owner labels are present and valid.
+// Note: this may cause issues if we ever add new "owner" labels,
+// but for now this check should be good enough.
+func CheckOwnerLabels(o ctrlclient.Object) error {
+	// check that all owner labels are present and valid, if not return an error
+	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
+	var errs error
+
+	labels := o.GetLabels()
+	for k, v := range OwnerLabels {
+		if o, ok := labels[k]; o != v || !ok {
+			errs = errors.Join(errs, fmt.Errorf(
+				"invalid owner label, key=%s, present=%t", k, ok))
+		}
+	}
+
+	return errs
+}
+
 // checkSecretIsOwnedByObj validates the Secret is owned by obj by checking its Labels and OwnerReferences.
 func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerReference) error {
-	var errs error
 	// checking for Secret ownership relies on first checking the Secret's labels,
 	// then verifying that its OwnerReferences match the SyncableSecret.
 
 	// check that all owner labels are present and valid, if not return an error
 	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
+
+	errs := CheckOwnerLabels(dest)
 	key := ctrlclient.ObjectKeyFromObject(dest)
-	for k, v := range OwnerLabels {
-		if o, ok := dest.Labels[k]; o != v || !ok {
-			errs = errors.Join(errs, fmt.Errorf(
-				"invalid owner label, key=%s, present=%t", k, ok))
-		}
-	}
 	// check that obj is the Secret's true Owner
 	if len(dest.OwnerReferences) > 0 {
 		if !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {
@@ -419,4 +400,175 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 		errs = errors.Join(errs, fmt.Errorf("not the owner of the destination Secret %s", key))
 	}
 	return errs
+}
+
+// SecretDataBuilder constructs K8s Secret data from various sources.
+type SecretDataBuilder struct{}
+
+// WithVaultData returns the K8s Secret data from a Vault Secret data.
+func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *SecretTransformationOption) (map[string][]byte, error) {
+	if opt == nil {
+		opt = &SecretTransformationOption{}
+	}
+
+	raw, err := json.Marshal(secretData)
+	if err != nil {
+		return nil, err
+	}
+
+	data := make(map[string][]byte)
+	if len(opt.KeyedTemplates) > 0 {
+		metadata, ok := secretData["metadata"].(map[string]any)
+		if !ok {
+			metadata = make(map[string]any)
+		}
+
+		input := NewSecretInput(d, metadata, opt.Annotations, opt.Labels)
+		data, err = renderTemplates(opt, input)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return makeK8sData(d, data, raw, opt)
+}
+
+func marshalJSON(value any) ([]byte, error) {
+	var b []byte
+	var err error
+	switch x := value.(type) {
+	case string:
+		b = []byte(x)
+	default:
+		b, err = json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
+}
+
+// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
+func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretTransformationOption) (map[string][]byte, error) {
+	if opt == nil {
+		opt = &SecretTransformationOption{}
+	}
+
+	p := resp.GetPayload()
+	raw, err := p.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	// secrets for SecretInput
+	secrets := make(map[string]any)
+	// metadata for SecretInput
+	metadata := make(map[string]any)
+	// secret data returned to the caller
+	data := make(map[string][]byte)
+	hasTemplates := len(opt.KeyedTemplates) > 0
+	for _, v := range p.Secrets {
+		ver := v.Version
+		if ver == nil {
+			continue
+		}
+
+		if ver.Type != "kv" {
+			continue
+		}
+
+		if hasTemplates {
+			// we only need the Secret's metadata if we have templates to render.
+			m, err := s.makeHVSMetadata(v)
+			if err != nil {
+				return nil, err
+			}
+
+			// maps secret name to its secret metadata
+			metadata[v.Name] = m
+		}
+		secrets[v.Name] = ver.Value
+	}
+
+	if hasTemplates {
+		data, err = renderTemplates(opt, NewSecretInput(secrets, metadata, opt.Annotations, opt.Labels))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return makeK8sData(secrets, data, raw, opt)
+}
+
+func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret) (map[string]any, error) {
+	b, err := v.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	// unmarshal to non-open secret, which should/must not contain any
+	// secret/confidential data.
+	var ss models.Secrets20230613Secret
+	if err := json.Unmarshal(b, &ss); err != nil {
+		return nil, err
+	}
+
+	sv, err := ss.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(sv, &m); err != nil {
+		return nil, err
+	}
+
+	return m, nil
+}
+
+// makeK8sData returns the filtered data for the destination K8s Secret. It
+// always adds the _raw data bytes, which is typically a secret source's entire
+// response. Any extraData will always be included in the result data. Returns a
+// SecretDataErrorContainsRaw error if either secretData or extraData contain
+// SecretDataKeyRaw .
+func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
+	raw []byte, opt *SecretTransformationOption,
+) (map[string][]byte, error) {
+	data := make(map[string][]byte)
+	if !opt.ExcludeRaw {
+		if _, ok := secretData[SecretDataKeyRaw]; ok {
+			return nil, SecretDataErrorContainsRaw
+		}
+
+		if _, ok := extraData[SecretDataKeyRaw]; ok {
+			return nil, SecretDataErrorContainsRaw
+		}
+
+		data[SecretDataKeyRaw] = raw
+	}
+	for k, v := range extraData {
+		data[k] = v
+	}
+
+	filtered, err := filterData(opt, secretData)
+	if err != nil {
+		return nil, err
+	}
+
+	// include the filtered fields that are not already in data
+	for k, v := range filtered {
+		if _, ok := data[k]; !ok {
+			bv, err := marshalJSON(v)
+			if err != nil {
+				return nil, err
+			}
+			data[k] = bv
+		}
+	}
+
+	return data, nil
+}
+
+func NewSecretsDataBuilder() *SecretDataBuilder {
+	return &SecretDataBuilder{}
 }

@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package controllers
 
@@ -9,16 +9,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -26,13 +26,18 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
+const vaultStaticSecretFinalizer = "vaultstaticsecret.secrets.hashicorp.com/finalizer"
+
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.ClientFactory
-	HMACValidator vault.HMACValidator
+	Scheme                     *runtime.Scheme
+	Recorder                   record.EventRecorder
+	ClientFactory              vault.ClientFactory
+	SecretDataBuilder          *helpers.SecretDataBuilder
+	HMACValidator              helpers.HMACValidator
+	ReferenceCache             ResourceReferenceCache
+	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -60,6 +65,15 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	if o.GetDeletionTimestamp() == nil {
+		if err := r.addFinalizer(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		logger.Info("Got deletion timestamp", "obj", o)
+		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
@@ -69,72 +83,61 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
-		d, err := time.ParseDuration(o.Spec.RefreshAfter)
+		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
 		if err != nil {
-			logger.Error(err, "Failed to parse o.Spec.RefreshAfter")
+			logger.Error(err, "Field validation failed")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
-				"Failed to parse o.Spec.RefreshAfter %s", o.Spec.RefreshAfter)
+				"Field validation failed, err=%s", err)
 			return ctrl.Result{}, err
 		}
 		requeueAfter = computeHorizonWithJitter(d)
 	}
 
-	var resp *api.KVSecret
-	switch o.Spec.Type {
-	case consts.KVSecretTypeV1:
-		w, err := c.KVv1(o.Spec.Mount)
-		if err != nil {
-			return ctrl.Result{}, err
+	transRefObjKeys := helpers.GetTransformationRefObjKeys(
+		o.Spec.Destination.Transformation, o.Namespace)
+	if len(transRefObjKeys) > 0 {
+		for _, ref := range transRefObjKeys {
+			r.ReferenceCache.Add(SecretTransformation, ref,
+				req.NamespacedName)
 		}
-		resp, err = w.Get(ctx, o.Spec.Path)
-	case consts.KVSecretTypeV2:
-		w, err := c.KVv2(o.Spec.Mount)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if o.Spec.Version == 0 {
-			resp, err = w.Get(ctx, o.Spec.Path)
-		} else {
-			resp, err = w.GetVersion(ctx, o.Spec.Path, o.Spec.Version)
-		}
-	default:
-		err = fmt.Errorf("unsupported secret type %q", o.Spec.Type)
-		logger.Error(err, "")
+	} else {
+		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
+	}
+
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+			"Failed setting up SecretTransformationOption: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
+	kvReq, err := newKVRequest(o.Spec)
+	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
 		return ctrl.Result{}, err
 	}
 
+	resp, err := c.Read(ctx, kvReq)
 	if err != nil {
-		logger.Error(err, "Failed to read Vault secret")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	if resp == nil {
-		logger.Error(nil, "empty Vault secret", "mount", o.Spec.Mount, "path", o.Spec.Path)
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Vault secret was empty, mount %s, path %s", o.Spec.Mount, o.Spec.Path)
-		return ctrl.Result{
-			RequeueAfter: requeueAfter,
-		}, nil
-	}
-
-	data, err := makeK8sSecret(resp)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, transOption)
 	if err != nil {
-		logger.Error(err, "Failed to construct k8s secret")
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
-			"Failed to construct k8s secret: %s", err)
-		return ctrl.Result{}, err
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
+			"Failed to build K8s secret data: %s", err)
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	var doRolloutRestart bool
-	syncSecret := true
+	doSync := true
 	if o.Spec.HMACSecretData {
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
 		if requeueAfter == 0 {
-			// hardcoding a default horizon here, perhaps we will want make this value public?
+			// hardcoding a default horizon here, perhaps we will want to make this value public?
 			requeueAfter = computeHorizonWithJitter(time.Second * 60)
 		}
 
@@ -146,7 +149,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		syncSecret = !macsEqual
+		// skip the next sync if the data has not changed since the last sync, and the
+		// resource has not been updated.
+		if o.Status.LastGeneration == o.GetGeneration() {
+			doSync = !macsEqual
+		}
 
 		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
 	} else if len(o.Spec.RolloutRestartTargets) > 0 {
@@ -155,7 +162,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"targets", o.Spec.RolloutRestartTargets)
 	}
 
-	if syncSecret {
+	if doSync {
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Failed to update k8s secret: %s", err)
@@ -170,9 +177,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
 	} else {
-		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
+		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -182,41 +190,60 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func makeK8sSecret(vaultSecret *api.KVSecret) (map[string][]byte, error) {
-	if vaultSecret.Raw == nil {
-		return nil, fmt.Errorf("raw portion of vault secret was nil")
-	}
-
-	b, err := json.Marshal(vaultSecret.Raw.Data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal raw Vault secret: %s", err)
-	}
-	k8sSecretData := map[string][]byte{
-		"_raw": b,
-	}
-	for k, v := range vaultSecret.Data {
-		if k == "_raw" {
-			return nil, fmt.Errorf("key '_raw' not permitted in Vault secret")
+func (r *VaultStaticSecretReconciler) addFinalizer(ctx context.Context, o client.Object) error {
+	if !controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
+		controllerutil.AddFinalizer(o, vaultStaticSecretFinalizer)
+		if err := r.Client.Update(ctx, o); err != nil {
+			return err
 		}
-		var m []byte
-		switch vTyped := v.(type) {
-		case string:
-			m = []byte(vTyped)
-		default:
-			m, err = json.Marshal(vTyped)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal key %q from Vault secret: %s", k, err)
-			}
-		}
-		k8sSecretData[k] = m
 	}
-	return k8sSecretData, nil
+	return nil
 }
 
-func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o client.Object) error {
+	logger := log.FromContext(ctx)
+	r.ReferenceCache.Prune(SecretTransformation, client.ObjectKeyFromObject(o))
+	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
+		logger.Info("Removing finalizer")
+		if controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer) {
+			if err := r.Update(ctx, o); err != nil {
+				logger.Error(err, "Failed to remove the finalizer")
+				return err
+			}
+			logger.Info("Successfully removed the finalizer")
+		}
+	}
+	return nil
+}
+
+func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(syncableSecretPredicate(nil)).
+		WithOptions(opts).
+		Watches(
+			&secretsv1beta1.SecretTransformation{},
+			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, nil),
+		).
+		Watches(
+			&corev1.Secret{},
+			&enqueueOnDeletionRequestHandler{
+				gvk: secretsv1beta1.GroupVersion.WithKind(VaultStaticSecret.String()),
+			},
+			builder.WithPredicates(&secretsPredicate{}),
+		).
 		Complete(r)
+}
+
+func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.ReadRequest, error) {
+	var kvReq vault.ReadRequest
+	switch s.Type {
+	case consts.KVSecretTypeV1:
+		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path)
+	case consts.KVSecretTypeV2:
+		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version)
+	default:
+		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
+	}
+	return kvReq, nil
 }

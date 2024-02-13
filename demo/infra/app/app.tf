@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: BUSL-1.1
 
 data "kubernetes_namespace" "operator" {
   metadata {
@@ -39,7 +39,7 @@ resource "kubernetes_manifest" "vault-auth-default" {
       namespace = vault_auth_backend.default.namespace
       mount     = vault_auth_backend.default.path
       kubernetes = {
-        role           = vault_kubernetes_auth_backend_role.dev.role_name
+        role           = vault_kubernetes_auth_backend_role.default.role_name
         serviceAccount = "default"
         audiences = [
           "vault",
@@ -61,14 +61,28 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
     metadata = {
       name      = "vso-db-demo"
       namespace = kubernetes_namespace.dev.metadata[0].name
+      annotations = {
+        "myapp.config/postgres-host" = "${local.postgres_host}"
+      }
+      labels = {
+        "myapp/name" : "db"
+      }
     }
     spec = {
-      namespace = vault_auth_backend.default.namespace
-      mount     = vault_database_secrets_mount.db.path
-      path      = local.db_creds_path
+      namespace      = vault_auth_backend.default.namespace
+      mount          = vault_database_secrets_mount.db.path
+      path           = local.db_creds_path
+      renewalPercent = "66"
       destination = {
-        create : false
-        name : kubernetes_secret.db.metadata[0].name
+        create = true
+        name   = "vso-db-demo"
+        transformation = {
+          transformationRefs = [
+            {
+              name = kubernetes_manifest.templates.manifest.metadata.name
+            }
+          ]
+        }
       }
 
       rolloutRestartTargets = [
@@ -79,45 +93,94 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
       ]
     }
   }
+
+  field_manager {
+    # force field manager conflicts to be overridden
+    force_conflicts = true
+  }
 }
 
-resource "kubernetes_manifest" "vault-dynamic-secret-create" {
+resource "kubernetes_manifest" "templates" {
   manifest = {
     apiVersion = "secrets.hashicorp.com/v1beta1"
-    kind       = "VaultDynamicSecret"
+    kind       = "SecretTransformation"
     metadata = {
-      name      = "vso-db-demo-create"
+      name      = "vso-templates"
       namespace = kubernetes_namespace.dev.metadata[0].name
     }
     spec = {
-      namespace = vault_auth_backend.default.namespace
-      mount     = vault_database_secrets_mount.db.path
-      path      = local.db_creds_path
-      destination = {
-        create : true
-        name : "vso-db-demo-created"
+      templates = {
+        "app.props" = {
+          name = "app.props"
+          text = "{{- template \"appProps\" . -}}"
+        }
+        "app.json" = {
+          name = "app.json"
+          text = "{{- template \"appJson\" . -}}"
+        },
+        "app.name" = {
+          name = "app.name"
+          text = "{{- template \"appName\" . -}}"
+        }
+        "url" = {
+          name = "url"
+          text = "{{- template \"dbUrl\" . -}}"
+        },
       }
-      rolloutRestartTargets = [
+      sourceTemplates = [
         {
-          kind = "Deployment"
-          name = "vso-db-demo"
+          name = "helpers"
+          text = <<EOF
+{{/*
+  create a Java props from SecretInput for this app
+*/}}
+{{- define "appProps" -}}
+{{- $host := get .Annotations "myapp.config/postgres-host" -}}
+{{- printf "db.host=%s\n" $host -}}
+{{- range $k, $v := .Secrets -}}
+{{- printf "db.%s=%s\n" $k $v -}}
+{{- end -}}
+{{- end -}}
+{{/*
+  create a JSON config from SecretInput for this app
+*/}}
+{{- define "appJson" -}}
+{{- $host := get .Annotations "myapp.config/postgres-host" -}}
+{{- $copy := .Secrets | mustDeepCopy -}}
+{{- $_ := set $copy "host" $host -}}
+{{- mustToPrettyJson $copy -}}
+{{- end -}}
+{{/*
+  compose a Postgres URL from SecretInput for this app
+*/}}
+{{- define "dbUrl" -}}
+{{- $host := get .Annotations "myapp.config/postgres-host" -}}
+{{- printf "postgresql://%s:%s@%s/postgres?sslmode=disable" (get .Secrets "username") (get .Secrets "password") $host -}}
+{{- end -}}
+{{/*
+  get the app name from the VSO resource's label
+*/}}
+{{- define "appName" -}}
+{{- get .Labels "myapp/name" -}}
+{{- end -}}
+EOF
         }
       ]
     }
   }
-}
 
-resource "kubernetes_secret" "db" {
-  metadata {
-    name      = "vso-db-demo"
-    namespace = kubernetes_namespace.dev.metadata[0].name
+  field_manager {
+    # force field manager conflicts to be overridden
+    force_conflicts = true
   }
 }
 
 resource "kubernetes_deployment" "example" {
+  depends_on = [kubernetes_manifest.vault-dynamic-secret]
+
   metadata {
     name      = "vso-db-demo"
-    namespace = kubernetes_namespace.dev.metadata[0].name
+    namespace = local.k8s_namespace
     labels = {
       test = "vso-db-demo"
     }
@@ -150,32 +213,22 @@ resource "kubernetes_deployment" "example" {
         volume {
           name = "secrets"
           secret {
-            secret_name = kubernetes_secret.db.metadata[0].name
+            secret_name = "vso-db-demo"
           }
         }
         container {
           image = "postgres:latest"
           name  = "demo"
           command = [
-            "sh", "-c", "while : ; do psql postgresql://$PGUSERNAME@${local.postgres_host}/postgres?sslmode=disable -c 'select 1;' ; sleep 5; done"
+            "sh", "-c", "while : ; do psql $PGURL -c 'select 1;' ; sleep 30; done"
           ]
 
           env {
-            name = "PGPASSWORD"
+            name = "PGURL"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.db.metadata[0].name
-                key  = "password"
-              }
-            }
-          }
-
-          env {
-            name = "PGUSERNAME"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.db.metadata[0].name
-                key  = "username"
+                name = "vso-db-demo"
+                key  = "url"
               }
             }
           }

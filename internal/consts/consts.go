@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package consts
 
@@ -21,4 +21,6 @@ const (
 	AWSRoleARN         = "role_arn"
 	AWSSessionName     = "session_name"
 	AWSSessionToken    = "session_token"
+
+	AnnotationResync = "vso/resync"
 )

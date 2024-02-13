@@ -1,5 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: BUSL-1.1
 
 package integration
 
@@ -12,14 +12,10 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/gruntwork-io/terratest/modules/files"
-	"github.com/gruntwork-io/terratest/modules/k8s"
-	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,12 +30,25 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
-func TestVaultStaticSecret_kv(t *testing.T) {
-	testID := strings.ToLower(random.UniqueId())
-	testK8sNamespace := "k8s-tenant-" + testID
-	testKvMountPath := consts.KVSecretTypeV1 + testID
-	testKvv2MountPath := consts.KVSecretTypeV2 + testID
-	testVaultNamespace := ""
+type vssK8SOutputs struct {
+	NamePrefix        string `json:"name_prefix"`
+	Namespace         string `json:"namespace"`
+	K8sNamespace      string `json:"k8s_namespace"`
+	K8sConfigContext  string `json:"k8s_config_context"`
+	AuthMount         string `json:"auth_mount"`
+	AuthPolicy        string `json:"auth_policy"`
+	AuthRole          string `json:"auth_role"`
+	KVMount           string `json:"kv_mount"`
+	KVV2Mount         string `json:"kv_v2_mount"`
+	AppK8sNamespace   string `json:"app_k8s_namespace"`
+	AppVaultNamespace string `json:"app_vault_namespace,omitempty"`
+	AdminK8sNamespace string `json:"admin_k8s_namespace"`
+}
+
+func TestVaultStaticSecret(t *testing.T) {
+	if testInParallel {
+		t.Parallel()
+	}
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
@@ -49,54 +58,26 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "vaultstaticsecret/terraform"),
-		tempDir,
-		"terraform",
-	)
-	require.Nil(t, err)
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultstaticsecret/terraform"), tempDir)
+	copyModulesDirT(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
-	k8sOpts := &k8s.KubectlOptions{
-		ContextName: k8sConfigContext,
-		Namespace:   operatorNS,
-	}
-	kustomizeConfigPath := filepath.Join(kustomizeConfigRoot, "default")
-	if !testWithHelm {
-		// deploy the Operator with Kustomize
-		deployOperatorWithKustomize(t, k8sOpts, kustomizeConfigPath)
-	}
-
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
-	terraformOptions := &terraform.Options{
+	tfOptions := &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"deploy_operator_via_helm":     testWithHelm,
-			"k8s_vault_connection_address": testVaultAddress,
-			"k8s_test_namespace":           testK8sNamespace,
-			"k8s_config_context":           k8sConfigContext,
-			"vault_kv_mount_path":          testKvMountPath,
-			"vault_kvv2_mount_path":        testKvv2MountPath,
-			"operator_helm_chart_path":     chartPath,
+			"k8s_config_context": k8sConfigContext,
 		},
 	}
-	if operatorImageRepo != "" {
-		terraformOptions.Vars["operator_image_repo"] = operatorImageRepo
-	}
-	if operatorImageTag != "" {
-		terraformOptions.Vars["operator_image_tag"] = operatorImageTag
-	}
 	if entTests {
-		testVaultNamespace = "vault-tenant-" + testID
-		terraformOptions.Vars["vault_enterprise"] = true
-		terraformOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		tfOptions.Vars["vault_enterprise"] = true
 	}
-	terraformOptions = setCommonTFOptions(t, terraformOptions)
+	tfOptions = setCommonTFOptions(t, tfOptions)
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -114,29 +95,44 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			assert.Nil(t, crdClient.Delete(ctx, c))
 		}
 
-		exportKindLogs(t)
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
 
 		// Clean up resources with "terraform destroy" at the end of the test.
-		terraform.Destroy(t, terraformOptions)
+		terraform.Destroy(t, tfOptions)
 		assert.NoError(t, os.RemoveAll(tempDir))
-
-		// Undeploy Kustomize
-		if !testWithHelm {
-			k8s.KubectlDeleteFromKustomize(t, k8sOpts, kustomizeConfigPath)
-		}
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
-	terraform.InitAndApply(t, terraformOptions)
+	terraform.InitAndApply(t, tfOptions)
+
+	if skipCleanup {
+		// save vars to re-run terraform, useful when SKIP_CLEANUP is set.
+		b, err := json.Marshal(tfOptions.Vars)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(tfOptions.TerraformDir, "terraform.tfvars.json"), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.Nil(t, err)
+
+	var outputs vssK8SOutputs
+	require.Nil(t, json.Unmarshal(b, &outputs))
 
 	// Set the secrets in vault to be synced to kubernetes
-	vClient := getVaultClient(t, testVaultNamespace)
+	vClient := getVaultClient(t, outputs.AppVaultNamespace)
 	// Create a VaultConnection CR
 	conns := []*secretsv1beta1.VaultConnection{
 		{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      "vaultconnection-test-tenant-1",
-				Namespace: testK8sNamespace,
+				Namespace: outputs.AdminK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultConnectionSpec{
 				Address: testVaultAddress,
@@ -144,69 +140,56 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 	}
 
-	// Creates a default VaultConnection CR
-	defaultConnection := &secretsv1beta1.VaultConnection{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      consts.NameDefault,
-			Namespace: operatorNS,
-		},
-		Spec: secretsv1beta1.VaultConnectionSpec{
-			Address: testVaultAddress,
-		},
-	}
-
 	auths := []*secretsv1beta1.VaultAuth{
 		// Create a non-default VaultAuth CR
 		{
 			ObjectMeta: v1.ObjectMeta{
-				Name:      "vaultauth-test-tenant-1",
-				Namespace: testK8sNamespace,
+				Name:      outputs.NamePrefix + "-admin",
+				Namespace: outputs.AppK8sNamespace,
 			},
 			Spec: secretsv1beta1.VaultAuthSpec{
-				VaultConnectionRef: "vaultconnection-test-tenant-1",
-				Namespace:          testVaultNamespace,
+				// This VaultAuth references a VaultConnection in an external namespace.
+				VaultConnectionRef: ctrlclient.ObjectKeyFromObject(conns[0]).String(),
+				Namespace:          outputs.AppK8sNamespace,
 				Method:             "kubernetes",
-				Mount:              "kubernetes",
+				Mount:              outputs.AuthMount,
 				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-					Role:           "role1",
+					Role:           outputs.AuthRole,
 					ServiceAccount: "default",
 					TokenAudiences: []string{"vault"},
 				},
+				AllowedNamespaces: []string{outputs.AppK8sNamespace},
 			},
 		},
 	}
 	// Create the default VaultAuth CR in the Operator's namespace
-	defaultAuthMethod := &secretsv1beta1.VaultAuth{
+	defaultVaultAuth := &secretsv1beta1.VaultAuth{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      consts.NameDefault,
+			Name:      outputs.NamePrefix + "-default",
 			Namespace: operatorNS,
 		},
 		Spec: secretsv1beta1.VaultAuthSpec{
 			VaultConnectionRef: consts.NameDefault,
-			Namespace:          testVaultNamespace,
+			Namespace:          outputs.AppK8sNamespace,
 			Method:             "kubernetes",
-			Mount:              "kubernetes",
+			Mount:              outputs.AuthMount,
+			AllowedNamespaces:  []string{outputs.AppK8sNamespace},
 			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           "role1",
+				Role:           outputs.AuthRole,
 				ServiceAccount: "default",
 				TokenAudiences: []string{"vault"},
 			},
 		},
 	}
 
-	// The Helm chart will deploy the defaultAuthMethod/Connection
-	if !testWithHelm {
-		conns = append(conns, defaultConnection)
-		auths = append(auths, defaultAuthMethod)
-	}
-
+	auths = append(auths, defaultVaultAuth)
 	for _, c := range conns {
-		require.Nil(t, crdClient.Create(ctx, c))
+		require.NoError(t, crdClient.Create(ctx, c))
 		created = append(created, c)
 	}
 
 	for _, a := range auths {
-		require.Nil(t, crdClient.Create(ctx, a))
+		require.NoError(t, crdClient.Create(ctx, a))
 		created = append(created, a)
 	}
 
@@ -218,14 +201,16 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultstaticsecret-test-kv",
-					Namespace: testK8sNamespace,
+					Namespace: outputs.AppK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					VaultAuthRef: auths[0].ObjectMeta.Name,
-					Namespace:    testVaultNamespace,
-					Mount:        testKvMountPath,
-					Type:         consts.KVSecretTypeV1,
-					Path:         "secret",
+					VaultAuthRef: ctrlclient.ObjectKeyFromObject(auths[0]).String(),
+					// This Secret references an Auth Method in a different namespace.
+					// VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
+					Namespace: outputs.AppVaultNamespace,
+					Mount:     outputs.KVMount,
+					Type:      consts.KVSecretTypeV1,
+					Path:      "secret",
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkv",
 						Create: false,
@@ -244,13 +229,15 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      "vaultstaticsecret-test-kvv2",
-					Namespace: testK8sNamespace,
+					Namespace: outputs.AppK8sNamespace,
 				},
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
-					Namespace: testVaultNamespace,
-					Mount:     testKvv2MountPath,
-					Type:      consts.KVSecretTypeV2,
-					Path:      "secret",
+					// This Secret references the default Auth Method.
+					VaultAuthRef: ctrlclient.ObjectKeyFromObject(defaultVaultAuth).String(),
+					Namespace:    outputs.AppK8sNamespace,
+					Mount:        outputs.KVV2Mount,
+					Type:         consts.KVSecretTypeV2,
+					Path:         "secret",
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkvv2",
 						Create: false,
@@ -298,7 +285,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 		},
 		{
 			name:        "create-kv-v2",
-			create:      2,
+			create:      1,
 			createTypes: []string{consts.KVSecretTypeV2},
 		},
 		{
@@ -333,9 +320,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	putKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret, data map[string]interface{}) {
 		switch vssObj.Spec.Type {
 		case consts.KVSecretTypeV1:
-			require.NoError(t, vClient.KVv1(testKvMountPath).Put(ctx, vssObj.Spec.Path, data))
+			require.NoError(t, vClient.KVv1(outputs.KVMount).Put(ctx, vssObj.Spec.Path, data))
 		case consts.KVSecretTypeV2:
-			_, err := vClient.KVv2(testKvv2MountPath).Put(ctx, vssObj.Spec.Path, data)
+			_, err := vClient.KVv2(outputs.KVV2Mount).Put(ctx, vssObj.Spec.Path, data)
 			require.NoError(t, err)
 		default:
 			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
@@ -345,9 +332,9 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 	deleteKV := func(t *testing.T, vssObj *secretsv1beta1.VaultStaticSecret) {
 		switch vssObj.Spec.Type {
 		case consts.KVSecretTypeV1:
-			require.NoError(t, vClient.KVv1(testKvMountPath).Delete(ctx, vssObj.Spec.Path))
+			require.NoError(t, vClient.KVv1(outputs.KVMount).Delete(ctx, vssObj.Spec.Path))
 		case consts.KVSecretTypeV2:
-			require.NoError(t, vClient.KVv2(testKvv2MountPath).Delete(ctx, vssObj.Spec.Path))
+			require.NoError(t, vClient.KVv2(outputs.KVV2Mount).Delete(ctx, vssObj.Spec.Path))
 		default:
 			t.Fatalf("invalid KV type %s", vssObj.Spec.Type)
 		}
@@ -369,7 +356,7 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			}
 		}
 
-		secret, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
+		secret, err := waitForSecretData(t, ctx, crdClient, 30, time.Millisecond*500, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, data)
 		if assert.NoError(t, err) {
 			assertSyncableSecret(t, crdClient, obj, secret)
@@ -380,11 +367,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 			}
 
 			if obj.Spec.Destination.Create {
-				sec, _, err := helpers.GetSecret(ctx, crdClient, obj)
+				sec, _, err := helpers.GetSyncableSecret(ctx, crdClient, obj)
 				if assert.NoError(t, err) {
 					// ensure that a Secret deleted out-of-band is properly restored
 					if assert.NoError(t, crdClient.Delete(ctx, sec)) {
-						_, err := waitForSecretData(t, ctx, crdClient, 30, 1*time.Second, obj.Spec.Destination.Name,
+						_, err := waitForSecretData(t, ctx, crdClient, 30, time.Millisecond*500, obj.Spec.Destination.Name,
 							obj.ObjectMeta.Namespace, data)
 						assert.NoError(t, err)
 					}
@@ -426,7 +413,16 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						kvType := kvType
 						t.Parallel()
 
-						mount := kvType + testID
+						var mount string
+						switch kvType {
+						case consts.KVSecretTypeV1:
+							mount = outputs.KVMount
+						case consts.KVSecretTypeV2:
+							mount = outputs.KVV2Mount
+						default:
+							require.Fail(t, "unsupported KV type %s", kvType)
+						}
+
 						dest := fmt.Sprintf("%s-%s-%d", tt.name, kvType, idx)
 						expected := expectedData{
 							initial: map[string]interface{}{"dest-initial": dest},
@@ -435,11 +431,11 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						vssObj := &secretsv1beta1.VaultStaticSecret{
 							ObjectMeta: v1.ObjectMeta{
 								Name:      dest,
-								Namespace: testK8sNamespace,
+								Namespace: outputs.AppK8sNamespace,
 							},
 							Spec: secretsv1beta1.VaultStaticSecretSpec{
-								VaultAuthRef: auths[0].ObjectMeta.Name,
-								Namespace:    testVaultNamespace,
+								VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
+								Namespace:    outputs.AppVaultNamespace,
 								Mount:        mount,
 								Type:         kvType,
 								Path:         dest,
@@ -463,7 +459,22 @@ func TestVaultStaticSecret_kv(t *testing.T) {
 						}
 
 						assertSync(t, vssObj, expected, true)
+						if t.Failed() {
+							return
+						}
+
 						assertSync(t, vssObj, expected, false)
+						if t.Failed() {
+							return
+						}
+
+						if vssObj.Spec.RefreshAfter != "" {
+							d, err := time.ParseDuration(vssObj.Spec.RefreshAfter)
+							if assert.NoError(t, err, "time.ParseDuration(%v)", vssObj.Spec.RefreshAfter) {
+								assertRemediationOnDestinationDeletion(t, ctx, crdClient, vssObj,
+									time.Millisecond*500, uint64(d.Seconds()*3))
+							}
+						}
 					})
 				}
 			}
@@ -574,7 +585,7 @@ func assertSecretDataHMAC(t *testing.T, ctx context.Context, client ctrlclient.C
 			return backoff.Permanent(fmt.Errorf("could not marshal Secret.Data, should never happen: %w", err))
 		}
 
-		validator := vault.NewHMACValidator(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
+		validator := helpers.NewHMACValidator(vault.DefaultClientCacheStorageConfig().HMACSecretObjKey)
 		valid, actualMAC, err := validator.Validate(ctx, client, message, expectedMAC)
 		if err != nil {
 			return backoff.Permanent(err)
