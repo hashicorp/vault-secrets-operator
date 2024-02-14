@@ -519,12 +519,13 @@ bundle: manifests kustomize sdk-generate set-image-ubi yq ## Generate bundle man
 	@$(COPYWRITE) headers &> /dev/null
 	@./hack/set_openshift_minimum_version.sh
 	@./hack/set_containerImage.sh
+	@./hack/set_csv_replaces.sh
 	mv bundle.Dockerfile $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	operator-sdk bundle validate $(BUNDLE_DIR)
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
-	docker build -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile -t $(BUNDLE_IMG) .
+	docker build -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile -t $(BUNDLE_IMG) --platform $(GOOS)/$(GOARCH) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
