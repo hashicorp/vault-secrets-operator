@@ -31,6 +31,7 @@ EXPORT_KIND_LOGS_ROOT ?=
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
 COPYWRITE_VERSION ?= 0.16.3
+OPERATOR_SDK_VERSION ?= v1.33.0
 
 TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
@@ -184,7 +185,7 @@ help: ## Display this help.
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
-	$(MAKE) sync-crds sync-rbac gen-api-ref-docs
+	$(MAKE) sync-crds sync-rbac gen-api-ref-docs sdk-generate
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -507,21 +508,21 @@ set-image-ubi: kustomize copy-config ## Set the controller UBI image
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG_UBI)
 
 .PHONY: sdk-generate
-sdk-generate: copywrite
-	operator-sdk generate kustomize manifests -q
+sdk-generate: copywrite operator-sdk
+	$(OPERATOR_SDK) generate kustomize manifests -q
 	@$(COPYWRITE) headers &> /dev/null
 
 .PHONY: bundle
-bundle: manifests kustomize sdk-generate set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
 	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
-	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
+	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	@$(COPYWRITE) headers &> /dev/null
 	@./hack/set_openshift_minimum_version.sh
 	@./hack/set_containerImage.sh
 	@./hack/set_csv_replaces.sh
 	mv bundle.Dockerfile $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
-	operator-sdk bundle validate $(BUNDLE_DIR)
+	$(OPERATOR_SDK) bundle validate $(BUNDLE_DIR)
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
@@ -591,6 +592,11 @@ copywrite: ## Download copywrite locally if necessary.
 .PHONY: yq
 yq: ## Download yq locally if necessary.
 	@./hack/install_yq.sh
+
+.PHONY: operator-sdk
+OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
+operator-sdk: ## Download operator-sdk locally if necessary.
+	@./hack/install_operator_sdk.sh
 
 .PHONY: crd-ref-docs
 CRD_REF_DOCS = ./bin/crd-ref-docs
