@@ -158,6 +158,7 @@ func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 		"ip_sans":                 strings.Join(v.Spec.IPSans, ","),
 		"uri_sans":                strings.Join(v.Spec.URISans, ","),
 		"other_sans":              strings.Join(v.Spec.OtherSans, ","),
+		"user_ids":                strings.Join(v.Spec.UserIDs, ","),
 		"ttl":                     v.Spec.TTL,
 		"not_after":               v.Spec.NotAfter,
 		"exclude_cn_from_sans":    v.Spec.ExcludeCNFromSans,
@@ -170,10 +171,6 @@ func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 
 	if v.Spec.PrivateKeyFormat != "" {
 		m["private_key_format"] = v.Spec.PrivateKeyFormat
-	}
-
-	if v.Spec.UserIDs != nil {
-		m["user_ids"] = strings.Join(v.Spec.UserIDs, ",")
 	}
 
 	return m
