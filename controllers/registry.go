@@ -58,7 +58,15 @@ func newResourceReferenceCache() ResourceReferenceCache {
 type refCacheMap map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty
 
 // resourceReferenceCache provides access to a refCacheMap. It can be used to
-// cache object references for a specific ResourceKind.
+// cache object references for a specific ResourceKind. It should be used
+// whenever you want to cache object references for specific resource kinds.
+// Typically, a CRD specifies a set of object references, with the controller
+// E.g: a VaultStaticSecret refers to a set of SecretTransformation instances.
+// SecretTransformation -> VaultStaticSecret -> [SecretTransformation, ...]
+// populating the cache with all references to a specific resource kind. Then a
+// Watch is set for that kind on the secret controller with a
+// ResourceReferenceCache aware handler.EventHandler. That handler enqueues all
+// objects that refer to the object for the handled event e.g: event.UpdateEvent.
 type resourceReferenceCache struct {
 	m  refCacheMap
 	mu sync.RWMutex
