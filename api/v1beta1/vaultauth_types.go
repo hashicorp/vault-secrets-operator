@@ -182,7 +182,7 @@ type VaultAuth struct {
 }
 
 // StorageEncryption provides the necessary configuration need to encrypt the storage cache
-// entries using Vault's Transit engine. It only supports Kubernetes Auth for now.
+// entries using Vault's Transit engine.
 type StorageEncryption struct {
 	// Mount path of the Transit engine in Vault.
 	Mount string `json:"mount"`
