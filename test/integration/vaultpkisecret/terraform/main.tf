@@ -9,7 +9,7 @@ terraform {
     }
     vault = {
       source  = "hashicorp/vault"
-      version = "3.12.0"
+      version = "3.24.0"
     }
     helm = {
       source  = "hashicorp/helm"
@@ -81,6 +81,7 @@ resource "vault_pki_secret_backend_role" "role" {
   allowed_domains  = ["example.com"]
   allow_subdomains = true
   allowed_uri_sans = ["uri1.example.com", "uri2.example.com"]
+  allowed_user_ids = ["12345", "67890"]
 }
 
 resource "vault_pki_secret_backend_root_cert" "test" {
