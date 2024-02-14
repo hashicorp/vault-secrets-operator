@@ -43,8 +43,27 @@ load _helpers
     [ "${actual}" = "kubernetes" ]
     actual=$(echo "$object" | yq '.spec.mount' | tee /dev/stderr)
     [ "${actual}" = "kubernetes" ]
+    actual=$(echo "$object" | yq '.spec.allowedNamespaces' | tee /dev/stderr)
+    [ "${actual}" = null ]
     actual=$(echo "$object" | yq '.spec.kubernetes.serviceAccount' | tee /dev/stderr)
     [ "${actual}" = "default" ]
+}
+
+@test "defaultAuthMethod/CR: allowedNamespaces" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.allowedNamespaces={tenant-1,tenant-2}' \
+        --set 'defaultAuthMethod.enabled=true' \
+        . | tee /dev/stderr)
+
+    local allowed=$(echo "${object}" | yq '.spec.allowedNamespaces')
+    actual=$(echo "${allowed}" | yq '. | length' | tee /dev/stderr)
+    [ "${actual}" = '2' ]
+    actual=$(echo "${allowed}" | yq '.[0]' | tee /dev/stderr)
+    [ "${actual}" = 'tenant-1' ]
+    actual=$(echo "${allowed}" | yq '.[1]' | tee /dev/stderr)
+    [ "${actual}" = 'tenant-2' ]
 }
 
 @test "defaultAuthMethod/CR: settings can be modified for kubernetes auth method" {
