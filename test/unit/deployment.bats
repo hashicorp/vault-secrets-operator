@@ -715,8 +715,15 @@ load _helpers
       . | tee /dev/stderr |
       yq 'select(.kind == "Job") | .metadata.annotations' | tee /dev/stderr)
 
-  local actual=$(echo "$object" | yq '.testAnnotation' | tee /dev/stderr)
+  local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "3" ]
+  actual=$(echo "$object" | yq '.testAnnotation' | tee /dev/stderr)
   [ "${actual}" = "testValue" ]
+  actual=$(echo "$object" | yq '."helm.sh/hook"' | tee /dev/stderr)
+  [ "${actual}" = "pre-delete" ]
+  actual=$(echo "$object" | yq '."helm.sh/hook-delete-policy"' | tee /dev/stderr)
+  [ "${actual}" = "hook-succeeded" ]
+
 }
 
 @test "controller/Deployment: pre-delete-controller Job name is truncated to 63 characters" {
