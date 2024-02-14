@@ -80,6 +80,24 @@ resources:
   controller: true
   domain: hashicorp.com
   group: secrets
+  kind: HCPAuth
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: hashicorp.com
+  group: secrets
+  kind: HCPVaultSecretsApp
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: hashicorp.com
+  group: secrets
   kind: SecretTransformation
   path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
   version: v1beta1
