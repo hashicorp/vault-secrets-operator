@@ -37,50 +37,65 @@ func (k ResourceKind) String() string {
 }
 
 type ResourceReferenceCache interface {
-	Add(ResourceKind, client.ObjectKey, ...client.ObjectKey)
-	Get(ResourceKind, client.ObjectKey) ([]client.ObjectKey, bool)
+	Set(ResourceKind, client.ObjectKey, ...client.ObjectKey)
+	Get(ResourceKind, client.ObjectKey) []client.ObjectKey
 	Remove(ResourceKind, client.ObjectKey) bool
 	Prune(ResourceKind, client.ObjectKey) int
 }
 
-// NewResourceReferenceCache returns the default ReferenceCache that be used to
+var _ ResourceReferenceCache = (*resourceReferenceCache)(nil)
+
+// newResourceReferenceCache returns the default ReferenceCache that be used to
 // store object references for quick access by secret controllers.
-func NewResourceReferenceCache() ResourceReferenceCache {
+func newResourceReferenceCache() ResourceReferenceCache {
 	return &resourceReferenceCache{
-		m: map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty{},
+		m: refCacheMap{},
 	}
 }
 
-// resourceReferenceCache provides caching of resource references by
-// ResourceKind.
+// refCacheMap holds a tree of client.ObjectKey references, keyed by
+// ResourceKind at the top level.
+type refCacheMap map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty
+
+// resourceReferenceCache provides access to a refCacheMap. It can be used to
+// cache object references for a specific ResourceKind. It should be used
+// whenever you want to cache object references for specific resource kinds.
+// Typically, a CRD specifies a set of object references, with the controller
+// E.g: a VaultStaticSecret refers to a set of SecretTransformation instances.
+// SecretTransformation -> VaultStaticSecret -> [SecretTransformation, ...]
+// populating the cache with all references to a specific resource kind. Then a
+// Watch is set for that kind on the secret controller with a
+// ResourceReferenceCache aware handler.EventHandler. That handler enqueues all
+// objects that refer to the object for the handled event e.g: event.UpdateEvent.
 type resourceReferenceCache struct {
-	m  map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty
+	m  refCacheMap
 	mu sync.RWMutex
 }
 
-// Add referrers for the referent object with kind.
-func (c *resourceReferenceCache) Add(kind ResourceKind, referent client.ObjectKey, referrers ...client.ObjectKey) {
+// Set references of kind for referrer.
+func (c *resourceReferenceCache) Set(kind ResourceKind, referrer client.ObjectKey, references ...client.ObjectKey) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if len(referrers) == 0 {
+	scope, _ := c.scoped(kind, true)
+	if len(references) == 0 {
+		delete(scope, referrer)
+		if len(scope) == 0 {
+			delete(c.m, kind)
+		}
 		return
 	}
 
-	scope, _ := c.scoped(kind, true)
-	refs, ok := scope[referent]
-	if !ok {
-		refs = map[client.ObjectKey]empty{}
-		scope[referent] = refs
-	}
-
-	for _, r := range referrers {
+	refs := map[client.ObjectKey]empty{}
+	for _, r := range references {
 		refs[r] = empty{}
 	}
+
+	scope[referrer] = refs
 }
 
-// Prune removes referrer from all references to kind.
-func (c *resourceReferenceCache) Prune(kind ResourceKind, referrer client.ObjectKey) int {
+// Prune reference of kind from the cache.
+func (c *resourceReferenceCache) Prune(kind ResourceKind, reference client.ObjectKey) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -90,13 +105,13 @@ func (c *resourceReferenceCache) Prune(kind ResourceKind, referrer client.Object
 	}
 
 	var count int
-	for k, refs := range scope {
-		if _, ok := refs[referrer]; ok {
+	for referrer, references := range scope {
+		if _, ok := references[reference]; ok {
 			count++
-			delete(refs, referrer)
+			delete(references, reference)
 		}
-		if len(refs) == 0 {
-			delete(scope, k)
+		if len(references) == 0 {
+			delete(scope, referrer)
 		}
 	}
 
@@ -107,33 +122,28 @@ func (c *resourceReferenceCache) Prune(kind ResourceKind, referrer client.Object
 	return count
 }
 
-// Get all references to ref for kind. Returns true if ref was found in the
-// cache.
-func (c *resourceReferenceCache) Get(kind ResourceKind, referent client.ObjectKey) ([]client.ObjectKey, bool) {
+// Get all client.ObjectKey that refer to reference of kind.
+func (c *resourceReferenceCache) Get(kind ResourceKind, reference client.ObjectKey) []client.ObjectKey {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	scope, ok := c.scoped(kind, false)
 	if !ok {
-		return nil, false
+		return nil
 	}
 
-	r, ok := scope[referent]
-	if !ok {
-		return nil, false
-	}
-
-	// object keys that refer to reference
 	var refs []client.ObjectKey
-	for ref := range r {
-		refs = append(refs, ref)
+	for ref, v := range scope {
+		if _, ok := v[reference]; ok {
+			refs = append(refs, ref)
+		}
 	}
 
-	return refs, true
+	return refs
 }
 
-// Remove ref and all of its referrers for ResourceKind.
-func (c *resourceReferenceCache) Remove(kind ResourceKind, referent client.ObjectKey) bool {
+// Remove all references of kind for referrer.
+func (c *resourceReferenceCache) Remove(kind ResourceKind, referrer client.ObjectKey) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -142,10 +152,9 @@ func (c *resourceReferenceCache) Remove(kind ResourceKind, referent client.Objec
 		return false
 	}
 
-	_, ok = scope[referent]
-	delete(scope, referent)
+	_, ok = scope[referrer]
+	delete(scope, referrer)
 
-	// remove kind if the cache no longer has references of that kind
 	if len(scope) == 0 {
 		delete(c.m, kind)
 	}

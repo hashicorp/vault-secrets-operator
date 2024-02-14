@@ -52,7 +52,7 @@ type HCPVaultSecretsAppReconciler struct {
 	SecretDataBuilder          *helpers.SecretDataBuilder
 	HMACValidator              helpers.HMACValidator
 	MinRefreshAfter            time.Duration
-	ReferenceCache             ResourceReferenceCache
+	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
@@ -128,16 +128,9 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	transRefObjKeys := helpers.GetTransformationRefObjKeys(
-		o.Spec.Destination.Transformation, o.Namespace)
-	if len(transRefObjKeys) > 0 {
-		for _, ref := range transRefObjKeys {
-			r.ReferenceCache.Add(SecretTransformation, ref,
-				req.NamespacedName)
-		}
-	} else {
-		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
-	}
+	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
+		helpers.GetTransformationRefObjKeys(
+			o.Spec.Destination.Transformation, o.Namespace)...)
 
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
@@ -204,13 +197,14 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
+	r.referenceCache = newResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
 		WithEventFilter(syncableSecretPredicate(nil)).
 		WithOptions(opts).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
-			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, nil),
+			NewEnqueueRefRequestsHandlerST(r.referenceCache, nil),
 		).
 		Watches(
 			&corev1.Secret{},
@@ -276,7 +270,7 @@ func (r *HCPVaultSecretsAppReconciler) addFinalizer(ctx context.Context, o clien
 
 func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o client.Object) error {
 	logger := log.FromContext(ctx)
-	r.ReferenceCache.Prune(SecretTransformation, client.ObjectKeyFromObject(o))
+	r.referenceCache.Remove(SecretTransformation, client.ObjectKeyFromObject(o))
 	if controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, hcpVaultSecretsAppFinalizer) {
