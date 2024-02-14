@@ -16,6 +16,10 @@ metadata:
   {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
   namespace: {{ .Values.defaultAuthMethod.namespace }}
+  {{- if .Values.defaultAuthMethod.allowedNamespaces }}
+  allowedNamespaces:
+  {{- toYaml .Values.defaultAuthMethod.allowedNamespaces | nindent 4 }}
+  {{- end }}
   method: {{ .Values.defaultAuthMethod.method }}
   mount: {{ .Values.defaultAuthMethod.mount }}
   {{- $kubeServiceAccount := .Values.defaultAuthMethod.kubernetes.serviceAccount }}
