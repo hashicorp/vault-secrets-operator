@@ -131,7 +131,6 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
-	logger.Info("ReferenceCache", "cache", r.referenceCache)
 
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,

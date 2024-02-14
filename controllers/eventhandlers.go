@@ -93,14 +93,19 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 		d = maxRequeueAfter
 	}
 
-	for _, ref := range e.refCache.Get(e.kind, client.ObjectKeyFromObject(o)) {
-		if e.validator != nil {
-			if err := e.validator(ctx, o); err != nil {
-				logger.Error(err, "Validation failed, skipping enqueue")
-				return
-			}
-		}
+	referrers := e.refCache.Get(e.kind, client.ObjectKeyFromObject(o))
+	if len(referrers) == 0 {
+		return
+	}
 
+	if e.validator != nil {
+		if err := e.validator(ctx, o); err != nil {
+			logger.Error(err, "Validation failed, skipping enqueue")
+			return
+		}
+	}
+
+	for _, ref := range referrers {
 		if e.syncReg != nil {
 			e.syncReg.Add(ref)
 		}

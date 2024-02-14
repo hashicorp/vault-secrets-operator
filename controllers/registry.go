@@ -53,17 +53,18 @@ func newResourceReferenceCache() ResourceReferenceCache {
 	}
 }
 
+// refCacheMap holds a tree of client.ObjectKey references, keyed by
+// ResourceKind at the top level.
 type refCacheMap map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empty
 
-// resourceReferenceCache holds the mapping of referring client.ObjectKey to a
-// set of client.ObjectKey references of ResourceKind.
+// resourceReferenceCache provides access to a refCacheMap. It can be used to
+// cache object references for a specific ResourceKind.
 type resourceReferenceCache struct {
 	m  refCacheMap
 	mu sync.RWMutex
 }
 
-// Set references of kind for referrer. If no references are passed, then
-// reference will be removed from the cache.
+// Set references of kind for referrer.
 func (c *resourceReferenceCache) Set(kind ResourceKind, referrer client.ObjectKey, references ...client.ObjectKey) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -85,7 +86,7 @@ func (c *resourceReferenceCache) Set(kind ResourceKind, referrer client.ObjectKe
 	scope[referrer] = refs
 }
 
-// Prune removes reference of kind from all referrers.
+// Prune reference of kind from the cache.
 func (c *resourceReferenceCache) Prune(kind ResourceKind, reference client.ObjectKey) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -113,8 +114,8 @@ func (c *resourceReferenceCache) Prune(kind ResourceKind, reference client.Objec
 	return count
 }
 
-// Get all references to referent of kind.
-func (c *resourceReferenceCache) Get(kind ResourceKind, referent client.ObjectKey) []client.ObjectKey {
+// Get all client.ObjectKey that refer to reference of kind.
+func (c *resourceReferenceCache) Get(kind ResourceKind, reference client.ObjectKey) []client.ObjectKey {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -125,7 +126,7 @@ func (c *resourceReferenceCache) Get(kind ResourceKind, referent client.ObjectKe
 
 	var refs []client.ObjectKey
 	for ref, v := range scope {
-		if _, ok := v[referent]; ok {
+		if _, ok := v[reference]; ok {
 			refs = append(refs, ref)
 		}
 	}
@@ -133,7 +134,7 @@ func (c *resourceReferenceCache) Get(kind ResourceKind, referent client.ObjectKe
 	return refs
 }
 
-// Remove referrer for kind.
+// Remove all references of kind for referrer.
 func (c *resourceReferenceCache) Remove(kind ResourceKind, referrer client.ObjectKey) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
