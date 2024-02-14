@@ -5,15 +5,15 @@ terraform {
   required_providers {
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "2.16.1"
+      version = "2.25.2"
     }
     vault = {
       source  = "hashicorp/vault"
-      version = "3.12.0"
+      version = "3.24.0"
     }
     google = {
       source  = "hashicorp/google"
-      version = "4.63.1"
+      version = "5.16.0"
     }
   }
 }
