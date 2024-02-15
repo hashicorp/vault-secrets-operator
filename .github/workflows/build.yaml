@@ -13,6 +13,8 @@ on:
 
 env:
   PKG_NAME: "vault-secrets-operator"
+  # used by scripts that fetch build tools from GH
+  GH_GET_RETRIES: 5
 
 jobs:
   get-product-version:
