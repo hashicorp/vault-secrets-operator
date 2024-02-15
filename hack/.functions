@@ -6,7 +6,7 @@
 function getGH() {
   local url="$1"
   local dest="$2"
-  local num_retries="${3:-${GH_GET_NUM_RETRIES}}"
+  local num_retries="${3:-${GH_GET_RETRIES}}"
 
   headers=(
       '--header' "Accept: application/vnd.github+json"
