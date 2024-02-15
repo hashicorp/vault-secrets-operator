@@ -251,20 +251,46 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		}
 		labels[k] = v
 	}
-	// add any annotations configured in meta.Destination.Labels
+
+	lastType := dest.Type
 	dest.Data = data
 	dest.Type = secretType
 	dest.SetAnnotations(meta.Destination.Annotations)
 	dest.SetLabels(labels)
 	dest.SetOwnerReferences(references)
 	logger.V(consts.LogLevelTrace).Info("ObjectMeta", "objectMeta", dest.ObjectMeta)
-
 	if exists {
-		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		if err := client.Update(ctx, dest); err != nil {
-			return err
+		// secret type is immutable, so we need to force recreate the secret when the
+		// type changes.
+		if dest.Type != lastType {
+			logger.V(consts.LogLevelDebug).Info("Recreating secret")
+			// unset the labels so that the owner object does not get enqueued on secret
+			// deletion
+			dest.SetLabels(nil)
+			if err := client.Update(ctx, dest); err != nil {
+				return err
+			}
+
+			// delete the secret
+			if err := client.Delete(ctx, dest); err != nil {
+				return err
+			}
+
+			dest.ResourceVersion = ""
+			dest.Generation = 0
+			dest.SetLabels(labels)
+			if err := client.Create(ctx, dest); err != nil {
+				return err
+			}
+		} else {
+			dest.Type = secretType
+			logger.V(consts.LogLevelDebug).Info("Updating secret")
+			if err := client.Update(ctx, dest); err != nil {
+				return err
+			}
 		}
 	} else {
+		dest.Type = secretType
 		logger.V(consts.LogLevelDebug).Info("Creating secret")
 		if err := client.Create(ctx, dest); err != nil {
 			return err
