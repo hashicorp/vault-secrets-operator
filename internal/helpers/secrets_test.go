@@ -213,6 +213,10 @@ func TestSyncSecret(t *testing.T) {
 		},
 	}
 
+	ownerWithCreateAndType := &secretsv1beta1.VaultDynamicSecret{}
+	ownerWithDest.DeepCopyInto(ownerWithCreateAndType)
+	ownerWithCreateAndType.Spec.Destination.Type = corev1.SecretTypeDockercfg
+
 	ownerWithDestNoCreate := &secretsv1beta1.VaultDynamicSecret{}
 	ownerWithDest.DeepCopyInto(ownerWithDestNoCreate)
 	ownerWithDestNoCreate.Spec.Destination.Create = false
@@ -258,14 +262,15 @@ func TestSyncSecret(t *testing.T) {
 		name   string
 		client ctrlclient.Client
 		// this could be any syncable secret type VSS, VPS, etc.
-		obj                *secretsv1beta1.VaultDynamicSecret
-		data               map[string][]byte
-		orphans            int
-		createDest         bool
-		destLabels         map[string]string
-		expectSecretsCount int
-		opts               []SyncOptions
-		wantErr            assert.ErrorAssertionFunc
+		obj                 *secretsv1beta1.VaultDynamicSecret
+		data                map[string][]byte
+		orphans             int
+		createDest          bool
+		destLabels          map[string]string
+		destOwnerReferences []metav1.OwnerReference
+		expectSecretsCount  int
+		opts                []SyncOptions
+		wantErr             assert.ErrorAssertionFunc
 	}{
 		{
 			name:   "invalid-no-dest",
@@ -310,6 +315,28 @@ func TestSyncSecret(t *testing.T) {
 			data: map[string][]byte{
 				"qux": []byte(`bar`),
 			},
+			expectSecretsCount: 1,
+			wantErr:            assert.NoError,
+		},
+		{
+			name:   "valid-dest-prune-orphans",
+			client: clientBuilder.Build(),
+			opts: []SyncOptions{
+				{
+					PruneOrphans: true,
+				},
+			},
+			obj:        ownerWithCreateAndType,
+			destLabels: maps.Clone(OwnerLabels),
+			destOwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: ownerWithCreateAndType.APIVersion,
+					Kind:       ownerWithCreateAndType.Kind,
+					Name:       ownerWithCreateAndType.Name,
+					UID:        ownerWithCreateAndType.UID,
+				},
+			},
+			createDest:         true,
 			expectSecretsCount: 1,
 			wantErr:            assert.NoError,
 		},
@@ -444,10 +471,12 @@ func TestSyncSecret(t *testing.T) {
 					"test object must Spec.Destination.Name set")
 				s := &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      tt.obj.Spec.Destination.Name,
-						Namespace: tt.obj.GetNamespace(),
-						Labels:    tt.destLabels,
+						Name:            tt.obj.Spec.Destination.Name,
+						Namespace:       tt.obj.GetNamespace(),
+						Labels:          tt.destLabels,
+						OwnerReferences: tt.destOwnerReferences,
 					},
+					Type: corev1.SecretTypeOpaque,
 				}
 				require.NoError(t, tt.client.Create(ctx, s))
 			}
@@ -507,6 +536,11 @@ func TestSyncSecret(t *testing.T) {
 				}
 			} else {
 				assert.Equal(t, tt.data, destSecret.Data)
+				wantType := tt.obj.Spec.Destination.Type
+				if wantType == "" {
+					wantType = corev1.SecretTypeOpaque
+				}
+				assert.Equal(t, wantType, destSecret.Type)
 			}
 
 			for _, objKey := range orphans {
