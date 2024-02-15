@@ -266,6 +266,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 			logger.V(consts.LogLevelDebug).Info("Recreating secret")
 			// unset the labels so that the owner object does not get enqueued on secret
 			// deletion
+			dest.Type = lastType
 			dest.SetLabels(nil)
 			if err := client.Update(ctx, dest); err != nil {
 				return err
@@ -276,6 +277,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 				return err
 			}
 
+			dest.Type = secretType
 			dest.ResourceVersion = ""
 			dest.Generation = 0
 			dest.SetLabels(labels)
@@ -283,14 +285,12 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 				return err
 			}
 		} else {
-			dest.Type = secretType
 			logger.V(consts.LogLevelDebug).Info("Updating secret")
 			if err := client.Update(ctx, dest); err != nil {
 				return err
 			}
 		}
 	} else {
-		dest.Type = secretType
 		logger.V(consts.LogLevelDebug).Info("Creating secret")
 		if err := client.Create(ctx, dest); err != nil {
 			return err
