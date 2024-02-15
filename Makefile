@@ -6,6 +6,8 @@
 VERSION ?= 0.0.0-dev
 KUBE_RBAC_PROXY_VERSION = v0.15.0
 
+GH_GET_RETRIES ?= 5
+
 GO_VERSION = $(shell cat .go-version)
 
 CONFIG_SRC_DIR ?= config
