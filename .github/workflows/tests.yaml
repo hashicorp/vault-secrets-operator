@@ -2,6 +2,10 @@ name: Tests
 
 on: [push, workflow_dispatch]
 
+env:
+  # used by scripts that fetch build tools from GH
+  GH_GET_RETRIES: 5
+
 jobs:
   fmtcheck:
     runs-on: ubuntu-latest
