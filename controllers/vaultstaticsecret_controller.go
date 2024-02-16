@@ -173,14 +173,23 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
-	o.Status.LastGeneration = o.GetGeneration()
-	if err := r.Status().Update(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
+}
+
+func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultStaticSecret) error {
+	o.Status.LastGeneration = o.GetGeneration()
+	if err := r.Status().Update(ctx, o); err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
+			"Failed to update the resource's status, err=%s", err)
+	}
+
+	return nil
 }
 
 func (r *VaultStaticSecretReconciler) addFinalizer(ctx context.Context, o client.Object) error {

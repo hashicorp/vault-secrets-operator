@@ -299,7 +299,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
 	o.Status.LastRotation = time.Now().Unix()
-	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.updateStatus(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return ctrl.Result{}, err
@@ -441,7 +440,10 @@ func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1beta1.VaultPKISecret,
 func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
 	logger.V(consts.LogLevelTrace).Info("Update status called")
+
 	metrics.SetResourceStatus("vaultpkisecret", o, o.Status.Valid)
+
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
 		msg := "Failed to update the resource's status"
 		r.recordEvent(o, consts.ReasonStatusUpdateError, "%s: %s", msg, err)
