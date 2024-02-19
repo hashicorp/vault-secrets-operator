@@ -218,14 +218,16 @@ func Test_maybeAddFinalizer(t *testing.T) {
 
 	ctx := context.Background()
 	clientBuilder := newClientBuilder()
-	type args struct{}
+	deletionTimestamp := metav1.NewTime(time.Now())
+
 	tests := []struct {
-		name      string
-		o         client.Object
-		create    bool
-		finalizer string
-		want      bool
-		wantErr   assert.ErrorAssertionFunc
+		name           string
+		o              client.Object
+		create         bool
+		finalizer      string
+		want           bool
+		wantFinalizers []string
+		wantErr        assert.ErrorAssertionFunc
 	}{
 		{
 			name: "updated",
@@ -238,13 +240,34 @@ func Test_maybeAddFinalizer(t *testing.T) {
 					Method: "kubernetes",
 				},
 			},
-			create:    true,
-			finalizer: vaultAuthFinalizer,
-			want:      true,
-			wantErr:   assert.NoError,
+			create:         true,
+			finalizer:      vaultAuthFinalizer,
+			want:           true,
+			wantFinalizers: []string{vaultAuthFinalizer},
+			wantErr:        assert.NoError,
 		},
 		{
-			name: "not-updated",
+			name: "updated-with-multiple",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "updated",
+					Finalizers: []string{
+						"other",
+					},
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			create:         true,
+			finalizer:      vaultAuthFinalizer,
+			want:           true,
+			wantFinalizers: []string{"other", vaultAuthFinalizer},
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "not-updated-exists-with-finalizer",
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -257,13 +280,14 @@ func Test_maybeAddFinalizer(t *testing.T) {
 					Method: "kubernetes",
 				},
 			},
-			create:    true,
-			finalizer: vaultAuthFinalizer,
-			want:      false,
-			wantErr:   assert.NoError,
+			create:         true,
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string{vaultAuthFinalizer},
+			wantErr:        assert.NoError,
 		},
 		{
-			name: "not-updated-inexistent-object",
+			name: "not-updated-inexistent-with-finalizer",
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -276,10 +300,27 @@ func Test_maybeAddFinalizer(t *testing.T) {
 					Method: "kubernetes",
 				},
 			},
-			create:    false,
-			finalizer: vaultAuthFinalizer,
-			want:      false,
-			wantErr:   assert.NoError,
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string{vaultAuthFinalizer},
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "not-updated-has-deletion-timestamp",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "default",
+					Name:              "updated",
+					DeletionTimestamp: &deletionTimestamp,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string(nil),
+			wantErr:        assert.NoError,
 		},
 		{
 			name: "invalid-not-found",
@@ -292,8 +333,9 @@ func Test_maybeAddFinalizer(t *testing.T) {
 					Method: "kubernetes",
 				},
 			},
-			finalizer: vaultAuthFinalizer,
-			want:      false,
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string{},
 			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
 				return assert.True(t, apierrors.IsNotFound(err))
 			},
@@ -314,7 +356,7 @@ func Test_maybeAddFinalizer(t *testing.T) {
 			}
 
 			assert.Equalf(t, tt.want, got, "maybeAddFinalizer(%v, %v, %v, %v)", ctx, c, tt.o, tt.finalizer)
-			assert.Equalf(t, []string{tt.finalizer}, tt.o.GetFinalizers(), "maybeAddFinalizer(%v, %v, %v, %v)", ctx, c, tt.o, tt.finalizer)
+			assert.Equalf(t, tt.wantFinalizers, tt.o.GetFinalizers(), "maybeAddFinalizer(%v, %v, %v, %v)", ctx, c, tt.o, tt.finalizer)
 
 			if tt.create {
 				var updated secretsv1beta1.VaultAuth

@@ -250,6 +250,7 @@ func maybeAddFinalizer(ctx context.Context, c client.Client, o client.Object, fi
 		controllerutil.AddFinalizer(o, finalizer)
 		if err := c.Update(ctx, o); err != nil {
 			logger.Error(err, "Failed to add finalizer")
+			controllerutil.RemoveFinalizer(o, finalizer)
 			return false, err
 		}
 
