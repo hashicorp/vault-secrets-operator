@@ -62,11 +62,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return r.handleFinalizer(ctx, o)
 	}
@@ -131,25 +127,16 @@ func (r *VaultAuthReconciler) recordEvent(a *secretsv1beta1.VaultAuth, reason, m
 	r.Recorder.Eventf(a, eventType, reason, msg, i...)
 }
 
-func (r *VaultAuthReconciler) updateStatus(ctx context.Context, a *secretsv1beta1.VaultAuth) error {
+func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultauth", a, a.Status.Valid)
-	if err := r.Status().Update(ctx, a); err != nil {
+	metrics.SetResourceStatus("vaultauth", o, o.Status.Valid)
+	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err
 	}
-	return nil
-}
 
-func (r *VaultAuthReconciler) addFinalizer(ctx context.Context, o *secretsv1beta1.VaultAuth) error {
-	if !controllerutil.ContainsFinalizer(o, vaultAuthFinalizer) {
-		controllerutil.AddFinalizer(o, vaultAuthFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultAuthFinalizer)
+	return err
 }
 
 func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1beta1.VaultAuth) (ctrl.Result, error) {

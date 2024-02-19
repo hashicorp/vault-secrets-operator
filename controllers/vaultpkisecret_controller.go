@@ -77,11 +77,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
@@ -342,22 +338,6 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
-	logger := log.FromContext(ctx).WithValues("finalizer", vaultPKIFinalizer)
-	if !controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
-		controllerutil.AddFinalizer(s, vaultPKIFinalizer)
-		logger.V(consts.LogLevelDebug).Info("Adding finalizer")
-		if err := r.Client.Update(ctx, s); err != nil {
-			logger.Error(err, "Adding finalizer")
-			return err
-		}
-		return nil
-	} else {
-		logger.V(consts.LogLevelDebug).Info("Finalizer already added")
-		return nil
-	}
-}
-
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
@@ -451,7 +431,8 @@ func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv
 		return err
 	}
 
-	return nil
+	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultPKIFinalizer)
+	return err
 }
 
 func computeExpirationTimePKI(o *secretsv1beta1.VaultPKISecret, offset int64) time.Time {

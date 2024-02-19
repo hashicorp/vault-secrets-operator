@@ -65,11 +65,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
@@ -183,23 +179,16 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 }
 
 func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultStaticSecret) error {
+	logger := log.FromContext(ctx)
+	logger.V(consts.LogLevelDebug).Info("Updating status")
 	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)
 	}
 
-	return nil
-}
-
-func (r *VaultStaticSecretReconciler) addFinalizer(ctx context.Context, o client.Object) error {
-	if !controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
-		controllerutil.AddFinalizer(o, vaultStaticSecretFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultStaticSecretFinalizer)
+	return err
 }
 
 func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o client.Object) error {
