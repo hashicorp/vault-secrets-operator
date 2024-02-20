@@ -102,11 +102,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
@@ -242,7 +238,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = nowFunc().Unix()
-	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -402,12 +397,15 @@ func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secr
 	if r.runtimePodUID != "" {
 		o.Status.LastRuntimePodUID = r.runtimePodUID
 	}
+
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)
 	}
 
-	return nil
+	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultDynamicSecretFinalizer)
+	return err
 }
 
 func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *secretsv1beta1.VaultSecretLease {
@@ -440,16 +438,6 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 	}
 
 	return r.getVaultSecretLease(resp.Secret()), nil
-}
-
-func (r *VaultDynamicSecretReconciler) addFinalizer(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
-	if !controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
-		controllerutil.AddFinalizer(o, vaultDynamicSecretFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
