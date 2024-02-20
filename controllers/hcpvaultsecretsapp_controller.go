@@ -77,11 +77,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
@@ -185,14 +181,24 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
 	}
 
-	o.Status.LastGeneration = o.GetGeneration()
-	if err := r.Status().Update(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
+}
+
+func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) error {
+	o.Status.LastGeneration = o.GetGeneration()
+	if err := r.Status().Update(ctx, o); err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
+			"Failed to update the resource's status, err=%s", err)
+	}
+
+	_, err := maybeAddFinalizer(ctx, r.Client, o, hcpVaultSecretsAppFinalizer)
+	return err
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -256,16 +262,6 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 	injectRequestInformation(cl)
 
 	return hvsclient.New(cl, nil), nil
-}
-
-func (r *HCPVaultSecretsAppReconciler) addFinalizer(ctx context.Context, o client.Object) error {
-	if !controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
-		controllerutil.AddFinalizer(o, hcpVaultSecretsAppFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o client.Object) error {

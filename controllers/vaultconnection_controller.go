@@ -59,11 +59,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return r.handleFinalizer(ctx, o)
 	}
@@ -124,17 +120,6 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *VaultConnectionReconciler) addFinalizer(ctx context.Context, o *secretsv1beta1.VaultConnection) error {
-	if !controllerutil.ContainsFinalizer(o, vaultConnectionFinalizer) {
-		controllerutil.AddFinalizer(o, vaultConnectionFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultConnection) error {
 	logger := log.FromContext(ctx)
 	metrics.SetResourceStatus("vaultconnection", o, o.Status.Valid)
@@ -142,7 +127,9 @@ func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secrets
 		logger.Error(err, "Failed to update the resource's status")
 		return err
 	}
-	return nil
+
+	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultConnectionFinalizer)
+	return err
 }
 
 func (r *VaultConnectionReconciler) handleFinalizer(ctx context.Context, o *secretsv1beta1.VaultConnection) (ctrl.Result, error) {
