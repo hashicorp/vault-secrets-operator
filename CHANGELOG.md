@@ -1,3 +1,14 @@
+## 0.5.1 (February 20th, 2024)
+Fix:
+* Sync: mitigate potential schema validation failures by only adding finalizers after a status update: [GH-609](https://github.com/hashicorp/vault-secrets-operator/pull/609)
+
+Dependency Updates:
+* Bump github.com/prometheus/client_model from 0.5.0 to 0.6.0: [GH-613](https://github.com/hashicorp/vault-secrets-operator/pull/613)
+* Bump google.golang.org/api from 0.163.0 to 0.165.0: [GH-614](https://github.com/hashicorp/vault-secrets-operator/pull/614)
+* Bump k8s.io/api from 0.29.1 to 0.29.2: [GH-612](https://github.com/hashicorp/vault-secrets-operator/pull/612)
+* Bump k8s.io/apimachinery from 0.29.1 to 0.29.2: [GH-615](https://github.com/hashicorp/vault-secrets-operator/pull/615)
+* Bump k8s.io/client-go from 0.29.1 to 0.29.2: [GH-611](https://github.com/hashicorp/vault-secrets-operator/pull/611)
+
 ## 0.5.0 (February 15th, 2024)
 
 Features:
