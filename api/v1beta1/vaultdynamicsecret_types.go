@@ -108,7 +108,7 @@ type VaultStaticCredsMetaData struct {
 	// schedule for each rotation.
 	// e.g. "1 0 * * *" would rotate at one minute past midnight (00:01) every
 	// day.
-	RotationSchedule string `json:"rotationSchedule"`
+	RotationSchedule string `json:"rotationSchedule,omitempty"`
 	// TTL is the seconds remaining before the next rotation.
 	TTL int64 `json:"ttl"`
 }
