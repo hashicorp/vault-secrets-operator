@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/vault/api"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -35,6 +35,8 @@ type ClientConfig struct {
 	TLSServerName string
 	// VaultNamespace is the namespace in Vault to auth to
 	VaultNamespace string
+	// Headers are http headers to set on the Vault client
+	Headers map[string]string
 }
 
 // MakeVaultClient creates a Vault api.Client from a ClientConfig.
@@ -95,6 +97,9 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 	}
 	if cfg.VaultNamespace != "" {
 		c.SetNamespace(cfg.VaultNamespace)
+	}
+	for k, v := range cfg.Headers {
+		c.AddHeader(k, v)
 	}
 
 	return c, nil

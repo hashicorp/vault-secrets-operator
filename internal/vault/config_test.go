@@ -72,6 +72,17 @@ func TestMakeVaultClient(t *testing.T) {
 			CACert:        nil,
 			expectedError: nil,
 		},
+		"headers": {
+			vaultConfig: &ClientConfig{
+				Headers: map[string]string{
+					"X-Proxy-Setting": "yes",
+					"Y-Proxy-Setting": "no",
+				},
+				VaultNamespace: "vault-test-namespace",
+			},
+			CACert:        nil,
+			expectedError: nil,
+		},
 	}
 
 	for name, tc := range tests {
@@ -116,7 +127,25 @@ func TestMakeVaultClient(t *testing.T) {
 					require.NoError(t, err)
 					assert.True(t, tlsConfig.RootCAs.Equal(expectedCertPool), "The CA cert in the client doesn't match the expected cert")
 				}
+
+				expectedHeaders := makeVaultHttpHeaders(t, tc.vaultConfig.VaultNamespace, tc.vaultConfig.Headers)
+				assert.Equal(t, expectedHeaders, vaultClient.Headers(), "The headers in the client don't match the expected headers")
 			}
 		})
 	}
+}
+
+func makeVaultHttpHeaders(t *testing.T, namespace string, headers map[string]string) http.Header {
+	t.Helper()
+
+	h := make(http.Header)
+	for k, v := range headers {
+		h.Set(k, v)
+	}
+	h.Set("X-Vault-Request", "true")
+	if len(namespace) > 0 {
+		h.Set(vconsts.NamespaceHeaderName, namespace)
+	}
+
+	return h
 }
