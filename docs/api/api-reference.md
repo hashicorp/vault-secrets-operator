@@ -10,21 +10,13 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 
 ### Resource Types
 - [HCPAuth](#hcpauth)
-- [HCPAuthList](#hcpauthlist)
 - [HCPVaultSecretsApp](#hcpvaultsecretsapp)
-- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
 - [SecretTransformation](#secrettransformation)
-- [SecretTransformationList](#secrettransformationlist)
 - [VaultAuth](#vaultauth)
-- [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
-- [VaultConnectionList](#vaultconnectionlist)
 - [VaultDynamicSecret](#vaultdynamicsecret)
-- [VaultDynamicSecretList](#vaultdynamicsecretlist)
 - [VaultPKISecret](#vaultpkisecret)
-- [VaultPKISecretList](#vaultpkisecretlist)
 - [VaultStaticSecret](#vaultstaticsecret)
-- [VaultStaticSecretList](#vaultstaticsecretlist)
 
 
 
@@ -57,8 +49,7 @@ _Appears in:_
 
 HCPAuth is the Schema for the hcpauths API
 
-_Appears in:_
-- [HCPAuthList](#hcpauthlist)
+
 
 | Field | Description |
 | --- | --- |
@@ -66,22 +57,6 @@ _Appears in:_
 | `kind` _string_ | `HCPAuth`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[HCPAuthSpec](#hcpauthspec)_ |  |
-
-
-#### HCPAuthList
-
-
-
-HCPAuthList contains a list of HCPAuth
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `HCPAuthList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[HCPAuth](#hcpauth) array_ |  |
 
 
 #### HCPAuthServicePrincipal
@@ -124,8 +99,7 @@ _Appears in:_
 
 HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
 
-_Appears in:_
-- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
+
 
 | Field | Description |
 | --- | --- |
@@ -133,22 +107,6 @@ _Appears in:_
 | `kind` _string_ | `HCPVaultSecretsApp`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)_ |  |
-
-
-#### HCPVaultSecretsAppList
-
-
-
-HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `HCPVaultSecretsAppList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[HCPVaultSecretsApp](#hcpvaultsecretsapp) array_ |  |
 
 
 #### HCPVaultSecretsAppSpec
@@ -196,8 +154,7 @@ _Appears in:_
 
 SecretTransformation is the Schema for the secrettransformations API
 
-_Appears in:_
-- [SecretTransformationList](#secrettransformationlist)
+
 
 | Field | Description |
 | --- | --- |
@@ -205,22 +162,6 @@ _Appears in:_
 | `kind` _string_ | `SecretTransformation`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[SecretTransformationSpec](#secrettransformationspec)_ |  |
-
-
-#### SecretTransformationList
-
-
-
-SecretTransformationList contains a list of SecretTransformation
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `SecretTransformationList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[SecretTransformation](#secrettransformation) array_ |  |
 
 
 #### SecretTransformationSpec
@@ -345,8 +286,7 @@ _Appears in:_
 
 VaultAuth is the Schema for the vaultauths API
 
-_Appears in:_
-- [VaultAuthList](#vaultauthlist)
+
 
 | Field | Description |
 | --- | --- |
@@ -445,22 +385,6 @@ _Appears in:_
 | `tokenExpirationSeconds` _integer_ | TokenExpirationSeconds to set the ServiceAccount token. |
 
 
-#### VaultAuthList
-
-
-
-VaultAuthList contains a list of VaultAuth
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `VaultAuthList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[VaultAuth](#vaultauth) array_ |  |
-
-
 #### VaultAuthSpec
 
 
@@ -495,8 +419,7 @@ _Appears in:_
 
 VaultConnection is the Schema for the vaultconnections API
 
-_Appears in:_
-- [VaultConnectionList](#vaultconnectionlist)
+
 
 | Field | Description |
 | --- | --- |
@@ -504,22 +427,6 @@ _Appears in:_
 | `kind` _string_ | `VaultConnection`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VaultConnectionSpec](#vaultconnectionspec)_ |  |
-
-
-#### VaultConnectionList
-
-
-
-VaultConnectionList contains a list of VaultConnection
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `VaultConnectionList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[VaultConnection](#vaultconnection) array_ |  |
 
 
 #### VaultConnectionSpec
@@ -548,8 +455,7 @@ _Appears in:_
 
 VaultDynamicSecret is the Schema for the vaultdynamicsecrets API
 
-_Appears in:_
-- [VaultDynamicSecretList](#vaultdynamicsecretlist)
+
 
 | Field | Description |
 | --- | --- |
@@ -557,22 +463,6 @@ _Appears in:_
 | `kind` _string_ | `VaultDynamicSecret`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VaultDynamicSecretSpec](#vaultdynamicsecretspec)_ |  |
-
-
-#### VaultDynamicSecretList
-
-
-
-VaultDynamicSecretList contains a list of VaultDynamicSecret
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `VaultDynamicSecretList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[VaultDynamicSecret](#vaultdynamicsecret) array_ |  |
 
 
 #### VaultDynamicSecretSpec
@@ -607,8 +497,7 @@ _Appears in:_
 
 VaultPKISecret is the Schema for the vaultpkisecrets API
 
-_Appears in:_
-- [VaultPKISecretList](#vaultpkisecretlist)
+
 
 | Field | Description |
 | --- | --- |
@@ -616,22 +505,6 @@ _Appears in:_
 | `kind` _string_ | `VaultPKISecret`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VaultPKISecretSpec](#vaultpkisecretspec)_ |  |
-
-
-#### VaultPKISecretList
-
-
-
-VaultPKISecretList contains a list of VaultPKISecret
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `VaultPKISecretList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[VaultPKISecret](#vaultpkisecret) array_ |  |
 
 
 #### VaultPKISecretSpec
@@ -710,8 +583,7 @@ _Appears in:_
 
 VaultStaticSecret is the Schema for the vaultstaticsecrets API
 
-_Appears in:_
-- [VaultStaticSecretList](#vaultstaticsecretlist)
+
 
 | Field | Description |
 | --- | --- |
@@ -719,22 +591,6 @@ _Appears in:_
 | `kind` _string_ | `VaultStaticSecret`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VaultStaticSecretSpec](#vaultstaticsecretspec)_ |  |
-
-
-#### VaultStaticSecretList
-
-
-
-VaultStaticSecretList contains a list of VaultStaticSecret
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1`
-| `kind` _string_ | `VaultStaticSecretList`
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `items` _[VaultStaticSecret](#vaultstaticsecret) array_ |  |
 
 
 #### VaultStaticSecretSpec
