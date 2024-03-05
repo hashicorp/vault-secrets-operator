@@ -59,7 +59,7 @@ func TestUnmarshalPKIIssueResponse(t *testing.T) {
 		{
 			name: "nil-vault-secret",
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "vault secret is nil")
+				return assert.EqualError(t, err, "vault secret response is nil")
 			},
 		},
 	}

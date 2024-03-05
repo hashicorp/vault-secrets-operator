@@ -22,7 +22,7 @@ type PKICertResponse struct {
 
 func UnmarshalPKIIssueResponse(resp *api.Secret) (*PKICertResponse, error) {
 	if resp == nil {
-		return nil, fmt.Errorf("vault secret is nil")
+		return nil, fmt.Errorf("vault secret response is nil")
 	}
 
 	b, err := json.Marshal(resp.Data)
