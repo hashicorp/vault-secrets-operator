@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/vault/api"
+	vconsts "github.com/hashicorp/vault/sdk/helper/consts"
 	v1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -95,11 +96,14 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		l.Error(err, "error setting up Vault API client")
 		return nil, err
 	}
-	if cfg.VaultNamespace != "" {
-		c.SetNamespace(cfg.VaultNamespace)
+	if _, exists := cfg.Headers[vconsts.NamespaceHeaderName]; exists {
+		return nil, fmt.Errorf("setting header %q on VaultConnection is not permitted", vconsts.NamespaceHeaderName)
 	}
 	for k, v := range cfg.Headers {
 		c.AddHeader(k, v)
+	}
+	if cfg.VaultNamespace != "" {
+		c.SetNamespace(cfg.VaultNamespace)
 	}
 
 	return c, nil

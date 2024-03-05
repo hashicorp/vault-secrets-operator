@@ -83,6 +83,18 @@ func TestMakeVaultClient(t *testing.T) {
 			CACert:        nil,
 			expectedError: nil,
 		},
+		"headers can't override namespace": {
+			vaultConfig: &ClientConfig{
+				Headers: map[string]string{
+					"X-Proxy-Setting":           "yes",
+					"Y-Proxy-Setting":           "no",
+					vconsts.NamespaceHeaderName: "nope",
+				},
+				VaultNamespace: "vault-test-namespace",
+			},
+			CACert:        nil,
+			expectedError: fmt.Errorf(`setting header "X-Vault-Namespace" on VaultConnection is not permitted`),
+		},
 	}
 
 	for name, tc := range tests {
@@ -108,7 +120,7 @@ func TestMakeVaultClient(t *testing.T) {
 				assert.Nil(t, vaultClient)
 			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, vaultClient)
+				require.NotNil(t, vaultClient)
 				vaultClient.SetCloneHeaders(true)
 				vaultConfig := vaultClient.CloneConfig()
 
