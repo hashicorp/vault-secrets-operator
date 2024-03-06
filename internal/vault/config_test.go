@@ -155,7 +155,7 @@ func makeVaultHttpHeaders(t *testing.T, namespace string, headers map[string]str
 		h.Set(k, v)
 	}
 	h.Set("X-Vault-Request", "true")
-	if len(namespace) > 0 {
+	if namespace != "" {
 		h.Set(vconsts.NamespaceHeaderName, namespace)
 	}
 
