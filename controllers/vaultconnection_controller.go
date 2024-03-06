@@ -73,6 +73,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		Address:         o.Spec.Address,
 		SkipTLSVerify:   o.Spec.SkipTLSVerify,
 		TLSServerName:   o.Spec.TLSServerName,
+		Headers:         o.Spec.Headers,
 	}
 
 	var errs error
