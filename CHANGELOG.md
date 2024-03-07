@@ -11,6 +11,9 @@ Dependency Updates:
 
 ## 0.5.0 (February 15th, 2024)
 
+KNOWN ISSUES:
+* Upgrades via OperatorHub may fail due to some new required fields in VaultConnection and the Secret types as described in [GH-631](https://github.com/hashicorp/vault-secrets-operator/issues/631)
+
 Features:
 * Sync: add support for secret data transformation: [GH-437](https://github.com/hashicorp/vault-secrets-operator/pull/437)
 
