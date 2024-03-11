@@ -60,6 +60,15 @@ type VaultDynamicSecretSpec struct {
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
 	Destination Destination `json:"destination"`
+	// RefreshAfter a period of time for VSO to sync the source secret data, in
+	// duration notation e.g. 30s, 1m, 24h. This value only needs to be set when
+	// syncing from a secret's engine that does not provide a lease TTL in its
+	// response. The value should be within the secret engine's configured ttl or
+	// max_ttl. The source secret's lease duration takes precedence over this
+	// configuration when it is greater than 0.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	RefreshAfter string `json:"refreshAfter,omitempty"`
 }
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret
