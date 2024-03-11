@@ -531,17 +531,19 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 // case the secret is from a "static-creds" role, the computed horizon will be
 // greater than the secret rotation period/TTL. For all other types, the horizon
 // is computed from the secret's lease duration, the o.Spec.RenewalPercent, minus
-// some jitter offset.
+// some jitter offset. In the case where the secret has no lease duration, the
+// horizon will be computed from o.Spec.RefreshAfter.
 func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) time.Duration {
 	logger := log.FromContext(ctx).WithName("computePostSyncHorizon")
 	var horizon time.Duration
 
 	secretLease := o.Status.SecretLease
+	d := getRotationDuration(o)
 	if !o.Spec.AllowStaticCreds {
-		leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
-		horizon = computeDynamicHorizonWithJitter(leaseDuration, o.Spec.RenewalPercent)
+		horizon = computeDynamicHorizonWithJitter(d, o.Spec.RenewalPercent)
 		logger.V(consts.LogLevelDebug).Info("Leased",
-			"secretLease", secretLease, "horizon", horizon)
+			"secretLease", secretLease, "horizon", horizon,
+			"refreshAfter", o.Spec.RefreshAfter)
 	} else {
 		// TODO: handle the case where VSO missed the last rotation, check o.Status.StaticCredsMetaData.LastVaultRotation ?
 		staticCredsMeta := o.Status.StaticCredsMetaData
@@ -556,9 +558,9 @@ func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Contex
 				"status", o.Status,
 			)
 		} else {
-			if staticCredsMeta.TTL > 0 {
+			if d > 0 {
 				// give Vault an extra .5 seconds to perform the rotation
-				horizon = time.Duration(staticCredsMeta.TTL)*time.Second + 500*time.Millisecond
+				horizon = d + 500*time.Millisecond
 			} else {
 				horizon = time.Second * 1
 			}
@@ -572,16 +574,33 @@ func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Contex
 	return horizon
 }
 
+func getRotationDuration(o *secretsv1beta1.VaultDynamicSecret) time.Duration {
+	var d time.Duration
+	if o.Spec.AllowStaticCreds {
+		d = time.Duration(o.Status.StaticCredsMetaData.TTL) * time.Second
+	} else {
+		d = time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
+		if d <= 0 && o.Spec.RefreshAfter != "" {
+			// we can ignore any parse errors since the min value is valid in this context in
+			// addition we rely on the CRD API validators to prevent bogus duration strings
+			// from ever making it here.
+			d, _ = parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
+		}
+	}
+
+	return d
+}
+
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
 	var ts int64
 	var horizon time.Duration
+	d := getRotationDuration(o)
 	if o.Spec.AllowStaticCreds {
 		ts = o.Status.StaticCredsMetaData.LastVaultRotation
-		horizon = time.Duration(o.Status.StaticCredsMetaData.TTL) * time.Second
+		horizon = d
 	} else {
 		ts = o.Status.LastRenewalTime
-		horizon = computeStartRenewingAt(
-			time.Duration(o.Status.SecretLease.LeaseDuration)*time.Second, o.Spec.RenewalPercent)
+		horizon = computeStartRenewingAt(d, o.Spec.RenewalPercent)
 	}
 
 	return time.Unix(ts, 0).Add(horizon)
