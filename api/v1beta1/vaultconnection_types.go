@@ -22,7 +22,7 @@ type VaultConnectionSpec struct {
 	CACertSecretRef string `json:"caCertSecretRef,omitempty"`
 	// SkipTLSVerify for TLS connections.
 	// +kubebuilder:default=false
-	SkipTLSVerify bool `json:"skipTLSVerify"`
+	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
 }
 
 // VaultConnectionStatus defines the observed state of VaultConnection
