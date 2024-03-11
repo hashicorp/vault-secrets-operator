@@ -4,12 +4,22 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 func Test_dynamicHorizon(t *testing.T) {
@@ -201,4 +211,172 @@ func Test_isInWindow(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_maybeAddFinalizer(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clientBuilder := newClientBuilder()
+	deletionTimestamp := metav1.NewTime(time.Now())
+
+	tests := []struct {
+		name           string
+		o              client.Object
+		create         bool
+		finalizer      string
+		want           bool
+		wantFinalizers []string
+		wantErr        assert.ErrorAssertionFunc
+	}{
+		{
+			name: "updated",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "updated",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			create:         true,
+			finalizer:      vaultAuthFinalizer,
+			want:           true,
+			wantFinalizers: []string{vaultAuthFinalizer},
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "updated-with-multiple",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "updated",
+					Finalizers: []string{
+						"other",
+					},
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			create:         true,
+			finalizer:      vaultAuthFinalizer,
+			want:           true,
+			wantFinalizers: []string{"other", vaultAuthFinalizer},
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "not-updated-exists-with-finalizer",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "updated",
+					Finalizers: []string{
+						vaultAuthFinalizer,
+					},
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			create:         true,
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string{vaultAuthFinalizer},
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "not-updated-inexistent-with-finalizer",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "updated",
+					Finalizers: []string{
+						vaultAuthFinalizer,
+					},
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string{vaultAuthFinalizer},
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "not-updated-has-deletion-timestamp",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "default",
+					Name:              "updated",
+					DeletionTimestamp: &deletionTimestamp,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string(nil),
+			wantErr:        assert.NoError,
+		},
+		{
+			name: "invalid-not-found",
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "updated",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+				},
+			},
+			finalizer:      vaultAuthFinalizer,
+			want:           false,
+			wantFinalizers: []string{},
+			wantErr: func(t assert.TestingT, err error, _ ...interface{}) bool {
+				return assert.True(t, apierrors.IsNotFound(err))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := clientBuilder.Build()
+			var origResourceVersion string
+			if tt.create {
+				require.NoError(t, c.Create(ctx, tt.o))
+				origResourceVersion = tt.o.GetResourceVersion()
+			}
+
+			got, err := maybeAddFinalizer(ctx, c, tt.o, tt.finalizer)
+			if !tt.wantErr(t, err, fmt.Sprintf("maybeAddFinalizer(%v, %v, %v, %v)", ctx, c, tt.o, tt.finalizer)) {
+				return
+			}
+
+			assert.Equalf(t, tt.want, got, "maybeAddFinalizer(%v, %v, %v, %v)", ctx, c, tt.o, tt.finalizer)
+			assert.Equalf(t, tt.wantFinalizers, tt.o.GetFinalizers(), "maybeAddFinalizer(%v, %v, %v, %v)", ctx, c, tt.o, tt.finalizer)
+
+			if tt.create {
+				var updated secretsv1beta1.VaultAuth
+				if assert.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(tt.o), &updated)) {
+					if tt.want {
+						assert.NotEqual(t, origResourceVersion, tt.o.GetResourceVersion())
+					} else {
+						// ensure that the object was not updated.
+						assert.Equal(t, origResourceVersion, tt.o.GetResourceVersion())
+					}
+				}
+			}
+		})
+	}
+}
+
+// newClientBuilder copied from helpers.
+func newClientBuilder() *fake.ClientBuilder {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+	return fake.NewClientBuilder().WithScheme(scheme)
 }

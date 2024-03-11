@@ -1,3 +1,56 @@
+## 0.5.1 (February 20th, 2024)
+Fix:
+* Sync: mitigate potential schema validation failures by only adding finalizers after a status update: [GH-609](https://github.com/hashicorp/vault-secrets-operator/pull/609)
+
+Dependency Updates:
+* Bump github.com/prometheus/client_model from 0.5.0 to 0.6.0: [GH-613](https://github.com/hashicorp/vault-secrets-operator/pull/613)
+* Bump google.golang.org/api from 0.163.0 to 0.165.0: [GH-614](https://github.com/hashicorp/vault-secrets-operator/pull/614)
+* Bump k8s.io/api from 0.29.1 to 0.29.2: [GH-612](https://github.com/hashicorp/vault-secrets-operator/pull/612)
+* Bump k8s.io/apimachinery from 0.29.1 to 0.29.2: [GH-615](https://github.com/hashicorp/vault-secrets-operator/pull/615)
+* Bump k8s.io/client-go from 0.29.1 to 0.29.2: [GH-611](https://github.com/hashicorp/vault-secrets-operator/pull/611)
+
+## 0.5.0 (February 15th, 2024)
+
+KNOWN ISSUES:
+* Upgrades via OperatorHub may fail due to some new required fields in VaultConnection and the Secret types as described in [GH-631](https://github.com/hashicorp/vault-secrets-operator/issues/631)
+
+Features:
+* Sync: add support for secret data transformation: [GH-437](https://github.com/hashicorp/vault-secrets-operator/pull/437)
+
+Improvements:
+* Core: set CLI options from VSO_ environment variables: [GH-551](https://github.com/hashicorp/vault-secrets-operator/pull/551)
+* Sync: Reconcile on secret deletion: [GH-587](https://github.com/hashicorp/vault-secrets-operator/pull/587)
+* Sync: support excluding _raw from the destination: [GH-546](https://github.com/hashicorp/vault-secrets-operator/pull/546)
+* Sync: take ownership of an existing destination secret: [GH-545](https://github.com/hashicorp/vault-secrets-operator/pull/545)
+* Sync: add support for userIDs in VaultPKISecret: [GH-552](https://github.com/hashicorp/vault-secrets-operator/pull/552)
+* OLM: set OLM bundle to "Seamless Upgrades": [GH-581](https://github.com/hashicorp/vault-secrets-operator/pull/581)
+* Helm: add annotations to the cleanup job: [GH-284](https://github.com/hashicorp/vault-secrets-operator/pull/284)
+* Helm: support setting imagePullPolicy: [GH-601](https://github.com/hashicorp/vault-secrets-operator/pull/601)
+* Helm: support setting VaultAuth allowedNamespaces: [GH-602](https://github.com/hashicorp/vault-secrets-operator/pull/602)
+
+Fix:
+* Sync: sync HCPVaultSecretsApp on lastGeneration change: [GH-591](https://github.com/hashicorp/vault-secrets-operator/pull/591)
+* Sync: properly handle secret type changes: [GH-605](https://github.com/hashicorp/vault-secrets-operator/pull/605)
+
+Build:
+* Install the operator-sdk CLI and check `sdk-generate` in CI: [GH-590](https://github.com/hashicorp/vault-secrets-operator/pull/590)
+* Bump some GH action versions: [GH-583](https://github.com/hashicorp/vault-secrets-operator/pull/583)
+
+Dependency Updates:
+* Bump github.com/go-openapi/runtime from 0.26.2 to 0.27.1: [GH-572](https://github.com/hashicorp/vault-secrets-operator/pull/572)
+* Bump github.com/google/uuid from 1.5.0 to 1.6.0: [GH-570](https://github.com/hashicorp/vault-secrets-operator/pull/570)
+* Bump github.com/gruntwork-io/terratest from 0.46.8 to 0.46.11: [GH-550](https://github.com/hashicorp/vault-secrets-operator/pull/550)
+* Bump github.com/hashicorp/go-secure-stdlib/awsutil from 0.2.3-0.20230606170242-1a4b95565d57 to 0.3.0: [GH-579](https://github.com/hashicorp/vault-secrets-operator/pull/579)
+* Bump github.com/hashicorp/vault/api from 1.11.0 to 1.12.0: [GH-595](https://github.com/hashicorp/vault-secrets-operator/pull/595)
+* Bump github.com/hashicorp/vault/sdk from 0.10.2 to 0.11.0: [GH-596](https://github.com/hashicorp/vault-secrets-operator/pull/596)
+* Bump github.com/onsi/gomega from 1.30.0 to 1.31.1: [GH-558](https://github.com/hashicorp/vault-secrets-operator/pull/558)
+* Bump google.golang.org/api from 0.161.0 to 0.163.0: [GH-594](https://github.com/hashicorp/vault-secrets-operator/pull/594)
+* Bump k8s.io/api from 0.29.0 to 0.29.1: [GH-556](https://github.com/hashicorp/vault-secrets-operator/pull/556)
+* Bump k8s.io/client-go from 0.29.0 to 0.29.1: [GH-554](https://github.com/hashicorp/vault-secrets-operator/pull/554)
+* Bump sigs.k8s.io/controller-runtime from 0.17.0 to 0.17.1: [GH-597](https://github.com/hashicorp/vault-secrets-operator/pull/597)
+* Bump ubi9/ubi-micro from 9.3-9 to 9.3-13: [GH-566](https://github.com/hashicorp/vault-secrets-operator/pull/566)
+* Bump ubi9/ubi-minimal from 9.3-1475 to 9.3-1552: [GH-565](https://github.com/hashicorp/vault-secrets-operator/pull/565)
+
 ## 0.4.3 (January 10th, 2024)
 
 Fix:

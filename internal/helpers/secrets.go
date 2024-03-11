@@ -213,7 +213,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 
 		checkOwnerShip := true
 		if meta.Destination.Overwrite {
-			checkOwnerShip = hasOwnerLabels(dest)
+			checkOwnerShip = HasOwnerLabels(dest)
 		}
 
 		if checkOwnerShip {
@@ -251,17 +251,44 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		}
 		labels[k] = v
 	}
-	// add any annotations configured in meta.Destination.Labels
+
+	lastType := dest.Type
 	dest.Data = data
 	dest.Type = secretType
 	dest.SetAnnotations(meta.Destination.Annotations)
 	dest.SetLabels(labels)
 	dest.SetOwnerReferences(references)
-
+	logger.V(consts.LogLevelTrace).Info("ObjectMeta", "objectMeta", dest.ObjectMeta)
 	if exists {
-		logger.V(consts.LogLevelDebug).Info("Updating secret")
-		if err := client.Update(ctx, dest); err != nil {
-			return err
+		// secret type is immutable, so we need to force recreate the secret when the
+		// type changes.
+		if dest.Type != lastType {
+			logger.V(consts.LogLevelDebug).Info("Recreating secret")
+			// unset the labels so that the owner object does not get enqueued on secret
+			// deletion
+			dest.Type = lastType
+			dest.SetLabels(nil)
+			if err := client.Update(ctx, dest); err != nil {
+				return err
+			}
+
+			// delete the secret
+			if err := client.Delete(ctx, dest); err != nil {
+				return err
+			}
+
+			dest.Type = secretType
+			dest.ResourceVersion = ""
+			dest.Generation = 0
+			dest.SetLabels(labels)
+			if err := client.Create(ctx, dest); err != nil {
+				return err
+			}
+		} else {
+			logger.V(consts.LogLevelDebug).Info("Updating secret")
+			if err := client.Update(ctx, dest); err != nil {
+				return err
+			}
 		}
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Creating secret")
@@ -349,16 +376,23 @@ func getSecretExists(ctx context.Context, client ctrlclient.Client, objKey ctrlc
 	return s, exists, err
 }
 
-func hasOwnerLabels(obj ctrlclient.Object) bool {
-	return checkOwnerLabels(obj) == nil
+// HasOwnerLabels returns true if all owner labels are present and valid, if not
+// it returns false.
+// Note: this may cause issues if we ever add new "owner"
+// labels, but for now this check should be good enough.
+func HasOwnerLabels(o ctrlclient.Object) bool {
+	return CheckOwnerLabels(o) == nil
 }
 
-func checkOwnerLabels(obj ctrlclient.Object) error {
+// CheckOwnerLabels checks that all owner labels are present and valid.
+// Note: this may cause issues if we ever add new "owner" labels,
+// but for now this check should be good enough.
+func CheckOwnerLabels(o ctrlclient.Object) error {
 	// check that all owner labels are present and valid, if not return an error
 	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
 	var errs error
 
-	labels := obj.GetLabels()
+	labels := o.GetLabels()
 	for k, v := range OwnerLabels {
 		if o, ok := labels[k]; o != v || !ok {
 			errs = errors.Join(errs, fmt.Errorf(
@@ -373,10 +407,13 @@ func checkOwnerLabels(obj ctrlclient.Object) error {
 func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerReference) error {
 	// checking for Secret ownership relies on first checking the Secret's labels,
 	// then verifying that its OwnerReferences match the SyncableSecret.
-	errs := checkOwnerLabels(dest)
 
-	// check that obj is the Secret's true Owner
+	// check that all owner labels are present and valid, if not return an error
+	// this may cause issues if we ever add new "owner" labels, but for now this check should be good enough.
+
+	errs := CheckOwnerLabels(dest)
 	key := ctrlclient.ObjectKeyFromObject(dest)
+	// check that obj is the Secret's true Owner
 	if len(dest.OwnerReferences) > 0 {
 		if !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {
 			// we are not the owner, perhaps another syncable-secret resource owns this secret?

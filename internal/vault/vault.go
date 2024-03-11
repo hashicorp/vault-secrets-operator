@@ -5,6 +5,7 @@ package vault
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -20,6 +21,10 @@ type PKICertResponse struct {
 }
 
 func UnmarshalPKIIssueResponse(resp *api.Secret) (*PKICertResponse, error) {
+	if resp == nil {
+		return nil, fmt.Errorf("vault secret response is nil")
+	}
+
 	b, err := json.Marshal(resp.Data)
 	if err != nil {
 		return nil, err

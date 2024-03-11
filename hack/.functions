@@ -1,6 +1,13 @@
+#
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+#
+
 function getGH() {
   local url="$1"
   local dest="$2"
+  local num_retries="${3:-${GH_GET_RETRIES}}"
+
   headers=(
       '--header' "Accept: application/vnd.github+json"
       '--header' "X-GitHub-Api-Version: 2022-11-28"
@@ -16,7 +23,10 @@ function getGH() {
   if [ -z "${dest}" ]; then
     opts+=('-O')
   else
-    opts+=('-o' "$dest")
+    opts+=('-o' "${dest}")
   fi
-  ${cmd} "${opts[@]}" "${headers[@]}" ${url}
+  if [ -n "${num_retries}" ]; then
+    opts+=('--retry' "${num_retries}")
+  fi
+  ${cmd} "${opts[@]}" "${headers[@]}" "${url}"
 }

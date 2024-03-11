@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/go-openapi/strfmt"
@@ -212,6 +213,10 @@ func TestSyncSecret(t *testing.T) {
 		},
 	}
 
+	ownerWithCreateAndType := &secretsv1beta1.VaultDynamicSecret{}
+	ownerWithDest.DeepCopyInto(ownerWithCreateAndType)
+	ownerWithCreateAndType.Spec.Destination.Type = corev1.SecretTypeDockercfg
+
 	ownerWithDestNoCreate := &secretsv1beta1.VaultDynamicSecret{}
 	ownerWithDest.DeepCopyInto(ownerWithDestNoCreate)
 	ownerWithDestNoCreate.Spec.Destination.Create = false
@@ -257,14 +262,15 @@ func TestSyncSecret(t *testing.T) {
 		name   string
 		client ctrlclient.Client
 		// this could be any syncable secret type VSS, VPS, etc.
-		obj                *secretsv1beta1.VaultDynamicSecret
-		data               map[string][]byte
-		orphans            int
-		createDest         bool
-		destLabels         map[string]string
-		expectSecretsCount int
-		opts               []SyncOptions
-		wantErr            assert.ErrorAssertionFunc
+		obj                 *secretsv1beta1.VaultDynamicSecret
+		data                map[string][]byte
+		orphans             int
+		createDest          bool
+		destLabels          map[string]string
+		destOwnerReferences []metav1.OwnerReference
+		expectSecretsCount  int
+		opts                []SyncOptions
+		wantErr             assert.ErrorAssertionFunc
 	}{
 		{
 			name:   "invalid-no-dest",
@@ -309,6 +315,28 @@ func TestSyncSecret(t *testing.T) {
 			data: map[string][]byte{
 				"qux": []byte(`bar`),
 			},
+			expectSecretsCount: 1,
+			wantErr:            assert.NoError,
+		},
+		{
+			name:   "valid-dest-prune-orphans",
+			client: clientBuilder.Build(),
+			opts: []SyncOptions{
+				{
+					PruneOrphans: true,
+				},
+			},
+			obj:        ownerWithCreateAndType,
+			destLabels: maps.Clone(OwnerLabels),
+			destOwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: ownerWithCreateAndType.APIVersion,
+					Kind:       ownerWithCreateAndType.Kind,
+					Name:       ownerWithCreateAndType.Name,
+					UID:        ownerWithCreateAndType.UID,
+				},
+			},
+			createDest:         true,
 			expectSecretsCount: 1,
 			wantErr:            assert.NoError,
 		},
@@ -443,10 +471,12 @@ func TestSyncSecret(t *testing.T) {
 					"test object must Spec.Destination.Name set")
 				s := &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      tt.obj.Spec.Destination.Name,
-						Namespace: tt.obj.GetNamespace(),
-						Labels:    tt.destLabels,
+						Name:            tt.obj.Spec.Destination.Name,
+						Namespace:       tt.obj.GetNamespace(),
+						Labels:          tt.destLabels,
+						OwnerReferences: tt.destOwnerReferences,
 					},
+					Type: corev1.SecretTypeOpaque,
 				}
 				require.NoError(t, tt.client.Create(ctx, s))
 			}
@@ -506,6 +536,11 @@ func TestSyncSecret(t *testing.T) {
 				}
 			} else {
 				assert.Equal(t, tt.data, destSecret.Data)
+				wantType := tt.obj.Spec.Destination.Type
+				if wantType == "" {
+					wantType = corev1.SecretTypeOpaque
+				}
+				assert.Equal(t, wantType, destSecret.Type)
 			}
 
 			for _, objKey := range orphans {
@@ -1519,6 +1554,52 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "WithHVSAppSecrets(%v, %v)", tt.resp, tt.opt)
+		})
+	}
+}
+
+func TestHasOwnerLabels(t *testing.T) {
+	t.Parallel()
+
+	// label setup copied to controllers.Test_secretsPredicate_Delete()
+	require.Greater(t, len(OwnerLabels), 1, "OwnerLabels global is invalid,")
+
+	hasNotLabels := maps.Clone(OwnerLabels)
+	for k := range hasNotLabels {
+		delete(hasNotLabels, k)
+		break
+	}
+
+	tests := []struct {
+		name string
+		o    ctrlclient.Object
+		want bool
+	}{
+		{
+			name: "has",
+			o: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: OwnerLabels,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "has-not",
+			o: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: hasNotLabels,
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assert.Equalf(t, tt.want, HasOwnerLabels(tt.o), "HasOwnerLabels(%v)", tt.o)
 		})
 	}
 }

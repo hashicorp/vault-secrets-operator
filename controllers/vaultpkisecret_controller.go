@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -41,7 +42,7 @@ type VaultPKISecretReconciler struct {
 	HMACValidator              helpers.HMACValidator
 	Recorder                   record.EventRecorder
 	SyncRegistry               *SyncRegistry
-	ReferenceCache             ResourceReferenceCache
+	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
@@ -77,11 +78,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
@@ -141,16 +138,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	transRefObjKeys := helpers.GetTransformationRefObjKeys(
-		o.Spec.Destination.Transformation, o.Namespace)
-	if len(transRefObjKeys) > 0 {
-		for _, ref := range transRefObjKeys {
-			r.ReferenceCache.Add(SecretTransformation, ref,
-				req.NamespacedName)
-		}
-	} else {
-		r.ReferenceCache.Remove(SecretTransformation, req.NamespacedName)
-	}
+	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
+		helpers.GetTransformationRefObjKeys(
+			o.Spec.Destination.Transformation, o.Namespace)...)
 
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
 	if err != nil {
@@ -306,7 +296,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
 	o.Status.LastRotation = time.Now().Unix()
-	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.updateStatus(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return ctrl.Result{}, err
@@ -326,7 +315,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
 
-	r.ReferenceCache.Prune(SecretTransformation, objKey)
+	r.referenceCache.Remove(SecretTransformation, objKey)
 	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
 	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
@@ -350,27 +339,23 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) addFinalizer(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
-	logger := log.FromContext(ctx).WithValues("finalizer", vaultPKIFinalizer)
-	if !controllerutil.ContainsFinalizer(s, vaultPKIFinalizer) {
-		controllerutil.AddFinalizer(s, vaultPKIFinalizer)
-		logger.V(consts.LogLevelDebug).Info("Adding finalizer")
-		if err := r.Client.Update(ctx, s); err != nil {
-			logger.Error(err, "Adding finalizer")
-			return err
-		}
-		return nil
-	} else {
-		logger.V(consts.LogLevelDebug).Info("Finalizer already added")
-		return nil
-	}
-}
-
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
+	r.referenceCache = newResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
 		WithOptions(opts).
+		Watches(
+			&secretsv1beta1.SecretTransformation{},
+			NewEnqueueRefRequestsHandlerST(r.referenceCache, r.SyncRegistry),
+		).
+		Watches(
+			&corev1.Secret{},
+			&enqueueOnDeletionRequestHandler{
+				gvk: secretsv1beta1.GroupVersion.WithKind(VaultPKISecret.String()),
+			},
+			builder.WithPredicates(&secretsPredicate{}),
+		).
 		Complete(r)
 }
 
@@ -436,7 +421,10 @@ func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1beta1.VaultPKISecret,
 func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
 	logger.V(consts.LogLevelTrace).Info("Update status called")
+
 	metrics.SetResourceStatus("vaultpkisecret", o, o.Status.Valid)
+
+	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
 		msg := "Failed to update the resource's status"
 		r.recordEvent(o, consts.ReasonStatusUpdateError, "%s: %s", msg, err)
@@ -444,7 +432,8 @@ func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv
 		return err
 	}
 
-	return nil
+	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultPKIFinalizer)
+	return err
 }
 
 func computeExpirationTimePKI(o *secretsv1beta1.VaultPKISecret, offset int64) time.Time {

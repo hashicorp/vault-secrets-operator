@@ -52,6 +52,7 @@ spec:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.controller.kubernetesClusterDomain }}
         image: {{ .Values.controller.kubeRbacProxy.image.repository }}:{{ .Values.controller.kubeRbacProxy.image.tag }}
+        imagePullPolicy: {{ .Values.controller.kubeRbacProxy.image.pullPolicy }}
         ports:
         - containerPort: 8443
           name: https
@@ -98,7 +99,7 @@ spec:
           value: {{ .value }}
         {{- end }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: {{ .Values.controller.manager.image.pullPolicy }}
         livenessProbe:
           httpGet:
             path: /healthz
@@ -163,6 +164,9 @@ metadata:
     # job is considered part of the release.
     "helm.sh/hook": pre-delete
     "helm.sh/hook-delete-policy": hook-succeeded
+    {{- if .Values.controller.annotations }}
+      {{- toYaml .Values.controller.annotations | nindent 4 }}
+    {{- end }}
 spec:
   template:
     metadata:

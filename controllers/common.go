@@ -12,9 +12,11 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 )
 
 var (
@@ -232,4 +234,28 @@ func parseDurationString(duration, path string, min time.Duration) (time.Duratio
 
 func isInWindow(t1, t2 time.Time) bool {
 	return t1.After(t2) || t1.Equal(t2)
+}
+
+// maybeAddFinalizer updates client.Object with finalizer if it is not already
+// set. Return true if the object was updated, in which case the object's
+// ResourceVersion will have changed. This update should be handled by in the
+// caller.
+func maybeAddFinalizer(ctx context.Context, c client.Client, o client.Object, finalizer string) (bool, error) {
+	if o.GetDeletionTimestamp() == nil && !controllerutil.ContainsFinalizer(o, finalizer) {
+		// always call maybeAddFinalizer() after client.Client.Status.Update() to avoid
+		// API validation errors due to changes to the status schema.
+		logger := log.FromContext(ctx).WithValues("finalizer", finalizer)
+		logger.V(consts.LogLevelTrace).Info("Adding finalizer",
+			"finalizer", finalizer)
+		controllerutil.AddFinalizer(o, finalizer)
+		if err := c.Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+			controllerutil.RemoveFinalizer(o, finalizer)
+			return false, err
+		}
+
+		return true, nil
+	}
+
+	return false, nil
 }

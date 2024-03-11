@@ -261,7 +261,7 @@ _Appears in:_
 
 
 
-StorageEncryption provides the necessary configuration need to encrypt the storage cache entries using Vault's Transit engine. It only supports Kubernetes Auth for now.
+StorageEncryption provides the necessary configuration need to encrypt the storage cache entries using Vault's Transit engine.
 
 _Appears in:_
 - [VaultAuthSpec](#vaultauthspec)
@@ -660,6 +660,7 @@ _Appears in:_
 | `ipSans` _string array_ | IPSans to include in the request. |
 | `uriSans` _string array_ | The requested URI SANs. |
 | `otherSans` _string array_ | Requested other SANs, in an array with the format oid;type:value for each entry. |
+| `userIDs` _string array_ | User ID (OID 0.9.2342.19200300.100.1.1) Subject values to be placed on the signed certificate. |
 | `ttl` _string_ | TTL for the certificate; sets the expiration date. If not specified the Vault role's default, backend default, or system default TTL is used, in that order. Cannot be larger than the mount's max TTL. Note: this only has an effect when generating a CA cert or signing a CA cert, not when generating a CSR for an intermediate CA. Should be in duration notation e.g. 120s, 2h, etc. |
 | `format` _string_ | Format for the certificate. Choices: "pem", "der", "pem_bundle". If "pem_bundle", any private key and issuing cert will be appended to the certificate pem. If "der", the value will be base64 encoded. Default: pem |
 | `privateKeyFormat` _string_ | PrivateKeyFormat, generally the default will be controlled by the Format parameter as either base64-encoded DER or PEM-encoded DER. However, this can be set to "pkcs8" to have the returned private key contain base64-encoded pkcs8 or PEM-encoded pkcs8 instead. Default: der |

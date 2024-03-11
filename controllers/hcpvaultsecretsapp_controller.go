@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -51,7 +52,7 @@ type HCPVaultSecretsAppReconciler struct {
 	SecretDataBuilder          *helpers.SecretDataBuilder
 	HMACValidator              helpers.HMACValidator
 	MinRefreshAfter            time.Duration
-	ReferenceCache             ResourceReferenceCache
+	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
 
@@ -83,11 +84,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	if o.GetDeletionTimestamp() == nil {
-		if err := r.addFinalizer(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
+	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
@@ -134,16 +131,9 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
-	transRefObjKeys := helpers.GetTransformationRefObjKeys(
-		o.Spec.Destination.Transformation, o.Namespace)
-	if len(transRefObjKeys) > 0 {
-		for _, ref := range transRefObjKeys {
-			r.ReferenceCache.Add(SecretTransformation, ref,
-				req.NamespacedName)
-		}
-	} else {
-		r.ReferenceCache.Prune(SecretTransformation, req.NamespacedName)
-	}
+	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
+		helpers.GetTransformationRefObjKeys(
+			o.Spec.Destination.Transformation, o.Namespace)...)
 
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
@@ -161,6 +151,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
+	doSync := true
 	// doRolloutRestart only if this is not the first time this secret has been synced
 	doRolloutRestart := o.Status.SecretMAC != ""
 	macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
@@ -170,8 +161,16 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
+	// skip the next sync if the data has not changed since the last sync, and the
+	// resource has not been updated.
+	// Note: spec.status.lastGeneration was added later, so we don't want to force a
+	// sync until we've updated it.
+	if o.Status.LastGeneration == 0 || o.Status.LastGeneration == o.GetGeneration() {
+		doSync = !macsEqual
+	}
+
 	o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
-	if !macsEqual {
+	if doSync {
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Failed to update k8s secret: %s", err)
@@ -189,7 +188,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
 	}
 
-	if err := r.Status().Update(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -198,15 +197,34 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}, nil
 }
 
+func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) error {
+	o.Status.LastGeneration = o.GetGeneration()
+	if err := r.Status().Update(ctx, o); err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
+			"Failed to update the resource's status, err=%s", err)
+	}
+
+	_, err := maybeAddFinalizer(ctx, r.Client, o, hcpVaultSecretsAppFinalizer)
+	return err
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
+	r.referenceCache = newResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
 		WithEventFilter(syncableSecretPredicate(nil)).
 		WithOptions(opts).
 		Watches(
 			&secretsv1beta1.SecretTransformation{},
-			NewEnqueueRefRequestsHandlerST(r.ReferenceCache, nil),
+			NewEnqueueRefRequestsHandlerST(r.referenceCache, nil),
+		).
+		Watches(
+			&corev1.Secret{},
+			&enqueueOnDeletionRequestHandler{
+				gvk: secretsv1beta1.GroupVersion.WithKind(HCPVaultSecretsApp.String()),
+			},
+			builder.WithPredicates(&secretsPredicate{}),
 		).
 		Complete(r)
 }
@@ -253,19 +271,9 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 	return hvsclient.New(cl, nil), nil
 }
 
-func (r *HCPVaultSecretsAppReconciler) addFinalizer(ctx context.Context, o client.Object) error {
-	if !controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
-		controllerutil.AddFinalizer(o, hcpVaultSecretsAppFinalizer)
-		if err := r.Client.Update(ctx, o); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o client.Object) error {
 	logger := log.FromContext(ctx)
-	r.ReferenceCache.Prune(SecretTransformation, client.ObjectKeyFromObject(o))
+	r.referenceCache.Remove(SecretTransformation, client.ObjectKeyFromObject(o))
 	if controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, hcpVaultSecretsAppFinalizer) {

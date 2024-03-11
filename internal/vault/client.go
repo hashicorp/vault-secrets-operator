@@ -606,6 +606,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 		VaultNamespace:  authObj.Spec.Namespace,
 		K8sNamespace:    connObj.Namespace,
 		CACertSecretRef: connObj.Spec.CACertSecretRef,
+		Headers:         connObj.Spec.Headers,
 	}
 
 	vc, err := MakeVaultClient(ctx, cfg, client)
