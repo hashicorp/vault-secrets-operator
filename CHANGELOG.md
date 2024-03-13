@@ -1,4 +1,33 @@
+## 0.5.2 (March 13th, 2024)
+
+Improvements:
+* VDS: support configuring an explicit sync delay for non-renewable leases without an explicit TTL: [GH-641](https://github.com/hashicorp/vault-secrets-operator/pull/641)
+* OLM: add newly required ClusterServiceVersion annotations: [GH-628](https://github.com/hashicorp/vault-secrets-operator/pull/628)
+* Helm: mention global transformation option env variable: [GH-626](https://github.com/hashicorp/vault-secrets-operator/pull/626)
+
+Fix:
+* API: make some required bool parameters optional: [GH-650](https://github.com/hashicorp/vault-secrets-operator/pull/650)
+* VDS: make rotationSchedule status field optional: [GH-621](https://github.com/hashicorp/vault-secrets-operator/pull/621)
+* VPS: return an error when the PKI secret is nil: [GH-636](https://github.com/hashicorp/vault-secrets-operator/pull/636)
+* Core: ensure VaultConnection headers are set on the vault client: [GH-629](https://github.com/hashicorp/vault-secrets-operator/pull/629)
+
+Build:
+* Use Go 1.21.8: [GH-651](https://github.com/hashicorp/vault-secrets-operator/pull/651)
+
+Dependency Updates:
+* Bump github.com/go-jose/go-jose/v3 from 3.0.1 to 3.0.3: [GH-646](https://github.com/hashicorp/vault-secrets-operator/pull/646)
+* Bump github.com/go-openapi/runtime from 0.27.1 to 0.28.0: [GH-648](https://github.com/hashicorp/vault-secrets-operator/pull/648)
+* Bump github.com/go-openapi/strfmt from 0.22.1 to 0.23.0: [GH-649](https://github.com/hashicorp/vault-secrets-operator/pull/649)
+* Bump github.com/prometheus/client_golang from 1.18.0 to 1.19.0: [GH-634](https://github.com/hashicorp/vault-secrets-operator/pull/634)
+* Bump github.com/stretchr/testify from 1.8.4 to 1.9.0: [GH-633](https://github.com/hashicorp/vault-secrets-operator/pull/633)
+* Bump google.golang.org/api from 0.167.0 to 0.169.0: [GH-647](https://github.com/hashicorp/vault-secrets-operator/pull/647)
+* Bump google.golang.org/protobuf from 1.32.0 to 1.33.0: [GH-642](https://github.com/hashicorp/vault-secrets-operator/pull/642)
+* Bump sigs.k8s.io/controller-runtime from 0.17.1 to 0.17.2: [GH-625](https://github.com/hashicorp/vault-secrets-operator/pull/625)
+* Bump ubi9/ubi-micro from 9.3-13 to 9.3-15: [GH-640](https://github.com/hashicorp/vault-secrets-operator/pull/640)
+* Bump ubi9/ubi-minimal from 9.3-1552 to 9.3-1612: [GH-639](https://github.com/hashicorp/vault-secrets-operator/pull/639)
+
 ## 0.5.1 (February 20th, 2024)
+
 Fix:
 * Sync: mitigate potential schema validation failures by only adding finalizers after a status update: [GH-609](https://github.com/hashicorp/vault-secrets-operator/pull/609)
 
