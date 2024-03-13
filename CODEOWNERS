@@ -4,4 +4,4 @@
 #
 # More on CODEOWNERS files: https://help.github.com/en/github/creating-cloning-and-archiving-repositories/about-code-owners
 
-* @hashicorp/vault-ecosystem-foundations
+* @hashicorp/vault-ecosystem
