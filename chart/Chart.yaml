@@ -5,7 +5,7 @@ apiVersion: v2
 name: vault-secrets-operator
 version: 0.5.2
 appVersion: "0.5.2"
-kubeVersion: ">=1.22.0-0"
+kubeVersion: ">=1.21.0-0"
 description: Official Vault Secrets Operator Chart
 type: application
 sources:
