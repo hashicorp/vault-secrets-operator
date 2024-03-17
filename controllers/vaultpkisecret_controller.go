@@ -233,16 +233,21 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		data["ca_chain"] = []byte(strings.Join(certResp.CAChain, "\n"))
 	}
 	if o.Spec.Destination.Type == corev1.SecretTypeTLS {
-		data[corev1.TLSCertKey] = data["certificate"]
+		// If using tls.key or tls.crt in templates, don't overwrite them
+		if !existsInTemplate(transOption, corev1.TLSCertKey) {
+			data[corev1.TLSCertKey] = data["certificate"]
+		}
 		// the ca_chain includes the issuing ca
-		if len(data["ca_chain"]) > 0 {
+		if len(data["ca_chain"]) > 0 && !existsInTemplate(transOption, corev1.TLSCertKey) {
 			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte("\n")...)
 			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte(data["ca_chain"])...)
-		} else if len(data["issuing_ca"]) > 0 {
+		} else if len(data["issuing_ca"]) > 0 && !existsInTemplate(transOption, corev1.TLSCertKey) {
 			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte("\n")...)
 			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], data["issuing_ca"]...)
 		}
-		data[corev1.TLSPrivateKeyKey] = data["private_key"]
+		if !existsInTemplate(transOption, corev1.TLSPrivateKeyKey) {
+			data[corev1.TLSPrivateKeyKey] = data["private_key"]
+		}
 	}
 
 	if b, err := json.Marshal(data); err == nil {
