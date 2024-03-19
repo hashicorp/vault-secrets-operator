@@ -17,7 +17,6 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var (
@@ -259,19 +258,4 @@ func maybeAddFinalizer(ctx context.Context, c client.Client, o client.Object, fi
 	}
 
 	return false, nil
-}
-
-// existsInTemplate checks whether a key exists in templates
-func existsInTemplate(opt *helpers.SecretTransformationOption, key string) bool {
-	if len(opt.KeyedTemplates) == 0 {
-		return false
-	}
-
-	for _, spec := range opt.KeyedTemplates {
-		if spec.Key == key {
-			return true
-		}
-	}
-
-	return false
 }
