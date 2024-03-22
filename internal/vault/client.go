@@ -24,7 +24,8 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal bool
+	SkipRenewal     bool
+	WatcherErrbacks []ClientErrback
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -158,6 +159,8 @@ type Client interface {
 
 var _ Client = (*defaultClient)(nil)
 
+type ClientErrback func(ctx context.Context, c Client, err error)
+
 type defaultClient struct {
 	client             *api.Client
 	isClone            bool
@@ -171,6 +174,7 @@ type defaultClient struct {
 	watcher            *api.LifetimeWatcher
 	closed             bool
 	lastWatcherErr     error
+	watcherErrbacks    []ClientErrback
 	once               sync.Once
 	mu                 sync.RWMutex
 }
@@ -400,6 +404,8 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 
 	watcher, err := c.client.NewLifetimeWatcher(&api.LifetimeWatcherInput{
 		Secret: c.authSecret,
+		// TODO: this is probably not the behaviour we want. Need to investigate further.
+		RenewBehavior: api.RenewBehaviorErrorOnErrors,
 	})
 	if err != nil {
 		return err
@@ -429,9 +435,17 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 					logger.Error(err, "LifetimeWatcher completed with an error")
 					c.lastWatcherErr = err
 				}
+
+				for _, errback := range c.watcherErrbacks {
+					logger.Info("Calling watcherErrback func")
+					errback(ctx, c, err)
+
+				}
+
 				return
 			case renewal := <-watcher.RenewCh():
-				logger.Info("Successfully renewed the client")
+				logger.Info("Successfully renewed the client",
+					"leaseID", c.authSecret.LeaseID)
 				c.authSecret = renewal.Secret
 				c.lastRenewal = renewal.RenewedAt.Unix()
 			}
@@ -624,6 +638,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.client = vc
 	c.authObj = authObj
 	c.connObj = connObj
+	c.watcherErrbacks = opts.WatcherErrbacks
 
 	return nil
 }

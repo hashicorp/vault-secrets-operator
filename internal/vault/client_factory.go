@@ -39,6 +39,7 @@ func (e *ClientFactoryDisabledError) Error() string {
 
 type ClientFactory interface {
 	Get(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
+	RegisterClientErrback(errback ClientErrback)
 }
 
 // clientCacheObjectFilterFunc provides a way to selectively prune  CachingClientFactory's Client cache.
@@ -73,7 +74,14 @@ type cachingClientFactory struct {
 	requestErrorCounterVec *prometheus.CounterVec
 	revokeOnEvict          bool
 	pruneStorageOnEvict    bool
+	clientErrbacks         []ClientErrback
 	mu                     sync.RWMutex
+}
+
+func (m *cachingClientFactory) RegisterClientErrback(errback ClientErrback) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clientErrbacks = append(m.clientErrbacks, errback)
 }
 
 // Prune the storage for the requesting object and CachingClientFactoryPruneRequest.
@@ -375,7 +383,9 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
-	c, err = NewClientWithLogin(ctx, client, obj, nil)
+	c, err = NewClientWithLogin(ctx, client, obj, &ClientOptions{
+		WatcherErrbacks: m.clientErrbacks,
+	})
 	if err != nil {
 		logger.Error(err, "Failed to get NewClientWithLogin")
 		errs = errors.Join(err)
@@ -473,7 +483,9 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 		return nil, fmt.Errorf("restoration impossible, storage is not enabled")
 	}
 
-	c, err := NewClientFromStorageEntry(ctx, client, entry, nil)
+	c, err := NewClientFromStorageEntry(ctx, client, entry, &ClientOptions{
+		WatcherErrbacks: m.clientErrbacks,
+	})
 	if err != nil {
 		// remove the Client storage entry if its restoration failed for any reason
 		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {

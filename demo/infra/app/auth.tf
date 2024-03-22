@@ -24,7 +24,7 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   bound_service_account_namespaces = [
     local.k8s_namespace,
   ]
-  token_period = 120
+  token_period = 30
   token_policies = [
     vault_policy.db.name,
   ]

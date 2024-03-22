@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -122,6 +123,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	doSync := (o.GetGeneration() != o.Status.LastGeneration) ||
 		(o.Spec.Destination.Create && !destExists) ||
 		r.SyncRegistry.Has(req.NamespacedName)
+
+	_, hasSyncAnno := o.Annotations[consts.AnnotationResync]
+	if hasSyncAnno {
+		doSync = true
+	}
+
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -163,6 +170,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{
 			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
 		}, nil
+	}
+
+	if cacheKey, err := vClient.GetCacheKey(); err == nil {
+		o.Status.ClientCacheKey = cacheKey.String()
+	} else {
+		o.Status.ClientCacheKey = ""
+		logger.Error(err,
+			"Resetting .status.cacheKey, cacheKey is invalid")
+
 	}
 
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
@@ -240,6 +256,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	o.Status.LastRenewalTime = nowFunc().Unix()
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if hasSyncAnno {
+		delete(o.Annotations, consts.AnnotationResync)
+		if err := r.Client.Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to remove resync annotation")
+		}
 	}
 
 	horizon := r.computePostSyncHorizon(ctx, o)
@@ -443,6 +466,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	r.ClientFactory.RegisterClientErrback(newClientErrback(r))
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
@@ -643,4 +667,60 @@ func computeRelativeHorizonWithJitter(o *secretsv1beta1.VaultDynamicSecret, minH
 		horizon -= time.Duration(jitter)
 	}
 	return horizon, inWindow
+}
+
+func newClientErrback(r *VaultDynamicSecretReconciler) vault.ClientErrback {
+	return func(ctx context.Context, c vault.Client, e error) {
+		logger := log.FromContext(ctx).WithName("watcherErrback")
+
+		logger.Info("Watcher errback called", "onError", e)
+		cacheKey, err := c.GetCacheKey()
+		if err != nil {
+			logger.Error(err, "GetCacheKey()")
+			return
+		}
+
+		logger = logger.WithValues("cacheKey", cacheKey)
+		var l secretsv1beta1.VaultDynamicSecretList
+		if err := r.Client.List(ctx, &l, client.InNamespace(
+			c.GetCredentialProvider().GetNamespace()),
+		); err != nil {
+			logger.Error(err, "Failed to list VDS instances")
+			return
+		}
+
+		// wg := sync.WaitGroup{}
+		if len(l.Items) == 0 {
+			return
+		}
+
+		reqs := map[reconcile.Request]empty{}
+		// wg.Add(len(l.Items))
+		for _, o := range l.Items {
+			if o.Status.ClientCacheKey == cacheKey.String() {
+				req := reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: o.GetNamespace(),
+						Name:      o.GetName(),
+					},
+				}
+
+				if _, ok := reqs[req]; !ok {
+					reqs[req] = empty{}
+					go func() {
+						// defer wg.Done()
+						req := req
+						_, horizon := computeMaxJitterDuration(time.Second * 2)
+						logger.Info("Calling Reconcile()", "req", req, "horizon", horizon)
+						time.Sleep(horizon)
+						if _, err := r.Reconcile(ctx, req); err != nil {
+							logger.Error(err, "Failed to reconcile", "req", req)
+						}
+					}()
+				}
+			}
+		}
+
+		// wg.Wait()
+	}
 }

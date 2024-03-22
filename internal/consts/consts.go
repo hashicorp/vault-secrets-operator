@@ -22,5 +22,5 @@ const (
 	AWSSessionName     = "session_name"
 	AWSSessionToken    = "session_token"
 
-	AnnotationResync = "vso/resync"
+	AnnotationResync = "vso.hashicorp.com/resync"
 )
