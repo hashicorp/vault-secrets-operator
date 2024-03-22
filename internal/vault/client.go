@@ -24,8 +24,8 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal    bool
-	WatcherErrback ClientErrback
+	SkipRenewal     bool
+	WatcherErrbacks []ClientErrback
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -159,7 +159,7 @@ type Client interface {
 
 var _ Client = (*defaultClient)(nil)
 
-type ClientErrback func(c Client, err error)
+type ClientErrback func(ctx context.Context, c Client, err error)
 
 type defaultClient struct {
 	client             *api.Client
@@ -174,7 +174,7 @@ type defaultClient struct {
 	watcher            *api.LifetimeWatcher
 	closed             bool
 	lastWatcherErr     error
-	watcherErrback     ClientErrback
+	watcherErrbacks    []ClientErrback
 	once               sync.Once
 	mu                 sync.RWMutex
 }
@@ -435,10 +435,13 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 					logger.Error(err, "LifetimeWatcher completed with an error")
 					c.lastWatcherErr = err
 				}
-				if c.watcherErrback != nil {
+
+				for _, errback := range c.watcherErrbacks {
 					logger.Info("Calling watcherErrback func")
-					c.watcherErrback(c, err)
+					errback(ctx, c, err)
+
 				}
+
 				return
 			case renewal := <-watcher.RenewCh():
 				logger.Info("Successfully renewed the client",
@@ -635,7 +638,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.client = vc
 	c.authObj = authObj
 	c.connObj = connObj
-	c.watcherErrback = opts.WatcherErrback
+	c.watcherErrbacks = opts.WatcherErrbacks
 
 	return nil
 }

@@ -71,7 +71,7 @@ demo-infra-app-plan: demo-setup-kind ## Deploy Postgres for the demo
 demo-deploy: demo-setup-kind ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	$(MAKE) deploy-kind \
 		KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) \
-		KUSTOMIZATION=persistence-encrypted
+		KUSTOMIZATION=persistence-encrypted-test
 
 .PHONY: demo
 demo: demo-deploy demo-infra-vault demo-infra-app ## Deploy the demo
