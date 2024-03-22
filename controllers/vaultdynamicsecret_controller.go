@@ -122,6 +122,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	doSync := (o.GetGeneration() != o.Status.LastGeneration) ||
 		(o.Spec.Destination.Create && !destExists) ||
 		r.SyncRegistry.Has(req.NamespacedName)
+
+	_, hasSyncAnno := o.Annotations[consts.AnnotationResync]
+	if hasSyncAnno {
+		doSync = true
+	}
+
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -163,6 +169,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{
 			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
 		}, nil
+	}
+
+	if cacheKey, err := vClient.GetCacheKey(); err == nil {
+		o.Status.ClientCacheKey = cacheKey.String()
+	} else {
+		o.Status.ClientCacheKey = ""
+		logger.Error(err,
+			"Resetting .status.cacheKey, cacheKey is invalid")
+
 	}
 
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
@@ -240,6 +255,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	o.Status.LastRenewalTime = nowFunc().Unix()
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if hasSyncAnno {
+		delete(o.Annotations, consts.AnnotationResync)
+		if err := r.Client.Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to remove resync annotation")
+		}
 	}
 
 	horizon := r.computePostSyncHorizon(ctx, o)

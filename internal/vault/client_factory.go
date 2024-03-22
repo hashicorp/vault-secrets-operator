@@ -375,7 +375,9 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
-	c, err = NewClientWithLogin(ctx, client, obj, nil)
+	c, err = NewClientWithLogin(ctx, client, obj, &ClientOptions{
+		WatcherErrback: newClientErrback(ctx, client),
+	})
 	if err != nil {
 		logger.Error(err, "Failed to get NewClientWithLogin")
 		errs = errors.Join(err)
@@ -473,7 +475,9 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 		return nil, fmt.Errorf("restoration impossible, storage is not enabled")
 	}
 
-	c, err := NewClientFromStorageEntry(ctx, client, entry, nil)
+	c, err := NewClientFromStorageEntry(ctx, client, entry, &ClientOptions{
+		WatcherErrback: newClientErrback(ctx, client),
+	})
 	if err != nil {
 		// remove the Client storage entry if its restoration failed for any reason
 		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {
@@ -713,3 +717,38 @@ type nullEventRecorder struct {
 }
 
 func (n *nullEventRecorder) Event(_ runtime.Object, _, _, _ string) {}
+
+func newClientErrback(ctx context.Context, client ctrlclient.Client) ClientErrback {
+	return func(c Client, e error) {
+		logger := log.FromContext(ctx).WithName("watcherErrback")
+
+		logger.Info("Watcher errback called", "onError", e)
+		cacheKey, err := c.GetCacheKey()
+		if err != nil {
+			logger.Error(err, "GetCacheKey()")
+			return
+		}
+
+		logger = logger.WithValues("cacheKey", cacheKey)
+		var l secretsv1beta1.VaultDynamicSecretList
+		if err := client.List(ctx, &l, ctrlclient.InNamespace(
+			c.GetCredentialProvider().GetNamespace()),
+		); err != nil {
+			logger.Error(err, "Failed to list VDS instances")
+			return
+		}
+
+		for _, o := range l.Items {
+			if o.Status.ClientCacheKey == cacheKey.String() {
+				// TODO: figure out a clear way of trigger the VDS reconciliation without
+				//  mutating the VDS instance's annotations.
+				o.Annotations[consts.AnnotationResync] = "true"
+				obj := o.DeepCopy()
+				logger.Info("Resync", "obj", o)
+				if err := client.Update(ctx, obj); err != nil {
+					logger.Error(err, "Failed to remove resync annotation")
+				}
+			}
+		}
+	}
+}
