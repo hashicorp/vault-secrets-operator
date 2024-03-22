@@ -711,8 +711,8 @@ func newClientErrback(r *VaultDynamicSecretReconciler) vault.ClientErrback {
 						// defer wg.Done()
 						req := req
 						_, horizon := computeMaxJitterDuration(time.Second * 2)
-						time.Sleep(horizon)
 						logger.Info("Calling Reconcile()", "req", req, "horizon", horizon)
+						time.Sleep(horizon)
 						if _, err := r.Reconcile(ctx, req); err != nil {
 							logger.Error(err, "Failed to reconcile", "req", req)
 						}
