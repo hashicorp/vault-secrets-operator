@@ -80,6 +80,15 @@ rules:
   - patch
   - watch
 - apiGroups:
+  - argoproj.io
+  resources:
+  - rollouts
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
   - secrets.hashicorp.com
   resources:
   - hcpauths
