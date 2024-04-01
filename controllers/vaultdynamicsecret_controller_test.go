@@ -677,6 +677,48 @@ func Test_computeRotationTime(t *testing.T) {
 			},
 			want: then.Add(time.Duration(float64(time.Second*300) * (float64(renewalPercentCap) / 100))),
 		},
+		{
+			name: "sixty-percent-refreshAfter",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					LastRenewalTime: then.Unix(),
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+					RefreshAfter:   "300s",
+				},
+			},
+			want: then.Add(180 * time.Second),
+		},
+		{
+			name: "sixty-percent-override-refreshAfter",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 300,
+					},
+					LastRenewalTime: then.Unix(),
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+					RefreshAfter:   "600s",
+				},
+			},
+			want: then.Add(180 * time.Second),
+		},
+		{
+			name: "invalid-refreshAfter-value",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					LastRenewalTime: then.Unix(),
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+					RefreshAfter:   "x",
+				},
+			},
+			want: then,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -886,6 +928,50 @@ func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
 			},
 			wantMaxHorizon: time.Second * 70,
 			wantMinHorizon: time.Second * 60,
+		},
+		{
+			name: "leased-with-refreshAfter",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+					RefreshAfter:   "200s",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						LeaseDuration: 100,
+					},
+				},
+			},
+			wantMaxHorizon: time.Second * 70,
+			wantMinHorizon: time.Second * 60,
+		},
+		{
+			name: "not-leased-with-refreshAfter",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+					RefreshAfter:   "100s",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{},
+				},
+			},
+			wantMaxHorizon: time.Second * 70,
+			wantMinHorizon: time.Second * 60,
+		},
+		{
+			name: "invalid-refreshAfter",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					RenewalPercent: 60,
+					RefreshAfter:   "x",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{},
+				},
+			},
+			wantMaxHorizon: 0,
+			wantMinHorizon: 0,
 		},
 	}
 	for _, tt := range tests {
