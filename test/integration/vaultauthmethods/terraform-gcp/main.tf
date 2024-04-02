@@ -13,7 +13,7 @@ terraform {
     }
     google = {
       source  = "hashicorp/google"
-      version = "5.16.0"
+      version = "5.23.0"
     }
   }
 }
@@ -35,7 +35,7 @@ provider "vault" {
 module "gke-workload-identity" {
   count      = var.run_gcp_tests ? 1 : 0
   source     = "terraform-google-modules/kubernetes-engine/google//modules/workload-identity"
-  version    = "28.0.0"
+  version    = "30.2.0"
   name       = "workload-identity-sa-${var.test_id}"
   namespace  = var.k8s_test_namespace
   project_id = var.gcp_project_id
