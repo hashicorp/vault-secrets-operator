@@ -431,7 +431,7 @@ port-forward:
 	    echo "Port 38300 is already in use, please free it up and try again."; \
 	else \
 	    echo "Starting port forwarding..."; \
-	    bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n $(K8S_VAULT_NAMESPACE) service/vault 38300:8200; done'; \
+	    bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n $(K8S_VAULT_NAMESPACE) statefulset/vault 38300:8200; done'; \
 	fi
 
 ##@ Deployment
