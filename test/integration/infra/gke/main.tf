@@ -41,6 +41,8 @@ resource "google_container_cluster" "primary" {
     workload_pool = "${var.project_id}.svc.id.goog"
   }
 
+  deletion_protection = false
+
   depends_on = [google_project_iam_member.default_gar_reader,
   google_project_iam_member.default_gar_writer]
 }
