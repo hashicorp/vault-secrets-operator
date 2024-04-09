@@ -440,6 +440,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `role` _string_ | Role to use for authenticating to Vault. |
+| `roleNamespaceSuffix` _boolean_ | Add the consuming secret's namespace as a suffix to the role name (e.g. "<role>-kube-system"). Defaults to false. |
 | `serviceAccount` _string_ | ServiceAccount to use when authenticating to Vault's authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace. |
 | `audiences` _string array_ | TokenAudiences to include in the ServiceAccount token. |
 | `tokenExpirationSeconds` _integer_ | TokenExpirationSeconds to set the ServiceAccount token. |

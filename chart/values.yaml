@@ -492,6 +492,10 @@ defaultAuthMethod:
     # @type: string
     role: ""
 
+    # Add the consuming secret's namespace as a suffix to the role name (e.g. "<role>-kube-system"). Defaults to false.
+    # @type: boolean
+    roleNamespaceSuffix: ~
+
     # Kubernetes ServiceAccount associated with the default Vault Auth Role
     # @type: string
     serviceAccount: default

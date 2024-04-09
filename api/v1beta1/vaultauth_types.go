@@ -14,6 +14,10 @@ import (
 type VaultAuthConfigKubernetes struct {
 	// Role to use for authenticating to Vault.
 	Role string `json:"role"`
+	// Add the consuming secret's namespace as a suffix to the role name (e.g. "<role>-kube-system").
+	// Defaults to false.
+	// +kubebuilder:default:=false
+	RoleNamespaceSuffix bool `json:"roleNamespaceSuffix,omitempty"`
 	// ServiceAccount to use when authenticating to Vault's
 	// authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace.
 	ServiceAccount string `json:"serviceAccount"`
