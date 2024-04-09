@@ -5,6 +5,7 @@ package vault
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -82,9 +83,13 @@ func (l *KubernetesCredentialProvider) GetCreds(ctx context.Context, client ctrl
 		return nil, err
 	}
 
+	role := l.authObj.Spec.Kubernetes.Role
+	if l.authObj.Spec.Kubernetes.RoleNamespaceSuffix {
+		role = fmt.Sprintf("%s-%s", role, l.providerNamespace)
+	}
 	// credentials needed for Kubernetes auth
 	return map[string]interface{}{
-		"role": l.authObj.Spec.Kubernetes.Role,
+		"role": role,
 		"jwt":  tr.Status.Token,
 	}, nil
 }

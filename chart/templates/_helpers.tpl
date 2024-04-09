@@ -78,6 +78,9 @@ VaultAuthMethod Spec
   {{- if eq $cur.method "kubernetes" }}
   kubernetes:
     role: {{ $cur.kubernetes.role }}
+    {{- if ne (toString $cur.kubernetes.roleNamespaceSuffix) "<nil>" }}
+    roleNamespaceSuffix: {{ $cur.kubernetes.roleNamespaceSuffix }}
+    {{- end }}
     serviceAccount: {{ $serviceAccount }}
     {{- if $cur.kubernetes.tokenAudiences }}
     audiences: {{ $cur.kubernetes.tokenAudiences | toJson }}
