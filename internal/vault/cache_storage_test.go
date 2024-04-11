@@ -260,7 +260,7 @@ func Test_defaultClientCacheStorage_RestoreAll(t *testing.T) {
 				return
 			}
 
-			assert.ElementsMatchf(t, tt.want, got, "RestoreAll(%v, %v, %v)", ctx, tt.client, tt.req)
+			assert.Equalf(t, tt.want, got, "RestoreAll(%v, %v, %v)", ctx, tt.client, tt.req)
 
 			expectedLen := tt.create
 			if err != nil {
