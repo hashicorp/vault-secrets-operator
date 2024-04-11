@@ -71,7 +71,6 @@ type CachingClientFactoryPruneRequest struct {
 type CachingClientFactory interface {
 	ClientFactory
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
-	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
 	Start(context.Context)
 	Stop()
@@ -232,67 +231,6 @@ func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Cl
 
 	m.logger.V(consts.LogLevelDebug).Info("Restoring Client", "cacheKey", cacheKey)
 	return m.restoreClientFromCacheKey(ctx, client, cacheKey)
-}
-
-// RestoreAll will attempt to restore all Client from storage. If storage is not enabled then no restoration will take place.
-// Normally this should be called before the controller-manager has started reconciling any of its Custom Resources.
-// Strict error checking is not necessary for the caller,
-// since future calls to GetClient will ensure that the new storage entries will be created upon request
-// from one of the supported Vault*Secret types. If any error is encountered, the clientCacheStorageEntry will be treated as suspect
-// and pruned from the storage cache.
-func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient.Client) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if !m.persist || m.storage == nil {
-		return nil
-	}
-
-	startTS := time.Now()
-	var errs error
-	defer func() {
-		m.incrementRequestCounter(metrics.OperationRestoreAll, errs)
-		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationRestoreAll).Observe(
-			time.Since(startTS).Seconds(),
-		)
-	}()
-	req, err := m.restoreAllRequest(ctx, client)
-	if err != nil {
-		errs = err
-		return errs
-	}
-
-	entries, err := m.storage.RestoreAll(ctx, client, req)
-	if err != nil {
-		m.logger.V(consts.LogLevelTrace).Error(err, "RestoreAll failed from storage")
-		errs = err
-		return errs
-	}
-	if len(entries) == 0 {
-		return nil
-	}
-
-	pruneIt := func(entry *clientCacheStorageEntry) {
-		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {
-			m.logger.Error(err, "Failed to prune invalid storage entry", "cacheKey", entry.CacheKey)
-			errs = errors.Join(errs, err)
-		}
-	}
-	// this is a bit challenging, since we really only want to restore Clients that are actually needed by any of the Vault*Secret types.
-	m.logger.Info("Restoring all Clients from storage", "numEntries", len(entries))
-	for _, entry := range entries {
-		m.logger.Info("Restoring", "cacheKey", entry.CacheKey)
-		_, err := m.restoreClient(ctx, client, entry)
-		if err != nil {
-			m.logger.Error(err, "Restore failed", "cacheKey", entry.CacheKey)
-			errs = errors.Join(errs, err)
-			pruneIt(entry)
-			continue
-		}
-
-		m.logger.Info("Successfully restored the Client", "cacheKey", entry.CacheKey)
-	}
-	return errs
 }
 
 // ShutDown will attempt to revoke all Client tokens in memory.
@@ -635,20 +573,6 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 	return c, nil
 }
 
-func (m *cachingClientFactory) restoreAllRequest(ctx context.Context, client ctrlclient.Client) (ClientCacheStorageRestoreAllRequest, error) {
-	req := ClientCacheStorageRestoreAllRequest{}
-	if m.encryptionRequired {
-		c, err := m.storageEncryptionClient(ctx, client)
-		if err != nil {
-			return req, err
-		}
-		req.DecryptionVaultAuth = c.GetVaultAuthObj()
-		req.DecryptionClient = c
-	}
-
-	return req, nil
-}
-
 func (m *cachingClientFactory) incrementRequestCounter(operation string, err error) {
 	if err != nil {
 		m.requestErrorCounterVec.WithLabelValues(operation).Inc()
@@ -839,14 +763,6 @@ func InitCachingClientFactory(ctx context.Context, client ctrlclient.Client, con
 	clientCacheFactory, err := NewCachingClientFactory(ctx, client, clientCacheStorage, config)
 	if err != nil {
 		return nil, err
-	}
-
-	if config.Persist {
-		// restore all clients from the storage cache. This should be done prior to the controller-manager starting up,
-		// since we want the ClientCache fully populated before any Vault*Secret resources are reconciled.
-		if err := clientCacheFactory.RestoreAll(ctx, client); err != nil {
-			logger.Error(err, "RestoreAll completed with errors, please investigate")
-		}
 	}
 
 	return clientCacheFactory, nil

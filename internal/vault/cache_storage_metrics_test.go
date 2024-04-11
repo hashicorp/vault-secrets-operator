@@ -114,12 +114,6 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			Value: pointer.String(metrics.OperationRestore),
 		},
 	}
-	restoreAllLabelPairs := []*io_prometheus_client.LabelPair{
-		{
-			Name:  pointer.String(metrics.LabelOperation),
-			Value: pointer.String(metrics.OperationRestoreAll),
-		},
-	}
 	purgeLabelPairs := []*io_prometheus_client.LabelPair{
 		{
 			Name:  pointer.String(metrics.LabelOperation),
@@ -156,12 +150,11 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 	}
 
 	type expectMetrics struct {
-		store      *expected
-		purge      *expected
-		prune      *expected
-		delete     *expected
-		restore    *expected
-		restoreAll *expected
+		store   *expected
+		purge   *expected
+		prune   *expected
+		delete  *expected
+		restore *expected
 	}
 
 	tests := []struct {
@@ -329,18 +322,6 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 						labelPairs: storeLabelPairs,
 					},
 				},
-				restoreAll: &expected{
-					reqs: &expectedMetricVec{
-						total:       pointer.Float64(1),
-						errorsTotal: pointer.Float64(1),
-						labelPairs:  restoreAllLabelPairs,
-					},
-					ops: &expectedMetricVec{
-						total:       pointer.Float64(1),
-						errorsTotal: pointer.Float64(1),
-						labelPairs:  restoreAllLabelPairs,
-					},
-				},
 				restore: &expected{
 					reqs: &expectedMetricVec{
 						total:      pointer.Float64(4),
@@ -375,10 +356,6 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 						case metrics.OperationStore:
 							secrets = append(secrets, storeSecret(t, ctx, tt.client, storage, i))
 						case metrics.OperationRestore:
-							// restore() is a sub operation of restoreAll, so there is no need to induce it when a restoreAll() test is expected.
-							if tt.expectMetrics.restoreAll != nil {
-								continue
-							}
 							require.LessOrEqual(t, count, len(secrets))
 							secret := secrets[i]
 							_, err := storage.Restore(ctx, tt.client, ClientCacheStorageRestoreRequest{
