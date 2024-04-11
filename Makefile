@@ -182,13 +182,13 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: go-version-check copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-	@$(COPYWRITE) headers &> /dev/null
+	$(COPYWRITE) headers #&> /dev/null
 	$(MAKE) sync-crds sync-rbac gen-api-ref-docs sdk-generate
 
 .PHONY: generate
-generate: go-version-check copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	@$(COPYWRITE) headers &> /dev/null
 
