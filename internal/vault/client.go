@@ -182,10 +182,8 @@ type defaultClient struct {
 	closed             bool
 	lastWatcherErr     error
 	watcherDoneCh      chan<- Client
-	// watcherRenewedCh   chan<- Client
-	tainted bool
-	once    sync.Once
-	mu      sync.RWMutex
+	once               sync.Once
+	mu                 sync.RWMutex
 }
 
 // Validate the client, returning an error for any validation failures.

@@ -74,7 +74,7 @@ type CachingClientFactory interface {
 	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
 	Start(context.Context)
-	Stop(context.Context)
+	Stop()
 	ShutDown(CachingClientFactoryShutDownRequest)
 }
 
@@ -113,7 +113,7 @@ func (m *cachingClientFactory) Start(ctx context.Context) {
 }
 
 // Stop method for cachingClientFactory stops the lifetime watcher handler.
-func (m *cachingClientFactory) Stop(ctx context.Context) {
+func (m *cachingClientFactory) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.watcherCancelFunc != nil {
