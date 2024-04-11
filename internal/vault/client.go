@@ -144,6 +144,7 @@ type ClientBase interface {
 	Read(context.Context, ReadRequest) (Response, error)
 	Write(context.Context, WriteRequest) (Response, error)
 	ID() string
+	Taint()
 }
 
 type Client interface {
@@ -163,6 +164,8 @@ type Client interface {
 	IsClone() bool
 	Namespace() string
 	SetNamespace(string)
+	Tainted() bool
+	Untaint() bool
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -182,9 +185,36 @@ type defaultClient struct {
 	closed             bool
 	lastWatcherErr     error
 	watcherDoneCh      chan<- Client
+	tainted            bool
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
+}
+
+// Untaint the client, marking it as untainted. This should be done after the
+// client has been validated. Returns true if the client was tainted.
+func (c *defaultClient) Untaint() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	tainted := c.tainted
+	c.tainted = false
+	return tainted
+}
+
+// Tainted returns true if the client is tainted. A tainted client should be
+// inspected before use.
+func (c *defaultClient) Tainted() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tainted
+}
+
+// Taint the client, marking it as tainted. This is useful for marking a client
+// as suspect. A deeper validation is required before using it.
+func (c *defaultClient) Taint() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tainted = true
 }
 
 // Validate the client, returning an error for any validation failures.
@@ -754,6 +784,8 @@ type MockRecordingVaultClient struct {
 func (m *MockRecordingVaultClient) ID() string {
 	return m.Id
 }
+
+func (m *MockRecordingVaultClient) Taint() {}
 
 func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {
 	m.Requests = append(m.Requests, &MockRequest{

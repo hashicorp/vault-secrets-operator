@@ -91,6 +91,7 @@ type cachingClientFactory struct {
 	logger                 logr.Logger
 	requestCounterVec      *prometheus.CounterVec
 	requestErrorCounterVec *prometheus.CounterVec
+	taintedClientGauge     *prometheus.GaugeVec
 	revokeOnEvict          bool
 	pruneStorageOnEvict    bool
 	ctrlClient             ctrlclient.Client
@@ -290,11 +291,21 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	var err error
 	var cacheKey ClientCacheKey
 	var errs error
+	var tainted bool
 	defer func() {
 		m.incrementRequestCounter(metrics.OperationGet, errs)
 		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationGet).Observe(
 			time.Since(startTS).Seconds(),
 		)
+
+		mt := m.taintedClientGauge.WithLabelValues(
+			metrics.OperationGet, cacheKey.String(),
+		)
+		if tainted {
+			mt.Set(1)
+		} else {
+			mt.Set(0)
+		}
 	}()
 
 	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj)
@@ -346,13 +357,23 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	c, ok := m.cache.Get(cacheKey)
 	if ok {
 		// return the Client from the cache if it is still Valid
-		logger.V(consts.LogLevelTrace).Info("Got client from cache", "clientID", c.ID())
-		err := c.Validate()
-		if err == nil {
+		tainted = c.Tainted()
+		logger.V(consts.LogLevelTrace).Info("Got client from cache", "clientID", c.ID(), "tainted", tainted)
+		if tainted {
+			// if the Client is tainted, we need to validate its token.
+			if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil)); err == nil {
+				defer c.Untaint()
+				tainted = false
+				if err := c.Validate(); err == nil {
+					return namespacedClient(c)
+				}
+			}
+		} else if err := c.Validate(); err == nil {
 			return namespacedClient(c)
 		}
 
-		logger.V(consts.LogLevelDebug).Error(err, "Invalid client")
+		logger.V(consts.LogLevelDebug).Error(err, "Invalid client",
+			"tainted", tainted)
 
 		// remove the parent Client from the cache in order to prune any of its clones.
 		m.cache.Remove(cacheKey)
@@ -693,6 +714,15 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 				metrics.LabelOperation,
 			},
 		),
+		taintedClientGauge: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: metricsFQNClientFactoryTaintedClients,
+				Help: "Client factory tainted clients",
+			}, []string{
+				metrics.LabelOperation,
+				metrics.LabelCacheKey,
+			},
+		),
 	}
 
 	if config.CollectClientCacheMetrics {
@@ -704,6 +734,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		config.MetricsRegistry.MustRegister(
 			factory.requestCounterVec,
 			factory.requestErrorCounterVec,
+			factory.taintedClientGauge,
 			clientFactoryOperationTimes,
 		)
 	}
