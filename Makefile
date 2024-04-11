@@ -30,7 +30,7 @@ EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
-COPYWRITE_VERSION ?= 0.16.3
+COPYWRITE_VERSION ?= 0.18.0
 OPERATOR_SDK_VERSION ?= v1.33.0
 
 TESTCOUNT ?= 1
@@ -184,19 +184,18 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-	$(COPYWRITE) headers #&> /dev/null
-	$(MAKE) sync-crds sync-rbac gen-api-ref-docs sdk-generate
+	$(MAKE) sdk-generate sync-crds sync-rbac gen-api-ref-docs
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	@$(COPYWRITE) headers &> /dev/null
+	$(COPYWRITE) headers -d $(CONFIG_SRC_DIR) #&> /dev/null
 
 .PHONY: sync-crds
 sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DIR for Helm. Called from the manifests target.
-	@rm -rf $(CHART_CRDS_DIR)
-	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
-	@$(COPYWRITE) headers &> /dev/null
+	$(COPYWRITE) headers -d $(CONFIG_CRD_BASES_DIR) #&> /dev/null
+	rm -rf $(CHART_CRDS_DIR)
+	cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 
 .PHONY: sync-rbac
 sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/rbac to CHART_ROOT/templates. Called from the manifests target.
@@ -204,9 +203,9 @@ sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/
 
 .PHONY: gen-api-ref-docs
 gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
-	@rm -f docs/api/api-reference.md
-	@$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
-	--renderer=markdown --output-path docs/api/api-reference.md 2>&1 > /dev/null
+	rm -f docs/api/api-reference.md
+	$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
+	--renderer=markdown --output-path docs/api/api-reference.md #2>&1 > /dev/null
 
 .PHONY: fmt
 fmt: gofumpt ## Run gofumpt against code.
@@ -510,14 +509,14 @@ set-image-ubi: kustomize copy-config ## Set the controller UBI image
 .PHONY: sdk-generate
 sdk-generate: copywrite operator-sdk
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	@$(COPYWRITE) headers &> /dev/null
+	$(COPYWRITE) headers -d $(CONFIG_SRC_DIR) #&> /dev/null
 
 .PHONY: bundle
 bundle: manifests kustomize set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
 	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
-	@$(COPYWRITE) headers &> /dev/null
+	@$(COPYWRITE) headers #&> /dev/null
 	@./hack/set_openshift_minimum_version.sh
 	@./hack/set_containerImage.sh
 	@./hack/set_csv_replaces.sh
