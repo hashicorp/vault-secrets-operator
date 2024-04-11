@@ -203,9 +203,10 @@ sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/
 
 .PHONY: gen-api-ref-docs
 gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
-	rm -f docs/api/api-reference.md
-	$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
-	--renderer=markdown --output-path docs/api/api-reference.md #2>&1 > /dev/null
+	echo "disabled"
+	#rm -f docs/api/api-reference.md
+	#$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
+	#--renderer=markdown --output-path docs/api/api-reference.md #2>&1 > /dev/null
 
 .PHONY: fmt
 fmt: gofumpt ## Run gofumpt against code.
