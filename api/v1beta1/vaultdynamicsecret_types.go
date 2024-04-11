@@ -93,6 +93,8 @@ type VaultDynamicSecretStatus struct {
 	// If drift is detected the data will be synced to the Destination.
 	// SecretMAC will only be stored when VaultDynamicSecretSpec.AllowStaticCreds is true.
 	SecretMAC string `json:"secretMAC,omitempty"`
+	// ClientCacheKey to the cached Vault client used to sync this resource.
+	ClientCacheKey string `json:"clientCacheKey,omitempty"`
 }
 
 type VaultSecretLease struct {

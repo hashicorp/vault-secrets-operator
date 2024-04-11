@@ -12,6 +12,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/vault/api"
@@ -26,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -44,6 +46,8 @@ var (
 	vdsJitterFactor          = 0.05
 )
 
+var _ SecretReconciler = &VaultDynamicSecretReconciler{}
+
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
@@ -54,10 +58,23 @@ type VaultDynamicSecretReconciler struct {
 	SyncRegistry               *SyncRegistry
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
+	SyncController             SyncController
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
 	runtimePodUID types.UID
+	once          sync.Once
+}
+
+func (r *VaultDynamicSecretReconciler) Start(ctx context.Context) error {
+	r.once.Do(func() {
+		go func() {
+			if err := r.SyncController.Start(ctx); err != nil {
+				log.FromContext(ctx).Error(err, "Failed to start the SyncController")
+			}
+		}()
+	})
+	return nil
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -81,6 +98,19 @@ type VaultDynamicSecretReconciler struct {
 // RolloutRestartTargets configured, then a request to "rollout restart"
 // the configured Deployment, StatefulSet, ReplicaSet will be made to Kubernetes.
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// delegate all secret sync handling to the SyncController
+	return r.SyncController.Sync(ctx,
+		SyncRequest{
+			// Logger:  log.FromContext(ctx),
+			Request: req,
+		},
+	)
+}
+
+// Sync is meant to be called from a SyncController. It can be called by callers
+// other than managing K8s controller, which only handles reconciliation of
+// modified custom resources.
+func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest SyncRequest) (ctrl.Result, error) {
 	if r.runtimePodUID == "" {
 		if val := os.Getenv("OPERATOR_POD_UID"); val != "" {
 			r.runtimePodUID = types.UID(val)
@@ -92,7 +122,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	req := syncRequest.Request
 	logger := log.FromContext(ctx).WithValues("podUID", r.runtimePodUID)
+	// logger := syncRequest.Logger.WithValues("podUID", r.runtimePodUID)
 	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -165,6 +197,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}, nil
 	}
 
+	if cacheKey, err := vClient.GetCacheKey(); err == nil {
+		o.Status.ClientCacheKey = cacheKey.String()
+	} else {
+		o.Status.ClientCacheKey = ""
+		logger.Error(err,
+			"Resetting .status.cacheKey, cacheKey is invalid")
+
+	}
+
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
 		// Renew the lease and return from Reconcile if the lease is successfully renewed.
 		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
@@ -202,7 +243,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Lease renewal duration was truncated from %ds to %ds, "+
 						"requesting new credentials", e.Expected, e.Actual)
-			} else if !isLeaseNotfoundError(err) {
+			} else if !vault.IsLeaseNotFoundError(err) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 			}
@@ -443,7 +484,14 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
-	return ctrl.NewControllerManagedBy(mgr).
+	r.ClientFactory.RegisterClientCallbackHandler(
+		vault.ClientCallbackHandler{
+			On:       vault.ClientCallbackOnLifetimeWatcherDone,
+			Callback: r.vaultClientCallback,
+		},
+	)
+
+	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
@@ -457,12 +505,30 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultDynamicSecret.String()),
 			},
 			builder.WithPredicates(&secretsPredicate{}),
-		).
-		Complete(r)
+		)
+
+	if err := m.Complete(r); err != nil {
+		return err
+	}
+
+	syncController, err := NewSyncController(
+		SyncControllerOptions{
+			MaxConcurrentSyncs: opts.MaxConcurrentReconciles,
+			Name:               "VaultDynamicSecret",
+			Syncer:             r,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	r.SyncController = syncController
+	return nil
 }
 
 func isLeaseNotfoundError(err error) bool {
-	if respErr, ok := err.(*api.ResponseError); ok && respErr != nil {
+	var respErr *api.ResponseError
+	if errors.As(err, &respErr) && respErr != nil {
 		if respErr.StatusCode == http.StatusBadRequest {
 			return len(respErr.Errors) == 1 && respErr.Errors[0] == "lease not found"
 		}
@@ -589,6 +655,59 @@ func getRotationDuration(o *secretsv1beta1.VaultDynamicSecret) time.Duration {
 	}
 
 	return d
+}
+
+// vaultClientCallback requests reconciliation of all VaultDynamicSecret instances that were synced with Client
+func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, c vault.Client, _ error) {
+	logger := log.FromContext(ctx).WithName("vaultClientCallback")
+
+	cacheKey, err := c.GetCacheKey()
+	if err != nil {
+		// should never get here
+		logger.Error(err, "Invalid cache key, skipping syncing of VaultDynamicSecret instances")
+		return
+	}
+
+	logger = logger.WithValues("cacheKey", cacheKey, "controller", "vds")
+	var l secretsv1beta1.VaultDynamicSecretList
+	if err := r.Client.List(ctx, &l, client.InNamespace(
+		c.GetCredentialProvider().GetNamespace()),
+	); err != nil {
+		logger.Error(err, "Failed to list VaultDynamicSecret instances")
+		return
+	}
+
+	if len(l.Items) == 0 {
+		return
+	}
+
+	reqs := map[reconcile.Request]empty{}
+	for _, o := range l.Items {
+		if o.Status.ClientCacheKey == cacheKey.String() {
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: o.GetNamespace(),
+					Name:      o.GetName(),
+				},
+			}
+
+			if _, ok := reqs[req]; !ok {
+				reqs[req] = empty{}
+				go func(req reconcile.Request) {
+					_, enqueueAfter := computeMaxJitterDuration(time.Second * 2)
+					logger.V(consts.LogLevelDebug).Info("Calling SyncController.Sync()",
+						"request", req, "horizon", enqueueAfter)
+					r.SyncRegistry.Add(req.NamespacedName)
+					if _, err := r.SyncController.Sync(ctx, SyncRequest{
+						Request: req,
+						Delay:   enqueueAfter,
+					}); err != nil {
+						logger.Error(err, "Sync failed", "request", req)
+					}
+				}(req)
+			}
+		}
+	}
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {

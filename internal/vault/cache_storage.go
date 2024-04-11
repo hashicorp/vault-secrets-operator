@@ -36,6 +36,7 @@ const (
 	labelEncrypted       = "encrypted"
 	labelVaultTransitRef = "vaultTransitRef"
 	labelCacheKey        = "cacheKey"
+	labelTokenAccessor   = "vaultTokenAccessor"
 	fieldMACMessage      = "messageMAC"
 	fieldCachedSecret    = "secret"
 
@@ -63,10 +64,11 @@ func IsStorageEntryNotFoundErr(err error) bool {
 }
 
 type ClientCacheStorageStoreRequest struct {
-	OwnerReferences     []metav1.OwnerReference
-	Client              Client
-	EncryptionClient    Client
-	EncryptionVaultAuth *secretsv1beta1.VaultAuth
+	OwnerReferences      []metav1.OwnerReference
+	Client               Client
+	EncryptionClient     Client
+	EncryptionVaultAuth  *secretsv1beta1.VaultAuth
+	IncludeTokenAccessor bool
 }
 
 type ClientCacheStoragePruneRequest struct {
@@ -174,7 +176,7 @@ func (c *defaultClientCacheStorage) getSecret(ctx context.Context, client ctrlcl
 }
 
 func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageStoreRequest) (*corev1.Secret, error) {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).V(consts.LogLevelDebug).WithName("clientCacheStorage")
 	var err error
 	defer func() {
 		c.incrementRequestCounter(metrics.OperationStore, err)
@@ -204,8 +206,9 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	logger.Info("ClientCacheStorage.Store()",
-		"enforceEncryption", c.enforceEncryption)
+	logger.Info("Storing client",
+		"enforceEncryption", c.enforceEncryption,
+		"cacheKey", cacheKey)
 
 	labels := ctrlclient.MatchingLabels{
 		// cacheKey is the key used to access a Client from the ClientCache
@@ -222,6 +225,13 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		labelConnectionGeneration: strconv.FormatInt(connObj.Generation, 10),
 		labelProviderUID:          string(credentialProvider.GetUID()),
 		labelProviderNamespace:    credentialProvider.GetNamespace(),
+	}
+
+	if req.IncludeTokenAccessor {
+		accessor, err := req.Client.GetTokenSecret().TokenAccessor()
+		if err == nil {
+			labels[labelTokenAccessor] = accessor
+		}
 	}
 	s := &corev1.Secret{
 		// we always store Clients in an Immutable secret as an anti-tampering mitigation.
@@ -292,9 +302,16 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 			}
 		} else {
 			err = e
+			logger.Error(err, "Failed to store client",
+				"enforceEncryption", c.enforceEncryption,
+				"cacheKey", cacheKey, "secret", ctrlclient.ObjectKeyFromObject(s))
 			return nil, err
 		}
 	}
+
+	logger.Info("Stored client",
+		"enforceEncryption", c.enforceEncryption,
+		"cacheKey", cacheKey, "secret", ctrlclient.ObjectKeyFromObject(s))
 
 	return s, nil
 }

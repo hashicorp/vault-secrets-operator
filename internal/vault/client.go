@@ -11,9 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/vault/api"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/hashicorp/vault/api"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -24,7 +25,11 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal bool
+	SkipRenewal      bool
+	WatcherDoneCh    chan<- Client
+	WatcherRenewedCh chan<- Client
+	// WatcherDoneChFunc    func() chan<- Client
+	// WatcherRenewedChFunc func() chan<- Client
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -129,6 +134,10 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, err
 	}
 
+	if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil)); err != nil {
+		return nil, err
+	}
+
 	return c, nil
 }
 
@@ -169,10 +178,14 @@ type defaultClient struct {
 	targetNamespace    string
 	credentialProvider provider.CredentialProviderBase
 	watcher            *api.LifetimeWatcher
+	inClosing          bool
 	closed             bool
 	lastWatcherErr     error
-	once               sync.Once
-	mu                 sync.RWMutex
+	watcherDoneCh      chan<- Client
+	// watcherRenewedCh   chan<- Client
+	tainted bool
+	once    sync.Once
+	mu      sync.RWMutex
 }
 
 // Validate the client, returning an error for any validation failures.
@@ -257,6 +270,10 @@ func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	return c.getCacheKey()
+}
+
+func (c *defaultClient) getCacheKey() (ClientCacheKey, error) {
 	cacheKey, err := ComputeClientCacheKeyFromClient(c)
 	if err != nil {
 		return "", err
@@ -362,8 +379,9 @@ func (c *defaultClient) Close(revoke bool) {
 		return
 	}
 
+	c.inClosing = true
 	logger := log.FromContext(nil)
-	logger.Info("Calling Client.Close()")
+	logger.Info("Close() called")
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
@@ -400,15 +418,19 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 
 	watcher, err := c.client.NewLifetimeWatcher(&api.LifetimeWatcherInput{
 		Secret: c.authSecret,
+		// TODO: this is probably not the behaviour we want. Need to investigate further.
+		RenewBehavior: api.RenewBehaviorIgnoreErrors,
 	})
 	if err != nil {
 		return err
 	}
 
+	cacheKey, _ := c.getCacheKey()
+
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
-		logger := log.FromContext(nil).V(consts.LogLevelDebug).WithName("lifetimeWatcher").WithValues(
+		logger := log.FromContext(nil).WithName("lifetimeWatcher").WithValues(
 			"entityID", c.authSecret.Auth.EntityID)
 		logger.Info("Starting")
 		defer func() {
@@ -419,7 +441,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 		go watcher.Start()
 		c.watcher = watcher
 		wg.Done()
-		logger.Info("Started")
+		logger.V(consts.LogLevelDebug).Info("Started")
 		for {
 			select {
 			case <-ctx.Done():
@@ -429,9 +451,25 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 					logger.Error(err, "LifetimeWatcher completed with an error")
 					c.lastWatcherErr = err
 				}
+
+				c.watcher = nil
+				if c.watcherDoneCh != nil {
+					if !c.inClosing {
+						logger.V(consts.LogLevelTrace).Info("Writing to watcherDone channel")
+						c.watcherDoneCh <- c
+					} else {
+						logger.V(consts.LogLevelTrace).Info("In closing, not writing to watcherDone channel")
+					}
+				} else {
+					logger.V(consts.LogLevelTrace).Info("Skipping, watcherDone channel not set")
+				}
+
 				return
 			case renewal := <-watcher.RenewCh():
-				logger.Info("Successfully renewed the client")
+				logger.V(consts.LogLevelDebug).Info("Successfully renewed the client",
+					"cacheKey", cacheKey,
+					"accessor", renewal.Secret.Auth.Accessor)
+
 				c.authSecret = renewal.Secret
 				c.lastRenewal = renewal.RenewedAt.Unix()
 			}
@@ -447,6 +485,10 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.closed {
+		return fmt.Errorf("client instance is closed")
+	}
 
 	var errs error
 	startTS := time.Now()
@@ -624,6 +666,8 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.client = vc
 	c.authObj = authObj
 	c.connObj = connObj
+	c.watcherDoneCh = opts.WatcherDoneCh
+	// c.watcherRenewedCh = opts.WatcherRenewedCh
 
 	return nil
 }
