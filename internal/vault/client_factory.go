@@ -98,7 +98,6 @@ type cachingClientFactory struct {
 	clientCallbacks        []ClientCallbackHandler
 	watcherDoneCh          chan Client
 	mu                     sync.RWMutex
-	encClientLock          sync.RWMutex
 	onceDoWatcher          sync.Once
 	watcherCancelFunc      context.CancelFunc
 }
@@ -589,9 +588,6 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 // The result is cached in the ClientCache for future needs. This should only ever be need if the ClientCacheStorage
 // has enforceEncryption enabled.
 func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
-	m.encClientLock.Lock()
-	defer m.encClientLock.Unlock()
-
 	cached := m.clientCacheKeyEncrypt != ""
 	if !cached {
 		m.logger.Info("Setting up Vault Client for storage encryption",
