@@ -253,9 +253,11 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Lease renewal duration was truncated from %ds to %ds, "+
 						"requesting new credentials", e.Expected, e.Actual)
-			} else if !isLeaseNotfoundError(err) {
+			} else if !vault.IsLeaseNotFoundError(err) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
+			} else if !vault.IsForbiddenError(err) {
+				vClient.Taint()
 			}
 			syncReason = "lease renewal failed"
 		}

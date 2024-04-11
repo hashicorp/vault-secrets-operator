@@ -175,6 +175,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
 	if err != nil {
+		if vault.IsForbiddenError(err) {
+			c.Taint()
+		}
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to issue certificate from Vault"
 		logger.Error(err, msg)

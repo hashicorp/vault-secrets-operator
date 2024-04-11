@@ -18,6 +18,7 @@ const (
 	// LabelVaultConnection usually contains the full name of VaultConnection CR.
 	// e.g. namespace1/connection1
 	LabelVaultConnection = "vault_connection"
+	LabelCacheKey        = "cache_key"
 
 	OperationGet        = "get"
 	OperationStore      = "store"
@@ -38,6 +39,7 @@ const (
 	NameOperationsTimeSeconds = "operations_time_seconds"
 	NameRequestsTotal         = "requests_total"
 	NameRequestsErrorsTotal   = "requests_errors_total"
+	NameTaintedClients        = "tainted_clients"
 )
 
 var ResourceStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{

@@ -863,3 +863,78 @@ func Test_defaultClient_hashAccessor(t *testing.T) {
 		})
 	}
 }
+
+func Test_defaultClient_Taint(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{
+			name: "taint",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{}
+			c.Taint()
+			assert.True(t, c.tainted)
+		})
+	}
+}
+
+func Test_defaultClient_Tainted(t *testing.T) {
+	tests := []struct {
+		name       string
+		tainted    bool
+		assertFunc assert.BoolAssertionFunc
+	}{
+		{
+			name:       "tainted",
+			tainted:    true,
+			assertFunc: assert.True,
+		},
+		{
+			name:       "not-tainted",
+			tainted:    false,
+			assertFunc: assert.False,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				tainted: tt.tainted,
+			}
+
+			got := c.Tainted()
+			tt.assertFunc(t, got, "Tainted()")
+		})
+	}
+}
+
+func Test_defaultClient_Untaint(t *testing.T) {
+	tests := []struct {
+		name       string
+		tainted    bool
+		assertFunc assert.BoolAssertionFunc
+	}{
+		{
+			name:       "tainted",
+			tainted:    true,
+			assertFunc: assert.True,
+		},
+		{
+			name:       "not-tainted",
+			tainted:    false,
+			assertFunc: assert.False,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				tainted: tt.tainted,
+			}
+
+			got := c.Untaint()
+			tt.assertFunc(t, got, "Untaint()")
+		})
+	}
+}
