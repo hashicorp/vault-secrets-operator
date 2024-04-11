@@ -9,7 +9,7 @@
 
 set -e -o pipefail
 
-YQ_VERSION="${YQ_VERSION-v4.40.4}"
+YQ_VERSION="${YQ_VERSION-v4.43.1}"
 
 pushd "$(git rev-parse --show-toplevel || echo .)" > /dev/null
 dest_filename="yq-${YQ_VERSION}"

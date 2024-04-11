@@ -182,13 +182,13 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: go-version-check copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@$(COPYWRITE) headers &> /dev/null
 	$(MAKE) sync-crds sync-rbac gen-api-ref-docs sdk-generate
 
 .PHONY: generate
-generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: go-version-check copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	@$(COPYWRITE) headers &> /dev/null
 
@@ -485,7 +485,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.13.0
+CONTROLLER_TOOLS_VERSION ?= v0.14.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -604,7 +604,7 @@ crd-ref-docs: ## Install crd-ref-docs locally if necessary.
 ifeq (,$(wildcard $(CRD_REF_DOCS)))
 ifeq (,$(shell which $(notdir $(CRD_REF_DOCS)) 2>/dev/null))
 	@{ \
-	GOBIN=${LOCALBIN} go install github.com/elastic/crd-ref-docs@v0.0.9 ;\
+	GOBIN=${LOCALBIN} go install github.com/elastic/crd-ref-docs@v0.0.12 ;\
 	}
 else
 CRD_REF_DOCS = $(shell which crd-ref-docs)
