@@ -98,8 +98,11 @@ type cachingClientFactory struct {
 	clientCallbacks        []ClientCallbackHandler
 	callbackHandlerCh      chan Client
 	mu                     sync.RWMutex
+	muLocks                sync.RWMutex
+	encClientLock          sync.RWMutex
 	onceDoWatcher          sync.Once
 	callbackHandlerCancel  context.CancelFunc
+	cacheKeyLocks          map[ClientCacheKey]*sync.RWMutex
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -208,6 +211,8 @@ func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlcli
 			logger.Info("Pruned storage", "count", count)
 		}
 	}
+
+	m.removeLock(cacheKey)
 }
 
 // Restore will attempt to restore a Client from storage. If storage is not enabled then no restoration will take place.
@@ -332,6 +337,23 @@ func (m *cachingClientFactory) isDisabled() bool {
 	return m.shutDown
 }
 
+func (m *cachingClientFactory) cacheKeyLock(cacheKey ClientCacheKey) (*sync.RWMutex, bool) {
+	m.muLocks.Lock()
+	defer m.muLocks.Unlock()
+	lock, ok := m.cacheKeyLocks[cacheKey]
+	if !ok {
+		lock = &sync.RWMutex{}
+		m.cacheKeyLocks[cacheKey] = lock
+	}
+	return lock, ok
+}
+
+func (m *cachingClientFactory) removeLock(cacheKey ClientCacheKey) {
+	m.muLocks.Lock()
+	defer m.muLocks.Unlock()
+	delete(m.cacheKeyLocks, cacheKey)
+}
+
 // Get is meant to be called for all resources that require access to Vault.
 // It will attempt to fetch a Client from the in-memory cache for the provided Object.
 // On a cache miss, an attempt at restoration from storage will be made, if a restoration attempt fails,
@@ -340,8 +362,6 @@ func (m *cachingClientFactory) isDisabled() bool {
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.isDisabled() {
 		return nil, &ClientFactoryDisabledError{}
 	}
@@ -368,7 +388,16 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, errs
 	}
 
+	lock, cachedLock := m.cacheKeyLock(cacheKey)
+	lock.Lock()
+	defer lock.Unlock()
+
 	logger = logger.WithValues("cacheKey", cacheKey)
+	logger.V(consts.LogLevelDebug).Info("Got lock",
+		"numLocks", len(m.cacheKeyLocks),
+		"cachedLock", cachedLock,
+	)
+
 	logger.V(consts.LogLevelDebug).Info("Get Client")
 	ns, err := common.GetVaultNamespace(obj)
 	if err != nil {
@@ -600,6 +629,9 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 // The result is cached in the ClientCache for future needs. This should only ever be need if the ClientCacheStorage
 // has enforceEncryption enabled.
 func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
+	m.encClientLock.Lock()
+	defer m.encClientLock.Unlock()
+
 	cached := m.clientCacheKeyEncrypt != ""
 	if !cached {
 		m.logger.Info("Setting up Vault Client for storage encryption",
@@ -744,6 +776,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		ctrlClient:         client,
 		callbackHandlerCh:  make(chan Client),
 		encryptionRequired: config.StorageConfig.EnforceEncryption,
+		cacheKeyLocks:      make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
