@@ -101,7 +101,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// delegate all secret sync handling to the SyncController
 	return r.SyncController.Sync(ctx,
 		SyncRequest{
-			// Logger:  log.FromContext(ctx),
 			Request: req,
 		},
 	)
@@ -150,8 +149,27 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
+	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+			"Failed to get Vault client: %s", err)
+		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
+		return ctrl.Result{
+			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
+		}, nil
+	}
+
+	// we can ignore the error here, since it was handled above in the Get() call.
+	clientCacheKey, _ := vClient.GetCacheKey()
+	lastClientCacheKey := o.Status.ClientCacheKey
+	o.Status.ClientCacheKey = clientCacheKey.String()
+
+	// clientCacheKeyChanged indicates that the cache key has changed since the last sync.
+	// This can happen when the VaultAuth or VaultConnection objects are updated.
+	clientCacheKeyChanged := lastClientCacheKey != "" && lastClientCacheKey != o.Status.ClientCacheKey
+
 	// doSync indicates that the controller should perform the secret sync,
-	doSync := (o.GetGeneration() != o.Status.LastGeneration) ||
+	doSync := clientCacheKeyChanged || (o.GetGeneration() != o.Status.LastGeneration) ||
 		(o.Spec.Destination.Create && !destExists) ||
 		r.SyncRegistry.Has(req.NamespacedName)
 	leaseID := o.Status.SecretLease.ID
@@ -185,25 +203,6 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 			}
 			return ctrl.Result{RequeueAfter: horizon}, nil
 		}
-	}
-
-	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
-		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
-		return ctrl.Result{
-			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
-		}, nil
-	}
-
-	if cacheKey, err := vClient.GetCacheKey(); err == nil {
-		o.Status.ClientCacheKey = cacheKey.String()
-	} else {
-		o.Status.ClientCacheKey = ""
-		logger.Error(err,
-			"Resetting .status.cacheKey, cacheKey is invalid")
-
 	}
 
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
