@@ -59,7 +59,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           make generate manifests
-          test -z "$(git status --porcelain)"
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Generated manifests are out of date. Please run 'make generate manifests' and commit the changes."
+            exit 1
+          fi
 
   generate-metadata-file:
     needs: get-product-version
