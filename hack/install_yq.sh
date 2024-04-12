@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2022 The Kubernetes Authors.
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
 
 # Script to install the mikefarah/yq tool to the bin directory.
 # It ensures that only one copy of yq exists, and its version
@@ -9,7 +9,7 @@
 
 set -e -o pipefail
 
-YQ_VERSION="${YQ_VERSION-v4.40.4}"
+YQ_VERSION="${YQ_VERSION-v4.43.1}"
 
 pushd "$(git rev-parse --show-toplevel || echo .)" > /dev/null
 dest_filename="yq-${YQ_VERSION}"
