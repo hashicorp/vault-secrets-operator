@@ -161,17 +161,37 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 
 	// we can ignore the error here, since it was handled above in the Get() call.
 	clientCacheKey, _ := vClient.GetCacheKey()
-	lastClientCacheKey := o.Status.ClientCacheKey
-	o.Status.ClientCacheKey = clientCacheKey.String()
+	lastClientCacheKey := o.Status.VaultClientMeta.CacheKey
+	lastClientID := o.Status.VaultClientMeta.ID
 
-	// clientCacheKeyChanged indicates that the cache key has changed since the last sync.
-	// This can happen when the VaultAuth or VaultConnection objects are updated.
-	clientCacheKeyChanged := lastClientCacheKey != "" && lastClientCacheKey != o.Status.ClientCacheKey
+	// update the VaultClientMeta in the resource's status.
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = vClient.ID()
 
+	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,
-	doSync := clientCacheKeyChanged || (o.GetGeneration() != o.Status.LastGeneration) ||
-		(o.Spec.Destination.Create && !destExists) ||
-		r.SyncRegistry.Has(req.NamespacedName)
+	switch {
+	// indicates that the resource has been added to the SyncRegistry
+	// and must be synced.
+	case r.SyncRegistry.Has(req.NamespacedName):
+		syncReason = "in sync registry"
+	// indicates that the resource has been updated since the last sync.
+	case o.GetGeneration() != o.Status.LastGeneration:
+		syncReason = "resource updated"
+	// indicates that the destination secret does not exist and the resource is configured to create it.
+	case o.Spec.Destination.Create && !destExists:
+		syncReason = "destination secret does not exist"
+	// indicates that the cache key has changed since the last sync. This can happen
+	// when the VaultAuth or VaultConnection objects are updated since the last sync.
+	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
+		syncReason = "client cache key changed"
+	// indicates that the Vault client ID has changed since the last sync. This can
+	// happen when the client has re-authenticated to Vault since the last sync.
+	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
+		syncReason = "client ID changed"
+	}
+
+	doSync := syncReason != ""
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -246,6 +266,7 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 			}
+			syncReason = "lease renewal failed"
 		}
 	}
 
@@ -284,7 +305,8 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 
 	horizon := r.computePostSyncHorizon(ctx, o)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
+		"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
+		secretLease.ID, horizon, syncReason)
 
 	if doRolloutRestart {
 		// rollout-restart errors are not retryable
@@ -682,7 +704,7 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 
 	reqs := map[reconcile.Request]empty{}
 	for _, o := range l.Items {
-		if o.Status.ClientCacheKey == cacheKey.String() {
+		if o.Status.VaultClientMeta.CacheKey == cacheKey.String() {
 			req := reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Namespace: o.GetNamespace(),

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -25,11 +26,8 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal      bool
-	WatcherDoneCh    chan<- Client
-	WatcherRenewedCh chan<- Client
-	// WatcherDoneChFunc    func() chan<- Client
-	// WatcherRenewedChFunc func() chan<- Client
+	SkipRenewal   bool
+	WatcherDoneCh chan<- Client
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -144,6 +142,7 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 type ClientBase interface {
 	Read(context.Context, ReadRequest) (Response, error)
 	Write(context.Context, WriteRequest) (Response, error)
+	ID() string
 }
 
 type Client interface {
@@ -184,6 +183,7 @@ type defaultClient struct {
 	watcherDoneCh      chan<- Client
 	once               sync.Once
 	mu                 sync.RWMutex
+	id                 string
 }
 
 // Validate the client, returning an error for any validation failures.
@@ -311,6 +311,13 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 		}
 	}
 
+	id, err := c.hashAccessor()
+	if err != nil {
+		return err
+	}
+
+	c.id = id
+
 	return nil
 }
 
@@ -378,7 +385,7 @@ func (c *defaultClient) Close(revoke bool) {
 	}
 
 	c.inClosing = true
-	logger := log.FromContext(nil)
+	logger := log.FromContext(nil).WithValues("id", c.id)
 	logger.Info("Close() called")
 	if c.watcher != nil {
 		c.watcher.Stop()
@@ -390,6 +397,7 @@ func (c *defaultClient) Close(revoke bool) {
 				"Failed to revoke Vault client token", "err", err)
 		}
 	}
+	c.id = ""
 	c.closed = true
 }
 
@@ -535,7 +543,41 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 		}
 	}
 
+	id, err := c.hashAccessor()
+	if err != nil {
+		return err
+	}
+
+	c.id = id
+
 	return nil
+}
+
+func (c *defaultClient) hashAccessor() (string, error) {
+	if c.authSecret == nil {
+		return "", nil
+	}
+
+	accessor, err := c.authSecret.TokenAccessor()
+	if err != nil {
+		return "", err
+	}
+
+	if accessor == "" {
+		return "", nil
+	}
+
+	// obfuscate the accessor since it is considered sensitive information.
+	return fmt.Sprintf("%x", blake2b.Sum256([]byte(accessor))), nil
+}
+
+// ID returns the client's unique ID. If the client is not logged in, an empty
+// string is returned. An empty ID should be considered invalid as it might
+// indicate the client may not have ever successfully authenticated.
+func (c *defaultClient) ID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.id
 }
 
 func (c *defaultClient) GetVaultAuthObj() *secretsv1beta1.VaultAuth {
@@ -694,6 +736,11 @@ var _ ClientBase = (*MockRecordingVaultClient)(nil)
 
 type MockRecordingVaultClient struct {
 	Requests []*MockRequest
+	Id       string
+}
+
+func (m *MockRecordingVaultClient) ID() string {
+	return m.Id
 }
 
 func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {
