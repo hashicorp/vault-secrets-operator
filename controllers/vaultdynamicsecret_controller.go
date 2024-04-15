@@ -66,17 +66,6 @@ type VaultDynamicSecretReconciler struct {
 	once          sync.Once
 }
 
-func (r *VaultDynamicSecretReconciler) Start(ctx context.Context) error {
-	r.once.Do(func() {
-		go func() {
-			if err := r.SyncController.Start(ctx); err != nil {
-				log.FromContext(ctx).Error(err, "Failed to start the SyncController")
-			}
-		}()
-	})
-	return nil
-}
-
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
@@ -543,7 +532,20 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		return err
 	}
 
+	// syncController should be started after the controller is set up.
 	r.SyncController = syncController
+	return nil
+}
+
+// Start starts the SyncController in a goroutine. It is idempotent.
+func (r *VaultDynamicSecretReconciler) Start(ctx context.Context) error {
+	r.once.Do(func() {
+		go func() {
+			if err := r.SyncController.Start(ctx); err != nil {
+				log.FromContext(ctx).Error(err, "Failed to start the SyncController")
+			}
+		}()
+	})
 	return nil
 }
 
