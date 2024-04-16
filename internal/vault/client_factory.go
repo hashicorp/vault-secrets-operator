@@ -685,6 +685,7 @@ func (m *cachingClientFactory) startLifetimeWatcherHandler(ctx context.Context) 
 					continue
 				}
 
+				// call in a go routine to avoid blocking the channel
 				go func() {
 					cacheKey, err := c.GetCacheKey()
 					if err != nil {

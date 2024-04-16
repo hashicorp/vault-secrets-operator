@@ -44,6 +44,9 @@ const (
 var (
 	staticCredsJitterHorizon = time.Second * 3
 	vdsJitterFactor          = 0.05
+	// vdsMaxClientCallbackDelayForJitter is used to compute jitter for the Vault
+	// client callback.
+	vdsMaxClientCallbackDelayForJitter = time.Second * 2
 )
 
 var _ SecretReconciler = &VaultDynamicSecretReconciler{}
@@ -704,30 +707,27 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 		return
 	}
 
-	reqs := map[reconcile.Request]empty{}
+	reqs := map[SyncRequest]empty{}
 	for _, o := range l.Items {
 		if o.Status.VaultClientMeta.CacheKey == cacheKey.String() {
-			req := reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Namespace: o.GetNamespace(),
-					Name:      o.GetName(),
+			_, delay := computeMaxJitterDuration(vdsMaxClientCallbackDelayForJitter)
+			req := SyncRequest{
+				Delay: delay,
+				Request: reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: o.GetNamespace(),
+						Name:      o.GetName(),
+					},
 				},
 			}
-
 			if _, ok := reqs[req]; !ok {
 				reqs[req] = empty{}
-				go func(req reconcile.Request) {
-					_, enqueueAfter := computeMaxJitterDuration(time.Second * 2)
-					logger.V(consts.LogLevelDebug).Info("Calling SyncController.Sync()",
-						"request", req, "horizon", enqueueAfter)
-					r.SyncRegistry.Add(req.NamespacedName)
-					if _, err := r.SyncController.Sync(ctx, SyncRequest{
-						Request: req,
-						Delay:   enqueueAfter,
-					}); err != nil {
-						logger.Error(err, "Sync failed", "request", req)
-					}
-				}(req)
+				logger.V(consts.LogLevelDebug).Info("Calling Sync()",
+					"request", req, "delay", delay)
+				r.SyncRegistry.Add(req.NamespacedName)
+				if _, err := r.SyncController.Sync(ctx, req); err != nil {
+					logger.Error(err, "Sync failed", "request", req)
+				}
 			}
 		}
 	}

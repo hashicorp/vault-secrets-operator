@@ -424,8 +424,6 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 
 	watcher, err := c.client.NewLifetimeWatcher(&api.LifetimeWatcherInput{
 		Secret: c.authSecret,
-		// TODO: this is probably not the behaviour we want. Need to investigate further.
-		RenewBehavior: api.RenewBehaviorIgnoreErrors,
 	})
 	if err != nil {
 		return err
@@ -575,8 +573,6 @@ func (c *defaultClient) hashAccessor() (string, error) {
 // string is returned. An empty ID should be considered invalid as it might
 // indicate the client may not have ever successfully authenticated.
 func (c *defaultClient) ID() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return c.id
 }
 

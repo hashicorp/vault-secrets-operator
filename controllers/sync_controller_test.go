@@ -251,6 +251,7 @@ func Test_defaultSyncController_Start(t *testing.T) {
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			var eg errgroup.Group
 			for i := 0; i < tt.count; i++ {
 				eg.Go(func() error {
@@ -263,7 +264,10 @@ func Test_defaultSyncController_Start(t *testing.T) {
 				cancel()
 			}()
 
-			tt.wantErr(t, eg.Wait(), fmt.Sprintf("Start(%v)", ctx))
+			if !tt.wantErr(t, eg.Wait(), fmt.Sprintf("Start(%v)", ctx)) {
+				return
+			}
+			assert.True(t, c.started)
 		})
 	}
 }

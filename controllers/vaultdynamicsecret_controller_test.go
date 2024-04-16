@@ -12,13 +12,17 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
@@ -980,6 +984,143 @@ func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
 			got := r.computePostSyncHorizon(ctx, tt.o)
 			assert.GreaterOrEqualf(t, got, tt.wantMinHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
 			assert.LessOrEqualf(t, got, tt.wantMaxHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
+		})
+	}
+}
+
+type stubVaultClient struct {
+	vault.Client
+	cacheKey           vault.ClientCacheKey
+	credentialProvider provider.CredentialProviderBase
+}
+
+func (c *stubVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
+	return c.cacheKey, nil
+}
+
+func (c *stubVaultClient) GetCredentialProvider() provider.CredentialProviderBase {
+	return c.credentialProvider
+}
+
+type stubCredentialProvider struct {
+	provider.CredentialProviderBase
+	namespace string
+}
+
+func (p *stubCredentialProvider) GetNamespace() string {
+	return p.namespace
+}
+
+func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
+	ctx := context.Background()
+	builder := newClientBuilder()
+
+	// instances in the same namespace that should be included by the callback.
+	instances := []*secretsv1beta1.VaultDynamicSecret{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "baz",
+			},
+			Status: secretsv1beta1.VaultDynamicSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: "kubernetes-12345",
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "canary",
+			},
+			Status: secretsv1beta1.VaultDynamicSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: "kubernetes-54321",
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		c         vault.Client
+		client    client.Client
+		create    int
+		want      []SyncRequest
+		instances []*secretsv1beta1.VaultDynamicSecret
+	}{
+		{
+			name:      "matching-instances",
+			instances: instances,
+			c: &stubVaultClient{
+				cacheKey:           "kubernetes-12345",
+				credentialProvider: &stubCredentialProvider{namespace: "default"},
+			},
+			want: []SyncRequest{
+				{
+					Request: ctrl.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      "baz",
+							Namespace: "default",
+						},
+					},
+					Delay: 0,
+				},
+			},
+		},
+		{
+			name: "none",
+			c: &stubVaultClient{
+				cacheKey:           "kubernetes-12345",
+				credentialProvider: &stubCredentialProvider{namespace: "default"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			syncRegistry := NewSyncRegistry()
+			r := &VaultDynamicSecretReconciler{
+				Client:       builder.Build(),
+				SyncRegistry: syncRegistry,
+			}
+
+			for _, o := range tt.instances {
+				require.NoError(t, r.Create(ctx, o))
+			}
+
+			syncer := &fakeSyncer{
+				requests: make(map[SyncRequest]int),
+			}
+
+			r.SyncController = &defaultSyncController{
+				do:                 syncer,
+				maxConcurrentSyncs: 1,
+				queue: &DelegatingQueue{
+					Interface: workqueue.New(),
+				},
+			}
+
+			syncCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			go func(ctx context.Context) {
+				_ = r.SyncController.Start(ctx)
+			}(syncCtx)
+
+			r.vaultClientCallback(ctx, tt.c, nil)
+			assert.Eventuallyf(t, func() bool {
+				return syncer.count == len(tt.want)
+			}, vdsMaxClientCallbackDelayForJitter, time.Millisecond*100,
+				"expected %d syncs, got %d", len(tt.want), syncer.count)
+
+			assert.Equalf(t, len(tt.want), len(syncer.requests),
+				"vaultClientCallback(%v, %v, %v)", ctx, tt.client, nil)
+
+			var reqs []SyncRequest
+			for req := range syncer.requests {
+				reqs = append(reqs, req)
+			}
+			assert.ElementsMatchf(t, tt.want, reqs,
+				"vaultClientCallback(%v, %v, %v)", ctx, tt.client, nil)
 		})
 	}
 }
