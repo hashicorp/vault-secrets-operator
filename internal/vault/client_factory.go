@@ -120,6 +120,11 @@ func (m *cachingClientFactory) Stop() {
 	}
 }
 
+// RegisterClientCallbackHandler registers a ClientCallbackHandler with the
+// cachingClientFactory. The ClientCallbackHandler will be called when the
+// specified event occurs. There is no duplication detection, so the same handler
+// can be registered multiple times. The caller is responsible for ensuring that
+// there are no duplicates.
 func (m *cachingClientFactory) RegisterClientCallbackHandler(cb ClientCallbackHandler) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

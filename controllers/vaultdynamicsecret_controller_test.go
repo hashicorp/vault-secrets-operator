@@ -1039,6 +1039,17 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 				},
 			},
 		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "other",
+				Name:      "canary-other-ns",
+			},
+			Status: secretsv1beta1.VaultDynamicSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: "kubernetes-12345",
+				},
+			},
+		},
 	}
 
 	tests := []struct {
