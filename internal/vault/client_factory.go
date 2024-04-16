@@ -471,9 +471,6 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 
 	req := ClientCacheStorageStoreRequest{
 		Client: c,
-		// TODO: make this configurable, since the accessor could be considered to be
-		// confidential.
-		IncludeTokenAccessor: true,
 	}
 
 	if m.encryptionRequired {

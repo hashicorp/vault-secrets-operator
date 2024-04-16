@@ -64,10 +64,12 @@ func IsStorageEntryNotFoundErr(err error) bool {
 }
 
 type ClientCacheStorageStoreRequest struct {
-	OwnerReferences      []metav1.OwnerReference
-	Client               Client
-	EncryptionClient     Client
-	EncryptionVaultAuth  *secretsv1beta1.VaultAuth
+	OwnerReferences     []metav1.OwnerReference
+	Client              Client
+	EncryptionClient    Client
+	EncryptionVaultAuth *secretsv1beta1.VaultAuth
+	// IncludeTokenAccessor is used for testing only, not for production. Exposing
+	// the token accessor in the Secret is a security risk.
 	IncludeTokenAccessor bool
 }
 
@@ -227,6 +229,8 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		labelProviderNamespace:    credentialProvider.GetNamespace(),
 	}
 
+	// used for testing only, not for production. Exposing the token accessor in the
+	// Secret is a security risk.
 	if req.IncludeTokenAccessor {
 		accessor, err := req.Client.GetTokenSecret().TokenAccessor()
 		if err == nil {
