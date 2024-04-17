@@ -276,13 +276,9 @@ func TestMain(m *testing.M) {
 			log.Printf("Failed to terraform.InitAndApplyE(t, tfOptions), err=%s", err)
 			result = 1
 		} else {
-			result := m.Run()
-			failed := result != 0
-			if err := exportKindLogs("TestMainVSO", failed); err != nil {
+			result = m.Run()
+			if err := exportKindLogs("TestMainVSO", result != 0); err != nil {
 				log.Printf("Error failed to exportKindLogs(), err=%s", err)
-				if !failed {
-					result = 1
-				}
 			}
 		}
 	}
