@@ -712,7 +712,8 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 		if o.Status.VaultClientMeta.CacheKey == cacheKey.String() {
 			_, delay := computeMaxJitterDuration(vdsMaxClientCallbackDelayForJitter)
 			req := SyncRequest{
-				Delay: delay,
+				Delay:        delay,
+				RequeueOnErr: true,
 				Request: reconcile.Request{
 					NamespacedName: types.NamespacedName{
 						Namespace: o.GetNamespace(),

@@ -74,6 +74,8 @@ type SyncRequest struct {
 	ctrl.Request
 	// Delay is the delay before syncing the secret.
 	Delay time.Duration
+	// RequeueOnErr is a flag to requeue the request on error.
+	RequeueOnErr bool
 }
 
 var _ SyncController = &defaultSyncController{}
@@ -177,7 +179,7 @@ func (c *defaultSyncController) syncHandler(ctx context.Context, req SyncRequest
 	debugLogger.Info("Syncing")
 	result, err := c.do.Sync(ctx, req)
 	if err != nil {
-		if !errors.Is(err, reconcile.TerminalError(nil)) {
+		if req.RequeueOnErr && !errors.Is(err, reconcile.TerminalError(nil)) {
 			c.queue.AddRateLimited(req)
 		}
 		logger.Error(err, "Sync error")
