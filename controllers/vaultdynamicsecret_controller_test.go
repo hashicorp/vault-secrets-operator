@@ -1012,6 +1012,8 @@ func (p *stubCredentialProvider) GetNamespace() string {
 }
 
 func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	builder := newClientBuilder()
 
@@ -1075,7 +1077,8 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 							Namespace: "default",
 						},
 					},
-					Delay: 0,
+					Delay:        0,
+					RequeueOnErr: true,
 				},
 			},
 		},
