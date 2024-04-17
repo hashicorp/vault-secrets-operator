@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	rolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
+	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
@@ -58,7 +58,7 @@ func init() {
 
 	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 
-	utilruntime.Must(rolloutsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
