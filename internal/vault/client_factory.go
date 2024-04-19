@@ -590,8 +590,7 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 			}
 		}
 	} else if persist {
-		logger.Info("Warning: persistence requested but storage not enabled",
-			"cacheKey", cacheKey)
+		logger.Info("Warning: persistence requested but storage not enabled")
 	}
 
 	return cacheKey, nil
