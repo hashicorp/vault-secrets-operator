@@ -99,7 +99,7 @@ type cachingClientFactory struct {
 	watcherDoneCh          chan Client
 	mu                     sync.RWMutex
 	onceDoWatcher          sync.Once
-	watcherCancelFunc      context.CancelFunc
+	callBackHandlerCancel  context.CancelFunc
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -107,7 +107,7 @@ func (m *cachingClientFactory) Start(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.onceDoWatcher.Do(func() {
-		m.startLifetimeWatcherHandler(ctx)
+		m.startClientCallbackHandler(ctx)
 	})
 }
 
@@ -115,8 +115,8 @@ func (m *cachingClientFactory) Start(ctx context.Context) {
 func (m *cachingClientFactory) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.watcherCancelFunc != nil {
-		m.watcherCancelFunc()
+	if m.callBackHandlerCancel != nil {
+		m.callBackHandlerCancel()
 	}
 }
 
@@ -329,8 +329,6 @@ func (m *cachingClientFactory) storageEnabled() bool {
 }
 
 func (m *cachingClientFactory) isDisabled() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return m.shutDown
 }
 
@@ -342,6 +340,12 @@ func (m *cachingClientFactory) isDisabled() bool {
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.isDisabled() {
+		return nil, &ClientFactoryDisabledError{}
+	}
+
 	logger := log.FromContext(ctx).WithName("cachingClientFactory")
 	logger.V(consts.LogLevelDebug).Info("Cache info", "length", m.cache.Len())
 	startTS := time.Now()
@@ -355,11 +359,6 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		)
 	}()
 
-	if m.isDisabled() {
-		errs = errors.Join(&ClientFactoryDisabledError{})
-		return nil, errs
-	}
-
 	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
@@ -370,9 +369,6 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	}
 
 	logger = logger.WithValues("cacheKey", cacheKey)
-	m.mu.Lock()
-	m.mu.Unlock()
-
 	logger.V(consts.LogLevelDebug).Info("Get Client")
 	ns, err := common.GetVaultNamespace(obj)
 	if err != nil {
@@ -412,7 +408,9 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	c, ok := m.cache.Get(cacheKey)
 	if ok {
 		// return the Client from the cache if it is still Valid
-		if err := c.Validate(); err == nil {
+		logger.V(consts.LogLevelTrace).Info("Got client from cache", "clientID", c.ID())
+		err := c.Validate()
+		if err == nil {
 			return namespacedClient(c)
 		}
 
@@ -420,6 +418,8 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 
 		// remove the parent Client from the cache in order to prune any of its clones.
 		m.cache.Remove(cacheKey)
+	} else {
+		logger.V(consts.LogLevelTrace).Info("Client not found in cache", "cacheKey", fmt.Sprintf("%#v", cacheKey))
 	}
 
 	if !ok && m.storageEnabled() {
@@ -443,6 +443,8 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 
 	}
 
+	logger.V(consts.LogLevelTrace).Info("New client created",
+		"cacheKey", cacheKey, "clientID", c.ID())
 	// cache the parent Client for future requests.
 	cacheKey, err = m.cacheClient(ctx, c, m.storageEnabled())
 	if err != nil {
@@ -553,17 +555,29 @@ func (m *cachingClientFactory) clientOptions() *ClientOptions {
 
 // cacheClient to the global in-memory cache.
 func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persist bool) (ClientCacheKey, error) {
+	logger := log.FromContext(ctx)
 	var errs error
 	cacheKey, err := c.GetCacheKey()
 	if err != nil {
 		return "", err
 	}
 
+	if _, ok := m.cache.Get(cacheKey); ok {
+		logger.V(consts.LogLevelDebug).Info("Client already cached, removing it", "cacheKey", cacheKey)
+		// removal ensures that the eviction handler is called, this should mitigate any
+		// potential go routine leaks on the lifetime watcher.
+		m.cache.Remove(cacheKey)
+	}
+
 	if _, err := m.cache.Add(c); err != nil {
-		m.logger.Error(err, "Failed to added to the cache", "client", c)
+		logger.Error(err, "Failed to added to the cache", "client", c)
 		return "", errs
 	}
-	m.logger.V(consts.LogLevelDebug).Info("Cached the client", "cacheKey", cacheKey, "isClone", c.IsClone())
+	logger.V(consts.LogLevelTrace).Info("Cached the client", "cacheKey", cacheKey, "isClone", c.IsClone())
+
+	if _, ok := m.cache.Get(cacheKey); !ok {
+		return "", fmt.Errorf("expected Client not found in the cache, cacheKey=%s", cacheKey)
+	}
 
 	if cacheKey == m.clientCacheKeyEncrypt {
 		// added protection against persisting the Vault client used for storage
@@ -574,11 +588,11 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 	if m.storageEnabled() {
 		if persist {
 			if err := m.storeClient(ctx, m.ctrlClient, c); err != nil {
-				m.logger.Info("Warning: failed to store the client",
+				logger.Info("Warning: failed to store the client",
 					"error", err)
 			}
 		} else {
-			m.logger.Info("Warning: persistence requested but storage not enabled",
+			logger.Info("Warning: persistence requested but storage not enabled",
 				"cacheKey", cacheKey)
 		}
 	}
@@ -659,15 +673,15 @@ func (m *cachingClientFactory) incrementRequestCounter(operation string, err err
 	}
 }
 
-func (m *cachingClientFactory) startLifetimeWatcherHandler(ctx context.Context) {
-	logger := m.logger.WithName("clientWatcherHandler")
-	if m.watcherCancelFunc != nil {
+func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
+	logger := m.logger.WithName("clientCallbackHandler")
+	if m.callBackHandlerCancel != nil {
 		logger.Info("Already started")
 		return
 	}
 
 	watcherCtx, cancel := context.WithCancel(ctx)
-	m.watcherCancelFunc = cancel
+	m.callBackHandlerCancel = cancel
 
 	logger.Info("Starting client lifetime watcher handler")
 
@@ -687,40 +701,34 @@ func (m *cachingClientFactory) startLifetimeWatcherHandler(ctx context.Context) 
 					continue
 				}
 
+				cacheKey, err := c.GetCacheKey()
+				if err != nil {
+					logger.Error(err, "Invalid client, client callbacks not executed",
+						"cacheKey", cacheKey)
+					return
+				}
+
+				// remove the client from the cache, it will be recreated when a reconciler
+				// requests it.
+				logger.V(consts.LogLevelDebug).Info("Removing client from cache", "cacheKey", cacheKey)
+				m.cache.Remove(cacheKey)
+				if m.storageEnabled() {
+					if _, err := m.pruneStorage(ctx, m.ctrlClient, cacheKey); err != nil {
+						logger.Info("Warning: failed to prune storage", "cacheKey", cacheKey)
+					}
+				}
+
 				// call in a go routine to avoid blocking the channel
-				go func() {
-					cacheKey, err := c.GetCacheKey()
-					if err != nil {
-						logger.Error(err, "Invalid client, client callbacks not executed",
-							"cacheKey", cacheKey)
-						return
-					}
-
-					if m.clientCacheKeyEncrypt == cacheKey {
-						m.clientCacheKeyEncrypt = ""
-					}
-
-					if err := c.Login(ctx, m.ctrlClient); err != nil {
-						logger.Error(err, "Client login failed, client callbacks not executed",
-							"cacheKey", cacheKey)
-						return
-					}
-
-					if _, err := m.cacheClient(ctx, c, true); err != nil {
-						logger.Error(err,
-							"Failed to cache the client",
-							"cacheKey", cacheKey)
-					}
-
+				go func(c Client) {
 					for idx, cbReq := range m.clientCallbacks {
 						if cbReq.On != ClientCallbackOnLifetimeWatcherDone {
 							continue
 						}
-						m.logger.Info("Calling client call back",
-							"cacheKey", cacheKey, "index", idx)
+						logger.Info("Calling client callBack on lifetime watcher done",
+							"index", idx, "cacheKey", cacheKey, "clientID", c.ID())
 						cbReq.Callback(ctx, c, nil)
 					}
-				}()
+				}(c)
 			}
 		}
 	}()

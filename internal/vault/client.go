@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/blake2b"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -207,11 +208,7 @@ func (c *defaultClient) Validate() error {
 	}
 
 	if expired, err := c.checkExpiry(0); expired || err != nil {
-		var errs error
-		if expired {
-			errs = errors.Join(errs, errors.New("client token expired"))
-		}
-		return errors.Join(errs, err)
+		return errors.New("client token expired")
 	}
 
 	return nil
@@ -305,18 +302,18 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 	c.authSecret = secret
 	c.client.SetToken(secret.Auth.ClientToken)
 
-	if secret.Auth.Renewable {
-		if err := c.startLifetimeWatcher(ctx); err != nil {
-			return err
-		}
-	}
-
 	id, err := c.hashAccessor()
 	if err != nil {
 		return err
 	}
 
 	c.id = id
+
+	if secret.Auth.Renewable {
+		if err := c.startLifetimeWatcher(ctx); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -430,12 +427,13 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 	}
 
 	cacheKey, _ := c.getCacheKey()
-
+	watcherID := uuid.NewString()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
 		logger := log.FromContext(nil).WithName("lifetimeWatcher").WithValues(
-			"entityID", c.authSecret.Auth.EntityID)
+			"id", watcherID, "entityID", c.authSecret.Auth.EntityID,
+			"clientID", c.id, "cacheKey", cacheKey)
 		logger.Info("Starting")
 		defer func() {
 			logger.Info("Stopping")
@@ -470,9 +468,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 
 				return
 			case renewal := <-watcher.RenewCh():
-				logger.V(consts.LogLevelDebug).Info("Successfully renewed the client",
-					"cacheKey", cacheKey,
-					"accessor", renewal.Secret.Auth.Accessor)
+				logger.V(consts.LogLevelDebug).Info("Successfully renewed the client")
 
 				c.authSecret = renewal.Secret
 				c.lastRenewal = renewal.RenewedAt.Unix()
@@ -534,13 +530,6 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	c.authSecret = resp.Secret()
 	c.lastRenewal = time.Now().Unix()
 
-	if resp.Secret().Auth.Renewable {
-		if err := c.startLifetimeWatcher(ctx); err != nil {
-			errs = err
-			return errs
-		}
-	}
-
 	id, err := c.hashAccessor()
 	if err != nil {
 		return err
@@ -548,10 +537,34 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 
 	c.id = id
 
+	if resp.Secret().Auth.Renewable {
+		if err := c.startLifetimeWatcher(ctx); err != nil {
+			errs = err
+			return errs
+		}
+	}
+
+	c.inClosing = false
+	c.closed = false
+
 	return nil
 }
 
 func (c *defaultClient) hashAccessor() (string, error) {
+	accessor, err := c.accessor()
+	if err != nil {
+		return "", err
+	}
+
+	if accessor == "" {
+		return "", nil
+	}
+
+	// obfuscate the accessor since it is considered sensitive information.
+	return fmt.Sprintf("%x", blake2b.Sum256([]byte(accessor))), nil
+}
+
+func (c *defaultClient) accessor() (string, error) {
 	if c.authSecret == nil {
 		return "", nil
 	}
@@ -565,14 +578,15 @@ func (c *defaultClient) hashAccessor() (string, error) {
 		return "", nil
 	}
 
-	// obfuscate the accessor since it is considered sensitive information.
-	return fmt.Sprintf("%x", blake2b.Sum256([]byte(accessor))), nil
+	return accessor, nil
 }
 
 // ID returns the client's unique ID. If the client is not logged in, an empty
 // string is returned. An empty ID should be considered invalid as it might
 // indicate the client may not have ever successfully authenticated.
 func (c *defaultClient) ID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.id
 }
 
