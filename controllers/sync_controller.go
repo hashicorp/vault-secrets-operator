@@ -74,13 +74,15 @@ type SyncRequest struct {
 	ctrl.Request
 	// Delay is the delay before syncing the secret.
 	Delay time.Duration
+	// RequeueOnErr is a flag to requeue the request on error.
+	RequeueOnErr bool
 }
 
 var _ SyncController = &defaultSyncController{}
 
 // defaultSyncController handles delegated secret reconciliation requests from a
 // Syncer. The queue processing is based off of the controller-runtime
-// internal/controller code, minus the k8s watchers
+// internal/controller code, minus the k8s watchers and event handling.
 type defaultSyncController struct {
 	do                 Syncer
 	queue              workqueue.RateLimitingInterface
@@ -154,10 +156,11 @@ func (c *defaultSyncController) processNextWorkItem(ctx context.Context) bool {
 // Syncer. It returns an error if the sync fails. It also handles enqueuing the
 // request if SyncRequest.Request has Requeue or RequeueAfter set. When
 // SyncRequest.Delay is set, the sync will happen later.
+// Delayed requests are scheduled in the future, typically those would be
+// scheduled outside a Reconciler's Reconile method.
 func (c *defaultSyncController) syncHandler(ctx context.Context, req SyncRequest) error {
 	// If the request has a delay, we need to requeue it with the delay.
 	if req.Delay > 0 {
-		// delayed requests are scheduled in the future
 		c.queue.Forget(req)
 		req.Delay = 0
 		c.queue.AddAfter(req, req.Delay)
@@ -176,7 +179,7 @@ func (c *defaultSyncController) syncHandler(ctx context.Context, req SyncRequest
 	debugLogger.Info("Syncing")
 	result, err := c.do.Sync(ctx, req)
 	if err != nil {
-		if !errors.Is(err, reconcile.TerminalError(nil)) {
+		if req.RequeueOnErr && !errors.Is(err, reconcile.TerminalError(nil)) {
 			c.queue.AddRateLimited(req)
 		}
 		logger.Error(err, "Sync error")

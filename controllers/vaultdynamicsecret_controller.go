@@ -44,6 +44,9 @@ const (
 var (
 	staticCredsJitterHorizon = time.Second * 3
 	vdsJitterFactor          = 0.05
+	// vdsMaxClientCallbackDelayForJitter is used to compute jitter for the Vault
+	// client callback.
+	vdsMaxClientCallbackDelayForJitter = time.Second * 2
 )
 
 var _ SecretReconciler = &VaultDynamicSecretReconciler{}
@@ -64,17 +67,6 @@ type VaultDynamicSecretReconciler struct {
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
 	runtimePodUID types.UID
 	once          sync.Once
-}
-
-func (r *VaultDynamicSecretReconciler) Start(ctx context.Context) error {
-	r.once.Do(func() {
-		go func() {
-			if err := r.SyncController.Start(ctx); err != nil {
-				log.FromContext(ctx).Error(err, "Failed to start the SyncController")
-			}
-		}()
-	})
-	return nil
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -101,7 +93,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// delegate all secret sync handling to the SyncController
 	return r.SyncController.Sync(ctx,
 		SyncRequest{
-			// Logger:  log.FromContext(ctx),
 			Request: req,
 		},
 	)
@@ -124,7 +115,6 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 
 	req := syncRequest.Request
 	logger := log.FromContext(ctx).WithValues("podUID", r.runtimePodUID)
-	// logger := syncRequest.Logger.WithValues("podUID", r.runtimePodUID)
 	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -150,10 +140,49 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
+	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+			"Failed to get Vault client: %s", err)
+		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
+		return ctrl.Result{
+			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
+		}, nil
+	}
+
+	// we can ignore the error here, since it was handled above in the Get() call.
+	clientCacheKey, _ := vClient.GetCacheKey()
+	lastClientCacheKey := o.Status.VaultClientMeta.CacheKey
+	lastClientID := o.Status.VaultClientMeta.ID
+
+	// update the VaultClientMeta in the resource's status.
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = vClient.ID()
+
+	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,
-	doSync := (o.GetGeneration() != o.Status.LastGeneration) ||
-		(o.Spec.Destination.Create && !destExists) ||
-		r.SyncRegistry.Has(req.NamespacedName)
+	switch {
+	// indicates that the resource has been added to the SyncRegistry
+	// and must be synced.
+	case r.SyncRegistry.Has(req.NamespacedName):
+		syncReason = "force sync"
+	// indicates that the resource has been updated since the last sync.
+	case o.GetGeneration() != o.Status.LastGeneration:
+		syncReason = "resource updated"
+	// indicates that the destination secret does not exist and the resource is configured to create it.
+	case o.Spec.Destination.Create && !destExists:
+		syncReason = "destination secret does not exist and create=true"
+	// indicates that the cache key has changed since the last sync. This can happen
+	// when the VaultAuth or VaultConnection objects are updated since the last sync.
+	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
+		syncReason = "new vault client due to config change"
+	// indicates that the Vault client ID has changed since the last sync. This can
+	// happen when the client has re-authenticated to Vault since the last sync.
+	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
+		syncReason = "vault token rotated"
+	}
+
+	doSync := syncReason != ""
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -185,25 +214,6 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 			}
 			return ctrl.Result{RequeueAfter: horizon}, nil
 		}
-	}
-
-	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
-		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
-		return ctrl.Result{
-			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
-		}, nil
-	}
-
-	if cacheKey, err := vClient.GetCacheKey(); err == nil {
-		o.Status.ClientCacheKey = cacheKey.String()
-	} else {
-		o.Status.ClientCacheKey = ""
-		logger.Error(err,
-			"Resetting .status.cacheKey, cacheKey is invalid")
-
 	}
 
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
@@ -243,10 +253,11 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Lease renewal duration was truncated from %ds to %ds, "+
 						"requesting new credentials", e.Expected, e.Actual)
-			} else if !vault.IsLeaseNotFoundError(err) {
+			} else if !isLeaseNotfoundError(err) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 			}
+			syncReason = "lease renewal failed"
 		}
 	}
 
@@ -285,7 +296,8 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 
 	horizon := r.computePostSyncHorizon(ctx, o)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
+		"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
+		secretLease.ID, horizon, syncReason)
 
 	if doRolloutRestart {
 		// rollout-restart errors are not retryable
@@ -522,7 +534,20 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		return err
 	}
 
+	// syncController should be started after the controller is set up.
 	r.SyncController = syncController
+	return nil
+}
+
+// Start starts the SyncController in a goroutine. It is idempotent.
+func (r *VaultDynamicSecretReconciler) Start(ctx context.Context) error {
+	r.once.Do(func() {
+		go func() {
+			if err := r.SyncController.Start(ctx); err != nil {
+				log.FromContext(ctx).Error(err, "Failed to start the SyncController")
+			}
+		}()
+	})
 	return nil
 }
 
@@ -681,30 +706,28 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 		return
 	}
 
-	reqs := map[reconcile.Request]empty{}
+	reqs := map[SyncRequest]empty{}
 	for _, o := range l.Items {
-		if o.Status.ClientCacheKey == cacheKey.String() {
-			req := reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Namespace: o.GetNamespace(),
-					Name:      o.GetName(),
+		if o.Status.VaultClientMeta.CacheKey == cacheKey.String() {
+			_, delay := computeMaxJitterDuration(vdsMaxClientCallbackDelayForJitter)
+			req := SyncRequest{
+				Delay:        delay,
+				RequeueOnErr: true,
+				Request: reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: o.GetNamespace(),
+						Name:      o.GetName(),
+					},
 				},
 			}
-
 			if _, ok := reqs[req]; !ok {
 				reqs[req] = empty{}
-				go func(req reconcile.Request) {
-					_, enqueueAfter := computeMaxJitterDuration(time.Second * 2)
-					logger.V(consts.LogLevelDebug).Info("Calling SyncController.Sync()",
-						"request", req, "horizon", enqueueAfter)
-					r.SyncRegistry.Add(req.NamespacedName)
-					if _, err := r.SyncController.Sync(ctx, SyncRequest{
-						Request: req,
-						Delay:   enqueueAfter,
-					}); err != nil {
-						logger.Error(err, "Sync failed", "request", req)
-					}
-				}(req)
+				logger.V(consts.LogLevelDebug).Info("Calling Sync()",
+					"request", req, "delay", delay)
+				r.SyncRegistry.Add(req.NamespacedName)
+				if _, err := r.SyncController.Sync(ctx, req); err != nil {
+					logger.Error(err, "Sync failed", "request", req)
+				}
 			}
 		}
 	}
