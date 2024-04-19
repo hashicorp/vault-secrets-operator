@@ -96,10 +96,10 @@ type cachingClientFactory struct {
 	pruneStorageOnEvict    bool
 	ctrlClient             ctrlclient.Client
 	clientCallbacks        []ClientCallbackHandler
-	watcherDoneCh          chan Client
+	callbackHandlerCh      chan Client
 	mu                     sync.RWMutex
 	onceDoWatcher          sync.Once
-	callBackHandlerCancel  context.CancelFunc
+	callbackHandlerCancel  context.CancelFunc
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -115,8 +115,8 @@ func (m *cachingClientFactory) Start(ctx context.Context) {
 func (m *cachingClientFactory) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.callBackHandlerCancel != nil {
-		m.callBackHandlerCancel()
+	if m.callbackHandlerCancel != nil {
+		m.callbackHandlerCancel()
 	}
 }
 
@@ -549,7 +549,7 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 
 func (m *cachingClientFactory) clientOptions() *ClientOptions {
 	return &ClientOptions{
-		WatcherDoneCh: m.watcherDoneCh,
+		WatcherDoneCh: m.callbackHandlerCh,
 	}
 }
 
@@ -672,28 +672,31 @@ func (m *cachingClientFactory) incrementRequestCounter(operation string, err err
 
 func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 	logger := m.logger.WithName("clientCallbackHandler")
-	if m.callBackHandlerCancel != nil {
+	if m.callbackHandlerCancel != nil {
 		logger.Info("Already started")
 		return
 	}
 
-	watcherCtx, cancel := context.WithCancel(ctx)
-	m.callBackHandlerCancel = cancel
+	callbackCtx, cancel := context.WithCancel(ctx)
+	m.callbackHandlerCancel = cancel
 
-	logger.Info("Starting client lifetime watcher handler")
+	logger.Info("Starting client callback handler")
 
 	go func() {
-		if m.watcherDoneCh == nil {
-			m.watcherDoneCh = make(chan Client)
+		if m.callbackHandlerCh == nil {
+			m.callbackHandlerCh = make(chan Client)
 		}
-		defer close(m.watcherDoneCh)
+		defer func() {
+			m.callbackHandlerCh = nil
+			close(m.callbackHandlerCh)
+		}()
 
 		for {
 			select {
-			case <-watcherCtx.Done():
-				logger.Info("Client watcher done")
+			case <-callbackCtx.Done():
+				logger.Info("Client callback handler done")
 				return
-			case c := <-m.watcherDoneCh:
+			case c := <-m.callbackHandlerCh:
 				if c.IsClone() {
 					continue
 				}
@@ -702,7 +705,7 @@ func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 				if err != nil {
 					logger.Error(err, "Invalid client, client callbacks not executed",
 						"cacheKey", cacheKey)
-					return
+					continue
 				}
 
 				// remove the client from the cache, it will be recreated when a reconciler
@@ -721,7 +724,7 @@ func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 						if cbReq.On != ClientCallbackOnLifetimeWatcherDone {
 							continue
 						}
-						logger.Info("Calling client callBack on lifetime watcher done",
+						logger.Info("Calling client callback on lifetime watcher done",
 							"index", idx, "cacheKey", cacheKey, "clientID", c.ID())
 						cbReq.Callback(ctx, c, nil)
 					}
@@ -740,7 +743,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		recorder:           config.Recorder,
 		persist:            config.Persist,
 		ctrlClient:         client,
-		watcherDoneCh:      make(chan Client),
+		callbackHandlerCh:  make(chan Client),
 		encryptionRequired: config.StorageConfig.EnforceEncryption,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
