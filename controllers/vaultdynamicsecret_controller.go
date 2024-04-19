@@ -115,7 +115,6 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 
 	req := syncRequest.Request
 	logger := log.FromContext(ctx).WithValues("podUID", r.runtimePodUID)
-	// logger := syncRequest.Logger.WithValues("podUID", r.runtimePodUID)
 	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -166,21 +165,21 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 	// indicates that the resource has been added to the SyncRegistry
 	// and must be synced.
 	case r.SyncRegistry.Has(req.NamespacedName):
-		syncReason = "in sync registry"
+		syncReason = "force sync"
 	// indicates that the resource has been updated since the last sync.
 	case o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = "resource updated"
 	// indicates that the destination secret does not exist and the resource is configured to create it.
 	case o.Spec.Destination.Create && !destExists:
-		syncReason = "destination secret does not exist"
+		syncReason = "destination secret does not exist and create=true"
 	// indicates that the cache key has changed since the last sync. This can happen
 	// when the VaultAuth or VaultConnection objects are updated since the last sync.
 	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
-		syncReason = "client cache key changed"
+		syncReason = "new vault client due to config change"
 	// indicates that the Vault client ID has changed since the last sync. This can
 	// happen when the client has re-authenticated to Vault since the last sync.
 	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
-		syncReason = "client ID changed"
+		syncReason = "vault token rotated"
 	}
 
 	doSync := syncReason != ""

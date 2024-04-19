@@ -555,13 +555,13 @@ func (m *cachingClientFactory) clientOptions() *ClientOptions {
 
 // cacheClient to the global in-memory cache.
 func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persist bool) (ClientCacheKey, error) {
-	logger := log.FromContext(ctx)
 	var errs error
 	cacheKey, err := c.GetCacheKey()
 	if err != nil {
 		return "", err
 	}
 
+	logger := log.FromContext(ctx).WithValues("cacheKey", cacheKey, "isClone", c.IsClone())
 	if _, ok := m.cache.Get(cacheKey); ok {
 		logger.V(consts.LogLevelDebug).Info("Client already cached, removing it", "cacheKey", cacheKey)
 		// removal ensures that the eviction handler is called, this should mitigate any
@@ -570,18 +570,15 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 	}
 
 	if _, err := m.cache.Add(c); err != nil {
-		logger.Error(err, "Failed to added to the cache", "client", c)
+		logger.Error(err, "Failed to add client to the cache")
 		return "", errs
 	}
-	logger.V(consts.LogLevelTrace).Info("Cached the client", "cacheKey", cacheKey, "isClone", c.IsClone())
-
-	if _, ok := m.cache.Get(cacheKey); !ok {
-		return "", fmt.Errorf("expected Client not found in the cache, cacheKey=%s", cacheKey)
-	}
+	logger.V(consts.LogLevelTrace).Info("Cached the client")
 
 	if cacheKey == m.clientCacheKeyEncrypt {
 		// added protection against persisting the Vault client used for storage
 		// data encryption.
+		logger.Info("Warning: refusing to store the encryption client")
 		persist = false
 	}
 
@@ -591,10 +588,10 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 				logger.Info("Warning: failed to store the client",
 					"error", err)
 			}
-		} else {
-			logger.Info("Warning: persistence requested but storage not enabled",
-				"cacheKey", cacheKey)
 		}
+	} else if persist {
+		logger.Info("Warning: persistence requested but storage not enabled",
+			"cacheKey", cacheKey)
 	}
 
 	return cacheKey, nil

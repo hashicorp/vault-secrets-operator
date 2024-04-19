@@ -583,7 +583,10 @@ func (c *defaultClient) accessor() (string, error) {
 
 // ID returns the client's unique ID. If the client is not logged in, an empty
 // string is returned. An empty ID should be considered invalid as it might
-// indicate the client may not have ever successfully authenticated.
+// indicate the client may not have ever successfully authenticated. The ID is a
+// hash of the client token accessor which should at least be unique within a
+// Vault cluster based on:
+// https://github.com/hashicorp/vault/blob/f86e3d4a68c6329ee3229aa742fb969c099b2d12/vault/token_store.go#L994
 func (c *defaultClient) ID() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -717,7 +720,6 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.authObj = authObj
 	c.connObj = connObj
 	c.watcherDoneCh = opts.WatcherDoneCh
-	// c.watcherRenewedCh = opts.WatcherRenewedCh
 
 	return nil
 }
