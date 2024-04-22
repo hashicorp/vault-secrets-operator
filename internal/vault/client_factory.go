@@ -419,10 +419,10 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	c, ok := m.cache.Get(cacheKey)
 	if ok {
 		// return the Client from the cache if it is still Valid
-		logger.V(consts.LogLevelTrace).Info("Got client from cache", "clientID", c.ID())
 		tainted = c.Tainted()
-		logger.V(consts.LogLevelDebug).Info("Client", "tainted", tainted)
+		logger.V(consts.LogLevelTrace).Info("Got client from cache", "clientID", c.ID(), "tainted", tainted)
 		if tainted {
+			// if the Client is tainted, we need to validate its token.
 			if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil)); err == nil {
 				defer c.Untaint()
 				tainted = false
