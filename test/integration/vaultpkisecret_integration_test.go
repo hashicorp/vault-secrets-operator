@@ -246,7 +246,7 @@ func TestVaultPKISecret(t *testing.T) {
 						CommonName:   fmt.Sprintf("%s.example.com", dest),
 						Format:       "pem",
 						Revoke:       true,
-						ExpiryOffset: "2s",
+						ExpiryOffset: "1s",
 						TTL:          "10s",
 						AltNames:     []string{"alt1.example.com", "alt2.example.com"},
 						URISans:      []string{"uri1.example.com", "uri2.example.com"},
@@ -288,7 +288,7 @@ func TestVaultPKISecret(t *testing.T) {
 						vpsObj, "",
 					)
 					require.NoError(t, err)
-					assert.NotEmpty(t, serialNumber)
+					require.NotEmpty(t, serialNumber)
 
 					assertSyncableSecret(t, crdClient, vpsObj, secret)
 
@@ -306,7 +306,7 @@ func TestVaultPKISecret(t *testing.T) {
 						vpsObj, serialNumber,
 					)
 					require.NoError(t, err)
-					assert.NotEmpty(t, newSerialNumber)
+					require.NotEmpty(t, newSerialNumber)
 
 					assertSyncableSecret(t, crdClient, vpsObj, secret)
 
@@ -317,7 +317,7 @@ func TestVaultPKISecret(t *testing.T) {
 					if vpsObj.Spec.Destination.Create && !t.Failed() {
 						if assert.NoError(t, err) {
 							assertRemediationOnDestinationDeletion(t, ctx, crdClient, vpsObj,
-								time.Millisecond*500, uint64(d.Seconds()*3))
+								time.Millisecond*500, uint64(maxTries))
 						}
 					}
 				})
