@@ -3,7 +3,7 @@ module github.com/hashicorp/vault-secrets-operator
 go 1.21
 
 require (
-	cloud.google.com/go/compute/metadata v0.2.3
+	cloud.google.com/go/compute/metadata v0.3.0
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/go-logr/logr v1.4.1
@@ -35,7 +35,6 @@ require (
 
 require (
 	cloud.google.com/go v0.112.0 // indirect
-	cloud.google.com/go/compute v1.23.4 // indirect
 	cloud.google.com/go/iam v1.1.6 // indirect
 	cloud.google.com/go/storage v1.36.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
