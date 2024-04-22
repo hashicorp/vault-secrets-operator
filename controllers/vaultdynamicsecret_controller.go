@@ -569,7 +569,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	// We are ignoring errors inside `revokeLease`, otherwise we may fail to remove the finalizer.
 	// Worst case at this point we will leave a dangling lease instead of a secret which
 	// cannot be deleted. Events are emitted in these cases.
-	r.revokeLease(ctx, o, "")
+	r.revokeLease(ctx, o)
 
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
@@ -591,13 +591,15 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 // NOTE: Enabling revocation requires the VaultAuthMethod referenced by `o.Spec.VaultAuthRef` to have a policy
 // that includes `path "sys/leases/revoke" { capabilities = ["update"] }`, otherwise this will fail with permission
 // errors.
-func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, id string) {
+func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) {
 	logger := log.FromContext(ctx)
 	// Allow us to override the SecretLease in the event that we want to revoke an old lease.
-	leaseID := id
+	leaseID := o.Status.SecretLease.ID
 	if leaseID == "" {
-		leaseID = o.Status.SecretLease.ID
+		logger.V(consts.LogLevelDebug).Info("Lease ID is empty, skipping lease revocation")
+		return
 	}
+
 	logger.Info("Revoking lease for credential ", "id", leaseID)
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
