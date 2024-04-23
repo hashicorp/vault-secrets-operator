@@ -13,13 +13,13 @@ import (
 )
 
 func Test_cachingClientFactory_RegisterClientCallbackHandler(t *testing.T) {
-	cb1 := func(_ context.Context, _ Client, _ error) {
+	cb1 := func(_ context.Context, _ Client) {
 		// do nothing
 	}
-	cb2 := func(_ context.Context, _ Client, _ error) {
+	cb2 := func(_ context.Context, _ Client) {
 		// do nothing
 	}
-	cb3 := func(_ context.Context, _ Client, _ error) {
+	cb3 := func(_ context.Context, _ Client) {
 		// do nothing
 	}
 	tests := []struct {

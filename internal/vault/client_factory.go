@@ -39,7 +39,7 @@ const (
 
 // ClientCallback is a function type that takes a context, a Client, and an error as parameters.
 // It is used in the context of a ClientCallbackHandler.
-type ClientCallback func(ctx context.Context, c Client, err error)
+type ClientCallback func(ctx context.Context, c Client)
 
 // ClientCallbackHandler is a struct that contains a ClientCallbackOn enumeration
 // and a ClientCallback function. It is used to register event handlers for
@@ -725,7 +725,7 @@ func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 						}
 						logger.Info("Calling client callback on lifetime watcher done",
 							"index", idx, "cacheKey", cacheKey, "clientID", c.ID())
-						cbReq.Callback(ctx, c, nil)
+						cbReq.Callback(ctx, c)
 					}
 				}(c)
 			}

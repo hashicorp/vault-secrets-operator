@@ -1120,7 +1120,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 				_ = r.SyncController.Start(ctx)
 			}(syncCtx)
 
-			r.vaultClientCallback(ctx, tt.c, nil)
+			r.vaultClientCallback(ctx, tt.c)
 			assert.Eventuallyf(t, func() bool {
 				return syncer.count == len(tt.want)
 			}, vdsMaxClientCallbackDelayForJitter, time.Millisecond*100,

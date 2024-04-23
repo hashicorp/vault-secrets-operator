@@ -682,8 +682,9 @@ func getRotationDuration(o *secretsv1beta1.VaultDynamicSecret) time.Duration {
 	return d
 }
 
-// vaultClientCallback requests reconciliation of all VaultDynamicSecret instances that were synced with Client
-func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, c vault.Client, _ error) {
+// vaultClientCallback requests reconciliation of all VaultDynamicSecret
+// instances that were synced with Client
+func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, c vault.Client) {
 	logger := log.FromContext(ctx).WithName("vaultClientCallback")
 
 	cacheKey, err := c.GetCacheKey()
