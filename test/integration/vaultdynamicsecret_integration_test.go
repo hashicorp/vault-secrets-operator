@@ -178,17 +178,21 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		authObj            *secretsv1beta1.VaultAuth
-		expected           map[string]int
-		expectedStatic     map[string]int
-		create             int
-		createStatic       int
-		createNonRenewable int
-		existing           int
+		name                 string
+		authObj              *secretsv1beta1.VaultAuth
+		rolloutRestartTarget secretsv1beta1.RolloutRestartTarget
+		expected             map[string]int
+		expectedStatic       map[string]int
+		create               int
+		createStatic         int
+		createNonRenewable   int
+		existing             int
 	}{
 		{
-			name:     "existing-only",
+			name: "existing-only-rollout-restart-deployment",
+			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
+				Kind: "Deployment",
+			},
 			existing: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
@@ -197,7 +201,35 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:   "create-only",
+			name: "existing-only-rollout-restart-argo-rollout",
+			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
+				Kind: "argo.Rollout",
+			},
+			existing: 1,
+			expected: map[string]int{
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
+			},
+		},
+		{
+			name: "existing-only-rollout-restart-argo-rollout-v1alpha1",
+			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
+				Kind:       "argo.Rollout",
+				APIVersion: "argoproj.io/v1alpha1",
+			},
+			existing: 5,
+			expected: map[string]int{
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
+			},
+		},
+		{
+			name: "create-only-rollout-restart-deployment",
+			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
+				Kind: "Deployment",
+			},
 			create: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
@@ -206,7 +238,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:               "mixed",
+			name: "mixed-rollout-restart-deployment",
+			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
+				Kind: "Deployment",
+			},
 			create:             5,
 			createStatic:       5,
 			createNonRenewable: 5,
@@ -256,6 +291,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 					}
 				}
 			})
+
 			// pre-created secrets test
 			for idx := 0; idx < tt.existing; idx++ {
 				dest := fmt.Sprintf("%s-dest-exists-%d", tt.name, idx)
@@ -283,19 +319,20 @@ func TestVaultDynamicSecret(t *testing.T) {
 						},
 					},
 				}
-				depObj := createDeployment(t, ctx, crdClient,
-					ctrlclient.ObjectKey{
-						Namespace: outputs.K8sNamespace,
-						Name:      dest,
-					},
+				rolloutRestartObjKey := ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      dest,
+				}
+				rolloutRestartObj := createRolloutRestartObj(t, ctx, crdClient,
+					rolloutRestartObjKey,
+					tt.rolloutRestartTarget,
 				)
-				otherObjsCreated = append(otherObjsCreated, depObj)
 
+				otherObjsCreated = append(otherObjsCreated, rolloutRestartObj)
+
+				tt.rolloutRestartTarget.Name = rolloutRestartObjKey.Name
 				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
-					{
-						Kind: "Deployment",
-						Name: depObj.Name,
-					},
+					tt.rolloutRestartTarget,
 				}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
@@ -321,19 +358,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 						},
 					},
 				}
-				depObj := createDeployment(t, ctx, crdClient,
-					ctrlclient.ObjectKey{
-						Namespace: outputs.K8sNamespace,
-						Name:      dest,
-					},
+				rolloutRestartObjKey := ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      dest,
+				}
+				rolloutRestartObj := createRolloutRestartObj(t, ctx, crdClient,
+					rolloutRestartObjKey,
+					tt.rolloutRestartTarget,
 				)
-				otherObjsCreated = append(otherObjsCreated, depObj)
+				otherObjsCreated = append(otherObjsCreated, rolloutRestartObj)
 
+				tt.rolloutRestartTarget.Name = rolloutRestartObjKey.Name
 				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
-					{
-						Kind: "Deployment",
-						Name: depObj.Name,
-					},
+					tt.rolloutRestartTarget,
 				}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
@@ -688,6 +725,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 
 	// check that all rollout-restarts completed successfully
 	if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
+		fmt.Printf("=========before awaitRolloutRestarts")
 		awaitRolloutRestarts(t, ctx, client,
 			vdsObj, vdsObj.Spec.RolloutRestartTargets)
 	}

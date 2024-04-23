@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
@@ -133,6 +134,10 @@ func TestMain(m *testing.M) {
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+
+		// add schemes to support other rollout restart targets
+		utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
+
 		restConfig = *ctrl.GetConfigOrDie()
 
 		os.Setenv("VAULT_ADDR", vaultAddr)
@@ -686,6 +691,7 @@ func assertRolloutRestarts(
 
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
+	var restartAt time.Time
 	for _, target := range targets {
 		var tObj ctrlclient.Object
 		tObjKey := ctrlclient.ObjectKey{
@@ -693,6 +699,7 @@ func assertRolloutRestarts(
 			Name:      target.Name,
 		}
 		var annotations map[string]string
+		expectedAnnotation := helpers.AnnotationRestartedAt
 		switch target.Kind {
 		case "Deployment":
 			var o appsv1.Deployment
@@ -715,6 +722,23 @@ func assertRolloutRestarts(
 				tObj = &o
 			}
 			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
+		case "argo.Rollout":
+			var o argorolloutsv1alpha1.Rollout
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				tObj = &o
+			}
+
+			assert.Nil(t, o.Spec.RestartAt, "expected argo.rollout.spec.restartAt nil", o)
+
+			expectedAnnotation = "argo.rollout.status.restartedAt"
+			if o.Status.RestartedAt != nil {
+				annotations[expectedAnnotation] = o.Status.RestartedAt.Time.String()
+			} else {
+				errs = errors.Join(errs, fmt.Errorf("expected %q not nil when updated replicas are available",
+					expectedAnnotation))
+				continue
+			}
+			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -727,20 +751,20 @@ func assertRolloutRestarts(
 			continue
 		}
 
-		expectedAnnotation := helpers.AnnotationRestartedAt
 		val, ok := annotations[expectedAnnotation]
 		if !ok {
 			errs = errors.Join(errs, fmt.Errorf("expected annotation %q not present", expectedAnnotation))
 			continue
 		}
-
-		ts, err := time.Parse(time.RFC3339, val)
+		var err error
+		restartAt, err = time.Parse(time.RFC3339, val)
 		if !assert.NoError(t, err,
 			"invalid value for %q", expectedAnnotation) {
 			continue
 		}
-		assert.True(t, ts.Before(timeNow),
-			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
+
+		assert.True(t, restartAt.Before(timeNow),
+			"timestamp value %q for %q is in the future, now=%q", restartAt, expectedAnnotation, timeNow)
 
 		t.Logf("Status %#v for target %#v", s, target)
 		//if s.ReadyReplicas != *s.Replicas {
@@ -942,6 +966,79 @@ func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Clien
 	require.NoError(t, client.Create(ctx, depObj), "failed to create %#v", depObj)
 
 	return depObj
+}
+
+func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) *argorolloutsv1alpha1.Rollout {
+	t.Helper()
+
+	rolloutObj := &argorolloutsv1alpha1.Rollout{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+		},
+		Spec: argorolloutsv1alpha1.RolloutSpec{
+			Selector: &v1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": key.Name,
+				},
+			},
+			Replicas: pointer.Int32(2),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: v1.ObjectMeta{
+					Labels: map[string]string{
+						"app": key.Name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  key.Name,
+							Image: "busybox:latest",
+							Command: []string{
+								"sh", "-c", "while : ; do sleep 10; done",
+							},
+						},
+					},
+					TerminationGracePeriodSeconds: pointer.Int64(5),
+				},
+			},
+			Strategy: argorolloutsv1alpha1.RolloutStrategy{
+				Canary: &argorolloutsv1alpha1.CanaryStrategy{
+					Steps: []argorolloutsv1alpha1.CanaryStep{
+						{
+							SetWeight: pointer.Int32(50),
+						},
+						{
+							Pause: &argorolloutsv1alpha1.RolloutPause{
+								Duration: argorolloutsv1alpha1.DurationFromString("2s"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.NoError(t, client.Create(ctx, rolloutObj), "failed to create %#v", rolloutObj)
+	return rolloutObj
+}
+
+func createRolloutRestartObj(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey, target secretsv1beta1.RolloutRestartTarget) ctrlclient.Object {
+	t.Helper()
+
+	var rolloutRestartObj ctrlclient.Object
+	switch target.Kind {
+	case "Deployment":
+		rolloutRestartObj = createDeployment(t, ctx, client, key)
+	case "argo.Rollout":
+		switch target.APIVersion {
+		case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
+			rolloutRestartObj = createArgoRolloutV1alpha1(t, ctx, client, key)
+		}
+	}
+
+	require.NotNil(t, rolloutRestartObj, "failed create rollout-restart obj %#v", target)
+	return rolloutRestartObj
 }
 
 func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, client ctrlclient.Client,
