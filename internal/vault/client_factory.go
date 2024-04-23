@@ -686,8 +686,8 @@ func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 			m.callbackHandlerCh = make(chan Client)
 		}
 		defer func() {
-			m.callbackHandlerCh = nil
 			close(m.callbackHandlerCh)
+			m.callbackHandlerCh = nil
 		}()
 
 		for {
