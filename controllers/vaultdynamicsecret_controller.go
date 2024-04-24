@@ -12,22 +12,25 @@ import (
 	"maps"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -44,12 +47,9 @@ const (
 var (
 	staticCredsJitterHorizon = time.Second * 3
 	vdsJitterFactor          = 0.05
-	// vdsMaxClientCallbackDelayForJitter is used to compute jitter for the Vault
-	// client callback.
-	vdsMaxClientCallbackDelayForJitter = time.Second * 2
 )
 
-var _ SecretReconciler = &VaultDynamicSecretReconciler{}
+var _ reconcile.Reconciler = &VaultDynamicSecretReconciler{}
 
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
@@ -61,12 +61,14 @@ type VaultDynamicSecretReconciler struct {
 	SyncRegistry               *SyncRegistry
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
-	SyncController             SyncController
+	// sourceCh is used to trigger a requeue of resource instances from an
+	// external source. Should be set on a source.Channel in SetupWithManager.
+	// This channel should be closed when the controller is stopped.
+	SourceCh chan event.GenericEvent
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
 	runtimePodUID types.UID
-	once          sync.Once
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -90,18 +92,6 @@ type VaultDynamicSecretReconciler struct {
 // RolloutRestartTargets configured, then a request to "rollout restart"
 // the configured Deployment, StatefulSet, ReplicaSet will be made to Kubernetes.
 func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// delegate all secret sync handling to the SyncController
-	return r.SyncController.Sync(ctx,
-		SyncRequest{
-			Request: req,
-		},
-	)
-}
-
-// Sync is meant to be called from a SyncController. It can be called by callers
-// other than managing K8s controller, which only handles reconciliation of
-// modified custom resources.
-func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest SyncRequest) (ctrl.Result, error) {
 	if r.runtimePodUID == "" {
 		if val := os.Getenv("OPERATOR_POD_UID"); val != "" {
 			r.runtimePodUID = types.UID(val)
@@ -113,7 +103,6 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 		}
 	}
 
-	req := syncRequest.Request
 	logger := log.FromContext(ctx).WithValues("podUID", r.runtimePodUID)
 	o := &secretsv1beta1.VaultDynamicSecret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, o); err != nil {
@@ -309,6 +298,7 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 	}
 
 	r.SyncRegistry.Delete(req.NamespacedName)
+	logger.Info("Deleted from SyncRegistry", "obj", req.NamespacedName)
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -506,6 +496,8 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		},
 	)
 
+	// TODO: close this channel when the controller is stopped.
+	r.SourceCh = make(chan event.GenericEvent)
 	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
@@ -520,37 +512,20 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultDynamicSecret.String()),
 			},
 			builder.WithPredicates(&secretsPredicate{}),
+		).
+		WatchesRawSource(
+			&source.Channel{
+				Source: r.SourceCh,
+			},
+			&enqueueDelayingSyncEventHandler{
+				enqueueDurationForJitter: time.Second * 2,
+			},
 		)
 
 	if err := m.Complete(r); err != nil {
 		return err
 	}
 
-	syncController, err := NewSyncController(
-		SyncControllerOptions{
-			MaxConcurrentSyncs: opts.MaxConcurrentReconciles,
-			Name:               "VaultDynamicSecret",
-			Syncer:             r,
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	// syncController should be started after the controller is set up.
-	r.SyncController = syncController
-	return nil
-}
-
-// Start starts the SyncController in a goroutine. It is idempotent.
-func (r *VaultDynamicSecretReconciler) Start(ctx context.Context) error {
-	r.once.Do(func() {
-		go func() {
-			if err := r.SyncController.Start(ctx); err != nil {
-				log.FromContext(ctx).Error(err, "Failed to start the SyncController")
-			}
-		}()
-	})
 	return nil
 }
 
@@ -710,28 +685,28 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 		return
 	}
 
-	reqs := map[SyncRequest]empty{}
+	reqs := map[client.ObjectKey]empty{}
 	for _, o := range l.Items {
 		if o.Status.VaultClientMeta.CacheKey == cacheKey.String() {
-			_, delay := computeMaxJitterDuration(vdsMaxClientCallbackDelayForJitter)
-			req := SyncRequest{
-				Delay:        delay,
-				RequeueOnErr: true,
-				Request: reconcile.Request{
-					NamespacedName: types.NamespacedName{
+			evt := event.GenericEvent{
+				Object: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
 						Namespace: o.GetNamespace(),
 						Name:      o.GetName(),
 					},
 				},
 			}
-			if _, ok := reqs[req]; !ok {
-				reqs[req] = empty{}
-				logger.V(consts.LogLevelDebug).Info("Calling Sync()",
-					"request", req, "delay", delay)
-				r.SyncRegistry.Add(req.NamespacedName)
-				if _, err := r.SyncController.Sync(ctx, req); err != nil {
-					logger.Error(err, "Sync failed", "request", req)
-				}
+
+			objKey := client.ObjectKeyFromObject(evt.Object)
+			if _, ok := reqs[objKey]; !ok {
+				// deduplicating is probably not necessary, but we do it just in case.
+				reqs[objKey] = empty{}
+				logger.V(consts.LogLevelDebug).Info("Enqueuing VaultDynamicSecret instance",
+					"objKey", objKey)
+				r.SyncRegistry.Add(objKey)
+				logger.V(consts.LogLevelDebug).Info(
+					"Sending GenericEvent to the SourceCh", "evt", evt)
+				r.SourceCh <- evt
 			}
 		}
 	}

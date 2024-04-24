@@ -16,9 +16,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -1014,9 +1016,7 @@ func (p *stubCredentialProvider) GetNamespace() string {
 func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
 	builder := newClientBuilder()
-
 	// instances in the same namespace that should be included by the callback.
 	instances := []*secretsv1beta1.VaultDynamicSecret{
 		{
@@ -1059,7 +1059,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 		c         vault.Client
 		client    client.Client
 		create    int
-		want      []SyncRequest
+		want      []any
 		instances []*secretsv1beta1.VaultDynamicSecret
 	}{
 		{
@@ -1069,16 +1069,12 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 				cacheKey:           "kubernetes-12345",
 				credentialProvider: &stubCredentialProvider{namespace: "default"},
 			},
-			want: []SyncRequest{
-				{
-					Request: ctrl.Request{
-						NamespacedName: types.NamespacedName{
-							Name:      "baz",
-							Namespace: "default",
-						},
+			want: []any{
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      "baz",
+						Namespace: "default",
 					},
-					Delay:        0,
-					RequeueOnErr: true,
 				},
 			},
 		},
@@ -1096,45 +1092,51 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client:       builder.Build(),
 				SyncRegistry: syncRegistry,
+				SourceCh:     make(chan event.GenericEvent),
 			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(func() {
+				cancel()
+				close(r.SourceCh)
+			})
 
 			for _, o := range tt.instances {
 				require.NoError(t, r.Create(ctx, o))
 			}
 
-			syncer := &fakeSyncer{
-				requests: make(map[SyncRequest]int),
+			cs := &source.Channel{
+				Source: r.SourceCh,
 			}
 
-			r.SyncController = &defaultSyncController{
-				do:                 syncer,
-				maxConcurrentSyncs: 1,
-				queue: &DelegatingQueue{
-					Interface: workqueue.New(),
-				},
+			handler := &enqueueDelayingSyncEventHandler{
+				enqueueDurationForJitter: time.Second * 2,
 			}
 
-			syncCtx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			go func(ctx context.Context) {
-				_ = r.SyncController.Start(ctx)
-			}(syncCtx)
+			q := &DelegatingQueue{
+				Interface: workqueue.New(),
+			}
+
+			go func() {
+				err := cs.Start(ctx, handler, q)
+				require.NoError(t, err, "cs.Start")
+			}()
 
 			r.vaultClientCallback(ctx, tt.c)
 			assert.Eventuallyf(t, func() bool {
-				return syncer.count == len(tt.want)
-			}, vdsMaxClientCallbackDelayForJitter, time.Millisecond*100,
-				"expected %d syncs, got %d", len(tt.want), syncer.count)
+				return len(q.AddedAfter) == len(tt.want)
+			}, handler.enqueueDurationForJitter, time.Millisecond*100,
+				"expected %d syncs, got %d", len(tt.want), len(q.AddedAfter))
 
-			assert.Equalf(t, len(tt.want), len(syncer.requests),
-				"vaultClientCallback(%v, %v, %v)", ctx, tt.client, nil)
+			assert.ElementsMatchf(t, tt.want, q.AddedAfter,
+				"vaultClientCallback(%v, %v)", ctx, tt.client)
 
-			var reqs []SyncRequest
-			for req := range syncer.requests {
-				reqs = append(reqs, req)
+			for _, d := range q.AddedAfterDuration {
+				assert.Greater(t, d, time.Duration(0), "expected positive duration")
+				assert.LessOrEqual(t, d, handler.enqueueDurationForJitter,
+					"expected duration to be less than %s",
+					handler.enqueueDurationForJitter)
 			}
-			assert.ElementsMatchf(t, tt.want, reqs,
-				"vaultClientCallback(%v, %v, %v)", ctx, tt.client, nil)
 		})
 	}
 }

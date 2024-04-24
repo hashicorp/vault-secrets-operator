@@ -346,6 +346,11 @@ func main() {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
 	}
+	defer func() {
+		if vdsReconciler.SourceCh != nil {
+			close(vdsReconciler.SourceCh)
+		}
+	}()
 
 	if err = (&controllers.HCPAuthReconciler{
 		Client: mgr.GetClient(),
@@ -391,11 +396,6 @@ func main() {
 	)
 
 	mgr.GetCache()
-
-	if err := vdsReconciler.Start(ctx); err != nil {
-		setupLog.Error(err, "problem starting VDS controller")
-		os.Exit(1)
-	}
 
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
