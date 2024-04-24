@@ -695,7 +695,11 @@ func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 			case <-callbackCtx.Done():
 				logger.Info("Client callback handler done")
 				return
-			case c := <-m.callbackHandlerCh:
+			case c, stillOpen := <-m.callbackHandlerCh:
+				if !stillOpen {
+					logger.Info("Client callback handler channel closed")
+					return
+				}
 				if c.IsClone() {
 					continue
 				}
@@ -717,17 +721,18 @@ func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 					}
 				}
 
-				// call in a go routine to avoid blocking the channel
-				go func(c Client) {
-					for idx, cbReq := range m.clientCallbacks {
-						if cbReq.On != ClientCallbackOnLifetimeWatcherDone {
-							continue
-						}
-						logger.Info("Calling client callback on lifetime watcher done",
-							"index", idx, "cacheKey", cacheKey, "clientID", c.ID())
-						cbReq.Callback(ctx, c)
+				for idx, cbReq := range m.clientCallbacks {
+					if cbReq.On != ClientCallbackOnLifetimeWatcherDone {
+						continue
 					}
-				}(c)
+
+					logger.Info("Calling client callback on lifetime watcher done",
+						"index", idx, "cacheKey", cacheKey, "clientID", c.ID())
+					// call in a go routine to avoid blocking the channel
+					go func(cbReq ClientCallbackHandler) {
+						cbReq.Callback(ctx, c)
+					}(cbReq)
+				}
 			}
 		}
 	}()
