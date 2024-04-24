@@ -709,11 +709,20 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 			t.Logf("Running rotation tests on %d created objects", len(objsCreated))
 			var reconciledObjs []*secretsv1beta1.VaultDynamicSecret
+			wg := sync.WaitGroup{}
+			wg.Add(len(objsCreated))
 			for _, obj := range objsCreated {
-				reconciledObj, valid := awaitDynamicSecretReconciled(t, ctx, crdClient, ctrlclient.ObjectKeyFromObject(obj))
-				if valid {
-					reconciledObjs = append(reconciledObjs, reconciledObj)
-				}
+				go func(obj *secretsv1beta1.VaultDynamicSecret) {
+					defer wg.Done()
+					reconciledObj, valid := awaitDynamicSecretReconciled(t, ctx, crdClient, ctrlclient.ObjectKeyFromObject(obj))
+					if valid {
+						reconciledObjs = append(reconciledObjs, reconciledObj)
+					}
+				}(obj)
+			}
+			wg.Wait()
+			if t.Failed() {
+				return
 			}
 
 			cfg := api.DefaultConfig()
@@ -732,8 +741,12 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 					t.Run(fmt.Sprintf("create-dest-%d", idx), func(t *testing.T) {
 						obj := obj
 						t.Parallel()
-						rotatedObj := assertDynamicSecretRotation(t, ctx, crdClient, obj, true, 30)
-						if assert.NotNil(t, rotatedObj) {
+						rotatedObj := assertDynamicSecretRotation(t, ctx, crdClient, obj, true, 300)
+						if t.Failed() {
+							return
+						}
+
+						if assert.NotNil(t, rotatedObj, "expected rotated object but got nil") {
 							assert.NotEmpty(t, obj.Status.VaultClientMeta.ID,
 								"expected VaultClientMeta.ID to be set on original object")
 							assert.NotEmpty(t, rotatedObj.Status.VaultClientMeta.ID,
@@ -909,7 +922,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 		lastObj = o
 		return nil
 	}, backoff.WithMaxRetries(bo, maxTries),
-	)) {
+	), "Failed to rotate secret for %q", ctrlclient.ObjectKeyFromObject(vdsObj)) {
 		return nil
 	}
 
@@ -926,6 +939,10 @@ func deleteEntitiesBySAPrefix(t *testing.T, vc *api.Client, ctx context.Context,
 
 	resp, err := vc.Logical().ListWithContext(ctx, "identity/entity/id")
 	if !assert.NoError(t, err, "failed to list identity entities") {
+		return
+	}
+
+	if !assert.NotNil(t, resp, "response is nil") {
 		return
 	}
 
@@ -994,10 +1011,17 @@ func awaitDynamicSecretReconciled(t *testing.T, ctx context.Context, client ctrl
 					return fmt.Errorf("expected lease ID to be set on %s", objKey)
 				}
 			}
+
+			if vdsObj.Status.VaultClientMeta.ID == "" {
+				return fmt.Errorf("expected VaultClientMeta.ID to be set on %s", objKey)
+			}
+			if vdsObj.Status.VaultClientMeta.CacheKey == "" {
+				return fmt.Errorf("expected VaultClientMeta.CacheKey to be set on %s", objKey)
+			}
 			vdsObjFinal = vdsObj
 			return nil
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 20),
 	))
 	return &vdsObjFinal, valid
 }

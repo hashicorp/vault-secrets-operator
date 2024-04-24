@@ -670,15 +670,15 @@ func (m *cachingClientFactory) incrementRequestCounter(operation string, err err
 }
 
 func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
-	logger := m.logger.WithName("clientCallbackHandler")
 	if m.callbackHandlerCancel != nil {
-		logger.Info("Already started")
+		m.logger.Info("Already started")
 		return
 	}
 
 	callbackCtx, cancel := context.WithCancel(ctx)
 	m.callbackHandlerCancel = cancel
 
+	logger := log.FromContext(ctx).WithName("clientCallbackHandler")
 	logger.Info("Starting client callback handler")
 
 	go func() {
