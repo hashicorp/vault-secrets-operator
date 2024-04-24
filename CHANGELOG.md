@@ -13,21 +13,16 @@ Build:
 * OLM: remove the `skips` from the last release: [GH-703](https://github.com/hashicorp/vault-secrets-operator/pull/703)
  
 Dependency Updates:
-* Bump github.com/onsi/gomega from 1.32.0 to 1.33.0: [GH-696](https://github.com/hashicorp/vault-secrets-operator/pull/696)
-* Bump sigs.k8s.io/controller-runtime from 0.17.2 to 0.17.3: [GH-688](https://github.com/hashicorp/vault-secrets-operator/pull/688)
-* Bump github.com/hashicorp/vault/sdk from 0.11.1 to 0.12.0: [GH-687](https://github.com/hashicorp/vault-secrets-operator/pull/687)
-* Bump github.com/hashicorp/go-hclog from 1.6.2 to 1.6.3: [GH-679](https://github.com/hashicorp/vault-secrets-operator/pull/679)
-* Bump github.com/prometheus/client_model from 0.6.0 to 0.6.1: [GH-678](https://github.com/hashicorp/vault-secrets-operator/pull/678)
 * Bump github.com/cenkalti/backoff/v4 from 4.2.1 to 4.3.0: [GH-673](https://github.com/hashicorp/vault-secrets-operator/pull/673)
-* Bump google.golang.org/api from 0.171.0 to 0.172.0: [GH-672](https://github.com/hashicorp/vault-secrets-operator/pull/672)
 * Bump github.com/gruntwork-io/terratest from 0.46.11 to 0.46.13: [GH-669](https://github.com/hashicorp/vault-secrets-operator/pull/669)
-* Bump google.golang.org/api from 0.170.0 to 0.171.0: [GH-668](https://github.com/hashicorp/vault-secrets-operator/pull/668)
+* Bump github.com/hashicorp/go-hclog from 1.6.2 to 1.6.3: [GH-679](https://github.com/hashicorp/vault-secrets-operator/pull/679)
 * Bump github.com/hashicorp/vault/api from 1.12.1 to 1.12.2: [GH-667](https://github.com/hashicorp/vault-secrets-operator/pull/667)
-* Bump github.com/onsi/gomega from 1.31.1 to 1.32.0: [GH-666](https://github.com/hashicorp/vault-secrets-operator/pull/666)
-* Bump google.golang.org/api from 0.169.0 to 0.170.0: [GH-664](https://github.com/hashicorp/vault-secrets-operator/pull/664)
-* Bump github.com/hashicorp/vault/api from 1.12.0 to 1.12.1: [GH-662](https://github.com/hashicorp/vault-secrets-operator/pull/662)
-* Bump github.com/hashicorp/vault/sdk from 0.11.0 to 0.11.1: [GH-661](https://github.com/hashicorp/vault-secrets-operator/pull/661)
+* Bump github.com/hashicorp/vault/sdk from 0.11.1 to 0.12.0: [GH-687](https://github.com/hashicorp/vault-secrets-operator/pull/687)
+* Bump github.com/onsi/gomega from 1.32.0 to 1.33.0: [GH-696](https://github.com/hashicorp/vault-secrets-operator/pull/696)
+* Bump github.com/prometheus/client_model from 0.6.0 to 0.6.1: [GH-678](https://github.com/hashicorp/vault-secrets-operator/pull/678)
+* Bump google.golang.org/api from 0.171.0 to 0.172.0: [GH-672](https://github.com/hashicorp/vault-secrets-operator/pull/672)
 * Bump k8s.io/client-go from 0.29.2 to 0.29.3: [GH-660](https://github.com/hashicorp/vault-secrets-operator/pull/660)
+* Bump sigs.k8s.io/controller-runtime from 0.17.2 to 0.17.3: [GH-688](https://github.com/hashicorp/vault-secrets-operator/pull/688)
 
 ## 0.5.2 (March 13th, 2024)
 
