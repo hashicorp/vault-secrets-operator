@@ -91,13 +91,6 @@ type ClientCacheStorageRestoreRequest struct {
 	NoPruneOnError bool
 }
 
-type ClientCacheStorageRestoreAllRequest struct {
-	DecryptionClient    Client
-	DecryptionVaultAuth *secretsv1beta1.VaultAuth
-	// NoPruneOnError preserves the storage entry on restoration error.
-	NoPruneOnError bool
-}
-
 // clientCacheStorageEntry represents a single Vault Client.
 // It contains the context needed to restore a Client to its original state.
 type clientCacheStorageEntry struct {
@@ -151,7 +144,6 @@ var _ ClientCacheStorage = (*defaultClientCacheStorage)(nil)
 type ClientCacheStorage interface {
 	Store(context.Context, ctrlclient.Client, ClientCacheStorageStoreRequest) (*corev1.Secret, error)
 	Restore(context.Context, ctrlclient.Client, ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error)
-	RestoreAll(context.Context, ctrlclient.Client, ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error)
 	Prune(context.Context, ctrlclient.Client, ClientCacheStoragePruneRequest) (int, error)
 	Purge(context.Context, ctrlclient.Client) error
 	Len(context.Context, ctrlclient.Client) (int, error)
@@ -516,44 +508,6 @@ func (c *defaultClientCacheStorage) Purge(ctx context.Context, client ctrlclient
 
 	err = client.DeleteAllOf(ctx, &corev1.Secret{}, c.deleteAllOfOptions()...)
 	return err
-}
-
-func (c *defaultClientCacheStorage) RestoreAll(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreAllRequest) ([]*clientCacheStorageEntry, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	var errs error
-	defer func() {
-		c.incrementRequestCounter(metrics.OperationRestoreAll, errs)
-	}()
-
-	found, err := c.listSecrets(ctx, client, c.listOptions()...)
-	if err != nil {
-		errs = errors.Join(err)
-		return nil, errs
-	}
-
-	var result []*clientCacheStorageEntry
-	for _, s := range found {
-		cacheKey := ClientCacheKey(s.Labels[labelCacheKey])
-		req := ClientCacheStorageRestoreRequest{
-			SecretObjKey:        ctrlclient.ObjectKeyFromObject(&s),
-			CacheKey:            cacheKey,
-			DecryptionClient:    req.DecryptionClient,
-			DecryptionVaultAuth: req.DecryptionVaultAuth,
-			NoPruneOnError:      req.NoPruneOnError,
-		}
-
-		entry, err := c.restore(ctx, client, req, &s)
-		if err != nil {
-			errs = errors.Join(errs, err)
-			continue
-		}
-
-		result = append(result, entry)
-	}
-
-	return result, errs
 }
 
 func (c *defaultClientCacheStorage) validateSecretMAC(req ClientCacheStorageRestoreRequest, s *corev1.Secret) error {
