@@ -71,10 +71,15 @@ resource "vault_kubernetes_auth_backend_config" "dev" {
 }
 
 resource "vault_kubernetes_auth_backend_role" "dev" {
-  namespace                        = vault_auth_backend.default.namespace
-  backend                          = vault_kubernetes_auth_backend_config.dev.backend
-  role_name                        = local.auth_role
-  bound_service_account_names      = ["default"]
+  namespace         = vault_auth_backend.default.namespace
+  backend           = vault_kubernetes_auth_backend_config.dev.backend
+  role_name         = local.auth_role
+  alias_name_source = "serviceaccount_name"
+  bound_service_account_names = [
+    "default",
+    # used by some tests that create their own service accounts
+    "sa-*",
+  ]
   bound_service_account_namespaces = [kubernetes_namespace.dev.metadata[0].name]
   token_period                     = var.vault_token_period
   token_policies = [

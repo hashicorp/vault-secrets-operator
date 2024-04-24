@@ -112,3 +112,13 @@ type Template struct {
 	// Refer to https://pkg.go.dev/text/template for more information.
 	Text string `json:"text"`
 }
+
+// VaultClientMeta defines the observed state of the last Vault Client used to
+// sync the secret. This status is used during resource reconciliation.
+type VaultClientMeta struct {
+	// CacheKey is the unique key used to identify the client cache.
+	CacheKey string `json:"cacheKey,omitempty"`
+	// ID is the Vault ID of the authenticated client. The ID should never contain
+	// any sensitive information.
+	ID string `json:"id,omitempty"`
+}

@@ -48,9 +48,16 @@ resource "null_resource" "create-pg-user" {
   }
   provisioner "local-exec" {
     command = <<EOT
-kubectl exec -n ${self.triggers.namespace} ${self.triggers.pod} -- \
-psql postgresql://postgres:${self.triggers.password}@127.0.0.1:5432/postgres \
--c 'CREATE ROLE "${local.db_role_static_user}"'
+tries=0
+until [ $tries -ge 60 ]
+do
+  kubectl exec -n ${self.triggers.namespace} ${self.triggers.pod} -- \
+  psql postgresql://postgres:${self.triggers.password}@127.0.0.1:5432/postgres \
+  -c 'CREATE ROLE "${local.db_role_static_user}"' && exit 0
+  ((++tries))
+  sleep .5
+done
+exit 1
 EOT
   }
 }
