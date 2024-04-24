@@ -162,6 +162,9 @@ func (r *VaultDynamicSecretReconciler) Sync(ctx context.Context, syncRequest Syn
 	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,
 	switch {
+	// indicates that the resource has not been synced yet.
+	case o.Status.LastGeneration == 0:
+		syncReason = "initial sync"
 	// indicates that the resource has been added to the SyncRegistry
 	// and must be synced.
 	case r.SyncRegistry.Has(req.NamespacedName):
