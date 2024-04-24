@@ -400,27 +400,36 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *s
 			}
 		}
 		tlsFieldsCheck, err := checkTLSFields(destSecret)
-		if vpsObj.Spec.Destination.Type == corev1.SecretTypeTLS {
-			assert.True(t, tlsFieldsCheck)
-			assert.NoError(t, err)
-		} else {
-			assert.False(t, tlsFieldsCheck)
-			assert.Error(t, err)
+		if assert.NoError(t, err) {
+			if vpsObj.Spec.Destination.Type == corev1.SecretTypeTLS {
+				assert.True(t, tlsFieldsCheck)
+			} else {
+				assert.False(t, tlsFieldsCheck)
+			}
+
+			if t.Failed() {
+				return "", nil
+			}
 		}
 
-		pem, rest := pem.Decode(destSecret.Data["certificate"])
-		assert.Empty(t, rest)
-		cert, err := x509.ParseCertificate(pem.Bytes)
-		require.NoError(t, err)
-		if cert.Subject.CommonName != vpsObj.Spec.CommonName {
-			return "", fmt.Errorf("subject common name %q does not match expected %q",
-				cert.Subject.CommonName, vpsObj.Spec.CommonName)
-		}
-		if cert.SerialNumber.String() == previousSerialNumber {
-			return "", fmt.Errorf("serial number %q still matches previous serial number %q", cert.SerialNumber, previousSerialNumber)
+		p, remaining := pem.Decode(destSecret.Data["certificate"])
+		if assert.Empty(t, remaining) {
+			cert, err := x509.ParseCertificate(p.Bytes)
+			if assert.NoError(t, err) {
+				if cert.Subject.CommonName != vpsObj.Spec.CommonName {
+					return "", fmt.Errorf("subject common name %q does not match expected %q",
+						cert.Subject.CommonName, vpsObj.Spec.CommonName)
+				}
+				if cert.SerialNumber.String() == previousSerialNumber {
+					return "", fmt.Errorf("serial number %q still matches previous serial number %q",
+						cert.SerialNumber, previousSerialNumber)
+				}
+				return cert.SerialNumber.String(), nil
+			}
 		}
 
-		return cert.SerialNumber.String(), nil
+		// failed
+		return "", nil
 	})
 
 	return newSerialNumber, destSecret, err
