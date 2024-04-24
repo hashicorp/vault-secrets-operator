@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/blake2b"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -801,6 +802,64 @@ func Test_defaultClient_Close(t *testing.T) {
 
 			assert.True(t, c.closed)
 			assert.NotNil(t, c.client)
+		})
+	}
+}
+
+func Test_defaultClient_hashAccessor(t *testing.T) {
+	accessor := "3cb18a45-eb9e-0ed8-149b-ae4f83808925"
+	want := fmt.Sprintf("%x", blake2b.Sum256([]byte(accessor)))
+	tests := []struct {
+		name       string
+		authSecret *api.Secret
+		want       string
+		wantErr    assert.ErrorAssertionFunc
+	}{
+		{
+			name: "valid",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					Accessor: accessor,
+				},
+			},
+			want:    want,
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "nil-authSecret",
+			want:    "",
+			wantErr: assert.NoError,
+		},
+		{
+			name:       "nil-authSecret-auth",
+			authSecret: &api.Secret{},
+			wantErr:    assert.NoError,
+		},
+		{
+			name: "invalid-accessor-format",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{},
+				Data: map[string]interface{}{
+					"accessor": 1,
+				},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "token found but in the wrong format", i...)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				authSecret: tt.authSecret,
+				id:         want,
+			}
+
+			got, err := c.hashAccessor()
+			if !tt.wantErr(t, err, fmt.Sprintf("hashAccessor()")) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "hashAccessor()")
 		})
 	}
 }

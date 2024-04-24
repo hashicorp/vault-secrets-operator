@@ -50,6 +50,11 @@ func HandleRolloutRestarts(ctx context.Context, client ctrlclient.Client, obj ct
 			"Rollout restart impossible (please report this bug): err=%s", err)
 		return err
 	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
 	var errs error
 	for _, target := range targets {
 		if err := RolloutRestart(ctx, obj.GetNamespace(), target, client); err != nil {
