@@ -102,7 +102,7 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.5.2
+      tag: 0.6.0
 
     # Global secret transformation options. In addition to the boolean options
     # below, these options may be set via the
