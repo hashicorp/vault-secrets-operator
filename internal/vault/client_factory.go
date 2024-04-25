@@ -27,9 +27,27 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
+// ClientCallbackOn is an enumeration of possible client callback events.
+type ClientCallbackOn int
+
 const (
-	NamePrefixVCC = "vso-cc-"
+	// ClientCallbackOnLifetimeWatcherDone is a ClientCallbackOn that handles client
+	// lifetime watcher done events.
+	ClientCallbackOnLifetimeWatcherDone ClientCallbackOn = iota
+	NamePrefixVCC                                        = "vso-cc-"
 )
+
+// ClientCallback is a function type that takes a context, a Client, and an error as parameters.
+// It is used in the context of a ClientCallbackHandler.
+type ClientCallback func(ctx context.Context, c Client)
+
+// ClientCallbackHandler is a struct that contains a ClientCallbackOn enumeration
+// and a ClientCallback function. It is used to register event handlers for
+// specific events in the lifecycle of a Client.
+type ClientCallbackHandler struct {
+	On       ClientCallbackOn
+	Callback ClientCallback
+}
 
 type ClientFactoryDisabledError struct{}
 
@@ -39,6 +57,7 @@ func (e *ClientFactoryDisabledError) Error() string {
 
 type ClientFactory interface {
 	Get(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
+	RegisterClientCallbackHandler(ClientCallbackHandler)
 }
 
 // clientCacheObjectFilterFunc provides a way to selectively prune  CachingClientFactory's Client cache.
@@ -52,8 +71,9 @@ type CachingClientFactoryPruneRequest struct {
 type CachingClientFactory interface {
 	ClientFactory
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
-	RestoreAll(context.Context, ctrlclient.Client) error
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
+	Start(context.Context)
+	Stop()
 	ShutDown(CachingClientFactoryShutDownRequest)
 }
 
@@ -73,7 +93,41 @@ type cachingClientFactory struct {
 	requestErrorCounterVec *prometheus.CounterVec
 	revokeOnEvict          bool
 	pruneStorageOnEvict    bool
+	ctrlClient             ctrlclient.Client
+	clientCallbacks        []ClientCallbackHandler
+	callbackHandlerCh      chan Client
 	mu                     sync.RWMutex
+	onceDoWatcher          sync.Once
+	callbackHandlerCancel  context.CancelFunc
+}
+
+// Start method for cachingClientFactory starts the lifetime watcher handler.
+func (m *cachingClientFactory) Start(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onceDoWatcher.Do(func() {
+		m.startClientCallbackHandler(ctx)
+	})
+}
+
+// Stop method for cachingClientFactory stops the lifetime watcher handler.
+func (m *cachingClientFactory) Stop() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.callbackHandlerCancel != nil {
+		m.callbackHandlerCancel()
+	}
+}
+
+// RegisterClientCallbackHandler registers a ClientCallbackHandler with the
+// cachingClientFactory. The ClientCallbackHandler will be called when the
+// specified event occurs. There is no duplication detection, so the same handler
+// can be registered multiple times. The caller is responsible for ensuring that
+// there are no duplicates.
+func (m *cachingClientFactory) RegisterClientCallbackHandler(cb ClientCallbackHandler) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clientCallbacks = append(m.clientCallbacks, cb)
 }
 
 // Prune the storage for the requesting object and CachingClientFactoryPruneRequest.
@@ -184,67 +238,6 @@ func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Cl
 	return m.restoreClientFromCacheKey(ctx, client, cacheKey)
 }
 
-// RestoreAll will attempt to restore all Client from storage. If storage is not enabled then no restoration will take place.
-// Normally this should be called before the controller-manager has started reconciling any of its Custom Resources.
-// Strict error checking is not necessary for the caller,
-// since future calls to GetClient will ensure that the new storage entries will be created upon request
-// from one of the supported Vault*Secret types. If any error is encountered, the clientCacheStorageEntry will be treated as suspect
-// and pruned from the storage cache.
-func (m *cachingClientFactory) RestoreAll(ctx context.Context, client ctrlclient.Client) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if !m.persist || m.storage == nil {
-		return nil
-	}
-
-	startTS := time.Now()
-	var errs error
-	defer func() {
-		m.incrementRequestCounter(metrics.OperationRestoreAll, errs)
-		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationRestoreAll).Observe(
-			time.Since(startTS).Seconds(),
-		)
-	}()
-	req, err := m.restoreAllRequest(ctx, client)
-	if err != nil {
-		errs = err
-		return errs
-	}
-
-	entries, err := m.storage.RestoreAll(ctx, client, req)
-	if err != nil {
-		m.logger.Error(err, "RestoreAll failed from storage")
-		errs = err
-		return errs
-	}
-	if len(entries) == 0 {
-		return nil
-	}
-
-	pruneIt := func(entry *clientCacheStorageEntry) {
-		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {
-			m.logger.Error(err, "Failed to prune invalid storage entry", "cacheKey", entry.CacheKey)
-			errs = errors.Join(errs, err)
-		}
-	}
-	// this is a bit challenging, since we really only want to restore Clients that are actually needed by any of the Vault*Secret types.
-	m.logger.Info("Restoring all Clients from storage", "numEntries", len(entries))
-	for _, entry := range entries {
-		m.logger.Info("Restoring", "cacheKey", entry.CacheKey)
-		_, err := m.restoreClient(ctx, client, entry)
-		if err != nil {
-			m.logger.Error(err, "Restore failed", "cacheKey", entry.CacheKey)
-			errs = errors.Join(errs, err)
-			pruneIt(entry)
-			continue
-		}
-
-		m.logger.Info("Successfully restored the Client", "cacheKey", entry.CacheKey)
-	}
-	return errs
-}
-
 // ShutDown will attempt to revoke all Client tokens in memory.
 // This should be called upon operator deployment deletion if client cache cleanup is required.
 func (m *cachingClientFactory) ShutDown(req CachingClientFactoryShutDownRequest) {
@@ -274,8 +267,6 @@ func (m *cachingClientFactory) storageEnabled() bool {
 }
 
 func (m *cachingClientFactory) isDisabled() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return m.shutDown
 }
 
@@ -287,9 +278,17 @@ func (m *cachingClientFactory) isDisabled() bool {
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (Client, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.isDisabled() {
+		return nil, &ClientFactoryDisabledError{}
+	}
+
 	logger := log.FromContext(ctx).WithName("cachingClientFactory")
 	logger.V(consts.LogLevelDebug).Info("Cache info", "length", m.cache.Len())
 	startTS := time.Now()
+	var err error
+	var cacheKey ClientCacheKey
 	var errs error
 	defer func() {
 		m.incrementRequestCounter(metrics.OperationGet, errs)
@@ -298,12 +297,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		)
 	}()
 
-	if m.isDisabled() {
-		errs = errors.Join(&ClientFactoryDisabledError{})
-		return nil, errs
-	}
-
-	cacheKey, err := ComputeClientCacheKeyFromObj(ctx, client, obj)
+	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj)
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
@@ -339,7 +333,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 
 			logger.Info("Cloned Client",
 				"namespace", ns, "cacheKeyClone", cacheKeyClone)
-			if _, err := m.cacheClient(clone); err != nil {
+			if _, err := m.cacheClient(ctx, clone, false); err != nil {
 				return nil, err
 			}
 
@@ -352,16 +346,20 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	c, ok := m.cache.Get(cacheKey)
 	if ok {
 		// return the Client from the cache if it is still Valid
-		if err := c.Validate(); err == nil {
+		logger.V(consts.LogLevelTrace).Info("Got client from cache", "clientID", c.ID())
+		err := c.Validate()
+		if err == nil {
 			return namespacedClient(c)
 		}
 
+		logger.V(consts.LogLevelDebug).Error(err, "Invalid client")
+
 		// remove the parent Client from the cache in order to prune any of its clones.
 		m.cache.Remove(cacheKey)
+	} else {
+		logger.V(consts.LogLevelTrace).Info("Client not found in cache", "cacheKey", fmt.Sprintf("%#v", cacheKey))
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if !ok && m.storageEnabled() {
 		// try and restore from Client storage cache, if properly configured to do so.
 		restored, err := m.restoreClientFromCacheKey(ctx, client, cacheKey)
@@ -375,24 +373,22 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
-	c, err = NewClientWithLogin(ctx, client, obj, nil)
+	c, err = NewClientWithLogin(ctx, client, obj, m.clientOptions())
 	if err != nil {
 		logger.Error(err, "Failed to get NewClientWithLogin")
 		errs = errors.Join(err)
 		return nil, errs
+
 	}
 
+	logger.V(consts.LogLevelTrace).Info("New client created",
+		"cacheKey", cacheKey, "clientID", c.ID())
 	// cache the parent Client for future requests.
-	cacheKey, err = m.cacheClient(c)
+	cacheKey, err = m.cacheClient(ctx, c, m.storageEnabled())
 	if err != nil {
 		errs = errors.Join(err)
 		return nil, errs
-	}
 
-	if m.storageEnabled() {
-		if err := m.storeClient(ctx, client, c); err != nil {
-			logger.Error(err, "Failed to store the client")
-		}
 	}
 
 	c, err = namespacedClient(c)
@@ -413,7 +409,6 @@ func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclien
 		return fmt.Errorf("storing impossible, storage is not enabled")
 	}
 
-	// TODO: move transit config to VaultAuth
 	req := ClientCacheStorageStoreRequest{
 		Client: c,
 	}
@@ -473,7 +468,7 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 		return nil, fmt.Errorf("restoration impossible, storage is not enabled")
 	}
 
-	c, err := NewClientFromStorageEntry(ctx, client, entry, nil)
+	c, err := NewClientFromStorageEntry(ctx, client, entry, m.clientOptions())
 	if err != nil {
 		// remove the Client storage entry if its restoration failed for any reason
 		if _, err := m.pruneStorage(ctx, client, entry.CacheKey); err != nil {
@@ -483,26 +478,58 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 		return nil, err
 	}
 
-	if _, err := m.cacheClient(c); err != nil {
+	if _, err := m.cacheClient(ctx, c, false); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
+func (m *cachingClientFactory) clientOptions() *ClientOptions {
+	return &ClientOptions{
+		WatcherDoneCh: m.callbackHandlerCh,
+	}
+}
+
 // cacheClient to the global in-memory cache.
-func (m *cachingClientFactory) cacheClient(c Client) (ClientCacheKey, error) {
+func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persist bool) (ClientCacheKey, error) {
 	var errs error
 	cacheKey, err := c.GetCacheKey()
 	if err != nil {
 		return "", err
 	}
 
+	logger := log.FromContext(ctx).WithValues("cacheKey", cacheKey, "isClone", c.IsClone())
+	if _, ok := m.cache.Get(cacheKey); ok {
+		logger.V(consts.LogLevelDebug).Info("Client already cached, removing it", "cacheKey", cacheKey)
+		// removal ensures that the eviction handler is called, this should mitigate any
+		// potential go routine leaks on the lifetime watcher.
+		m.cache.Remove(cacheKey)
+	}
+
 	if _, err := m.cache.Add(c); err != nil {
-		m.logger.Error(err, "Failed to added to the cache", "client", c)
+		logger.Error(err, "Failed to add client to the cache")
 		return "", errs
 	}
-	m.logger.V(consts.LogLevelDebug).Info("Cached the client", "cacheKey", cacheKey, "isClone", c.IsClone())
+	logger.V(consts.LogLevelTrace).Info("Cached the client")
+
+	if cacheKey == m.clientCacheKeyEncrypt {
+		// added protection against persisting the Vault client used for storage
+		// data encryption.
+		logger.Info("Warning: refusing to store the encryption client")
+		persist = false
+	}
+
+	if m.storageEnabled() {
+		if persist {
+			if err := m.storeClient(ctx, m.ctrlClient, c); err != nil {
+				logger.Info("Warning: failed to store the client",
+					"error", err)
+			}
+		}
+	} else if persist {
+		logger.Info("Warning: persistence requested but storage not enabled")
+	}
 
 	return cacheKey, nil
 }
@@ -511,10 +538,10 @@ func (m *cachingClientFactory) cacheClient(c Client) (ClientCacheKey, error) {
 // The result is cached in the ClientCache for future needs. This should only ever be need if the ClientCacheStorage
 // has enforceEncryption enabled.
 func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
-	m.logger.Info("Setting up Vault Client for storage encryption",
-		"cacheKey", m.clientCacheKeyEncrypt)
 	cached := m.clientCacheKeyEncrypt != ""
 	if !cached {
+		m.logger.Info("Setting up Vault Client for storage encryption",
+			"cacheKey", m.clientCacheKeyEncrypt)
 		encryptionVaultAuth, err := common.FindVaultAuthForStorageEncryption(ctx, client)
 		if err != nil {
 			return nil, err
@@ -527,7 +554,7 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 		}
 
 		// cache the new Client for future requests.
-		cacheKey, err := m.cacheClient(vc)
+		cacheKey, err := m.cacheClient(ctx, vc, false)
 		if err != nil {
 			return nil, err
 		}
@@ -558,26 +585,81 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 	return c, nil
 }
 
-func (m *cachingClientFactory) restoreAllRequest(ctx context.Context, client ctrlclient.Client) (ClientCacheStorageRestoreAllRequest, error) {
-	req := ClientCacheStorageRestoreAllRequest{}
-	if m.encryptionRequired {
-		c, err := m.storageEncryptionClient(ctx, client)
-		if err != nil {
-			return req, err
-		}
-		req.DecryptionVaultAuth = c.GetVaultAuthObj()
-		req.DecryptionClient = c
+func (m *cachingClientFactory) incrementRequestCounter(operation string, err error) {
+	if err != nil {
+		m.requestErrorCounterVec.WithLabelValues(operation).Inc()
+	} else {
+		m.requestCounterVec.WithLabelValues(operation).Inc()
 	}
-
-	return req, nil
 }
 
-func (c *cachingClientFactory) incrementRequestCounter(operation string, err error) {
-	if err != nil {
-		c.requestErrorCounterVec.WithLabelValues(operation).Inc()
-	} else {
-		c.requestCounterVec.WithLabelValues(operation).Inc()
+func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
+	if m.callbackHandlerCancel != nil {
+		m.logger.Info("Already started")
+		return
 	}
+
+	callbackCtx, cancel := context.WithCancel(ctx)
+	m.callbackHandlerCancel = cancel
+
+	logger := log.FromContext(ctx).WithName("clientCallbackHandler")
+	logger.Info("Starting client callback handler")
+
+	go func() {
+		if m.callbackHandlerCh == nil {
+			m.callbackHandlerCh = make(chan Client)
+		}
+		defer func() {
+			close(m.callbackHandlerCh)
+			m.callbackHandlerCh = nil
+		}()
+
+		for {
+			select {
+			case <-callbackCtx.Done():
+				logger.Info("Client callback handler done")
+				return
+			case c, stillOpen := <-m.callbackHandlerCh:
+				if !stillOpen {
+					logger.Info("Client callback handler channel closed")
+					return
+				}
+				if c.IsClone() {
+					continue
+				}
+
+				cacheKey, err := c.GetCacheKey()
+				if err != nil {
+					logger.Error(err, "Invalid client, client callbacks not executed",
+						"cacheKey", cacheKey)
+					continue
+				}
+
+				// remove the client from the cache, it will be recreated when a reconciler
+				// requests it.
+				logger.V(consts.LogLevelDebug).Info("Removing client from cache", "cacheKey", cacheKey)
+				m.cache.Remove(cacheKey)
+				if m.storageEnabled() {
+					if _, err := m.pruneStorage(ctx, m.ctrlClient, cacheKey); err != nil {
+						logger.Info("Warning: failed to prune storage", "cacheKey", cacheKey)
+					}
+				}
+
+				for idx, cbReq := range m.clientCallbacks {
+					if cbReq.On != ClientCallbackOnLifetimeWatcherDone {
+						continue
+					}
+
+					logger.Info("Calling client callback on lifetime watcher done",
+						"index", idx, "cacheKey", cacheKey, "clientID", c.ID())
+					// call in a go routine to avoid blocking the channel
+					go func(cbReq ClientCallbackHandler) {
+						cbReq.Callback(ctx, c)
+					}(cbReq)
+				}
+			}
+		}
+	}()
 }
 
 // NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
@@ -588,6 +670,8 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		storage:            cacheStorage,
 		recorder:           config.Recorder,
 		persist:            config.Persist,
+		ctrlClient:         client,
+		callbackHandlerCh:  make(chan Client),
 		encryptionRequired: config.StorageConfig.EnforceEncryption,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
@@ -638,6 +722,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 	}
 
 	factory.cache = cache
+	factory.Start(ctx)
 	return factory, nil
 }
 
@@ -693,14 +778,6 @@ func InitCachingClientFactory(ctx context.Context, client ctrlclient.Client, con
 	clientCacheFactory, err := NewCachingClientFactory(ctx, client, clientCacheStorage, config)
 	if err != nil {
 		return nil, err
-	}
-
-	if config.Persist {
-		// restore all clients from the storage cache. This should be done prior to the controller-manager starting up,
-		// since we want the ClientCache fully populated before any Vault*Secret resources are reconciled.
-		if err := clientCacheFactory.RestoreAll(ctx, client); err != nil {
-			logger.Error(err, "RestoreAll completed with errors, please investigate")
-		}
 	}
 
 	return clientCacheFactory, nil

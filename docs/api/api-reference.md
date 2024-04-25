@@ -561,6 +561,24 @@ _Appears in:_
 
 
 
+#### VaultClientMeta
+
+
+
+VaultClientMeta defines the observed state of the last Vault Client used to
+sync the secret. This status is used during resource reconciliation.
+
+
+
+_Appears in:_
+- [VaultDynamicSecretStatus](#vaultdynamicsecretstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `cacheKey` _string_ | CacheKey is the unique key used to identify the client cache. |  |  |
+| `id` _string_ | ID is the Vault ID of the authenticated client. The ID should never contain<br />any sensitive information. |  |  |
+
+
 #### VaultConnection
 
 
