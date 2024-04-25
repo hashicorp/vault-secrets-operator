@@ -39,8 +39,6 @@ type hcpVSOutputs struct {
 }
 
 func TestHCPVaultSecretsApp(t *testing.T) {
-	t.Skip("thy")
-
 	if os.Getenv("SKIP_HCPVSAPPS_TESTS") != "" {
 		t.Skipf("Skipping test, SKIP_HCPVSAPPS_TESTS is set")
 	}
