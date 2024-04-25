@@ -10,6 +10,7 @@ project {
   # Default: []
   header_ignore = [
     ".idea/**",
+    "build/**"
     # "vendor/**",
     # "**autogen**",
   ]

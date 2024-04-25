@@ -11,9 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/vault/api"
+	"github.com/google/uuid"
+	"golang.org/x/crypto/blake2b"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/hashicorp/vault/api"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -24,7 +27,8 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal bool
+	SkipRenewal   bool
+	WatcherDoneCh chan<- Client
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -129,12 +133,17 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, err
 	}
 
+	if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil)); err != nil {
+		return nil, err
+	}
+
 	return c, nil
 }
 
 type ClientBase interface {
 	Read(context.Context, ReadRequest) (Response, error)
 	Write(context.Context, WriteRequest) (Response, error)
+	ID() string
 }
 
 type Client interface {
@@ -169,10 +178,13 @@ type defaultClient struct {
 	targetNamespace    string
 	credentialProvider provider.CredentialProviderBase
 	watcher            *api.LifetimeWatcher
+	inClosing          bool
 	closed             bool
 	lastWatcherErr     error
+	watcherDoneCh      chan<- Client
 	once               sync.Once
 	mu                 sync.RWMutex
+	id                 string
 }
 
 // Validate the client, returning an error for any validation failures.
@@ -196,11 +208,7 @@ func (c *defaultClient) Validate() error {
 	}
 
 	if expired, err := c.checkExpiry(0); expired || err != nil {
-		var errs error
-		if expired {
-			errs = errors.Join(errs, errors.New("client token expired"))
-		}
-		return errors.Join(errs, err)
+		return errors.New("client token expired")
 	}
 
 	return nil
@@ -257,6 +265,10 @@ func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	return c.getCacheKey()
+}
+
+func (c *defaultClient) getCacheKey() (ClientCacheKey, error) {
 	cacheKey, err := ComputeClientCacheKeyFromClient(c)
 	if err != nil {
 		return "", err
@@ -289,6 +301,13 @@ func (c *defaultClient) Restore(ctx context.Context, secret *api.Secret) error {
 
 	c.authSecret = secret
 	c.client.SetToken(secret.Auth.ClientToken)
+
+	id, err := c.hashAccessor()
+	if err != nil {
+		return err
+	}
+
+	c.id = id
 
 	if secret.Auth.Renewable {
 		if err := c.startLifetimeWatcher(ctx); err != nil {
@@ -362,8 +381,9 @@ func (c *defaultClient) Close(revoke bool) {
 		return
 	}
 
-	logger := log.FromContext(nil)
-	logger.Info("Calling Client.Close()")
+	c.inClosing = true
+	logger := log.FromContext(nil).WithValues("id", c.id)
+	logger.Info("Close() called")
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
@@ -374,6 +394,7 @@ func (c *defaultClient) Close(revoke bool) {
 				"Failed to revoke Vault client token", "err", err)
 		}
 	}
+	c.id = ""
 	c.closed = true
 }
 
@@ -405,11 +426,14 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 		return err
 	}
 
+	cacheKey, _ := c.getCacheKey()
+	watcherID := uuid.NewString()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
-		logger := log.FromContext(nil).V(consts.LogLevelDebug).WithName("lifetimeWatcher").WithValues(
-			"entityID", c.authSecret.Auth.EntityID)
+		logger := log.FromContext(nil).WithName("lifetimeWatcher").WithValues(
+			"id", watcherID, "entityID", c.authSecret.Auth.EntityID,
+			"clientID", c.id, "cacheKey", cacheKey)
 		logger.Info("Starting")
 		defer func() {
 			logger.Info("Stopping")
@@ -419,7 +443,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 		go watcher.Start()
 		c.watcher = watcher
 		wg.Done()
-		logger.Info("Started")
+		logger.V(consts.LogLevelDebug).Info("Started")
 		for {
 			select {
 			case <-ctx.Done():
@@ -429,9 +453,23 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 					logger.Error(err, "LifetimeWatcher completed with an error")
 					c.lastWatcherErr = err
 				}
+
+				c.watcher = nil
+				if c.watcherDoneCh != nil {
+					if !c.inClosing {
+						logger.V(consts.LogLevelTrace).Info("Writing to watcherDone channel")
+						c.watcherDoneCh <- c
+					} else {
+						logger.V(consts.LogLevelTrace).Info("In closing, not writing to watcherDone channel")
+					}
+				} else {
+					logger.V(consts.LogLevelTrace).Info("Skipping, watcherDone channel not set")
+				}
+
 				return
 			case renewal := <-watcher.RenewCh():
-				logger.Info("Successfully renewed the client")
+				logger.V(consts.LogLevelDebug).Info("Successfully renewed the client")
+
 				c.authSecret = renewal.Secret
 				c.lastRenewal = renewal.RenewedAt.Unix()
 			}
@@ -447,6 +485,10 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.closed {
+		return fmt.Errorf("client instance is closed")
+	}
 
 	var errs error
 	startTS := time.Now()
@@ -488,6 +530,13 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 	c.authSecret = resp.Secret()
 	c.lastRenewal = time.Now().Unix()
 
+	id, err := c.hashAccessor()
+	if err != nil {
+		return err
+	}
+
+	c.id = id
+
 	if resp.Secret().Auth.Renewable {
 		if err := c.startLifetimeWatcher(ctx); err != nil {
 			errs = err
@@ -495,7 +544,53 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 		}
 	}
 
+	c.inClosing = false
+	c.closed = false
+
 	return nil
+}
+
+func (c *defaultClient) hashAccessor() (string, error) {
+	accessor, err := c.accessor()
+	if err != nil {
+		return "", err
+	}
+
+	if accessor == "" {
+		return "", nil
+	}
+
+	// obfuscate the accessor since it is considered sensitive information.
+	return fmt.Sprintf("%x", blake2b.Sum256([]byte(accessor))), nil
+}
+
+func (c *defaultClient) accessor() (string, error) {
+	if c.authSecret == nil {
+		return "", nil
+	}
+
+	accessor, err := c.authSecret.TokenAccessor()
+	if err != nil {
+		return "", err
+	}
+
+	if accessor == "" {
+		return "", nil
+	}
+
+	return accessor, nil
+}
+
+// ID returns the client's unique ID. If the client is not logged in, an empty
+// string is returned. An empty ID should be considered invalid as it might
+// indicate the client may not have ever successfully authenticated. The ID is a
+// hash of the client token accessor which should at least be unique within a
+// Vault cluster based on:
+// https://github.com/hashicorp/vault/blob/f86e3d4a68c6329ee3229aa742fb969c099b2d12/vault/token_store.go#L994
+func (c *defaultClient) ID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.id
 }
 
 func (c *defaultClient) GetVaultAuthObj() *secretsv1beta1.VaultAuth {
@@ -624,6 +719,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.client = vc
 	c.authObj = authObj
 	c.connObj = connObj
+	c.watcherDoneCh = opts.WatcherDoneCh
 
 	return nil
 }
@@ -652,6 +748,11 @@ var _ ClientBase = (*MockRecordingVaultClient)(nil)
 
 type MockRecordingVaultClient struct {
 	Requests []*MockRequest
+	Id       string
+}
+
+func (m *MockRecordingVaultClient) ID() string {
+	return m.Id
 }
 
 func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {

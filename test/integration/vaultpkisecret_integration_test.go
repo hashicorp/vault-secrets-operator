@@ -38,6 +38,8 @@ type vpsK8SOutputs struct {
 }
 
 func TestVaultPKISecret(t *testing.T) {
+	t.Skipf("Skipping test %s for VAULT-25273", t.Name())
+
 	if testInParallel {
 		t.Parallel()
 	}

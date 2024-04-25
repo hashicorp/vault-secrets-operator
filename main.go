@@ -335,7 +335,8 @@ func main() {
 	} else {
 		vdsOverrideOpts = controllerOptions
 	}
-	if err = (&controllers.VaultDynamicSecretReconciler{
+
+	vdsReconciler := &controllers.VaultDynamicSecretReconciler{
 		Client:                     mgr.GetClient(),
 		Scheme:                     mgr.GetScheme(),
 		Recorder:                   mgr.GetEventRecorderFor("VaultDynamicSecret"),
@@ -343,10 +344,17 @@ func main() {
 		HMACValidator:              hmacValidator,
 		SyncRegistry:               controllers.NewSyncRegistry(),
 		GlobalTransformationOption: globalTransOpt,
-	}).SetupWithManager(mgr, vdsOverrideOpts); err != nil {
+	}
+	if err = vdsReconciler.SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
 		os.Exit(1)
 	}
+	defer func() {
+		if vdsReconciler.SourceCh != nil {
+			close(vdsReconciler.SourceCh)
+		}
+	}()
+
 	if err = (&controllers.HCPAuthReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -389,7 +397,9 @@ func main() {
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
 	)
+
 	mgr.GetCache()
+
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

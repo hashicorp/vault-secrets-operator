@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -177,4 +178,44 @@ func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
 func (e *enqueueOnDeletionRequestHandler) Generic(ctx context.Context,
 	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
 ) {
+}
+
+// enqueueDelayingSyncEventHandler enqueues objects with a delay to avoid
+// thundering herd issues. It is meant to be used with GenericEvents only.
+type enqueueDelayingSyncEventHandler struct {
+	enqueueDurationForJitter time.Duration
+}
+
+func (e *enqueueDelayingSyncEventHandler) Create(_ context.Context, _ event.CreateEvent, _ workqueue.RateLimitingInterface) {
+}
+
+func (e *enqueueDelayingSyncEventHandler) Update(_ context.Context, _ event.UpdateEvent, _ workqueue.RateLimitingInterface) {
+}
+
+func (e *enqueueDelayingSyncEventHandler) Delete(_ context.Context, _ event.DeleteEvent, _ workqueue.RateLimitingInterface) {
+}
+
+func (e *enqueueDelayingSyncEventHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+	logger := log.FromContext(ctx).WithName("enqueueDelayingSyncEventHandler")
+	if evt.Object == nil {
+		logger.Error(nil,
+			"GenericEvent received with no metadata", "event", evt)
+		return
+	}
+
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      evt.Object.GetName(),
+			Namespace: evt.Object.GetNamespace(),
+		},
+	}
+
+	_, horizon := computeMaxJitterDuration(e.enqueueDurationForJitter)
+	logger.V(consts.LogLevelTrace).Info("Enqueuing GenericEvent",
+		"req", req, "horizon", horizon)
+	if horizon > 0 {
+		q.AddAfter(req, horizon)
+	} else {
+		q.Add(req)
+	}
 }
