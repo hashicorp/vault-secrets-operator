@@ -928,7 +928,8 @@ func copyChartDir(tfDir string) (string, error) {
 }
 
 func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client,
-	key ctrlclient.ObjectKey) *appsv1.Deployment {
+	key ctrlclient.ObjectKey,
+) *appsv1.Deployment {
 	t.Helper()
 	depObj := &appsv1.Deployment{
 		ObjectMeta: v1.ObjectMeta{
@@ -980,7 +981,8 @@ func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Clien
 }
 
 func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlclient.Client,
-	key ctrlclient.ObjectKey) *argorolloutsv1alpha1.Rollout {
+	key ctrlclient.ObjectKey,
+) *argorolloutsv1alpha1.Rollout {
 	t.Helper()
 	rolloutObj := &argorolloutsv1alpha1.Rollout{
 		ObjectMeta: v1.ObjectMeta{
@@ -1055,7 +1057,8 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 }
 
 func createRolloutRestartObj(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey,
-	target secretsv1beta1.RolloutRestartTarget) ctrlclient.Object {
+	target secretsv1beta1.RolloutRestartTarget,
+) ctrlclient.Object {
 	t.Helper()
 
 	var rolloutRestartObj ctrlclient.Object
