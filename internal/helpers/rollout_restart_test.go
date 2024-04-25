@@ -8,6 +8,9 @@ import (
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestRolloutRestart(t *testing.T) {
@@ -16,6 +19,9 @@ func TestRolloutRestart(t *testing.T) {
 	ctx := context.Background()
 	clientBuilder := newClientBuilder()
 	defaultClient := clientBuilder.Build()
+	// use one second ago timestamp to compare against rollout restartAt
+	// since argo.Rollout's Spec.RestartAt rounds down to the nearest second
+	// and often equals to time.Now()
 	beforeRolloutRestart := time.Now().Add(-1 * time.Second)
 
 	type args struct {
@@ -123,6 +129,44 @@ func TestRolloutRestart(t *testing.T) {
 			if rolloutRestartObj != nil {
 				assertPatchedRolloutRestartObj(t, ctx, rolloutRestartObj, beforeRolloutRestart, defaultClient)
 			}
+		})
+	}
+}
+
+func Test_patchForRolloutRestart(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clientBuilder := newClientBuilder()
+	defaultClient := clientBuilder.Build()
+
+	tests := []struct {
+		name    string
+		obj     client.Object
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Deployment paused",
+			obj: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "foo",
+					Name:      "bar",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Paused: true,
+				},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					fmt.Sprintf("is paused, cannot restart it"), i...)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NoError(t, defaultClient.Create(ctx, tt.obj))
+
+			tt.wantErr(t, patchForRolloutRestart(ctx, tt.obj, defaultClient))
 		})
 	}
 }

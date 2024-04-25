@@ -147,7 +147,7 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 		return client.Patch(ctx, t, patch)
 	case *argorolloutsv1alpha1.Rollout:
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch := ctrlclient.MergeFrom(t.DeepCopy())
 		t.Spec.RestartAt = &metav1.Time{Time: time.Now()}
 		return client.Patch(ctx, t, patch)
 	default:
