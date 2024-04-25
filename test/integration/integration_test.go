@@ -748,6 +748,10 @@ func assertRolloutRestarts(
 				s = restartedStatus
 				annotations = map[string]string{}
 				annotations[expectedAnnotation] = restartedAt.Format(time.RFC3339)
+			default:
+				assert.Fail(t,
+					"fatal, unsupported rollout-restart argo.Rollout APIVersion %q for target %v",
+					target.APIVersion, target)
 			}
 		default:
 			assert.Fail(t,
@@ -1069,7 +1073,14 @@ func createRolloutRestartObj(t *testing.T, ctx context.Context, client ctrlclien
 		switch target.APIVersion {
 		case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
 			rolloutRestartObj = createArgoRolloutV1alpha1(t, ctx, client, key)
+		default:
+			assert.Fail(t,
+				"fatal, unsupported rollout-restart argo.Rollout APIVersion %q for target %v",
+				target.APIVersion, target)
 		}
+	default:
+		assert.Fail(t,
+			"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
 	}
 
 	require.NotNil(t, rolloutRestartObj, "failed create rollout-restart obj %#v", target)

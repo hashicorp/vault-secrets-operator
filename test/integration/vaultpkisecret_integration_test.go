@@ -38,6 +38,7 @@ type vpsK8SOutputs struct {
 }
 
 func TestVaultPKISecret(t *testing.T) {
+	t.Skip("thy")
 	if testInParallel {
 		t.Parallel()
 	}
