@@ -42,13 +42,6 @@ resource "kubernetes_namespace" "dev" {
   }
 }
 
-resource "helm_release" "argo_rollouts" {
-  namespace  = local.k8s_namespace
-  name       = "argo-rollouts"
-  repository = "https://argoproj.github.io/argo-helm"
-  chart      = "argo-rollouts"
-}
-
 resource "random_string" "prefix" {
   length  = 10
   upper   = false

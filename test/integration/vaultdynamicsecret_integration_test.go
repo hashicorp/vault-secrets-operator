@@ -180,8 +180,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                 string
-		authObj              *secretsv1beta1.VaultAuth
+		name    string
+		authObj *secretsv1beta1.VaultAuth
+		// TODO plural
+
 		rolloutRestartTarget secretsv1beta1.RolloutRestartTarget
 		expected             map[string]int
 		expectedStatic       map[string]int
