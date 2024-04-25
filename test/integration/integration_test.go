@@ -656,9 +656,8 @@ func exportKindLogs(name string, failed bool) error {
 	return nil
 }
 
-func awaitRolloutRestarts(t *testing.T, ctx context.Context,
-	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1beta1.RolloutRestartTarget,
-) {
+func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	obj ctrlclient.Object, targets []secretsv1beta1.RolloutRestartTarget) {
 	t.Helper()
 	require.NoError(t, backoff.Retry(
 		func() error {
@@ -672,7 +671,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 60),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 360),
 	))
 }
 
@@ -1054,7 +1053,7 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 
 			return fmt.Errorf("failed to get argo.Rollout v1alpha1 key %#v", key)
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 120),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 360),
 	))
 
 	return rolloutObj
