@@ -193,8 +193,15 @@ _Appears in:_
 
 
 
-RolloutRestartTarget provides the configuration required to perform a rollout-restart of the supported resources upon Vault Secret rotation. The rollout-restart is triggered by patching the target resource's 'spec.template.metadata.annotations' to include 'vso.secrets.hashicorp.com/restartedAt' with a timestamp value of when the trigger was executed. E.g. vso.secrets.hashicorp.com/restartedAt: "2023-03-23T13:39:31Z" 
- Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
+RolloutRestartTarget provides the configuration required to perform a
+rollout-restart of the supported resources upon Vault Secret rotation.
+The rollout-restart is triggered by patching the target resource's
+'spec.template.metadata.annotations' to include 'vso.secrets.hashicorp.com/restartedAt'
+with a timestamp value of when the trigger was executed.
+E.g. vso.secrets.hashicorp.com/restartedAt: "2023-03-23T13:39:31Z"
+
+
+Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 
 
 
@@ -206,8 +213,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `kind` _string_ |  |  | Enum: [Deployment DaemonSet StatefulSet] <br /> |
+| `kind` _string_ |  |  | Enum: [Deployment DaemonSet StatefulSet argo.Rollout] <br /> |
 | `name` _string_ |  |  |  |
+| `apiVersion` _string_ |  |  |  |
 
 
 #### SecretTransformation
