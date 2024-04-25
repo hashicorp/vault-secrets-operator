@@ -9,6 +9,8 @@ project {
   # files or folders should be ignored
   # Default: []
   header_ignore = [
+    ".idea/**",
+    "build/**"
     # "vendor/**",
     # "**autogen**",
   ]

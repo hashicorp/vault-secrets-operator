@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2022 The Kubernetes Authors.
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
 
 # Script to install the operator-sdk CLI tool to the bin directory.
 # It ensures that only one copy of operator-sdk exists, and its version

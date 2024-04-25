@@ -20,9 +20,11 @@ import (
 )
 
 var (
-	_                      error = (*LeaseTruncatedError)(nil)
-	random                       = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
-	requeueDurationOnError       = time.Second * 5
+	_ error = (*LeaseTruncatedError)(nil)
+	// random is not cryptographically secure, should not be used in any crypto
+	// type of operations.
+	random                 = rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	requeueDurationOnError = time.Second * 5
 	// used by monkey patching unit tests
 	nowFunc = time.Now
 )
