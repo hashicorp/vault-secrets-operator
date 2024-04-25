@@ -189,7 +189,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		existing             int
 	}{
 		{
-			name: "existing-only-rollout-restart-deployment",
+			name: "existing-only-deployment",
 			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
 				Kind: "Deployment",
 			},
@@ -201,11 +201,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name: "existing-only-rollout-restart-argo-rollout",
+			name: "existing-only-argo-rollout",
 			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
 				Kind: "argo.Rollout",
 			},
-			existing: 1,
+			existing: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -213,7 +213,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name: "existing-only-rollout-restart-argo-rollout-v1alpha1",
+			name: "existing-only-argo-rollout-v1alpha1",
 			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
 				Kind:       "argo.Rollout",
 				APIVersion: "argoproj.io/v1alpha1",
@@ -226,9 +226,22 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name: "create-only-rollout-restart-deployment",
+			name: "create-only-deployment",
 			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
 				Kind: "Deployment",
+			},
+			create: 5,
+			expected: map[string]int{
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
+			},
+		},
+		{
+			name: "create-only-argo-rollout-v1alpha1",
+			rolloutRestartTarget: secretsv1beta1.RolloutRestartTarget{
+				Kind:       "argo.Rollout",
+				APIVersion: "argoproj.io/v1alpha1",
 			},
 			create: 5,
 			expected: map[string]int{
@@ -725,7 +738,6 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context,
 
 	// check that all rollout-restarts completed successfully
 	if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
-		fmt.Printf("=========before awaitRolloutRestarts")
 		awaitRolloutRestarts(t, ctx, client,
 			vdsObj, vdsObj.Spec.RolloutRestartTargets)
 	}

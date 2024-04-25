@@ -43,7 +43,7 @@ resource "kubernetes_namespace" "dev" {
 }
 
 resource "helm_release" "argo_rollouts" {
-  namespace =  local.k8s_namespace
+  namespace  = local.k8s_namespace
   name       = "argo-rollouts"
   repository = "https://argoproj.github.io/argo-helm"
   chart      = "argo-rollouts"

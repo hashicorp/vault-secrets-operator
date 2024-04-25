@@ -676,18 +676,27 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 	))
 }
 
+type status struct {
+	Replicas      *int32
+	ReadyReplicas int32
+}
+
 func assertRolloutRestarts(
 	t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
 	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
 ) error {
 	t.Helper()
 
-	type status struct {
-		Replicas      *int32
-		ReadyReplicas int32
-	}
 	var errs error
 	var s *status
+
+	// TODO thy - remove before merge
+	//prettyprint := func(i interface{}, name string) {
+	//	fmt.Println(name)
+	//	b, err := json.MarshalIndent(i, "", "  ")
+	//	assert.Equal(t, nil, err)
+	//	fmt.Println(string(b))
+	//}
 
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
@@ -723,22 +732,23 @@ func assertRolloutRestarts(
 			}
 			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "argo.Rollout":
-			var o argorolloutsv1alpha1.Rollout
-			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-				tObj = &o
-			}
-
-			assert.Nil(t, o.Spec.RestartAt, "expected argo.rollout.spec.restartAt nil", o)
-
 			expectedAnnotation = "argo.rollout.status.restartedAt"
-			if o.Status.RestartedAt != nil {
-				annotations[expectedAnnotation] = o.Status.RestartedAt.Time.String()
-			} else {
-				errs = errors.Join(errs, fmt.Errorf("expected %q not nil when updated replicas are available",
-					expectedAnnotation))
-				continue
+			switch target.APIVersion {
+			case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
+				var o argorolloutsv1alpha1.Rollout
+				if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+					tObj = &o
+				}
+				restartedStatus, restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o)
+				if err != nil {
+					errs = errors.Join(errs, err)
+					continue
+				}
+
+				s = restartedStatus
+				annotations = map[string]string{}
+				annotations[expectedAnnotation] = restartedAt.Format(time.RFC3339)
 			}
-			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -917,7 +927,8 @@ func copyChartDir(tfDir string) (string, error) {
 	)
 }
 
-func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) *appsv1.Deployment {
+func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	key ctrlclient.ObjectKey) *appsv1.Deployment {
 	t.Helper()
 	depObj := &appsv1.Deployment{
 		ObjectMeta: v1.ObjectMeta{
@@ -968,9 +979,9 @@ func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Clien
 	return depObj
 }
 
-func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) *argorolloutsv1alpha1.Rollout {
+func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	key ctrlclient.ObjectKey) *argorolloutsv1alpha1.Rollout {
 	t.Helper()
-
 	rolloutObj := &argorolloutsv1alpha1.Rollout{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      key.Name,
@@ -979,14 +990,14 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 		Spec: argorolloutsv1alpha1.RolloutSpec{
 			Selector: &v1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": key.Name,
+					"test": key.Name,
 				},
 			},
 			Replicas: pointer.Int32(2),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: v1.ObjectMeta{
 					Labels: map[string]string{
-						"app": key.Name,
+						"test": key.Name,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -999,7 +1010,7 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 							},
 						},
 					},
-					TerminationGracePeriodSeconds: pointer.Int64(5),
+					TerminationGracePeriodSeconds: pointer.Int64(2),
 				},
 			},
 			Strategy: argorolloutsv1alpha1.RolloutStrategy{
@@ -1010,7 +1021,7 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 						},
 						{
 							Pause: &argorolloutsv1alpha1.RolloutPause{
-								Duration: argorolloutsv1alpha1.DurationFromString("2s"),
+								Duration: argorolloutsv1alpha1.DurationFromString("1s"),
 							},
 						},
 					},
@@ -1020,10 +1031,31 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 	}
 
 	require.NoError(t, client.Create(ctx, rolloutObj), "failed to create %#v", rolloutObj)
+
+	// wait for argo.Rollout to reach healthy status phase after created
+	// before returning to test the rollout restart via a reconciler.Reconcile()
+	require.NoError(t, backoff.Retry(
+		func() error {
+			var o argorolloutsv1alpha1.Rollout
+			if assert.NoError(t, client.Get(ctx, key, &o)) {
+				if o.Status.Phase == argorolloutsv1alpha1.RolloutPhaseHealthy {
+					return nil
+				}
+
+				return fmt.Errorf("expected argo.Rollout v1alpha1 status.phase %q, got %q",
+					argorolloutsv1alpha1.RolloutPhaseHealthy, o.Status.Phase)
+			}
+
+			return fmt.Errorf("failed to get argo.Rollout v1alpha1 key %#v", key)
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 120),
+	))
+
 	return rolloutObj
 }
 
-func createRolloutRestartObj(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey, target secretsv1beta1.RolloutRestartTarget) ctrlclient.Object {
+func createRolloutRestartObj(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey,
+	target secretsv1beta1.RolloutRestartTarget) ctrlclient.Object {
 	t.Helper()
 
 	var rolloutRestartObj ctrlclient.Object
@@ -1038,7 +1070,26 @@ func createRolloutRestartObj(t *testing.T, ctx context.Context, client ctrlclien
 	}
 
 	require.NotNil(t, rolloutRestartObj, "failed create rollout-restart obj %#v", target)
+
 	return rolloutRestartObj
+}
+
+func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout) (*status, time.Time, error) {
+	if o.Spec.RestartAt == nil {
+		return nil, time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 spec.restartedAt not nil")
+	}
+
+	if o.Status.Phase != argorolloutsv1alpha1.RolloutPhaseHealthy {
+		return nil, time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 status.phase %q, got %q",
+			argorolloutsv1alpha1.RolloutPhaseHealthy, o.Status.Phase)
+	}
+
+	if o.Status.RestartedAt != nil {
+		return &status{o.Spec.Replicas, o.Status.ReadyReplicas}, o.Status.RestartedAt.Time, nil
+	}
+
+	return nil, time.Time{}, fmt.Errorf("expected argo.rollout.status.restartedAt not nil " +
+		"when updated replicas are available")
 }
 
 func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, client ctrlclient.Client,
