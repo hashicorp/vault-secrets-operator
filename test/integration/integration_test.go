@@ -653,7 +653,8 @@ func exportKindLogs(name string, failed bool) error {
 }
 
 func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
-	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64) {
+	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
+) {
 	t.Helper()
 	require.NoError(t, backoff.Retry(
 		func() error {
