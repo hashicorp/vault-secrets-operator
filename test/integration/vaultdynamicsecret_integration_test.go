@@ -327,8 +327,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 				otherObjsCreated = append(otherObjsCreated,
 					createRolloutRestartObjs(t, ctx, crdClient, tt.rolloutRestartTargets, outputs.K8sNamespace, dest)...,
 				)
-
 				vdsObj.Spec.RolloutRestartTargets = tt.rolloutRestartTargets
+				// check that all rollout-restarts reach health state after created
+				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
+					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
+				}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
 				objsCreated = append(objsCreated, vdsObj)
@@ -357,8 +360,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 				otherObjsCreated = append(otherObjsCreated,
 					createRolloutRestartObjs(t, ctx, crdClient, tt.rolloutRestartTargets, outputs.K8sNamespace, dest)...,
 				)
-
 				vdsObj.Spec.RolloutRestartTargets = tt.rolloutRestartTargets
+				// check that all rollout-restarts reach health state after created
+				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
+					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
+				}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
 				objsCreated = append(objsCreated, vdsObj)
@@ -950,8 +956,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 
 	// check that all rollout-restarts completed successfully
 	if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
-		awaitRolloutRestarts(t, ctx, client,
-			vdsObj, vdsObj.Spec.RolloutRestartTargets)
+		awaitRolloutRestarts(t, ctx, client, vdsObj, vdsObj.Spec.RolloutRestartTargets, 2)
 	}
 	return &lastObj
 }
