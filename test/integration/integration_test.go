@@ -1113,6 +1113,7 @@ func createRolloutRestartObjs(t *testing.T, ctx context.Context, crdClient ctrlc
 	rolloutRestartTargets []secretsv1beta1.RolloutRestartTarget, namespace, secretDest string,
 ) []ctrlclient.Object {
 	var createdObjs []ctrlclient.Object
+
 	for i := range rolloutRestartTargets {
 		rolloutRestartObjKey := ctrlclient.ObjectKey{
 			Namespace: namespace,
@@ -1126,6 +1127,7 @@ func createRolloutRestartObjs(t *testing.T, ctx context.Context, crdClient ctrlc
 		)
 		createdObjs = append(createdObjs, obj)
 	}
+
 	return createdObjs
 }
 
