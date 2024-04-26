@@ -1056,79 +1056,54 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 	return rolloutObj
 }
 
-func createRolloutRestartObj(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey,
-	target secretsv1beta1.RolloutRestartTarget,
-) ctrlclient.Object {
-	t.Helper()
-
-	var rolloutRestartObj ctrlclient.Object
-	switch target.Kind {
-	case "Deployment":
-		rolloutRestartObj = createDeployment(t, ctx, client, key)
-	case "argo.Rollout":
-		switch target.APIVersion {
-		case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
-			rolloutRestartObj = createArgoRolloutV1alpha1(t, ctx, client, key)
-		default:
-			assert.Fail(t,
-				"fatal, unsupported rollout-restart argo.Rollout APIVersion %q for target %v",
-				target.APIVersion, target)
-		}
-	default:
-		assert.Fail(t,
-			"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
-	}
-
-	require.NotNil(t, rolloutRestartObj, "failed create rollout-restart obj %#v", target)
-
-	return rolloutRestartObj
-}
-
-func rolloutRestartObjName(t *testing.T, target secretsv1beta1.RolloutRestartTarget, secretDest string) string {
-	t.Helper()
-
-	switch target.Kind {
-	case "Deployment":
-		return fmt.Sprintf("%s-deployment", secretDest)
-	case "argo.Rollout":
-		switch target.APIVersion {
-		case "":
-			return fmt.Sprintf("%s-argo-rollout", secretDest)
-		case argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
-			return fmt.Sprintf("%s-argo-rollout-v1alpha1", secretDest)
-		default:
-			assert.Fail(t,
-				"fatal, unsupported rollout-restart argo.Rollout APIVersion %q for target %v",
-				target.APIVersion, target)
-		}
-	default:
-		assert.Fail(t,
-			"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
-	}
-
-	return ""
-}
-
-func createRolloutRestartObjs(t *testing.T, ctx context.Context, crdClient ctrlclient.Client,
+func createRolloutRestartObjs(t *testing.T, ctx context.Context, client ctrlclient.Client,
 	rolloutRestartTargets []secretsv1beta1.RolloutRestartTarget, namespace, secretDest string,
 ) []ctrlclient.Object {
-	var createdObjs []ctrlclient.Object
+	var objs []ctrlclient.Object
 
-	for i := range rolloutRestartTargets {
-		rolloutRestartObjKey := ctrlclient.ObjectKey{
-			Namespace: namespace,
-			Name:      rolloutRestartObjName(t, rolloutRestartTargets[i], secretDest),
-		}
-		rolloutRestartTargets[i].Name = rolloutRestartObjKey.Name
-
-		obj := createRolloutRestartObj(t, ctx, crdClient,
-			rolloutRestartObjKey,
-			rolloutRestartTargets[i],
-		)
-		createdObjs = append(createdObjs, obj)
+	rolloutRestartObjName := func(kindSuffix string) string {
+		return fmt.Sprintf("%s-%s", secretDest, kindSuffix)
 	}
 
-	return createdObjs
+	for i := range rolloutRestartTargets {
+		var obj ctrlclient.Object
+
+		switch rolloutRestartTargets[i].Kind {
+		case "Deployment":
+			rolloutRestartTargets[i].Name = rolloutRestartObjName("deployment")
+			obj = createDeployment(t, ctx, client, ctrlclient.ObjectKey{
+				Namespace: namespace,
+				Name:      rolloutRestartTargets[i].Name,
+			})
+		case "argo.Rollout":
+			switch rolloutRestartTargets[i].APIVersion {
+			case "":
+				rolloutRestartTargets[i].Name = rolloutRestartObjName("argo-rollout")
+				obj = createArgoRolloutV1alpha1(t, ctx, client, ctrlclient.ObjectKey{
+					Namespace: namespace,
+					Name:      rolloutRestartTargets[i].Name,
+				})
+			case argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
+				rolloutRestartTargets[i].Name = rolloutRestartObjName("argo-rollout-v1alpha1")
+				obj = createArgoRolloutV1alpha1(t, ctx, client, ctrlclient.ObjectKey{
+					Namespace: namespace,
+					Name:      rolloutRestartTargets[i].Name,
+				})
+			default:
+				assert.Fail(t,
+					"fatal, unsupported rollout-restart argo.Rollout APIVersion %q for target %v",
+					rolloutRestartTargets[i].APIVersion, rolloutRestartTargets[i])
+			}
+		default:
+			assert.Fail(t,
+				"fatal, unsupported rollout-restart Kind %q for target %v",
+				rolloutRestartTargets[i].Kind, rolloutRestartTargets[i])
+		}
+
+		objs = append(objs, obj)
+	}
+
+	return objs
 }
 
 func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout) (*status, time.Time, error) {
