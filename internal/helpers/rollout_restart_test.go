@@ -14,11 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestRolloutRestart(t *testing.T) {
@@ -26,104 +24,141 @@ func TestRolloutRestart(t *testing.T) {
 
 	ctx := context.Background()
 	builder := newClientBuilder()
-	defaultClient := builder.Build()
 	// use one second ago timestamp to compare against rollout restartAt
 	// since argo.Rollout's Spec.RestartAt rounds down to the nearest second
 	// and often equals to time.Now()
 	beforeRolloutRestart := time.Now().Add(-1 * time.Second)
 
-	type args struct {
-		namespace string
-		target    v1beta1.RolloutRestartTarget
-	}
 	tests := []struct {
 		name    string
-		args    args
+		obj     ctrlclient.Object
+		target  v1beta1.RolloutRestartTarget
 		wantErr assert.ErrorAssertionFunc
 	}{
 		{
-			name: "DaemonSet",
-			args: args{
-				namespace: "foo",
-				target: v1beta1.RolloutRestartTarget{
-					Kind: "DaemonSet",
-					Name: "qux",
+			name: "invalid Kind",
+			obj: &appsv1.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "qux",
 				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind: "invalid",
+				Name: "qux",
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					fmt.Sprintf("unsupported Kind %q", "invalid"), i...)
+			},
+		},
+		{
+			name: "DaemonSet",
+			obj: &appsv1.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "qux",
+				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind: "DaemonSet",
+				Name: "qux",
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name: "Deployment",
-			args: args{
-				namespace: "foo",
-				target: v1beta1.RolloutRestartTarget{
-					Kind: "Deployment",
-					Name: "qux",
+			obj: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "foo",
 				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind: "Deployment",
+				Name: "foo",
 			},
 			wantErr: assert.NoError,
 		},
 		{
-			name: "StatefulSet",
-			args: args{
-				namespace: "foo",
-				target: v1beta1.RolloutRestartTarget{
-					Kind: "StatefulSet",
-					Name: "qux",
+			name: "Deployment-in-pause",
+			obj: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "foo",
 				},
+				Spec: appsv1.DeploymentSpec{
+					Paused: true,
+				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind: "Deployment",
+				Name: "foo",
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					fmt.Sprintf("is paused, cannot restart it"), i...)
+			},
+		},
+		{
+			name: "StatefulSet",
+			obj: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "bar",
+				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind: "StatefulSet",
+				Name: "bar",
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name: "argo.Rollout empty APIVersion",
-			args: args{
-				namespace: "foo",
-				target: v1beta1.RolloutRestartTarget{
-					Kind: "argo.Rollout",
-					Name: "qux",
+			obj: &argorolloutsv1alpha1.Rollout{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "fred",
 				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind: "argo.Rollout",
+				Name: "fred",
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name: "argo.Rollout argoproj.io/v1alpha1",
-			args: args{
-				namespace: "foo",
-				target: v1beta1.RolloutRestartTarget{
-					Kind:       "argo.Rollout",
-					APIVersion: "argoproj.io/v1alpha1",
-					Name:       "bar",
+			obj: &argorolloutsv1alpha1.Rollout{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "fred",
 				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind:       "argo.Rollout",
+				APIVersion: "argoproj.io/v1alpha1",
+				Name:       "fred",
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name: "argo.Rollout invalid APIVersion",
-			args: args{
-				namespace: "foo",
-				target: v1beta1.RolloutRestartTarget{
-					Kind:       "argo.Rollout",
-					APIVersion: "invalid",
-					Name:       "baz",
+			obj: &argorolloutsv1alpha1.Rollout{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "fred",
 				},
+			},
+			target: v1beta1.RolloutRestartTarget{
+				Kind:       "argo.Rollout",
+				APIVersion: "invalid",
+				Name:       "fred",
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.ErrorContains(t, err,
 					fmt.Sprintf("unsupported APIVersion %q", "invalid"), i...)
-			},
-		},
-		{
-			name: "invalid Kind",
-			args: args{
-				namespace: "foo",
-				target: v1beta1.RolloutRestartTarget{
-					Kind: "invalid",
-					Name: "baz",
-				},
-			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.ErrorContains(t, err,
-					fmt.Sprintf("unsupported Kind %q", "invalid"), i...)
 			},
 		},
 	}
@@ -132,96 +167,21 @@ func TestRolloutRestart(t *testing.T) {
 			tt := tt
 			t.Parallel()
 
-			rolloutRestartObj := createRolloutRestartObj(t, ctx, tt.args.namespace, tt.args.target, defaultClient)
+			c := builder.Build()
+			if tt.obj != nil {
+				require.NoError(t, c.Create(ctx, tt.obj))
+			}
 
-			err := RolloutRestart(ctx, tt.args.namespace, tt.args.target, defaultClient)
+			err := RolloutRestart(ctx, tt.obj.GetNamespace(), tt.target, c)
 			if !tt.wantErr(t, err) {
 				return
 			}
 
-			if rolloutRestartObj != nil {
-				assertPatchedRolloutRestartObj(t, ctx, rolloutRestartObj, beforeRolloutRestart, defaultClient)
+			if assert.NoError(t, err) {
+				assertPatchedRolloutRestartObj(t, ctx, tt.obj, beforeRolloutRestart, c)
 			}
 		})
 	}
-}
-
-func Test_patchForRolloutRestart(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	builder := newClientBuilder()
-
-	tests := []struct {
-		name    string
-		obj     client.Object
-		wantErr assert.ErrorAssertionFunc
-	}{
-		{
-			name: "Deployment paused",
-			obj: &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "foo",
-					Name:      "bar",
-				},
-				Spec: appsv1.DeploymentSpec{
-					Paused: true,
-				},
-			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.ErrorContains(t, err,
-					fmt.Sprintf("is paused, cannot restart it"), i...)
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := builder.Build()
-
-			// TODO merge with TestRolloutRestart and
-			assert.NoError(t, c.Create(ctx, tt.obj))
-
-			tt.wantErr(t, patchForRolloutRestart(ctx, tt.obj, c))
-		})
-	}
-}
-
-func createRolloutRestartObj(t *testing.T, ctx context.Context, namespace string, target secretsv1beta1.RolloutRestartTarget, client ctrlclient.WithWatch) ctrlclient.Object {
-	t.Helper()
-
-	objectMeta := metav1.ObjectMeta{
-		Namespace: namespace,
-		Name:      target.Name,
-	}
-
-	var obj ctrlclient.Object
-	switch target.Kind {
-	case "DaemonSet":
-		obj = &appsv1.DaemonSet{
-			ObjectMeta: objectMeta,
-		}
-	case "Deployment":
-		obj = &appsv1.Deployment{
-			ObjectMeta: objectMeta,
-		}
-	case "StatefulSet":
-		obj = &appsv1.StatefulSet{
-			ObjectMeta: objectMeta,
-		}
-	case "argo.Rollout":
-		switch target.APIVersion {
-		case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
-			obj = &argorolloutsv1alpha1.Rollout{
-				ObjectMeta: objectMeta,
-			}
-		default:
-			return nil
-		}
-	default:
-		return nil
-	}
-	require.NoError(t, client.Create(ctx, obj))
-	return obj
 }
 
 func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlclient.Object, beforeRolloutRestart time.Time, client ctrlclient.WithWatch) {
