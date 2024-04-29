@@ -45,6 +45,13 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        [ -n "${{ inputs.operator-image-archive }}" ] || (echo "inputs.operator-image-archive not set" >&2 ; exit 1)
+        if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
+          [ -n "${{ inputs.vault-license-ci }}" ] || (echo "inputs.vault-license-ci not set" >&2 ; exit 1)
+        fi
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
     # Checkout this repo.
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -55,13 +62,6 @@ runs:
         config: test/integration/kind/config.yaml
         node_image: kindest/node:v${{ inputs.k8s-version }}
         version: "v0.22.0"
-    - name: Validate inputs
-      shell: bash
-      run: |
-        [ -n "${{ inputs.operator-image-archive }}" ] || (echo "inputs.operator-image-archive not set" >&2 ; exit 1)
-        if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
-          [ -n "${{ inputs.vault-license-ci }}" ] || (echo "inputs.vault-license-ci not set" >&2 ; exit 1)
-        fi
     - name: Create kind export log root
       id: create_kind_export_log_root
       shell: bash
