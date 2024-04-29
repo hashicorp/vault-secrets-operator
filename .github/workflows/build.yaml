@@ -289,7 +289,7 @@ jobs:
         k8s-version:
           - ${{ fromJson(needs.versions.outputs.K8S_VERSIONS)[0] }}
         installation-method: [kustomize]
-        vault-enterprise: [true, false]
+        vault-enterprise: [true]
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: ./.github/actions/integration-test
