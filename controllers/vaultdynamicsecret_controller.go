@@ -514,12 +514,10 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 			builder.WithPredicates(&secretsPredicate{}),
 		).
 		WatchesRawSource(
-			&source.Channel{
-				Source: r.SourceCh,
-			},
-			&enqueueDelayingSyncEventHandler{
-				enqueueDurationForJitter: time.Second * 2,
-			},
+			source.Channel(r.SourceCh,
+				&enqueueDelayingSyncEventHandler{
+					enqueueDurationForJitter: time.Second * 2,
+				}),
 		)
 
 	if err := m.Complete(r); err != nil {
