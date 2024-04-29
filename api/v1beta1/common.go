@@ -42,8 +42,12 @@ type Destination struct {
 // Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 type RolloutRestartTarget struct {
 	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet,argo.Rollout}
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	// APIVersion of resource
+	//
+	// Supported APIVersion(s):
+	//	argo.Rollout: argoproj.io/v1alpha1
 	APIVersion string `json:"apiVersion,omitempty"`
 }
 
