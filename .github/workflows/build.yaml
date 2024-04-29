@@ -240,7 +240,7 @@ jobs:
       VAULT_N_1: "1.15.6"
       VAULT_N_2: "1.14.10"
   latest-vault:
-    name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }} enterprise=${{ matrix.vault-enterprise }}
+    name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }} ${{ matrix.installation-method }} enterprise=${{ matrix.vault-enterprise }}
     needs:
       - get-product-version
       - build-pre-checks
@@ -273,7 +273,7 @@ jobs:
           hcp-client-secret: ${{ secrets.HCP_CLIENT_SECRET }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
   latest-k8s:
-    name: vault:${{ matrix.vault-version }} kind:${{ matrix.kind-k8s-version }} ${{ matrix.installation-method }} enterprise=${{ matrix.vault-enterprise }}
+    name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }} ${{ matrix.installation-method }} enterprise=${{ matrix.vault-enterprise }}
     runs-on: ubuntu-latest
     needs:
       - get-product-version

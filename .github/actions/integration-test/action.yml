@@ -8,13 +8,13 @@ inputs:
     description: 'Kubernetes version to use for the kind cluster'
     required: true
   version:
-    description: 'Vault K8s version to use for the tests'
-    required: true
-  vault-enterprise:
-    description: 'Test against Vault Enterprise'
+    description: 'Vault Secrets Operator version to use for the tests'
     required: true
   vault-version:
     description: 'Vault version to use for the tests'
+    required: true
+  vault-enterprise:
+    description: 'Test against Vault Enterprise'
     required: true
   operator-image-archive:
     description: 'Name of the docker image archive artifact to download'
@@ -55,11 +55,18 @@ runs:
         config: test/integration/kind/config.yaml
         node_image: kindest/node:v${{ inputs.k8s-version }}
         version: "v0.22.0"
+    - name: Validate inputs
+      shell: bash
+      run: |
+        [ -n "${{ inputs.operator-image-archive }}" ] || (echo "inputs.operator-image-archive not set" >&2 ; exit 1)
+        if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
+          [ -n "${{ inputs.vault-license-ci }}" ] || (echo "inputs.vault-license-ci not set" >&2 ; exit 1)
+        fi
     - name: Create kind export log root
       id: create_kind_export_log_root
       shell: bash
       run: |
-        vault_flavor=oss
+        vault_flavor=community
         if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
           vault_flavor=ent
         fi
@@ -73,10 +80,11 @@ runs:
         name: ${{ inputs.operator-image-archive }}
     - name: Load vault-secrets-operator ${{ inputs.version }} image
       env:
-        GITHUB_TOKEN: inputs.github-token
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        # used by scripts that fetch build tools from GH
+        GH_GET_RETRIES: 5
       shell: bash
       run: |
-        [ -n "${{ inputs.operator-image-archive }}" ] || (echo "inputs.operator-image-archive not set" >&2 ; exit 1)
         make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE="${{ inputs.operator-image-archive }}"
     - name: "${{ inputs.installation-method }} enterprise=${{ inputs.vault-enterprise }}"
       env:
@@ -87,7 +95,9 @@ runs:
         HCP_PROJECT_ID: ${{ inputs.hcp-project-id }}
         HCP_CLIENT_ID: ${{ inputs.hcp-client-id }}
         HCP_CLIENT_SECRET: ${{ inputs.hcp-client-secret }}
-        GITHUB_TOKEN: inputs.github-token
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        # used by scripts that fetch build tools from GH
+        GH_GET_RETRIES: 5
       shell: bash
       run: |
         make_target=integration-test
