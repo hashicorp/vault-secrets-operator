@@ -9,20 +9,24 @@ import (
 	"testing"
 	"time"
 
+	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestRolloutRestart(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	clientBuilder := newClientBuilder()
-	defaultClient := clientBuilder.Build()
+	builder := newClientBuilder()
+	defaultClient := builder.Build()
 	// use one second ago timestamp to compare against rollout restartAt
 	// since argo.Rollout's Spec.RestartAt rounds down to the nearest second
 	// and often equals to time.Now()
@@ -125,10 +129,14 @@ func TestRolloutRestart(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			rolloutRestartObj := createRolloutRestartObj(t, ctx, tt.args.namespace, tt.args.target, defaultClient)
 
 			err := RolloutRestart(ctx, tt.args.namespace, tt.args.target, defaultClient)
-			tt.wantErr(t, err)
+			if !tt.wantErr(t, err) {
+				return
+			}
 
 			if rolloutRestartObj != nil {
 				assertPatchedRolloutRestartObj(t, ctx, rolloutRestartObj, beforeRolloutRestart, defaultClient)
@@ -141,8 +149,7 @@ func Test_patchForRolloutRestart(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	clientBuilder := newClientBuilder()
-	defaultClient := clientBuilder.Build()
+	builder := newClientBuilder()
 
 	tests := []struct {
 		name    string
@@ -168,9 +175,84 @@ func Test_patchForRolloutRestart(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NoError(t, defaultClient.Create(ctx, tt.obj))
+			c := builder.Build()
 
-			tt.wantErr(t, patchForRolloutRestart(ctx, tt.obj, defaultClient))
+			// TODO merge with TestRolloutRestart and
+			assert.NoError(t, c.Create(ctx, tt.obj))
+
+			tt.wantErr(t, patchForRolloutRestart(ctx, tt.obj, c))
 		})
 	}
+}
+
+func createRolloutRestartObj(t *testing.T, ctx context.Context, namespace string, target secretsv1beta1.RolloutRestartTarget, client ctrlclient.WithWatch) ctrlclient.Object {
+	t.Helper()
+
+	objectMeta := metav1.ObjectMeta{
+		Namespace: namespace,
+		Name:      target.Name,
+	}
+
+	var obj ctrlclient.Object
+	switch target.Kind {
+	case "DaemonSet":
+		obj = &appsv1.DaemonSet{
+			ObjectMeta: objectMeta,
+		}
+	case "Deployment":
+		obj = &appsv1.Deployment{
+			ObjectMeta: objectMeta,
+		}
+	case "StatefulSet":
+		obj = &appsv1.StatefulSet{
+			ObjectMeta: objectMeta,
+		}
+	case "argo.Rollout":
+		switch target.APIVersion {
+		case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
+			obj = &argorolloutsv1alpha1.Rollout{
+				ObjectMeta: objectMeta,
+			}
+		default:
+			return nil
+		}
+	default:
+		return nil
+	}
+	require.NoError(t, client.Create(ctx, obj))
+	return obj
+}
+
+func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlclient.Object, beforeRolloutRestart time.Time, client ctrlclient.WithWatch) {
+	t.Helper()
+
+	objKey := ctrlclient.ObjectKeyFromObject(obj)
+	require.NoError(t, client.Get(ctx, objKey, obj))
+
+	attr := AnnotationRestartedAt
+	var restartAtTime time.Time
+	var restartAt string
+	switch o := obj.(type) {
+	case *appsv1.Deployment:
+		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
+	case *appsv1.StatefulSet:
+		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
+	case *appsv1.DaemonSet:
+		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
+	case *argorolloutsv1alpha1.Rollout:
+		attr = "argo.rollout.spec.restartAt"
+		restartAtTime = o.Spec.RestartAt.Time
+	default:
+		t.Fatalf("rollout restart object type not supported %v", o)
+	}
+
+	if restartAt != "" {
+		var err error
+		restartAtTime, err = time.Parse(time.RFC3339, restartAt)
+		assert.NoError(t, err, "invalid value for %q", attr)
+	}
+
+	assert.True(t, restartAtTime.After(beforeRolloutRestart),
+		"restartAt should be after beforeRolloutRestart",
+		attr, restartAtTime, "beforeRolloutRestart", beforeRolloutRestart)
 }
