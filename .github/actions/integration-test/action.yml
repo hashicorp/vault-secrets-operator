@@ -22,6 +22,8 @@ inputs:
   kind-cluster-name:
     description: 'Name of the kind cluster to create and test against'
     default: vault-secrets-operator
+  log-prefix:
+    description: 'Prefix for the log artifact name'
   installation-method:
     description: 'Installation method to use for the tests'
     required: true
@@ -70,7 +72,7 @@ runs:
         if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
           vault_flavor=ent
         fi
-        log_artifact_name="kind-${{ inputs.kind-cluster-name }}-$(git rev-parse --short ${{ github.sha }})-${{ inputs.k8s-version }}-${{ inputs.vault-version }}-${vault_flavor}-${{ inputs.installation-method }}-logs"
+        log_artifact_name="${{ inputs.log-prefix }}kind-${{ inputs.kind-cluster-name }}-$(git rev-parse --short ${{ github.sha }})-${{ inputs.k8s-version }}-${{ inputs.vault-version }}-${vault_flavor}-${{ inputs.installation-method }}-logs"
         log_root="/tmp/${log_artifact_name}"
         mkdir -vp "${log_root}"
         echo "log_root=${log_root}" >> $GITHUB_OUTPUT

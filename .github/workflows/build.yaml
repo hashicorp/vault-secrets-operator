@@ -272,6 +272,7 @@ jobs:
           hcp-client-id: ${{ secrets.HCP_CLIENT_ID }}
           hcp-client-secret: ${{ secrets.HCP_CLIENT_SECRET }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          log-prefix: "latest-vault-"
   latest-k8s:
     name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }} ${{ matrix.installation-method }} enterprise=${{ matrix.vault-enterprise }}
     runs-on: ubuntu-latest
@@ -307,3 +308,4 @@ jobs:
           hcp-client-id: ${{ secrets.HCP_CLIENT_ID }}
           hcp-client-secret: ${{ secrets.HCP_CLIENT_SECRET }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          log-prefix: "latest-k8s-"
