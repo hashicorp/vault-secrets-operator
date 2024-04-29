@@ -13,7 +13,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -24,6 +23,8 @@ import (
 
 // AnnotationRestartedAt is updated to trigger a rollout-restart
 const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
+
+var defaultArgoRolloutAPIVersion = argorolloutsv1alpha1.RolloutGVR.GroupVersion().String()
 
 // HandleRolloutRestarts for all v1beta1.RolloutRestartTarget(s) configured for obj.
 // Supported objs are: v1beta1.VaultDynamicSecret, v1beta1.VaultStaticSecret, v1beta1.VaultPKISecret
@@ -85,7 +86,7 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 		return fmt.Errorf("namespace cannot be empty")
 	}
 
-	objectMeta := v1.ObjectMeta{
+	objectMeta := metav1.ObjectMeta{
 		Namespace: namespace,
 		Name:      target.Name,
 	}
@@ -105,13 +106,20 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 			ObjectMeta: objectMeta,
 		}
 	case "argo.Rollout":
-		switch target.APIVersion {
-		case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
+		// we added APIVersion to RolloutRestartTarget to later support
+		// concurrent multiple versions in []RolloutRestartTarget
+		apiVersion := target.APIVersion
+		if apiVersion == "" {
+			apiVersion = defaultArgoRolloutAPIVersion
+		}
+
+		switch apiVersion {
+		case defaultArgoRolloutAPIVersion:
 			obj = &argorolloutsv1alpha1.Rollout{
 				ObjectMeta: objectMeta,
 			}
 		default:
-			return fmt.Errorf("unsupported APIVersion %q for %T", target.APIVersion, target)
+			return fmt.Errorf("unsupported APIVersion %q for %T", apiVersion, target)
 		}
 	default:
 		return fmt.Errorf("unsupported Kind %q for %T", target.Kind, target)
@@ -152,6 +160,7 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 		return client.Patch(ctx, t, patch)
 	case *argorolloutsv1alpha1.Rollout:
+		// use MergeFrom() since it supports CRDs whereas StrategicMergeFrom() does not.
 		patch := ctrlclient.MergeFrom(t.DeepCopy())
 		t.Spec.RestartAt = &metav1.Time{Time: time.Now()}
 		return client.Patch(ctx, t, patch)
