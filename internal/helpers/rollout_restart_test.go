@@ -177,7 +177,7 @@ func TestRolloutRestart(t *testing.T) {
 				return
 			}
 
-			if assert.NoError(t, err) {
+			if err == nil {
 				assertPatchedRolloutRestartObj(t, ctx, tt.obj, beforeRolloutRestart, c)
 			}
 		})
