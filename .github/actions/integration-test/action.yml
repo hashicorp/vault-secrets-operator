@@ -1,0 +1,128 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+name: Integration test
+description: Run the integration tests against a single version of k8s and Vault
+inputs:
+  k8s-version:
+    description: 'Kubernetes version to use for the kind cluster'
+    required: true
+  version:
+    description: 'Vault Secrets Operator version to use for the tests'
+    required: true
+  vault-version:
+    description: 'Vault version to use for the tests'
+    required: true
+  vault-enterprise:
+    description: 'Test against Vault Enterprise'
+    required: true
+  operator-image-archive:
+    description: 'Name of the docker image archive artifact to download'
+    required: true
+  kind-cluster-name:
+    description: 'Name of the kind cluster to create and test against'
+    default: vault-secrets-operator
+  log-prefix:
+    description: 'Prefix for the log artifact name'
+  installation-method:
+    description: 'Installation method to use for the tests'
+    required: true
+  vault-license-ci:
+    description: 'Vault license to use for enterprise tests'
+  hcp-organization-id:
+    description: 'HCP organization ID'
+    required: true
+  hcp-project-id:
+    description: 'HCP project ID'
+    required: true
+  hcp-client-id:
+    description: 'HCP client ID'
+    required: true
+  hcp-client-secret:
+    description: 'HCP client secret'
+    required: true
+  github-token:
+    description: 'GitHub token'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        [ -n "${{ inputs.operator-image-archive }}" ] || (echo "inputs.operator-image-archive not set" >&2 ; exit 1)
+        if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
+          [ -n "${{ inputs.vault-license-ci }}" ] || (echo "inputs.vault-license-ci not set" >&2 ; exit 1)
+        fi
+    # Checkout this repo.
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - name: Setup go
+      uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+      with:
+        go-version-file: .go-version
+    - name: Create Kind Cluster
+      uses: helm/kind-action@99576bfa6ddf9a8e612d83b513da5a75875caced # v1.9.0
+      with:
+        cluster_name: ${{ inputs.kind-cluster-name }}
+        config: test/integration/kind/config.yaml
+        node_image: kindest/node:v${{ inputs.k8s-version }}
+        version: "v0.22.0"
+    - name: Create kind export log root
+      id: create_kind_export_log_root
+      shell: bash
+      run: |
+        vault_flavor=community
+        if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
+          vault_flavor=ent
+        fi
+        log_artifact_name="${{ inputs.log-prefix }}kind-${{ inputs.kind-cluster-name }}-$(git rev-parse --short ${{ github.sha }})-${{ inputs.k8s-version }}-${{ inputs.vault-version }}-${vault_flavor}-${{ inputs.installation-method }}-logs"
+        log_root="/tmp/${log_artifact_name}"
+        mkdir -vp "${log_root}"
+        echo "log_root=${log_root}" >> $GITHUB_OUTPUT
+        echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
+    - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+      with:
+        name: ${{ inputs.operator-image-archive }}
+    - name: Load vault-secrets-operator ${{ inputs.version }} image
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        # used by scripts that fetch build tools from GH
+        GH_GET_RETRIES: 5
+      shell: bash
+      run: |
+        make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE="${{ inputs.operator-image-archive }}"
+    - name: "${{ inputs.installation-method }} enterprise=${{ inputs.vault-enterprise }}"
+      env:
+        INTEGRATION_TESTS: "true"
+        VAULT_IMAGE_TAG: ${{ inputs.vault-version }}
+        VAULT_LICENSE_CI: ${{ inputs.vault-license-ci }}
+        HCP_ORGANIZATION_ID: ${{ inputs.hcp-organization-id }}
+        HCP_PROJECT_ID: ${{ inputs.hcp-project-id }}
+        HCP_CLIENT_ID: ${{ inputs.hcp-client-id }}
+        HCP_CLIENT_SECRET: ${{ inputs.hcp-client-secret }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        # used by scripts that fetch build tools from GH
+        GH_GET_RETRIES: 5
+      shell: bash
+      run: |
+        make_target=integration-test
+        if [ ${{ inputs.installation-method }} == 'helm' ]; then
+          make_target+='-helm'
+        fi
+        if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
+          make_target+='-ent'
+          export VAULT_IMAGE_TAG='${{ inputs.vault-version }}-ent'
+        fi
+        make $make_target INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+    - name: Store kind cluster logs
+      if: success()
+      uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      with:
+        name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}
+        path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
+    - name: Store kind cluster logs failure
+      if: failure()
+      uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      with:
+        name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}-failed
+        path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
