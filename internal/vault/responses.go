@@ -133,6 +133,7 @@ func NewDefaultResponse(secret *api.Secret) Response {
 	}
 }
 
+// IsLeaseNotFoundError returns true if a lease not found error is returned from Vault.
 func IsLeaseNotFoundError(err error) bool {
 	var respErr *api.ResponseError
 	if errors.As(err, &respErr) && respErr != nil {
@@ -143,6 +144,7 @@ func IsLeaseNotFoundError(err error) bool {
 	return false
 }
 
+// IsForbiddenError returns true if a forbidden error is returned from Vault.
 func IsForbiddenError(err error) bool {
 	var respErr *api.ResponseError
 	if errors.As(err, &respErr) && respErr != nil {
