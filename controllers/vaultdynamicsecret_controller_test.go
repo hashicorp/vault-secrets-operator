@@ -1105,20 +1105,17 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 				require.NoError(t, r.Create(ctx, o))
 			}
 
-			cs := &source.Channel{
-				Source: r.SourceCh,
-			}
-
 			handler := &enqueueDelayingSyncEventHandler{
 				enqueueDurationForJitter: time.Second * 2,
 			}
+			cs := source.Channel(r.SourceCh, handler)
 
 			q := &DelegatingQueue{
 				Interface: workqueue.New(),
 			}
 
 			go func() {
-				err := cs.Start(ctx, handler, q)
+				err := cs.Start(ctx, q)
 				require.NoError(t, err, "cs.Start")
 			}()
 
