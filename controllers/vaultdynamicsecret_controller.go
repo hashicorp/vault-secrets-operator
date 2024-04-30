@@ -529,16 +529,6 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	return nil
 }
 
-func isLeaseNotfoundError(err error) bool {
-	var respErr *api.ResponseError
-	if errors.As(err, &respErr) && respErr != nil {
-		if respErr.StatusCode == http.StatusBadRequest {
-			return len(respErr.Errors) == 1 && respErr.Errors[0] == "lease not found"
-		}
-	}
-	return false
-}
-
 // handleDeletion will handle the deletion path of the VDS secret:
 // * revoking any associated outstanding leases
 // * removing our finalizer
