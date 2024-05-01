@@ -693,14 +693,6 @@ func assertRolloutRestarts(
 	var errs error
 	var s *status
 
-	// TODO thy - remove before merge
-	//prettyprint := func(i interface{}, name string) {
-	//	fmt.Println(name)
-	//	b, err := json.MarshalIndent(i, "", "  ")
-	//	assert.Equal(t, nil, err)
-	//	fmt.Println(string(b))
-	//}
-
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
 	var restartAt time.Time
@@ -742,27 +734,22 @@ func assertRolloutRestarts(
 			}
 		case "argo.Rollout":
 			expectedAnnotation = "argo.rollout.status.restartedAt"
-			switch target.APIVersion {
-			case "", argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
-				var o argorolloutsv1alpha1.Rollout
-				if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-					tObj = &o
-				}
-				restartedStatus, restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o, minGeneration)
-				if err != nil {
-					errs = errors.Join(errs, err)
-					continue
-				}
 
-				if minGeneration > 1 {
-					s = restartedStatus
-					annotations = map[string]string{}
-					annotations[expectedAnnotation] = restartedAt.Format(time.RFC3339)
-				}
-			default:
-				assert.Fail(t,
-					"fatal, unsupported rollout-restart argo.Rollout APIVersion %q for target %v",
-					target.APIVersion, target)
+			var o argorolloutsv1alpha1.Rollout
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				tObj = &o
+			}
+
+			restartedStatus, restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o, minGeneration)
+			if err != nil {
+				errs = errors.Join(errs, err)
+				continue
+			}
+
+			if minGeneration > 1 {
+				s = restartedStatus
+				annotations = map[string]string{}
+				annotations[expectedAnnotation] = restartedAt.Format(time.RFC3339)
 			}
 		default:
 			assert.Fail(t,
@@ -1078,24 +1065,11 @@ func createRolloutRestartObjs(t *testing.T, ctx context.Context, client ctrlclie
 				Name:      rolloutRestartTargets[i].Name,
 			})
 		case "argo.Rollout":
-			switch rolloutRestartTargets[i].APIVersion {
-			case "":
-				rolloutRestartTargets[i].Name = rolloutRestartObjName("argo-rollout")
-				obj = createArgoRolloutV1alpha1(t, ctx, client, ctrlclient.ObjectKey{
-					Namespace: namespace,
-					Name:      rolloutRestartTargets[i].Name,
-				})
-			case argorolloutsv1alpha1.RolloutGVR.GroupVersion().String():
-				rolloutRestartTargets[i].Name = rolloutRestartObjName("argo-rollout-v1alpha1")
-				obj = createArgoRolloutV1alpha1(t, ctx, client, ctrlclient.ObjectKey{
-					Namespace: namespace,
-					Name:      rolloutRestartTargets[i].Name,
-				})
-			default:
-				assert.Fail(t,
-					"fatal, unsupported rollout-restart argo.Rollout APIVersion %q for target %v",
-					rolloutRestartTargets[i].APIVersion, rolloutRestartTargets[i])
-			}
+			rolloutRestartTargets[i].Name = rolloutRestartObjName("argo-rollout")
+			obj = createArgoRolloutV1alpha1(t, ctx, client, ctrlclient.ObjectKey{
+				Namespace: namespace,
+				Name:      rolloutRestartTargets[i].Name,
+			})
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v",

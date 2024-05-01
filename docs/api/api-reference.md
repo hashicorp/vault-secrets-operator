@@ -215,7 +215,6 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `kind` _string_ |  |  | Enum: [Deployment DaemonSet StatefulSet argo.Rollout] <br /> |
 | `name` _string_ |  |  |  |
-| `apiVersion` _string_ | APIVersion of resource<br /><br />Supported APIVersion(s):<br />	argo.Rollout: argoproj.io/v1alpha1 |  |  |
 
 
 #### SecretTransformation

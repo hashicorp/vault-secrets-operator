@@ -106,20 +106,8 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 			ObjectMeta: objectMeta,
 		}
 	case "argo.Rollout":
-		// we added APIVersion to RolloutRestartTarget to later support
-		// concurrent multiple versions in []RolloutRestartTarget
-		apiVersion := target.APIVersion
-		if apiVersion == "" {
-			apiVersion = defaultArgoRolloutAPIVersion
-		}
-
-		switch apiVersion {
-		case defaultArgoRolloutAPIVersion:
-			obj = &argorolloutsv1alpha1.Rollout{
-				ObjectMeta: objectMeta,
-			}
-		default:
-			return fmt.Errorf("unsupported APIVersion %q for %T", apiVersion, target)
+		obj = &argorolloutsv1alpha1.Rollout{
+			ObjectMeta: objectMeta,
 		}
 	default:
 		return fmt.Errorf("unsupported Kind %q for %T", target.Kind, target)

@@ -115,7 +115,7 @@ func TestRolloutRestart(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "argo.Rollout empty APIVersion",
+			name: "argo.Rollout",
 			obj: &argorolloutsv1alpha1.Rollout{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -127,39 +127,6 @@ func TestRolloutRestart(t *testing.T) {
 				Name: "fred",
 			},
 			wantErr: assert.NoError,
-		},
-		{
-			name: "argo.Rollout argoproj.io/v1alpha1",
-			obj: &argorolloutsv1alpha1.Rollout{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "fred",
-				},
-			},
-			target: v1beta1.RolloutRestartTarget{
-				Kind:       "argo.Rollout",
-				APIVersion: "argoproj.io/v1alpha1",
-				Name:       "fred",
-			},
-			wantErr: assert.NoError,
-		},
-		{
-			name: "argo.Rollout invalid APIVersion",
-			obj: &argorolloutsv1alpha1.Rollout{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "fred",
-				},
-			},
-			target: v1beta1.RolloutRestartTarget{
-				Kind:       "argo.Rollout",
-				APIVersion: "invalid",
-				Name:       "fred",
-			},
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.ErrorContains(t, err,
-					fmt.Sprintf("unsupported APIVersion %q", "invalid"), i...)
-			},
 		},
 	}
 	for _, tt := range tests {

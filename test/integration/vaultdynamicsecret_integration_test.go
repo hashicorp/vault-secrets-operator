@@ -199,10 +199,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 				{
 					Kind: "argo.Rollout",
 				},
-				{
-					Kind:       "argo.Rollout",
-					APIVersion: "argoproj.io/v1alpha1",
-				},
 			},
 			existing: 5,
 			expected: map[string]int{
@@ -220,10 +216,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 				{
 					Kind: "argo.Rollout",
 				},
-				{
-					Kind:       "argo.Rollout",
-					APIVersion: "argoproj.io/v1alpha1",
-				},
 			},
 			create: 5,
 			expected: map[string]int{
@@ -240,10 +232,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 				},
 				{
 					Kind: "argo.Rollout",
-				},
-				{
-					Kind:       "argo.Rollout",
-					APIVersion: "argoproj.io/v1alpha1",
 				},
 			},
 			create:             5,
