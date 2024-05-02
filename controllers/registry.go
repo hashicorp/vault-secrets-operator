@@ -197,11 +197,13 @@ func (r *SyncRegistry) Add(objKey client.ObjectKey) {
 }
 
 // Delete objKey to the set of registered objects.
-func (r *SyncRegistry) Delete(objKey client.ObjectKey) {
+func (r *SyncRegistry) Delete(objKey client.ObjectKey) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	_, ok := r.m[objKey]
 	delete(r.m, objKey)
+	return ok
 }
 
 // Has returns true if objKey is in the set of registered objects.
