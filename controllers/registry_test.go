@@ -489,7 +489,7 @@ func TestSyncRegistry(t *testing.T) {
 					case 0:
 						r.Add(ttt.objKey)
 					case 1:
-						assert.Equal(t, r.Delete(ttt.objKey), ttt.wantHas)
+						assert.Equal(t, ttt.wantHas, r.Delete(ttt.objKey))
 					case 2:
 						assert.Equal(t, ttt.wantHas, r.Has(ttt.objKey))
 					default:
