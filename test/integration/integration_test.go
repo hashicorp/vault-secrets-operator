@@ -678,10 +678,12 @@ type status struct {
 }
 
 // assertRolloutRestarts asserts status and object state of each RolloutRestartTarget based on minGeneration.
-// If minGeneration==1, minimally assert each RolloutRestartTarget reached a healthy state after created
-// RolloutRestartTarget like argo.Rollout needs to reach a healthy state before we can effectively test
+//
+// If minGeneration==1, minimally assert each RolloutRestartTarget reached a healthy state after being created.
+// RolloutRestartTarget's like argo.Rollout need to reach a healthy state before we can effectively test
 // the rollout restart via a reconciler.Reconcile() - when argo.Rollout is making progress towards a healthy state
-// after created, any immediately triggered restart won't take effect
+// after being created, any immediately triggered restart won't take effect.
+//
 // If minGeneration==2, assert each RolloutRestartTarget restarted, reached a healthy state, and has minGeneration
 // and appropriate restartAt.
 func assertRolloutRestarts(
