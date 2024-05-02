@@ -13,9 +13,10 @@ import (
 )
 
 type resourceRefTest struct {
-	referrer       client.ObjectKey
-	reference      client.ObjectKey
-	references     []client.ObjectKey
+	referrer   client.ObjectKey
+	reference  client.ObjectKey
+	references []client.ObjectKey
+	// action 0: Set, 1: Get, 2: Prune, 3: Remove
 	action         int
 	wantReferrers  []client.ObjectKey
 	wantPruneCount int
@@ -357,8 +358,13 @@ func TestSyncRegistry(t *testing.T) {
 		Namespace: "foo",
 		Name:      "bar",
 	}
+	objKey3 := client.ObjectKey{
+		Namespace: "baz",
+		Name:      "qux",
+	}
 	type objKeyTest struct {
-		objKey  client.ObjectKey
+		objKey client.ObjectKey
+		// action 0: Add, 1: Delete, 2: Has
 		action  int
 		wantHas bool
 	}
@@ -399,12 +405,19 @@ func TestSyncRegistry(t *testing.T) {
 			},
 			objKeyTests: []objKeyTest{
 				{
-					objKey: objKey1,
-					action: 1,
+					objKey:  objKey1,
+					action:  1,
+					wantHas: true,
 				},
 				{
-					objKey: objKey2,
-					action: 1,
+					objKey:  objKey2,
+					action:  1,
+					wantHas: true,
+				},
+				{
+					objKey:  objKey3,
+					action:  1,
+					wantHas: false,
 				},
 			},
 			want: &SyncRegistry{
@@ -444,8 +457,9 @@ func TestSyncRegistry(t *testing.T) {
 					action: 0,
 				},
 				{
-					objKey: objKey2,
-					action: 1,
+					objKey:  objKey2,
+					action:  1,
+					wantHas: true,
 				},
 				{
 					objKey:  objKey2,
@@ -475,7 +489,7 @@ func TestSyncRegistry(t *testing.T) {
 					case 0:
 						r.Add(ttt.objKey)
 					case 1:
-						r.Delete(ttt.objKey)
+						assert.Equal(t, ttt.wantHas, r.Delete(ttt.objKey))
 					case 2:
 						assert.Equal(t, ttt.wantHas, r.Has(ttt.objKey))
 					default:
