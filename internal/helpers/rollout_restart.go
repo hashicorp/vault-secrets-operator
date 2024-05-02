@@ -24,8 +24,6 @@ import (
 // AnnotationRestartedAt is updated to trigger a rollout-restart
 const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
 
-var defaultArgoRolloutAPIVersion = argorolloutsv1alpha1.RolloutGVR.GroupVersion().String()
-
 // HandleRolloutRestarts for all v1beta1.RolloutRestartTarget(s) configured for obj.
 // Supported objs are: v1beta1.VaultDynamicSecret, v1beta1.VaultStaticSecret, v1beta1.VaultPKISecret
 // Please note the following:
