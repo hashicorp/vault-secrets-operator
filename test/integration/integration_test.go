@@ -134,7 +134,6 @@ func TestMain(m *testing.M) {
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
-
 		// add schemes to support other rollout restart targets
 		utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
 
