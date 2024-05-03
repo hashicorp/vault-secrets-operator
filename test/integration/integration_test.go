@@ -671,11 +671,6 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.C
 	))
 }
 
-type status struct {
-	Replicas      *int32
-	ReadyReplicas int32
-}
-
 // assertRolloutRestarts asserts status and object state of each RolloutRestartTarget based on minGeneration.
 //
 // If minGeneration==1, minimally assert each RolloutRestartTarget reached a healthy state after being created.
@@ -692,7 +687,6 @@ func assertRolloutRestarts(
 	t.Helper()
 
 	var errs error
-	var s *status
 
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
@@ -707,31 +701,22 @@ func assertRolloutRestarts(
 		expectedAnnotation := helpers.AnnotationRestartedAt
 		switch target.Kind {
 		case "Deployment":
-			if minGeneration > 1 {
-				var o appsv1.Deployment
-				if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-					annotations = o.Spec.Template.Annotations
-					tObj = &o
-				}
-				s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
+			var o appsv1.Deployment
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				annotations = o.Spec.Template.Annotations
+				tObj = &o
 			}
 		case "StatefulSet":
-			if minGeneration > 1 {
-				var o appsv1.StatefulSet
-				if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-					annotations = o.Spec.Template.Annotations
-					tObj = &o
-				}
-				s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
+			var o appsv1.StatefulSet
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				annotations = o.Spec.Template.Annotations
+				tObj = &o
 			}
 		case "ReplicaSet":
-			if minGeneration > 1 {
-				var o appsv1.ReplicaSet
-				if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
-					annotations = o.Spec.Template.Annotations
-					tObj = &o
-				}
-				s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
+			var o appsv1.ReplicaSet
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				annotations = o.Spec.Template.Annotations
+				tObj = &o
 			}
 		case "argo.Rollout":
 			expectedAnnotation = "argo.rollout.status.restartedAt"
@@ -741,17 +726,13 @@ func assertRolloutRestarts(
 				tObj = &o
 			}
 
-			restartedStatus, restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o, minGeneration)
+			restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o, minGeneration)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
 			}
-
-			if minGeneration > 1 {
-				s = restartedStatus
-				annotations = map[string]string{}
-				annotations[expectedAnnotation] = restartedAt.Format(time.RFC3339)
-			}
+			annotations = map[string]string{}
+			annotations[expectedAnnotation] = restartedAt.Format(time.RFC3339)
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -784,7 +765,6 @@ func assertRolloutRestarts(
 		assert.True(t, restartAt.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", restartAt, expectedAnnotation, timeNow)
 
-		t.Logf("Status %#v for target %#v", s, target)
 		//if s.ReadyReplicas != *s.Replicas {
 		//	errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
 		//}
@@ -1083,25 +1063,25 @@ func createRolloutRestartObjs(t *testing.T, ctx context.Context, client ctrlclie
 	return objs
 }
 
-func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout, minGeneration int64) (*status, time.Time, error) {
+func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout, minGeneration int64) (time.Time, error) {
 	if o.Status.Phase != argorolloutsv1alpha1.RolloutPhaseHealthy {
-		return nil, time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 status.phase %q, got %q",
+		return time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 status.phase %q, got %q",
 			argorolloutsv1alpha1.RolloutPhaseHealthy, o.Status.Phase)
 	}
 
 	if minGeneration == 1 {
-		return nil, time.Time{}, nil
+		return time.Time{}, nil
 	}
 
 	if o.Spec.RestartAt == nil {
-		return nil, time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 spec.restartedAt not nil")
+		return time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 spec.restartedAt not nil")
 	}
 
 	if o.Status.RestartedAt != nil {
-		return &status{o.Spec.Replicas, o.Status.ReadyReplicas}, o.Status.RestartedAt.Time, nil
+		return o.Status.RestartedAt.Time, nil
 	}
 
-	return nil, time.Time{}, fmt.Errorf("expected argo.rollout.status.restartedAt not nil " +
+	return time.Time{}, fmt.Errorf("expected argo.rollout.status.restartedAt not nil " +
 		"when updated replicas are available")
 }
 
