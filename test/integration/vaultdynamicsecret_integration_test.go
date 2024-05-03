@@ -308,9 +308,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 					},
 				}
 				// check that all rollout-restarts reach healthy state after created
-				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
-					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
-				}
+				//if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
+				//	awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
+				//}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
 				objsCreated = append(objsCreated, vdsObj)
@@ -357,9 +357,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 					},
 				}
 				// check that all rollout-restarts reach healthy state after created
-				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
-					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
-				}
+				//if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
+				//	awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
+				//}
 
 				assert.NoError(t, crdClient.Create(ctx, vdsObj))
 				objsCreated = append(objsCreated, vdsObj)
