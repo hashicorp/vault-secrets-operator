@@ -738,15 +738,15 @@ func assertRolloutRestarts(
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
 		}
 
-		// skip check generation and restartAt if RolloutRestartTarget was just created
-		if minGeneration == 1 {
-			continue
-		}
-
 		// expect the generation has been incremented
 		if !(tObj.GetGeneration() >= minGeneration) {
 			errs = errors.Join(errs, fmt.Errorf(
 				"expected min generation %d, actual %d", minGeneration, tObj.GetGeneration()))
+			continue
+		}
+
+		// skip check generation if RolloutRestartTarget was just created
+		if minGeneration == 1 {
 			continue
 		}
 
@@ -1025,42 +1025,8 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 	return rolloutObj
 }
 
-func createRolloutRestartObjs(t *testing.T, ctx context.Context, client ctrlclient.Client,
-	rolloutRestartTargets []secretsv1beta1.RolloutRestartTarget, namespace, secretDest string,
-) []ctrlclient.Object {
-	t.Helper()
-	var objs []ctrlclient.Object
-
-	rolloutRestartObjName := func(kindSuffix string) string {
-		return fmt.Sprintf("%s-%s", secretDest, kindSuffix)
-	}
-
-	for i := range rolloutRestartTargets {
-		var obj ctrlclient.Object
-
-		switch rolloutRestartTargets[i].Kind {
-		case "Deployment":
-			rolloutRestartTargets[i].Name = rolloutRestartObjName("deployment")
-			obj = createDeployment(t, ctx, client, ctrlclient.ObjectKey{
-				Namespace: namespace,
-				Name:      rolloutRestartTargets[i].Name,
-			})
-		case "argo.Rollout":
-			rolloutRestartTargets[i].Name = rolloutRestartObjName("argo-rollout")
-			obj = createArgoRolloutV1alpha1(t, ctx, client, ctrlclient.ObjectKey{
-				Namespace: namespace,
-				Name:      rolloutRestartTargets[i].Name,
-			})
-		default:
-			assert.Fail(t,
-				"fatal, unsupported rollout-restart Kind %q for target %v",
-				rolloutRestartTargets[i].Kind, rolloutRestartTargets[i])
-		}
-
-		objs = append(objs, obj)
-	}
-
-	return objs
+func rolloutRestartObjName(secretDest, kindSuffix string) string {
+	return fmt.Sprintf("%s-%s", secretDest, kindSuffix)
 }
 
 func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout, minGeneration int64) (time.Time, error) {

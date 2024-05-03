@@ -180,26 +180,17 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                  string
-		authObj               *secretsv1beta1.VaultAuth
-		rolloutRestartTargets []secretsv1beta1.RolloutRestartTarget
-		expected              map[string]int
-		expectedStatic        map[string]int
-		create                int
-		createStatic          int
-		createNonRenewable    int
-		existing              int
+		name               string
+		authObj            *secretsv1beta1.VaultAuth
+		expected           map[string]int
+		expectedStatic     map[string]int
+		create             int
+		createStatic       int
+		createNonRenewable int
+		existing           int
 	}{
 		{
-			name: "existing-only",
-			rolloutRestartTargets: []secretsv1beta1.RolloutRestartTarget{
-				{
-					Kind: "Deployment",
-				},
-				{
-					Kind: "argo.Rollout",
-				},
-			},
+			name:     "existing-only",
 			existing: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
@@ -208,15 +199,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name: "create-only",
-			rolloutRestartTargets: []secretsv1beta1.RolloutRestartTarget{
-				{
-					Kind: "Deployment",
-				},
-				{
-					Kind: "argo.Rollout",
-				},
-			},
+			name:   "create-only",
 			create: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
@@ -225,15 +208,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name: "mixed",
-			rolloutRestartTargets: []secretsv1beta1.RolloutRestartTarget{
-				{
-					Kind: "Deployment",
-				},
-				{
-					Kind: "argo.Rollout",
-				},
-			},
+			name:               "mixed",
 			create:             5,
 			createStatic:       5,
 			createNonRenewable: 5,
@@ -312,10 +287,26 @@ func TestVaultDynamicSecret(t *testing.T) {
 					},
 				}
 
-				otherObjsCreated = append(otherObjsCreated,
-					createRolloutRestartObjs(t, ctx, crdClient, tt.rolloutRestartTargets, outputs.K8sNamespace, dest)...,
-				)
-				vdsObj.Spec.RolloutRestartTargets = tt.rolloutRestartTargets
+				depObj := createDeployment(t, ctx, crdClient, ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      rolloutRestartObjName(dest, "deployment"),
+				})
+				argoRolloutObj := createArgoRolloutV1alpha1(t, ctx, crdClient, ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      rolloutRestartObjName(dest, "argo-rollout-v1alpha1"),
+				})
+				otherObjsCreated = append(otherObjsCreated, depObj, argoRolloutObj)
+
+				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
+					},
+					{
+						Kind: "argo.Rollout",
+						Name: argoRolloutObj.Name,
+					},
+				}
 				// check that all rollout-restarts reach health state after created
 				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
 					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
@@ -345,10 +336,26 @@ func TestVaultDynamicSecret(t *testing.T) {
 					},
 				}
 
-				otherObjsCreated = append(otherObjsCreated,
-					createRolloutRestartObjs(t, ctx, crdClient, tt.rolloutRestartTargets, outputs.K8sNamespace, dest)...,
-				)
-				vdsObj.Spec.RolloutRestartTargets = tt.rolloutRestartTargets
+				depObj := createDeployment(t, ctx, crdClient, ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      rolloutRestartObjName(dest, "deployment"),
+				})
+				argoRolloutObj := createArgoRolloutV1alpha1(t, ctx, crdClient, ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      rolloutRestartObjName(dest, "argo-rollout-v1alpha1"),
+				})
+				otherObjsCreated = append(otherObjsCreated, depObj, argoRolloutObj)
+
+				vdsObj.Spec.RolloutRestartTargets = []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
+					},
+					{
+						Kind: "argo.Rollout",
+						Name: argoRolloutObj.Name,
+					},
+				}
 				// check that all rollout-restarts reach health state after created
 				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
 					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
