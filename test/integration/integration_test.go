@@ -669,15 +669,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.C
 	))
 }
 
-// assertRolloutRestarts asserts status and object state of each RolloutRestartTarget based on minGeneration.
-//
-// If minGeneration==1, minimally assert each RolloutRestartTarget reached a healthy state after being created.
-// RolloutRestartTarget's like argo.Rollout need to reach a healthy state before we can effectively test
-// the rollout restart via a reconciler.Reconcile() - when argo.Rollout is making progress towards a healthy state
-// after being created, any immediately triggered restart won't take effect.
-//
-// If minGeneration==2, assert each RolloutRestartTarget restarted, reached a healthy state, and has minGeneration
-// and appropriate restartAt.
+// assertRolloutRestarts asserts status and object state of each RolloutRestartTarget
 func assertRolloutRestarts(
 	t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
 	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
