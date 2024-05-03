@@ -379,7 +379,8 @@ func TestVaultStaticSecret(t *testing.T) {
 			}
 
 			if !expectInitial && len(obj.Spec.RolloutRestartTargets) > 0 {
-				awaitRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets, 2)
+				awaitRolloutRestarts(t, ctx, crdClient, obj,
+					obj.Spec.RolloutRestartTargets, 2)
 			}
 		}
 	}

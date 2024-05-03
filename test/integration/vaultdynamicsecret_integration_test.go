@@ -307,7 +307,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Name: argoRolloutObj.Name,
 					},
 				}
-				// check that all rollout-restarts reach health state after created
+				// check that all rollout-restarts reach healthy state after created
 				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
 					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
 				}
@@ -356,7 +356,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 						Name: argoRolloutObj.Name,
 					},
 				}
-				// check that all rollout-restarts reach health state after created
+				// check that all rollout-restarts reach healthy state after created
 				if len(vdsObj.Spec.RolloutRestartTargets) > 0 {
 					awaitRolloutRestarts(t, ctx, crdClient, vdsObj, vdsObj.Spec.RolloutRestartTargets, 1)
 				}
