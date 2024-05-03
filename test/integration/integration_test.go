@@ -651,13 +651,11 @@ func exportKindLogs(name string, failed bool) error {
 	return nil
 }
 
-func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
-	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
-) {
+func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1beta1.RolloutRestartTarget) {
 	t.Helper()
 	require.NoError(t, backoff.Retry(
 		func() error {
-			err := assertRolloutRestarts(t, ctx, client, obj, targets, minGeneration)
+			err := assertRolloutRestarts(t, ctx, client, obj, targets, 2)
 			if t.Failed() {
 				e := fmt.Errorf("assertRolloutRestarts failed")
 				if err != nil {
@@ -667,7 +665,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.C
 			}
 			return err
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 360),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 60),
 	))
 }
 

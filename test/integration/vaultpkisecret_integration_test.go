@@ -313,7 +313,7 @@ func TestVaultPKISecret(t *testing.T) {
 					assertSyncableSecret(t, crdClient, vpsObj, secret)
 
 					if len(vpsObj.Spec.RolloutRestartTargets) > 0 {
-						awaitRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets, 2)
+						awaitRolloutRestarts(t, ctx, crdClient, vpsObj, vpsObj.Spec.RolloutRestartTargets)
 					}
 
 					if vpsObj.Spec.Destination.Create && !t.Failed() {
