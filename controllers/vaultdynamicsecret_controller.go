@@ -297,8 +297,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	r.SyncRegistry.Delete(req.NamespacedName)
-	logger.Info("Deleted from SyncRegistry", "obj", req.NamespacedName)
+	if ok := r.SyncRegistry.Delete(req.NamespacedName); ok {
+		logger.V(consts.LogLevelDebug).Info("Deleted object from SyncRegistry",
+			"obj", req.NamespacedName)
+	}
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -514,12 +516,10 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 			builder.WithPredicates(&secretsPredicate{}),
 		).
 		WatchesRawSource(
-			&source.Channel{
-				Source: r.SourceCh,
-			},
-			&enqueueDelayingSyncEventHandler{
-				enqueueDurationForJitter: time.Second * 2,
-			},
+			source.Channel(r.SourceCh,
+				&enqueueDelayingSyncEventHandler{
+					enqueueDurationForJitter: time.Second * 2,
+				}),
 		)
 
 	if err := m.Complete(r); err != nil {
