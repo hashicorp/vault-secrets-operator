@@ -213,8 +213,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `kind` _string_ |  |  | Enum: [Deployment DaemonSet StatefulSet argo.Rollout] <br /> |
-| `name` _string_ |  |  |  |
+| `kind` _string_ | Kind of the resource |  | Enum: [Deployment DaemonSet StatefulSet argo.Rollout] <br /> |
+| `name` _string_ | Name of the resource |  |  |
 
 
 #### SecretTransformation

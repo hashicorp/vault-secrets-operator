@@ -41,13 +41,11 @@ type Destination struct {
 //
 // Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 type RolloutRestartTarget struct {
+	// Kind of the resource
 	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet,argo.Rollout}
 	Kind string `json:"kind"`
+	// Name of the resource
 	Name string `json:"name"`
-	// When argo.Rollout CRD's APIVersion is bumped or new CRDs that are supported
-	// in the future have multiple APIVersions, we will probably need to support
-	// APIVersion in RolloutRestartTarget, since there can be rollout instances
-	// of varying APIVersions deployed to the cluster.
 }
 
 type Transformation struct {
