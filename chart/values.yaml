@@ -12,13 +12,14 @@ controller:
   # Configure update strategy for multi-replica deployments.
   # Kubernetes supports types Recreate, and RollingUpdate
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+  # Example:
+  # strategy: {}
+  #   rollingUpdate:
+  #     maxSurge: 1
+  #     maxUnavailable: 0
+  #   type: RollingUpdate
   # @type: object
   strategy: {}
-  # rollingUpdate:
-  #   maxSurge: 1
-  #   maxUnavailable: 0
-  # type: RollingUpdate
-
 
   # Host Aliases settings for vault-secrets-operator pod.
   # The value is an array of PodSpec HostAlias maps.

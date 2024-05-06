@@ -27,7 +27,7 @@ spec:
     matchLabels:
       control-plane: controller-manager
     {{- include "vso.chart.selectorLabels" . | nindent 6 }}
-  {{- with .Values.strategy }}
+  {{- with .Values.controller.strategy }}
   strategy: {{ toYaml . | nindent 4 }}
   {{- end }}
   template:
