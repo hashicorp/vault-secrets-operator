@@ -716,7 +716,7 @@ func assertRolloutRestarts(
 				tObj = &o
 			}
 
-			restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o, minGeneration)
+			restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
@@ -732,11 +732,6 @@ func assertRolloutRestarts(
 		if !(tObj.GetGeneration() >= minGeneration) {
 			errs = errors.Join(errs, fmt.Errorf(
 				"expected min generation %d, actual %d", minGeneration, tObj.GetGeneration()))
-			continue
-		}
-
-		// skip check generation if RolloutRestartTarget was just created
-		if minGeneration == 1 {
 			continue
 		}
 
@@ -1019,14 +1014,10 @@ func rolloutRestartObjName(secretDest, kindSuffix string) string {
 	return fmt.Sprintf("%s-%s", secretDest, kindSuffix)
 }
 
-func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout, minGeneration int64) (time.Time, error) {
+func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout) (time.Time, error) {
 	if o.Status.Phase != argorolloutsv1alpha1.RolloutPhaseHealthy {
 		return time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 status.phase %q, got %q",
 			argorolloutsv1alpha1.RolloutPhaseHealthy, o.Status.Phase)
-	}
-
-	if minGeneration == 1 {
-		return time.Time{}, nil
 	}
 
 	if o.Spec.RestartAt == nil {
