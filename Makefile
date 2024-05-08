@@ -304,7 +304,7 @@ set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_D
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
 
 .PHONY: set-image integration-test
-integration-test: set-image setup-vault ## Run integration tests for Vault OSS
+integration-test: set-image setup-vault ## Run integration tests for Vault Community
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
@@ -316,7 +316,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
-integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
+integration-test-helm: setup-integration-test ## Run integration tests for Vault Community
 	$(MAKE) integration-test TEST_WITH_HELM=true
 
 .PHONY: integration-test-helm-ent
@@ -328,7 +328,7 @@ integration-test-ent: ## Run integration tests for Vault Enterprise
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 
 .PHONY: integration-test-both
-integration-test-both: ## Run integration tests against Vault Enterprise and Vault OSS
+integration-test-both: ## Run integration tests against Vault Enterprise and Vault Community
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 	$(MAKE) integration-test
 
