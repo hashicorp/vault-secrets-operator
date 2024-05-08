@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"time"
 
+	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -83,7 +84,7 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 		return fmt.Errorf("namespace cannot be empty")
 	}
 
-	objectMeta := v1.ObjectMeta{
+	objectMeta := metav1.ObjectMeta{
 		Namespace: namespace,
 		Name:      target.Name,
 	}
@@ -100,6 +101,10 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 		}
 	case "StatefulSet":
 		obj = &appsv1.StatefulSet{
+			ObjectMeta: objectMeta,
+		}
+	case "argo.Rollout":
+		obj = &argorolloutsv1alpha1.Rollout{
 			ObjectMeta: objectMeta,
 		}
 	default:
@@ -139,6 +144,11 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
+		return client.Patch(ctx, t, patch)
+	case *argorolloutsv1alpha1.Rollout:
+		// use MergeFrom() since it supports CRDs whereas StrategicMergeFrom() does not.
+		patch := ctrlclient.MergeFrom(t.DeepCopy())
+		t.Spec.RestartAt = &metav1.Time{Time: time.Now()}
 		return client.Patch(ctx, t, patch)
 	default:
 		return fmt.Errorf("unsupported type %T for rollout-restart patching", t)
