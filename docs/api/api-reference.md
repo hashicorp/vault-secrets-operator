@@ -201,7 +201,7 @@ with a timestamp value of when the trigger was executed.
 E.g. vso.secrets.hashicorp.com/restartedAt: "2023-03-23T13:39:31Z"
 
 
-Supported resources: Deployment, DaemonSet, StatefulSet
+Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 
 
 
@@ -213,8 +213,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `kind` _string_ |  |  | Enum: [Deployment DaemonSet StatefulSet] <br /> |
-| `name` _string_ |  |  |  |
+| `kind` _string_ | Kind of the resource |  | Enum: [Deployment DaemonSet StatefulSet argo.Rollout] <br /> |
+| `name` _string_ | Name of the resource |  |  |
 
 
 #### SecretTransformation

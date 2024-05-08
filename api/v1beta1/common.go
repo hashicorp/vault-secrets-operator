@@ -39,10 +39,12 @@ type Destination struct {
 // with a timestamp value of when the trigger was executed.
 // E.g. vso.secrets.hashicorp.com/restartedAt: "2023-03-23T13:39:31Z"
 //
-// Supported resources: Deployment, DaemonSet, StatefulSet
+// Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 type RolloutRestartTarget struct {
-	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet}
+	// Kind of the resource
+	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet,argo.Rollout}
 	Kind string `json:"kind"`
+	// Name of the resource
 	Name string `json:"name"`
 }
 
