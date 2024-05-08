@@ -669,7 +669,7 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.C
 	))
 }
 
-// assertRolloutRestarts asserts status and object state of each RolloutRestartTarget
+// assertRolloutRestarts asserts the object state of each RolloutRestartTarget
 func assertRolloutRestarts(
 	t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
 	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
@@ -680,7 +680,6 @@ func assertRolloutRestarts(
 
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
-	var restartAt time.Time
 	for _, target := range targets {
 		var tObj ctrlclient.Object
 		tObjKey := ctrlclient.ObjectKey{
@@ -716,13 +715,13 @@ func assertRolloutRestarts(
 				tObj = &o
 			}
 
-			restartedAt, err := statusAfterRestartArgoRolloutV1alpha1(&o)
+			restartAt, err := statusAfterRestartArgoRolloutV1alpha1(&o)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
 			}
 			annotations = map[string]string{}
-			annotations[expectedAnnotation] = restartedAt.Format(time.RFC3339)
+			annotations[expectedAnnotation] = restartAt.Format(time.RFC3339)
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -741,7 +740,7 @@ func assertRolloutRestarts(
 			continue
 		}
 		var err error
-		restartAt, err = time.Parse(time.RFC3339, val)
+		restartAt, err := time.Parse(time.RFC3339, val)
 		if !assert.NoError(t, err,
 			"invalid value for %q", expectedAnnotation) {
 			continue
@@ -1014,22 +1013,17 @@ func rolloutRestartObjName(secretDest, kindSuffix string) string {
 	return fmt.Sprintf("%s-%s", secretDest, kindSuffix)
 }
 
-func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout) (time.Time, error) {
-	if o.Status.Phase != argorolloutsv1alpha1.RolloutPhaseHealthy {
-		return time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 status.phase %q, got %q",
-			argorolloutsv1alpha1.RolloutPhaseHealthy, o.Status.Phase)
-	}
-
+func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout) (*v1.Time, error) {
+	// We only do basic validation to show that VSO did the Spec.RestartAt patch.
+	// We don't check that the argo.Rollout object reaches a healthy state, and
+	// has Status.RestartedAt set properly, due to nondeterministic states caused by
+	// argo.Rollout controller's reconciliation issues.
+	// https://github.com/argoproj/argo-rollouts/issues/3418
+	// https://github.com/argoproj/argo-rollouts/issues/3080
 	if o.Spec.RestartAt == nil {
-		return time.Time{}, fmt.Errorf("expected argo.Rollout v1alpha1 spec.restartedAt not nil")
+		return nil, fmt.Errorf("expected argo.Rollout v1alpha1 spec.restartAt not nil")
 	}
-
-	if o.Status.RestartedAt != nil {
-		return o.Status.RestartedAt.Time, nil
-	}
-
-	return time.Time{}, fmt.Errorf("expected argo.rollout.status.restartedAt not nil " +
-		"when updated replicas are available")
+	return o.Spec.RestartAt, nil
 }
 
 func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, client ctrlclient.Client,

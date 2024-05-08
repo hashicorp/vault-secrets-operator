@@ -190,9 +190,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 		existing           int
 	}{
 		{
-			name:            "existing-only",
-			existing:        5,
-			withArgoRollout: true,
+			name:     "existing-only",
+			existing: 5,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
