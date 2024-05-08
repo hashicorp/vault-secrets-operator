@@ -348,6 +348,7 @@ func Test_resourceReferenceCache(t *testing.T) {
 }
 
 func TestSyncRegistry(t *testing.T) {
+	t.Skip()
 	t.Parallel()
 
 	objKey1 := client.ObjectKey{

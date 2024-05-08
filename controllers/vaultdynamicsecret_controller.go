@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -329,9 +330,8 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 	return meta.LastVaultRotation > 0 && (meta.RotationPeriod >= 1 || meta.RotationSchedule != "")
 }
 
-func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
-	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
-) (*secretsv1beta1.VaultSecretLease, bool, error) {
+// doVault performs a Vault request based on the VaultDynamicSecret's spec.
+func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (vault.Response, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp vault.Response
@@ -345,7 +345,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	}
 
 	method := o.Spec.RequestHTTPMethod
-	logger := log.FromContext(ctx).WithName("syncSecret")
+	logger := log.FromContext(ctx).WithName("doVault")
 	if params != nil {
 		if !(method == http.MethodPost || method == http.MethodPut) {
 			logger.V(consts.LogLevelWarning).Info(
@@ -365,71 +365,72 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	case http.MethodGet:
 		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil))
 	default:
-		return nil, false, fmt.Errorf("unsupported HTTP method %q for sync", method)
+		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
 
 	if err != nil {
 		logger.Error(err, "Vault request failed")
-		return nil, false, err
+		return nil, err
 	}
 
 	if resp == nil {
-		return nil, false, fmt.Errorf("nil response from vault for path %s", path)
+		return nil, fmt.Errorf("nil response from vault for path %s", path)
 	}
 
-	data, err := resp.SecretK8sData(opt)
+	return resp, nil
+}
+
+func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
+	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
+) (*secretsv1beta1.VaultSecretLease, bool, error) {
+	logger := log.FromContext(ctx).WithName("syncSecret")
+
+	resp, err := r.doVault(ctx, c, o)
 	if err != nil {
 		return nil, false, err
 	}
 
+	if resp == nil {
+		return nil, false, errors.New("nil response")
+	}
+
+	var data map[string][]byte
 	secretLease := r.getVaultSecretLease(resp.Secret())
 	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
-		respData := resp.Data()
-		if v, ok := respData["last_vault_rotation"]; ok && v != nil {
-			ts, err := time.Parse(time.RFC3339Nano, v.(string))
-			if err == nil {
-				o.Status.StaticCredsMetaData.LastVaultRotation = ts.Unix()
-			}
-		}
-		if v, ok := respData["rotation_period"]; ok && v != nil {
-			switch t := v.(type) {
-			case json.Number:
-				period, err := t.Int64()
-				if err == nil {
-					o.Status.StaticCredsMetaData.RotationPeriod = period
-				}
-			}
-		}
-		if v, ok := respData["rotation_schedule"]; ok && v != nil {
-			if schedule, ok := v.(string); ok && v != nil {
-				o.Status.StaticCredsMetaData.RotationSchedule = schedule
-			}
-		}
-		if v, ok := respData["ttl"]; ok && v != nil {
-			switch t := v.(type) {
-			case json.Number:
-				ttl, err := t.Int64()
-				if err == nil {
-					o.Status.StaticCredsMetaData.TTL = ttl
-				}
-			}
+		staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+		if err != nil {
+			return nil, false, err
 		}
 
-		if r.isStaticCreds(&o.Status.StaticCredsMetaData) {
-			dataToMAC := maps.Clone(data)
-			for _, k := range []string{"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", "_raw"} {
-				delete(dataToMAC, k)
-			}
+		resp = rotatedResponse
+		data, err = resp.SecretK8sData(opt)
+		if err != nil {
+			return nil, false, err
+		}
 
-			macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, dataToMAC)
-			if err != nil {
-				return nil, false, err
-			}
+		dataToMAC := maps.Clone(data)
+		for _, k := range []string{"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", "_raw"} {
+			delete(dataToMAC, k)
+		}
 
-			o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
-			if macsEqual {
-				return secretLease, false, nil
-			}
+		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, dataToMAC)
+		if err != nil {
+			return nil, false, err
+		}
+
+		logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
+
+		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+		if macsEqual {
+			return secretLease, false, nil
+		}
+
+		o.Status.StaticCredsMetaData = *staticCredsMeta
+		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
+	} else {
+		data, err = resp.SecretK8sData(opt)
+		if err != nil {
+			return nil, false, err
 		}
 	}
 
@@ -439,6 +440,100 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	}
 
 	return secretLease, true, nil
+}
+
+// awaitVaultSecretRotation waits for the Vault secret to be rotated. This is
+// necessary for the case where the Vault secret is a static-creds secret and includes
+// a rotation schedule.
+func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret,
+	c vault.ClientBase, lastResponse vault.Response) (*secretsv1beta1.VaultStaticCredsMetaData,
+	vault.Response,
+	error,
+) {
+	logger := log.FromContext(ctx).WithName("awaitVaultSecretRotation")
+
+	resp := lastResponse
+	respData := lastResponse.Data()
+	staticCredsMeta, err := vaultStaticCredsMetaDataFromData(respData)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// if we are not handling static creds or the rotation schedule is not set, then
+	// we can return early.
+	if !r.isStaticCreds(staticCredsMeta) || staticCredsMeta.RotationSchedule == "" {
+		return staticCredsMeta, resp, nil
+	}
+
+	lastSyncStaticCredsMeta := o.Status.StaticCredsMetaData.DeepCopy()
+	inLastSyncRotation := lastSyncStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation
+	switch {
+	case !inLastSyncRotation:
+		// return early, not in the last rotation
+		return staticCredsMeta, resp, nil
+	case lastSyncStaticCredsMeta.RotationSchedule == "":
+		// return early, rotation schedule was not set in the last sync
+		return staticCredsMeta, resp, nil
+	case lastSyncStaticCredsMeta.RotationSchedule != staticCredsMeta.RotationSchedule:
+		// return early, rotation schedule has changed
+		return staticCredsMeta, resp, nil
+	}
+
+	logger = logger.WithValues(
+		"staticCredsMeta", staticCredsMeta,
+		"lastSyncStaticCredsMeta", lastSyncStaticCredsMeta,
+		"ttl", staticCredsMeta.TTL,
+		"inLastSyncRotation", inLastSyncRotation,
+	)
+
+	bo := backoff.NewExponentialBackOff(
+		// typically the rotation period is 5s, so it should be safe to double that.
+		// Ideally we could use the rotation's TTL value here, but that value is not
+		// considered to be reliable to the TTL roll-over bug that might exist in the database
+		// secrets engine.
+		backoff.WithMaxElapsedTime(time.Second*10),
+		backoff.WithMaxInterval(time.Second*2))
+	if err := backoff.Retry(
+		func() error {
+			resp, err = r.doVault(ctx, c, o)
+			if err != nil {
+				return err
+			}
+
+			newStaticCredsMeta, err := vaultStaticCredsMetaDataFromData(resp.Data())
+			if err != nil {
+				return err
+			}
+
+			var retryError error
+			if newStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation {
+				// in the case where we are in the rotation period, we need to wait for the next
+				// rotation if it is less than 2s away or if the ttl has increased wrt. to the
+				// last rotation. An increase in ttl indicates that secrets engine has the TTL
+				// rollover bug, so we need to wait for the next rotation in order to get the
+				// correct/true TTL value.
+				if newStaticCredsMeta.TTL <= 2 {
+					retryError = errors.New("near rotation, ttl<=2")
+				} else if newStaticCredsMeta.TTL >= lastSyncStaticCredsMeta.TTL {
+					retryError = errors.New("not rotated, handling ttl rollover bug")
+				}
+			}
+
+			logger.V(consts.LogLevelDebug).Info("Stale static creds backoff",
+				"newStaticCredsMeta", newStaticCredsMeta,
+				"retryError", retryError,
+			)
+			if retryError != nil {
+				return retryError
+			}
+
+			staticCredsMeta = newStaticCredsMeta
+			return nil
+		}, bo); err != nil {
+		return nil, nil, err
+	}
+
+	return staticCredsMeta, resp, nil
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
@@ -628,8 +723,12 @@ func (r *VaultDynamicSecretReconciler) computePostSyncHorizon(ctx context.Contex
 			)
 		} else {
 			if d > 0 {
-				// give Vault an extra .5 seconds to perform the rotation
-				horizon = d + 500*time.Millisecond
+				horizon = d
+				if staticCredsMeta.RotationPeriod > 0 {
+					// give Vault an extra .5 seconds to perform the rotation if the case of a
+					// non-scheduled rotation.
+					horizon = d + 500*time.Millisecond
+				}
 			} else {
 				horizon = time.Second * 1
 			}
@@ -764,4 +863,54 @@ func computeRelativeHorizonWithJitter(o *secretsv1beta1.VaultDynamicSecret, minH
 		horizon -= time.Duration(jitter)
 	}
 	return horizon, inWindow
+}
+
+func vaultStaticCredsMetaDataFromData(data map[string]any) (*secretsv1beta1.VaultStaticCredsMetaData, error) {
+	var ret secretsv1beta1.VaultStaticCredsMetaData
+	if v, ok := data["last_vault_rotation"]; ok && v != nil {
+		ts, err := time.Parse(time.RFC3339Nano, v.(string))
+		if err != nil {
+			return nil, fmt.Errorf("invalid last_vault_rotation %w", err)
+		}
+
+		ret.LastVaultRotation = ts.Unix()
+	}
+
+	if v, ok := data["rotation_period"]; ok && v != nil {
+		switch t := v.(type) {
+		case json.Number:
+			period, err := t.Int64()
+			if err != nil {
+				return nil, err
+			}
+			ret.RotationPeriod = period
+		case int:
+			ret.RotationPeriod = int64(t)
+		default:
+			return nil, errors.New("invalid rotation_period")
+		}
+	}
+
+	if v, ok := data["rotation_schedule"]; ok && v != nil {
+		if schedule, ok := v.(string); ok && v != nil {
+			ret.RotationSchedule = schedule
+		}
+	}
+
+	if v, ok := data["ttl"]; ok && v != nil {
+		switch t := v.(type) {
+		case json.Number:
+			ttl, err := t.Int64()
+			if err != nil {
+				return nil, err
+			}
+			ret.TTL = ttl
+		case int:
+			ret.TTL = int64(t)
+		default:
+			return nil, errors.New("invalid ttl")
+		}
+	}
+
+	return &ret, nil
 }

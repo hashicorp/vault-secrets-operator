@@ -33,19 +33,21 @@ import (
 )
 
 type dynamicK8SOutputs struct {
-	NamePrefix              string `json:"name_prefix"`
-	Namespace               string `json:"namespace"`
-	K8sNamespace            string `json:"k8s_namespace"`
-	K8sConfigContext        string `json:"k8s_config_context"`
-	AuthMount               string `json:"auth_mount"`
-	AuthPolicy              string `json:"auth_policy"`
-	AuthRole                string `json:"auth_role"`
-	DBRole                  string `json:"db_role"`
-	DBRoleStatic            string `json:"db_role_static"`
-	DefaultLeaseTTLSeconds  int    `json:"default_lease_ttl_seconds"`
-	DBRoleStaticUser        string `json:"db_role_static_user"`
-	StaticRotationPeriod    int    `json:"static_rotation_period"`
-	NonRenewableK8STokenTTL int    `json:"non_renewable_k8s_token_ttl"`
+	NamePrefix                string `json:"name_prefix"`
+	Namespace                 string `json:"namespace"`
+	K8sNamespace              string `json:"k8s_namespace"`
+	K8sConfigContext          string `json:"k8s_config_context"`
+	AuthMount                 string `json:"auth_mount"`
+	AuthPolicy                string `json:"auth_policy"`
+	AuthRole                  string `json:"auth_role"`
+	DBRole                    string `json:"db_role"`
+	DBRoleStatic              string `json:"db_role_static"`
+	DBRoleStaticUser          string `json:"db_role_static_user"`
+	StaticRotationPeriod      int    `json:"static_rotation_period"`
+	DBRoleStaticScheduled     string `json:"db_role_static_scheduled"`
+	DBRoleStaticUserScheduled string `json:"db_role_static_user_scheduled"`
+	DefaultLeaseTTLSeconds    int    `json:"default_lease_ttl_seconds"`
+	NonRenewableK8STokenTTL   int    `json:"non_renewable_k8s_token_ttl"`
 	// should always be non-renewable
 	K8SSecretPath  string `json:"k8s_secret_path"`
 	K8SSecretRole  string `json:"k8s_secret_role"`
@@ -180,14 +182,16 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		authObj            *secretsv1beta1.VaultAuth
-		expected           map[string]int
-		expectedStatic     map[string]int
-		create             int
-		createStatic       int
-		createNonRenewable int
-		existing           int
+		name                    string
+		authObj                 *secretsv1beta1.VaultAuth
+		expected                map[string]int
+		expectedStatic          map[string]int
+		expectedStaticScheduled map[string]int
+		create                  int
+		createStatic            int
+		createStaticScheduled   int
+		createNonRenewable      int
+		existing                int
 	}{
 		{
 			name:     "existing-only",
@@ -235,6 +239,18 @@ func TestVaultDynamicSecret(t *testing.T) {
 				"password":        20,
 				"rotation_period": 2,
 				"username":        24,
+			},
+		},
+		{
+			name:                  "create-static-scheduled",
+			createStaticScheduled: 10,
+			expectedStaticScheduled: map[string]int{
+				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
+				// assertDynamicSecret, so no need to include them here.
+				"password":          20,
+				"username":          len(outputs.DBRoleStaticUserScheduled),
+				"rotation_schedule": 11,
+				"rotation_window":   4,
 			},
 		},
 		{
@@ -366,6 +382,30 @@ func TestVaultDynamicSecret(t *testing.T) {
 				objsCreated = append(objsCreated, vdsObj)
 			}
 
+			for idx := 0; idx < tt.createStaticScheduled; idx++ {
+				dest := fmt.Sprintf("%s-create-static-creds-scheduled-%d", tt.name, idx)
+				vdsObj := &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Namespace:        outputs.Namespace,
+						Mount:            outputs.DBPath,
+						Path:             "static-creds/" + outputs.DBRoleStaticScheduled,
+						AllowStaticCreds: true,
+						Revoke:           false,
+						Destination: secretsv1beta1.Destination{
+							Name:   dest,
+							Create: true,
+						},
+					},
+				}
+
+				assert.NoError(t, crdClient.Create(ctx, vdsObj))
+				objsCreated = append(objsCreated, vdsObj)
+			}
+
 			for idx := 0; idx < tt.createNonRenewable; idx++ {
 				dest := fmt.Sprintf("%s-create-nr-creds-%d", tt.name, idx)
 				vdsObj := &secretsv1beta1.VaultDynamicSecret{
@@ -406,7 +446,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 				var expectedPresentOnly []string
 				if obj.Spec.AllowStaticCreds {
 					nameFmt = "static-" + nameFmt
-					expected = tt.expectedStatic
+					if len(tt.expectedStatic) > 0 {
+						expected = tt.expectedStatic
+					} else if len(tt.expectedStaticScheduled) > 0 {
+						expected = tt.expectedStaticScheduled
+					}
 					expectedPresentOnly = append(expectedPresentOnly,
 						helpers.SecretDataKeyRaw,
 						"last_vault_rotation",
@@ -871,13 +915,19 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 		if !vdsObj.Spec.AllowStaticCreds {
 			maxTries = uint64(vdsObj.Status.SecretLease.LeaseDuration * 10)
 		} else {
-			if !assert.Greater(t, vdsObj.Status.StaticCredsMetaData.RotationPeriod, int64(0)) {
+			if vdsObj.Status.StaticCredsMetaData.RotationSchedule == "" {
+				if !assert.Greater(t, vdsObj.Status.StaticCredsMetaData.RotationPeriod, int64(0),
+					"expected Status.StaticCredsMetaData.RotationPeriod to be set") {
+					return nil
+				}
+				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
+			} else {
+				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.TTL * 4)
+			}
+			if !assert.NotEmpty(t, vdsObj.Status.SecretMAC,
+				"expected Status.SecretMAC to be set") {
 				return nil
 			}
-			if !assert.NotEmpty(t, vdsObj.Status.SecretMAC) {
-				return nil
-			}
-			maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
 		}
 	}
 

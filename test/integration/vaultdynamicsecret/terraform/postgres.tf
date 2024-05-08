@@ -45,6 +45,7 @@ resource "null_resource" "create-pg-user" {
     namespace = data.kubernetes_pod.postgres.metadata[0].namespace
     pod       = data.kubernetes_pod.postgres.metadata[0].name
     password  = data.kubernetes_secret.postgres.data["postgres-password"]
+    role      = local.db_role_static_user
   }
   provisioner "local-exec" {
     command = <<EOT
@@ -53,7 +54,7 @@ until [ $tries -ge 60 ]
 do
   kubectl exec -n ${self.triggers.namespace} ${self.triggers.pod} -- \
   psql postgresql://postgres:${self.triggers.password}@127.0.0.1:5432/postgres \
-  -c 'CREATE ROLE "${local.db_role_static_user}"' && exit 0
+  -c 'CREATE ROLE "${self.triggers.role}"' && exit 0
   ((++tries))
   sleep .5
 done
@@ -61,6 +62,30 @@ exit 1
 EOT
   }
 }
+
+resource "null_resource" "create-pg-user-scheduled" {
+  triggers = {
+    namespace = data.kubernetes_pod.postgres.metadata[0].namespace
+    pod       = data.kubernetes_pod.postgres.metadata[0].name
+    password  = data.kubernetes_secret.postgres.data["postgres-password"]
+    role      = local.db_role_static_user_scheduled
+  }
+  provisioner "local-exec" {
+    command = <<EOT
+tries=0
+until [ $tries -ge 60 ]
+do
+  kubectl exec -n ${self.triggers.namespace} ${self.triggers.pod} -- \
+  psql postgresql://postgres:${self.triggers.password}@127.0.0.1:5432/postgres \
+  -c 'CREATE ROLE "${self.triggers.role}"' && exit 0
+  ((++tries))
+  sleep .5
+done
+exit 1
+EOT
+  }
+}
+
 
 resource "vault_database_secrets_mount" "db" {
   namespace                 = local.namespace
@@ -76,6 +101,7 @@ resource "vault_database_secrets_mount" "db" {
     allowed_roles = [
       local.db_role,
       local.db_role_static,
+      local.db_role_static_scheduled,
     ]
   }
 }
@@ -104,6 +130,19 @@ resource "vault_database_secret_backend_static_role" "postgres" {
   ]
 }
 
+resource "vault_database_secret_backend_static_role" "postgres-scheduled" {
+  namespace           = local.namespace
+  backend             = vault_database_secrets_mount.db.path
+  name                = local.db_role_static_scheduled
+  db_name             = vault_database_secrets_mount.db.postgresql[0].name
+  username            = local.db_role_static_user_scheduled
+  rotation_statements = ["ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
+  rotation_schedule   = "*/1 * * * *"
+  rotation_window     = 3600
+  depends_on = [
+    null_resource.create-pg-user,
+  ]
+}
 resource "vault_policy" "db" {
   namespace = local.namespace
   name      = "${local.auth_policy}-db"
@@ -112,6 +151,9 @@ path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_back
   capabilities = ["read"]
 }
 path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
+  capabilities = ["read"]
+}
+path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres-scheduled.name}" {
   capabilities = ["read"]
 }
 EOT
