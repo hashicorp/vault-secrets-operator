@@ -427,6 +427,21 @@ func Test_defaultClient_Validate(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid-with-auth-secret-nil",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					"auth secret not set, never logged in", i...)
+			},
+		},
+		{
+			name:       "invalid-with-secret-auth-nil",
+			authSecret: &api.Secret{},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					"invalid auth secret, Auth field is nil", i...)
+			},
+		},
+		{
 			name: "valid-with-watcher",
 			authSecret: &api.Secret{
 				Auth: &api.SecretAuth{
@@ -480,12 +495,27 @@ func Test_defaultClient_Validate(t *testing.T) {
 			wantErr:        assert.NoError,
 		},
 		{
+			name: "valid-with-watcher-nil-non-renewable",
+			authSecret: &api.Secret{
+				LeaseDuration: 30,
+				Renewable:     false,
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+					Renewable:     false,
+				},
+			},
+			skipRenewal: false,
+			lastRenewal: time.Now().Unix() - 5,
+			wantErr:     assert.NoError,
+		},
+		{
 			name: "invalid-with-watcher-nil",
 			authSecret: &api.Secret{
 				LeaseDuration: 30,
 				Renewable:     false,
 				Auth: &api.SecretAuth{
 					LeaseDuration: 30,
+					Renewable:     true,
 				},
 			},
 			skipRenewal:    false,
@@ -502,6 +532,7 @@ func Test_defaultClient_Validate(t *testing.T) {
 				Renewable:     false,
 				Auth: &api.SecretAuth{
 					LeaseDuration: 30,
+					Renewable:     true,
 				},
 			},
 			skipRenewal:    false,

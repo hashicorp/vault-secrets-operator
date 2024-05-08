@@ -298,8 +298,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	r.SyncRegistry.Delete(req.NamespacedName)
-	logger.Info("Deleted from SyncRegistry", "obj", req.NamespacedName)
+	if ok := r.SyncRegistry.Delete(req.NamespacedName); ok {
+		logger.V(consts.LogLevelDebug).Info("Deleted object from SyncRegistry",
+			"obj", req.NamespacedName)
+	}
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
