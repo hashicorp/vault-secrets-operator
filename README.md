@@ -132,7 +132,7 @@ make integration-test
 # Create an EKS cluster and a ECR repository
 make -f aws.mk create-eks
 
-# Build the operator image and run the integration tests (includes Vault OSS deployment)
+# Build the operator image and run the integration tests (includes Vault Community deployment)
 make -f aws.mk build-push integration-test-eks
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
@@ -161,7 +161,7 @@ export GCP_PROJECT="<project_id>"
 # Create an GKE cluster and a GAR repository
 make -f gcp.mk create-gke
 
-# Build & operator image & run the integration tests (includes Vault OSS deployment)
+# Build & operator image & run the integration tests (includes Vault Community deployment)
 make -f gcp.mk build-push integration-test-gke
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)
@@ -182,7 +182,7 @@ export AZURE_TENANT="<tenant_id>"
 # Create an AKS cluster and a ACR repository
 make -f azure.mk create-aks
 
-# Build  the operator image and run the integration tests (includes Vault OSS deployment)
+# Build  the operator image and run the integration tests (includes Vault Community deployment)
 make -f azure.mk build-push integration-test-aks
 
 # Run the integration tests (includes Vault ent deployment, have the Vault license as environment variable)

@@ -608,7 +608,7 @@ func exportKindLogs(name string, failed bool) error {
 		if entTests {
 			exportDir += "-ent"
 		} else {
-			exportDir += "-oss"
+			exportDir += "-community"
 		}
 
 		if failed {
