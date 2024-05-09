@@ -1,3 +1,8 @@
+## Unreleased
+
+Features:
+* Sync: support argo.Rollout for RolloutRestartTarget: [GH-702](https://github.com/hashicorp/vault-secrets-operator/pull/702)
+
 ## 0.6.0 (April 24th, 2024)
 
 Fix:
