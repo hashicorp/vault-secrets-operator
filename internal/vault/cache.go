@@ -21,7 +21,7 @@ type ClientCache interface {
 	Add(Client) (bool, error)
 	Remove(ClientCacheKey) bool
 	Len() int
-	Prune(filterFunc ClientCachePruneFilterFunc) []ClientCacheKey
+	Prune(filterFunc ClientCachePruneFilterFunc) []Client
 	Contains(key ClientCacheKey) bool
 	Purge() []ClientCacheKey
 }
@@ -134,13 +134,13 @@ func (c *clientCache) Remove(key ClientCacheKey) bool {
 	return removed
 }
 
-func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []ClientCacheKey {
-	var pruned []ClientCacheKey
+func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []Client {
+	var pruned []Client
 	for _, k := range c.cache.Keys() {
 		if client, ok := c.cache.Peek(k); ok {
 			if filterFunc(client) {
 				if c.remove(k, client) {
-					pruned = append(pruned, k)
+					pruned = append(pruned, client)
 				}
 			}
 		}
@@ -158,6 +158,10 @@ func (c *clientCache) remove(key ClientCacheKey, client Client) bool {
 }
 
 func (c *clientCache) pruneClones(cacheKey ClientCacheKey) {
+	if c.cloneCache == nil {
+		return
+	}
+
 	for _, k := range c.cloneCache.Keys() {
 		if !strings.HasPrefix(k.String(), cacheKey.String()) {
 			continue
