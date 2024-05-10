@@ -4,19 +4,19 @@
 package v1beta1
 
 import (
+	"errors"
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VaultAuthConfigKubernetes provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigKubernetes struct {
 	// Role to use for authenticating to Vault.
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 	// ServiceAccount to use when authenticating to Vault's
 	// authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace.
-	ServiceAccount string `json:"serviceAccount"`
+	ServiceAccount string `json:"serviceAccount,omitempty"`
 	// TokenAudiences to include in the ServiceAccount token.
 	TokenAudiences []string `json:"audiences,omitempty"`
 	// TokenExpirationSeconds to set the ServiceAccount token.
@@ -25,10 +25,35 @@ type VaultAuthConfigKubernetes struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
+func (a *VaultAuthConfigKubernetes) Merge(other *VaultAuthConfigKubernetes) error {
+	var errs error
+	if a.Role == "" {
+		if other.Role == "" {
+			errs = errors.Join(fmt.Errorf("empty role"))
+		} else {
+			a.Role = other.Role
+		}
+	}
+	if a.ServiceAccount == "" {
+		if other.ServiceAccount == "" {
+			errs = errors.Join(fmt.Errorf("empty serviceAccount"))
+		} else {
+			a.ServiceAccount = other.ServiceAccount
+		}
+	}
+	if len(a.TokenAudiences) == 0 {
+		a.TokenAudiences = other.TokenAudiences
+	}
+	if a.TokenExpirationSeconds == 0 {
+		a.TokenExpirationSeconds = other.TokenExpirationSeconds
+	}
+	return errs
+}
+
 // VaultAuthConfigJWT provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigJWT struct {
 	// Role to use for authenticating to Vault.
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the JWT token to authenticate to Vault's JWT authentication backend. The secret must
 	// have a key named `jwt` which holds the JWT token.
@@ -44,16 +69,61 @@ type VaultAuthConfigJWT struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
+func (a *VaultAuthConfigJWT) Merge(other *VaultAuthConfigJWT) error {
+	var errs error
+	if a.Role == "" {
+		if other.Role == "" {
+			errs = errors.Join(fmt.Errorf("empty role"))
+		} else {
+			a.Role = other.Role
+		}
+	}
+	if a.SecretRef == "" {
+		a.SecretRef = other.SecretRef
+	}
+	if a.ServiceAccount == "" {
+		a.ServiceAccount = other.ServiceAccount
+	}
+	if len(a.TokenAudiences) == 0 {
+		a.TokenAudiences = other.TokenAudiences
+	}
+	if a.TokenExpirationSeconds == 0 {
+		a.TokenExpirationSeconds = other.TokenExpirationSeconds
+	}
+
+	return errs
+}
+
 // VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to
 // Vault via an AppRole AuthMethod.
 type VaultAuthConfigAppRole struct {
 	// RoleID of the AppRole Role to use for authenticating to Vault.
-	RoleID string `json:"roleId"`
+	RoleID string `json:"roleId,omitempty"`
 
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
 	// AppRole Role's secretID.
-	SecretRef string `json:"secretRef"`
+	SecretRef string `json:"secretRef,omitempty"`
+}
+
+func (a *VaultAuthConfigAppRole) Merge(other *VaultAuthConfigAppRole) error {
+	var errs error
+	if a.RoleID == "" {
+		if other.RoleID == "" {
+			errs = errors.Join(fmt.Errorf("empty roleID"))
+		} else {
+			a.RoleID = other.RoleID
+		}
+	}
+	if a.SecretRef == "" {
+		if other.SecretRef == "" {
+			errs = errors.Join(fmt.Errorf("empty secretRef"))
+		} else {
+			a.SecretRef = other.SecretRef
+		}
+	}
+
+	return errs
 }
 
 // VaultAuthConfigAWS provides VaultAuth configuration options needed for
@@ -63,7 +133,7 @@ type VaultAuthConfigAppRole struct {
 // authenticate to Vault.
 type VaultAuthConfigAWS struct {
 	// Vault role to use for authenticating
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 	// AWS Region to use for signing the authentication request
 	Region string `json:"region,omitempty"`
 	// The Vault header value to include in the STS signing request
@@ -90,17 +160,51 @@ type VaultAuthConfigAWS struct {
 	IRSAServiceAccount string `json:"irsaServiceAccount,omitempty"`
 }
 
+func (a *VaultAuthConfigAWS) Merge(other *VaultAuthConfigAWS) error {
+	var errs error
+	if a.Role == "" {
+		if other.Role == "" {
+			errs = errors.Join(fmt.Errorf("empty role"))
+		} else {
+			a.Role = other.Role
+		}
+	}
+	if a.Region == "" {
+		a.Region = other.Region
+	}
+	if a.HeaderValue == "" {
+		a.HeaderValue = other.HeaderValue
+	}
+	if a.SessionName == "" {
+		a.SessionName = other.SessionName
+	}
+	if a.STSEndpoint == "" {
+		a.STSEndpoint = other.STSEndpoint
+	}
+	if a.IAMEndpoint == "" {
+		a.IAMEndpoint = other.IAMEndpoint
+	}
+	if a.SecretRef == "" {
+		a.SecretRef = other.SecretRef
+	}
+	if a.IRSAServiceAccount == "" {
+		a.IRSAServiceAccount = other.IRSAServiceAccount
+	}
+
+	return errs
+}
+
 // VaultAuthConfigGCP provides VaultAuth configuration options needed for
 // authenticating to Vault via a GCP AuthMethod, using workload identity
 type VaultAuthConfigGCP struct {
 	// Vault role to use for authenticating
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 
 	// WorkloadIdentityServiceAccount is the name of a Kubernetes service
 	// account (in the same Kubernetes namespace as the Vault*Secret referencing
 	// this resource) which has been configured for workload identity in GKE.
 	// Should be annotated with "iam.gke.io/gcp-service-account".
-	WorkloadIdentityServiceAccount string `json:"workloadIdentityServiceAccount"`
+	WorkloadIdentityServiceAccount string `json:"workloadIdentityServiceAccount,omitempty"`
 
 	// GCP Region of the GKE cluster's identity provider. Defaults to the region
 	// returned from the operator pod's local metadata server.
@@ -115,6 +219,35 @@ type VaultAuthConfigGCP struct {
 	ProjectID string `json:"projectID,omitempty"`
 }
 
+func (a *VaultAuthConfigGCP) Merge(other *VaultAuthConfigGCP) error {
+	var errs error
+	if a.Role == "" {
+		if other.Role == "" {
+			errs = errors.Join(fmt.Errorf("empty role"))
+		} else {
+			a.Role = other.Role
+		}
+	}
+	if a.WorkloadIdentityServiceAccount == "" {
+		if other.WorkloadIdentityServiceAccount == "" {
+			errs = errors.Join(fmt.Errorf("empty workloadIdentityServiceAccount"))
+		} else {
+			a.WorkloadIdentityServiceAccount = other.WorkloadIdentityServiceAccount
+		}
+	}
+	if a.Region == "" {
+		a.Region = other.Region
+	}
+	if a.ClusterName == "" {
+		a.ClusterName = other.ClusterName
+	}
+	if a.ProjectID == "" {
+		a.ProjectID = other.ProjectID
+	}
+
+	return errs
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
@@ -122,7 +255,13 @@ type VaultAuthSpec struct {
 	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
 	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
-	// Namespace to auth to in Vault
+	// VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
+	// namespace of the VaultAuthGlobal CR.
+	VaultAuthGlobalRef string `json:"vaultAuthGlobalRef,omitempty"`
+	// Namespace to auth to in Vault, if not specified the namespace of the auth
+	// method will be used. This can be used as a default Vault namespace for all
+	// auth methods.
 	Namespace string `json:"namespace,omitempty"`
 	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
 	// This field allows administrators to customize which Kubernetes namespaces are authorized to
@@ -136,9 +275,9 @@ type VaultAuthSpec struct {
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws;gcp
-	Method string `json:"method"`
+	Method string `json:"method,omitempty"`
 	// Mount to use when authenticating to auth method.
-	Mount string `json:"mount"`
+	Mount string `json:"mount,omitempty"`
 	// Params to use when authenticating to Vault
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.
@@ -165,8 +304,10 @@ type VaultAuthSpec struct {
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid bool   `json:"valid"`
-	Error string `json:"error"`
+	Valid      bool               `json:"valid"`
+	Error      string             `json:"error"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	SpecHash   string             `json:"specHash,omitempty"`
 }
 
 //+kubebuilder:object:root=true

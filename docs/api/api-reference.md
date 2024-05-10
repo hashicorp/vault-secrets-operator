@@ -16,6 +16,8 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 - [SecretTransformation](#secrettransformation)
 - [SecretTransformationList](#secrettransformationlist)
 - [VaultAuth](#vaultauth)
+- [VaultAuthGlobal](#vaultauthglobal)
+- [VaultAuthGlobalList](#vaultauthgloballist)
 - [VaultAuthList](#vaultauthlist)
 - [VaultConnection](#vaultconnection)
 - [VaultConnectionList](#vaultconnectionlist)
@@ -420,6 +422,7 @@ authenticate to Vault.
 
 
 _Appears in:_
+- [VaultAuthGlobalConfigAWS](#vaultauthglobalconfigaws)
 - [VaultAuthSpec](#vaultauthspec)
 
 | Field | Description | Default | Validation |
@@ -444,6 +447,7 @@ Vault via an AppRole AuthMethod.
 
 
 _Appears in:_
+- [VaultAuthGlobalConfigAppRole](#vaultauthglobalconfigapprole)
 - [VaultAuthSpec](#vaultauthspec)
 
 | Field | Description | Default | Validation |
@@ -462,6 +466,7 @@ authenticating to Vault via a GCP AuthMethod, using workload identity
 
 
 _Appears in:_
+- [VaultAuthGlobalConfigGCP](#vaultauthglobalconfiggcp)
 - [VaultAuthSpec](#vaultauthspec)
 
 | Field | Description | Default | Validation |
@@ -482,6 +487,7 @@ VaultAuthConfigJWT provides VaultAuth configuration options needed for authentic
 
 
 _Appears in:_
+- [VaultAuthGlobalConfigJWT](#vaultauthglobalconfigjwt)
 - [VaultAuthSpec](#vaultauthspec)
 
 | Field | Description | Default | Validation |
@@ -502,6 +508,7 @@ VaultAuthConfigKubernetes provides VaultAuth configuration options needed for au
 
 
 _Appears in:_
+- [VaultAuthGlobalConfigKubernetes](#vaultauthglobalconfigkubernetes)
 - [VaultAuthSpec](#vaultauthspec)
 
 | Field | Description | Default | Validation |
@@ -510,6 +517,191 @@ _Appears in:_
 | `serviceAccount` _string_ | ServiceAccount to use when authenticating to Vault's<br />authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace. |  |  |
 | `audiences` _string array_ | TokenAudiences to include in the ServiceAccount token. |  |  |
 | `tokenExpirationSeconds` _integer_ | TokenExpirationSeconds to set the ServiceAccount token. | 600 | Minimum: 600 <br /> |
+
+
+#### VaultAuthGlobal
+
+
+
+VaultAuthGlobal is the Schema for the vaultauthglobals API
+
+
+
+_Appears in:_
+- [VaultAuthGlobalList](#vaultauthgloballist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
+| `kind` _string_ | `VaultAuthGlobal` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[VaultAuthGlobalSpec](#vaultauthglobalspec)_ |  |  |  |
+
+
+#### VaultAuthGlobalConfigAWS
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultAuthGlobalSpec](#vaultauthglobalspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `role` _string_ | Vault role to use for authenticating |  |  |
+| `region` _string_ | AWS Region to use for signing the authentication request |  |  |
+| `headerValue` _string_ | The Vault header value to include in the STS signing request |  |  |
+| `sessionName` _string_ | The role session name to use when creating a webidentity provider |  |  |
+| `stsEndpoint` _string_ | The STS endpoint to use; if not set will use the default |  |  |
+| `iamEndpoint` _string_ | The IAM endpoint to use; if not set will use the default |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes Secret in the consumer's (VDS/VSS/PKI) namespace<br />which holds credentials for AWS. Expected keys include `access_key_id`, `secret_access_key`,<br />`session_token` |  |  |
+| `irsaServiceAccount` _string_ | IRSAServiceAccount name to use with IAM Roles for Service Accounts<br />(IRSA), and should be annotated with "eks.amazonaws.com/role-arn". This<br />ServiceAccount will be checked for other EKS annotations:<br />eks.amazonaws.com/audience and eks.amazonaws.com/token-expiration |  |  |
+| `namespace` _string_ | Namespace to auth to in Vault |  |  |
+| `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
+| `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
+| `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |  |  |
+
+
+#### VaultAuthGlobalConfigAppRole
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultAuthGlobalSpec](#vaultauthglobalspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
+| `namespace` _string_ | Namespace to auth to in Vault |  |  |
+| `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
+| `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
+| `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |  |  |
+
+
+#### VaultAuthGlobalConfigGCP
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultAuthGlobalSpec](#vaultauthglobalspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `role` _string_ | Vault role to use for authenticating |  |  |
+| `workloadIdentityServiceAccount` _string_ | WorkloadIdentityServiceAccount is the name of a Kubernetes service<br />account (in the same Kubernetes namespace as the Vault*Secret referencing<br />this resource) which has been configured for workload identity in GKE.<br />Should be annotated with "iam.gke.io/gcp-service-account". |  |  |
+| `region` _string_ | GCP Region of the GKE cluster's identity provider. Defaults to the region<br />returned from the operator pod's local metadata server. |  |  |
+| `clusterName` _string_ | GKE cluster name. Defaults to the cluster-name returned from the operator<br />pod's local metadata server. |  |  |
+| `projectID` _string_ | GCP project ID. Defaults to the project-id returned from the operator<br />pod's local metadata server. |  |  |
+| `namespace` _string_ | Namespace to auth to in Vault |  |  |
+| `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
+| `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
+| `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |  |  |
+
+
+#### VaultAuthGlobalConfigJWT
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultAuthGlobalSpec](#vaultauthglobalspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `role` _string_ | Role to use for authenticating to Vault. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the JWT token to authenticate to Vault's JWT authentication backend. The secret must<br />have a key named `jwt` which holds the JWT token. |  |  |
+| `serviceAccount` _string_ | ServiceAccount to use when creating a ServiceAccount token to authenticate to Vault's<br />JWT authentication backend. |  |  |
+| `audiences` _string array_ | TokenAudiences to include in the ServiceAccount token. |  |  |
+| `tokenExpirationSeconds` _integer_ | TokenExpirationSeconds to set the ServiceAccount token. | 600 | Minimum: 600 <br /> |
+| `namespace` _string_ | Namespace to auth to in Vault |  |  |
+| `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
+| `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
+| `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |  |  |
+
+
+#### VaultAuthGlobalConfigKubernetes
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultAuthGlobalSpec](#vaultauthglobalspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `role` _string_ | Role to use for authenticating to Vault. |  |  |
+| `serviceAccount` _string_ | ServiceAccount to use when authenticating to Vault's<br />authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace. |  |  |
+| `audiences` _string array_ | TokenAudiences to include in the ServiceAccount token. |  |  |
+| `tokenExpirationSeconds` _integer_ | TokenExpirationSeconds to set the ServiceAccount token. | 600 | Minimum: 600 <br /> |
+| `namespace` _string_ | Namespace to auth to in Vault |  |  |
+| `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
+| `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
+| `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |  |  |
+
+
+#### VaultAuthGlobalList
+
+
+
+VaultAuthGlobalList contains a list of VaultAuthGlobal
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
+| `kind` _string_ | `VaultAuthGlobalList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[VaultAuthGlobal](#vaultauthglobal) array_ |  |  |  |
+
+
+#### VaultAuthGlobalSpec
+
+
+
+VaultAuthGlobalSpec defines the desired state of VaultAuthGlobal
+
+
+
+_Appears in:_
+- [VaultAuthGlobal](#vaultauthglobal)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which VaultAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]{"*"} - wildcard, all namespaces.<br />[]{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this<br />is the default behavior. |  |  |
+| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
+| `defaultVaultNamespace` _string_ | DefaultVaultNamespace to auth to in Vault, if not specified the namespace of the auth<br />method will be used. This can be used as a default Vault namespace for all<br />auth methods. |  |  |
+| `defaultAuthMethod` _string_ | DefaultAuthMethod to use when authenticating to Vault. |  | Enum: [kubernetes jwt appRole aws gcp] <br /> |
+| `defaultMount` _string_ | DefaultMount to use when authenticating to auth method. If not specified the mount of<br />the auth method configured in Vault will be used. |  |  |
+| `params` _object (keys:string, values:string)_ | DefaultParams to use when authenticating to Vault |  |  |
+| `headers` _object (keys:string, values:string)_ | DefaultHeaders to be included in all Vault requests. |  |  |
+| `kubernetes` _[VaultAuthGlobalConfigKubernetes](#vaultauthglobalconfigkubernetes)_ | Kubernetes specific auth configuration, requires that the Method be set to `kubernetes`. |  |  |
+| `appRole` _[VaultAuthGlobalConfigAppRole](#vaultauthglobalconfigapprole)_ | AppRole specific auth configuration, requires that the Method be set to `appRole`. |  |  |
+| `jwt` _[VaultAuthGlobalConfigJWT](#vaultauthglobalconfigjwt)_ | JWT specific auth configuration, requires that the Method be set to `jwt`. |  |  |
+| `aws` _[VaultAuthGlobalConfigAWS](#vaultauthglobalconfigaws)_ | AWS specific auth configuration, requires that Method be set to `aws`. |  |  |
+| `gcp` _[VaultAuthGlobalConfigGCP](#vaultauthglobalconfiggcp)_ | GCP specific auth configuration, requires that Method be set to `gcp`. |  |  |
+
+
 
 
 #### VaultAuthList
@@ -544,7 +736,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
-| `namespace` _string_ | Namespace to auth to in Vault |  |  |
+| `vaultAuthGlobalRef` _string_ | VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultAuthGlobal CR. |  |  |
+| `namespace` _string_ | Namespace to auth to in Vault, if not specified the namespace of the auth<br />method will be used. This can be used as a default Vault namespace for all<br />auth methods. |  |  |
 | `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which VaultAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]{"*"} - wildcard, all namespaces.<br />[]{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this<br />is the default behavior. |  |  |
 | `method` _string_ | Method to use when authenticating to Vault. |  | Enum: [kubernetes jwt appRole aws gcp] <br /> |
 | `mount` _string_ | Mount to use when authenticating to auth method. |  |  |

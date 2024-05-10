@@ -19,6 +19,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	vaultcredsconsts "github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
 
@@ -35,13 +36,18 @@ var (
 type NamespaceNotAllowedError struct {
 	TargetNS  string
 	ObjRef    types.NamespacedName
+	RefKind   string
 	AllowedNS []string
 }
 
 func (n *NamespaceNotAllowedError) Error() string {
+	refKind := n.RefKind
+	if refKind == "" {
+		refKind = "unknown"
+	}
 	return fmt.Sprintf(
-		"target namespace %q is not allowed by authRef %s, allowed=%v",
-		n.TargetNS, n.ObjRef, n.AllowedNS)
+		"target namespace %q is not allowed by kind=%s obj=%s, allowedNamespaces=%v",
+		n.TargetNS, refKind, n.ObjRef, n.AllowedNS)
 }
 
 func init() {
@@ -62,16 +68,16 @@ func getAuthRefNamespacedName(obj client.Object) (types.NamespacedName, error) {
 		return types.NamespacedName{}, err
 	}
 
-	authRef, err := parseResourceRef(m.AuthRef, obj.GetNamespace())
+	authRef, err := ParseResourceRef(m.AuthRef, obj.GetNamespace())
 	if err != nil {
 		return types.NamespacedName{}, err
 	}
 	return authRef, nil
 }
 
-// parseResourceRef parses an input string and returns a types.NamespacedName
+// ParseResourceRef parses an input string and returns a types.NamespacedName
 // with appropriate namespace and name set or otherwise overridden as default.
-func parseResourceRef(refName, defaultNamespace string) (types.NamespacedName, error) {
+func ParseResourceRef(refName, defaultNamespace string) (types.NamespacedName, error) {
 	var ref types.NamespacedName
 	if refName != "" {
 		names := strings.Split(refName, "/")
@@ -144,9 +150,206 @@ func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Obj
 		return nil, &NamespaceNotAllowedError{
 			TargetNS: obj.GetNamespace(),
 			ObjRef:   authRef,
+			RefKind:  "VaultAuth",
+		}
+	}
+
+	if authObj.Spec.VaultAuthGlobalRef != "" {
+		authObj, _, err = MergeInVaultAuthGlobal(ctx, c, authObj)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return authObj, nil
+}
+
+// MergeInVaultAuthGlobal merges the VaultAuthGlobal object into the VaultAuth
+// object. The VaultAuthGlobal object is referenced by the VaultAuth object. The
+// VaultAuthGlobal object is fetched and merged into the VaultAuth object. In the
+// case where no reference is specified in the VaultAuth object, the VaultAuth
+// object is returned as is.
+func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secretsv1beta1.VaultAuth) (*secretsv1beta1.VaultAuth, *secretsv1beta1.VaultAuthGlobal, error) {
+	if o.Spec.VaultAuthGlobalRef == "" {
+		return o, nil, nil
+	}
+
+	cObj := o.DeepCopy()
+	authGlobalRef, err := ParseResourceRef(cObj.Spec.VaultAuthGlobalRef, cObj.GetNamespace())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var gObj secretsv1beta1.VaultAuthGlobal
+	if err := c.Get(ctx, authGlobalRef, &gObj); err != nil {
+		return nil, nil, fmt.Errorf("failed getting %s, err=%w", authGlobalRef, err)
+	}
+
+	if !isAllowedNamespace(&gObj, cObj.GetNamespace(), gObj.Spec.AllowedNamespaces...) {
+		return nil, nil, &NamespaceNotAllowedError{
+			TargetNS: cObj.GetNamespace(),
+			ObjRef:   authGlobalRef,
+			RefKind:  "VaultAuthGlobal",
+		}
+	}
+
+	// authMethod is the method to be used in the VaultAuth object. If the method is
+	// not set in the VaultAuth object, the default method from the VaultAuthGlobal
+	// object is used.
+	if cObj.Spec.Method == "" {
+		if gObj.Spec.DefaultAuthMethod == "" {
+			return nil, nil, fmt.Errorf(
+				"no auth method set in VaultAuth %s and no default method set in VaultAuthGlobal %s",
+				client.ObjectKeyFromObject(cObj), authGlobalRef)
+		}
+		cObj.Spec.Method = gObj.Spec.DefaultAuthMethod
+	}
+
+	var globalAuthMount string
+	var globalAuthNamespace string
+	var globalAuthParams map[string]string
+	var globalAuthHeaders map[string]string
+	switch cObj.Spec.Method {
+	case vaultcredsconsts.ProviderMethodKubernetes:
+		globalAuthMethod := gObj.Spec.Kubernetes
+		mergeTargetAuthMethod := cObj.Spec.Kubernetes
+		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
+			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
+				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+		}
+
+		if globalAuthMethod != nil {
+			srcAuthMethod := globalAuthMethod.VaultAuthConfigKubernetes.DeepCopy()
+			if mergeTargetAuthMethod == nil {
+				cObj.Spec.Kubernetes = srcAuthMethod
+			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+				return nil, nil, err
+			}
+			globalAuthMount = globalAuthMethod.Mount
+			globalAuthNamespace = globalAuthMethod.Namespace
+			globalAuthParams = globalAuthMethod.Params
+			globalAuthHeaders = globalAuthMethod.Headers
+		}
+	case vaultcredsconsts.ProviderMethodJWT:
+		globalAuthMethod := gObj.Spec.JWT
+		mergeTargetAuthMethod := cObj.Spec.JWT
+		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
+			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
+				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+		}
+
+		if globalAuthMethod != nil {
+			srcAuthMethod := globalAuthMethod.VaultAuthConfigJWT.DeepCopy()
+			if mergeTargetAuthMethod == nil {
+				cObj.Spec.JWT = srcAuthMethod
+			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+				return nil, nil, err
+			}
+			globalAuthMount = globalAuthMethod.Mount
+			globalAuthNamespace = globalAuthMethod.Namespace
+			globalAuthParams = globalAuthMethod.Params
+			globalAuthHeaders = globalAuthMethod.Headers
+		}
+	case vaultcredsconsts.ProviderMethodAppRole:
+		globalAuthMethod := gObj.Spec.AppRole
+		mergeTargetAuthMethod := cObj.Spec.AppRole
+		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
+			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
+				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+		}
+
+		if globalAuthMethod != nil {
+			srcAuthMethod := globalAuthMethod.VaultAuthConfigAppRole.DeepCopy()
+			if mergeTargetAuthMethod == nil {
+				cObj.Spec.AppRole = srcAuthMethod
+			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+				return nil, nil, err
+			}
+			globalAuthMount = globalAuthMethod.Mount
+			globalAuthNamespace = globalAuthMethod.Namespace
+			globalAuthParams = globalAuthMethod.Params
+			globalAuthHeaders = globalAuthMethod.Headers
+		}
+	case vaultcredsconsts.ProviderMethodAWS:
+		globalAuthMethod := gObj.Spec.AWS
+		mergeTargetAuthMethod := cObj.Spec.AWS
+		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
+			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
+				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+		}
+
+		if globalAuthMethod != nil {
+			srcAuthMethod := globalAuthMethod.VaultAuthConfigAWS.DeepCopy()
+			if mergeTargetAuthMethod == nil {
+				cObj.Spec.AWS = srcAuthMethod
+			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+				return nil, nil, err
+			}
+			globalAuthMount = globalAuthMethod.Mount
+			globalAuthNamespace = globalAuthMethod.Namespace
+			globalAuthParams = globalAuthMethod.Params
+			globalAuthHeaders = globalAuthMethod.Headers
+		}
+	case vaultcredsconsts.ProviderMethodGCP:
+		globalAuthMethod := gObj.Spec.GCP
+		mergeTargetAuthMethod := cObj.Spec.GCP
+		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
+			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
+				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+		}
+
+		if globalAuthMethod != nil {
+			srcAuthMethod := globalAuthMethod.VaultAuthConfigGCP.DeepCopy()
+			if mergeTargetAuthMethod == nil {
+				cObj.Spec.GCP = srcAuthMethod
+			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+				return nil, nil, err
+			}
+			globalAuthMount = globalAuthMethod.Mount
+			globalAuthNamespace = globalAuthMethod.Namespace
+			globalAuthParams = globalAuthMethod.Params
+			globalAuthHeaders = globalAuthMethod.Headers
+		}
+	default:
+		return nil, nil, fmt.Errorf(
+			"unsupported auth method %q for global auth merge",
+			cObj.Spec.Method,
+		)
+	}
+
+	cObj.Spec.Mount = firstNonZeroLen(strLenFunc,
+		cObj.Spec.Mount, globalAuthMount, gObj.Spec.DefaultMount)
+	if cObj.Spec.Mount == "" {
+		return nil, nil, fmt.Errorf(
+			"mount is not set in VaultAuth %s after merge with %s",
+			client.ObjectKeyFromObject(cObj), authGlobalRef,
+		)
+	}
+
+	cObj.Spec.Namespace = firstNonZeroLen(strLenFunc,
+		cObj.Spec.Namespace, globalAuthNamespace, gObj.Spec.DefaultVaultNamespace)
+	cObj.Spec.Headers = firstNonZeroLen(mapLenFunc[string, string],
+		cObj.Spec.Headers, globalAuthHeaders, gObj.Spec.DefaultHeaders)
+	cObj.Spec.Params = firstNonZeroLen(mapLenFunc[string, string],
+		cObj.Spec.Params, globalAuthParams, gObj.Spec.DefaultParams)
+
+	return cObj, &gObj, nil
+}
+
+func strLenFunc(s string) int {
+	return len(s)
+}
+
+func mapLenFunc[K comparable, V any](m map[K]V) int {
+	return len(m)
+}
+
+func firstNonZeroLen[V any](lenFunc func(V) int, m ...V) (ret V) {
+	for _, v := range m {
+		if lenFunc(v) > 0 {
+			ret = v
+		}
+	}
+	return
 }
 
 func GetVaultConnection(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.VaultConnection, error) {
@@ -203,6 +406,7 @@ func GetHCPAuthForObj(ctx context.Context, c client.Client, obj client.Object) (
 		return nil, &NamespaceNotAllowedError{
 			TargetNS: obj.GetNamespace(),
 			ObjRef:   authRef,
+			RefKind:  "HCPAuth",
 		}
 	}
 
@@ -257,7 +461,7 @@ func GetConnectionNamespacedName(a *secretsv1beta1.VaultAuth) (types.NamespacedN
 	if a.Spec.VaultConnectionRef == "" && OperatorNamespace == "" {
 		return types.NamespacedName{}, fmt.Errorf("operator's default namespace is not set, this is a bug")
 	}
-	connRef, err := parseResourceRef(a.Spec.VaultConnectionRef, a.GetNamespace())
+	connRef, err := ParseResourceRef(a.Spec.VaultConnectionRef, a.GetNamespace())
 	if err != nil {
 		return types.NamespacedName{}, err
 	}

@@ -17,6 +17,8 @@ const (
 	VaultStaticSecret
 	VaultPKISecret
 	HCPVaultSecretsApp
+	VaultAuth
+	VaultAuthGlobal
 )
 
 func (k ResourceKind) String() string {
@@ -31,6 +33,10 @@ func (k ResourceKind) String() string {
 		return "VaultPKISecret"
 	case HCPVaultSecretsApp:
 		return "HCPVaultSecretsApp"
+	case VaultAuth:
+		return "VaultAuth"
+	case VaultAuthGlobal:
+		return "VaultAuthGlobal"
 	default:
 		return "unknown"
 	}

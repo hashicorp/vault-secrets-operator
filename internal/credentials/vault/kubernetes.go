@@ -5,6 +5,7 @@ package vault
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,6 +57,10 @@ func (l *KubernetesCredentialProvider) Init(ctx context.Context, client ctrlclie
 }
 
 func (l *KubernetesCredentialProvider) getServiceAccount(ctx context.Context, client ctrlclient.Client) (*corev1.ServiceAccount, error) {
+	if l.authObj.Spec.Kubernetes == nil {
+		return nil, fmt.Errorf("kubernetes auth method not configured")
+	}
+
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
 		Name:      l.authObj.Spec.Kubernetes.ServiceAccount,

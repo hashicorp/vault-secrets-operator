@@ -5,12 +5,15 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,9 +34,10 @@ const vaultAuthFinalizer = "vaultauth.secrets.hashicorp.com/finalizer"
 // VaultAuthReconciler reconciles a VaultAuth object
 type VaultAuthReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ClientFactory vault.CachingClientFactory
+	Scheme         *runtime.Scheme
+	Recorder       record.EventRecorder
+	ClientFactory  vault.CachingClientFactory
+	referenceCache ResourceReferenceCache
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths,verbs=get;list;watch;create;update;patch;delete
@@ -64,13 +68,49 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
+		r.referenceCache.Remove(VaultAuthGlobal, req.NamespacedName)
 		return r.handleFinalizer(ctx, o)
 	}
 
 	// assume that status is always invalid
 	o.Status.Valid = false
-
 	var errs error
+
+	var conditions []metav1.Condition
+	if o.Spec.VaultAuthGlobalRef != "" {
+		globalRef, err := common.ParseResourceRef(o.Spec.VaultAuthGlobalRef, o.GetNamespace())
+		r.referenceCache.Set(
+			VaultAuthGlobal, req.NamespacedName,
+			globalRef)
+
+		condition := metav1.Condition{
+			Type:               "VaultGlobalAuthRef",
+			Status:             "True",
+			ObservedGeneration: o.Generation,
+			LastTransitionTime: metav1.NewTime(nowFunc()),
+			Reason:             "VaultGlobalAuthRef",
+		}
+
+		mObj, gObj, err := common.MergeInVaultAuthGlobal(ctx, r.Client, o)
+		if err != nil {
+			condition.Message = err.Error()
+			condition.Status = "False"
+		} else {
+			o = mObj
+			condition.Message = fmt.Sprintf("%s:%s:%d",
+
+				client.ObjectKeyFromObject(gObj), gObj.UID, gObj.Generation)
+			r.referenceCache.Set(
+				VaultAuthGlobal, req.NamespacedName,
+				client.ObjectKeyFromObject(gObj))
+		}
+		conditions = append(conditions, condition)
+	} else {
+		r.referenceCache.Remove(VaultAuthGlobal, req.NamespacedName)
+	}
+
+	o.Status.Conditions = conditions
+
 	// ensure that the vaultConnectionRef is set for any VaultAuth resource in the operator namespace.
 	if o.Namespace == common.OperatorNamespace && o.Spec.VaultConnectionRef == "" {
 		err = fmt.Errorf("vaultConnectionRef must be set on resources in the %q namespace", common.OperatorNamespace)
@@ -91,23 +131,53 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		logger.Error(err, "Failed to find VaultConnectionRef")
 	}
 
-	// prune old referent Client from the ClientFactory's cache for all older generations of self.
-	// this is a bit of a sledgehammer, not all updated attributes of VaultConnection
-	// warrant eviction of a client cache entry, but this is a good start.
-	//
-	// This is also done in controllers.VaultConnectionReconciler
-	// TODO: consider adding a Predicate to the EventFilter, to filter events that do not result in a change to the Spec.
-	if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
-		FilterFunc:   filterOldCacheRefs,
-		PruneStorage: true,
-	}); err != nil {
+	// hash the VaultAut
+	b, err := json.Marshal(o.Spec)
+	var specHash string
+	if err == nil {
+		specHash = fmt.Sprintf("%x", blake2b.Sum256(b))
+	} else {
 		errs = errors.Join(errs, err)
 	}
 
 	if errs == nil {
-		o.Status.Valid = true
-	} else {
+		var pruneAll bool
+		if specHash != "" && o.Status.SpecHash != "" {
+			pruneAll = specHash != o.Status.SpecHash
+		}
+
+		// prune old referent Client from the ClientFactory's cache for all older generations of self.
+		// this is a bit of a sledgehammer, not all updated attributes of VaultAuth
+		// warrant eviction of a client cache entry, but this is a good start.
+		//
+		// This is also done in controllers.VaultConnectionReconciler
+		logger.V(consts.LogLevelDebug).Info("Prune",
+			"pruneAll", pruneAll, "specHash", specHash, "lastSpecHash", o.Status.SpecHash,
+			"objectMeta", o.ObjectMeta)
+		if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
+			FilterFunc: func(cur, other client.Object) bool {
+				if pruneAll {
+					// prune all cache refs to this resource from the ClientFactory's cache.
+					return filterAllCacheRefs(cur, other)
+				}
+				// prune all but the current generation of this resource from the ClientFactory's
+				// cache.
+				return filterOldCacheRefs(cur, other)
+			},
+			PruneStorage: true,
+		}); err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+
+	o.Status.SpecHash = specHash
+
+	if errs != nil {
+		o.Status.Valid = false
 		o.Status.Error = errs.Error()
+	} else {
+		o.Status.Valid = true
+		o.Status.Error = ""
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
@@ -160,8 +230,14 @@ func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1b
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.referenceCache = newResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultAuth{}).
+		Watches(
+			&secretsv1beta1.VaultAuthGlobal{},
+			NewEnqueueRefRequestsHandler(VaultAuthGlobal, r.referenceCache, nil, nil),
+			// builder.WithPredicates(&predicate.GenerationChangedPredicate{}),
+		).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
