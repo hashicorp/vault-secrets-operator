@@ -23,6 +23,11 @@ spec:
   selector:
     matchLabels:
       control-plane: controller-manager
+  namespaceSelector:
+    matchNames:
+  {{- if .Values.telemetry.serviceMonitor.namespaceSelector }}
+  {{- toYaml .Values.telemetry.serviceMonitor.namespaceSelector | nindent 6 }}
+  {{- end }}       
   endpoints:
     - port: {{ .Values.telemetry.serviceMonitor.port }}
       scheme: {{ .Values.telemetry.serviceMonitor.scheme }}
@@ -34,5 +39,10 @@ spec:
         format:
           - prometheus
       tlsConfig:
-        insecureSkipVerify: true
+        insecureSkipVerify: {{ .Values.telemetry.serviceMonitor.insecureSkipVerify }}   
+        {{ if .Values.telemetry.serviceMonitor.tlsconfiguration.enabled }}           
+        caFile: {{ .Values.telemetry.serviceMonitor.caFile }}
+        certFile: {{ .Values.telemetry.serviceMonitor.caFile }}
+        keyFile: {{ .Values.telemetry.serviceMonitor.caFile }}  
+        {{ end }}
 {{ end }}
