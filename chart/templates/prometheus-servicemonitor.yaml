@@ -23,9 +23,9 @@ spec:
   selector:
     matchLabels:
       control-plane: controller-manager
+  {{- if .Values.telemetry.serviceMonitor.namespaceSelector }}
   namespaceSelector:
     matchNames:
-  {{- if .Values.telemetry.serviceMonitor.namespaceSelector }}
   {{- toYaml .Values.telemetry.serviceMonitor.namespaceSelector | nindent 6 }}
   {{- end }}       
   endpoints:
