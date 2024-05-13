@@ -97,11 +97,17 @@ type cachingClientFactory struct {
 	clientCallbacks        []ClientCallbackHandler
 	callbackHandlerCh      chan Client
 	mu                     sync.RWMutex
-	muLocks                sync.RWMutex
-	encClientLock          sync.RWMutex
 	onceDoWatcher          sync.Once
 	callbackHandlerCancel  context.CancelFunc
-	cacheKeyLocks          map[ClientCacheKey]*sync.RWMutex
+	// clientLocksLock is a lock for the clientLocks map.
+	clientLocksLock sync.RWMutex
+	// clientLocks is a map of cache keys to locks that allow for concurrent access
+	// to the client factory's cache.
+	clientLocks map[ClientCacheKey]*sync.RWMutex
+	// encClientLock is a lock for the encryption client. It is used to ensure that
+	// only one encryption client is created. This is necessary because the
+	// encryption client is not stored in the cache.
+	encClientLock sync.RWMutex
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -275,21 +281,21 @@ func (m *cachingClientFactory) isDisabled() bool {
 	return m.shutDown
 }
 
-func (m *cachingClientFactory) cacheKeyLock(cacheKey ClientCacheKey) (*sync.RWMutex, bool) {
-	m.muLocks.Lock()
-	defer m.muLocks.Unlock()
-	lock, ok := m.cacheKeyLocks[cacheKey]
+func (m *cachingClientFactory) clientKeyLock(cacheKey ClientCacheKey) (*sync.RWMutex, bool) {
+	m.clientLocksLock.Lock()
+	defer m.clientLocksLock.Unlock()
+	lock, ok := m.clientLocks[cacheKey]
 	if !ok {
 		lock = &sync.RWMutex{}
-		m.cacheKeyLocks[cacheKey] = lock
+		m.clientLocks[cacheKey] = lock
 	}
 	return lock, ok
 }
 
 func (m *cachingClientFactory) removeLock(cacheKey ClientCacheKey) {
-	m.muLocks.Lock()
-	defer m.muLocks.Unlock()
-	delete(m.cacheKeyLocks, cacheKey)
+	m.clientLocksLock.Lock()
+	defer m.clientLocksLock.Unlock()
+	delete(m.clientLocks, cacheKey)
 }
 
 // Get is meant to be called for all resources that require access to Vault.
@@ -326,13 +332,16 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, errs
 	}
 
-	lock, cachedLock := m.cacheKeyLock(cacheKey)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	lock, cachedLock := m.clientKeyLock(cacheKey)
 	lock.Lock()
 	defer lock.Unlock()
 
 	logger = logger.WithValues("cacheKey", cacheKey)
 	logger.V(consts.LogLevelDebug).Info("Got lock",
-		"numLocks", len(m.cacheKeyLocks),
+		"numLocks", len(m.clientLocks),
 		"cachedLock", cachedLock,
 	)
 
@@ -705,7 +714,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		ctrlClient:         client,
 		callbackHandlerCh:  make(chan Client),
 		encryptionRequired: config.StorageConfig.EnforceEncryption,
-		cacheKeyLocks:      make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
+		clientLocks:        make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,

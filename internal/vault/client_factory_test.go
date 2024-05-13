@@ -76,15 +76,15 @@ func Test_cachingClientFactory_RegisterClientCallbackHandler(t *testing.T) {
 	}
 }
 
-func Test_cachingClientFactory_cacheKeyLock(t *testing.T) {
+func Test_cachingClientFactory_clientLocks(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		cacheKey      ClientCacheKey
-		tryLockCount  int
-		wantInLocks   bool
-		cacheKeyLocks map[ClientCacheKey]*sync.RWMutex
+		name         string
+		cacheKey     ClientCacheKey
+		tryLockCount int
+		wantInLocks  bool
+		clientLocks  map[ClientCacheKey]*sync.RWMutex
 	}{
 		{
 			name:         "single-new",
@@ -95,7 +95,7 @@ func Test_cachingClientFactory_cacheKeyLock(t *testing.T) {
 		{
 			name:     "single-existing",
 			cacheKey: ClientCacheKey("single-existing"),
-			cacheKeyLocks: map[ClientCacheKey]*sync.RWMutex{
+			clientLocks: map[ClientCacheKey]*sync.RWMutex{
 				ClientCacheKey("single-existing"): {},
 			},
 			tryLockCount: 1,
@@ -110,7 +110,7 @@ func Test_cachingClientFactory_cacheKeyLock(t *testing.T) {
 		{
 			name:     "concurrent-existing",
 			cacheKey: ClientCacheKey("concurrent-existing"),
-			cacheKeyLocks: map[ClientCacheKey]*sync.RWMutex{
+			clientLocks: map[ClientCacheKey]*sync.RWMutex{
 				ClientCacheKey("concurrent-existing"): {},
 			},
 			tryLockCount: 10,
@@ -121,17 +121,17 @@ func Test_cachingClientFactory_cacheKeyLock(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Greater(t, tt.tryLockCount, 0, "no test tryLockCount provided")
 
-			if tt.cacheKeyLocks == nil {
-				tt.cacheKeyLocks = make(map[ClientCacheKey]*sync.RWMutex)
+			if tt.clientLocks == nil {
+				tt.clientLocks = make(map[ClientCacheKey]*sync.RWMutex)
 			}
 
 			m := &cachingClientFactory{
-				cacheKeyLocks: tt.cacheKeyLocks,
+				clientLocks: tt.clientLocks,
 			}
 
-			got, inLocks := m.cacheKeyLock(tt.cacheKey)
+			got, inLocks := m.clientKeyLock(tt.cacheKey)
 			if !tt.wantInLocks {
-				assert.Equal(t, got, tt.cacheKeyLocks[tt.cacheKey])
+				assert.Equal(t, got, tt.clientLocks[tt.cacheKey])
 			}
 			require.Equal(t, tt.wantInLocks, inLocks)
 
@@ -151,7 +151,7 @@ func Test_cachingClientFactory_cacheKeyLock(t *testing.T) {
 			for i := 0; i < tt.tryLockCount; i++ {
 				go func(ctx context.Context) {
 					defer wg.Done()
-					lck, _ := m.cacheKeyLock(tt.cacheKey)
+					lck, _ := m.clientKeyLock(tt.cacheKey)
 					lck.Lock()
 					defer lck.Unlock()
 					assert.Equal(t, got, lck)
