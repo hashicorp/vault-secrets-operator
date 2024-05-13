@@ -129,7 +129,7 @@ func Test_cachingClientFactory_clientLocks(t *testing.T) {
 				clientLocks: tt.clientLocks,
 			}
 
-			got, inLocks := m.clientKeyLock(tt.cacheKey)
+			got, inLocks := m.clientLock(tt.cacheKey)
 			if !tt.wantInLocks {
 				assert.Equal(t, got, tt.clientLocks[tt.cacheKey])
 			}
@@ -151,7 +151,7 @@ func Test_cachingClientFactory_clientLocks(t *testing.T) {
 			for i := 0; i < tt.tryLockCount; i++ {
 				go func(ctx context.Context) {
 					defer wg.Done()
-					lck, _ := m.clientKeyLock(tt.cacheKey)
+					lck, _ := m.clientLock(tt.cacheKey)
 					lck.Lock()
 					defer lck.Unlock()
 					assert.Equal(t, got, lck)

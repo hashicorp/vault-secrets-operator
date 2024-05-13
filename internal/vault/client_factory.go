@@ -217,7 +217,7 @@ func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlcli
 		}
 	}
 
-	m.removeLock(cacheKey)
+	m.removeClientLock(cacheKey)
 }
 
 // Restore will attempt to restore a Client from storage. If storage is not enabled then no restoration will take place.
@@ -281,7 +281,7 @@ func (m *cachingClientFactory) isDisabled() bool {
 	return m.shutDown
 }
 
-func (m *cachingClientFactory) clientKeyLock(cacheKey ClientCacheKey) (*sync.RWMutex, bool) {
+func (m *cachingClientFactory) clientLock(cacheKey ClientCacheKey) (*sync.RWMutex, bool) {
 	m.clientLocksLock.Lock()
 	defer m.clientLocksLock.Unlock()
 	lock, ok := m.clientLocks[cacheKey]
@@ -292,7 +292,7 @@ func (m *cachingClientFactory) clientKeyLock(cacheKey ClientCacheKey) (*sync.RWM
 	return lock, ok
 }
 
-func (m *cachingClientFactory) removeLock(cacheKey ClientCacheKey) {
+func (m *cachingClientFactory) removeClientLock(cacheKey ClientCacheKey) {
 	m.clientLocksLock.Lock()
 	defer m.clientLocksLock.Unlock()
 	delete(m.clientLocks, cacheKey)
@@ -335,7 +335,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	lock, cachedLock := m.clientKeyLock(cacheKey)
+	lock, cachedLock := m.clientLock(cacheKey)
 	lock.Lock()
 	defer lock.Unlock()
 
