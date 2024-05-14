@@ -116,8 +116,9 @@ func main() {
 		fmt.Sprintf("Set global secret transformation options as a comma delimited string. "+
 			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS."+
 			"Valid values are: %v", []string{"exclude-raw"}))
+
 	opts := zap.Options{
-		Development: true,
+		Development: os.Getenv("VSO_LOGGER_DEVELOPMENT_MODE") != "",
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
