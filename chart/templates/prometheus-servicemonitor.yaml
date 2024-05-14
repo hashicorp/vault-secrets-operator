@@ -40,9 +40,9 @@ spec:
           - prometheus
       tlsConfig:
         insecureSkipVerify: {{ .Values.telemetry.serviceMonitor.insecureSkipVerify }}   
-        {{ if .Values.telemetry.serviceMonitor.tlsconfiguration.enabled }}           
-        caFile: {{ .Values.telemetry.serviceMonitor.caFile }}
-        certFile: {{ .Values.telemetry.serviceMonitor.caFile }}
-        keyFile: {{ .Values.telemetry.serviceMonitor.caFile }}  
-        {{ end }}
+        {{- if .Values.telemetry.serviceMonitor.tlsconfiguration.enabled }}           
+        caFile: {{ .Values.telemetry.serviceMonitor.tlsconfiguration.caFile }}
+        certFile: {{ .Values.telemetry.serviceMonitor.tlsconfiguration.certFile }}
+        keyFile: {{ .Values.telemetry.serviceMonitor.tlsconfiguration.keyFile }}  
+        {{- end }}
 {{ end }}
