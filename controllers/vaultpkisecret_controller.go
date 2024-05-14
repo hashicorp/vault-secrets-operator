@@ -42,6 +42,7 @@ type VaultPKISecretReconciler struct {
 	HMACValidator              helpers.HMACValidator
 	Recorder                   record.EventRecorder
 	SyncRegistry               *SyncRegistry
+	BackOffRegistry            *BackOffRegistry
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
@@ -183,9 +184,14 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		r.SyncRegistry.Add(req.NamespacedName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+			RequeueAfter: entry.NextBackOff(),
 		}, nil
+	} else {
+		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
 	certResp, err := vault.UnmarshalPKIIssueResponse(resp.Secret())
@@ -314,6 +320,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
+	r.BackOffRegistry.Delete(objKey)
 
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
@@ -341,6 +348,9 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	if r.BackOffRegistry == nil {
+		r.BackOffRegistry = NewBackOffRegistry()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).

@@ -59,6 +59,7 @@ type VaultDynamicSecretReconciler struct {
 	ClientFactory              vault.ClientFactory
 	HMACValidator              helpers.HMACValidator
 	SyncRegistry               *SyncRegistry
+	BackOffRegistry            *BackOffRegistry
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 	// sourceCh is used to trigger a requeue of resource instances from an
@@ -158,7 +159,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// indicates that the resource has been added to the SyncRegistry
 	// and must be synced.
 	case r.SyncRegistry.Has(req.NamespacedName):
+		// indicates that the resource has been added to the SyncRegistry
+		// and must be synced.
 		syncReason = "force sync"
+		syncReason = "last sync error"
 	// indicates that the resource has been updated since the last sync.
 	case o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = "resource updated"
@@ -269,15 +273,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// sync the secret
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
-			"Failed to sync secret: %s", err)
-		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
-		horizon := requeueDurationOnError + time.Duration(jitter)
+		r.SyncRegistry.Add(req.NamespacedName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+		horizon := entry.NextBackOff()
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)
 		return ctrl.Result{
 			RequeueAfter: horizon,
 		}, nil
+	} else {
+		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
@@ -492,6 +497,10 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	if r.BackOffRegistry == nil {
+		r.BackOffRegistry = NewBackOffRegistry()
+	}
+
 	r.ClientFactory.RegisterClientCallbackHandler(
 		vault.ClientCallbackHandler{
 			On:       vault.ClientCallbackOnLifetimeWatcherDone,
@@ -552,6 +561,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
+	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")

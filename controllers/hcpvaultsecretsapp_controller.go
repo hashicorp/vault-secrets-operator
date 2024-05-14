@@ -54,6 +54,7 @@ type HCPVaultSecretsAppReconciler struct {
 	MinRefreshAfter            time.Duration
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
+	BackOffRegistry            *BackOffRegistry
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -126,9 +127,12 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	resp, err := c.OpenAppSecrets(params, nil)
 	if err != nil {
 		logger.Error(err, "Get App Secret", "appName", o.Spec.AppName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+			RequeueAfter: entry.NextBackOff(),
 		}, nil
+	} else {
+		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
@@ -211,6 +215,10 @@ func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secr
 // SetupWithManager sets up the controller with the Manager.
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	if r.BackOffRegistry == nil {
+		r.BackOffRegistry = NewBackOffRegistry()
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
 		WithEventFilter(syncableSecretPredicate(nil)).
@@ -273,7 +281,9 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 
 func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o client.Object) error {
 	logger := log.FromContext(ctx)
-	r.referenceCache.Remove(SecretTransformation, client.ObjectKeyFromObject(o))
+	objKey := client.ObjectKeyFromObject(o)
+	r.referenceCache.Remove(SecretTransformation, objKey)
+	r.BackOffRegistry.Delete(objKey)
 	if controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, hcpVaultSecretsAppFinalizer) {

@@ -4,8 +4,8 @@
 package options
 
 import (
-	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,24 +26,27 @@ func TestParse(t *testing.T) {
 				"VSO_CLIENT_CACHE_SIZE":              "100",
 				"VSO_CLIENT_CACHE_PERSISTENCE_MODEL": "memory",
 				"VSO_MAX_CONCURRENT_RECONCILES":      "10",
+				"VSO_BACK_OFF_INITIAL_INTERVAL":      "1s",
+				"VSO_BACK_OFF_MAX_INTERVAL":          "60s",
+				"VSO_BACK_OFF_RANDOMIZATION_FACTOR":  "0.5",
+				"VSO_BACK_OFF_MULTIPLIER":            "2.5",
 			},
 			wantOptions: VSOEnvOptions{
 				OutputFormat:                "json",
 				ClientCacheSize:             makeInt(t, 100),
 				ClientCachePersistenceModel: "memory",
 				MaxConcurrentReconciles:     makeInt(t, 10),
+				BackOffInitialInterval:      time.Second * 1,
+				BackOffMaxInterval:          time.Second * 60,
+				BackOffRandomizationFactor:  0.5,
+				BackOffMultiplier:           2.5,
 			},
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			defer func() {
-				for env := range tt.envs {
-					require.NoError(t, os.Unsetenv(env))
-				}
-			}()
 			for env, val := range tt.envs {
-				require.NoError(t, os.Setenv(env, val))
+				t.Setenv(env, val)
 			}
 
 			gotOptions := VSOEnvOptions{}
