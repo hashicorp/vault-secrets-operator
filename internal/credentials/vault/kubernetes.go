@@ -43,6 +43,13 @@ func (l *KubernetesCredentialProvider) GetUID() types.UID {
 }
 
 func (l *KubernetesCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
+	if authObj.Spec.Kubernetes == nil {
+		return fmt.Errorf("kubernetes auth method not configured")
+	}
+	if err := authObj.Spec.Kubernetes.Validate(); err != nil {
+		return fmt.Errorf("invalid kubernetes auth configuration: %w", err)
+	}
+
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 

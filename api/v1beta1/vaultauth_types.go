@@ -25,28 +25,42 @@ type VaultAuthConfigKubernetes struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
-func (a *VaultAuthConfigKubernetes) Merge(other *VaultAuthConfigKubernetes) error {
+// Merge merges the other VaultAuthConfigKubernetes into a copy of the current.
+// If the current value is empty, it will be replaced by the other value. If the
+// merger is successful, the copy is returned.
+func (a *VaultAuthConfigKubernetes) Merge(other *VaultAuthConfigKubernetes) (*VaultAuthConfigKubernetes, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.ServiceAccount == "" {
+		c.ServiceAccount = other.ServiceAccount
+	}
+	if len(c.TokenAudiences) == 0 {
+		c.TokenAudiences = other.TokenAudiences
+	}
+	if c.TokenExpirationSeconds == 0 {
+		c.TokenExpirationSeconds = other.TokenExpirationSeconds
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigKubernetes is valid. All validation
+// errors are returned.
+func (a *VaultAuthConfigKubernetes) Validate() error {
 	var errs error
 	if a.Role == "" {
-		if other.Role == "" {
-			errs = errors.Join(fmt.Errorf("empty role"))
-		} else {
-			a.Role = other.Role
-		}
+		errs = errors.Join(fmt.Errorf("empty role"))
 	}
+
 	if a.ServiceAccount == "" {
-		if other.ServiceAccount == "" {
-			errs = errors.Join(fmt.Errorf("empty serviceAccount"))
-		} else {
-			a.ServiceAccount = other.ServiceAccount
-		}
+		errs = errors.Join(fmt.Errorf("empty serviceAccount"))
 	}
-	if len(a.TokenAudiences) == 0 {
-		a.TokenAudiences = other.TokenAudiences
-	}
-	if a.TokenExpirationSeconds == 0 {
-		a.TokenExpirationSeconds = other.TokenExpirationSeconds
-	}
+
 	return errs
 }
 
@@ -69,26 +83,39 @@ type VaultAuthConfigJWT struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
-func (a *VaultAuthConfigJWT) Merge(other *VaultAuthConfigJWT) error {
+// Merge merges the other VaultAuthConfigJWT into a copy of the current. If the
+// current value is empty, it will be replaced by the other value. If the merger
+// is successful, the copy is returned.
+func (a *VaultAuthConfigJWT) Merge(other *VaultAuthConfigJWT) (*VaultAuthConfigJWT, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.SecretRef == "" {
+		c.SecretRef = other.SecretRef
+	}
+	if c.ServiceAccount == "" {
+		c.ServiceAccount = other.ServiceAccount
+	}
+	if len(c.TokenAudiences) == 0 {
+		c.TokenAudiences = other.TokenAudiences
+	}
+	if c.TokenExpirationSeconds == 0 {
+		c.TokenExpirationSeconds = other.TokenExpirationSeconds
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigJWT is valid. All validation errors
+// are returned.
+func (a *VaultAuthConfigJWT) Validate() error {
 	var errs error
 	if a.Role == "" {
-		if other.Role == "" {
-			errs = errors.Join(fmt.Errorf("empty role"))
-		} else {
-			a.Role = other.Role
-		}
-	}
-	if a.SecretRef == "" {
-		a.SecretRef = other.SecretRef
-	}
-	if a.ServiceAccount == "" {
-		a.ServiceAccount = other.ServiceAccount
-	}
-	if len(a.TokenAudiences) == 0 {
-		a.TokenAudiences = other.TokenAudiences
-	}
-	if a.TokenExpirationSeconds == 0 {
-		a.TokenExpirationSeconds = other.TokenExpirationSeconds
+		errs = errors.Join(fmt.Errorf("empty role"))
 	}
 
 	return errs
@@ -106,21 +133,34 @@ type VaultAuthConfigAppRole struct {
 	SecretRef string `json:"secretRef,omitempty"`
 }
 
-func (a *VaultAuthConfigAppRole) Merge(other *VaultAuthConfigAppRole) error {
+// Merge merges the other VaultAuthConfigAppRole into a copy of the current. If
+// the current value is empty, it will be replaced by the other value. If the
+// merger is successful, the copy is returned.
+func (a *VaultAuthConfigAppRole) Merge(other *VaultAuthConfigAppRole) (*VaultAuthConfigAppRole, error) {
+	c := a.DeepCopy()
+	if c.RoleID == "" {
+		c.RoleID = other.RoleID
+	}
+	if c.SecretRef == "" {
+		c.SecretRef = other.SecretRef
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigAppRole is valid. All validation
+// errors are returned.
+func (a *VaultAuthConfigAppRole) Validate() error {
 	var errs error
 	if a.RoleID == "" {
-		if other.RoleID == "" {
-			errs = errors.Join(fmt.Errorf("empty roleID"))
-		} else {
-			a.RoleID = other.RoleID
-		}
+		errs = errors.Join(fmt.Errorf("empty roleID"))
 	}
+
 	if a.SecretRef == "" {
-		if other.SecretRef == "" {
-			errs = errors.Join(fmt.Errorf("empty secretRef"))
-		} else {
-			a.SecretRef = other.SecretRef
-		}
+		errs = errors.Join(fmt.Errorf("empty secretRef"))
 	}
 
 	return errs
@@ -160,35 +200,48 @@ type VaultAuthConfigAWS struct {
 	IRSAServiceAccount string `json:"irsaServiceAccount,omitempty"`
 }
 
-func (a *VaultAuthConfigAWS) Merge(other *VaultAuthConfigAWS) error {
+// Merge merges the other VaultAuthConfigAWS into a copy of the current. If the
+// current value is empty, it will be replaced by the other value. If the merger
+// is successful, the copy is returned.
+func (a *VaultAuthConfigAWS) Merge(other *VaultAuthConfigAWS) (*VaultAuthConfigAWS, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.Region == "" {
+		c.Region = other.Region
+	}
+	if c.HeaderValue == "" {
+		c.HeaderValue = other.HeaderValue
+	}
+	if c.SessionName == "" {
+		c.SessionName = other.SessionName
+	}
+	if c.STSEndpoint == "" {
+		c.STSEndpoint = other.STSEndpoint
+	}
+	if c.IAMEndpoint == "" {
+		c.IAMEndpoint = other.IAMEndpoint
+	}
+	if c.SecretRef == "" {
+		c.SecretRef = other.SecretRef
+	}
+	if c.IRSAServiceAccount == "" {
+		c.IRSAServiceAccount = other.IRSAServiceAccount
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigAWS is valid. All validation errors
+// are returned.
+func (a *VaultAuthConfigAWS) Validate() error {
 	var errs error
 	if a.Role == "" {
-		if other.Role == "" {
-			errs = errors.Join(fmt.Errorf("empty role"))
-		} else {
-			a.Role = other.Role
-		}
-	}
-	if a.Region == "" {
-		a.Region = other.Region
-	}
-	if a.HeaderValue == "" {
-		a.HeaderValue = other.HeaderValue
-	}
-	if a.SessionName == "" {
-		a.SessionName = other.SessionName
-	}
-	if a.STSEndpoint == "" {
-		a.STSEndpoint = other.STSEndpoint
-	}
-	if a.IAMEndpoint == "" {
-		a.IAMEndpoint = other.IAMEndpoint
-	}
-	if a.SecretRef == "" {
-		a.SecretRef = other.SecretRef
-	}
-	if a.IRSAServiceAccount == "" {
-		a.IRSAServiceAccount = other.IRSAServiceAccount
+		errs = errors.Join(fmt.Errorf("empty role"))
 	}
 
 	return errs
@@ -219,30 +272,42 @@ type VaultAuthConfigGCP struct {
 	ProjectID string `json:"projectID,omitempty"`
 }
 
-func (a *VaultAuthConfigGCP) Merge(other *VaultAuthConfigGCP) error {
+// Merge merges the other VaultAuthConfigGCP into a copy of the current. If the
+// current value is empty, it will be replaced by the other value. If the merger
+// is successful, the copy is returned.
+func (a *VaultAuthConfigGCP) Merge(other *VaultAuthConfigGCP) (*VaultAuthConfigGCP, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.WorkloadIdentityServiceAccount == "" {
+		c.WorkloadIdentityServiceAccount = other.WorkloadIdentityServiceAccount
+	}
+	if c.Region == "" {
+		c.Region = other.Region
+	}
+	if c.ClusterName == "" {
+		c.ClusterName = other.ClusterName
+	}
+	if c.ProjectID == "" {
+		c.ProjectID = other.ProjectID
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigGCP is valid. All validation errors
+// are returned.
+func (a *VaultAuthConfigGCP) Validate() error {
 	var errs error
 	if a.Role == "" {
-		if other.Role == "" {
-			errs = errors.Join(fmt.Errorf("empty role"))
-		} else {
-			a.Role = other.Role
-		}
+		errs = errors.Join(fmt.Errorf("empty role"))
 	}
 	if a.WorkloadIdentityServiceAccount == "" {
-		if other.WorkloadIdentityServiceAccount == "" {
-			errs = errors.Join(fmt.Errorf("empty workloadIdentityServiceAccount"))
-		} else {
-			a.WorkloadIdentityServiceAccount = other.WorkloadIdentityServiceAccount
-		}
-	}
-	if a.Region == "" {
-		a.Region = other.Region
-	}
-	if a.ClusterName == "" {
-		a.ClusterName = other.ClusterName
-	}
-	if a.ProjectID == "" {
-		a.ProjectID = other.ProjectID
+		errs = errors.Join(fmt.Errorf("empty workloadIdentityServiceAccount"))
 	}
 
 	return errs

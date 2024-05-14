@@ -33,6 +33,13 @@ func (l *AppRoleCredentialProvider) GetUID() types.UID {
 }
 
 func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
+	if authObj.Spec.AppRole == nil {
+		return fmt.Errorf("AppRole auth method not configured")
+	}
+	if err := authObj.Spec.AppRole.Validate(); err != nil {
+		return fmt.Errorf("invalid AppRole auth configuration: %w", err)
+	}
+
 	logger := log.FromContext(ctx)
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace

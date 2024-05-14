@@ -187,6 +187,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			Method:             vaultcredsconsts.ProviderMethodKubernetes,
 			Mount:              "kubernetes",
 			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           "vso-role",
 				ServiceAccount: consts.NameDefault,
 			},
 		},

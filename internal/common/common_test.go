@@ -746,8 +746,9 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				Namespace: "biff",
 				Mount:     "qux",
 				VaultAuthConfigGCP: secretsv1beta1.VaultAuthConfigGCP{
-					Role:   "beetle",
-					Region: "us-west1",
+					Role:                           "beetle",
+					Region:                         "us-west1",
+					WorkloadIdentityServiceAccount: "sa1",
 				},
 			},
 		},
@@ -962,8 +963,9 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace:          "biff",
 					Mount:              "qux",
 					GCP: &secretsv1beta1.VaultAuthConfigGCP{
-						Role:   "beetle",
-						Region: "us-west1",
+						Role:                           "beetle",
+						Region:                         "us-west1",
+						WorkloadIdentityServiceAccount: "sa1",
 					},
 				},
 			},

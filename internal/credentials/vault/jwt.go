@@ -35,6 +35,13 @@ func (l *JWTCredentialProvider) GetUID() types.UID {
 }
 
 func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
+	if err := authObj.Spec.JWT.Validate(); err != nil {
+		return fmt.Errorf("invalid JWT auth configuration: %w", err)
+	}
+	if err := authObj.Spec.JWT.Validate(); err != nil {
+		return fmt.Errorf("invalid JWT auth configuration: %w", err)
+	}
+
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 

@@ -221,7 +221,14 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			srcAuthMethod := globalAuthMethod.VaultAuthConfigKubernetes.DeepCopy()
 			if mergeTargetAuthMethod == nil {
 				cObj.Spec.Kubernetes = srcAuthMethod
-			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+			} else {
+				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
+				if err != nil {
+					return nil, nil, err
+				}
+				cObj.Spec.Kubernetes = merged
+			}
+			if err := cObj.Spec.Kubernetes.Validate(); err != nil {
 				return nil, nil, err
 			}
 			globalAuthMount = globalAuthMethod.Mount
@@ -241,7 +248,14 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			srcAuthMethod := globalAuthMethod.VaultAuthConfigJWT.DeepCopy()
 			if mergeTargetAuthMethod == nil {
 				cObj.Spec.JWT = srcAuthMethod
-			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+			} else {
+				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
+				if err != nil {
+					return nil, nil, err
+				}
+				cObj.Spec.JWT = merged
+			}
+			if err := cObj.Spec.JWT.Validate(); err != nil {
 				return nil, nil, err
 			}
 			globalAuthMount = globalAuthMethod.Mount
@@ -261,7 +275,14 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			srcAuthMethod := globalAuthMethod.VaultAuthConfigAppRole.DeepCopy()
 			if mergeTargetAuthMethod == nil {
 				cObj.Spec.AppRole = srcAuthMethod
-			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+			} else {
+				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
+				if err != nil {
+					return nil, nil, err
+				}
+				cObj.Spec.AppRole = merged
+			}
+			if err := cObj.Spec.AppRole.Validate(); err != nil {
 				return nil, nil, err
 			}
 			globalAuthMount = globalAuthMethod.Mount
@@ -281,7 +302,14 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			srcAuthMethod := globalAuthMethod.VaultAuthConfigAWS.DeepCopy()
 			if mergeTargetAuthMethod == nil {
 				cObj.Spec.AWS = srcAuthMethod
-			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+			} else {
+				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
+				if err != nil {
+					return nil, nil, err
+				}
+				cObj.Spec.AWS = merged
+			}
+			if err := cObj.Spec.AWS.Validate(); err != nil {
 				return nil, nil, err
 			}
 			globalAuthMount = globalAuthMethod.Mount
@@ -301,7 +329,14 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			srcAuthMethod := globalAuthMethod.VaultAuthConfigGCP.DeepCopy()
 			if mergeTargetAuthMethod == nil {
 				cObj.Spec.GCP = srcAuthMethod
-			} else if err := mergeTargetAuthMethod.Merge(srcAuthMethod); err != nil {
+			} else {
+				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
+				if err != nil {
+					return nil, nil, err
+				}
+				cObj.Spec.GCP = merged
+			}
+			if err := cObj.Spec.GCP.Validate(); err != nil {
 				return nil, nil, err
 			}
 			globalAuthMount = globalAuthMethod.Mount
