@@ -732,6 +732,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 								return false
 							}
 
+							updateErr = nil
 							return true
 						}, 5*time.Second, 1*time.Second, "failed to update VaultConnection after 5s")
 						assert.NoError(t, updateErr, "failed to update VaultConnection")
