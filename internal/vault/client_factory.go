@@ -66,6 +66,9 @@ type clientCacheObjectFilterFunc func(cur, other ctrlclient.Object) bool
 type CachingClientFactoryPruneRequest struct {
 	FilterFunc   clientCacheObjectFilterFunc
 	PruneStorage bool
+	// SkipClientCallbacks will prevent the ClientCallbackHandlers from being called
+	// when a Client is pruned.
+	SkipClientCallbacks bool
 }
 
 type CachingClientFactory interface {
@@ -156,24 +159,29 @@ func (m *cachingClientFactory) Prune(ctx context.Context, client ctrlclient.Clie
 		return 0, fmt.Errorf("client removal not supported for type %T", cur)
 	}
 
-	if !req.PruneStorage {
-		return 0, nil
-	}
-	return m.prune(ctx, client, filter)
+	return m.prune(ctx, client, filter, req.SkipClientCallbacks)
 }
 
-func (m *cachingClientFactory) prune(ctx context.Context, client ctrlclient.Client, filter ClientCachePruneFilterFunc) (int, error) {
+func (m *cachingClientFactory) prune(ctx context.Context, client ctrlclient.Client, filter ClientCachePruneFilterFunc, skipCallbacks bool) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// prune the client cache for filter, pruned is a slice of cache keys
 	pruned := m.cache.Prune(filter)
 	var errs error
-	// for all cache entries pruned, remove the corresponding storage entries.
-	if m.storageEnabled() {
-		for _, key := range pruned {
-			if _, err := m.pruneStorage(ctx, client, key); err != nil {
-				errs = errors.Join(errs, err)
+	if !skipCallbacks {
+		for _, c := range pruned {
+			// the callback handler will remove the client from the storage
+			m.callbackHandlerCh <- c
+		}
+	} else {
+		// for all cache entries pruned, remove the corresponding storage entries.
+		if m.storageEnabled() {
+			for _, c := range pruned {
+				key, _ := c.GetCacheKey()
+				if _, err := m.pruneStorage(ctx, client, key); err != nil {
+					errs = errors.Join(errs, err)
+				}
 			}
 		}
 	}

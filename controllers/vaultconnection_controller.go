@@ -136,8 +136,9 @@ func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secrets
 func (r *VaultConnectionReconciler) handleFinalizer(ctx context.Context, o *secretsv1beta1.VaultConnection) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultConnectionFinalizer) {
 		if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
-			FilterFunc:   filterAllCacheRefs,
-			PruneStorage: true,
+			FilterFunc:          filterAllCacheRefs,
+			PruneStorage:        true,
+			SkipClientCallbacks: true,
 		}); err != nil {
 			return ctrl.Result{}, err
 		}
