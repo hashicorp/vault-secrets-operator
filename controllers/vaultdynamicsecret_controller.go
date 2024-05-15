@@ -162,7 +162,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// indicates that the resource has been added to the SyncRegistry
 		// and must be synced.
 		syncReason = "force sync"
-		syncReason = "last sync error"
 	// indicates that the resource has been updated since the last sync.
 	case o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = "resource updated"
