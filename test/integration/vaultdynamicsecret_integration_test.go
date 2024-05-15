@@ -713,16 +713,29 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 						Name:      obj.Spec.VaultAuthRef,
 					})
 					if assert.NoError(t, err) {
-						connObj, err := common.GetVaultConnection(ctx, crdClient, ctrlclient.ObjectKey{
-							Namespace: obj.Namespace,
-							Name:      authObj.Spec.VaultConnectionRef,
-						})
-						if assert.NoError(t, err) {
+						var updateErr error
+						assert.Eventually(t, func() bool {
+							connObj, err := common.GetVaultConnection(ctx, crdClient, ctrlclient.ObjectKey{
+								Namespace: obj.Namespace,
+								Name:      authObj.Spec.VaultConnectionRef,
+							})
+							if err != nil {
+								updateErr = err
+								return false
+							}
+
 							connObj.Spec.Headers = map[string]string{
 								"X-test-it": "true",
 							}
-							assert.NoError(t, crdClient.Update(ctx, connObj))
-						}
+							if err := crdClient.Update(ctx, connObj); err != nil {
+								updateErr = err
+								return false
+							}
+
+							updateErr = nil
+							return true
+						}, 5*time.Second, 1*time.Second, "failed to update VaultConnection after 5s")
+						assert.NoError(t, updateErr, "failed to update VaultConnection")
 					}
 				}
 			},
