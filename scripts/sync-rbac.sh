@@ -8,7 +8,7 @@
 # role etc, requires manual syncing
 # requires yq (Go), not python-yq
 
-set -e -o pipefail
+set -e -o pipefail extglob
 
 REPO_ROOT="$(git rev-parse --show-toplevel || echo .)"
 # yq should be in the PATH after running 'make yq'
@@ -41,6 +41,22 @@ function mungeIt {
   local kind="$(echo "${output}" | yq .kind)"
   local metadataName="$(echo "${output}" | yq .metadata.name)"
   local rules="$(echo "${output}"| yq .rules)"
+
+  local aggregate=
+  local aggregateLabel=
+  case "${metadataName}" in
+    *-editor-role)
+      aggregate='editor'
+      ;;
+    *-viewer-role)
+      aggregate='viewer'
+      ;;
+  esac
+
+  if [ -n "${aggregate}" ]; then
+    aggregateLabel="vso.hashicorp.com/aggregate-to-${aggregate}: \"true\""
+  fi
+
   cat <<HERE > ${outfile}
 {{- /*
 # Copyright (c) HashiCorp, Inc.
@@ -57,6 +73,7 @@ metadata:
     app.kubernetes.io/component: rbac
     # allow for selecting on the canonical name
     vso.hashicorp.com/role-instance: ${metadataName}
+    ${aggregateLabel}
   {{- include "vso.chart.labels" . | nindent 4 }}
 rules:
 ${rules}
