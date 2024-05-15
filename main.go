@@ -83,11 +83,11 @@ func main() {
 	var uninstall bool
 	var preDeleteHookTimeoutSeconds int
 	var minRefreshAfterHVSA time.Duration
+	var globalTransformationOpts string
 	var backOffInitialInterval time.Duration
 	var backOffMaxInterval time.Duration
 	var backOffRandomizationFactor float64
 	var backOffMultiplier float64
-	var globalTransformationOpts string
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -139,8 +139,9 @@ func main() {
 		"Sets the multiplier for increasing the interval between retries on secret source errors. "+
 			"All errors are tried using an exponential backoff strategy. "+
 			"Also set from environment variable VSO_BACK_OFF_MULTIPLIER.")
+
 	opts := zap.Options{
-		Development: true,
+		Development: os.Getenv("VSO_LOGGER_DEVELOPMENT_MODE") != "",
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()

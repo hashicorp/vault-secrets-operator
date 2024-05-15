@@ -28,6 +28,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
@@ -662,13 +663,82 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		create   int
-		expected map[string]int
+		name        string
+		create      int
+		triggerFunc func(t *testing.T, reconciledObjs []*secretsv1beta1.VaultDynamicSecret)
+		expected    map[string]int
 	}{
 		{
 			name:   "create-only",
 			create: 25,
+			triggerFunc: func(t *testing.T, _ []*secretsv1beta1.VaultDynamicSecret) {
+				t.Helper()
+				cfg := api.DefaultConfig()
+				cfg.Address = vaultAddr
+				vc, err := api.NewClient(cfg)
+				assert.NoError(t, err)
+				vc.SetToken(vaultToken)
+				if outputs.Namespace != "" {
+					vc.SetNamespace(outputs.Namespace)
+				}
+
+				deleteEntitiesBySAPrefix(t, vc, ctx, outputs.K8sNamespace, "sa-create-only-test-vcc")
+			},
+		},
+		{
+			name:   "create-only-vault-auth-update",
+			create: 25,
+			triggerFunc: func(t *testing.T, reconciledObjs []*secretsv1beta1.VaultDynamicSecret) {
+				t.Helper()
+				for _, obj := range reconciledObjs {
+					authObj, err := common.GetVaultAuth(ctx, crdClient, ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Spec.VaultAuthRef,
+					})
+					if assert.NoError(t, err) {
+						authObj.Spec.Kubernetes.TokenAudiences = []string{"vault", "test"}
+						assert.NoError(t, crdClient.Update(ctx, authObj))
+					}
+				}
+			},
+		},
+		{
+			name:   "create-only-vault-conn-update",
+			create: 25,
+			triggerFunc: func(t *testing.T, reconciledObjs []*secretsv1beta1.VaultDynamicSecret) {
+				t.Helper()
+				for _, obj := range reconciledObjs {
+					authObj, err := common.GetVaultAuth(ctx, crdClient, ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Spec.VaultAuthRef,
+					})
+					if assert.NoError(t, err) {
+						var updateErr error
+						assert.Eventually(t, func() bool {
+							connObj, err := common.GetVaultConnection(ctx, crdClient, ctrlclient.ObjectKey{
+								Namespace: obj.Namespace,
+								Name:      authObj.Spec.VaultConnectionRef,
+							})
+							if err != nil {
+								updateErr = err
+								return false
+							}
+
+							connObj.Spec.Headers = map[string]string{
+								"X-test-it": "true",
+							}
+							if err := crdClient.Update(ctx, connObj); err != nil {
+								updateErr = err
+								return false
+							}
+
+							updateErr = nil
+							return true
+						}, 5*time.Second, 1*time.Second, "failed to update VaultConnection after 5s")
+						assert.NoError(t, updateErr, "failed to update VaultConnection")
+					}
+				}
+			},
 		},
 	}
 
@@ -695,15 +765,27 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 				}
 				createObj(sa)
 
+				connObj := &secretsv1beta1.VaultConnection{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      fmt.Sprintf("va-%s", nameSuffix),
+					},
+					Spec: secretsv1beta1.VaultConnectionSpec{
+						Address: testVaultAddress,
+					},
+				}
+				createObj(connObj)
+
 				authObj := &secretsv1beta1.VaultAuth{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
 						Name:      fmt.Sprintf("va-%s", nameSuffix),
 					},
 					Spec: secretsv1beta1.VaultAuthSpec{
-						Namespace: outputs.Namespace,
-						Method:    "kubernetes",
-						Mount:     outputs.AuthMount,
+						Namespace:          outputs.Namespace,
+						Method:             "kubernetes",
+						Mount:              outputs.AuthMount,
+						VaultConnectionRef: connObj.GetName(),
 						Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 							Role:           outputs.AuthRole,
 							ServiceAccount: sa.ObjectMeta.Name,
@@ -753,17 +835,8 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 				return
 			}
 
-			cfg := api.DefaultConfig()
-			cfg.Address = vaultAddr
-			vc, err := api.NewClient(cfg)
-			assert.NoError(t, err)
-			vc.SetToken(vaultToken)
-			if outputs.Namespace != "" {
-				vc.SetNamespace(outputs.Namespace)
-			}
-
 			t.Logf("Running rotation tests on %d reconciled objects", len(reconciledObjs))
-			deleteEntitiesBySAPrefix(t, vc, ctx, outputs.K8sNamespace, "sa-"+testSuffix)
+			tt.triggerFunc(t, reconciledObjs)
 			if !t.Failed() {
 				for idx, obj := range reconciledObjs {
 					t.Run(fmt.Sprintf("create-dest-%d", idx), func(t *testing.T) {
