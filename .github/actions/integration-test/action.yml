@@ -77,7 +77,7 @@ runs:
         fi
         log_artifact_name="${{ inputs.log-prefix }}kind-${{ inputs.kind-cluster-name }}-$(git rev-parse --short ${{ github.sha }})-${{ inputs.k8s-version }}-${{ inputs.vault-version }}-${vault_flavor}-${{ inputs.installation-method }}-logs"
         log_root="/tmp/${log_artifact_name}"
-        mkdir -vp "${log_root}"
+        mkdir -m 755 -vp "${log_root}"
         echo "log_root=${log_root}" >> $GITHUB_OUTPUT
         echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
     - uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e # v4.1.7
