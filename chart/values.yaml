@@ -71,6 +71,7 @@ controller:
       # individually specified roles:
       # - "VaultAuth"
       # - "HCPAuth"
+      # @type: array<string>
       viewerRoles: []
 
       # editorRoles is a list of roles that will be aggregated into the editor ClusterRole.
@@ -86,6 +87,7 @@ controller:
       # individually specified roles:
       # - "VaultAuth"
       # - "HCPAuth"
+      # @type: array<string>
       editorRoles: []
 
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
