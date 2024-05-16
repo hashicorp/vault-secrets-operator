@@ -670,7 +670,7 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "3" ]
+   [ "${actual}" = "7" ]
 }
 
 #
@@ -684,11 +684,11 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "5" ]
+   [ "${actual}" = "9" ]
 
-   local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[7]' | tee /dev/stderr)
    [ "${actual}" = "--foo=baz" ]
-   local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
    [ "${actual}" = "--bar=qux" ]
 }
 
@@ -750,7 +750,7 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "3" ]
+   [ "${actual}" = "7" ]
 }
 
 @test "controller/Deployment: with globalTransformationOptions.excludeRaw" {
@@ -762,7 +762,7 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "4" ]
+   [ "${actual}" = "8" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
    [ "${actual}" = "--global-transformation-options=exclude-raw" ]
@@ -778,14 +778,58 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "6" ]
+   [ "${actual}" = "10" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
    [ "${actual}" = "--global-transformation-options=exclude-raw" ]
-   local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
    [ "${actual}" = "--foo=baz" ]
-   local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
    [ "${actual}" = "--bar=qux" ]
+}
+
+@test "controller/Deployment: with backOffOnSecretSourceError defaults" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "7" ]
+
+   local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-initial-interval=5s" ]
+   local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-max-interval=60s" ]
+   local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-multiplier=1.50" ]
+   local actual=$(echo "$object" | yq '.[6]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-randomization-factor=0.50" ]
+}
+
+@test "controller/Deployment: with backOffOnSecretSourceError set" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.backOffOnSecretSourceError.initialInterval=30s' \
+      --set 'controller.manager.backOffOnSecretSourceError.maxInterval=300s' \
+      --set 'controller.manager.backOffOnSecretSourceError.multiplier=2.5' \
+      --set 'controller.manager.backOffOnSecretSourceError.randomizationFactor=3.7361' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "7" ]
+
+   local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-initial-interval=30s" ]
+   local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-max-interval=300s" ]
+   local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-multiplier=2.50" ]
+   local actual=$(echo "$object" | yq '.[6]' | tee /dev/stderr)
+   [ "${actual}" = "--back-off-randomization-factor=3.74" ]
 }
 
 #--------------------------------------------------------------------
