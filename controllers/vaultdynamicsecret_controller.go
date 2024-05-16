@@ -155,27 +155,27 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	switch {
 	// indicates that the resource has not been synced yet.
 	case o.Status.LastGeneration == 0:
-		syncReason = "initial sync"
+		syncReason = consts.ReasonInitialSync
 	// indicates that the resource has been added to the SyncRegistry
 	// and must be synced.
 	case r.SyncRegistry.Has(req.NamespacedName):
 		// indicates that the resource has been added to the SyncRegistry
 		// and must be synced.
-		syncReason = "force sync"
+		syncReason = consts.ReasonForceSync
 	// indicates that the resource has been updated since the last sync.
 	case o.GetGeneration() != o.Status.LastGeneration:
-		syncReason = "resource updated"
+		syncReason = consts.ReasonResourceUpdated
 	// indicates that the destination secret does not exist and the resource is configured to create it.
 	case o.Spec.Destination.Create && !destExists:
-		syncReason = "destination secret does not exist and create=true"
+		syncReason = consts.ReasonInexistentDestination
 	// indicates that the cache key has changed since the last sync. This can happen
 	// when the VaultAuth or VaultConnection objects are updated since the last sync.
 	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
-		syncReason = "new vault client due to config change"
+		syncReason = consts.ReasonVaultClientConfigChanged
 	// indicates that the Vault client ID has changed since the last sync. This can
 	// happen when the client has re-authenticated to Vault since the last sync.
 	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
-		syncReason = "vault token rotated"
+		syncReason = consts.ReasonVaultTokenRotated
 	}
 
 	doSync := syncReason != ""
@@ -253,7 +253,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 			}
-			syncReason = "lease renewal failed"
+			syncReason = consts.ReasonSecretLeaseRenewalError
 		}
 	}
 

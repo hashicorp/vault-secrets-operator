@@ -120,7 +120,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	case o.Status.SerialNumber == "":
 		syncReason = consts.ReasonInitialSync
 	case r.SyncRegistry.Has(req.NamespacedName):
-		syncReason = consts.ReasonSyncOnRefUpdate
+		syncReason = consts.ReasonForceSync
 	case schemaEpoch > 0 && o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = consts.ReasonResourceUpdated
 	case o.Spec.Destination.Create && !destinationExists:
