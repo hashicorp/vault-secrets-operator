@@ -35,6 +35,9 @@ type VSOEnvOptions struct {
 	// BackOffMaxInterval is VSO_BACK_OFF_MAX_INTERVAL environment variable option
 	BackOffMaxInterval time.Duration `split_words:"true"`
 
+	// BackOffMaxElapsedTime is VSO_BACK_OFF_MAX_ELAPSED_TIME environment variable option
+	BackOffMaxElapsedTime time.Duration `split_words:"true"`
+
 	// BackOffRandomizationFactor is VSO_BACK_OFF_RANDOMIZATION_FACTOR environment variable option
 	BackOffRandomizationFactor float64 `split_words:"true"`
 

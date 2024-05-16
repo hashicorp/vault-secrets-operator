@@ -90,6 +90,7 @@ func main() {
 	var backOffMaxInterval time.Duration
 	var backOffRandomizationFactor float64
 	var backOffMultiplier float64
+	var backOffMaxElapsedTime time.Duration
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -131,6 +132,10 @@ func main() {
 		"Maximum interval between retries on secret source errors. "+
 			"All errors are tried using an exponential backoff strategy. "+
 			"Also set from environment variable VSO_BACK_OFF_MAX_INTERVAL.")
+	flag.DurationVar(&backOffMaxElapsedTime, "back-off-max-elapsed-time", 0,
+		"Maximum elapsed time before giving up on secret source errors. "+
+			"All errors are tried using an exponential backoff strategy. "+
+			"Also set from environment variable VSO_BACK_OFF_MAX_ELAPSED_TIME.")
 	flag.Float64Var(&backOffRandomizationFactor, "back-off-randomization-factor",
 		backoff.DefaultRandomizationFactor,
 		"Sets the randomization factor to add jitter to the interval between retries on secret "+
@@ -219,6 +224,7 @@ func main() {
 		backoff.WithMaxInterval(backOffMaxInterval),
 		backoff.WithRandomizationFactor(backOffRandomizationFactor),
 		backoff.WithMultiplier(backOffMultiplier),
+		backoff.WithMaxElapsedTime(backOffMaxElapsedTime),
 	}
 
 	globalTransOpt := &helpers.GlobalTransformationOption{}
@@ -280,6 +286,7 @@ func main() {
 				ConstLabels: map[string]string{
 					"backOffInitialInterval":      backOffInitialInterval.String(),
 					"backOffMaxInterval":          backOffMaxInterval.String(),
+					"backOffMaxElapsedTime":       backOffMaxElapsedTime.String(),
 					"backOffMultiplier":           fmt.Sprintf("%.2f", backOffMultiplier),
 					"backOffRandomizationFactor":  fmt.Sprintf("%.2f", backOffRandomizationFactor),
 					"clientCachePersistenceModel": clientCachePersistenceModel,
@@ -467,6 +474,7 @@ func main() {
 		"clientCacheSize", cfc.ClientCacheSize,
 		"backOffMultiplier", backOffMultiplier,
 		"backOffMaxInterval", backOffMaxInterval,
+		"backOffMaxElapsedTime", backOffMaxElapsedTime,
 		"backOffInitialInterval", backOffInitialInterval,
 		"backOffRandomizationFactor", backOffRandomizationFactor,
 	)

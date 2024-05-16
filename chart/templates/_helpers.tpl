@@ -190,6 +190,9 @@ secret source error occurs.
 {{- with .maxInterval -}}
 {{- $opts = mustAppend $opts (printf "--back-off-max-interval=%s" .) -}}
 {{- end -}}
+{{- with .maxElapsedTime -}}
+{{- $opts = mustAppend $opts (printf "--back-off-max-elapsed-time=%s" .) -}}
+{{- end -}}
 {{- with .multiplier -}}
 {{- $opts = mustAppend $opts (printf "--back-off-multiplier=%.2f"  (. | float64)) -}}
 {{- end -}}

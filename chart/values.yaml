@@ -122,6 +122,9 @@ controller:
       # Maximum interval between retries.
       # @type: duration
       maxInterval: "60s"
+      # Maximum elapsed time before giving up.
+      # @type: duration
+      maxElapsedTime: "0s"
       # Randomization factor to add jitter to the interval between retries.
       # @type: float
       randomizationFactor: 0.5
