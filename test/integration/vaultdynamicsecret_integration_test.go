@@ -691,14 +691,27 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			triggerFunc: func(t *testing.T, reconciledObjs []*secretsv1beta1.VaultDynamicSecret) {
 				t.Helper()
 				for _, obj := range reconciledObjs {
-					authObj, err := common.GetVaultAuth(ctx, crdClient, ctrlclient.ObjectKey{
-						Namespace: obj.Namespace,
-						Name:      obj.Spec.VaultAuthRef,
-					})
-					if assert.NoError(t, err) {
+					var updateErr error
+					assert.Eventually(t, func() bool {
+						authObj, err := common.GetVaultAuth(ctx, crdClient, ctrlclient.ObjectKey{
+							Namespace: obj.Namespace,
+							Name:      obj.Spec.VaultAuthRef,
+						})
+						if err != nil {
+							updateErr = err
+							return false
+						}
+
 						authObj.Spec.Kubernetes.TokenAudiences = []string{"vault", "test"}
-						assert.NoError(t, crdClient.Update(ctx, authObj))
-					}
+						if err := crdClient.Update(ctx, authObj); err != nil {
+							updateErr = err
+							return false
+						}
+
+						updateErr = nil
+						return true
+					}, 5*time.Second, 1*time.Second, "failed to update VaultAuth after 5s")
+					assert.NoError(t, updateErr, "failed to update VaultAuth")
 				}
 			},
 		},
