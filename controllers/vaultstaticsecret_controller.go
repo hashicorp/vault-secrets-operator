@@ -127,7 +127,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var doRolloutRestart bool
 	doSync := true
-	if o.Spec.HMACSecretData {
+	if o.Spec.HMACSecretData != nil && *o.Spec.HMACSecretData {
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
 		if requeueAfter == 0 {
