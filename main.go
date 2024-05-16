@@ -10,11 +10,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -268,6 +270,27 @@ func main() {
 			metrics.NewBuildInfoGauge(versionInfo),
 		)
 		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
+
+		metric := prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: metrics.Namespace,
+				Subsystem: "runtime",
+				Name:      "config",
+				Help:      "Vault Secrets Operator runtime config.",
+				ConstLabels: map[string]string{
+					"backOffInitialInterval":      backOffInitialInterval.String(),
+					"backOffMaxInterval":          backOffMaxInterval.String(),
+					"backOffMultiplier":           fmt.Sprintf("%.2f", backOffMultiplier),
+					"backOffRandomizationFactor":  fmt.Sprintf("%.2f", backOffRandomizationFactor),
+					"clientCachePersistenceModel": clientCachePersistenceModel,
+					"clientCacheSize":             strconv.Itoa(cfc.ClientCacheSize),
+					"globalTransformationOptions": globalTransformationOpts,
+					"maxConcurrentReconciles":     strconv.Itoa(controllerOptions.MaxConcurrentReconciles),
+				},
+			},
+		)
+		metric.Set(1)
+		cfc.MetricsRegistry.MustRegister(metric)
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -442,6 +465,10 @@ func main() {
 	setupLog.Info("Starting manager",
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
+		"backOffMultiplier", backOffMultiplier,
+		"backOffMaxInterval", backOffMaxInterval,
+		"backOffInitialInterval", backOffInitialInterval,
+		"backOffRandomizationFactor", backOffRandomizationFactor,
 	)
 
 	mgr.GetCache()

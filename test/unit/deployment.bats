@@ -812,10 +812,10 @@ load _helpers
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml \
-      --set 'controller.manager.backoffOnSecretSourceError.initialInterval=30s' \
-      --set 'controller.manager.backoffOnSecretSourceError.maxInterval=300s' \
-      --set 'controller.manager.backoffOnSecretSourceError.multiplier=2.5' \
-      --set 'controller.manager.backoffOnSecretSourceError.randomizationFactor=3.7361' \
+      --set 'controller.manager.backOffOnSecretSourceError.initialInterval=30s' \
+      --set 'controller.manager.backOffOnSecretSourceError.maxInterval=300s' \
+      --set 'controller.manager.backOffOnSecretSourceError.multiplier=2.5' \
+      --set 'controller.manager.backOffOnSecretSourceError.randomizationFactor=3.7361' \
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 

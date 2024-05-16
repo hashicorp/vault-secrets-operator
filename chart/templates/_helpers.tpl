@@ -183,7 +183,7 @@ secret source error occurs.
 */}}
 {{- define "vso.backOffOnSecretSourceError" -}}
 {{- $opts := list -}}
-{{- with .Values.controller.manager.backoffOnSecretSourceError -}}
+{{- with .Values.controller.manager.backOffOnSecretSourceError -}}
 {{- with .initialInterval -}}
 {{- $opts = mustAppend $opts (printf "--back-off-initial-interval=%s" .) -}}
 {{- end -}}
