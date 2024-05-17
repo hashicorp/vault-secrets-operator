@@ -17,6 +17,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/hashicorp/vault/sdk/helper/pointerutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -215,7 +216,7 @@ func TestVaultStaticSecret(t *testing.T) {
 						Name:   "secretkv",
 						Create: false,
 					},
-					HMACSecretData: true,
+					HMACSecretData: pointerutil.BoolPtr(true),
 					RefreshAfter:   "5s",
 					RolloutRestartTargets: []secretsv1beta1.RolloutRestartTarget{
 						{
@@ -243,7 +244,7 @@ func TestVaultStaticSecret(t *testing.T) {
 						Create: false,
 					},
 					RefreshAfter:   "5s",
-					HMACSecretData: false,
+					HMACSecretData: pointerutil.BoolPtr(false),
 				},
 			},
 		}
@@ -343,8 +344,23 @@ func TestVaultStaticSecret(t *testing.T) {
 	assertSync := func(t *testing.T, obj *secretsv1beta1.VaultStaticSecret, expected expectedData, expectInitial bool) {
 		var data map[string]interface{}
 		if expectInitial {
+			require.Empty(t, obj.UID,
+				"obj %s has UID %s, expected empty", obj.Name, obj.UID)
+			var expectSpecHMACData *bool
+			if obj.Spec.HMACSecretData == nil {
+				// default value as defined in the CRD schema
+				expectSpecHMACData = pointerutil.BoolPtr(true)
+			} else if *obj.Spec.HMACSecretData {
+				// explicitly set to true
+				expectSpecHMACData = pointerutil.BoolPtr(true)
+			} else {
+				// explicitly set to false
+				expectSpecHMACData = pointerutil.BoolPtr(false)
+			}
 			putKV(t, obj, expected.initial)
 			require.NoError(t, crdClient.Create(ctx, obj))
+			require.Equal(t, obj.Spec.HMACSecretData, expectSpecHMACData,
+				"expected initial value for spec.hmacSecretData to be honoured after creation")
 			data = expected.initial
 		} else {
 			putKV(t, obj, expected.update)
@@ -360,7 +376,7 @@ func TestVaultStaticSecret(t *testing.T) {
 			obj.ObjectMeta.Namespace, data)
 		if assert.NoError(t, err) {
 			assertSyncableSecret(t, crdClient, obj, secret)
-			if obj.Spec.HMACSecretData {
+			if obj.Spec.HMACSecretData != nil && *obj.Spec.HMACSecretData {
 				assertHMAC(t, ctx, crdClient, obj, expectInitial)
 			} else {
 				assertNoHMAC(t, obj)
@@ -444,7 +460,7 @@ func TestVaultStaticSecret(t *testing.T) {
 									Create: true,
 								},
 								RefreshAfter:   "5s",
-								HMACSecretData: true,
+								HMACSecretData: pointerutil.BoolPtr(true),
 							},
 						}
 						if tt.version != 0 {
