@@ -84,11 +84,11 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			globalRef)
 
 		condition := metav1.Condition{
-			Type:               "VaultGlobalAuthRef",
+			Type:               "VaultAuthGlobalRef",
 			Status:             "True",
 			ObservedGeneration: o.Generation,
 			LastTransitionTime: metav1.NewTime(nowFunc()),
-			Reason:             "VaultGlobalAuthRef",
+			Reason:             "VaultAuthGlobalRef",
 		}
 
 		mObj, gObj, err := common.MergeInVaultAuthGlobal(ctx, r.Client, o)
@@ -98,7 +98,6 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		} else {
 			o = mObj
 			condition.Message = fmt.Sprintf("%s:%s:%d",
-
 				client.ObjectKeyFromObject(gObj), gObj.UID, gObj.Generation)
 			r.referenceCache.Set(
 				VaultAuthGlobal, req.NamespacedName,
@@ -131,7 +130,8 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		logger.Error(err, "Failed to find VaultConnectionRef")
 	}
 
-	// hash the VaultAut
+	// hash the VaultAuth.Spec so it can be used to determine if the VaultAuth
+	// resource has changed since the last reconciliation.
 	b, err := json.Marshal(o.Spec)
 	var specHash string
 	if err == nil {
@@ -236,7 +236,6 @@ func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&secretsv1beta1.VaultAuthGlobal{},
 			NewEnqueueRefRequestsHandler(VaultAuthGlobal, r.referenceCache, nil, nil),
-			// builder.WithPredicates(&predicate.GenerationChangedPredicate{}),
 		).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)

@@ -367,6 +367,9 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 	cObj.Spec.Params = firstNonZeroLen(mapLenFunc[string, string],
 		cObj.Spec.Params, globalAuthParams, gObj.Spec.DefaultParams)
 
+	cObj.Spec.VaultConnectionRef = firstNonZeroLen(strLenFunc,
+		cObj.Spec.VaultConnectionRef, gObj.Spec.VaultConnectionRef)
+
 	return cObj, &gObj, nil
 }
 
@@ -382,6 +385,7 @@ func firstNonZeroLen[V any](lenFunc func(V) int, m ...V) (ret V) {
 	for _, v := range m {
 		if lenFunc(v) > 0 {
 			ret = v
+			break
 		}
 	}
 	return

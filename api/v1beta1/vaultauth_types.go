@@ -321,12 +321,10 @@ type VaultAuthSpec struct {
 	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
 	// VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,
-	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
+	// eg: `namespaceA/vaultAuthGlobalRefB`. If no namespace prefix is provided it will default to
 	// namespace of the VaultAuthGlobal CR.
 	VaultAuthGlobalRef string `json:"vaultAuthGlobalRef,omitempty"`
-	// Namespace to auth to in Vault, if not specified the namespace of the auth
-	// method will be used. This can be used as a default Vault namespace for all
-	// auth methods.
+	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
 	// This field allows administrators to customize which Kubernetes namespaces are authorized to
@@ -369,8 +367,8 @@ type VaultAuthSpec struct {
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid      bool               `json:"valid"`
-	Error      string             `json:"error"`
+	Valid      bool               `json:"valid,omitempty"`
+	Error      string             `json:"error,omitempty"`
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	SpecHash   string             `json:"specHash,omitempty"`
 }

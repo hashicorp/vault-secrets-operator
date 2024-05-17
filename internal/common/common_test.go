@@ -708,6 +708,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			Namespace: "baz",
 		},
 		Spec: secretsv1beta1.VaultAuthGlobalSpec{
+			VaultConnectionRef: "default",
 			Kubernetes: &secretsv1beta1.VaultAuthGlobalConfigKubernetes{
 				Namespace: "biff",
 				Mount:     "qux",
@@ -783,6 +784,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					ResourceVersion: "1",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
 					VaultAuthGlobalRef: "buz",
 					Method:             "kubernetes",
 					Namespace:          "biff",
@@ -806,6 +808,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "other",
 					VaultAuthGlobalRef: "buz",
 					Method:             "kubernetes",
 					Mount:              "qux",
@@ -824,6 +827,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					ResourceVersion: "1",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "other",
 					VaultAuthGlobalRef: "buz",
 					Method:             "kubernetes",
 					Namespace:          "biff",
@@ -859,6 +863,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					ResourceVersion: "1",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
 					VaultAuthGlobalRef: "buz",
 					Method:             "jwt",
 					Namespace:          "biff",
@@ -892,6 +897,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					ResourceVersion: "1",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
 					VaultAuthGlobalRef: "buz",
 					Method:             "appRole",
 					Namespace:          "biff",
@@ -925,6 +931,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					ResourceVersion: "1",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
 					VaultAuthGlobalRef: "buz",
 					Method:             "aws",
 					Namespace:          "biff",
@@ -958,6 +965,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					ResourceVersion: "1",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
 					VaultAuthGlobalRef: "buz",
 					Method:             "gcp",
 					Namespace:          "biff",

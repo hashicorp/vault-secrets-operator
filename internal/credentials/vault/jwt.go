@@ -35,9 +35,10 @@ func (l *JWTCredentialProvider) GetUID() types.UID {
 }
 
 func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
-	if err := authObj.Spec.JWT.Validate(); err != nil {
-		return fmt.Errorf("invalid JWT auth configuration: %w", err)
+	if authObj.Spec.JWT == nil {
+		return fmt.Errorf("kubernetes auth method not configured")
 	}
+
 	if err := authObj.Spec.JWT.Validate(); err != nil {
 		return fmt.Errorf("invalid JWT auth configuration: %w", err)
 	}

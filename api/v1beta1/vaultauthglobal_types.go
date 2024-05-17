@@ -9,15 +9,14 @@ import (
 
 // VaultAuthGlobalSpec defines the desired state of VaultAuthGlobal
 type VaultAuthGlobalSpec struct {
-	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
-	// This field allows administrators to customize which Kubernetes namespaces are authorized to
-	// use with this AuthMethod. While Vault will still enforce its own rules, this has the added
-	// configurability of restricting which VaultAuthMethods can be used by which namespaces.
-	// Accepted values:
-	// []{"*"} - wildcard, all namespaces.
-	// []{"a", "b"} - list of namespaces.
-	// unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this
-	// is the default behavior.
+	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with
+	// this VaultAuthGlobal. This field allows administrators to customize which
+	// Kubernetes namespaces are authorized to reference this resource. While Vault
+	// will still enforce its own rules, this has the added configurability of
+	// restricting which VaultAuthMethods can be used by which namespaces. Accepted
+	// values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces.
+	// unset - disallow all namespaces except the Operator's the VaultAuthMethod's
+	// namespace, this is the default behavior.
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
