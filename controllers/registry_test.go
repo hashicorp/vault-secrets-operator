@@ -555,9 +555,12 @@ func TestBackOffRegistry_Get(t *testing.T) {
 				opts: tt.opts,
 			}
 			bo, created := r.Get(tt.objKey)
-			assert.NotNilf(t, bo, "Get(%v)", tt.objKey)
+			require.NotNilf(t, bo, "Get(%v)", tt.objKey)
 			assert.Equalf(t, tt.want, created, "Get(%v)", tt.objKey)
 			assert.Greaterf(t, bo.NextBackOff(), time.Duration(0), "Get(%v)", tt.objKey)
+
+			bo, created = r.Get(tt.objKey)
+			assert.False(t, created, "Get(%v)", tt.objKey)
 			assert.Lessf(t, bo.NextBackOff(), bo.NextBackOff(), "Get(%v)", tt.objKey)
 		})
 	}
