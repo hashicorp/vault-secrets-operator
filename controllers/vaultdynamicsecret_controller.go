@@ -488,7 +488,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	)
 
 	bo := backoff.NewExponentialBackOff(
-		// typically the rotation period is 5s, so it should be safe to double that.
+		// the minimum rotation period is 5s, so it should be safe to double that.
 		// Ideally we could use the rotation's TTL value here, but that value is not
 		// considered to be reliable to the TTL roll-over bug that might exist in the database
 		// secrets engine.
@@ -893,7 +893,7 @@ func vaultStaticCredsMetaDataFromData(data map[string]any) (*secretsv1beta1.Vaul
 	}
 
 	if v, ok := data["rotation_schedule"]; ok && v != nil {
-		if schedule, ok := v.(string); ok && v != nil {
+		if schedule, ok := v.(string); ok {
 			ret.RotationSchedule = schedule
 		}
 	}
