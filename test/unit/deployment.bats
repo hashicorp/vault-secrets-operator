@@ -799,15 +799,15 @@ load _helpers
    [ "${actual}" = "8" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-initial-interval=5s" ]
+   [ "${actual}" = "--backoff-initial-interval=5s" ]
    local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-max-interval=60s" ]
+   [ "${actual}" = "--backoff-max-interval=60s" ]
    local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-max-elapsed-time=0s" ]
+   [ "${actual}" = "--backoff-max-elapsed-time=0s" ]
    local actual=$(echo "$object" | yq '.[6]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-multiplier=1.50" ]
+   [ "${actual}" = "--backoff-multiplier=1.50" ]
    local actual=$(echo "$object" | yq '.[7]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-randomization-factor=0.50" ]
+   [ "${actual}" = "--backoff-randomization-factor=0.50" ]
 }
 
 @test "controller/Deployment: with backOffOnSecretSourceError set" {
@@ -825,15 +825,15 @@ load _helpers
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
    [ "${actual}" = "8" ]
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-initial-interval=30s" ]
+   [ "${actual}" = "--backoff-initial-interval=30s" ]
    local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-max-interval=300s" ]
+   [ "${actual}" = "--backoff-max-interval=300s" ]
    local actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-max-elapsed-time=24h" ]
+   [ "${actual}" = "--backoff-max-elapsed-time=24h" ]
    local actual=$(echo "$object" | yq '.[6]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-multiplier=2.50" ]
+   [ "${actual}" = "--backoff-multiplier=2.50" ]
    local actual=$(echo "$object" | yq '.[7]' | tee /dev/stderr)
-   [ "${actual}" = "--back-off-randomization-factor=3.74" ]
+   [ "${actual}" = "--backoff-randomization-factor=3.74" ]
 }
 
 #--------------------------------------------------------------------

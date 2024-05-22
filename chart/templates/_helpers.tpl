@@ -177,26 +177,26 @@ globalTransformationOptions configures the manager's --global-transformation-opt
 {{- end -}}
 
 {{/*
-backOffOnSecretSourceError provides the back-off options for the manager when a
+backOffOnSecretSourceError provides the backoff options for the manager when a
 secret source error occurs.
 */}}
 {{- define "vso.backOffOnSecretSourceError" -}}
 {{- $opts := list -}}
 {{- with .Values.controller.manager.backOffOnSecretSourceError -}}
 {{- with .initialInterval -}}
-{{- $opts = mustAppend $opts (printf "--back-off-initial-interval=%s" .) -}}
+{{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
 {{- end -}}
 {{- with .maxInterval -}}
-{{- $opts = mustAppend $opts (printf "--back-off-max-interval=%s" .) -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-interval=%s" .) -}}
 {{- end -}}
 {{- with .maxElapsedTime -}}
-{{- $opts = mustAppend $opts (printf "--back-off-max-elapsed-time=%s" .) -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-elapsed-time=%s" .) -}}
 {{- end -}}
 {{- with .multiplier -}}
-{{- $opts = mustAppend $opts (printf "--back-off-multiplier=%.2f"  (. | float64)) -}}
+{{- $opts = mustAppend $opts (printf "--backoff-multiplier=%.2f"  (. | float64)) -}}
 {{- end -}}
 {{- with .randomizationFactor -}}
-{{- $opts = mustAppend $opts (printf "--back-off-randomization-factor=%.2f" (. | float64)) -}}
+{{- $opts = mustAppend $opts (printf "--backoff-randomization-factor=%.2f" (. | float64)) -}}
 {{- end -}}
 {{- $opts | toYaml | nindent 8 -}}
 {{- end -}}
