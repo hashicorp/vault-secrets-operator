@@ -38,6 +38,7 @@ type VaultStaticSecretReconciler struct {
 	HMACValidator              helpers.HMACValidator
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
+	BackOffRegistry            *BackOffRegistry
 }
 
 //+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -50,6 +51,7 @@ type VaultStaticSecretReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -108,9 +110,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	resp, err := c.Read(ctx, kvReq)
 	if err != nil {
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
-		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+		return ctrl.Result{RequeueAfter: entry.NextBackOff()}, nil
+	} else {
+		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
 	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, transOption)
@@ -122,7 +127,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var doRolloutRestart bool
 	doSync := true
-	if o.Spec.HMACSecretData {
+	if o.Spec.HMACSecretData != nil && *o.Spec.HMACSecretData {
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
 		if requeueAfter == 0 {
@@ -193,7 +198,9 @@ func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secre
 
 func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o client.Object) error {
 	logger := log.FromContext(ctx)
-	r.referenceCache.Remove(SecretTransformation, client.ObjectKeyFromObject(o))
+	objKey := client.ObjectKeyFromObject(o)
+	r.referenceCache.Remove(SecretTransformation, objKey)
+	r.BackOffRegistry.Delete(objKey)
 	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer) {
@@ -209,6 +216,10 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	if r.BackOffRegistry == nil {
+		r.BackOffRegistry = NewBackOffRegistry()
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
 		WithEventFilter(syncableSecretPredicate(nil)).

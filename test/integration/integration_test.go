@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/k8s"
@@ -133,6 +134,9 @@ func TestMain(m *testing.M) {
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+		// add schemes to support other rollout restart targets
+		utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
+
 		restConfig = *ctrl.GetConfigOrDie()
 
 		os.Setenv("VAULT_ADDR", vaultAddr)
@@ -276,13 +280,9 @@ func TestMain(m *testing.M) {
 			log.Printf("Failed to terraform.InitAndApplyE(t, tfOptions), err=%s", err)
 			result = 1
 		} else {
-			result := m.Run()
-			failed := result != 0
-			if err := exportKindLogs("TestMainVSO", failed); err != nil {
+			result = m.Run()
+			if err := exportKindLogs("TestMainVSO", result != 0); err != nil {
 				log.Printf("Error failed to exportKindLogs(), err=%s", err)
-				if !failed {
-					result = 1
-				}
 			}
 		}
 	}
@@ -608,7 +608,7 @@ func exportKindLogs(name string, failed bool) error {
 		if entTests {
 			exportDir += "-ent"
 		} else {
-			exportDir += "-oss"
+			exportDir += "-community"
 		}
 
 		if failed {
@@ -651,9 +651,7 @@ func exportKindLogs(name string, failed bool) error {
 	return nil
 }
 
-func awaitRolloutRestarts(t *testing.T, ctx context.Context,
-	client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1beta1.RolloutRestartTarget,
-) {
+func awaitRolloutRestarts(t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, targets []secretsv1beta1.RolloutRestartTarget) {
 	t.Helper()
 	require.NoError(t, backoff.Retry(
 		func() error {
@@ -671,18 +669,14 @@ func awaitRolloutRestarts(t *testing.T, ctx context.Context,
 	))
 }
 
+// assertRolloutRestarts asserts the object state of each RolloutRestartTarget
 func assertRolloutRestarts(
 	t *testing.T, ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object,
 	targets []secretsv1beta1.RolloutRestartTarget, minGeneration int64,
 ) error {
 	t.Helper()
 
-	type status struct {
-		Replicas      *int32
-		ReadyReplicas int32
-	}
 	var errs error
-	var s *status
 
 	// see secretsv1beta1.RolloutRestartTarget for supported target resources.
 	timeNow := time.Now().UTC()
@@ -693,6 +687,7 @@ func assertRolloutRestarts(
 			Name:      target.Name,
 		}
 		var annotations map[string]string
+		expectedAnnotation := helpers.AnnotationRestartedAt
 		switch target.Kind {
 		case "Deployment":
 			var o appsv1.Deployment
@@ -700,21 +695,33 @@ func assertRolloutRestarts(
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
-			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "StatefulSet":
 			var o appsv1.StatefulSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
-			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
 		case "ReplicaSet":
 			var o appsv1.ReplicaSet
 			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
 				annotations = o.Spec.Template.Annotations
 				tObj = &o
 			}
-			s = &status{o.Spec.Replicas, o.Status.ReadyReplicas}
+		case "argo.Rollout":
+			expectedAnnotation = "argo.rollout.status.restartedAt"
+
+			var o argorolloutsv1alpha1.Rollout
+			if assert.NoError(t, client.Get(ctx, tObjKey, &o)) {
+				tObj = &o
+			}
+
+			restartAt, err := statusAfterRestartArgoRolloutV1alpha1(&o)
+			if err != nil {
+				errs = errors.Join(errs, err)
+				continue
+			}
+			annotations = map[string]string{}
+			annotations[expectedAnnotation] = restartAt.Format(time.RFC3339)
 		default:
 			assert.Fail(t,
 				"fatal, unsupported rollout-restart Kind %q for target %v", target.Kind, target)
@@ -727,22 +734,21 @@ func assertRolloutRestarts(
 			continue
 		}
 
-		expectedAnnotation := helpers.AnnotationRestartedAt
 		val, ok := annotations[expectedAnnotation]
 		if !ok {
 			errs = errors.Join(errs, fmt.Errorf("expected annotation %q not present", expectedAnnotation))
 			continue
 		}
-
-		ts, err := time.Parse(time.RFC3339, val)
+		var err error
+		restartAt, err := time.Parse(time.RFC3339, val)
 		if !assert.NoError(t, err,
 			"invalid value for %q", expectedAnnotation) {
 			continue
 		}
-		assert.True(t, ts.Before(timeNow),
-			"timestamp value %q for %q is in the future, now=%q", ts, expectedAnnotation, timeNow)
 
-		t.Logf("Status %#v for target %#v", s, target)
+		assert.True(t, restartAt.Before(timeNow),
+			"timestamp value %q for %q is in the future, now=%q", restartAt, expectedAnnotation, timeNow)
+
 		//if s.ReadyReplicas != *s.Replicas {
 		//	errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
 		//}
@@ -893,7 +899,9 @@ func copyChartDir(tfDir string) (string, error) {
 	)
 }
 
-func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client, key ctrlclient.ObjectKey) *appsv1.Deployment {
+func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	key ctrlclient.ObjectKey,
+) *appsv1.Deployment {
 	t.Helper()
 	depObj := &appsv1.Deployment{
 		ObjectMeta: v1.ObjectMeta{
@@ -942,6 +950,80 @@ func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Clien
 	require.NoError(t, client.Create(ctx, depObj), "failed to create %#v", depObj)
 
 	return depObj
+}
+
+func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlclient.Client,
+	key ctrlclient.ObjectKey,
+) *argorolloutsv1alpha1.Rollout {
+	t.Helper()
+	rolloutObj := &argorolloutsv1alpha1.Rollout{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+		},
+		Spec: argorolloutsv1alpha1.RolloutSpec{
+			Selector: &v1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": key.Name,
+				},
+			},
+			Replicas: pointer.Int32(2),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: v1.ObjectMeta{
+					Labels: map[string]string{
+						"test": key.Name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  key.Name,
+							Image: "busybox:latest",
+							Command: []string{
+								"sh", "-c", "while : ; do sleep 10; done",
+							},
+						},
+					},
+					TerminationGracePeriodSeconds: pointer.Int64(2),
+				},
+			},
+			Strategy: argorolloutsv1alpha1.RolloutStrategy{
+				Canary: &argorolloutsv1alpha1.CanaryStrategy{
+					Steps: []argorolloutsv1alpha1.CanaryStep{
+						{
+							SetWeight: pointer.Int32(50),
+						},
+						{
+							Pause: &argorolloutsv1alpha1.RolloutPause{
+								Duration: argorolloutsv1alpha1.DurationFromString("1s"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.NoError(t, client.Create(ctx, rolloutObj), "failed to create %#v", rolloutObj)
+
+	return rolloutObj
+}
+
+func rolloutRestartObjName(secretDest, kindSuffix string) string {
+	return fmt.Sprintf("%s-%s", secretDest, kindSuffix)
+}
+
+func statusAfterRestartArgoRolloutV1alpha1(o *argorolloutsv1alpha1.Rollout) (*v1.Time, error) {
+	// We only do basic validation to show that VSO did the Spec.RestartAt patch.
+	// We don't check that the argo.Rollout object reaches a healthy state, and
+	// has Status.RestartedAt set properly, due to nondeterministic states caused by
+	// argo.Rollout controller's reconciliation issues.
+	// https://github.com/argoproj/argo-rollouts/issues/3418
+	// https://github.com/argoproj/argo-rollouts/issues/3080
+	if o.Spec.RestartAt == nil {
+		return nil, fmt.Errorf("expected argo.Rollout v1alpha1 spec.restartAt not nil")
+	}
+	return o.Spec.RestartAt, nil
 }
 
 func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, client ctrlclient.Client,

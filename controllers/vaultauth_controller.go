@@ -142,8 +142,9 @@ func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta
 func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1beta1.VaultAuth) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(o, vaultAuthFinalizer) {
 		if _, err := r.ClientFactory.Prune(ctx, r.Client, o, vault.CachingClientFactoryPruneRequest{
-			FilterFunc:   filterAllCacheRefs,
-			PruneStorage: true,
+			FilterFunc:          filterAllCacheRefs,
+			PruneStorage:        true,
+			SkipClientCallbacks: true,
 		}); err != nil {
 			return ctrl.Result{}, err
 		}

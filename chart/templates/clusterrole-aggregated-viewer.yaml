@@ -1,0 +1,13 @@
+{{- if .Values.controller.rbac.clusterRoleAggregation.viewerRoles -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "aggregate-role-viewer" }}
+  labels:
+    app.kubernetes.io/component: rbac
+    vso.hashicorp.com/role-instance: aggregate-role-viewer
+{{- include "vso.chart.labels" . | nindent 4 }}
+aggregationRule:
+  clusterRoleSelectors:
+{{- include "vso.aggregateRoleMatchLabelsViewer" . | nindent 2 -}}
+{{- end -}}

@@ -17,15 +17,20 @@ import (
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -44,6 +49,8 @@ var (
 	vdsJitterFactor          = 0.05
 )
 
+var _ reconcile.Reconciler = &VaultDynamicSecretReconciler{}
+
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
@@ -52,8 +59,13 @@ type VaultDynamicSecretReconciler struct {
 	ClientFactory              vault.ClientFactory
 	HMACValidator              helpers.HMACValidator
 	SyncRegistry               *SyncRegistry
+	BackOffRegistry            *BackOffRegistry
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
+	// sourceCh is used to trigger a requeue of resource instances from an
+	// external source. Should be set on a source.Channel in SetupWithManager.
+	// This channel should be closed when the controller is stopped.
+	SourceCh chan event.GenericEvent
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
@@ -70,6 +82,7 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 // needed for managing cached Clients, duplicated in vaultconnection_controller.go
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
@@ -118,10 +131,54 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
+	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+			"Failed to get Vault client: %s", err)
+		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
+		return ctrl.Result{
+			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
+		}, nil
+	}
+
+	// we can ignore the error here, since it was handled above in the Get() call.
+	clientCacheKey, _ := vClient.GetCacheKey()
+	lastClientCacheKey := o.Status.VaultClientMeta.CacheKey
+	lastClientID := o.Status.VaultClientMeta.ID
+
+	// update the VaultClientMeta in the resource's status.
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = vClient.ID()
+
+	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,
-	doSync := (o.GetGeneration() != o.Status.LastGeneration) ||
-		(o.Spec.Destination.Create && !destExists) ||
-		r.SyncRegistry.Has(req.NamespacedName)
+	switch {
+	// indicates that the resource has not been synced yet.
+	case o.Status.LastGeneration == 0:
+		syncReason = consts.ReasonInitialSync
+	// indicates that the resource has been added to the SyncRegistry
+	// and must be synced.
+	case r.SyncRegistry.Has(req.NamespacedName):
+		// indicates that the resource has been added to the SyncRegistry
+		// and must be synced.
+		syncReason = consts.ReasonForceSync
+	// indicates that the resource has been updated since the last sync.
+	case o.GetGeneration() != o.Status.LastGeneration:
+		syncReason = consts.ReasonResourceUpdated
+	// indicates that the destination secret does not exist and the resource is configured to create it.
+	case o.Spec.Destination.Create && !destExists:
+		syncReason = consts.ReasonInexistentDestination
+	// indicates that the cache key has changed since the last sync. This can happen
+	// when the VaultAuth or VaultConnection objects are updated since the last sync.
+	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
+		syncReason = consts.ReasonVaultClientConfigChanged
+	// indicates that the Vault client ID has changed since the last sync. This can
+	// happen when the client has re-authenticated to Vault since the last sync.
+	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
+		syncReason = consts.ReasonVaultTokenRotated
+	}
+
+	doSync := syncReason != ""
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -153,16 +210,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 			return ctrl.Result{RequeueAfter: horizon}, nil
 		}
-	}
-
-	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-			"Failed to get Vault client: %s, lease_id=%s", err, leaseID)
-		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
-		return ctrl.Result{
-			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
-		}, nil
 	}
 
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
@@ -206,6 +253,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 			}
+			syncReason = consts.ReasonSecretLeaseRenewalError
 		}
 	}
 
@@ -224,15 +272,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// sync the secret
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
-			"Failed to sync secret: %s", err)
-		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
-		horizon := requeueDurationOnError + time.Duration(jitter)
+		r.SyncRegistry.Add(req.NamespacedName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+		horizon := entry.NextBackOff()
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)
 		return ctrl.Result{
 			RequeueAfter: horizon,
 		}, nil
+	} else {
+		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
@@ -244,7 +293,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	horizon := r.computePostSyncHorizon(ctx, o)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Secret synced, lease_id=%q, horizon=%s", secretLease.ID, horizon)
+		"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
+		secretLease.ID, horizon, syncReason)
 
 	if doRolloutRestart {
 		// rollout-restart errors are not retryable
@@ -252,7 +302,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	r.SyncRegistry.Delete(req.NamespacedName)
+	if ok := r.SyncRegistry.Delete(req.NamespacedName); ok {
+		logger.V(consts.LogLevelDebug).Info("Deleted object from SyncRegistry",
+			"obj", req.NamespacedName)
+	}
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -443,7 +496,20 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
-	return ctrl.NewControllerManagedBy(mgr).
+	if r.BackOffRegistry == nil {
+		r.BackOffRegistry = NewBackOffRegistry()
+	}
+
+	r.ClientFactory.RegisterClientCallbackHandler(
+		vault.ClientCallbackHandler{
+			On:       vault.ClientCallbackOnLifetimeWatcherDone,
+			Callback: r.vaultClientCallback,
+		},
+	)
+
+	// TODO: close this channel when the controller is stopped.
+	r.SourceCh = make(chan event.GenericEvent)
+	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).
@@ -458,11 +524,23 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 			},
 			builder.WithPredicates(&secretsPredicate{}),
 		).
-		Complete(r)
+		WatchesRawSource(
+			source.Channel(r.SourceCh,
+				&enqueueDelayingSyncEventHandler{
+					enqueueDurationForJitter: time.Second * 2,
+				}),
+		)
+
+	if err := m.Complete(r); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func isLeaseNotfoundError(err error) bool {
-	if respErr, ok := err.(*api.ResponseError); ok && respErr != nil {
+	var respErr *api.ResponseError
+	if errors.As(err, &respErr) && respErr != nil {
 		if respErr.StatusCode == http.StatusBadRequest {
 			return len(respErr.Errors) == 1 && respErr.Errors[0] == "lease not found"
 		}
@@ -482,6 +560,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
+	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
@@ -589,6 +668,58 @@ func getRotationDuration(o *secretsv1beta1.VaultDynamicSecret) time.Duration {
 	}
 
 	return d
+}
+
+// vaultClientCallback requests reconciliation of all VaultDynamicSecret
+// instances that were synced with Client
+func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, c vault.Client) {
+	logger := log.FromContext(ctx).WithName("vaultClientCallback")
+
+	cacheKey, err := c.GetCacheKey()
+	if err != nil {
+		// should never get here
+		logger.Error(err, "Invalid cache key, skipping syncing of VaultDynamicSecret instances")
+		return
+	}
+
+	logger = logger.WithValues("cacheKey", cacheKey, "controller", "vds")
+	var l secretsv1beta1.VaultDynamicSecretList
+	if err := r.Client.List(ctx, &l, client.InNamespace(
+		c.GetCredentialProvider().GetNamespace()),
+	); err != nil {
+		logger.Error(err, "Failed to list VaultDynamicSecret instances")
+		return
+	}
+
+	if len(l.Items) == 0 {
+		return
+	}
+
+	reqs := map[client.ObjectKey]empty{}
+	for _, o := range l.Items {
+		if o.Status.VaultClientMeta.CacheKey == cacheKey.String() {
+			evt := event.GenericEvent{
+				Object: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: o.GetNamespace(),
+						Name:      o.GetName(),
+					},
+				},
+			}
+
+			objKey := client.ObjectKeyFromObject(evt.Object)
+			if _, ok := reqs[objKey]; !ok {
+				// deduplicating is probably not necessary, but we do it just in case.
+				reqs[objKey] = empty{}
+				logger.V(consts.LogLevelDebug).Info("Enqueuing VaultDynamicSecret instance",
+					"objKey", objKey)
+				r.SyncRegistry.Add(objKey)
+				logger.V(consts.LogLevelDebug).Info(
+					"Sending GenericEvent to the SourceCh", "evt", evt)
+				r.SourceCh <- evt
+			}
+		}
+	}
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {

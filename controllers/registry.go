@@ -5,7 +5,9 @@ package controllers
 
 import (
 	"sync"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -197,11 +199,13 @@ func (r *SyncRegistry) Add(objKey client.ObjectKey) {
 }
 
 // Delete objKey to the set of registered objects.
-func (r *SyncRegistry) Delete(objKey client.ObjectKey) {
+func (r *SyncRegistry) Delete(objKey client.ObjectKey) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	_, ok := r.m[objKey]
 	delete(r.m, objKey)
+	return ok
 }
 
 // Has returns true if objKey is in the set of registered objects.
@@ -224,4 +228,70 @@ func (r *SyncRegistry) ObjectKeys() []client.ObjectKey {
 	}
 
 	return result
+}
+
+// BackOffRegistry is a registry that stores sync backoff for a client.Object.
+type BackOffRegistry struct {
+	m    map[client.ObjectKey]*BackOff
+	mu   sync.RWMutex
+	opts []backoff.ExponentialBackOffOpts
+}
+
+// Delete objKey to the set of registered objects.
+func (r *BackOffRegistry) Delete(objKey client.ObjectKey) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	_, ok := r.m[objKey]
+	delete(r.m, objKey)
+	return ok
+}
+
+// Get is a getter/setter that returns the BackOff for objKey.
+// If objKey is not in the set of registered objects, it will be added. Return
+// true if the sync backoff entry was created.
+func (r *BackOffRegistry) Get(objKey client.ObjectKey) (*BackOff, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	entry, ok := r.m[objKey]
+	if !ok {
+		entry = &BackOff{
+			bo: backoff.NewExponentialBackOff(r.opts...),
+		}
+		r.m[objKey] = entry
+	}
+
+	return entry, !ok
+}
+
+// BackOff is a wrapper around backoff.BackOff that does not implement
+// BackOff.Reset, since elements in BackOffRegistry are meant to be ephemeral.
+type BackOff struct {
+	bo backoff.BackOff
+}
+
+// NextBackOff returns the next backoff duration.
+func (s *BackOff) NextBackOff() time.Duration {
+	return s.bo.NextBackOff()
+}
+
+// DefaultExponentialBackOffOpts returns the default exponential options for the
+func DefaultExponentialBackOffOpts() []backoff.ExponentialBackOffOpts {
+	return []backoff.ExponentialBackOffOpts{
+		backoff.WithInitialInterval(requeueDurationOnError),
+		backoff.WithMaxInterval(time.Second * 60),
+	}
+}
+
+// NewBackOffRegistry returns a BackOffRegistry.
+func NewBackOffRegistry(opts ...backoff.ExponentialBackOffOpts) *BackOffRegistry {
+	if len(opts) == 0 {
+		opts = DefaultExponentialBackOffOpts()
+	}
+
+	return &BackOffRegistry{
+		m:    map[client.ObjectKey]*BackOff{},
+		opts: opts,
+	}
 }

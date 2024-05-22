@@ -58,7 +58,7 @@ load _helpers
 @test "helper/namespace: used everywhere" {
   cd `chart_dir`
   # Grep for files that don't have 'namespace: ' in them
-  local actual=$(grep -L 'namespace: ' templates/*.yaml | grep -E -v 'crd|rbac|editor_role|viewer_role' | tee /dev/stderr )
+  local actual=$(grep -L 'namespace: ' templates/*.yaml | grep -E -v 'crd|rbac|editor_role|viewer_role|role.yaml|clusterrole' | tee /dev/stderr )
   [ "${actual}" = '' ]
 }
 

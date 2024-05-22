@@ -30,8 +30,10 @@ EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
-COPYWRITE_VERSION ?= 0.16.3
+COPYWRITE_VERSION ?= 0.18.0
 OPERATOR_SDK_VERSION ?= v1.33.0
+YQ_VERSION ?= v4.43.1
+CRD_REF_DOCS_VERSION ?= v0.12.0
 
 TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
@@ -184,19 +186,18 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: copywrite controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-	@$(COPYWRITE) headers &> /dev/null
-	$(MAKE) sync-crds sync-rbac gen-api-ref-docs sdk-generate
+	$(MAKE) sdk-generate sync-crds sync-rbac gen-api-ref-docs
 
 .PHONY: generate
 generate: copywrite controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	@$(COPYWRITE) headers &> /dev/null
+	$(COPYWRITE) headers -d $(CONFIG_SRC_DIR)
 
 .PHONY: sync-crds
 sync-crds: copywrite ## Sync generated CRDs from CHART_CRDS_DIR to CHART_CRDS_DIR for Helm. Called from the manifests target.
-	@rm -rf $(CHART_CRDS_DIR)
-	@cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
-	@$(COPYWRITE) headers &> /dev/null
+	$(COPYWRITE) headers -d $(CONFIG_CRD_BASES_DIR)
+	rm -rf $(CHART_CRDS_DIR)
+	cp -a $(CONFIG_CRD_BASES_DIR) $(CHART_CRDS_DIR)
 
 .PHONY: sync-rbac
 sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/rbac to CHART_ROOT/templates. Called from the manifests target.
@@ -204,9 +205,9 @@ sync-rbac: yq ## Sync the generated viewer and editor roles from CONFIG_SRC_DIR/
 
 .PHONY: gen-api-ref-docs
 gen-api-ref-docs: crd-ref-docs ## Generate the API reference docs for all CRDs
-	@rm -f docs/api/api-reference.md
-	@$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
-	--renderer=markdown --output-path docs/api/api-reference.md 2>&1 > /dev/null
+	rm -f docs/api/api-reference.md
+	$(CRD_REF_DOCS) --source-path api --config docs/api/config.yaml \
+	  --renderer=markdown --output-path docs/api/api-reference.md
 
 .PHONY: fmt
 fmt: gofumpt ## Run gofumpt against code.
@@ -303,7 +304,7 @@ set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_D
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
 
 .PHONY: set-image integration-test
-integration-test: set-image setup-vault ## Run integration tests for Vault OSS
+integration-test: set-image setup-vault ## Run integration tests for Vault Community
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
@@ -315,7 +316,7 @@ integration-test: set-image setup-vault ## Run integration tests for Vault OSS
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
-integration-test-helm: setup-integration-test ## Run integration tests for Vault OSS
+integration-test-helm: setup-integration-test ## Run integration tests for Vault Community
 	$(MAKE) integration-test TEST_WITH_HELM=true
 
 .PHONY: integration-test-helm-ent
@@ -327,7 +328,7 @@ integration-test-ent: ## Run integration tests for Vault Enterprise
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 
 .PHONY: integration-test-both
-integration-test-both: ## Run integration tests against Vault Enterprise and Vault OSS
+integration-test-both: ## Run integration tests against Vault Enterprise and Vault Community
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 	$(MAKE) integration-test
 
@@ -485,7 +486,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.13.0
+CONTROLLER_TOOLS_VERSION ?= v0.14.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -510,14 +511,14 @@ set-image-ubi: kustomize copy-config ## Set the controller UBI image
 .PHONY: sdk-generate
 sdk-generate: copywrite operator-sdk
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	@$(COPYWRITE) headers &> /dev/null
+	$(COPYWRITE) headers -d $(CONFIG_SRC_DIR)
 
 .PHONY: bundle
 bundle: manifests kustomize set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
 	@rm -f $(OPERATOR_BUILD_DIR)/bundle.Dockerfile
 	$(KUSTOMIZE) build $(CONFIG_BUILD_DIR)/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
-	@$(COPYWRITE) headers &> /dev/null
+	@$(COPYWRITE) headers
 	@./hack/set_openshift_minimum_version.sh
 	@./hack/set_containerImage.sh
 	@./hack/set_csv_replaces.sh
@@ -587,29 +588,21 @@ endif
 .PHONY: copywrite
 copywrite: ## Download copywrite locally if necessary.
 	@./hack/install_copywrite.sh
-	$(eval COPYWRITE=./bin/copywrite)
+	$(eval COPYWRITE=$(LOCALBIN)/copywrite)
 
 .PHONY: yq
 yq: ## Download yq locally if necessary.
-	@./hack/install_yq.sh
+	@./hack/install_yq.sh YQ_VERSION=$(YQ_VERSION)
 
 .PHONY: operator-sdk
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
-	@./hack/install_operator_sdk.sh
+	@./hack/install_operator_sdk.sh OPERATOR_SDK_VERSION=$(OPERATOR_SDK_VERSION)
 
 .PHONY: crd-ref-docs
-CRD_REF_DOCS = ./bin/crd-ref-docs
+CRD_REF_DOCS = $(LOCALBIN)/crd-ref-docs
 crd-ref-docs: ## Install crd-ref-docs locally if necessary.
-ifeq (,$(wildcard $(CRD_REF_DOCS)))
-ifeq (,$(shell which $(notdir $(CRD_REF_DOCS)) 2>/dev/null))
-	@{ \
-	GOBIN=${LOCALBIN} go install github.com/elastic/crd-ref-docs@v0.0.9 ;\
-	}
-else
-CRD_REF_DOCS = $(shell which crd-ref-docs)
-endif
-endif
+	@./hack/install_crd-ref-docs.sh CRD_REF_DOCS_VERSION=$(CRD_REF_DOCS_VERSION)
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.

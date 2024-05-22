@@ -39,10 +39,12 @@ type Destination struct {
 // with a timestamp value of when the trigger was executed.
 // E.g. vso.secrets.hashicorp.com/restartedAt: "2023-03-23T13:39:31Z"
 //
-// Supported resources: Deployment, DaemonSet, StatefulSet
+// Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 type RolloutRestartTarget struct {
-	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet}
+	// Kind of the resource
+	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet,argo.Rollout}
 	Kind string `json:"kind"`
+	// Name of the resource
 	Name string `json:"name"`
 }
 
@@ -111,4 +113,14 @@ type Template struct {
 	// references attributes from the data structure of the source secret.
 	// Refer to https://pkg.go.dev/text/template for more information.
 	Text string `json:"text"`
+}
+
+// VaultClientMeta defines the observed state of the last Vault Client used to
+// sync the secret. This status is used during resource reconciliation.
+type VaultClientMeta struct {
+	// CacheKey is the unique key used to identify the client cache.
+	CacheKey string `json:"cacheKey,omitempty"`
+	// ID is the Vault ID of the authenticated client. The ID should never contain
+	// any sensitive information.
+	ID string `json:"id,omitempty"`
 }
