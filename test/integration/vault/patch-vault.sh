@@ -15,11 +15,11 @@ fi
 function waitVaultPod() {
     echo "waiting for the vault pod to become Ready"
     local tries=0
-    until [ $tries -gt 120 ]
+    until [ $tries -gt 5 ]
     do
         kubectl wait --namespace=${K8S_VAULT_NAMESPACE} \
             --for=condition=Ready \
-            --timeout=5m pod -l \
+            --timeout=1m pod -l \
             app.kubernetes.io/name=vault &> /dev/null && return 0
         ((++tries))
         sleep .5
