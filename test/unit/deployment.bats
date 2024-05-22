@@ -870,3 +870,39 @@ load _helpers
 
    [ "${actual}" = "Never" ]
 }
+
+#--------------------------------------------------------------------
+# strategy
+
+@test "controller/Deployment: without strategy" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      . | \
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.strategy' | tee /dev/stderr)
+   [ "${actual}" = "null" ]
+}
+
+@test "controller/Deployment: with rollingUpdate strategy" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.strategy.type=rollingUpdate' \
+      --set 'controller.strategy.rollingUpdate.maxSurge=1' \
+      --set 'controller.strategy.rollingUpdate.maxUnavailable=1' \
+      . | \
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '.strategy | length' | tee /dev/stderr)
+   [ "${actual}" = "2" ]
+   actual=$(echo "$object" | yq '.strategy.type' | tee /dev/stderr)
+   [ "${actual}" = "rollingUpdate" ]
+   local actual=$(echo "$object" | yq '.strategy.rollingUpdate | length' | tee /dev/stderr)
+   [ "${actual}" = "2" ]
+   actual=$(echo "$object" | yq '.strategy.rollingUpdate.maxSurge' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$object" | yq '.strategy.rollingUpdate.maxUnavailable' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+}
