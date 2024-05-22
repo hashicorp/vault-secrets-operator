@@ -55,6 +55,41 @@ controller:
   #           - antarctica-west1
   affinity: {}
 
+  rbac:
+    # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
+    clusterRoleAggregation:
+      # viewerRoles is a list of roles that will be aggregated into the viewer ClusterRole.
+      # The role name must be that of any VSO resource type. E.g. "VaultAuth", "HCPAuth".
+      # All values are case-insensitive.
+      # Specifying '*' as the first element will include all roles in the aggregation.
+      #
+      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-viewer.
+      #
+      # Example usages:
+      # all roles:
+      # - '*'
+      # individually specified roles:
+      # - "VaultAuth"
+      # - "HCPAuth"
+      # @type: array<string>
+      viewerRoles: []
+
+      # editorRoles is a list of roles that will be aggregated into the editor ClusterRole.
+      # The role name must be that of any VSO resource type. E.g. "VaultAuth", "HCPAuth".
+      # All values are case-insensitive.
+      # Specifying '*' as the first element will include all roles in the aggregation.
+      #
+      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-editor.
+      #
+      # Example usages:
+      # all roles:
+      # - '*'
+      # individually specified roles:
+      # - "VaultAuth"
+      # - "HCPAuth"
+      # @type: array<string>
+      editorRoles: []
+
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
