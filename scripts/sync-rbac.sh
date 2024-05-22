@@ -8,7 +8,7 @@
 # role etc, requires manual syncing
 # requires yq (Go), not python-yq
 
-set -e -o pipefail extglob
+set -e -o pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel || echo .)"
 # yq should be in the PATH after running 'make yq'
