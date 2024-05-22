@@ -6,7 +6,9 @@ package controllers
 import (
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -500,6 +502,116 @@ func TestSyncRegistry(t *testing.T) {
 			wg.Wait()
 
 			assert.Equal(t, tt.want, r)
+		})
+	}
+}
+
+func TestBackOffRegistry_Get(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		m      map[client.ObjectKey]*BackOff
+		opts   []backoff.ExponentialBackOffOpts
+		objKey client.ObjectKey
+		want   bool
+	}{
+		{
+			name: "new",
+			m:    map[client.ObjectKey]*BackOff{},
+			objKey: client.ObjectKey{
+				Namespace: "foo",
+				Name:      "bar",
+			},
+			opts: append(DefaultExponentialBackOffOpts(),
+				backoff.WithRandomizationFactor(0.1)),
+			want: true,
+		},
+		{
+			name: "previous",
+			m: map[client.ObjectKey]*BackOff{
+				{
+					Namespace: "foo",
+					Name:      "bar",
+				}: {
+					bo: backoff.NewExponentialBackOff(
+						backoff.WithRandomizationFactor(0.1),
+					),
+				},
+			},
+			objKey: client.ObjectKey{
+				Namespace: "foo",
+				Name:      "bar",
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+			r := &BackOffRegistry{
+				m:    tt.m,
+				opts: tt.opts,
+			}
+			bo, created := r.Get(tt.objKey)
+			require.NotNilf(t, bo, "Get(%v)", tt.objKey)
+			assert.Equalf(t, tt.want, created, "Get(%v)", tt.objKey)
+			assert.Greaterf(t, bo.NextBackOff(), time.Duration(0), "Get(%v)", tt.objKey)
+
+			bo, created = r.Get(tt.objKey)
+			assert.False(t, created, "Get(%v)", tt.objKey)
+			assert.Lessf(t, bo.NextBackOff(), bo.NextBackOff(), "Get(%v)", tt.objKey)
+		})
+	}
+}
+
+func TestBackOffRegistry_Delete(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		m      map[client.ObjectKey]*BackOff
+		opts   []backoff.ExponentialBackOffOpts
+		objKey client.ObjectKey
+		want   bool
+	}{
+		{
+			name: "not-found",
+			m:    map[client.ObjectKey]*BackOff{},
+			objKey: client.ObjectKey{
+				Namespace: "foo",
+				Name:      "bar",
+			},
+			want: false,
+		},
+		{
+			name: "deleted",
+			m: map[client.ObjectKey]*BackOff{
+				{
+					Namespace: "foo",
+					Name:      "bar",
+				}: {
+					bo: backoff.NewExponentialBackOff(
+						DefaultExponentialBackOffOpts()...,
+					),
+				},
+			},
+			objKey: client.ObjectKey{
+				Namespace: "foo",
+				Name:      "bar",
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &BackOffRegistry{
+				m:    tt.m,
+				opts: tt.opts,
+			}
+			got := r.Delete(tt.objKey)
+			assert.Equalf(t, tt.want, got, "Delete(%v)", tt.objKey)
 		})
 	}
 }

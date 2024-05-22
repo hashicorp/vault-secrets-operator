@@ -78,6 +78,9 @@ spec:
         {{- if $opts }}
         - --global-transformation-options={{ $opts }}
         {{- end }}
+        {{- with include "vso.backOffOnSecretSourceError" . }}
+        {{- . -}}
+        {{- end }}
         {{- if .Values.controller.manager.extraArgs }}
         {{- toYaml .Values.controller.manager.extraArgs | nindent 8 }}
         {{- end }}
