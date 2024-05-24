@@ -228,7 +228,11 @@ func (c *defaultClient) Validate() error {
 		return fmt.Errorf("auth secret not set, never logged in")
 	}
 
-	if !c.skipRenewal {
+	if c.authSecret.Auth == nil {
+		return fmt.Errorf("invalid auth secret, Auth field is nil")
+	}
+
+	if !c.skipRenewal && c.authSecret.Auth.Renewable {
 		if c.lastWatcherErr != nil {
 			return c.lastWatcherErr
 		}

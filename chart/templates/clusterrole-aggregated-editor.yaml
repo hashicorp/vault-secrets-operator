@@ -1,0 +1,13 @@
+{{- if .Values.controller.rbac.clusterRoleAggregation.editorRoles -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "aggregate-role-editor" }}
+  labels:
+    app.kubernetes.io/component: rbac
+    vso.hashicorp.com/role-instance: aggregate-role-editor
+{{- include "vso.chart.labels" . | nindent 4 }}
+aggregationRule:
+  clusterRoleSelectors:
+{{- include "vso.aggregateRoleMatchLabelsEditor" . | nindent 2 -}}
+{{- end -}}

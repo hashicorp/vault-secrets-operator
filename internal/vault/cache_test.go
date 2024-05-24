@@ -13,6 +13,8 @@ import (
 )
 
 func Test_clientCache_Prune(t *testing.T) {
+	t.Parallel()
+
 	dummyCallbackFunc := func(_ ClientCacheKey, _ Client) {}
 	cacheSize := 10
 
@@ -46,29 +48,33 @@ func Test_clientCache_Prune(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &clientCache{}
 			cache, err := lru.NewWithEvict[ClientCacheKey, Client](cacheSize, dummyCallbackFunc)
 			require.NoError(t, err)
-			c.cache = cache
+			cloneCache, err := lru.New[ClientCacheKey, Client](cacheSize)
+			require.NoError(t, err)
 
-			var expectedPrunedKeys []ClientCacheKey
-			for i := 0; i < tt.cacheLen; i++ {
-				client := &defaultClient{
-					// for simplicity, client is clone. pruneClones() should be tested separately
-					isClone: true,
-				}
-				key := ClientCacheKey(fmt.Sprintf("key%d", i))
-				if tt.filterFuncReturnsTrue {
-					expectedPrunedKeys = append(expectedPrunedKeys, key)
-				}
-				c.cache.Add(key, client)
+			c := &clientCache{
+				cache:      cache,
+				cloneCache: cloneCache,
 			}
-			assert.Equal(t, tt.cacheLen, c.cache.Len(), "unexpected cache len before calling Prune()")
-			keys := c.Prune(func(Client) bool {
+			var expectedPrunedClients []Client
+			for i := 0; i < tt.cacheLen; i++ {
+				id := fmt.Sprintf("key%d", i)
+				client := &defaultClient{
+					id: id,
+				}
+				if tt.filterFuncReturnsTrue {
+					expectedPrunedClients = append(expectedPrunedClients, client)
+				}
+				c.cache.Add(ClientCacheKey(id), client)
+			}
+			assert.Equal(t, tt.cacheLen, c.cache.Len(),
+				"unexpected cache len before calling Prune()")
+			actual := c.Prune(func(Client) bool {
 				return tt.filterFuncReturnsTrue
 			})
-			assert.EqualValues(t, expectedPrunedKeys, keys)
-			assert.Equal(t, tt.cacheLen-len(expectedPrunedKeys), c.cache.Len())
+			assert.EqualValues(t, expectedPrunedClients, actual)
+			assert.Equal(t, tt.cacheLen-len(expectedPrunedClients), c.cache.Len())
 		})
 	}
 }

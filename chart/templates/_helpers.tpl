@@ -175,3 +175,69 @@ globalTransformationOptions configures the manager's --global-transformation-opt
 {{- $opts | join "," -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+backOffOnSecretSourceError provides the backoff options for the manager when a
+secret source error occurs.
+*/}}
+{{- define "vso.backOffOnSecretSourceError" -}}
+{{- $opts := list -}}
+{{- with .Values.controller.manager.backOffOnSecretSourceError -}}
+{{- with .initialInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxElapsedTime -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-elapsed-time=%s" .) -}}
+{{- end -}}
+{{- with .multiplier -}}
+{{- $opts = mustAppend $opts (printf "--backoff-multiplier=%.2f"  (. | float64)) -}}
+{{- end -}}
+{{- with .randomizationFactor -}}
+{{- $opts = mustAppend $opts (printf "--backoff-randomization-factor=%.2f" (. | float64)) -}}
+{{- end -}}
+{{- $opts | toYaml | nindent 8 -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+aggregateRoleMatchLabelsViewer generates the matchLabels for the viewer cluster roles.
+*/}}
+{{- define "vso.aggregateRoleMatchLabelsViewer" -}}
+{{- $ret := list }}
+{{- with .Values.controller.rbac.clusterRoleAggregation.viewerRoles -}}
+{{- if eq "*" (. | first) -}}
+{{- $labels := dict "vso.hashicorp.com/aggregate-to-viewer" "true" -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- else -}}
+{{- range . -}}
+{{- $labels := dict -}}
+{{- $_ := set $labels "vso.hashicorp.com/role-instance" (printf "%s-viewer-role" (. | lower) ) -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- end -}}
+{{- end -}}
+{{- $ret | toYaml -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+aggregateRoleMatchLabelsEditor generates the matchLabels for the editor cluster roles.
+*/}}
+{{- define "vso.aggregateRoleMatchLabelsEditor" -}}
+{{- $ret := list }}
+{{- with .Values.controller.rbac.clusterRoleAggregation.editorRoles -}}
+{{- if eq "*" (. | first) -}}
+{{- $labels := dict "vso.hashicorp.com/aggregate-to-editor" "true" -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- else -}}
+{{- range . -}}
+{{- $labels := dict -}}
+{{- $_ := set $labels "vso.hashicorp.com/role-instance" (printf "%s-editor-role" (. | lower) ) -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- end -}}
+{{- end -}}
+{{- $ret | toYaml -}}
+{{- end -}}
+{{- end -}}

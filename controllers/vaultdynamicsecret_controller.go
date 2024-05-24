@@ -59,6 +59,7 @@ type VaultDynamicSecretReconciler struct {
 	ClientFactory              vault.ClientFactory
 	HMACValidator              helpers.HMACValidator
 	SyncRegistry               *SyncRegistry
+	BackOffRegistry            *BackOffRegistry
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 	// sourceCh is used to trigger a requeue of resource instances from an
@@ -81,6 +82,7 @@ type VaultDynamicSecretReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 // needed for managing cached Clients, duplicated in vaultconnection_controller.go
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
@@ -153,25 +155,27 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	switch {
 	// indicates that the resource has not been synced yet.
 	case o.Status.LastGeneration == 0:
-		syncReason = "initial sync"
+		syncReason = consts.ReasonInitialSync
 	// indicates that the resource has been added to the SyncRegistry
 	// and must be synced.
 	case r.SyncRegistry.Has(req.NamespacedName):
-		syncReason = "force sync"
+		// indicates that the resource has been added to the SyncRegistry
+		// and must be synced.
+		syncReason = consts.ReasonForceSync
 	// indicates that the resource has been updated since the last sync.
 	case o.GetGeneration() != o.Status.LastGeneration:
-		syncReason = "resource updated"
+		syncReason = consts.ReasonResourceUpdated
 	// indicates that the destination secret does not exist and the resource is configured to create it.
 	case o.Spec.Destination.Create && !destExists:
-		syncReason = "destination secret does not exist and create=true"
+		syncReason = consts.ReasonInexistentDestination
 	// indicates that the cache key has changed since the last sync. This can happen
 	// when the VaultAuth or VaultConnection objects are updated since the last sync.
 	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
-		syncReason = "new vault client due to config change"
+		syncReason = consts.ReasonVaultClientConfigChanged
 	// indicates that the Vault client ID has changed since the last sync. This can
 	// happen when the client has re-authenticated to Vault since the last sync.
 	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
-		syncReason = "vault token rotated"
+		syncReason = consts.ReasonVaultTokenRotated
 	}
 
 	doSync := syncReason != ""
@@ -251,7 +255,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			} else if !vault.IsForbiddenError(err) {
 				vClient.Taint()
 			}
-			syncReason = "lease renewal failed"
+			syncReason = consts.ReasonSecretLeaseRenewalError
 		}
 	}
 
@@ -270,15 +274,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// sync the secret
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
-			"Failed to sync secret: %s", err)
-		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
-		horizon := requeueDurationOnError + time.Duration(jitter)
+		r.SyncRegistry.Add(req.NamespacedName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+		horizon := entry.NextBackOff()
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)
 		return ctrl.Result{
 			RequeueAfter: horizon,
 		}, nil
+	} else {
+		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
@@ -299,8 +304,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 	}
 
-	r.SyncRegistry.Delete(req.NamespacedName)
-	logger.Info("Deleted from SyncRegistry", "obj", req.NamespacedName)
+	if ok := r.SyncRegistry.Delete(req.NamespacedName); ok {
+		logger.V(consts.LogLevelDebug).Info("Deleted object from SyncRegistry",
+			"obj", req.NamespacedName)
+	}
 
 	if horizon.Seconds() == 0 {
 		// no need to requeue
@@ -491,6 +498,10 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	if r.BackOffRegistry == nil {
+		r.BackOffRegistry = NewBackOffRegistry()
+	}
+
 	r.ClientFactory.RegisterClientCallbackHandler(
 		vault.ClientCallbackHandler{
 			On:       vault.ClientCallbackOnLifetimeWatcherDone,
@@ -541,6 +552,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
+	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")

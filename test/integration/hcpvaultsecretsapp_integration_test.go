@@ -310,8 +310,8 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 					if assert.NoError(t, err) {
 						// check that all rollout-restarts completed successfully
 						if len(obj.Spec.RolloutRestartTargets) > 0 {
-							awaitRolloutRestarts(t, ctx, crdClient,
-								obj, obj.Spec.RolloutRestartTargets)
+							awaitRolloutRestarts(t, ctx, crdClient, obj,
+								obj.Spec.RolloutRestartTargets)
 						}
 					}
 				}
