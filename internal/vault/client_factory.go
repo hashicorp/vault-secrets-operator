@@ -440,6 +440,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		if err := c.Validate(ctx); err != nil {
 			logger.V(consts.LogLevelDebug).Error(err, "Invalid client",
 				"tainted", tainted)
+			m.cache.Remove(cacheKey)
 			m.callbackHandlerCh <- &ClientCallbackHandlerRequest{
 				On:     ClientCallbackOnCacheRemoval,
 				Client: c,
