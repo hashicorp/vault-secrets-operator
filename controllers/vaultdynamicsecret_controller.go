@@ -252,7 +252,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			} else if !vault.IsLeaseNotFoundError(err) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
-			} else if !vault.IsForbiddenError(err) {
+			} else if vault.IsForbiddenError(err) {
+				logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
 				vClient.Taint()
 			}
 			syncReason = consts.ReasonSecretLeaseRenewalError
@@ -275,6 +276,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
 		r.SyncRegistry.Add(req.NamespacedName)
+		if vault.IsForbiddenError(err) {
+			logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
+			vClient.Taint()
+		}
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		horizon := entry.NextBackOff()
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
@@ -504,7 +509,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 
 	r.ClientFactory.RegisterClientCallbackHandler(
 		vault.ClientCallbackHandler{
-			On:       vault.ClientCallbackOnLifetimeWatcherDone,
+			On:       vault.ClientCallbackOnLifetimeWatcherDone | vault.ClientCallbackOnCacheRemoval,
 			Callback: r.vaultClientCallback,
 		},
 	)
