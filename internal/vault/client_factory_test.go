@@ -274,6 +274,20 @@ func Test_cachingClientFactory_callClientCallbacks(t *testing.T) {
 			wait:       true,
 			wantCalled: false,
 		},
+		{
+			name:   "single-not-called-unknown",
+			c:      &defaultClient{},
+			onMask: ClientCallbackOn(uint32(1024)),
+			cbOn:   ClientCallbackOnCacheRemoval,
+			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
+				result := &callbackResult{}
+				return func(ctx context.Context, c Client) {
+					// should not be called
+				}, result
+			},
+			wait:       true,
+			wantCalled: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
