@@ -51,6 +51,15 @@ func (o ClientCallbackOn) String() string {
 	}
 }
 
+// ClientCallbackHandlerRequest is a struct that contains a ClientCallbackOn
+// enumeration and a Client. It is used to send requests to the
+// ClientCallbackHandler. The ClientCallbackHandler will call the ClientCallback
+// function with the Client and the ClientCallbackOn enumeration. On is the event
+// that occurred, and Client is the Client that the event occurred on. On is
+// applied as a bitmask, so multiple events can be sent in a single request.
+// For example:
+// Setting On = ClientCallbackOnLifetimeWatcherDone | ClientCallbackOnCacheRemoval
+// would match either event.
 type ClientCallbackHandlerRequest struct {
 	On     ClientCallbackOn
 	Client Client
