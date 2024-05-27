@@ -15,6 +15,7 @@ Improvements:
 * CachingClientFactory: lock by client cache key: [GH-716](https://github.com/hashicorp/vault-secrets-operator/pull/716)
 * Transformations: add support for the htpasswd Sprig function: [GH-708](https://github.com/hashicorp/vault-secrets-operator/pull/708)
 * VPS: skip overwriting tls.crt and tls.key whenever transformation templates are configured: [GH-659](https://github.com/hashicorp/vault-secrets-operator/pull/659)
+* Core: Use exponential backoff on secret source errors: [GH-732](https://github.com/hashicorp/vault-secrets-operator/pull/732)
 
 Fix:
 * Core: call VDS callbacks on VaultAuth and VaultConnection changes: [GH-739](https://github.com/hashicorp/vault-secrets-operator/pull/739)
