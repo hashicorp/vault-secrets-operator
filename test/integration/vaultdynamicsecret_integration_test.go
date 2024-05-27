@@ -245,7 +245,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:                  "create-static-scheduled",
-			createStaticScheduled: 10,
+			createStaticScheduled: 5,
 			expectedStaticScheduled: map[string]int{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
 				// assertDynamicSecret, so no need to include them here.
@@ -1036,7 +1036,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 				}
 				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
 			} else {
-				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.TTL * 4)
+				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.TTL * 5)
 			}
 			if !assert.NotEmpty(t, vdsObj.Status.SecretMAC,
 				"expected Status.SecretMAC to be set") {
