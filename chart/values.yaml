@@ -162,7 +162,7 @@ controller:
 
     # Backoff settings for the controller manager. These settings control the backoff behavior
     # when the controller encounters an error while fetching secrets from the SecretSource.
-    backOffOnSecretSourceError:
+    backoffOnSecretSourceError:
       # Initial interval between retries.
       # @type: duration
       initialInterval: "5s"
