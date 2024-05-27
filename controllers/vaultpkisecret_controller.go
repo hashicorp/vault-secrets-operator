@@ -239,7 +239,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if len(data["ca_chain"]) > 0 {
 		data["ca_chain"] = []byte(strings.Join(certResp.CAChain, "\n"))
 	}
-	if o.Spec.Destination.Type == corev1.SecretTypeTLS {
+	// If using data transformation (templates), avoid generating tls.key and tls.crt.
+	if o.Spec.Destination.Type == corev1.SecretTypeTLS && len(transOption.KeyedTemplates) == 0 {
 		data[corev1.TLSCertKey] = data["certificate"]
 		// the ca_chain includes the issuing ca
 		if len(data["ca_chain"]) > 0 {
