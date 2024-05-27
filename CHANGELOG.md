@@ -9,9 +9,12 @@ Features:
 * Core: support argo.Rollout as a rolloutRestartTarget for all secret type custom resources: [GH-702](https://github.com/hashicorp/vault-secrets-operator/pull/702)
 * Helm: add support for cluster role aggregates: [GH-752](https://github.com/hashicorp/vault-secrets-operator/pull/752)
 * Helm: adds values for setting VSO logging options: [GH-778](https://github.com/hashicorp/vault-secrets-operator/pull/778)
+* Helm: add support for configuring strategy on controller deployment : [GH-709](https://github.com/hashicorp/vault-secrets-operator/pull/709)
 
 Improvements:
 * CachingClientFactory: lock by client cache key: [GH-716](https://github.com/hashicorp/vault-secrets-operator/pull/716)
+* Transformations: add support for the htpasswd Sprig function: [GH-708](https://github.com/hashicorp/vault-secrets-operator/pull/708)
+* VPS: skip overwriting tls.crt and tls.key whenever transformation templates are configured: [GH-659](https://github.com/hashicorp/vault-secrets-operator/pull/659)
 
 Fix:
 * Core: call VDS callbacks on VaultAuth and VaultConnection changes: [GH-739](https://github.com/hashicorp/vault-secrets-operator/pull/739)
@@ -27,11 +30,13 @@ Build:
 Dependency Updates:
 * Bump TF provider versions: [GH-737](https://github.com/hashicorp/vault-secrets-operator/pull/737)
 * Bump github.com/go-logr/logr from 1.4.1 to 1.4.2: [GH-775](https://github.com/hashicorp/vault-secrets-operator/pull/775)
+* Bump github.com/hashicorp/go-getter from 1.7.1 to 1.7.4: [GH-711](https://github.com/hashicorp/vault-secrets-operator/pull/711)
 * Bump github.com/hashicorp/vault/api from 1.12.2 to 1.13.0: [GH-725](https://github.com/hashicorp/vault-secrets-operator/pull/725)
 * Bump github.com/hashicorp/vault/sdk from 0.12.0 to 0.13.0: [GH-773](https://github.com/hashicorp/vault-secrets-operator/pull/773)
 * Bump github.com/onsi/gomega from 1.33.0 to 1.33.1: [GH-727](https://github.com/hashicorp/vault-secrets-operator/pull/727)
 * Bump github.com/prometheus/client_golang from 1.19.0 to 1.19.1: [GH-741](https://github.com/hashicorp/vault-secrets-operator/pull/741)
 * Bump golang.org/x/crypto from 0.22.0 to 0.23.0: [GH-744](https://github.com/hashicorp/vault-secrets-operator/pull/744)
+* Bump google.golang.org/api from 0.176.1 to 0.177.0: [GH-724](https://github.com/hashicorp/vault-secrets-operator/pull/724)
 * Bump google.golang.org/api from 0.180.0 to 0.181.0: [GH-758](https://github.com/hashicorp/vault-secrets-operator/pull/758)
 * Bump k8s.io/api from 0.30.0 to 0.30.1: [GH-761](https://github.com/hashicorp/vault-secrets-operator/pull/761)
 * Bump k8s.io/client-go from 0.30.0 to 0.30.1: [GH-760](https://github.com/hashicorp/vault-secrets-operator/pull/760)
