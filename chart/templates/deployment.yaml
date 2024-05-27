@@ -84,8 +84,11 @@ spec:
         {{- with include "vso.backoffOnSecretSourceError" . }}
         {{- . -}}
         {{- end }}
-        {{- if .Values.controller.manager.extraArgs }}
-        {{- toYaml .Values.controller.manager.extraArgs | nindent 8 }}
+        {{- with include "vso.controllerLoggingArgs" . }}
+        {{- . }}
+        {{- end }}
+        {{- with .Values.controller.manager.extraArgs }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
         command:
         - /vault-secrets-operator
