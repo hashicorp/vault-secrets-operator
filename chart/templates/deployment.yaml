@@ -81,7 +81,7 @@ spec:
         {{- if $opts }}
         - --global-transformation-options={{ $opts }}
         {{- end }}
-        {{- with include "vso.backOffOnSecretSourceError" . }}
+        {{- with include "vso.backoffOnSecretSourceError" . }}
         {{- . -}}
         {{- end }}
         {{- if .Values.controller.manager.extraArgs }}
