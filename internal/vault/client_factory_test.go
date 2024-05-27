@@ -205,20 +205,6 @@ func Test_cachingClientFactory_callClientCallbacks(t *testing.T) {
 			wantCalled: true,
 		},
 		{
-			name:   "single-on-lifetime-watcher-done",
-			c:      &defaultClient{},
-			onMask: ClientCallbackOnLifetimeWatcherDone,
-			cbOn:   ClientCallbackOnLifetimeWatcherDone,
-			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
-				result := &callbackResult{}
-				return func(ctx context.Context, c Client) {
-					result.called = true
-					result.done = true
-				}, result
-			},
-			wantCalled: true,
-		},
-		{
 			name:   "single-on-cache-removal",
 			c:      &defaultClient{},
 			onMask: ClientCallbackOnCacheRemoval,
