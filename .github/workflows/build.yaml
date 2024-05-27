@@ -260,12 +260,12 @@ jobs:
       - uses: ./.github/actions/integration-test
         name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }}
         with:
+          version: ${{ needs.get-product-version.outputs.product-version }}
           k8s-version: ${{ matrix.k8s-version }}
           vault-version: ${{ matrix.vault-version }}
           vault-enterprise: ${{ matrix.vault-enterprise }}
           installation-method: ${{ matrix.installation-method }}
           operator-image-archive: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
-          version: ${{ needs.test.outputs.version }}
           vault-license-ci: ${{ secrets.VAULT_LICENSE_CI }}
           hcp-organization-id: ${{ secrets.HCP_ORGANIZATION_ID }}
           hcp-project-id: ${{ secrets.HCP_PROJECT_ID }}
@@ -296,12 +296,12 @@ jobs:
       - uses: ./.github/actions/integration-test
         name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }}
         with:
+          version: ${{ needs.get-product-version.outputs.product-version }}
           k8s-version: ${{ matrix.k8s-version }}
           vault-version: ${{ matrix.vault-version }}
           vault-enterprise: ${{ matrix.vault-enterprise }}
           installation-method: ${{ matrix.installation-method }}
           operator-image-archive: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
-          version: ${{ needs.test.outputs.version }}
           vault-license-ci: ${{ secrets.VAULT_LICENSE_CI }}
           hcp-organization-id: ${{ secrets.HCP_ORGANIZATION_ID }}
           hcp-project-id: ${{ secrets.HCP_PROJECT_ID }}

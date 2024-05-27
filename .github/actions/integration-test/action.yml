@@ -54,6 +54,7 @@ runs:
         if [ ${{ inputs.vault-enterprise }} == 'true' ]; then
           [ -n "${{ inputs.vault-license-ci }}" ] || (echo "inputs.vault-license-ci not set" >&2 ; exit 1)
         fi
+        [ -n "${{ inputs.version }}" ] || (echo "inputs.version not set" >&2 ; exit 1)
     # Checkout this repo.
     - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
     - name: Setup go
@@ -113,7 +114,7 @@ runs:
           make_target+='-ent'
           export VAULT_IMAGE_TAG='${{ inputs.vault-version }}-ent'
         fi
-        make $make_target INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+        make $make_target VERSION=${{ inputs.version }} INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
     - name: Store kind cluster logs
       # skip main as a temporary workaround for CRT build prepare issue ref: https://github.com/hashicorp/bob/pull/189.
       if: success() && !contains(github.ref, 'refs/heads/main')
