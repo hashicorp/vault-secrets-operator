@@ -91,7 +91,7 @@ runs:
         GH_GET_RETRIES: 5
       shell: bash
       run: |
-        make docker-image-load load-docker-image IMAGE_ARCHIVE_FILE="${{ inputs.operator-image-archive }}"
+        make docker-image-load load-docker-image VERSION=${{ inputs.version }} IMAGE_ARCHIVE_FILE="${{ inputs.operator-image-archive }}"
     - name: "${{ inputs.installation-method }} enterprise=${{ inputs.vault-enterprise }}"
       env:
         INTEGRATION_TESTS: "true"
