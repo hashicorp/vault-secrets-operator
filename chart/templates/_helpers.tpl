@@ -177,12 +177,12 @@ globalTransformationOptions configures the manager's --global-transformation-opt
 {{- end -}}
 
 {{/*
-backOffOnSecretSourceError provides the backoff options for the manager when a
+backoffOnSecretSourceError provides the backoff options for the manager when a
 secret source error occurs.
 */}}
-{{- define "vso.backOffOnSecretSourceError" -}}
+{{- define "vso.backoffOnSecretSourceError" -}}
 {{- $opts := list -}}
-{{- with .Values.controller.manager.backOffOnSecretSourceError -}}
+{{- with .Values.controller.manager.backoffOnSecretSourceError -}}
 {{- with .initialInterval -}}
 {{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
 {{- end -}}
