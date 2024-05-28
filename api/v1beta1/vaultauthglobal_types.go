@@ -15,8 +15,8 @@ type VaultAuthGlobalSpec struct {
 	// will still enforce its own rules, this has the added configurability of
 	// restricting which VaultAuthMethods can be used by which namespaces. Accepted
 	// values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces.
-	// unset - disallow all namespaces except the Operator's the VaultAuthMethod's
-	// namespace, this is the default behavior.
+	// unset - disallow all namespaces except the Operator's and the referring
+	// VaultAuthMethod's namespace, this is the default behavior.
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
