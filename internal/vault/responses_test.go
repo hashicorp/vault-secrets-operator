@@ -5,6 +5,7 @@ package vault
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/hashicorp/vault/api"
@@ -673,6 +674,95 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 			t.Parallel()
 
 			assertResponseSecretK8sData(t, tt)
+		})
+	}
+}
+
+func TestIsLeaseNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  *api.ResponseError
+		want bool
+	}{
+		{
+			name: "nil",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "lease-not-found",
+			err: &api.ResponseError{
+				StatusCode: http.StatusBadRequest,
+				Errors:     []string{"lease not found"},
+			},
+			want: true,
+		},
+		{
+			name: "not-lease-not-found",
+			err:  &api.ResponseError{StatusCode: http.StatusOK},
+			want: false,
+		},
+		{
+			name: "not-lease-not-found-wrong-error",
+			err: &api.ResponseError{
+				StatusCode: http.StatusBadRequest,
+				Errors:     []string{"another error"},
+			},
+			want: false,
+		},
+		{
+			name: "not-lease-not-found-multiple-errors",
+			err: &api.ResponseError{
+				StatusCode: http.StatusBadRequest,
+				Errors:     []string{"some error", "another error"},
+			},
+			want: false,
+		},
+		{
+			name: "not-lease-not-found-wrong-status-code",
+			err: &api.ResponseError{
+				StatusCode: http.StatusNotFound,
+				Errors:     []string{"lease not found"},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, IsLeaseNotFoundError(tt.err), "IsLeaseNotFoundError(%v)", tt.err)
+		})
+	}
+}
+
+func TestIsForbiddenError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  *api.ResponseError
+		want bool
+	}{
+		{
+			name: "nil",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "not-forbidden",
+			err:  &api.ResponseError{StatusCode: http.StatusOK},
+			want: false,
+		},
+		{
+			name: "forbidden",
+			err:  &api.ResponseError{StatusCode: http.StatusForbidden},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, IsForbiddenError(tt.err), "IsForbiddenError(%v)", tt.err)
 		})
 	}
 }
