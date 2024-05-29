@@ -191,6 +191,23 @@ _Appears in:_
 
 
 
+#### MergeStrategy
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultAuthGlobalRef](#vaultauthglobalref)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `headers` _string_ |  | union | Enum: [union replace none] <br /> |
+| `params` _string_ |  | union | Enum: [union replace none] <br /> |
+
+
 #### RolloutRestartTarget
 
 
@@ -675,6 +692,24 @@ VaultAuthGlobalList contains a list of VaultAuthGlobal
 | `items` _[VaultAuthGlobal](#vaultauthglobal) array_ |  |  |  |
 
 
+#### VaultAuthGlobalRef
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultAuthSpec](#vaultauthspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
+| `namespace` _string_ |  |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
+| `mergeStrategy` _[MergeStrategy](#mergestrategy)_ |  |  |  |
+
+
 #### VaultAuthGlobalSpec
 
 
@@ -736,7 +771,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
-| `vaultAuthGlobalRef` _string_ | VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthGlobalRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultAuthGlobal CR. |  |  |
+| `vaultAuthGlobalRef` _[VaultAuthGlobalRef](#vaultauthglobalref)_ | VaultAuthGlobalRef. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
 | `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which VaultAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]{"*"} - wildcard, all namespaces.<br />[]{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this<br />is the default behavior. |  |  |
 | `method` _string_ | Method to use when authenticating to Vault. |  | Enum: [kubernetes jwt appRole aws gcp] <br /> |

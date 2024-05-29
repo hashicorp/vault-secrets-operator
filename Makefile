@@ -251,7 +251,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
 .PHONY: docker-build
-docker-build: test ## Build docker image with the manager.
+docker-build: ## Build docker image with the manager.
 	docker build -t $(IMG) . --target=dev \
 	--build-arg GOOS=$(GOOS) \
 	--build-arg GOARCH=$(GOARCH) \

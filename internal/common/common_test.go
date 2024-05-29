@@ -709,9 +709,15 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		Spec: secretsv1beta1.VaultAuthGlobalSpec{
 			VaultConnectionRef: "default",
+			DefaultHeaders: map[string]string{
+				"X-Global-Default": "bar",
+			},
 			Kubernetes: &secretsv1beta1.VaultAuthGlobalConfigKubernetes{
 				Namespace: "biff",
 				Mount:     "qux",
+				Headers: map[string]string{
+					"X-Global-Kubernetes": "qux",
+				},
 				VaultAuthConfigKubernetes: secretsv1beta1.VaultAuthConfigKubernetes{
 					Role:                   "beetle",
 					ServiceAccount:         "sa1",
@@ -772,8 +778,17 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "buz",
-					Method:             "kubernetes",
+					Headers: map[string]string{
+						"X-Local": "buz",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method: "kubernetes",
 				},
 			},
 			gObj: gObj.DeepCopy(),
@@ -785,10 +800,22 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "default",
-					VaultAuthGlobalRef: "buz",
-					Method:             "kubernetes",
-					Namespace:          "biff",
-					Mount:              "qux",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "kubernetes",
+					Namespace: "biff",
+					Mount:     "qux",
+					Headers: map[string]string{
+						"X-Local":             "buz",
+						"X-Global-Default":    "bar",
+						"X-Global-Kubernetes": "qux",
+					},
+					Params: map[string]string{},
 					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 						Role:                   "beetle",
 						ServiceAccount:         "sa1",
@@ -809,10 +836,21 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "other",
-					VaultAuthGlobalRef: "buz",
-					Method:             "kubernetes",
-					Mount:              "qux",
-					Namespace:          "biff",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "kubernetes",
+					Mount:     "qux",
+					Namespace: "biff",
+					Params:    map[string]string{},
+					Headers: map[string]string{
+						"X-Global-Default":    "bar",
+						"X-Global-Kubernetes": "qux",
+					},
 					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 						ServiceAccount: "sa1",
 						TokenAudiences: []string{"qux"},
@@ -828,10 +866,21 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "other",
-					VaultAuthGlobalRef: "buz",
-					Method:             "kubernetes",
-					Namespace:          "biff",
-					Mount:              "qux",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "kubernetes",
+					Namespace: "biff",
+					Mount:     "qux",
+					Params:    map[string]string{},
+					Headers: map[string]string{
+						"X-Global-Default":    "bar",
+						"X-Global-Kubernetes": "qux",
+					},
 					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 						Role:                   "beetle",
 						ServiceAccount:         "sa1",
@@ -851,8 +900,14 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "buz",
-					Method:             "jwt",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method: "jwt",
 				},
 			},
 			gObj: gObj.DeepCopy(),
@@ -864,10 +919,20 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "default",
-					VaultAuthGlobalRef: "buz",
-					Method:             "jwt",
-					Namespace:          "biff",
-					Mount:              "qux",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "jwt",
+					Namespace: "biff",
+					Mount:     "qux",
+					Params:    map[string]string{},
+					Headers: map[string]string{
+						"X-Global-Default": "bar",
+					},
 					JWT: &secretsv1beta1.VaultAuthConfigJWT{
 						Role:           "beetle",
 						ServiceAccount: "sa1",
@@ -885,8 +950,14 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "buz",
-					Method:             "appRole",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method: "appRole",
 				},
 			},
 			gObj: gObj.DeepCopy(),
@@ -898,10 +969,20 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "default",
-					VaultAuthGlobalRef: "buz",
-					Method:             "appRole",
-					Namespace:          "biff",
-					Mount:              "qux",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "appRole",
+					Namespace: "biff",
+					Mount:     "qux",
+					Headers: map[string]string{
+						"X-Global-Default": "bar",
+					},
+					Params: map[string]string{},
 					AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
 						RoleID:    "foo",
 						SecretRef: "bar",
@@ -919,8 +1000,14 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "buz",
-					Method:             "aws",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "none",
+							Params:  "none",
+						},
+					},
+					Method: "aws",
 				},
 			},
 			gObj: gObj.DeepCopy(),
@@ -932,10 +1019,16 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "default",
-					VaultAuthGlobalRef: "buz",
-					Method:             "aws",
-					Namespace:          "biff",
-					Mount:              "qux",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "none",
+							Params:  "none",
+						},
+					},
+					Method:    "aws",
+					Namespace: "biff",
+					Mount:     "qux",
 					AWS: &secretsv1beta1.VaultAuthConfigAWS{
 						Role:   "beetle",
 						Region: "us-east-1",
@@ -953,8 +1046,14 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "buz",
-					Method:             "gcp",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method: "gcp",
 				},
 			},
 			gObj: gObj.DeepCopy(),
@@ -966,10 +1065,20 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
 					VaultConnectionRef: "default",
-					VaultAuthGlobalRef: "buz",
-					Method:             "gcp",
-					Namespace:          "biff",
-					Mount:              "qux",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "gcp",
+					Namespace: "biff",
+					Mount:     "qux",
+					Headers: map[string]string{
+						"X-Global-Default": "bar",
+					},
+					Params: map[string]string{},
 					GCP: &secretsv1beta1.VaultAuthConfigGCP{
 						Role:                           "beetle",
 						Region:                         "us-west1",
@@ -1000,6 +1109,121 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name: "union-headers",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Headers: map[string]string{
+						"X-Local": "buz",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "kubernetes",
+					Namespace: "biff",
+					Mount:     "qux",
+					Headers: map[string]string{
+						"X-Local":             "buz",
+						"X-Global-Default":    "bar",
+						"X-Global-Kubernetes": "qux",
+					},
+					Params: map[string]string{},
+					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+						Role:                   "beetle",
+						ServiceAccount:         "sa1",
+						TokenExpirationSeconds: 200,
+						TokenAudiences:         []string{"baz"},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "union-headers-override",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Headers: map[string]string{
+						"X-Local":          "buz",
+						"X-Global-Default": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+						MergeStrategy: secretsv1beta1.MergeStrategy{
+							Headers: "union",
+							Params:  "union",
+						},
+					},
+					Method:    "kubernetes",
+					Namespace: "biff",
+					Mount:     "qux",
+					Headers: map[string]string{
+						"X-Local":             "buz",
+						"X-Global-Default":    "override",
+						"X-Global-Kubernetes": "qux",
+					},
+					Params: map[string]string{},
+					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+						Role:                   "beetle",
+						ServiceAccount:         "sa1",
+						TokenExpirationSeconds: 200,
+						TokenAudiences:         []string{"baz"},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name: "invalid-method",
 			c:    builder.Build(),
 			o: &secretsv1beta1.VaultAuth{
@@ -1008,8 +1232,10 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "buz",
-					Method:             "invalid",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+					},
+					Method: "invalid",
 				},
 			},
 			gObj: gObj.DeepCopy(),
@@ -1027,7 +1253,9 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Namespace: "baz",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "invalid",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "invalid",
+					},
 				},
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -1052,7 +1280,9 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Name:      "foo",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "buz",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name: "buz",
+					},
 				},
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -1069,7 +1299,10 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					Name:      "foo",
 				},
 				Spec: secretsv1beta1.VaultAuthSpec{
-					VaultAuthGlobalRef: "baz/buz",
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Name:      "buz",
+						Namespace: "baz",
+					},
 				},
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {

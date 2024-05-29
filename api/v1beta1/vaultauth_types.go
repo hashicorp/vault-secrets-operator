@@ -313,6 +313,23 @@ func (a *VaultAuthConfigGCP) Validate() error {
 	return errs
 }
 
+type VaultAuthGlobalRef struct {
+	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
+	Name string `json:"name,omitempty"`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
+	Namespace     string        `json:"namespace,omitempty"`
+	MergeStrategy MergeStrategy `json:"mergeStrategy,omitempty"`
+}
+
+type MergeStrategy struct {
+	// +kubebuilder:validation:Enum=union;replace;none
+	// +kubebuilder:default=union
+	Headers string `json:"headers,omitempty"`
+	// +kubebuilder:validation:Enum=union;replace;none
+	// +kubebuilder:default=union
+	Params string `json:"params,omitempty"`
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
@@ -320,10 +337,8 @@ type VaultAuthSpec struct {
 	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
 	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
-	// VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,
-	// eg: `namespaceA/vaultAuthGlobalRefB`. If no namespace prefix is provided it will default to
-	// namespace of the VaultAuthGlobal CR.
-	VaultAuthGlobalRef string `json:"vaultAuthGlobalRef,omitempty"`
+	// VaultAuthGlobalRef.
+	VaultAuthGlobalRef *VaultAuthGlobalRef `json:"vaultAuthGlobalRef,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
