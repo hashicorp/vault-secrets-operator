@@ -111,4 +111,12 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "controller.manager.extraArgs"
     value = var.manager_extra_args
   }
+  set_list {
+    name  = "controller.rbac.clusterRoleAggregation.viewerRoles"
+    value = ["*"]
+  }
+  set_list {
+    name  = "controller.rbac.clusterRoleAggregation.editorRoles"
+    value = ["*"]
+  }
 }

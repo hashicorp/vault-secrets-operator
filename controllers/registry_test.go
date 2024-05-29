@@ -514,8 +514,7 @@ func TestBackOffRegistry_Get(t *testing.T) {
 		m      map[client.ObjectKey]*BackOff
 		opts   []backoff.ExponentialBackOffOpts
 		objKey client.ObjectKey
-		want   *BackOff
-		want1  bool
+		want   bool
 	}{
 		{
 			name: "new",
@@ -524,12 +523,9 @@ func TestBackOffRegistry_Get(t *testing.T) {
 				Namespace: "foo",
 				Name:      "bar",
 			},
-			want: &BackOff{
-				bo: backoff.NewExponentialBackOff(
-					DefaultExponentialBackOffOpts()...,
-				),
-			},
-			want1: true,
+			opts: append(DefaultExponentialBackOffOpts(),
+				backoff.WithRandomizationFactor(0.1)),
+			want: true,
 		},
 		{
 			name: "previous",
@@ -539,7 +535,7 @@ func TestBackOffRegistry_Get(t *testing.T) {
 					Name:      "bar",
 				}: {
 					bo: backoff.NewExponentialBackOff(
-						DefaultExponentialBackOffOpts()...,
+						backoff.WithRandomizationFactor(0.1),
 					),
 				},
 			},
@@ -547,26 +543,25 @@ func TestBackOffRegistry_Get(t *testing.T) {
 				Namespace: "foo",
 				Name:      "bar",
 			},
-			want: &BackOff{
-				bo: backoff.NewExponentialBackOff(
-					DefaultExponentialBackOffOpts()...,
-				),
-			},
-			want1: false,
+			want: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
 			r := &BackOffRegistry{
 				m:    tt.m,
 				opts: tt.opts,
 			}
-			got, got1 := r.Get(tt.objKey)
-			assert.NotNilf(t, got, "Get(%v)", tt.objKey)
-			assert.Equalf(t, tt.want1, got1, "Get(%v)", tt.objKey)
-			last := got.bo.NextBackOff()
-			assert.Greaterf(t, last, time.Duration(0), "Get(%v)", tt.objKey)
-			assert.Greaterf(t, got.bo.NextBackOff(), last, "Get(%v)", tt.objKey)
+			bo, created := r.Get(tt.objKey)
+			require.NotNilf(t, bo, "Get(%v)", tt.objKey)
+			assert.Equalf(t, tt.want, created, "Get(%v)", tt.objKey)
+			assert.Greaterf(t, bo.NextBackOff(), time.Duration(0), "Get(%v)", tt.objKey)
+
+			bo, created = r.Get(tt.objKey)
+			assert.False(t, created, "Get(%v)", tt.objKey)
+			assert.Lessf(t, bo.NextBackOff(), bo.NextBackOff(), "Get(%v)", tt.objKey)
 		})
 	}
 }

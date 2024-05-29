@@ -29,17 +29,20 @@ type VSOEnvOptions struct {
 	// GlobalTransformationOptions is VSO_GLOBAL_TRANSFORMATION_OPTIONS environment variable option
 	GlobalTransformationOptions string `split_words:"true"`
 
-	// BackOffInitialInterval is VSO_BACK_OFF_INITIAL_INTERVAL environment variable option
-	BackOffInitialInterval time.Duration `split_words:"true"`
+	// BackoffInitialInterval is VSO_BACKOFF_INITIAL_INTERVAL environment variable option
+	BackoffInitialInterval time.Duration `split_words:"true"`
 
-	// BackOffMaxInterval is VSO_BACK_OFF_MAX_INTERVAL environment variable option
-	BackOffMaxInterval time.Duration `split_words:"true"`
+	// BackoffMaxInterval is VSO_BACKOFF_MAX_INTERVAL environment variable option
+	BackoffMaxInterval time.Duration `split_words:"true"`
 
-	// BackOffRandomizationFactor is VSO_BACK_OFF_RANDOMIZATION_FACTOR environment variable option
-	BackOffRandomizationFactor float64 `split_words:"true"`
+	// BackoffMaxElapsedTime is VSO_BACKOFF_MAX_ELAPSED_TIME environment variable option
+	BackoffMaxElapsedTime time.Duration `split_words:"true"`
 
-	// BackOffMultiplier is VSO_BACK_OFF_MULTIPLIER environment variable option
-	BackOffMultiplier float64 `split_words:"true"`
+	// BackoffRandomizationFactor is VSO_BACKOFF_RANDOMIZATION_FACTOR environment variable option
+	BackoffRandomizationFactor float64 `split_words:"true"`
+
+	// BackoffMultiplier is VSO_BACKOFF_MULTIPLIER environment variable option
+	BackoffMultiplier float64 `split_words:"true"`
 }
 
 // Parse environment variable options, prefixed with "VSO_"

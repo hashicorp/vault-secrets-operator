@@ -9,6 +9,18 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Configure update strategy for multi-replica deployments.
+  # Kubernetes supports types Recreate, and RollingUpdate
+  # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+  # Example:
+  # strategy: {}
+  #   rollingUpdate:
+  #     maxSurge: 1
+  #     maxUnavailable: 0
+  #   type: RollingUpdate
+  # @type: object
+  strategy: {}
+
   # Host Aliases settings for vault-secrets-operator pod.
   # The value is an array of PodSpec HostAlias maps.
   # ref: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
@@ -54,6 +66,41 @@ controller:
   #           - antarctica-east1
   #           - antarctica-west1
   affinity: {}
+
+  rbac:
+    # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
+    clusterRoleAggregation:
+      # viewerRoles is a list of roles that will be aggregated into the viewer ClusterRole.
+      # The role name must be that of any VSO resource type. E.g. "VaultAuth", "HCPAuth".
+      # All values are case-insensitive.
+      # Specifying '*' as the first element will include all roles in the aggregation.
+      #
+      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-viewer.
+      #
+      # Example usages:
+      # all roles:
+      # - '*'
+      # individually specified roles:
+      # - "VaultAuth"
+      # - "HCPAuth"
+      # @type: array<string>
+      viewerRoles: []
+
+      # editorRoles is a list of roles that will be aggregated into the editor ClusterRole.
+      # The role name must be that of any VSO resource type. E.g. "VaultAuth", "HCPAuth".
+      # All values are case-insensitive.
+      # Specifying '*' as the first element will include all roles in the aggregation.
+      #
+      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-editor.
+      #
+      # Example usages:
+      # all roles:
+      # - '*'
+      # individually specified roles:
+      # - "VaultAuth"
+      # - "HCPAuth"
+      # @type: array<string>
+      editorRoles: []
 
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
@@ -102,7 +149,27 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.6.0
+      tag: 0.7.0
+
+    # logging
+    logging:
+      # Sets the log level for the operator.
+      # Builtin levels are: info, error, debug, debug-extended, trace
+      # Default: info
+      # @type: string
+      level: info
+
+      # Sets the time encoding for the operator.
+      # Options are: epoch, millis, nano, iso8601, rfc3339, rfc3339nano
+      # Default: rfc3339
+      # @type: string
+      timeEncoding: rfc3339
+
+      # Sets the stacktrace level for the operator.
+      # Options are: info, error, panic
+      # Default: panic
+      # @type: string
+      stacktraceLevel: panic
 
     # Global secret transformation options. In addition to the boolean options
     # below, these options may be set via the
@@ -115,13 +182,16 @@ controller:
 
     # Backoff settings for the controller manager. These settings control the backoff behavior
     # when the controller encounters an error while fetching secrets from the SecretSource.
-    backOffOnSecretSourceError:
+    backoffOnSecretSourceError:
       # Initial interval between retries.
       # @type: duration
       initialInterval: "5s"
       # Maximum interval between retries.
       # @type: duration
       maxInterval: "60s"
+      # Maximum elapsed time before giving up.
+      # @type: duration
+      maxElapsedTime: "0s"
       # Randomization factor to add jitter to the interval between retries.
       # @type: float
       randomizationFactor: 0.5
@@ -365,8 +435,7 @@ controller:
 
     # Defines additional commandline arguments to be passed to the
     # vault-secrets-operator manager container.
-    # extraArgs:
-    # - -zap-log-level=5
+    #
     # @type: array
     extraArgs: []
 
@@ -652,7 +721,7 @@ telemetry:
 
     # Enable deployment of the Vault Secrets Operator ServiceMonitor CustomResource.
     # @type: boolean
-    enabled: false
+    nabled: false
 
     # Selector labels to add to the ServiceMonitor.
     # When empty, defaults to:

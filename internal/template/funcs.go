@@ -75,6 +75,7 @@ var allowedSprigFuncs = []string{
 	"hasKey",
 	"hasPrefix",
 	"hasSuffix",
+	"htpasswd",
 	"indent",
 	"initial",
 	"initials",

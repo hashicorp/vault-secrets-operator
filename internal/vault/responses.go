@@ -4,7 +4,9 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/hashicorp/vault/api"
 
@@ -129,4 +131,26 @@ func NewDefaultResponse(secret *api.Secret) Response {
 	return &defaultResponse{
 		secret: secret,
 	}
+}
+
+// IsLeaseNotFoundError returns true if a lease not found error is returned from Vault.
+func IsLeaseNotFoundError(err error) bool {
+	var respErr *api.ResponseError
+	if errors.As(err, &respErr) && respErr != nil {
+		if respErr.StatusCode == http.StatusBadRequest {
+			return len(respErr.Errors) == 1 && respErr.Errors[0] == "lease not found"
+		}
+	}
+	return false
+}
+
+// IsForbiddenError returns true if a forbidden error is returned from Vault.
+func IsForbiddenError(err error) bool {
+	var respErr *api.ResponseError
+	if errors.As(err, &respErr) && respErr != nil {
+		if respErr.StatusCode == http.StatusForbidden {
+			return true
+		}
+	}
+	return false
 }

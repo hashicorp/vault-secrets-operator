@@ -13,6 +13,7 @@ metadata:
     app.kubernetes.io/component: rbac
     # allow for selecting on the canonical name
     vso.hashicorp.com/role-instance: manager-role
+    
   {{- include "vso.chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:

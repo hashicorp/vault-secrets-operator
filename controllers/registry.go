@@ -257,8 +257,8 @@ func (r *BackOffRegistry) Delete(objKey client.ObjectKey) bool {
 // If objKey is not in the set of registered objects, it will be added. Return
 // true if the sync backoff entry was created.
 func (r *BackOffRegistry) Get(objKey client.ObjectKey) (*BackOff, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	entry, ok := r.m[objKey]
 	if !ok {
