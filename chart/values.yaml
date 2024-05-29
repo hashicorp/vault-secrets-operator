@@ -721,7 +721,7 @@ telemetry:
 
     # Enable deployment of the Vault Secrets Operator ServiceMonitor CustomResource.
     # @type: boolean
-    nabled: false
+    enabled: false
 
     # Selector labels to add to the ServiceMonitor.
     # When empty, defaults to:
