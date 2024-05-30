@@ -14,12 +14,15 @@ import (
 type eventWatcherMeta struct {
 	// Cancel will close the watcher's context (and stop the watcher goroutine)
 	Cancel context.CancelFunc
-	// Namespace in Vault for the secret that's being watched
-	Namespace string
-	// Type of the KV secret that's being watched
-	Type string
-	// Path in Vault for the secret that's being watched
-	Path string
+	// StoppedCh lets the watcher goroutine signal the caller that it has
+	// stopped (and removed itself from the registry)
+	StoppedCh chan struct{}
+	// LastGeneration is the generation of the VaultStaticSecret resource, used
+	// to detect if the event watcher needs to be recreated
+	LastGeneration int64
+	// LastClientID - vault client ID for the last successful connection, used
+	// to detect if the Vault client has changed since the event watcher started
+	LastClientID string
 }
 
 type EventWatcherRegistry struct {

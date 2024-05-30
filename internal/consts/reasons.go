@@ -36,4 +36,5 @@ const (
 	ReasonVaultTokenRotated          = "VaultTokenRotated"
 	ReasonVaultClientConfigChanged   = "VaultClientConfigChanged"
 	ReasonEventWatcherError          = "EventWatcherError"
+	ReasonEventWatcherStarted        = "EventWatcherStarted"
 )
