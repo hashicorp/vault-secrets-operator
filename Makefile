@@ -274,7 +274,10 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: ci-build
 ci-build: ## Build operator binary (without generating assets).
-	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
+	rm -rf $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts
+	cp -a chart/crds $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts/.
+	ln -s ../$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts/upgrade-crds
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
 		-a \

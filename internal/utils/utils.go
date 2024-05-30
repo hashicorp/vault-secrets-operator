@@ -5,15 +5,25 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/json"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/yaml"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/version"
 )
 
 var (
@@ -51,4 +61,92 @@ func GetOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1
 	ownerRef.APIVersion = apiVersion
 	ownerRef.Kind = kind
 	return ownerRef, nil
+}
+
+// UpgradeCRDs upgrades custom resource definitions a directory containing CRD
+// YAML manifest files. It only supports
+// apiextensionsv1.CustomResourceDefinition. If the CRD exists in the cluster, it
+// will be patched from the contents from the corresponding manifest file. If the
+// CRD does not exist, it will be created. The Client must have the
+// apiextensionsv1.Scheme registered.
+func UpgradeCRDs(ctx context.Context, c ctrlclient.Client, dir string) error {
+	logger := zap.New().WithName("UpgradeCRDs").WithValues(
+		"version", version.Version(), "dir", dir)
+
+	d, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	var crds []apiextensionsv1.CustomResourceDefinition
+	for _, f := range d {
+		if f.IsDir() {
+			continue
+		}
+
+		if !strings.HasSuffix(f.Name(), ".yaml") {
+			continue
+		}
+
+		fn := filepath.Join(dir, f.Name())
+		fh, err := os.Open(fn)
+		if err != nil {
+			return err
+		}
+
+		b, err := io.ReadAll(fh)
+		if err != nil {
+			return err
+		}
+
+		jsonB, err := yaml.YAMLToJSONStrict(b)
+		if err != nil {
+			return err
+		}
+
+		var crd apiextensionsv1.CustomResourceDefinition
+		if err := json.Unmarshal(jsonB, &crd); err != nil {
+			return err
+		}
+
+		if crd.GroupVersionKind() != apiextensionsv1.SchemeGroupVersion.WithKind(crd.Kind) {
+			logger.Info("Skipping unsupported kind", "gvk", crd.GroupVersionKind(),
+				"name", crd.Name, "filename", fn)
+			continue
+		}
+
+		crds = append(crds, crd)
+	}
+
+	if len(crds) == 0 {
+		return fmt.Errorf("no CRDs found in directory %q", dir)
+	}
+
+	// TODO(future): add support for optionally deleting obsolete CRDs
+	var errs error
+	for _, crd := range crds {
+		var cur apiextensionsv1.CustomResourceDefinition
+		if err := c.Get(ctx, ctrlclient.ObjectKey{Name: crd.Name}, &cur); err != nil {
+			if apierrors.IsNotFound(err) {
+				logger.Info("Creating", "name", crd.Name, "gvk", crd.GroupVersionKind())
+				if err := c.Create(ctx, &crd); err != nil {
+					return err
+				}
+			} else {
+				errs = errors.Join(errs, err)
+			}
+		} else {
+			logger.Info("Patching",
+				"name", crd.Name, "gvk", crd.GroupVersionKind(),
+				"uid", cur.GetUID(), "resourceVersion", cur.GetResourceVersion(),
+			)
+			patch := ctrlclient.MergeFrom(cur.DeepCopy())
+			cur.Spec = crd.Spec
+			cur.ObjectMeta.Annotations = crd.ObjectMeta.Annotations
+			cur.ObjectMeta.Labels = crd.ObjectMeta.Labels
+			errors.Join(errs, c.Patch(ctx, &cur, patch))
+		}
+	}
+
+	return errs
 }
