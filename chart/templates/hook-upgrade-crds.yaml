@@ -88,7 +88,7 @@ spec:
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         env:
         - name: VSO_UPGRADE_CRDS_TIMEOUT
-          value: .Values.hooks.upgradeCRDs.executionTimeout
+          value: {{ .Values.hooks.upgradeCRDs.executionTimeout }}
         command:
         - /scripts/upgrade-crds
         {{- with .Values.hooks.resources  }}
