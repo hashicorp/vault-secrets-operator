@@ -110,6 +110,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	resp, err := c.Read(ctx, kvReq)
 	if err != nil {
+		if vault.IsForbiddenError(err) {
+			c.Taint()
+		}
+
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
