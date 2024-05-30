@@ -116,15 +116,13 @@ runs:
         fi
         make $make_target VERSION=${{ inputs.version }} INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
     - name: Store kind cluster logs
-      # skip main as a temporary workaround for CRT build prepare issue ref: https://github.com/hashicorp/bob/pull/189.
-      if: success() && !contains(github.ref, 'refs/heads/main')
+      if: success()
       uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
       with:
         name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}
         path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
     - name: Store kind cluster logs failure
-      # skip main as a temporary workaround for CRT build prepare issue ref: https://github.com/hashicorp/bob/pull/189.
-      if: failure() && !contains(github.ref, 'refs/heads/main')
+      if: failure()
       uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
       with:
         name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}-failed
