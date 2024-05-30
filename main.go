@@ -110,6 +110,7 @@ func main() {
 		// utility jobs like this.
 		var exitCode int
 		if err := upgradeCRDs(); err != nil {
+			exitCode = 1
 			os.Stderr.WriteString(fmt.Sprintf("failed to upgrade CRDs, err=%s\n", err))
 		}
 		os.Exit(exitCode)
