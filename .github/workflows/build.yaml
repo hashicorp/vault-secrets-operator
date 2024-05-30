@@ -108,8 +108,7 @@ jobs:
         run: |
           mkdir dist out
           make ci-build
-          cd dist/${{ env.GOOS }}/${{ env.GOARCH }}/.
-          zip -r --symlinks ../../../out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip .
+          zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/${{ env.GOOS }}/${{ env.GOARCH }}/${{ env.PKG_NAME }}
       - name: Upload binaries
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
@@ -126,9 +125,12 @@ jobs:
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
-
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Setup scripts directory
+        shell: bash
+        run: |
+          make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v2
         env:
@@ -164,9 +166,12 @@ jobs:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
       image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
-
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Setup scripts directory
+        shell: bash
+        run: |
+          make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v2
         env:
@@ -204,9 +209,12 @@ jobs:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
       image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
-
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Setup scripts directory
+        shell: bash
+        run: |
+          make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v2
         env:
