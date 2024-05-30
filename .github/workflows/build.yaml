@@ -108,7 +108,8 @@ jobs:
         run: |
           mkdir dist out
           make ci-build
-          zip -r -j out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip dist/${{ env.GOOS }}/${{ env.GOARCH }}/
+          cd dist/${{ env.GOOS }}/${{ env.GOARCH }}/.
+          zip -r --symlinks ../../../out/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip .
       - name: Upload binaries
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
