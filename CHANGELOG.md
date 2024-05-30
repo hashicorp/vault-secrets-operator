@@ -1,3 +1,9 @@
+## 0.7.1 (May 30th, 2024)
+
+Fix:
+* Helm: fix invalid value name for telemetry.serviceMonitor.enabled (#786): [GH-790](https://github.com/hashicorp/vault-secrets-operator/pull/790)
+
+
 ## 0.7.0 (May 27th, 2024)
 **Important**: this release contains CRD schema changes that must be applied manually when deploying VSO with Helm. 
 Please see [updating-crds](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#updating-crds-when-using-helm) for more details.
@@ -15,6 +21,7 @@ Improvements:
 * CachingClientFactory: lock by client cache key: [GH-716](https://github.com/hashicorp/vault-secrets-operator/pull/716)
 * Transformations: add support for the htpasswd Sprig function: [GH-708](https://github.com/hashicorp/vault-secrets-operator/pull/708)
 * VPS: skip overwriting tls.crt and tls.key whenever transformation templates are configured: [GH-659](https://github.com/hashicorp/vault-secrets-operator/pull/659)
+* Core: Use exponential backoff on secret source errors: [GH-732](https://github.com/hashicorp/vault-secrets-operator/pull/732)
 
 Fix:
 * Core: call VDS callbacks on VaultAuth and VaultConnection changes: [GH-739](https://github.com/hashicorp/vault-secrets-operator/pull/739)
