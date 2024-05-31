@@ -133,6 +133,17 @@ func TestMain(m *testing.M) {
 }
 
 func TestChart_upgradeCRDs(t *testing.T) {
+	startChartVersion := os.Getenv("TEST_START_CHART_VERSION")
+	if startChartVersion == "" {
+		startChartVersion = "0.2.0"
+	}
+
+	// IMG is set in the Makefile
+	image := os.Getenv("IMG")
+	if image == "" {
+		image = "hashicorp/vault-secrets-operator:0.0.0-dev"
+	}
+
 	releaseName := strings.Replace(strings.ToLower(t.Name()), "_", "-", -1)
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -144,7 +155,7 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	})
 
 	require.NoError(t, runKind(t, ctx,
-		"load", "docker-image", "hashicorp/vault-secrets-operator:0.0.0-dev",
+		"load", "docker-image", image,
 		"--name", kindClusterName,
 	))
 
@@ -153,7 +164,7 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--create-namespace",
 		"--namespace", vsoNamespace,
 		// picking a lower version to ensure we see some CRD changes.
-		"--version", "0.2.0",
+		"--version", startChartVersion,
 		releaseName,
 		"hashicorp/vault-secrets-operator",
 	))

@@ -340,7 +340,9 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 
 .PHONY: integration-test-chart
 integration-test-chart:
-	INTEGRATION_TESTS=true go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
+	IMG=$(IMG) \
+	INTEGRATION_TESTS=true \
+	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
 
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally
