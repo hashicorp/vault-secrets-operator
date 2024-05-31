@@ -33,7 +33,10 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
-const vaultStaticSecretFinalizer = "vaultstaticsecret.secrets.hashicorp.com/finalizer"
+const (
+	vaultStaticSecretFinalizer = "vaultstaticsecret.secrets.hashicorp.com/finalizer"
+	eventPath                  = "/v1/sys/events/subscribe/kv*"
+)
 
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
@@ -261,13 +264,13 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 		// so close it
 		if meta.Cancel != nil {
 			meta.Cancel()
-			// Wait for the goroutine to stop
+			// Wait for the goroutine to stop and remove itself from the event registry
 			<-meta.StoppedCh
 		} else {
 			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "meta", meta)
 		}
 	}
-	wsClient, err := c.WebsocketClient()
+	wsClient, err := c.WebsocketClient(eventPath)
 	if err != nil {
 		return fmt.Errorf("failed to create websocket client: %w", err)
 	}
@@ -301,6 +304,8 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 	}
 }
 
+// getEvents calls streamStaticSecretEvents in a loop, collecting and responding
+// to any errors returned.
 func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) error {
 	logger := log.FromContext(ctx)
 	name := types.NamespacedName{Namespace: o.Namespace, Name: o.Name}
@@ -326,7 +331,6 @@ eventLoop:
 			}
 			err := r.streamStaticSecretEvents(ctx, o, wsClient)
 			if err != nil {
-
 				if strings.Contains(err.Error(), "use of closed network connection") ||
 					strings.Contains(err.Error(), "context canceled") {
 					// The connection and/or context was closed, so we should
@@ -357,12 +361,13 @@ eventLoop:
 					logger.Error(err, "Failed to retrieve Vault client")
 					break eventLoop
 				} else {
-					wsClient, err = newVaultClient.WebsocketClient()
+					wsClient, err = newVaultClient.WebsocketClient(eventPath)
 					if err != nil {
 						logger.Error(err, "Failed to create new websocket client")
 						break eventLoop
 					}
 				}
+
 				// Update the LastClientID in the event registry
 				key := types.NamespacedName{Namespace: o.Namespace, Name: o.Name}
 				meta, ok := r.eventWatcherRegistry.Get(key)
@@ -392,6 +397,8 @@ eventLoop:
 	return nil
 }
 
+// eventMsg is used to extract the relevant field from an event message sent
+// from Vault
 type eventMsg struct {
 	Data struct {
 		Event struct {

@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// eventWatcherMeta - metadata for controlling an event watcher goroutine
+// eventWatcherMeta - metadata for managing an event watcher goroutine
 type eventWatcherMeta struct {
 	// Cancel will close the watcher's context (and stop the watcher goroutine)
 	Cancel context.CancelFunc

@@ -21,7 +21,7 @@ type WebsocketClient struct {
 }
 
 // WebSocketClient parses the vault client's address and scheme to create a websocket client
-func (c *defaultClient) WebsocketClient() (*WebsocketClient, error) {
+func (c *defaultClient) WebsocketClient(eventPath string) (*WebsocketClient, error) {
 	vaultURL, err := url.Parse(c.client.Address())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse vault URL: %w", err)
@@ -34,10 +34,8 @@ func (c *defaultClient) WebsocketClient() (*WebsocketClient, error) {
 		scheme = "ws"
 	}
 
-	// TODO(tvoran): move the kv path somewhere else to make this function more
-	// generic
 	webSocketURL := url.URL{
-		Path:   "/v1/sys/events/subscribe/kv*",
+		Path:   eventPath,
 		Host:   vaultHost,
 		Scheme: scheme,
 	}

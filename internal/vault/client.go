@@ -163,7 +163,7 @@ type Client interface {
 	IsClone() bool
 	Namespace() string
 	SetNamespace(string)
-	WebsocketClient() (*WebsocketClient, error)
+	WebsocketClient(string) (*WebsocketClient, error)
 }
 
 var _ Client = (*defaultClient)(nil)
