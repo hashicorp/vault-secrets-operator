@@ -338,6 +338,10 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 	$(MAKE) integration-test
 
+.PHONY: integration-test-chart
+integration-test-chart:
+	INTEGRATION_TESTS=true go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
+
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \

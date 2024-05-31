@@ -63,19 +63,14 @@ func GetOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1
 	return ownerRef, nil
 }
 
-// UpgradeCRDs upgrades custom resource definitions a directory containing CRD
-// YAML manifest files. It only supports
-// apiextensionsv1.CustomResourceDefinition. If the CRD exists in the cluster, it
-// will be patched from the contents from the corresponding manifest file. If the
-// CRD does not exist, it will be created. The Client must have the
-// apiextensionsv1.Scheme registered.
-func UpgradeCRDs(ctx context.Context, c ctrlclient.Client, dir string) error {
-	logger := zap.New().WithName("UpgradeCRDs").WithValues(
-		"version", version.Version(), "dir", dir)
-
+// LoadCRDsFromDir reads dir to find any CustomResourceDefinition YAML manifest
+// files. It only supports apiextensionsv1.CustomResourceDefinition. Returns a
+// slice of apiextensionsv1.CustomResourceDefinition objects or an error if any
+// occurred.
+func LoadCRDsFromDir(dir string) ([]apiextensionsv1.CustomResourceDefinition, error) {
 	d, err := os.ReadDir(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var crds []apiextensionsv1.CustomResourceDefinition
@@ -91,31 +86,47 @@ func UpgradeCRDs(ctx context.Context, c ctrlclient.Client, dir string) error {
 		fn := filepath.Join(dir, f.Name())
 		fh, err := os.Open(fn)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		b, err := io.ReadAll(fh)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		jsonB, err := yaml.YAMLToJSONStrict(b)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		var crd apiextensionsv1.CustomResourceDefinition
 		if err := json.Unmarshal(jsonB, &crd); err != nil {
-			return err
+			return nil, err
 		}
 
 		if crd.GroupVersionKind() != apiextensionsv1.SchemeGroupVersion.WithKind(crd.Kind) {
-			logger.Info("Skipping unsupported kind", "gvk", crd.GroupVersionKind(),
-				"name", crd.Name, "filename", fn)
 			continue
 		}
 
 		crds = append(crds, crd)
+	}
+
+	return crds, nil
+}
+
+// UpgradeCRDs upgrades custom resource definitions a directory containing CRD
+// YAML manifest files. It only supports
+// apiextensionsv1.CustomResourceDefinition. If the CRD exists in the cluster, it
+// will be patched from the contents from the corresponding manifest file. If the
+// CRD does not exist, it will be created. The Client must have the
+// apiextensionsv1.Scheme registered.
+func UpgradeCRDs(ctx context.Context, c ctrlclient.Client, dir string) error {
+	logger := zap.New().WithName("UpgradeCRDs").WithValues(
+		"version", version.Version(), "dir", dir)
+
+	crds, err := LoadCRDsFromDir(dir)
+	if err != nil {
+		return err
 	}
 
 	if len(crds) == 0 {
