@@ -149,7 +149,27 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.6.0
+      tag: 0.7.0
+
+    # logging
+    logging:
+      # Sets the log level for the operator.
+      # Builtin levels are: info, error, debug, debug-extended, trace
+      # Default: info
+      # @type: string
+      level: info
+
+      # Sets the time encoding for the operator.
+      # Options are: epoch, millis, nano, iso8601, rfc3339, rfc3339nano
+      # Default: rfc3339
+      # @type: string
+      timeEncoding: rfc3339
+
+      # Sets the stacktrace level for the operator.
+      # Options are: info, error, panic
+      # Default: panic
+      # @type: string
+      stacktraceLevel: panic
 
     # Global secret transformation options. In addition to the boolean options
     # below, these options may be set via the
@@ -162,7 +182,7 @@ controller:
 
     # Backoff settings for the controller manager. These settings control the backoff behavior
     # when the controller encounters an error while fetching secrets from the SecretSource.
-    backOffOnSecretSourceError:
+    backoffOnSecretSourceError:
       # Initial interval between retries.
       # @type: duration
       initialInterval: "5s"
@@ -415,8 +435,7 @@ controller:
 
     # Defines additional commandline arguments to be passed to the
     # vault-secrets-operator manager container.
-    # extraArgs:
-    # - -zap-log-level=5
+    #
     # @type: array
     extraArgs: []
 

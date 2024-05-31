@@ -402,12 +402,17 @@ func Test_defaultClient_Init(t *testing.T) {
 }
 
 func Test_defaultClient_Validate(t *testing.T) {
+	ctx := context.Background()
+
 	tests := []struct {
 		name           string
+		c              *api.Client
+		handler        *testHandler
 		authSecret     *api.Secret
 		skipRenewal    bool
 		lastRenewal    int64
 		watcher        *api.LifetimeWatcher
+		tainted        bool
 		lastWatcherErr error
 		wantErr        assert.ErrorAssertionFunc
 	}{
@@ -443,6 +448,7 @@ func Test_defaultClient_Validate(t *testing.T) {
 		},
 		{
 			name: "valid-with-watcher",
+			c:    &api.Client{},
 			authSecret: &api.Secret{
 				Auth: &api.SecretAuth{
 					LeaseDuration: 30,
@@ -456,6 +462,7 @@ func Test_defaultClient_Validate(t *testing.T) {
 		},
 		{
 			name: "valid-with-watcher-skipRenewal",
+			c:    &api.Client{},
 			authSecret: &api.Secret{
 				Auth: &api.SecretAuth{
 					LeaseDuration: 30,
@@ -468,20 +475,8 @@ func Test_defaultClient_Validate(t *testing.T) {
 			wantErr:        assert.NoError,
 		},
 		{
-			name: "valid-with-watcher",
-			authSecret: &api.Secret{
-				Auth: &api.SecretAuth{
-					LeaseDuration: 30,
-				},
-			},
-			skipRenewal:    false,
-			lastRenewal:    time.Now().Unix() - 5,
-			watcher:        &api.LifetimeWatcher{},
-			lastWatcherErr: nil,
-			wantErr:        assert.NoError,
-		},
-		{
 			name: "valid-with-watcher-error-skipRenewal",
+			c:    &api.Client{},
 			authSecret: &api.Secret{
 				LeaseDuration: 30,
 				Renewable:     false,
@@ -496,6 +491,7 @@ func Test_defaultClient_Validate(t *testing.T) {
 		},
 		{
 			name: "valid-with-watcher-nil-non-renewable",
+			c:    &api.Client{},
 			authSecret: &api.Secret{
 				LeaseDuration: 30,
 				Renewable:     false,
@@ -542,17 +538,76 @@ func Test_defaultClient_Validate(t *testing.T) {
 				return assert.EqualError(t, err, "lifetime watcher error", i...)
 			},
 		},
+		{
+			name: "invalid-client-not-set",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    false,
+			lastRenewal:    time.Now().Unix() - 5,
+			watcher:        &api.LifetimeWatcher{},
+			lastWatcherErr: nil,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "client not set", i...)
+			},
+		},
+		{
+			name: "invalid-tainted-client",
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					LeaseDuration: 30,
+				},
+			},
+			skipRenewal:    false,
+			lastRenewal:    time.Now().Unix() - 5,
+			watcher:        &api.LifetimeWatcher{},
+			lastWatcherErr: nil,
+			tainted:        true,
+			handler: &testHandler{
+				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if assert.ErrorContains(t, err,
+					"tainted client is invalid",
+					i...,
+				) {
+					return assert.True(t, IsForbiddenError(err), i...)
+				}
+				return false
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.c != nil && tt.handler != nil {
+				require.Fail(t, "cannot set both client and handler")
+			}
+
+			if tt.c == nil && tt.handler != nil {
+				config, l := NewTestHTTPServer(t, tt.handler.handler())
+				t.Cleanup(func() {
+					l.Close()
+				})
+
+				client, err := api.NewClient(config)
+				require.NoError(t, err)
+				tt.c = client
+			}
+
 			c := &defaultClient{
+				client:         tt.c,
 				authSecret:     tt.authSecret,
 				skipRenewal:    tt.skipRenewal,
 				lastRenewal:    tt.lastRenewal,
 				watcher:        tt.watcher,
+				tainted:        tt.tainted,
 				lastWatcherErr: tt.lastWatcherErr,
 			}
-			tt.wantErr(t, c.Validate(), fmt.Sprintf("Validate()"))
+			tt.wantErr(t, c.Validate(ctx), "Validate()")
 		})
 	}
 }
@@ -891,6 +946,81 @@ func Test_defaultClient_hashAccessor(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "hashAccessor()")
+		})
+	}
+}
+
+func Test_defaultClient_Taint(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{
+			name: "taint",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{}
+			c.Taint()
+			assert.True(t, c.tainted)
+		})
+	}
+}
+
+func Test_defaultClient_Tainted(t *testing.T) {
+	tests := []struct {
+		name       string
+		tainted    bool
+		assertFunc assert.BoolAssertionFunc
+	}{
+		{
+			name:       "tainted",
+			tainted:    true,
+			assertFunc: assert.True,
+		},
+		{
+			name:       "not-tainted",
+			tainted:    false,
+			assertFunc: assert.False,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				tainted: tt.tainted,
+			}
+
+			got := c.Tainted()
+			tt.assertFunc(t, got, "Tainted()")
+		})
+	}
+}
+
+func Test_defaultClient_Untaint(t *testing.T) {
+	tests := []struct {
+		name       string
+		tainted    bool
+		assertFunc assert.BoolAssertionFunc
+	}{
+		{
+			name:       "tainted",
+			tainted:    true,
+			assertFunc: assert.True,
+		},
+		{
+			name:       "not-tainted",
+			tainted:    false,
+			assertFunc: assert.False,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				tainted: tt.tainted,
+			}
+
+			got := c.Untaint()
+			tt.assertFunc(t, got, "Untaint()")
 		})
 	}
 }

@@ -670,7 +670,7 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "8" ]
+   [ "${actual}" = "11" ]
 }
 
 #
@@ -684,11 +684,11 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "10" ]
+   [ "${actual}" = "13" ]
 
-   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
    [ "${actual}" = "--foo=baz" ]
-   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
    [ "${actual}" = "--bar=qux" ]
 }
 
@@ -750,7 +750,7 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "8" ]
+   [ "${actual}" = "11" ]
 }
 
 @test "controller/Deployment: with globalTransformationOptions.excludeRaw" {
@@ -762,7 +762,7 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "9" ]
+   [ "${actual}" = "12" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
    [ "${actual}" = "--global-transformation-options=exclude-raw" ]
@@ -778,17 +778,17 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "11" ]
+   [ "${actual}" = "14" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
    [ "${actual}" = "--global-transformation-options=exclude-raw" ]
-   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
    [ "${actual}" = "--foo=baz" ]
-   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   local actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
    [ "${actual}" = "--bar=qux" ]
 }
 
-@test "controller/Deployment: with backOffOnSecretSourceError defaults" {
+@test "controller/Deployment: with backoffOnSecretSourceError defaults" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml \
@@ -796,7 +796,7 @@ load _helpers
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "8" ]
+   [ "${actual}" = "11" ]
 
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
    [ "${actual}" = "--backoff-initial-interval=5s" ]
@@ -808,22 +808,23 @@ load _helpers
    [ "${actual}" = "--backoff-multiplier=1.50" ]
    local actual=$(echo "$object" | yq '.[7]' | tee /dev/stderr)
    [ "${actual}" = "--backoff-randomization-factor=0.50" ]
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
 }
 
-@test "controller/Deployment: with backOffOnSecretSourceError set" {
+@test "controller/Deployment: with backoffOnSecretSourceError set" {
   cd `chart_dir`
   local object=$(helm template \
       -s templates/deployment.yaml \
-      --set 'controller.manager.backOffOnSecretSourceError.initialInterval=30s' \
-      --set 'controller.manager.backOffOnSecretSourceError.maxInterval=300s' \
-      --set 'controller.manager.backOffOnSecretSourceError.maxElapsedTime=24h' \
-      --set 'controller.manager.backOffOnSecretSourceError.multiplier=2.5' \
-      --set 'controller.manager.backOffOnSecretSourceError.randomizationFactor=3.7361' \
+      --set 'controller.manager.backoffOnSecretSourceError.initialInterval=30s' \
+      --set 'controller.manager.backoffOnSecretSourceError.maxInterval=300s' \
+      --set 'controller.manager.backoffOnSecretSourceError.maxElapsedTime=24h' \
+      --set 'controller.manager.backoffOnSecretSourceError.multiplier=2.5' \
+      --set 'controller.manager.backoffOnSecretSourceError.randomizationFactor=3.7361' \
       . | tee /dev/stderr |
       yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
 
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-   [ "${actual}" = "8" ]
+   [ "${actual}" = "11" ]
    local actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
    [ "${actual}" = "--backoff-initial-interval=30s" ]
    local actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
@@ -834,6 +835,171 @@ load _helpers
    [ "${actual}" = "--backoff-multiplier=2.50" ]
    local actual=$(echo "$object" | yq '.[7]' | tee /dev/stderr)
    [ "${actual}" = "--backoff-randomization-factor=3.74" ]
+}
+
+
+#--------------------------------------------------------------------
+# manager logging args
+@test "controller/Deployment: manager logging defaults" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "11" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=info" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-stacktrace-level=panic" ]
+}
+
+@test "controller/Deployment: manager logging set all" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.logging.level=debug' \
+      --set 'controller.manager.logging.timeEncoding=nanos' \
+      --set 'controller.manager.logging.stacktraceLevel=error' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "11" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=debug" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-time-encoding=nanos" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-stacktrace-level=error" ]
+}
+
+@test "controller/Deployment: manager logging set custom log level debug-extended" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.logging.level=debug-extended' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "11" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=5" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-stacktrace-level=panic" ]
+}
+
+@test "controller/Deployment: manager logging set custom log level trace" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.logging.level=trace' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "11" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=6" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-stacktrace-level=panic" ]
+}
+
+@test "controller/Deployment: manager logging with intersecting log level extraArgs" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.extraArgs={--zap-log-level=extra,--bar=qux}' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "12" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-stacktrace-level=panic" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=extra" ]
+   local actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+   [ "${actual}" = "--bar=qux" ]
+}
+
+@test "controller/Deployment: manager logging with intersecting time encoding extraArgs" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.extraArgs={--zap-time-encoding=extra,--bar=qux}' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "12" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=info" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-stacktrace-level=panic" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-time-encoding=extra" ]
+   local actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+   [ "${actual}" = "--bar=qux" ]
+}
+
+@test "controller/Deployment: manager logging with intersecting stacktrace level extraArgs" {
+  cd `chart_dir`
+  local object=$(helm template \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.extraArgs={--zap-stacktrace-level=extra,--bar=qux}' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "12" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=info" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-stacktrace-level=extra" ]
+   local actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+   [ "${actual}" = "--bar=qux" ]
+}
+
+@test "controller/Deployment: manager logging with all intersecting extraArgs" {
+  cd `chart_dir`
+  local object=$(helm template \
+      --debug \
+      -s templates/deployment.yaml \
+      --set 'controller.manager.extraArgs={--zap-log-level=extra,-zap-time-encoding=extra,-zap-stacktrace-level=extra,--bar=qux}' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "12" ]
+
+   local actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+   [ "${actual}" = "--zap-log-level=extra" ]
+   local actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+   [ "${actual}" = "-zap-time-encoding=extra" ]
+   local actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
+   [ "${actual}" = "-zap-stacktrace-level=extra" ]
+   local actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+   [ "${actual}" = "--bar=qux" ]
 }
 
 #--------------------------------------------------------------------
