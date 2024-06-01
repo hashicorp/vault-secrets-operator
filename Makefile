@@ -340,7 +340,8 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 
 .PHONY: integration-test-chart
 integration-test-chart:
-	IMG=$(IMG) \
+	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
+	VERSION=$(VERSION) \
 	INTEGRATION_TESTS=true \
 	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
 

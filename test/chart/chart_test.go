@@ -133,17 +133,21 @@ func TestMain(m *testing.M) {
 }
 
 func TestChart_upgradeCRDs(t *testing.T) {
+	operatorImageRepo := os.Getenv("IMAGE_TAG_BASE")
+	if operatorImageRepo == "" {
+		require.Fail(t, "IMAGE_TAG_BASE is not set")
+	}
+	operatorImageTag := os.Getenv("VERSION")
+	if operatorImageTag == "" {
+		require.Fail(t, "VERSION is not set")
+	}
+
 	startChartVersion := os.Getenv("TEST_START_CHART_VERSION")
 	if startChartVersion == "" {
 		startChartVersion = "0.2.0"
 	}
 
-	// IMG is set in the Makefile
-	image := os.Getenv("IMG")
-	if image == "" {
-		image = "hashicorp/vault-secrets-operator:0.0.0-dev"
-	}
-
+	image := fmt.Sprintf("%s:%s", operatorImageRepo, operatorImageTag)
 	releaseName := strings.Replace(strings.ToLower(t.Name()), "_", "-", -1)
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -180,7 +184,8 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	require.NoError(t, upgradeVSO(t, ctx,
 		"--wait",
 		"--namespace", vsoNamespace,
-		"--set", "controller.manager.image.tag=0.0.0-dev",
+		"--set", fmt.Sprintf("controller.manager.image.repository=%s", operatorImageRepo),
+		"--set", fmt.Sprintf("controller.manager.image.tag=%s", operatorImageTag),
 		releaseName,
 		chartPath,
 	))
