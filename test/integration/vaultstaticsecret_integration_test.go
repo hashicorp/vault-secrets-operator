@@ -264,6 +264,7 @@ func TestVaultStaticSecret(t *testing.T) {
 		create           int
 		createTypes      []string
 		version          int
+		useEvents        bool
 	}{
 		{
 			name: "existing",
@@ -315,6 +316,30 @@ func TestVaultStaticSecret(t *testing.T) {
 			existing:    getExisting(),
 			create:      2,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
+		},
+		{
+			name: "events-both",
+			expectedExisting: []expectedData{
+				{
+					initial: map[string]interface{}{"username": "bob", "fruit": "banana"},
+					update:  map[string]interface{}{"username": "bob", "fruit": "apple"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+			},
+			existing: func() []*secretsv1beta1.VaultStaticSecret {
+				vss := getExisting()
+				for _, v := range vss {
+					v.Spec.TBDInstantUpdateEventFlag = true
+					v.Spec.RefreshAfter = "1h"
+				}
+				return vss
+			}(),
+			create:      2,
+			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
+			useEvents:   true,
 		},
 	}
 
@@ -402,6 +427,9 @@ func TestVaultStaticSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.useEvents && !entTests {
+				t.Skip("Skipping because events require Vault Enterprise")
+			}
 			var count int
 			require.Equal(t, len(tt.existing), len(tt.expectedExisting))
 
@@ -465,6 +493,10 @@ func TestVaultStaticSecret(t *testing.T) {
 						}
 						if tt.version != 0 {
 							vssObj.Spec.Version = tt.version
+						}
+						if tt.useEvents {
+							vssObj.Spec.TBDInstantUpdateEventFlag = true
+							vssObj.Spec.RefreshAfter = "1h"
 						}
 
 						if !skipCleanup {

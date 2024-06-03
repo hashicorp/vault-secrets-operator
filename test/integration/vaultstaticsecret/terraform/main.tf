@@ -120,10 +120,16 @@ resource "vault_policy" "default" {
   namespace = local.namespace
   policy    = <<EOT
 path "${vault_mount.kvv2.path}/*" {
-  capabilities = ["read"]
+  capabilities = ["read", "list", "subscribe"]
+  subscribe_event_types = ["kv*"]
 }
 
 path "${vault_mount.kv.path}/*" {
+  capabilities = ["read", "list", "subscribe"]
+  subscribe_event_types = ["kv*"]
+}
+
+path "sys/events/subscribe/kv*" {
   capabilities = ["read"]
 }
 EOT
