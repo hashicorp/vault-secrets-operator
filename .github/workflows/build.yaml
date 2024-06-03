@@ -248,7 +248,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        start-chart-version: ["0.2.0"]
+        start-chart-version:
+        - "0.1.0"
+        - "0.2.0"
+        - "0.3.0"
+        - "0.4.0"
+        - "0.5.0"
+        - "0.6.0"
+        - "0.7.0"
     steps:
       - uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e # v4.1.7
         with:

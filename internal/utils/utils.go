@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	yamlv3 "gopkg.in/yaml.v3"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,7 +74,7 @@ func LoadCRDsFromDir(dir string) ([]apiextensionsv1.CustomResourceDefinition, er
 		return nil, err
 	}
 
-	var crds []apiextensionsv1.CustomResourceDefinition
+	var ret []apiextensionsv1.CustomResourceDefinition
 	for _, f := range d {
 		if f.IsDir() {
 			continue
@@ -89,7 +90,35 @@ func LoadCRDsFromDir(dir string) ([]apiextensionsv1.CustomResourceDefinition, er
 			return nil, err
 		}
 
-		b, err := io.ReadAll(fh)
+		crds, err := DecodeCRDs(fh)
+		if err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, crds...)
+	}
+
+	return ret, nil
+}
+
+type empty struct{}
+
+// DecodeCRDs reads input to decode CustomResourceDefinition YAML manifest data.
+// It supports multiple YAML documents.
+func DecodeCRDs(input io.Reader) ([]apiextensionsv1.CustomResourceDefinition, error) {
+	var crds []apiextensionsv1.CustomResourceDefinition
+	dec := yamlv3.NewDecoder(input)
+	seen := map[string]empty{}
+	for {
+		var doc any
+		if err := dec.Decode(&doc); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+
+		b, err := yaml.Marshal(doc)
 		if err != nil {
 			return nil, err
 		}
@@ -108,9 +137,13 @@ func LoadCRDsFromDir(dir string) ([]apiextensionsv1.CustomResourceDefinition, er
 			continue
 		}
 
+		if _, ok := seen[crd.Name]; ok {
+			return nil, fmt.Errorf("duplicate CRD %q found", crd.Name)
+		}
+		seen[crd.Name] = empty{}
+
 		crds = append(crds, crd)
 	}
-
 	return crds, nil
 }
 

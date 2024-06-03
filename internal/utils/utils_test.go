@@ -240,7 +240,7 @@ metadata:
 			otherManifests: []string{"foo:\n-bar"},
 			createDir:      true,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.ErrorContains(t, err, `yaml: line 3: could not find expected ':'`)
+				return assert.ErrorContains(t, err, `yaml: line 2: could not find expected ':'`)
 			},
 		},
 	}

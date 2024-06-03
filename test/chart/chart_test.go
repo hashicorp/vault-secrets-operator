@@ -4,15 +4,19 @@
 package chart
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -144,8 +148,35 @@ func TestChart_upgradeCRDs(t *testing.T) {
 
 	startChartVersion := os.Getenv("TEST_START_CHART_VERSION")
 	if startChartVersion == "" {
-		startChartVersion = "0.2.0"
+		require.Fail(t, "TEST_START_CHART_VERSION is not set")
 	}
+
+	// incoming CRDS
+	b := bytes.NewBuffer([]byte{})
+	require.NoError(t,
+		runHelm(t, context.Background(), time.Second*30, b, nil,
+			"show", "crds",
+			"--version", startChartVersion,
+			"hashicorp/vault-secrets-operator",
+		),
+	)
+
+	incomingCRDs, err := utils.DecodeCRDs(bytes.NewReader(b.Bytes()))
+	require.NoError(t, err)
+	slices.SortFunc(incomingCRDs, func(a, b apiextensionsv1.CustomResourceDefinition) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	crdsDir := filepath.Join(chartPath, "crds")
+	wantCRDs, err := utils.LoadCRDsFromDir(crdsDir)
+	require.NoError(t, err, "failed to load CRDs from %q", crdsDir)
+	require.Greater(t, len(wantCRDs), 0, "no CRDs found in %q", crdsDir)
+	slices.SortFunc(incomingCRDs, func(a, b apiextensionsv1.CustomResourceDefinition) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	expectCRDUpgrade := !reflect.DeepEqual(incomingCRDs, wantCRDs)
+	t.Logf("Expect upgrade from version %s: %t", startChartVersion, expectCRDUpgrade)
 
 	image := fmt.Sprintf("%s:%s", operatorImageRepo, operatorImageTag)
 	releaseName := strings.Replace(strings.ToLower(t.Name()), "_", "-", -1)
@@ -167,18 +198,17 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--wait",
 		"--create-namespace",
 		"--namespace", vsoNamespace,
-		// picking a lower version to ensure we see some CRD changes.
 		"--version", startChartVersion,
 		releaseName,
 		"hashicorp/vault-secrets-operator",
 	))
 
-	var origCRDs apiextensionsv1.CustomResourceDefinitionList
-	require.NoError(t, client.List(ctx, &origCRDs))
+	var currentCRDs apiextensionsv1.CustomResourceDefinitionList
+	require.NoError(t, client.List(ctx, &currentCRDs))
 
-	origCRDsByName := map[string]apiextensionsv1.CustomResourceDefinition{}
-	for _, o := range origCRDs.Items {
-		origCRDsByName[o.Name] = o
+	curCRDsByName := map[string]apiextensionsv1.CustomResourceDefinition{}
+	for _, o := range currentCRDs.Items {
+		curCRDsByName[o.Name] = o
 	}
 
 	require.NoError(t, upgradeVSO(t, ctx,
@@ -190,14 +220,11 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		chartPath,
 	))
 
-	crdsDir := filepath.Join(chartPath, "crds")
-	wantCRDs, err := utils.LoadCRDsFromDir(crdsDir)
-	require.NoError(t, err, "failed to load CRDs from %q", crdsDir)
-	require.Greater(t, len(wantCRDs), 0, "no CRDs found in %q", crdsDir)
-
 	var updatedCRDs apiextensionsv1.CustomResourceDefinitionList
 	require.NoError(t, client.List(ctx, &updatedCRDs))
-	assert.NotEqual(t, origCRDs.Items, updatedCRDs.Items)
+	if expectCRDUpgrade {
+		assert.NotEqual(t, currentCRDs.Items, updatedCRDs.Items)
+	}
 
 	for _, wantCRD := range wantCRDs {
 		var updatedCRD apiextensionsv1.CustomResourceDefinition
@@ -206,8 +233,15 @@ func TestChart_upgradeCRDs(t *testing.T) {
 			updatedCRD.Spec.Conversion = nil
 		}
 
-		if o, ok := origCRDsByName[wantCRD.Name]; ok {
-			assert.Greater(t, updatedCRD.Generation, o.Generation)
+		if o, ok := curCRDsByName[wantCRD.Name]; ok {
+			if expectCRDUpgrade {
+				assert.Greater(t, updatedCRD.Generation, o.Generation,
+					"Upgrade expected, CRD %q .metadata.generation", wantCRD.Name,
+				)
+			} else {
+				assert.Equal(t, updatedCRD.Generation, o.Generation,
+					"Upgrade unexpected, CRD %q .metadata.generation", wantCRD.Name)
+			}
 			assert.Equal(t, o.UID, updatedCRD.UID)
 		} else {
 			assert.Equal(t, int64(1), updatedCRD.Generation)
@@ -221,42 +255,52 @@ func TestChart_upgradeCRDs(t *testing.T) {
 
 func installVSO(t *testing.T, ctx context.Context, extraArgs ...string) error {
 	t.Helper()
-	ctx_, cancel := context.WithTimeout(ctx, time.Minute*5)
-	defer cancel()
-	return runHelm(t, ctx_, append([]string{"install"}, extraArgs...)...)
+	return runHelm(t, ctx, time.Minute*5, nil, nil, append([]string{"install"}, extraArgs...)...)
 }
 
 func upgradeVSO(t *testing.T, ctx context.Context, extraArgs ...string) error {
 	t.Helper()
-	ctx_, cancel := context.WithTimeout(ctx, time.Minute*5)
-	defer cancel()
-	return runHelm(t, ctx_, append([]string{"upgrade"}, extraArgs...)...)
+	return runHelm(t, ctx, time.Minute*5, nil, nil, append([]string{"upgrade"}, extraArgs...)...)
 }
 
 func uninstallVSO(t *testing.T, ctx context.Context, extraArgs ...string) error {
 	t.Helper()
-	ctx_, cancel := context.WithTimeout(ctx, time.Minute*3)
-	defer cancel()
-	return runHelm(t, ctx_, append([]string{"uninstall"}, extraArgs...)...)
+	return runHelm(t, ctx, time.Minute*3, nil, nil, append([]string{"uninstall"}, extraArgs...)...)
 }
 
-func runHelm(t *testing.T, ctx context.Context, args ...string) error {
+func runHelm(t *testing.T, ctx context.Context, timeout time.Duration, stdout, stderr io.Writer, args ...string) error {
 	t.Helper()
-	return runCommand(t, ctx, "helm", args...)
+	return runCommandWithTimeout(t, ctx, timeout, stdout, stderr, "helm", args...)
 }
 
 func runKind(t *testing.T, ctx context.Context, args ...string) error {
-	ctx_, cancel := context.WithTimeout(ctx, time.Minute*5)
-	defer cancel()
 	t.Helper()
-	return runCommand(t, ctx_, "kind", args...)
+	return runCommandWithTimeout(t, ctx, time.Minute*5, nil, nil, "kind", args...)
 }
 
-func runCommand(t *testing.T, ctx context.Context, name string, args ...string) error {
+func runCommandWithTimeout(t *testing.T, ctx context.Context, timeout time.Duration, stdout, stderr io.Writer, name string, args ...string) error {
 	t.Helper()
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var ctx_ context.Context
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx_, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	} else {
+		ctx_ = ctx
+	}
+
+	cmd := exec.CommandContext(ctx_, name, args...)
+	if stdout != nil {
+		cmd.Stdout = stdout
+	} else {
+		cmd.Stdout = os.Stdout
+	}
+	if stderr != nil {
+		cmd.Stderr = stderr
+	} else {
+		cmd.Stderr = os.Stderr
+	}
+
 	t.Logf("Running command %q", cmd)
 	return cmd.Run()
 }
