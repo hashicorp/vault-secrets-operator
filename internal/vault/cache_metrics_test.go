@@ -17,6 +17,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 )
 
 func Test_clientCacheCollector_Collect(t *testing.T) {
@@ -193,7 +194,7 @@ func Test_clientCache_Metrics(t *testing.T) {
 							Generation: 0,
 						},
 						Spec: secretsv1beta1.VaultAuthSpec{
-							Method: vault.ProviderMethodKubernetes,
+							Method: consts.ProviderMethodKubernetes,
 						},
 					},
 					connObj: &secretsv1beta1.VaultConnection{
