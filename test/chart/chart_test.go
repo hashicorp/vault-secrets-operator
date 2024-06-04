@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -151,31 +150,43 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		require.Fail(t, "TEST_START_CHART_VERSION is not set")
 	}
 
-	// incoming CRDS
+	// incoming CRDS are used to determine if an upgrade is expected.
 	b := bytes.NewBuffer([]byte{})
+	chart := "hashicorp/vault-secrets-operator"
 	require.NoError(t,
 		runHelm(t, context.Background(), time.Second*30, b, nil,
 			"show", "crds",
 			"--version", startChartVersion,
-			"hashicorp/vault-secrets-operator",
+			chart,
 		),
 	)
 
 	incomingCRDs, err := utils.DecodeCRDs(bytes.NewReader(b.Bytes()))
 	require.NoError(t, err)
-	slices.SortFunc(incomingCRDs, func(a, b apiextensionsv1.CustomResourceDefinition) int {
-		return strings.Compare(a.Name, b.Name)
-	})
+	incomingCRDsMap := map[string]apiextensionsv1.CustomResourceDefinition{}
+	for _, crd := range incomingCRDs {
+		incomingCRDsMap[crd.Name] = crd
+	}
 
 	crdsDir := filepath.Join(chartPath, "crds")
 	wantCRDs, err := utils.LoadCRDsFromDir(crdsDir)
 	require.NoError(t, err, "failed to load CRDs from %q", crdsDir)
 	require.Greater(t, len(wantCRDs), 0, "no CRDs found in %q", crdsDir)
-	slices.SortFunc(incomingCRDs, func(a, b apiextensionsv1.CustomResourceDefinition) int {
-		return strings.Compare(a.Name, b.Name)
-	})
 
-	expectCRDUpgrade := !reflect.DeepEqual(incomingCRDs, wantCRDs)
+	var expectCRDUpgrade bool
+	// expectUpgradeMap is used to determine if a CRD should have been upgraded.
+	expectUpgradeMap := map[string]bool{}
+	for _, crd := range wantCRDs {
+		if o, ok := incomingCRDsMap[crd.Name]; ok {
+			if reflect.DeepEqual(o.Spec, crd.Spec) && reflect.DeepEqual(o.ObjectMeta, crd.ObjectMeta) {
+				expectUpgradeMap[crd.Name] = false
+			} else {
+				expectCRDUpgrade = true
+				expectUpgradeMap[crd.Name] = true
+			}
+		}
+	}
+
 	t.Logf("Expect upgrade from version %s: %t", startChartVersion, expectCRDUpgrade)
 
 	image := fmt.Sprintf("%s:%s", operatorImageRepo, operatorImageTag)
@@ -200,15 +211,15 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--namespace", vsoNamespace,
 		"--version", startChartVersion,
 		releaseName,
-		"hashicorp/vault-secrets-operator",
+		chart,
 	))
 
 	var currentCRDs apiextensionsv1.CustomResourceDefinitionList
 	require.NoError(t, client.List(ctx, &currentCRDs))
 
-	curCRDsByName := map[string]apiextensionsv1.CustomResourceDefinition{}
+	installedCRDsMap := map[string]apiextensionsv1.CustomResourceDefinition{}
 	for _, o := range currentCRDs.Items {
-		curCRDsByName[o.Name] = o
+		installedCRDsMap[o.Name] = o
 	}
 
 	require.NoError(t, upgradeVSO(t, ctx,
@@ -225,6 +236,7 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	if expectCRDUpgrade {
 		assert.NotEqual(t, currentCRDs.Items, updatedCRDs.Items)
 	}
+	assert.Equal(t, len(wantCRDs), len(updatedCRDs.Items), "CRD count mismatch")
 
 	for _, wantCRD := range wantCRDs {
 		var updatedCRD apiextensionsv1.CustomResourceDefinition
@@ -233,8 +245,8 @@ func TestChart_upgradeCRDs(t *testing.T) {
 			updatedCRD.Spec.Conversion = nil
 		}
 
-		if o, ok := curCRDsByName[wantCRD.Name]; ok {
-			if expectCRDUpgrade {
+		if o, ok := installedCRDsMap[wantCRD.Name]; ok {
+			if expect, _ := expectUpgradeMap[o.Name]; expect {
 				assert.Greater(t, updatedCRD.Generation, o.Generation,
 					"Upgrade expected, CRD %q .metadata.generation", wantCRD.Name,
 				)
@@ -250,6 +262,9 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		assert.Equal(t, wantCRD.Spec, updatedCRD.Spec, "CRD %q .spec mismatch", wantCRD.Name)
 		assert.Equal(t, wantCRD.Labels, updatedCRD.Labels, "CRD %q .metadata.labels mismatch", wantCRD.Name)
 		assert.Equal(t, wantCRD.Annotations, updatedCRD.Annotations, "CRD %q .metadata.annotations mismatch", wantCRD.Name)
+		assert.Len(t, updatedCRD.Status.Conditions, 2, "CRD %q .status.conditions mismatch", wantCRD.Name)
+		assert.Equal(t, wantCRD.Spec.Names, updatedCRD.Status.AcceptedNames, "CRD %q .status.acceptedNames mismatch", wantCRD.Name)
+		assert.Equal(t, len(updatedCRD.Status.StoredVersions), len(wantCRD.Spec.Versions), "CRD %q .status.storedVersions", wantCRD.Name)
 	}
 }
 

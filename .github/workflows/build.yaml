@@ -248,14 +248,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Test upgrading from the previous version to the current build.
+        # This list should be updated with each new release.
+        # We probably only want to maintain the last 5-6 versions.
         start-chart-version:
-        - "0.1.0"
         - "0.2.0"
-        - "0.3.0"
+        - "0.3.1"
         - "0.4.0"
         - "0.5.0"
         - "0.6.0"
-        - "0.7.0"
+        - "0.7.1"
     steps:
       - uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e # v4.1.7
         with:

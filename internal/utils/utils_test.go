@@ -268,7 +268,7 @@ metadata:
 				require.NoError(t, os.Mkdir(subDir, 0o700))
 			}
 
-			for i := 0; i < tt.subDirs; i++ {
+			for i := 0; i < tt.canaries; i++ {
 				filename := filepath.Join(dir, fmt.Sprintf("canary-%d", i))
 				require.NoError(t, os.WriteFile(filename, []byte{}, 0o600))
 			}

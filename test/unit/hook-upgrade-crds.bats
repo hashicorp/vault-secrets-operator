@@ -125,8 +125,6 @@ load _helpers
     [ "$(echo "${job}" | \
       yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
     [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
-    [ "$(echo "${job}" | \
       yq '.spec.template.spec.containers[0].command[0] == "/scripts/upgrade-crds"')" = "true" ]
     [ "$(echo "${job}" | \
       yq '(.spec.template.spec.containers[0].resources | length) == 2')" = "true" ]
@@ -149,8 +147,6 @@ load _helpers
     [ "$(echo "${job}" | yq '.kind == "Job"')" = "true" ]
     [ "$(echo "${job}" | \
       yq '.spec.backoffLimit == 5')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
     [ "$(echo "${job}" | \
       yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
     [ "$(echo "${job}" | \
@@ -182,8 +178,6 @@ load _helpers
     [ "$(echo "${job}" | \
       yq '.spec.backoffLimit == 10')" = "true" ]
     [ "$(echo "${job}" | yq '.kind == "Job"')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
     [ "$(echo "${job}" | \
       yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
     [ "$(echo "${job}" | \
