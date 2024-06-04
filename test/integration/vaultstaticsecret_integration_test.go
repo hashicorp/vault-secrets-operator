@@ -425,10 +425,13 @@ func TestVaultStaticSecret(t *testing.T) {
 		}
 	}
 
+	rootVaultClient := getVaultClient(t, "")
+	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.useEvents && !entTests {
-				t.Skip("Skipping because events require Vault Enterprise")
+			if tt.useEvents && !(entTests && atLeast_v1_16_3) {
+				t.Skip("Skipping because events tests require Vault Enterprise >= 1.16.3")
 			}
 			var count int
 			require.Equal(t, len(tt.existing), len(tt.expectedExisting))
