@@ -272,9 +272,15 @@ docker-push: ## Push docker image with the manager.
 
 ##@ CI
 
+.PHONY: ci-build-scripts-dir
+ci-build-scripts-dir: ## Build operator binary (without generating assets).
+	rm -rf $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts
+	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts
+	cp -a chart/crds $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts/.
+	ln -s ../$(BIN_NAME) $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts/upgrade-crds
+
 .PHONY: ci-build
-ci-build: ## Build operator binary (without generating assets).
-	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)
+ci-build: ci-build-scripts-dir ## Build operator binary (without generating assets).
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "${LD_FLAGS} $(shell GOOS=$(GOOS) GOARCH=$(GOARCH) ./scripts/ldflags-version.sh)" \
 		-a \
@@ -331,6 +337,13 @@ integration-test-ent: ## Run integration tests for Vault Enterprise
 integration-test-both: ## Run integration tests against Vault Enterprise and Vault Community
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 	$(MAKE) integration-test
+
+.PHONY: integration-test-chart
+integration-test-chart:
+	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
+	VERSION=$(VERSION) \
+	INTEGRATION_TESTS=true \
+	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
 
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally

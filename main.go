@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,13 +18,14 @@ import (
 	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v3"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/yaml"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -38,6 +40,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/options"
+	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	//+kubebuilder:scaffold:imports
@@ -65,7 +68,54 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// upgradeCRDs upgrades the CRDs in the cluster to the latest version.
+func upgradeCRDs() error {
+	root, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		return err
+	}
+
+	var c client.Client
+	config, err := ctrl.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	s := runtime.NewScheme()
+	if apiextensionsv1.AddToScheme(s) != nil {
+		return err
+	}
+
+	c, err = client.New(config, client.Options{Scheme: s})
+	if err != nil {
+		return err
+	}
+
+	timeout := time.Second * 30
+	if v := os.Getenv("VSO_UPGRADE_CRDS_TIMEOUT"); v != "" {
+		if to, err := time.ParseDuration(v); err == nil {
+			timeout = to
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return utils.UpgradeCRDs(ctx, c, filepath.Join(root, "crds"))
+}
+
 func main() {
+	if filepath.Base(os.Args[0]) == "upgrade-crds" {
+		// If the binary is named "upgrade-crds" then we are running in a job to upgrade
+		// CRDs and exit. The docker image will contain a symlink to the binary with this
+		// name. Following this pattern allows us to need only one image for executing
+		// utility jobs like this.
+		var exitCode int
+		if err := upgradeCRDs(); err != nil {
+			exitCode = 1
+			os.Stderr.WriteString(fmt.Sprintf("failed to upgrade CRDs, err=%s\n", err))
+		}
+		os.Exit(exitCode)
+	}
+
 	persistenceModelNone := "none"
 	persistenceModelDirectUnencrypted := "direct-unencrypted"
 	persistenceModelDirectEncrypted := "direct-encrypted"

@@ -31,13 +31,20 @@ ARG LD_FLAGS
 # Build
 RUN CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LD_FLAGS" -a -o $BIN_NAME main.go
 
+# setup scripts directory needed for upgrading CRDs.
+RUN mkdir scripts
+COPY chart/crds scripts/crds
+RUN ln -s ../$BIN_NAME scripts/upgrade-crds
+
 # dev image
 # -----------------------------------
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot as dev
+ENV BIN_NAME=vault-secrets-operator
 WORKDIR /
 COPY --from=dev-builder /workspace/$BIN_NAME /
+COPY --from=dev-builder /workspace/scripts /scripts
 USER 65532:65532
 
 ENTRYPOINT ["/vault-secrets-operator"]
@@ -59,7 +66,8 @@ LABEL revision=$PRODUCT_REVISION
 
 WORKDIR /
 
-COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /
+COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /$BIN_NAME
+COPY dist/$TARGETOS/$TARGETARCH/scripts /scripts
 COPY LICENSE /licenses/copyright.txt
 
 USER 65532:65532
@@ -93,7 +101,8 @@ LABEL name="Vault Secrets Operator" \
 
 WORKDIR /
 
-COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /
+COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /$BIN_NAME
+COPY dist/$TARGETOS/$TARGETARCH/scripts /scripts
 COPY LICENSE /licenses/copyright.txt
 COPY --from=build-ubi /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/pki/ca-trust/extracted/pem/
 

@@ -9,6 +9,7 @@ metadata:
   name: {{ include "vso.chart.fullname" . }}-controller-manager
   namespace: {{ .Release.Namespace }}
   labels:
+    app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
 {{ include "vso.imagePullSecrets" .}}
 ---
@@ -167,6 +168,7 @@ metadata:
   name: {{ printf "%s-%s" "pdcc" (include "vso.chart.fullname" .) | trunc 63 | trimSuffix "-" }}
   namespace: {{ .Release.Namespace }}
   labels:
+    app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
   annotations:
     # This is what defines this resource as a hook. Without this line, the
@@ -177,6 +179,7 @@ metadata:
       {{- toYaml .Values.controller.annotations | nindent 4 }}
     {{- end }}
 spec:
+  backoffLimit: 5
   template:
     metadata:
       # This name is truncated because kubernetes applies labels to the job which contain the job and pod
@@ -195,15 +198,20 @@ spec:
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
         command:
         - /vault-secrets-operator
-        resources: {{- toYaml .Values.controller.manager.resources | nindent 10 }}
+        {{- with .Values.hooks.resources  }}
+        resources:
+        {{- toYaml . | nindent 10 }}
+        {{- end}}
+        {{- with  .Values.controller.securityContext }}
         securityContext:
-          {{- toYaml .Values.controller.securityContext | nindent 10 }}
+        {{- toYaml .| nindent 10 }}
+        {{- end}}
       restartPolicy: Never
-      {{- if .Values.controller.nodeSelector }}
+      {{- with .Values.controller.nodeSelector }}
       nodeSelector:
-      {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+      {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.controller.tolerations }}
+      {{- with .Values.controller.tolerations }}
       tolerations:
-      {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      {{- toYaml .| nindent 8 }}
       {{- end }}
