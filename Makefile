@@ -23,7 +23,7 @@ CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-KIND_K8S_VERSION ?= v1.29.0
+KIND_K8S_VERSION ?= v1.30.0
 VAULT_HELM_VERSION ?= 0.25.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
