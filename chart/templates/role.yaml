@@ -13,6 +13,7 @@ metadata:
     app.kubernetes.io/component: rbac
     # allow for selecting on the canonical name
     vso.hashicorp.com/role-instance: manager-role
+    
   {{- include "vso.chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
@@ -170,6 +171,32 @@ rules:
     - secrets.hashicorp.com
   resources:
     - secrettransformations/status
+  verbs:
+    - get
+    - patch
+    - update
+- apiGroups:
+    - secrets.hashicorp.com
+  resources:
+    - vaultauthglobals
+  verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+- apiGroups:
+    - secrets.hashicorp.com
+  resources:
+    - vaultauthglobals/finalizers
+  verbs:
+    - update
+- apiGroups:
+    - secrets.hashicorp.com
+  resources:
+    - vaultauthglobals/status
   verbs:
     - get
     - patch

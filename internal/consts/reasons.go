@@ -32,5 +32,7 @@ const (
 	ReasonCertificateRevocationError = "CertificateRevocationError"
 	ReasonTransformationError        = "TransformationError"
 	ReasonSecretDataBuilderError     = "SecretDataBuilderError"
-	ReasonSyncOnRefUpdate            = "SyncOnRefUpdate"
+	ReasonForceSync                  = "ForceSync"
+	ReasonVaultTokenRotated          = "VaultTokenRotated"
+	ReasonVaultClientConfigChanged   = "VaultClientConfigChanged"
 )

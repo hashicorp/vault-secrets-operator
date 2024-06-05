@@ -1,7 +1,50 @@
-## Unreleased
+## 0.7.0 (May 27th, 2024)
+**Important**: this release contains CRD schema changes that must be applied manually when deploying VSO with Helm. 
+Please see [updating-crds](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#updating-crds-when-using-helm) for more details.
+
+Behavioral changes:
+* Core: Controller logs are now JSON encoded by default.
 
 Features:
-* Sync: support argo.Rollout for RolloutRestartTarget: [GH-702](https://github.com/hashicorp/vault-secrets-operator/pull/702)
+* Core: support argo.Rollout as a rolloutRestartTarget for all secret type custom resources: [GH-702](https://github.com/hashicorp/vault-secrets-operator/pull/702)
+* Helm: add support for cluster role aggregates: [GH-752](https://github.com/hashicorp/vault-secrets-operator/pull/752)
+* Helm: adds values for setting VSO logging options: [GH-778](https://github.com/hashicorp/vault-secrets-operator/pull/778)
+* Helm: add support for configuring strategy on controller deployment : [GH-709](https://github.com/hashicorp/vault-secrets-operator/pull/709)
+
+Improvements:
+* CachingClientFactory: lock by client cache key: [GH-716](https://github.com/hashicorp/vault-secrets-operator/pull/716)
+* Transformations: add support for the htpasswd Sprig function: [GH-708](https://github.com/hashicorp/vault-secrets-operator/pull/708)
+* VPS: skip overwriting tls.crt and tls.key whenever transformation templates are configured: [GH-659](https://github.com/hashicorp/vault-secrets-operator/pull/659)
+* Core: Use exponential backoff on secret source errors: [GH-732](https://github.com/hashicorp/vault-secrets-operator/pull/732)
+
+Fix:
+* Core: call VDS callbacks on VaultAuth and VaultConnection changes: [GH-739](https://github.com/hashicorp/vault-secrets-operator/pull/739)
+* Core: skip LifetimeWatcher validation for non-renewable auth tokens: [GH-722](https://github.com/hashicorp/vault-secrets-operator/pull/722)
+* Core: disable development logger mode by default: [GH-751](https://github.com/hashicorp/vault-secrets-operator/pull/751)
+* VSS: that spec.hmacSecretData's value is honoured: [GH-753](https://github.com/hashicorp/vault-secrets-operator/pull/753)
+* VDS: Selectively log calls to SyncRegistry.Delete(): [GH-718](https://github.com/hashicorp/vault-secrets-operator/pull/718)
+
+Build:
+* CI: test against vault-1.16.2: [GH-715](https://github.com/hashicorp/vault-secrets-operator/pull/715)
+* Bump GH actions for node 16 obsolescence: [GH-738](https://github.com/hashicorp/vault-secrets-operator/pull/738)
+
+Dependency Updates:
+* Bump TF provider versions: [GH-737](https://github.com/hashicorp/vault-secrets-operator/pull/737)
+* Bump github.com/go-logr/logr from 1.4.1 to 1.4.2: [GH-775](https://github.com/hashicorp/vault-secrets-operator/pull/775)
+* Bump github.com/hashicorp/go-getter from 1.7.1 to 1.7.4: [GH-711](https://github.com/hashicorp/vault-secrets-operator/pull/711)
+* Bump github.com/hashicorp/vault/api from 1.12.2 to 1.13.0: [GH-725](https://github.com/hashicorp/vault-secrets-operator/pull/725)
+* Bump github.com/hashicorp/vault/sdk from 0.12.0 to 0.13.0: [GH-773](https://github.com/hashicorp/vault-secrets-operator/pull/773)
+* Bump github.com/onsi/gomega from 1.33.0 to 1.33.1: [GH-727](https://github.com/hashicorp/vault-secrets-operator/pull/727)
+* Bump github.com/prometheus/client_golang from 1.19.0 to 1.19.1: [GH-741](https://github.com/hashicorp/vault-secrets-operator/pull/741)
+* Bump golang.org/x/crypto from 0.22.0 to 0.23.0: [GH-744](https://github.com/hashicorp/vault-secrets-operator/pull/744)
+* Bump google.golang.org/api from 0.176.1 to 0.177.0: [GH-724](https://github.com/hashicorp/vault-secrets-operator/pull/724)
+* Bump google.golang.org/api from 0.180.0 to 0.181.0: [GH-758](https://github.com/hashicorp/vault-secrets-operator/pull/758)
+* Bump k8s.io/api from 0.30.0 to 0.30.1: [GH-761](https://github.com/hashicorp/vault-secrets-operator/pull/761)
+* Bump k8s.io/client-go from 0.30.0 to 0.30.1: [GH-760](https://github.com/hashicorp/vault-secrets-operator/pull/760)
+* Bump sigs.k8s.io/controller-runtime from 0.18.2 to 0.18.3: [GH-772](https://github.com/hashicorp/vault-secrets-operator/pull/772)
+* Bump ubi9/ubi-micro from 9.3-15 to 9.4-6: [GH-719](https://github.com/hashicorp/vault-secrets-operator/pull/719)
+* Bump ubi9/ubi-minimal from 9.4-949 to 9.4-949.1714662671: [GH-728](https://github.com/hashicorp/vault-secrets-operator/pull/728)
+
 
 ## 0.6.0 (April 24th, 2024)
 

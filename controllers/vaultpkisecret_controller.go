@@ -42,6 +42,7 @@ type VaultPKISecretReconciler struct {
 	HMACValidator              helpers.HMACValidator
 	Recorder                   record.EventRecorder
 	SyncRegistry               *SyncRegistry
+	BackOffRegistry            *BackOffRegistry
 	referenceCache             ResourceReferenceCache
 	GlobalTransformationOption *helpers.GlobalTransformationOption
 }
@@ -119,7 +120,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	case o.Status.SerialNumber == "":
 		syncReason = consts.ReasonInitialSync
 	case r.SyncRegistry.Has(req.NamespacedName):
-		syncReason = consts.ReasonSyncOnRefUpdate
+		syncReason = consts.ReasonForceSync
 	case schemaEpoch > 0 && o.GetGeneration() != o.Status.LastGeneration:
 		syncReason = consts.ReasonResourceUpdated
 	case o.Spec.Destination.Create && !destinationExists:
@@ -176,6 +177,9 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
 	if err != nil {
+		if vault.IsForbiddenError(err) {
+			c.Taint()
+		}
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to issue certificate from Vault"
 		logger.Error(err, msg)
@@ -183,9 +187,14 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.updateStatus(ctx, o); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		r.SyncRegistry.Add(req.NamespacedName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+			RequeueAfter: entry.NextBackOff(),
 		}, nil
+	} else {
+		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
 	certResp, err := vault.UnmarshalPKIIssueResponse(resp.Secret())
@@ -233,7 +242,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if len(data["ca_chain"]) > 0 {
 		data["ca_chain"] = []byte(strings.Join(certResp.CAChain, "\n"))
 	}
-	if o.Spec.Destination.Type == corev1.SecretTypeTLS {
+	// If using data transformation (templates), avoid generating tls.key and tls.crt.
+	if o.Spec.Destination.Type == corev1.SecretTypeTLS && len(transOption.KeyedTemplates) == 0 {
 		data[corev1.TLSCertKey] = data["certificate"]
 		// the ca_chain includes the issuing ca
 		if len(data["ca_chain"]) > 0 {
@@ -314,6 +324,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
+	r.BackOffRegistry.Delete(objKey)
 
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
@@ -341,6 +352,9 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	if r.BackOffRegistry == nil {
+		r.BackOffRegistry = NewBackOffRegistry()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
 		WithEventFilter(syncableSecretPredicate(r.SyncRegistry)).

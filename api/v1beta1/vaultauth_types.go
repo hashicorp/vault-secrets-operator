@@ -4,19 +4,19 @@
 package v1beta1
 
 import (
+	"errors"
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VaultAuthConfigKubernetes provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigKubernetes struct {
 	// Role to use for authenticating to Vault.
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 	// ServiceAccount to use when authenticating to Vault's
 	// authentication backend. This must reside in the consuming secret's (VDS/VSS/PKI) namespace.
-	ServiceAccount string `json:"serviceAccount"`
+	ServiceAccount string `json:"serviceAccount,omitempty"`
 	// TokenAudiences to include in the ServiceAccount token.
 	TokenAudiences []string `json:"audiences,omitempty"`
 	// TokenExpirationSeconds to set the ServiceAccount token.
@@ -25,10 +25,49 @@ type VaultAuthConfigKubernetes struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
+// Merge merges the other VaultAuthConfigKubernetes into a copy of the current.
+// If the current value is empty, it will be replaced by the other value. If the
+// merger is successful, the copy is returned.
+func (a *VaultAuthConfigKubernetes) Merge(other *VaultAuthConfigKubernetes) (*VaultAuthConfigKubernetes, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.ServiceAccount == "" {
+		c.ServiceAccount = other.ServiceAccount
+	}
+	if len(c.TokenAudiences) == 0 {
+		c.TokenAudiences = other.TokenAudiences
+	}
+	if c.TokenExpirationSeconds == 0 {
+		c.TokenExpirationSeconds = other.TokenExpirationSeconds
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigKubernetes is valid. All validation
+// errors are returned.
+func (a *VaultAuthConfigKubernetes) Validate() error {
+	var errs error
+	if a.Role == "" {
+		errs = errors.Join(fmt.Errorf("empty role"))
+	}
+
+	if a.ServiceAccount == "" {
+		errs = errors.Join(fmt.Errorf("empty serviceAccount"))
+	}
+
+	return errs
+}
+
 // VaultAuthConfigJWT provides VaultAuth configuration options needed for authenticating to Vault.
 type VaultAuthConfigJWT struct {
 	// Role to use for authenticating to Vault.
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the JWT token to authenticate to Vault's JWT authentication backend. The secret must
 	// have a key named `jwt` which holds the JWT token.
@@ -44,16 +83,87 @@ type VaultAuthConfigJWT struct {
 	TokenExpirationSeconds int64 `json:"tokenExpirationSeconds,omitempty"`
 }
 
+// Merge merges the other VaultAuthConfigJWT into a copy of the current. If the
+// current value is empty, it will be replaced by the other value. If the merger
+// is successful, the copy is returned.
+func (a *VaultAuthConfigJWT) Merge(other *VaultAuthConfigJWT) (*VaultAuthConfigJWT, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.SecretRef == "" {
+		c.SecretRef = other.SecretRef
+	}
+	if c.ServiceAccount == "" {
+		c.ServiceAccount = other.ServiceAccount
+	}
+	if len(c.TokenAudiences) == 0 {
+		c.TokenAudiences = other.TokenAudiences
+	}
+	if c.TokenExpirationSeconds == 0 {
+		c.TokenExpirationSeconds = other.TokenExpirationSeconds
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigJWT is valid. All validation errors
+// are returned.
+func (a *VaultAuthConfigJWT) Validate() error {
+	var errs error
+	if a.Role == "" {
+		errs = errors.Join(fmt.Errorf("empty role"))
+	}
+
+	return errs
+}
+
 // VaultAuthConfigAppRole provides VaultAuth configuration options needed for authenticating to
 // Vault via an AppRole AuthMethod.
 type VaultAuthConfigAppRole struct {
 	// RoleID of the AppRole Role to use for authenticating to Vault.
-	RoleID string `json:"roleId"`
+	RoleID string `json:"roleId,omitempty"`
 
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
 	// AppRole Role's secretID.
-	SecretRef string `json:"secretRef"`
+	SecretRef string `json:"secretRef,omitempty"`
+}
+
+// Merge merges the other VaultAuthConfigAppRole into a copy of the current. If
+// the current value is empty, it will be replaced by the other value. If the
+// merger is successful, the copy is returned.
+func (a *VaultAuthConfigAppRole) Merge(other *VaultAuthConfigAppRole) (*VaultAuthConfigAppRole, error) {
+	c := a.DeepCopy()
+	if c.RoleID == "" {
+		c.RoleID = other.RoleID
+	}
+	if c.SecretRef == "" {
+		c.SecretRef = other.SecretRef
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigAppRole is valid. All validation
+// errors are returned.
+func (a *VaultAuthConfigAppRole) Validate() error {
+	var errs error
+	if a.RoleID == "" {
+		errs = errors.Join(fmt.Errorf("empty roleID"))
+	}
+
+	if a.SecretRef == "" {
+		errs = errors.Join(fmt.Errorf("empty secretRef"))
+	}
+
+	return errs
 }
 
 // VaultAuthConfigAWS provides VaultAuth configuration options needed for
@@ -63,7 +173,7 @@ type VaultAuthConfigAppRole struct {
 // authenticate to Vault.
 type VaultAuthConfigAWS struct {
 	// Vault role to use for authenticating
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 	// AWS Region to use for signing the authentication request
 	Region string `json:"region,omitempty"`
 	// The Vault header value to include in the STS signing request
@@ -90,17 +200,64 @@ type VaultAuthConfigAWS struct {
 	IRSAServiceAccount string `json:"irsaServiceAccount,omitempty"`
 }
 
+// Merge merges the other VaultAuthConfigAWS into a copy of the current. If the
+// current value is empty, it will be replaced by the other value. If the merger
+// is successful, the copy is returned.
+func (a *VaultAuthConfigAWS) Merge(other *VaultAuthConfigAWS) (*VaultAuthConfigAWS, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.Region == "" {
+		c.Region = other.Region
+	}
+	if c.HeaderValue == "" {
+		c.HeaderValue = other.HeaderValue
+	}
+	if c.SessionName == "" {
+		c.SessionName = other.SessionName
+	}
+	if c.STSEndpoint == "" {
+		c.STSEndpoint = other.STSEndpoint
+	}
+	if c.IAMEndpoint == "" {
+		c.IAMEndpoint = other.IAMEndpoint
+	}
+	if c.SecretRef == "" {
+		c.SecretRef = other.SecretRef
+	}
+	if c.IRSAServiceAccount == "" {
+		c.IRSAServiceAccount = other.IRSAServiceAccount
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigAWS is valid. All validation errors
+// are returned.
+func (a *VaultAuthConfigAWS) Validate() error {
+	var errs error
+	if a.Role == "" {
+		errs = errors.Join(fmt.Errorf("empty role"))
+	}
+
+	return errs
+}
+
 // VaultAuthConfigGCP provides VaultAuth configuration options needed for
 // authenticating to Vault via a GCP AuthMethod, using workload identity
 type VaultAuthConfigGCP struct {
 	// Vault role to use for authenticating
-	Role string `json:"role"`
+	Role string `json:"role,omitempty"`
 
 	// WorkloadIdentityServiceAccount is the name of a Kubernetes service
 	// account (in the same Kubernetes namespace as the Vault*Secret referencing
 	// this resource) which has been configured for workload identity in GKE.
 	// Should be annotated with "iam.gke.io/gcp-service-account".
-	WorkloadIdentityServiceAccount string `json:"workloadIdentityServiceAccount"`
+	WorkloadIdentityServiceAccount string `json:"workloadIdentityServiceAccount,omitempty"`
 
 	// GCP Region of the GKE cluster's identity provider. Defaults to the region
 	// returned from the operator pod's local metadata server.
@@ -115,6 +272,47 @@ type VaultAuthConfigGCP struct {
 	ProjectID string `json:"projectID,omitempty"`
 }
 
+// Merge merges the other VaultAuthConfigGCP into a copy of the current. If the
+// current value is empty, it will be replaced by the other value. If the merger
+// is successful, the copy is returned.
+func (a *VaultAuthConfigGCP) Merge(other *VaultAuthConfigGCP) (*VaultAuthConfigGCP, error) {
+	c := a.DeepCopy()
+	if c.Role == "" {
+		c.Role = other.Role
+	}
+	if c.WorkloadIdentityServiceAccount == "" {
+		c.WorkloadIdentityServiceAccount = other.WorkloadIdentityServiceAccount
+	}
+	if c.Region == "" {
+		c.Region = other.Region
+	}
+	if c.ClusterName == "" {
+		c.ClusterName = other.ClusterName
+	}
+	if c.ProjectID == "" {
+		c.ProjectID = other.ProjectID
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Validate checks that the VaultAuthConfigGCP is valid. All validation errors
+// are returned.
+func (a *VaultAuthConfigGCP) Validate() error {
+	var errs error
+	if a.Role == "" {
+		errs = errors.Join(fmt.Errorf("empty role"))
+	}
+	if a.WorkloadIdentityServiceAccount == "" {
+		errs = errors.Join(fmt.Errorf("empty workloadIdentityServiceAccount"))
+	}
+
+	return errs
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
@@ -122,6 +320,10 @@ type VaultAuthSpec struct {
 	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
 	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
+	// VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultAuthGlobalRefB`. If no namespace prefix is provided it will default to
+	// namespace of the VaultAuthGlobal CR.
+	VaultAuthGlobalRef string `json:"vaultAuthGlobalRef,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
@@ -136,9 +338,9 @@ type VaultAuthSpec struct {
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// Method to use when authenticating to Vault.
 	// +kubebuilder:validation:Enum=kubernetes;jwt;appRole;aws;gcp
-	Method string `json:"method"`
+	Method string `json:"method,omitempty"`
 	// Mount to use when authenticating to auth method.
-	Mount string `json:"mount"`
+	Mount string `json:"mount,omitempty"`
 	// Params to use when authenticating to Vault
 	Params map[string]string `json:"params,omitempty"`
 	// Headers to be included in all Vault requests.
@@ -165,8 +367,10 @@ type VaultAuthSpec struct {
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid bool   `json:"valid"`
-	Error string `json:"error"`
+	Valid      bool               `json:"valid,omitempty"`
+	Error      string             `json:"error,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	SpecHash   string             `json:"specHash,omitempty"`
 }
 
 //+kubebuilder:object:root=true

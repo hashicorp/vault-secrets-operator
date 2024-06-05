@@ -51,7 +51,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
@@ -792,7 +792,7 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			vault.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
+			consts.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))

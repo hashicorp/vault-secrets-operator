@@ -42,7 +42,7 @@ type VaultStaticSecretSpec struct {
 	// and during incoming Vault secret comparison.
 	// Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault.
 	// +kubebuilder:default=true
-	HMACSecretData bool `json:"hmacSecretData,omitempty"`
+	HMACSecretData *bool `json:"hmacSecretData,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will

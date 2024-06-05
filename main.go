@@ -10,17 +10,22 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
-	"gopkg.in/yaml.v3"
+	"github.com/cenkalti/backoff/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/yaml"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -35,6 +40,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/options"
+	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	//+kubebuilder:scaffold:imports
@@ -62,7 +68,54 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// upgradeCRDs upgrades the CRDs in the cluster to the latest version.
+func upgradeCRDs() error {
+	root, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		return err
+	}
+
+	var c client.Client
+	config, err := ctrl.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	s := runtime.NewScheme()
+	if apiextensionsv1.AddToScheme(s) != nil {
+		return err
+	}
+
+	c, err = client.New(config, client.Options{Scheme: s})
+	if err != nil {
+		return err
+	}
+
+	timeout := time.Second * 30
+	if v := os.Getenv("VSO_UPGRADE_CRDS_TIMEOUT"); v != "" {
+		if to, err := time.ParseDuration(v); err == nil {
+			timeout = to
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return utils.UpgradeCRDs(ctx, c, filepath.Join(root, "crds"))
+}
+
 func main() {
+	if filepath.Base(os.Args[0]) == "upgrade-crds" {
+		// If the binary is named "upgrade-crds" then we are running in a job to upgrade
+		// CRDs and exit. The docker image will contain a symlink to the binary with this
+		// name. Following this pattern allows us to need only one image for executing
+		// utility jobs like this.
+		var exitCode int
+		if err := upgradeCRDs(); err != nil {
+			exitCode = 1
+			os.Stderr.WriteString(fmt.Sprintf("failed to upgrade CRDs, err=%s\n", err))
+		}
+		os.Exit(exitCode)
+	}
+
 	persistenceModelNone := "none"
 	persistenceModelDirectUnencrypted := "direct-unencrypted"
 	persistenceModelDirectEncrypted := "direct-encrypted"
@@ -83,6 +136,11 @@ func main() {
 	var preDeleteHookTimeoutSeconds int
 	var minRefreshAfterHVSA time.Duration
 	var globalTransformationOpts string
+	var backoffInitialInterval time.Duration
+	var backoffMaxInterval time.Duration
+	var backoffRandomizationFactor float64
+	var backoffMultiplier float64
+	var backoffMaxElapsedTime time.Duration
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -114,8 +172,30 @@ func main() {
 		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
 	flag.StringVar(&globalTransformationOpts, "global-transformation-options", "",
 		fmt.Sprintf("Set global secret transformation options as a comma delimited string. "+
-			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS."+
+			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS. "+
 			"Valid values are: %v", []string{"exclude-raw"}))
+	flag.DurationVar(&backoffInitialInterval, "backoff-initial-interval", time.Second*5,
+		"Initial interval between retries on secret source errors. "+
+			"All errors are tried using an exponential backoff strategy. "+
+			"Also set from environment variable VSO_BACKOFF_INITIAL_INTERVAL.")
+	flag.DurationVar(&backoffMaxInterval, "backoff-max-interval", time.Second*60,
+		"Maximum interval between retries on secret source errors. "+
+			"All errors are tried using an exponential backoff strategy. "+
+			"Also set from environment variable VSO_BACKOFF_MAX_INTERVAL.")
+	flag.DurationVar(&backoffMaxElapsedTime, "backoff-max-elapsed-time", 0,
+		"Maximum elapsed time before giving up on secret source errors. "+
+			"All errors are tried using an exponential backoff strategy. "+
+			"Also set from environment variable VSO_BACKOFF_MAX_ELAPSED_TIME.")
+	flag.Float64Var(&backoffRandomizationFactor, "backoff-randomization-factor",
+		backoff.DefaultRandomizationFactor,
+		"Sets the randomization factor to add jitter to the interval between retries on secret "+
+			"source errors. All errors are tried using an exponential backoff strategy. "+
+			"Also set from environment variable VSO_BACKOFF_RANDOMIZATION_FACTOR.")
+	flag.Float64Var(&backoffMultiplier, "backoff-multiplier",
+		backoff.DefaultMultiplier,
+		"Sets the multiplier for increasing the interval between retries on secret source errors. "+
+			"All errors are tried using an exponential backoff strategy. "+
+			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
 
 	opts := zap.Options{
 		Development: os.Getenv("VSO_LOGGER_DEVELOPMENT_MODE") != "",
@@ -145,7 +225,18 @@ func main() {
 	if vsoEnvOptions.GlobalTransformationOptions != "" {
 		globalTransformationOpts = vsoEnvOptions.GlobalTransformationOptions
 	}
-
+	if vsoEnvOptions.BackoffInitialInterval != 0 {
+		backoffInitialInterval = vsoEnvOptions.BackoffInitialInterval
+	}
+	if vsoEnvOptions.BackoffMaxInterval != 0 {
+		backoffMaxInterval = vsoEnvOptions.BackoffMaxInterval
+	}
+	if vsoEnvOptions.BackoffRandomizationFactor != 0 {
+		backoffRandomizationFactor = vsoEnvOptions.BackoffRandomizationFactor
+	}
+	if vsoEnvOptions.BackoffMultiplier != 0 {
+		backoffMultiplier = vsoEnvOptions.BackoffMultiplier
+	}
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
 	if printVersion {
@@ -177,6 +268,14 @@ func main() {
 		os.Exit(0)
 	}
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	backoffOpts := []backoff.ExponentialBackOffOpts{
+		backoff.WithInitialInterval(backoffInitialInterval),
+		backoff.WithMaxInterval(backoffMaxInterval),
+		backoff.WithRandomizationFactor(backoffRandomizationFactor),
+		backoff.WithMultiplier(backoffMultiplier),
+		backoff.WithMaxElapsedTime(backoffMaxElapsedTime),
+	}
 
 	globalTransOpt := &helpers.GlobalTransformationOption{}
 	if globalTransformationOpts != "" {
@@ -227,6 +326,28 @@ func main() {
 			metrics.NewBuildInfoGauge(versionInfo),
 		)
 		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
+
+		metric := prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: metrics.Namespace,
+				Subsystem: "runtime",
+				Name:      "config",
+				Help:      "Vault Secrets Operator runtime config.",
+				ConstLabels: map[string]string{
+					"backoffInitialInterval":      backoffInitialInterval.String(),
+					"backoffMaxInterval":          backoffMaxInterval.String(),
+					"backoffMaxElapsedTime":       backoffMaxElapsedTime.String(),
+					"backoffMultiplier":           fmt.Sprintf("%.2f", backoffMultiplier),
+					"backoffRandomizationFactor":  fmt.Sprintf("%.2f", backoffRandomizationFactor),
+					"clientCachePersistenceModel": clientCachePersistenceModel,
+					"clientCacheSize":             strconv.Itoa(cfc.ClientCacheSize),
+					"globalTransformationOptions": globalTransformationOpts,
+					"maxConcurrentReconciles":     strconv.Itoa(controllerOptions.MaxConcurrentReconciles),
+				},
+			},
+		)
+		metric.Set(1)
+		cfc.MetricsRegistry.MustRegister(metric)
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -290,6 +411,7 @@ func main() {
 		SecretDataBuilder:          secretDataBuilder,
 		HMACValidator:              hmacValidator,
 		ClientFactory:              clientFactory,
+		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
@@ -302,6 +424,7 @@ func main() {
 		HMACValidator:              hmacValidator,
 		SyncRegistry:               controllers.NewSyncRegistry(),
 		Recorder:                   mgr.GetEventRecorderFor("VaultPKISecret"),
+		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
@@ -344,6 +467,7 @@ func main() {
 		ClientFactory:              clientFactory,
 		HMACValidator:              hmacValidator,
 		SyncRegistry:               controllers.NewSyncRegistry(),
+		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOption: globalTransOpt,
 	}
 	if err = vdsReconciler.SetupWithManager(mgr, vdsOverrideOpts); err != nil {
@@ -370,6 +494,7 @@ func main() {
 		SecretDataBuilder:          secretDataBuilder,
 		HMACValidator:              hmacValidator,
 		MinRefreshAfter:            minRefreshAfterHVSA,
+		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOption: globalTransOpt,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
@@ -381,6 +506,13 @@ func main() {
 		Recorder: mgr.GetEventRecorderFor("SecretTransformation"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SecretTransformation")
+		os.Exit(1)
+	}
+	if err = (&controllers.VaultAuthGlobalReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VaultAuthGlobal")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
@@ -397,6 +529,11 @@ func main() {
 	setupLog.Info("Starting manager",
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
+		"backoffMultiplier", backoffMultiplier,
+		"backoffMaxInterval", backoffMaxInterval,
+		"backoffMaxElapsedTime", backoffMaxElapsedTime,
+		"backoffInitialInterval", backoffInitialInterval,
+		"backoffRandomizationFactor", backoffRandomizationFactor,
 	)
 
 	mgr.GetCache()

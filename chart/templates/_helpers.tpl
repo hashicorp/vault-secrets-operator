@@ -175,3 +175,113 @@ globalTransformationOptions configures the manager's --global-transformation-opt
 {{- $opts | join "," -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+backoffOnSecretSourceError provides the backoff options for the manager when a
+secret source error occurs.
+*/}}
+{{- define "vso.backoffOnSecretSourceError" -}}
+{{- $opts := list -}}
+{{- with .Values.controller.manager.backoffOnSecretSourceError -}}
+{{- with .initialInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxElapsedTime -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-elapsed-time=%s" .) -}}
+{{- end -}}
+{{- with .multiplier -}}
+{{- $opts = mustAppend $opts (printf "--backoff-multiplier=%.2f"  (. | float64)) -}}
+{{- end -}}
+{{- with .randomizationFactor -}}
+{{- $opts = mustAppend $opts (printf "--backoff-randomization-factor=%.2f" (. | float64)) -}}
+{{- end -}}
+{{- $opts | toYaml | nindent 8 -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+aggregateRoleMatchLabelsViewer generates the matchLabels for the viewer cluster roles.
+*/}}
+{{- define "vso.aggregateRoleMatchLabelsViewer" -}}
+{{- $ret := list }}
+{{- with .Values.controller.rbac.clusterRoleAggregation.viewerRoles -}}
+{{- if eq "*" (. | first) -}}
+{{- $labels := dict "vso.hashicorp.com/aggregate-to-viewer" "true" -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- else -}}
+{{- range . -}}
+{{- $labels := dict -}}
+{{- $_ := set $labels "vso.hashicorp.com/role-instance" (printf "%s-viewer-role" (. | lower) ) -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- end -}}
+{{- end -}}
+{{- $ret | toYaml -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+aggregateRoleMatchLabelsEditor generates the matchLabels for the editor cluster roles.
+*/}}
+{{- define "vso.aggregateRoleMatchLabelsEditor" -}}
+{{- $ret := list }}
+{{- with .Values.controller.rbac.clusterRoleAggregation.editorRoles -}}
+{{- if eq "*" (. | first) -}}
+{{- $labels := dict "vso.hashicorp.com/aggregate-to-editor" "true" -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- else -}}
+{{- range . -}}
+{{- $labels := dict -}}
+{{- $_ := set $labels "vso.hashicorp.com/role-instance" (printf "%s-editor-role" (. | lower) ) -}}
+{{- $ret = append $ret (dict "matchLabels" $labels) }}
+{{- end -}}
+{{- end -}}
+{{- $ret | toYaml -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+logging args
+*/}}
+{{- define "vso.controllerLoggingArgs" -}}
+{{- $extraArgs := dict -}}
+{{- with .Values.controller.manager.extraArgs -}}
+{{- range . -}}
+{{ $parts := splitList "=" . -}}
+{{ $arg := (($parts | first) | trimPrefix "-") }}
+{{- $_ := set $extraArgs ( $arg | trimPrefix "-")  . -}}
+{{- end -}}
+{{- end -}}
+{{- $ret := list -}}
+{{- with .Values.controller.manager.logging -}}
+{{- if $level := .level -}}
+{{ $arg := "zap-log-level" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- if eq $level "debug-extended" -}}
+{{- $level = "5" -}}
+{{- end -}}
+{{- if eq .level "trace" -}}
+{{- $level = "6" -}}
+{{- end -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg $level) -}}
+{{- end -}}
+{{- end -}}
+{{- if .timeEncoding -}}
+{{ $arg := "zap-time-encoding" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg .timeEncoding) -}}
+{{- end -}}
+{{- end -}}
+{{- if .stacktraceLevel -}}
+{{ $arg := "zap-stacktrace-level" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg .stacktraceLevel) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $ret -}}
+{{- $ret | toYaml | nindent 8 -}}
+{{- end -}}
+{{- end -}}

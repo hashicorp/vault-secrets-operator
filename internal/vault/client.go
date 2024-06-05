@@ -28,7 +28,7 @@ import (
 
 type ClientOptions struct {
 	SkipRenewal   bool
-	WatcherDoneCh chan<- Client
+	WatcherDoneCh chan<- *ClientCallbackHandlerRequest
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -106,6 +106,11 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, err
 	}
 
+	authObj, _, err = common.MergeInVaultAuthGlobal(ctx, client, authObj)
+	if err != nil {
+		return nil, err
+	}
+
 	connObj, err := common.FindVaultConnectionByUID(ctx, client, entry.VaultConnectionNamespace,
 		entry.VaultConnectionUID, entry.VaultConnectionGeneration)
 	if err != nil {
@@ -129,11 +134,10 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, fmt.Errorf("restored client's cacheKey %s does not match expected %s", cacheKey, entry.CacheKey)
 	}
 
-	if err := c.Validate(); err != nil {
-		return nil, err
-	}
+	c.Taint()
+	defer c.Untaint()
 
-	if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil)); err != nil {
+	if err := c.Validate(ctx); err != nil {
 		return nil, err
 	}
 
@@ -144,6 +148,7 @@ type ClientBase interface {
 	Read(context.Context, ReadRequest) (Response, error)
 	Write(context.Context, WriteRequest) (Response, error)
 	ID() string
+	Taint()
 }
 
 type Client interface {
@@ -153,7 +158,7 @@ type Client interface {
 	Restore(context.Context, *api.Secret) error
 	GetTokenSecret() *api.Secret
 	CheckExpiry(int64) (bool, error)
-	Validate() error
+	Validate(ctx context.Context) error
 	GetVaultAuthObj() *secretsv1beta1.VaultAuth
 	GetVaultConnectionObj() *secretsv1beta1.VaultConnection
 	GetCredentialProvider() provider.CredentialProviderBase
@@ -163,6 +168,8 @@ type Client interface {
 	IsClone() bool
 	Namespace() string
 	SetNamespace(string)
+	Tainted() bool
+	Untaint() bool
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -181,16 +188,43 @@ type defaultClient struct {
 	inClosing          bool
 	closed             bool
 	lastWatcherErr     error
-	watcherDoneCh      chan<- Client
+	watcherDoneCh      chan<- *ClientCallbackHandlerRequest
+	tainted            bool
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
 }
 
+// Untaint the client, marking it as untainted. This should be done after the
+// client has been validated. Returns true if the client was tainted.
+func (c *defaultClient) Untaint() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	tainted := c.tainted
+	c.tainted = false
+	return tainted
+}
+
+// Tainted returns true if the client is tainted. A tainted client should be
+// inspected before use.
+func (c *defaultClient) Tainted() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tainted
+}
+
+// Taint the client, marking it as tainted. This is useful for marking a client
+// as suspect. A deeper validation is required before using it.
+func (c *defaultClient) Taint() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tainted = true
+}
+
 // Validate the client, returning an error for any validation failures.
 // Typically, an invalid Client would be discarded and replaced with a new
 // instance.
-func (c *defaultClient) Validate() error {
+func (c *defaultClient) Validate(ctx context.Context) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -213,6 +247,16 @@ func (c *defaultClient) Validate() error {
 
 	if expired, err := c.checkExpiry(0); expired || err != nil {
 		return errors.New("client token expired")
+	}
+
+	if c.client == nil {
+		return errors.New("client not set")
+	}
+
+	if c.tainted {
+		if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil)); err != nil {
+			return fmt.Errorf("tainted client is invalid: %w", err)
+		}
 	}
 
 	return nil
@@ -462,7 +506,10 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 				if c.watcherDoneCh != nil {
 					if !c.inClosing {
 						logger.V(consts.LogLevelTrace).Info("Writing to watcherDone channel")
-						c.watcherDoneCh <- c
+						c.watcherDoneCh <- &ClientCallbackHandlerRequest{
+							Client: c,
+							On:     ClientCallbackOnLifetimeWatcherDone,
+						}
 					} else {
 						logger.V(consts.LogLevelTrace).Info("In closing, not writing to watcherDone channel")
 					}
@@ -729,12 +776,22 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 }
 
 func (c *defaultClient) observeTime(ts time.Time, operation string) {
+	if c.connObj == nil {
+		// should not happen on a properly initialized Client
+		return
+	}
+
 	clientOperationTimes.WithLabelValues(operation, ctrlclient.ObjectKeyFromObject(c.connObj).String()).Observe(
 		time.Since(ts).Seconds(),
 	)
 }
 
 func (c *defaultClient) incrementOperationCounter(operation string, err error) {
+	if c.connObj == nil {
+		// should not happen on a properly initialized Client
+		return
+	}
+
 	vaultConn := ctrlclient.ObjectKeyFromObject(c.connObj).String()
 	clientOperations.WithLabelValues(operation, vaultConn).Inc()
 	if err != nil {
@@ -758,6 +815,8 @@ type MockRecordingVaultClient struct {
 func (m *MockRecordingVaultClient) ID() string {
 	return m.Id
 }
+
+func (m *MockRecordingVaultClient) Taint() {}
 
 func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {
 	m.Requests = append(m.Requests, &MockRequest{

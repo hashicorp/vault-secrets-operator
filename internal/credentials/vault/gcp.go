@@ -39,6 +39,13 @@ func (l *GCPCredentialProvider) GetUID() types.UID {
 }
 
 func (l *GCPCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
+	if authObj.Spec.GCP == nil {
+		return fmt.Errorf("GCP auth method not configured")
+	}
+	if err := authObj.Spec.GCP.Validate(); err != nil {
+		return fmt.Errorf("invalid GCP auth configuration: %w", err)
+	}
+
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
