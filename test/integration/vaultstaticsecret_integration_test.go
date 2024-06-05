@@ -56,6 +56,12 @@ func TestVaultStaticSecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	// The events tests require Vault Enterprise >= 1.16.3, and since that
+	// changes the app policy required we need to set a flag in the test
+	// terraform
+	rootVaultClient := getVaultClient(t, "")
+	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
+
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
@@ -77,6 +83,9 @@ func TestVaultStaticSecret(t *testing.T) {
 	}
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
+		if atLeast_v1_16_3 {
+			tfOptions.Vars["use_events"] = true
+		}
 	}
 	tfOptions = setCommonTFOptions(t, tfOptions)
 
@@ -424,9 +433,6 @@ func TestVaultStaticSecret(t *testing.T) {
 			}
 		}
 	}
-
-	rootVaultClient := getVaultClient(t, "")
-	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

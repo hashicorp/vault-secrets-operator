@@ -71,3 +71,8 @@ variable "name_prefix" {
   type    = string
   default = "vss"
 }
+
+variable "use_events" {
+  type    = bool
+  default = false
+}

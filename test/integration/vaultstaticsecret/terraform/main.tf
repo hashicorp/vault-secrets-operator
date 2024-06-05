@@ -110,13 +110,28 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   bound_service_account_names      = ["default"]
   bound_service_account_namespaces = [kubernetes_namespace.app.metadata[0].name]
   token_ttl                        = 3600
-  token_policies                   = [vault_policy.default.name]
+  token_policies                   = var.use_events ? [vault_policy.default_with_events[0].name] : [vault_policy.default[0].name]
   audience                         = "vault"
 }
 
 resource "vault_policy" "default" {
-  name = local.app_policy
-  #name      = "dev"
+  count     = var.use_events ? 0 : 1
+  name      = local.app_policy
+  namespace = local.namespace
+  policy    = <<EOT
+path "${vault_mount.kvv2.path}/*" {
+  capabilities = ["read"]
+}
+
+path "${vault_mount.kv.path}/*" {
+  capabilities = ["read"]
+}
+EOT
+}
+
+resource "vault_policy" "default_with_events" {
+  count     = var.use_events ? 1 : 0
+  name      = local.app_policy
   namespace = local.namespace
   policy    = <<EOT
 path "${vault_mount.kvv2.path}/*" {
