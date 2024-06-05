@@ -183,7 +183,10 @@ func main() {
 			"All errors are tried using an exponential backoff strategy. "+
 			"Also set from environment variable VSO_BACKOFF_MAX_INTERVAL.")
 	flag.DurationVar(&backoffMaxElapsedTime, "backoff-max-elapsed-time", 0,
-		"Maximum elapsed time before giving up on secret source errors. "+
+		"Maximum elapsed time without a successful sync from the secret's source. "+
+			"It's important to note that setting this option to anything other than "+
+			"its default value of 0 will result in the secret sync no longer being retried after "+
+			"reaching the max elapsed time without a successful sync. This could "+
 			"All errors are tried using an exponential backoff strategy. "+
 			"Also set from environment variable VSO_BACKOFF_MAX_ELAPSED_TIME.")
 	flag.Float64Var(&backoffRandomizationFactor, "backoff-randomization-factor",
@@ -195,6 +198,7 @@ func main() {
 		backoff.DefaultMultiplier,
 		"Sets the multiplier for increasing the interval between retries on secret source errors. "+
 			"All errors are tried using an exponential backoff strategy. "+
+			"The value must be greater than zero. "+
 			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
 
 	opts := zap.Options{
@@ -268,6 +272,12 @@ func main() {
 		os.Exit(0)
 	}
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if backoffMultiplier <= 0 {
+		setupLog.Error(errors.New("invalid option"),
+			fmt.Sprintf("Invalid backoff multiplier %f, must be greater than 0", backoffMultiplier))
+		os.Exit(1)
+	}
 
 	backoffOpts := []backoff.ExponentialBackOffOpts{
 		backoff.WithInitialInterval(backoffInitialInterval),
