@@ -191,6 +191,25 @@ _Appears in:_
 
 
 
+#### MergeStrategy
+
+
+
+MergeStrategy provides the configuration for merging HTTP headers and
+parameters from the referring VaultAuth resource and its VaultAuthGlobal
+resource.
+
+
+
+_Appears in:_
+- [VaultAuthGlobalRef](#vaultauthglobalref)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `headers` _string_ | Headers configures the merge strategy for HTTP headers that are included in<br />all Vault requests. Choices are `union`, `replace`, or `none`.<br /><br />If `union` is set, the headers from the VaultAuthGlobal and VaultAuth<br />resources are merged. The headers from the VaultAuth always take precedence.<br /><br />If `replace` is set, the first set of non-empty headers taken in order from:<br />VaultAuth, VaultAuthGlobal auth method, VaultGlobal default headers.<br /><br />If `none` is set, the headers from the<br />VaultAuthGlobal resource are ignored and only the headers from the VaultAuth<br />resource are used. The default is `none`. |  | Enum: [union replace none] <br /> |
+| `params` _string_ | Params configures the merge strategy for HTTP parameters that are included in<br />all Vault requests. Choices are `union`, `replace`, or `none`.<br /><br />If `union` is set, the parameters from the VaultAuthGlobal and VaultAuth<br />resources are merged. The parameters from the VaultAuth always take<br />precedence.<br /><br />If `replace` is set, the first set of non-empty parameters taken in order from:<br />VaultAuth, VaultAuthGlobal auth method, VaultGlobal default parameters.<br /><br />If `none` is set, the parameters from the VaultAuthGlobal resource are ignored<br />and only the parameters from the VaultAuth resource are used. The default is<br />`none`. |  | Enum: [union replace none] <br /> |
+
+
 #### RolloutRestartTarget
 
 
@@ -675,6 +694,27 @@ VaultAuthGlobalList contains a list of VaultAuthGlobal
 | `items` _[VaultAuthGlobal](#vaultauthglobal) array_ |  |  |  |
 
 
+#### VaultAuthGlobalRef
+
+
+
+VaultAuthGlobalRef is a reference to a VaultAuthGlobal resource. A referring
+VaultAuth resource can use the VaultAuthGlobal resource to share common
+configuration across multiple VaultAuth resources. The VaultAuthGlobal
+resource is used to store global configuration for VaultAuth resources.
+
+
+
+_Appears in:_
+- [VaultAuthSpec](#vaultauthspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name of the VaultAuthGlobal resource. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
+| `namespace` _string_ | Namespace of the VaultAuthGlobal resource. If not provided, the namespace of<br />the referring VaultAuth resource is used. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
+| `mergeStrategy` _[MergeStrategy](#mergestrategy)_ | MergeStrategy configures the merge strategy for HTTP headers and parameters<br />that are included in all Vault authentication requests. |  |  |
+
+
 #### VaultAuthGlobalSpec
 
 
@@ -736,7 +776,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
-| `vaultAuthGlobalRef` _string_ | VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthGlobalRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultAuthGlobal CR. |  |  |
+| `vaultAuthGlobalRef` _[VaultAuthGlobalRef](#vaultauthglobalref)_ | VaultAuthGlobalRef. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
 | `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which VaultAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]{"*"} - wildcard, all namespaces.<br />[]{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this<br />is the default behavior. |  |  |
 | `method` _string_ | Method to use when authenticating to Vault. |  | Enum: [kubernetes jwt appRole aws gcp] <br /> |

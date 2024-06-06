@@ -35,7 +35,9 @@ resource "kubernetes_manifest" "vault-auth-default" {
       namespace = data.kubernetes_namespace.operator.metadata[0].name
     }
     spec = {
-      vaultAuthGlobalRef = kubernetes_manifest.vault-auth-global.manifest.metadata.name
+      vaultAuthGlobalRef = {
+        name = kubernetes_manifest.vault-auth-global.manifest.metadata.name
+      }
     }
   }
 

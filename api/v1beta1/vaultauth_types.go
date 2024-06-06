@@ -313,6 +313,58 @@ func (a *VaultAuthConfigGCP) Validate() error {
 	return errs
 }
 
+// VaultAuthGlobalRef is a reference to a VaultAuthGlobal resource. A referring
+// VaultAuth resource can use the VaultAuthGlobal resource to share common
+// configuration across multiple VaultAuth resources. The VaultAuthGlobal
+// resource is used to store global configuration for VaultAuth resources.
+type VaultAuthGlobalRef struct {
+	// Name of the VaultAuthGlobal resource.
+	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
+	Name string `json:"name"`
+	// Namespace of the VaultAuthGlobal resource. If not provided, the namespace of
+	// the referring VaultAuth resource is used.
+	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
+	Namespace string `json:"namespace,omitempty"`
+	// MergeStrategy configures the merge strategy for HTTP headers and parameters
+	// that are included in all Vault authentication requests.
+	MergeStrategy *MergeStrategy `json:"mergeStrategy,omitempty"`
+}
+
+// MergeStrategy provides the configuration for merging HTTP headers and
+// parameters from the referring VaultAuth resource and its VaultAuthGlobal
+// resource.
+type MergeStrategy struct {
+	// Headers configures the merge strategy for HTTP headers that are included in
+	// all Vault requests. Choices are `union`, `replace`, or `none`.
+	//
+	// If `union` is set, the headers from the VaultAuthGlobal and VaultAuth
+	// resources are merged. The headers from the VaultAuth always take precedence.
+	//
+	// If `replace` is set, the first set of non-empty headers taken in order from:
+	// VaultAuth, VaultAuthGlobal auth method, VaultGlobal default headers.
+	//
+	// If `none` is set, the headers from the
+	// VaultAuthGlobal resource are ignored and only the headers from the VaultAuth
+	// resource are used. The default is `none`.
+	// +kubebuilder:validation:Enum=union;replace;none
+	Headers string `json:"headers,omitempty"`
+	// Params configures the merge strategy for HTTP parameters that are included in
+	// all Vault requests. Choices are `union`, `replace`, or `none`.
+	//
+	// If `union` is set, the parameters from the VaultAuthGlobal and VaultAuth
+	// resources are merged. The parameters from the VaultAuth always take
+	// precedence.
+	//
+	// If `replace` is set, the first set of non-empty parameters taken in order from:
+	// VaultAuth, VaultAuthGlobal auth method, VaultGlobal default parameters.
+	//
+	// If `none` is set, the parameters from the VaultAuthGlobal resource are ignored
+	// and only the parameters from the VaultAuth resource are used. The default is
+	// `none`.
+	// +kubebuilder:validation:Enum=union;replace;none
+	Params string `json:"params,omitempty"`
+}
+
 // VaultAuthSpec defines the desired state of VaultAuth
 type VaultAuthSpec struct {
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
@@ -320,10 +372,8 @@ type VaultAuthSpec struct {
 	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
 	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
-	// VaultAuthGlobalRef to the VaultAuthGlobal resource, can be prefixed with a namespace,
-	// eg: `namespaceA/vaultAuthGlobalRefB`. If no namespace prefix is provided it will default to
-	// namespace of the VaultAuthGlobal CR.
-	VaultAuthGlobalRef string `json:"vaultAuthGlobalRef,omitempty"`
+	// VaultAuthGlobalRef.
+	VaultAuthGlobalRef *VaultAuthGlobalRef `json:"vaultAuthGlobalRef,omitempty"`
 	// Namespace to auth to in Vault
 	Namespace string `json:"namespace,omitempty"`
 	// AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.
