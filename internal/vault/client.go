@@ -106,6 +106,11 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, err
 	}
 
+	authObj, _, err = common.MergeInVaultAuthGlobal(ctx, client, authObj)
+	if err != nil {
+		return nil, err
+	}
+
 	connObj, err := common.FindVaultConnectionByUID(ctx, client, entry.VaultConnectionNamespace,
 		entry.VaultConnectionUID, entry.VaultConnectionGeneration)
 	if err != nil {

@@ -178,6 +178,32 @@ rules:
 - apiGroups:
     - secrets.hashicorp.com
   resources:
+    - vaultauthglobals
+  verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+- apiGroups:
+    - secrets.hashicorp.com
+  resources:
+    - vaultauthglobals/finalizers
+  verbs:
+    - update
+- apiGroups:
+    - secrets.hashicorp.com
+  resources:
+    - vaultauthglobals/status
+  verbs:
+    - get
+    - patch
+    - update
+- apiGroups:
+    - secrets.hashicorp.com
+  resources:
     - vaultauths
   verbs:
     - create
