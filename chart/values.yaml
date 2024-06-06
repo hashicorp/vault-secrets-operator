@@ -181,6 +181,15 @@ controller:
 
     # Backoff settings for the controller manager. These settings control the backoff behavior
     # when the controller encounters an error while fetching secrets from the SecretSource.
+    # For example given the following settings:
+    #   initialInterval: 5s
+    #   maxInterval: 60s
+    #   randomizationFactor: 0.5
+    #   multiplier: 1.5
+    #
+    # The backoff retry sequence might be something like:
+    #  5.5s, 7.5s, 11.25s, 16.87s, 25.3125s, 37.96s, 56.95, 60.95s...
+    # @type: object
     backoffOnSecretSourceError:
       # Initial interval between retries.
       # @type: duration
@@ -188,13 +197,21 @@ controller:
       # Maximum interval between retries.
       # @type: duration
       maxInterval: "60s"
-      # Maximum elapsed time before giving up.
+      # Maximum elapsed time without a successful sync from the secret's source.
+      # It's important to note that setting this option to anything other than
+      # its default will result in the secret sync no longer being retried after
+      # reaching the max elapsed time.
       # @type: duration
       maxElapsedTime: "0s"
-      # Randomization factor to add jitter to the interval between retries.
+      # Randomization factor randomizes the backoff interval between retries.
+      # This helps to spread out the retries to avoid a thundering herd.
+      # If the value is 0, then the backoff interval will not be randomized.
+      # It is recommended to set this to a value that is greater than 0.
       # @type: float
       randomizationFactor: 0.5
-      # Sets the multiplier for increasing the interval between retries.
+      # Sets the multiplier that is used to increase the backoff interval between retries.
+      # This value should always be set to a value greater than 0.
+      # The value must be greater than zero.
       # @type: float
       multiplier: 1.5
 
