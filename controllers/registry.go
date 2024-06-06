@@ -262,8 +262,11 @@ func (r *BackOffRegistry) Get(objKey client.ObjectKey) (*BackOff, bool) {
 
 	entry, ok := r.m[objKey]
 	if !ok {
+		bo := backoff.NewExponentialBackOff(r.opts...)
+		// call Reset() to ensure that the initial interval is honoured.
+		bo.Reset()
 		entry = &BackOff{
-			bo: backoff.NewExponentialBackOff(r.opts...),
+			bo: bo,
 		}
 		r.m[objKey] = entry
 	}
