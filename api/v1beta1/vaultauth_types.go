@@ -313,6 +313,10 @@ func (a *VaultAuthConfigGCP) Validate() error {
 	return errs
 }
 
+// VaultAuthGlobalRef is a reference to a VaultAuthGlobal resource. A referring
+// VaultAuth resource can use the VaultAuthGlobal resource to share common
+// configuration across multiple VaultAuth resources. The VaultAuthGlobal
+// resource is used to store global configuration for VaultAuth resources.
 type VaultAuthGlobalRef struct {
 	// Name of the VaultAuthGlobal resource.
 	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
@@ -326,6 +330,9 @@ type VaultAuthGlobalRef struct {
 	MergeStrategy *MergeStrategy `json:"mergeStrategy,omitempty"`
 }
 
+// MergeStrategy provides the configuration for merging HTTP headers and
+// parameters from the referring VaultAuth resource and its VaultAuthGlobal
+// resource.
 type MergeStrategy struct {
 	// Headers configures the merge strategy for HTTP headers that are included in
 	// all Vault requests. Choices are `union`, `replace`, or `none`.

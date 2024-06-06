@@ -195,7 +195,9 @@ _Appears in:_
 
 
 
-
+MergeStrategy provides the configuration for merging HTTP headers and
+parameters from the referring VaultAuth resource and its VaultAuthGlobal
+resource.
 
 
 
@@ -696,7 +698,10 @@ VaultAuthGlobalList contains a list of VaultAuthGlobal
 
 
 
-
+VaultAuthGlobalRef is a reference to a VaultAuthGlobal resource. A referring
+VaultAuth resource can use the VaultAuthGlobal resource to share common
+configuration across multiple VaultAuth resources. The VaultAuthGlobal
+resource is used to store global configuration for VaultAuth resources.
 
 
 
