@@ -101,6 +101,10 @@ load _helpers
       --set 'controller.manager.resources.requests.cpu=100m' \
       --set 'controller.manager.resources.limits.memory=200Mi' \
       --set 'controller.manager.resources.limits.cpu=200m' \
+      --set 'hooks.resources.requests.memory=256Mi' \
+      --set 'hooks.resources.requests.cpu=200m' \
+      --set 'hooks.resources.limits.memory=400Mi' \
+      --set 'hooks.resources.limits.cpu=400m' \
       . | tee /dev/stderr |
       yq '.' | tee /dev/stderr)
 
@@ -115,14 +119,15 @@ load _helpers
     [ "${actual}" = "200m" ]
    actual=$(echo "$controller" | yq '.limits.memory' | tee /dev/stderr)
     [ "${actual}" = "200Mi" ]
+
    actual=$(echo "$job" | yq '.requests.cpu' | tee /dev/stderr)
-    [ "${actual}" = "100m" ]
-   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
-    [ "${actual}" = "100Mi" ]
-   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
     [ "${actual}" = "200m" ]
+   actual=$(echo "$job" | yq '.requests.memory' | tee /dev/stderr)
+    [ "${actual}" = "256Mi" ]
+   actual=$(echo "$job" | yq '.limits.cpu' | tee /dev/stderr)
+    [ "${actual}" = "400m" ]
    actual=$(echo "$job" | yq '.limits.memory' | tee /dev/stderr)
-    [ "${actual}" = "200Mi" ]
+    [ "${actual}" = "400Mi" ]
 }
 
 #--------------------------------------------------------------------

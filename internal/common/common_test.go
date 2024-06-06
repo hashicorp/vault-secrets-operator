@@ -9,12 +9,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -23,6 +25,8 @@ import (
 )
 
 func Test_GetConnectionNamespacedName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name            string
 		a               *secretsv1beta1.VaultAuth
@@ -203,6 +207,8 @@ func Test_getAuthRefNamespacedName(t *testing.T) {
 }
 
 func Test_isAllowedNamespace(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name            string
 		a               *secretsv1beta1.VaultAuth
@@ -311,6 +317,8 @@ func Test_isAllowedNamespace(t *testing.T) {
 }
 
 func TestGetHCPAuthForObj(t *testing.T) {
+	t.Parallel()
+
 	scheme := runtime.NewScheme()
 	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 	clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
@@ -574,6 +582,8 @@ func TestGetHCPAuthForObj(t *testing.T) {
 }
 
 func TestNewSyncableSecretMetaData(t *testing.T) {
+	t.Parallel()
+
 	namespace := "qux"
 	name := "foo"
 	newTypeMeta := func(kind string) metav1.TypeMeta {
@@ -675,6 +685,418 @@ func TestNewSyncableSecretMetaData(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "NewSyncableSecretMetaData(%v)", tt.obj)
+		})
+	}
+}
+
+func newClientBuilder() *fake.ClientBuilder {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+	return fake.NewClientBuilder().WithScheme(scheme)
+}
+
+func Test_MergeInVaultAuthGlobal(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	builder := newClientBuilder()
+
+	gObj := &secretsv1beta1.VaultAuthGlobal{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "buz",
+			Namespace: "baz",
+		},
+		Spec: secretsv1beta1.VaultAuthGlobalSpec{
+			VaultConnectionRef: "default",
+			Kubernetes: &secretsv1beta1.VaultAuthGlobalConfigKubernetes{
+				Namespace: "biff",
+				Mount:     "qux",
+				VaultAuthConfigKubernetes: secretsv1beta1.VaultAuthConfigKubernetes{
+					Role:                   "beetle",
+					ServiceAccount:         "sa1",
+					TokenExpirationSeconds: 200,
+					TokenAudiences:         []string{"baz"},
+				},
+			},
+			AppRole: &secretsv1beta1.VaultAuthGlobalConfigAppRole{
+				Namespace: "biff",
+				Mount:     "qux",
+				VaultAuthConfigAppRole: secretsv1beta1.VaultAuthConfigAppRole{
+					RoleID:    "foo",
+					SecretRef: "bar",
+				},
+			},
+			JWT: &secretsv1beta1.VaultAuthGlobalConfigJWT{
+				Namespace: "biff",
+				Mount:     "qux",
+				VaultAuthConfigJWT: secretsv1beta1.VaultAuthConfigJWT{
+					Role:           "beetle",
+					ServiceAccount: "sa1",
+				},
+			},
+			AWS: &secretsv1beta1.VaultAuthGlobalConfigAWS{
+				Namespace: "biff",
+				Mount:     "qux",
+				VaultAuthConfigAWS: secretsv1beta1.VaultAuthConfigAWS{
+					Role:   "beetle",
+					Region: "us-east-1",
+				},
+			},
+			GCP: &secretsv1beta1.VaultAuthGlobalConfigGCP{
+				Namespace: "biff",
+				Mount:     "qux",
+				VaultAuthConfigGCP: secretsv1beta1.VaultAuthConfigGCP{
+					Role:                           "beetle",
+					Region:                         "us-west1",
+					WorkloadIdentityServiceAccount: "sa1",
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		c       client.Client
+		o       *secretsv1beta1.VaultAuth
+		gObj    *secretsv1beta1.VaultAuthGlobal
+		want    *secretsv1beta1.VaultAuth
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "set-kubernetes",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "buz",
+					Method:             "kubernetes",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
+					VaultAuthGlobalRef: "buz",
+					Method:             "kubernetes",
+					Namespace:          "biff",
+					Mount:              "qux",
+					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+						Role:                   "beetle",
+						ServiceAccount:         "sa1",
+						TokenExpirationSeconds: 200,
+						TokenAudiences:         []string{"baz"},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "override-kubernetes",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "other",
+					VaultAuthGlobalRef: "buz",
+					Method:             "kubernetes",
+					Mount:              "qux",
+					Namespace:          "biff",
+					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+						ServiceAccount: "sa1",
+						TokenAudiences: []string{"qux"},
+					},
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "other",
+					VaultAuthGlobalRef: "buz",
+					Method:             "kubernetes",
+					Namespace:          "biff",
+					Mount:              "qux",
+					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+						Role:                   "beetle",
+						ServiceAccount:         "sa1",
+						TokenExpirationSeconds: 200,
+						TokenAudiences:         []string{"qux"},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "set-jwt",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "buz",
+					Method:             "jwt",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
+					VaultAuthGlobalRef: "buz",
+					Method:             "jwt",
+					Namespace:          "biff",
+					Mount:              "qux",
+					JWT: &secretsv1beta1.VaultAuthConfigJWT{
+						Role:           "beetle",
+						ServiceAccount: "sa1",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "set-appRole",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "buz",
+					Method:             "appRole",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
+					VaultAuthGlobalRef: "buz",
+					Method:             "appRole",
+					Namespace:          "biff",
+					Mount:              "qux",
+					AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+						RoleID:    "foo",
+						SecretRef: "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "set-aws",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "buz",
+					Method:             "aws",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
+					VaultAuthGlobalRef: "buz",
+					Method:             "aws",
+					Namespace:          "biff",
+					Mount:              "qux",
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
+						Role:   "beetle",
+						Region: "us-east-1",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "set-gcp",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "buz",
+					Method:             "gcp",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultConnectionRef: "default",
+					VaultAuthGlobalRef: "buz",
+					Method:             "gcp",
+					Namespace:          "biff",
+					Mount:              "qux",
+					GCP: &secretsv1beta1.VaultAuthConfigGCP{
+						Role:                           "beetle",
+						Region:                         "us-west1",
+						WorkloadIdentityServiceAccount: "sa1",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "global-ref-not-set",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{},
+			},
+			want: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "foo",
+					Namespace:       "baz",
+					ResourceVersion: "1",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "invalid-method",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "buz",
+					Method:             "invalid",
+				},
+			},
+			gObj: gObj.DeepCopy(),
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err,
+					`unsupported auth method "invalid" for global auth merge`)
+			},
+		},
+		{
+			name: "invalid-global-ref",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "invalid",
+				},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if assert.ErrorContains(t, err, "failed getting baz/invalid, err=") {
+					return assert.True(t, errors.IsNotFound(err), i...)
+				}
+				return false
+			},
+		},
+		{
+			name: "invalid-nil-auth-config",
+			c:    builder.Build(),
+			gObj: &secretsv1beta1.VaultAuthGlobal{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "baz",
+					Name:      "buz",
+				},
+			},
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "baz",
+					Name:      "foo",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "buz",
+				},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err, "no auth method set in VaultAuth baz/foo")
+			},
+		},
+		{
+			name: "invalid-not-allowed-namespace",
+			c:    builder.Build(),
+			gObj: gObj.DeepCopy(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "other",
+					Name:      "foo",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					VaultAuthGlobalRef: "baz/buz",
+				},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if assert.ErrorContains(t, err,
+					`target namespace "other" is not allowed by kind=VaultAuthGlobal obj=baz/buz`,
+				) {
+					var wantErr *NamespaceNotAllowedError
+					return assert.ErrorAs(t, err, &wantErr)
+				}
+				return false
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.o != nil {
+				require.NoError(t, tt.c.Create(ctx, tt.o))
+			}
+			if tt.gObj != nil {
+				require.NoError(t, tt.c.Create(ctx, tt.gObj))
+			}
+
+			got, _, err := MergeInVaultAuthGlobal(ctx, tt.c, tt.o)
+			if !tt.wantErr(t, err, fmt.Sprintf("MergeInVaultAuthGlobal(%v, %v, %v)", ctx, tt.c, tt.o)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "MergeInVaultAuthGlobal(%v, %v, %v)", ctx, tt.c, tt.o)
 		})
 	}
 }

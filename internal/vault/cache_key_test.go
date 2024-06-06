@@ -14,6 +14,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 )
 
 const (
@@ -257,21 +258,21 @@ func TestClientCacheKey_IsClone(t *testing.T) {
 		{
 			name: "is-not-a-clone-no-suffix",
 			k: ClientCacheKey(fmt.Sprintf("%s-%s",
-				vault.ProviderMethodKubernetes,
+				consts.ProviderMethodKubernetes,
 				computedHash)),
 			want: false,
 		},
 		{
 			name: "is-not-a-clone-empty-suffix",
 			k: ClientCacheKey(fmt.Sprintf("%s-%s-",
-				vault.ProviderMethodKubernetes,
+				consts.ProviderMethodKubernetes,
 				computedHash)),
 			want: false,
 		},
 		{
 			name: "is-a-clone",
 			k: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
-				vault.ProviderMethodKubernetes,
+				consts.ProviderMethodKubernetes,
 				computedHash)),
 			want: true,
 		},
@@ -295,18 +296,18 @@ func TestClientCacheKeyClone(t *testing.T) {
 		{
 			name: "valid",
 			key: ClientCacheKey(fmt.Sprintf("%s-%s",
-				vault.ProviderMethodKubernetes,
+				consts.ProviderMethodKubernetes,
 				computedHash)),
 			namespace: "ns1/ns2",
 			want: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
-				vault.ProviderMethodKubernetes,
+				consts.ProviderMethodKubernetes,
 				computedHash)),
 			wantErr: assert.NoError,
 		},
 		{
 			name: "fail-empty-namespace",
 			key: ClientCacheKey(fmt.Sprintf("%s-%s",
-				vault.ProviderMethodKubernetes,
+				consts.ProviderMethodKubernetes,
 				computedHash)),
 			namespace: "",
 			want:      "",
@@ -317,7 +318,7 @@ func TestClientCacheKeyClone(t *testing.T) {
 		{
 			name: "fail-parent-is-clone",
 			key: ClientCacheKey(fmt.Sprintf("%s-%s-ns1/ns2",
-				vault.ProviderMethodKubernetes,
+				consts.ProviderMethodKubernetes,
 				computedHash)),
 			namespace: "ns3",
 			want:      "",

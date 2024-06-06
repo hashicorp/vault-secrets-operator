@@ -87,7 +87,9 @@ func (e *enqueueRefRequestsHandler) Generic(ctx context.Context,
 func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 	q workqueue.RateLimitingInterface, o client.Object,
 ) {
-	logger := log.FromContext(ctx).WithName("enqueueRefRequestsHandler")
+	logger := log.FromContext(ctx).WithName(
+		"enqueueRefRequestsHandler").
+		WithValues("refKind", e.kind)
 	reqs := map[reconcile.Request]empty{}
 	d := e.maxRequeueAfter
 	if d <= 0 {
@@ -96,6 +98,7 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 
 	referrers := e.refCache.Get(e.kind, client.ObjectKeyFromObject(o))
 	if len(referrers) == 0 {
+		logger.V(consts.LogLevelDebug).Info("No referrers")
 		return
 	}
 
@@ -117,7 +120,7 @@ func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
 		if _, ok := reqs[req]; !ok {
 			_, jitter := computeMaxJitterDuration(d)
 			logger.V(consts.LogLevelTrace).Info(
-				"Enqueuing", "obj", ref, "refKind", e.kind)
+				"Enqueuing", "obj", ref)
 			q.AddAfter(req, jitter)
 			reqs[req] = empty{}
 		}
