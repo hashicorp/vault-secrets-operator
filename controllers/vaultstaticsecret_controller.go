@@ -193,7 +193,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
-	if o.Spec.TBDInstantUpdateEventFlag {
+	if o.Spec.InstantUpdates {
 		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
 		// ensure event watcher is running
 		if err := r.ensureEventWatcher(ctx, o, c); err != nil {
@@ -260,12 +260,8 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 		}
 	}
 	if meta != nil {
-
-		logger.V(consts.LogLevelDebug).Info("vault client id's", "old", meta.LastClientID, "new", c.ID())
-		logger.V(consts.LogLevelDebug).Info("compare generations", "old", meta.LastGeneration, "new", o.GetGeneration())
-
 		// The watcher is running, but the metadata or vault client has changed,
-		// so close it
+		// so kill it
 		if meta.Cancel != nil {
 			meta.Cancel()
 			// Wait for the goroutine to stop and remove itself from the event registry
@@ -296,7 +292,7 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 }
 
 // unWatchEvents - If the VSS is in the registry, cancel its event watcher
-// context to close the goroutine and remove the VSS from the registry
+// context to close the goroutine, and remove the VSS from the registry
 func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStaticSecret) {
 	name := types.NamespacedName{Namespace: o.Namespace, Name: o.Name}
 	meta, ok := r.eventWatcherRegistry.Get(name)
@@ -401,7 +397,7 @@ eventLoop:
 	return nil
 }
 
-// eventMsg is used to extract the relevant field from an event message sent
+// eventMsg is used to extract the relevant fields from an event message sent
 // from Vault
 type eventMsg struct {
 	Data struct {
@@ -445,12 +441,13 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 				return fmt.Errorf("failed to unmarshal event message: %w", err)
 			}
 			logger.V(consts.LogLevelTrace).Info("Received message", "message type", msgType, "message", messageMap)
-			namespace := strings.Trim(messageMap.Data.Namespace, "/")
-			path := messageMap.Data.Event.Metadata.Path
 			modified := messageMap.Data.Event.Metadata.Modified
 
 			if modified == "true" {
+				namespace := strings.Trim(messageMap.Data.Namespace, "/")
+				path := messageMap.Data.Event.Metadata.Path
 				specPath := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+
 				if o.Spec.Type == consts.KVSecretTypeV2 {
 					specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
 				}

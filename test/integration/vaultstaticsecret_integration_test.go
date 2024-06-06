@@ -341,7 +341,7 @@ func TestVaultStaticSecret(t *testing.T) {
 			existing: func() []*secretsv1beta1.VaultStaticSecret {
 				vss := getExisting()
 				for _, v := range vss {
-					v.Spec.TBDInstantUpdateEventFlag = true
+					v.Spec.InstantUpdates = true
 					v.Spec.RefreshAfter = "1h"
 				}
 				return vss
@@ -504,7 +504,7 @@ func TestVaultStaticSecret(t *testing.T) {
 							vssObj.Spec.Version = tt.version
 						}
 						if tt.useEvents {
-							vssObj.Spec.TBDInstantUpdateEventFlag = true
+							vssObj.Spec.InstantUpdates = true
 							vssObj.Spec.RefreshAfter = "1h"
 						}
 

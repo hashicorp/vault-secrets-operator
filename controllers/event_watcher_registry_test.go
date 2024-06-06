@@ -43,18 +43,30 @@ func TestEventWatcherRegistry(t *testing.T) {
 	assert.Equal(t, int64(123), got.LastGeneration)
 	assert.Equal(t, "client-id", got.LastClientID)
 
+	// Update something
+	got.LastGeneration = 456
+	registry.Register(itemName, got)
+
+	// Get again
+	gotAgain, ok := registry.Get(itemName)
+	require.True(t, ok, "expected to get event watcher again, got none")
+	require.NotNil(t, gotAgain, "expected to get event watcher again, got nil")
+
+	assert.Equal(t, int64(456), gotAgain.LastGeneration)
+	assert.Equal(t, "client-id", gotAgain.LastClientID)
+
 	// Cancel context received from the registry, check the original
-	got.Cancel()
+	gotAgain.Cancel()
 	assert.Equal(t, ctx.Err(), context.Canceled)
 
-	_, isOpen := <-got.StoppedCh
+	_, isOpen := <-gotAgain.StoppedCh
 	assert.False(t, isOpen, "expected stoppedCh from registry item to be closed")
 
 	// Delete the event watcher
 	registry.Delete(itemName)
 
 	// Get the event watcher
-	got, ok = registry.Get(itemName)
+	gotFinally, ok := registry.Get(itemName)
 	assert.False(t, ok, "expected to not get event watcher, got one")
-	assert.Nil(t, got, "expected nil event watcher")
+	assert.Nil(t, gotFinally, "expected nil event watcher")
 }

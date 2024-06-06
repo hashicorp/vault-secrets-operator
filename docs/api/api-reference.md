@@ -876,7 +876,7 @@ _Appears in:_
 | `hmacSecretData` _boolean_ | HMACSecretData determines whether the Operator computes the<br />HMAC of the Secret's data. The MAC value will be stored in<br />the resource's Status.SecretMac field, and will be used for drift detection<br />and during incoming Vault secret comparison.<br />Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault. | true |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets wil be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
-| `tbdInstantUpdateEventFlag` _boolean_ | TBDInstantUpdateEventFlag is a flag to indicate that event-driven updates<br />are enabled for this VaultStaticSecret |  |  |
+| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this VaultStaticSecret |  |  |
 
 
 
