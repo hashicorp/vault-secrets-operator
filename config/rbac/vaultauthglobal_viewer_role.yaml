@@ -1,0 +1,30 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+# permissions for end users to view vaultauthglobals.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: vaultauthglobal-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: vault-secrets-operator
+    app.kubernetes.io/part-of: vault-secrets-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: vaultauthglobal-viewer-role
+rules:
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultauthglobals
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - secrets.hashicorp.com
+  resources:
+  - vaultauthglobals/status
+  verbs:
+  - get

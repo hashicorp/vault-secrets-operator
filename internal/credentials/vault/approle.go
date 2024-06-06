@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
@@ -32,6 +33,13 @@ func (l *AppRoleCredentialProvider) GetUID() types.UID {
 }
 
 func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
+	if authObj.Spec.AppRole == nil {
+		return fmt.Errorf("AppRole auth method not configured")
+	}
+	if err := authObj.Spec.AppRole.Validate(); err != nil {
+		return fmt.Errorf("invalid AppRole auth configuration: %w", err)
+	}
+
 	logger := log.FromContext(ctx)
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
@@ -64,13 +72,13 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 		logger.Error(err, "Failed to get secret", "secret_name", l.authObj.Spec.AppRole.SecretRef)
 		return nil, err
 	}
-	if secretID, ok := secret.Data[ProviderSecretKeyAppRole]; !ok {
-		err = fmt.Errorf("no key %q found in secret", ProviderSecretKeyAppRole)
+	if secretID, ok := secret.Data[consts.ProviderSecretKeyAppRole]; !ok {
+		err = fmt.Errorf("no key %q found in secret", consts.ProviderSecretKeyAppRole)
 		logger.Error(err, "Failed to get secretID from secret", "secret_name",
 			l.authObj.Spec.AppRole.SecretRef)
 		return nil, err
 	} else if len(secretID) == 0 {
-		err = fmt.Errorf("no data found in secret key %q", ProviderSecretKeyAppRole)
+		err = fmt.Errorf("no data found in secret key %q", consts.ProviderSecretKeyAppRole)
 		logger.Error(err, "Failed to get secretID from secret", "secret_name",
 			l.authObj.Spec.AppRole.SecretRef)
 		return nil, err

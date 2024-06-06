@@ -35,16 +35,7 @@ resource "kubernetes_manifest" "vault-auth-default" {
       namespace = data.kubernetes_namespace.operator.metadata[0].name
     }
     spec = {
-      method    = "kubernetes"
-      namespace = vault_auth_backend.default.namespace
-      mount     = vault_auth_backend.default.path
-      kubernetes = {
-        role           = vault_kubernetes_auth_backend_role.default.role_name
-        serviceAccount = "default"
-        audiences = [
-          "vault",
-        ]
-      }
+      vaultAuthGlobalRef = kubernetes_manifest.vault-auth-global.manifest.metadata.name
     }
   }
 

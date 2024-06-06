@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
@@ -34,6 +35,14 @@ func (l *JWTCredentialProvider) GetUID() types.UID {
 }
 
 func (l *JWTCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
+	if authObj.Spec.JWT == nil {
+		return fmt.Errorf("kubernetes auth method not configured")
+	}
+
+	if err := authObj.Spec.JWT.Validate(); err != nil {
+		return fmt.Errorf("invalid JWT auth configuration: %w", err)
+	}
+
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
@@ -106,13 +115,13 @@ func (l *JWTCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	if err != nil {
 		return nil, err
 	}
-	if jwtData, ok := l.tokenSecret.Data[ProviderSecretKeyJWT]; !ok {
-		err = fmt.Errorf("no key %q found in secret", ProviderSecretKeyJWT)
+	if jwtData, ok := l.tokenSecret.Data[consts.ProviderSecretKeyJWT]; !ok {
+		err = fmt.Errorf("no key %q found in secret", consts.ProviderSecretKeyJWT)
 		logger.Error(err, "Failed to get jwt token from secret", "secret_name",
 			l.authObj.Spec.JWT.SecretRef)
 		return nil, err
 	} else if len(jwtData) == 0 {
-		err = fmt.Errorf("no data found in secret key %q", ProviderSecretKeyJWT)
+		err = fmt.Errorf("no data found in secret key %q", consts.ProviderSecretKeyJWT)
 		logger.Error(err, "Failed to get jwt token from secret", "secret_name",
 			l.authObj.Spec.JWT.SecretRef)
 		return nil, err

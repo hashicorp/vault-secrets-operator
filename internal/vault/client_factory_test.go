@@ -139,7 +139,7 @@ func Test_cachingClientFactory_clientLocks(t *testing.T) {
 			// is acquired.
 			holdLockDuration := 2 * time.Millisecond
 			// ctxTimeout is the total time to wait for all lockers to acquire the lock once.
-			ctxTimeout := time.Duration(tt.tryLockCount) * (holdLockDuration * 2)
+			ctxTimeout := time.Duration(tt.tryLockCount) * (holdLockDuration * 10)
 			ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 			go func() {
 				defer cancel()
@@ -171,6 +171,132 @@ func Test_cachingClientFactory_clientLocks(t *testing.T) {
 
 			assert.NoError(t, ctx.Err(),
 				"context timeout waiting for all lockers")
+		})
+	}
+}
+
+func Test_cachingClientFactory_callClientCallbacks(t *testing.T) {
+	ctx := context.Background()
+	type callbackResult struct {
+		called bool
+		done   bool
+	}
+	tests := []struct {
+		name       string
+		c          Client
+		onMask     ClientCallbackOn
+		cbOn       ClientCallbackOn
+		cbFn       func(t *testing.T) (ClientCallback, *callbackResult)
+		wait       bool
+		wantCalled bool
+	}{
+		{
+			name:   "single-on-lifetime-watcher-done",
+			c:      &defaultClient{},
+			onMask: ClientCallbackOnLifetimeWatcherDone,
+			cbOn:   ClientCallbackOnLifetimeWatcherDone,
+			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
+				result := &callbackResult{}
+				return func(ctx context.Context, c Client) {
+					result.called = true
+					result.done = true
+				}, result
+			},
+			wantCalled: true,
+		},
+		{
+			name:   "single-on-cache-removal",
+			c:      &defaultClient{},
+			onMask: ClientCallbackOnCacheRemoval,
+			cbOn:   ClientCallbackOnCacheRemoval,
+			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
+				result := &callbackResult{}
+				return func(ctx context.Context, c Client) {
+					result.called = true
+					result.done = true
+				}, result
+			},
+			wantCalled: true,
+		},
+		{
+			name:   "multi-on-lifetime-watcher-done",
+			c:      &defaultClient{},
+			onMask: ClientCallbackOnCacheRemoval | ClientCallbackOnLifetimeWatcherDone,
+			cbOn:   ClientCallbackOnLifetimeWatcherDone,
+			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
+				result := &callbackResult{}
+				return func(ctx context.Context, c Client) {
+					result.called = true
+					result.done = true
+				}, result
+			},
+			wantCalled: true,
+		},
+		{
+			name:   "multi-on-cache-removal",
+			c:      &defaultClient{},
+			onMask: ClientCallbackOnCacheRemoval | ClientCallbackOnLifetimeWatcherDone,
+			cbOn:   ClientCallbackOnCacheRemoval,
+			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
+				result := &callbackResult{}
+				return func(ctx context.Context, c Client) {
+					result.called = true
+					result.done = true
+				}, result
+			},
+			wantCalled: true,
+		},
+		{
+			name:   "single-not-called",
+			c:      &defaultClient{},
+			onMask: ClientCallbackOnLifetimeWatcherDone,
+			cbOn:   ClientCallbackOnCacheRemoval,
+			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
+				result := &callbackResult{}
+				return func(ctx context.Context, c Client) {
+					// should not be called
+				}, result
+			},
+			wait:       true,
+			wantCalled: false,
+		},
+		{
+			name:   "single-not-called-unknown",
+			c:      &defaultClient{},
+			onMask: ClientCallbackOn(uint32(1024)),
+			cbOn:   ClientCallbackOnCacheRemoval,
+			cbFn: func(t *testing.T) (ClientCallback, *callbackResult) {
+				result := &callbackResult{}
+				return func(ctx context.Context, c Client) {
+					// should not be called
+				}, result
+			},
+			wait:       true,
+			wantCalled: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &cachingClientFactory{}
+			cbFn, result := tt.cbFn(t)
+			cb := ClientCallbackHandler{
+				On:       tt.cbOn,
+				Callback: cbFn,
+			}
+
+			m.RegisterClientCallbackHandler(cb)
+			m.callClientCallbacks(ctx, tt.c, tt.onMask, tt.wait)
+			if tt.wait {
+				assert.Equal(t, tt.wantCalled, result.called)
+			} else {
+				assert.Eventually(t, func() bool {
+					if result.done {
+						assert.Equal(t, tt.wantCalled, result.called)
+						return true
+					}
+					return false
+				}, time.Second*1, time.Millisecond*100)
+			}
 		})
 	}
 }

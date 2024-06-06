@@ -250,9 +250,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Lease renewal duration was truncated from %ds to %ds, "+
 						"requesting new credentials", e.Expected, e.Actual)
-			} else if !isLeaseNotfoundError(err) {
+			} else if !vault.IsLeaseNotFoundError(err) {
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewalError,
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
+			} else if vault.IsForbiddenError(err) {
+				logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
+				vClient.Taint()
 			}
 			syncReason = consts.ReasonSecretLeaseRenewalError
 		}
@@ -274,6 +277,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
 		r.SyncRegistry.Add(req.NamespacedName)
+		if vault.IsForbiddenError(err) {
+			logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
+			vClient.Taint()
+		}
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		horizon := entry.NextBackOff()
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
@@ -597,7 +604,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 
 	r.ClientFactory.RegisterClientCallbackHandler(
 		vault.ClientCallbackHandler{
-			On:       vault.ClientCallbackOnLifetimeWatcherDone,
+			On:       vault.ClientCallbackOnLifetimeWatcherDone | vault.ClientCallbackOnCacheRemoval,
 			Callback: r.vaultClientCallback,
 		},
 	)
@@ -631,16 +638,6 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	}
 
 	return nil
-}
-
-func isLeaseNotfoundError(err error) bool {
-	var respErr *api.ResponseError
-	if errors.As(err, &respErr) && respErr != nil {
-		if respErr.StatusCode == http.StatusBadRequest {
-			return len(respErr.Errors) == 1 && respErr.Errors[0] == "lease not found"
-		}
-	}
-	return false
 }
 
 // handleDeletion will handle the deletion path of the VDS secret:

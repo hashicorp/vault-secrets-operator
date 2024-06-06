@@ -47,6 +47,13 @@ func (l *AWSCredentialProvider) GetUID() types.UID {
 }
 
 func (l *AWSCredentialProvider) Init(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, providerNamespace string) error {
+	if authObj.Spec.AWS == nil {
+		return fmt.Errorf("AWS auth method not configured")
+	}
+	if err := authObj.Spec.AWS.Validate(); err != nil {
+		return fmt.Errorf("invalid AWS auth configuration: %w", err)
+	}
+
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
