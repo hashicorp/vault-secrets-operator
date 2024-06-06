@@ -181,7 +181,9 @@ resource "kubernetes_manifest" "tenant-vault-auth-sa-uid" {
       }
     }
     spec = {
-      vaultAuthGlobalRef = kubernetes_manifest.tenant-vault-auth-global.manifest.metadata.name
+      vaultAuthGlobalRef = {
+        name = kubernetes_manifest.tenant-vault-auth-global.manifest.metadata.name
+      }
       kubernetes = {
         role = vault_kubernetes_auth_backend_role.tenant-sa-uid.role_name
       }
@@ -206,7 +208,9 @@ resource "kubernetes_manifest" "tenant-vault-auth-sa-name" {
       }
     }
     spec = {
-      vaultAuthGlobalRef = kubernetes_manifest.tenant-vault-auth-global.manifest.metadata.name
+      vaultAuthGlobalRef = {
+        name = kubernetes_manifest.tenant-vault-auth-global.manifest.metadata.name
+      }
       kubernetes = {
         role = vault_kubernetes_auth_backend_role.tenant-sa-name.role_name
       }

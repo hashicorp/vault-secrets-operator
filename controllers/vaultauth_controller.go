@@ -77,8 +77,8 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	var errs error
 
 	var conditions []metav1.Condition
-	if o.Spec.VaultAuthGlobalRef != "" {
-		globalRef, err := common.ParseResourceRef(o.Spec.VaultAuthGlobalRef, o.GetNamespace())
+	if o.Spec.VaultAuthGlobalRef != nil {
+		globalRef, err := common.VaultAuthGlobalResourceRef(o)
 		r.referenceCache.Set(
 			VaultAuthGlobal, req.NamespacedName,
 			globalRef)
