@@ -79,3 +79,8 @@ variable "operator_image_repo" {
 variable "operator_image_tag" {
   default = "0.0.0-dev"
 }
+
+variable "with_static_role_scheduled" {
+  type    = bool
+  default = true
+}

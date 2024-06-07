@@ -20,6 +20,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,21 @@ type dynamicK8SOutputs struct {
 	TransitPath    string `json:"transit_path"`
 	TransitKeyName string `json:"transit_key_name"`
 	TransitRef     string `json:"transit_ref"`
+}
+
+// updated in init()
+var withStaticRoleScheduled = true
+
+func init() {
+	vaultImageTag := os.Getenv("VAULT_IMAGE_TAG")
+	if vaultImageTag != "" {
+		vaultVersion, err := version.NewSemver(vaultImageTag)
+		if err == nil {
+			if vaultVersion.LessThan(version.Must(version.NewVersion("1.15.0"))) {
+				withStaticRoleScheduled = false
+			}
+		}
+	}
 }
 
 func TestVaultDynamicSecret(t *testing.T) {
@@ -99,6 +115,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 15,
+			"with_static_role_scheduled": withStaticRoleScheduled,
 		},
 	}
 	if entTests {
@@ -182,7 +199,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		create(o)
 	}
 
-	tests := []struct {
+	type testCase struct {
 		name                    string
 		withArgoRollout         bool
 		expected                map[string]int
@@ -193,7 +210,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 		createStaticScheduled   int
 		createNonRenewable      int
 		existing                int
-	}{
+	}
+
+	tests := []testCase{
 		{
 			name:     "existing-only",
 			existing: 5,
@@ -244,21 +263,26 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:                  "create-static-scheduled",
-			createStaticScheduled: 5,
-			expectedStaticScheduled: map[string]int{
-				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
-				// assertDynamicSecret, so no need to include them here.
-				"password":          20,
-				"username":          len(outputs.DBRoleStaticUserScheduled),
-				"rotation_schedule": 11,
-				"rotation_window":   4,
-			},
-		},
-		{
 			name:               "create-non-renewable",
 			createNonRenewable: 5,
 		},
+	}
+
+	if withStaticRoleScheduled {
+		tests = append(tests,
+			testCase{
+				name:                  "create-static-scheduled",
+				createStaticScheduled: 5,
+				expectedStaticScheduled: map[string]int{
+					// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
+					// assertDynamicSecret, so no need to include them here.
+					"password":          20,
+					"username":          len(outputs.DBRoleStaticUserScheduled),
+					"rotation_schedule": 11,
+					"rotation_window":   4,
+				},
+			},
+		)
 	}
 
 	for _, tt := range tests {
@@ -650,6 +674,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			"vault_token_period": 15,
 			// set a high default lease ttl to avoid renewals during the test
 			"vault_db_default_lease_ttl": 600,
+			"with_static_role_scheduled": withStaticRoleScheduled,
 		},
 	}
 	if entTests {

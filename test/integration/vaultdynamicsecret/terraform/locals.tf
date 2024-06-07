@@ -23,4 +23,13 @@ locals {
   db_role_static_scheduled      = "${local.db_role_static}-scheduled"
   db_role_static_user_scheduled = "${local.db_role_static}-user-scheduled"
   k8s_secret_role               = "k8s-secret"
+
+  dev_token_policies = concat(
+    [
+      vault_policy.revocation.name,
+      vault_policy.db.name,
+      vault_policy.k8s_secrets.name,
+    ],
+    vault_policy.db-scheduled[*].name,
+  )
 }

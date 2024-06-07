@@ -64,6 +64,7 @@ EOT
 }
 
 resource "null_resource" "create-pg-user-scheduled" {
+  count = var.with_static_role_scheduled ? 1 : 0
   triggers = {
     namespace = data.kubernetes_pod.postgres.metadata[0].namespace
     pod       = data.kubernetes_pod.postgres.metadata[0].name
@@ -101,6 +102,7 @@ resource "vault_database_secrets_mount" "db" {
     allowed_roles = [
       local.db_role,
       local.db_role_static,
+      # optionally created since vault 1.14 does not support scheduled static roles.
       local.db_role_static_scheduled,
     ]
   }
@@ -131,6 +133,7 @@ resource "vault_database_secret_backend_static_role" "postgres" {
 }
 
 resource "vault_database_secret_backend_static_role" "postgres-scheduled" {
+  count               = var.with_static_role_scheduled ? 1 : 0
   namespace           = local.namespace
   backend             = vault_database_secrets_mount.db.path
   name                = local.db_role_static_scheduled
@@ -153,7 +156,15 @@ path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_back
 path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
   capabilities = ["read"]
 }
-path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres-scheduled.name}" {
+EOT
+}
+
+resource "vault_policy" "db-scheduled" {
+  count     = var.with_static_role_scheduled ? 1 : 0
+  namespace = local.namespace
+  name      = "${local.auth_policy}-db-scheduled"
+  policy    = <<EOT
+path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres-scheduled[0].name}" {
   capabilities = ["read"]
 }
 EOT
