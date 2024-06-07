@@ -113,7 +113,6 @@ jobs:
     needs:
       - get-product-version
       - build-pre-checks
-      - unit-tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -416,6 +415,7 @@ jobs:
       - build-docker-ubi
       - build-docker-ubi-redhat
       - chart-upgrade-tests
+      - unit-tests
       - latest-vault
       - latest-k8s
     steps:
