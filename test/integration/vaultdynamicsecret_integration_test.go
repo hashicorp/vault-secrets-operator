@@ -1061,7 +1061,13 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 				}
 				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
 			} else {
-				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.TTL * 5)
+				ttl := vdsObj.Status.StaticCredsMetaData.TTL
+				if ttl <= 2 {
+					// inflate the ttl since we are near the rotation period and may hit the TTL
+					// rollover bug
+					ttl = 10
+				}
+				maxTries = uint64(ttl * 5)
 			}
 			if !assert.NotEmpty(t, vdsObj.Status.SecretMAC,
 				"expected Status.SecretMAC to be set") {
