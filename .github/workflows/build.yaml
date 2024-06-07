@@ -410,7 +410,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           log-prefix: "latest-k8s-"
 
-  # This job is used as a requirement for the repo's branch protection setup.
   build-done:
     runs-on: ubuntu-latest
     if: always()
@@ -424,9 +423,19 @@ jobs:
       - latest-vault
       - latest-k8s
     steps:
-    - name: passed
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
-      run: exit 0
     - name: failed
       if: ${{ contains(needs.*.result, 'failure') }}
       run: exit 1
+    - name: passed
+      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      run: exit 0
+
+  # This job is used as a requirement for the repo's branch protection setup.
+  build-not-cancelled:
+    runs-on: ubuntu-latest
+    if: cancelled()
+    needs:
+      - build-done
+    steps:
+      - name: cancelled
+        run: exit 1
