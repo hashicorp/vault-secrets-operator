@@ -424,6 +424,9 @@ jobs:
       - latest-vault
       - latest-k8s
     steps:
+    - name: cancelled
+      if: ${{ (contains(needs.*.result, 'cancelled')) }}
+      run: exit 2
     - name: passed
       if: ${{ !(contains(needs.*.result, 'failure')) }}
       run: exit 0
