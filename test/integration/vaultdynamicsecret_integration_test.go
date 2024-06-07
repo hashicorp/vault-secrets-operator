@@ -20,6 +20,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,19 +35,21 @@ import (
 )
 
 type dynamicK8SOutputs struct {
-	NamePrefix              string `json:"name_prefix"`
-	Namespace               string `json:"namespace"`
-	K8sNamespace            string `json:"k8s_namespace"`
-	K8sConfigContext        string `json:"k8s_config_context"`
-	AuthMount               string `json:"auth_mount"`
-	AuthPolicy              string `json:"auth_policy"`
-	AuthRole                string `json:"auth_role"`
-	DBRole                  string `json:"db_role"`
-	DBRoleStatic            string `json:"db_role_static"`
-	DefaultLeaseTTLSeconds  int    `json:"default_lease_ttl_seconds"`
-	DBRoleStaticUser        string `json:"db_role_static_user"`
-	StaticRotationPeriod    int    `json:"static_rotation_period"`
-	NonRenewableK8STokenTTL int    `json:"non_renewable_k8s_token_ttl"`
+	NamePrefix                string `json:"name_prefix"`
+	Namespace                 string `json:"namespace"`
+	K8sNamespace              string `json:"k8s_namespace"`
+	K8sConfigContext          string `json:"k8s_config_context"`
+	AuthMount                 string `json:"auth_mount"`
+	AuthPolicy                string `json:"auth_policy"`
+	AuthRole                  string `json:"auth_role"`
+	DBRole                    string `json:"db_role"`
+	DBRoleStatic              string `json:"db_role_static"`
+	DBRoleStaticUser          string `json:"db_role_static_user"`
+	StaticRotationPeriod      int    `json:"static_rotation_period"`
+	DBRoleStaticScheduled     string `json:"db_role_static_scheduled"`
+	DBRoleStaticUserScheduled string `json:"db_role_static_user_scheduled"`
+	DefaultLeaseTTLSeconds    int    `json:"default_lease_ttl_seconds"`
+	NonRenewableK8STokenTTL   int    `json:"non_renewable_k8s_token_ttl"`
 	// should always be non-renewable
 	K8SSecretPath  string `json:"k8s_secret_path"`
 	K8SSecretRole  string `json:"k8s_secret_role"`
@@ -54,6 +57,21 @@ type dynamicK8SOutputs struct {
 	TransitPath    string `json:"transit_path"`
 	TransitKeyName string `json:"transit_key_name"`
 	TransitRef     string `json:"transit_ref"`
+}
+
+// updated in init()
+var withStaticRoleScheduled = true
+
+func init() {
+	vaultImageTag := os.Getenv("VAULT_IMAGE_TAG")
+	if vaultImageTag != "" {
+		vaultVersion, err := version.NewSemver(vaultImageTag)
+		if err == nil {
+			if vaultVersion.LessThan(version.Must(version.NewVersion("1.15.0"))) {
+				withStaticRoleScheduled = false
+			}
+		}
+	}
 }
 
 func TestVaultDynamicSecret(t *testing.T) {
@@ -97,6 +115,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 15,
+			"with_static_role_scheduled": withStaticRoleScheduled,
 		},
 	}
 	if entTests {
@@ -180,16 +199,20 @@ func TestVaultDynamicSecret(t *testing.T) {
 		create(o)
 	}
 
-	tests := []struct {
-		name               string
-		withArgoRollout    bool
-		expected           map[string]int
-		expectedStatic     map[string]int
-		create             int
-		createStatic       int
-		createNonRenewable int
-		existing           int
-	}{
+	type testCase struct {
+		name                    string
+		withArgoRollout         bool
+		expected                map[string]int
+		expectedStatic          map[string]int
+		expectedStaticScheduled map[string]int
+		create                  int
+		createStatic            int
+		createStaticScheduled   int
+		createNonRenewable      int
+		existing                int
+	}
+
+	tests := []testCase{
 		{
 			name:     "existing-only",
 			existing: 5,
@@ -243,6 +266,23 @@ func TestVaultDynamicSecret(t *testing.T) {
 			name:               "create-non-renewable",
 			createNonRenewable: 5,
 		},
+	}
+
+	if withStaticRoleScheduled {
+		tests = append(tests,
+			testCase{
+				name:                  "create-static-scheduled",
+				createStaticScheduled: 5,
+				expectedStaticScheduled: map[string]int{
+					// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
+					// assertDynamicSecret, so no need to include them here.
+					"password":          20,
+					"username":          len(outputs.DBRoleStaticUserScheduled),
+					"rotation_schedule": 11,
+					"rotation_window":   4,
+				},
+			},
+		)
 	}
 
 	for _, tt := range tests {
@@ -395,6 +435,30 @@ func TestVaultDynamicSecret(t *testing.T) {
 				objsCreated = append(objsCreated, vdsObj)
 			}
 
+			for idx := 0; idx < tt.createStaticScheduled; idx++ {
+				dest := fmt.Sprintf("%s-create-static-creds-scheduled-%d", tt.name, idx)
+				vdsObj := &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: v1.ObjectMeta{
+						Namespace: outputs.K8sNamespace,
+						Name:      dest,
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Namespace:        outputs.Namespace,
+						Mount:            outputs.DBPath,
+						Path:             "static-creds/" + outputs.DBRoleStaticScheduled,
+						AllowStaticCreds: true,
+						Revoke:           false,
+						Destination: secretsv1beta1.Destination{
+							Name:   dest,
+							Create: true,
+						},
+					},
+				}
+
+				assert.NoError(t, crdClient.Create(ctx, vdsObj))
+				objsCreated = append(objsCreated, vdsObj)
+			}
+
 			for idx := 0; idx < tt.createNonRenewable; idx++ {
 				dest := fmt.Sprintf("%s-create-nr-creds-%d", tt.name, idx)
 				vdsObj := &secretsv1beta1.VaultDynamicSecret{
@@ -435,7 +499,11 @@ func TestVaultDynamicSecret(t *testing.T) {
 				var expectedPresentOnly []string
 				if obj.Spec.AllowStaticCreds {
 					nameFmt = "static-" + nameFmt
-					expected = tt.expectedStatic
+					if len(tt.expectedStatic) > 0 {
+						expected = tt.expectedStatic
+					} else if len(tt.expectedStaticScheduled) > 0 {
+						expected = tt.expectedStaticScheduled
+					}
 					expectedPresentOnly = append(expectedPresentOnly,
 						helpers.SecretDataKeyRaw,
 						"last_vault_rotation",
@@ -606,6 +674,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			"vault_token_period": 15,
 			// set a high default lease ttl to avoid renewals during the test
 			"vault_db_default_lease_ttl": 600,
+			"with_static_role_scheduled": withStaticRoleScheduled,
 		},
 	}
 	if entTests {
@@ -985,13 +1054,25 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 		if !vdsObj.Spec.AllowStaticCreds {
 			maxTries = uint64(vdsObj.Status.SecretLease.LeaseDuration * 10)
 		} else {
-			if !assert.Greater(t, vdsObj.Status.StaticCredsMetaData.RotationPeriod, int64(0)) {
+			if vdsObj.Status.StaticCredsMetaData.RotationSchedule == "" {
+				if !assert.Greater(t, vdsObj.Status.StaticCredsMetaData.RotationPeriod, int64(0),
+					"expected Status.StaticCredsMetaData.RotationPeriod to be set") {
+					return nil
+				}
+				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
+			} else {
+				ttl := vdsObj.Status.StaticCredsMetaData.TTL
+				if ttl <= 2 {
+					// inflate the ttl since we are near the rotation period and may hit the TTL
+					// rollover bug
+					ttl = 10
+				}
+				maxTries = uint64(ttl * 5)
+			}
+			if !assert.NotEmpty(t, vdsObj.Status.SecretMAC,
+				"expected Status.SecretMAC to be set") {
 				return nil
 			}
-			if !assert.NotEmpty(t, vdsObj.Status.SecretMAC) {
-				return nil
-			}
-			maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
 		}
 	}
 
