@@ -26,6 +26,26 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
+type ClientStat struct {
+	// createTime is the time the client was created.
+	createTime time.Time
+	mu         sync.RWMutex
+}
+
+// Age returns the duration since the client was created.
+func (m *ClientStat) Age() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return time.Since(m.createTime)
+}
+
+// Reset the client's creation time to the current time.
+func (m *ClientStat) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.createTime = time.Now()
+}
+
 type ClientOptions struct {
 	SkipRenewal   bool
 	WatcherDoneCh chan<- *ClientCallbackHandlerRequest
@@ -170,6 +190,7 @@ type Client interface {
 	SetNamespace(string)
 	Tainted() bool
 	Untaint() bool
+	Stat() *ClientStat
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -193,6 +214,11 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
+	clientStat         *ClientStat
+}
+
+func (c *defaultClient) Stat() *ClientStat {
+	return c.clientStat
 }
 
 // Untaint the client, marking it as untainted. This should be done after the
@@ -771,6 +797,9 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.authObj = authObj
 	c.connObj = connObj
 	c.watcherDoneCh = opts.WatcherDoneCh
+
+	c.clientStat = &ClientStat{}
+	c.clientStat.Reset()
 
 	return nil
 }

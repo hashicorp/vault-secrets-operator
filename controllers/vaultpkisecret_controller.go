@@ -175,6 +175,10 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
+	clientCacheKey, _ := c.GetCacheKey()
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = c.ID()
+
 	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
 	if err != nil {
 		if vault.IsForbiddenError(err) {

@@ -66,6 +66,9 @@ type VaultStaticSecretStatus struct {
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.
 	SecretMAC string `json:"secretMAC,omitempty"`
+	// VaultClientMeta contains the status of the Vault client and is used during
+	// resource reconciliation.
+	VaultClientMeta VaultClientMeta `json:"vaultClientMeta,omitempty"`
 }
 
 //+kubebuilder:object:root=true

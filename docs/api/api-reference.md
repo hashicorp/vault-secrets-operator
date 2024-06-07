@@ -804,6 +804,8 @@ sync the secret. This status is used during resource reconciliation.
 
 _Appears in:_
 - [VaultDynamicSecretStatus](#vaultdynamicsecretstatus)
+- [VaultPKISecretStatus](#vaultpkisecretstatus)
+- [VaultStaticSecretStatus](#vaultstaticsecretstatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |

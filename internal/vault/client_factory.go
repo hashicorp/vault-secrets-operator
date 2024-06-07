@@ -40,6 +40,8 @@ const (
 	ClientCallbackOnCacheRemoval
 )
 
+var defaultPruneOrphanAge = 5 * time.Minute
+
 func (o ClientCallbackOn) String() string {
 	switch o {
 	case ClientCallbackOnLifetimeWatcherDone:
@@ -139,7 +141,8 @@ type cachingClientFactory struct {
 	// encClientLock is a lock for the encryption client. It is used to ensure that
 	// only one encryption client is created. This is necessary because the
 	// encryption client is not stored in the cache.
-	encClientLock sync.RWMutex
+	encClientLock      sync.RWMutex
+	orphanPrunerCancel context.CancelFunc
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -148,6 +151,7 @@ func (m *cachingClientFactory) Start(ctx context.Context) {
 	defer m.mu.Unlock()
 	m.onceDoWatcher.Do(func() {
 		m.startClientCallbackHandler(ctx)
+		m.startOrphanClientPruner(ctx)
 	})
 }
 
@@ -245,9 +249,13 @@ func (m *cachingClientFactory) pruneStorage(ctx context.Context, client ctrlclie
 // onClientEvict should be called whenever an eviction from the ClientCache occurs.
 // It should always call Client.Close() to prevent leaking Go routines.
 func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlclient.Client, cacheKey ClientCacheKey, c Client) {
-	logger := m.logger.WithValues("cacheKey", cacheKey)
+	logger := m.logger.WithName("onClientEvict").WithValues("cacheKey", cacheKey)
 	logger.Info("Handling client cache eviction")
 	c.Close(m.revokeOnEvict)
+
+	if m.clientCacheKeyEncrypt == cacheKey {
+		m.clientCacheKeyEncrypt = ""
+	}
 
 	if m.storageEnabled() && m.pruneStorageOnEvict {
 		if count, err := m.pruneStorage(ctx, client, cacheKey); err != nil {
@@ -689,15 +697,15 @@ func (m *cachingClientFactory) incrementRequestCounter(operation string, err err
 }
 
 func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
+	logger := log.FromContext(ctx).WithName("clientCallbackHandler")
 	if m.callbackHandlerCancel != nil {
-		m.logger.Info("Already started")
+		logger.Info("Already started")
 		return
 	}
 
 	callbackCtx, cancel := context.WithCancel(ctx)
 	m.callbackHandlerCancel = cancel
 
-	logger := log.FromContext(ctx).WithName("clientCallbackHandler")
 	logger.Info("Starting client callback handler")
 
 	go func() {
@@ -793,18 +801,142 @@ func (m *cachingClientFactory) callClientCallbacks(ctx context.Context, c Client
 	}
 }
 
+// startOrphanClientPruner starts a go routine that will periodically prune
+// orphaned clients from the cache. An orphaned client is a client that is not
+// associated with any of secretsv1beta1.VaultStaticSecret,
+// secretsv1beta1.VaultPKISecret, secretsv1beta1.VaultDynamicSecret.
+func (m *cachingClientFactory) startOrphanClientPruner(ctx context.Context) {
+	logger := log.FromContext(ctx).WithName("orphanClientPruner")
+	if m.orphanPrunerCancel != nil {
+		logger.Info("Already started")
+	}
+
+	ctx_, cancel := context.WithCancel(ctx)
+	m.orphanPrunerCancel = cancel
+	// TODO: make period a command line option
+	ticker := time.NewTicker(30 * time.Second)
+	go func() {
+		defer func() {
+			m.orphanPrunerCancel = nil
+		}()
+		for {
+			select {
+			case <-ctx_.Done():
+				logger.Info("Done")
+				return
+			case <-ticker.C:
+				if count, err := m.pruneOrphanClients(ctx); err != nil {
+					logger.Error(err, "Prune orphan Vault Clients")
+				} else {
+					logger.Info("Prune orphan Vault Clients", "count", count)
+				}
+			}
+		}
+	}()
+}
+
+// pruneOrphanClients will remove all clients from the cache that are not
+// associated with any of the following custom resources:
+// secretsv1beta1.VaultStaticSecret, secretsv1beta1.VaultPKISecret,
+// secretsv1beta1.VaultDynamicSecret.
+func (m *cachingClientFactory) pruneOrphanClients(ctx context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	logger := m.logger.WithName("pruneOrphanClients")
+
+	currentClientCacheKeys := map[ClientCacheKey]empty{}
+	addCurrentClientCacheKeys := func(meta secretsv1beta1.VaultClientMeta) {
+		if meta.CacheKey != "" {
+			key := ClientCacheKey(meta.CacheKey)
+			currentClientCacheKeys[key] = empty{}
+		}
+	}
+
+	var vssList secretsv1beta1.VaultStaticSecretList
+	err := m.ctrlClient.List(ctx, &vssList)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, o := range vssList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+
+	var vpsList secretsv1beta1.VaultPKISecretList
+	err = m.ctrlClient.List(ctx, &vpsList)
+	if err != nil {
+		return 0, err
+	}
+	for _, o := range vpsList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+
+	var vdsList secretsv1beta1.VaultDynamicSecretList
+	err = m.ctrlClient.List(ctx, &vdsList)
+	if err != nil {
+		return 0, err
+	}
+	for _, o := range vdsList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+
+	var toPrune []ClientCacheKey
+	for _, c := range m.cache.Values() {
+		key, err := c.GetCacheKey()
+		if err != nil {
+			continue
+		}
+
+		if _, ok := currentClientCacheKeys[key]; !ok {
+			if key == m.clientCacheKeyEncrypt {
+				continue
+			}
+			stat := c.Stat()
+			if stat == nil {
+				continue
+			}
+			// prune clients that have not been created in the last 5 minutes, this gives
+			// time for any referring resource to update their
+			// .status.vaultClientMeta.cacheKey
+			if stat.Age() >= defaultPruneOrphanAge {
+				toPrune = append(toPrune, key)
+			}
+		}
+	}
+
+	// TODO: ensure that this does not block forever...
+	var count int
+	wg := sync.WaitGroup{}
+	wg.Add(len(toPrune))
+	for _, key := range toPrune {
+		count++
+		go func() {
+			defer wg.Done()
+			m.cache.Remove(key)
+			m.removeClientLock(key)
+		}()
+	}
+	wg.Wait()
+
+	logger.V(consts.LogLevelDebug).Info(
+		"Pruned orphaned clients", "count", count, "pruned", toPrune)
+	return count, nil
+}
+
 // NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
 // The ClientCache's onEvictCallback is registered with the factory's onClientEvict(),
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
 	factory := &cachingClientFactory{
-		storage:            cacheStorage,
-		recorder:           config.Recorder,
-		persist:            config.Persist,
-		ctrlClient:         client,
-		callbackHandlerCh:  make(chan *ClientCallbackHandlerRequest),
-		encryptionRequired: config.StorageConfig.EnforceEncryption,
-		clientLocks:        make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
+		storage:             cacheStorage,
+		recorder:            config.Recorder,
+		persist:             config.Persist,
+		ctrlClient:          client,
+		pruneStorageOnEvict: true,
+		callbackHandlerCh:   make(chan *ClientCallbackHandlerRequest),
+		encryptionRequired:  config.StorageConfig.EnforceEncryption,
+		clientLocks:         make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -932,3 +1064,5 @@ type nullEventRecorder struct {
 }
 
 func (n *nullEventRecorder) Event(_ runtime.Object, _, _, _ string) {}
+
+type empty struct{}

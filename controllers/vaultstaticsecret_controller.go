@@ -79,6 +79,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
+	clientCacheKey, _ := c.GetCacheKey()
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = c.ID()
+
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
 		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
