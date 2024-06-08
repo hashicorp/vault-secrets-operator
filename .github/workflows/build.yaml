@@ -41,6 +41,11 @@ jobs:
         uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
         with:
           go-version-file: .go-version
+      - name: go mod download all
+        run: |
+          # download all dependencies to warm up the module cache
+          # make sure to run go mod tidy after this since the go.sum file will be updated
+          go mod download all
       - name: go mod tidy
         run: |
           go mod tidy
@@ -113,7 +118,6 @@ jobs:
     needs:
       - get-product-version
       - build-pre-checks
-      - unit-tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -416,9 +420,13 @@ jobs:
       - build-docker-ubi
       - build-docker-ubi-redhat
       - chart-upgrade-tests
+      - unit-tests
       - latest-vault
       - latest-k8s
     steps:
+    - name: cancelled
+      if: ${{ (contains(needs.*.result, 'cancelled')) }}
+      run: exit 2
     - name: passed
       if: ${{ !(contains(needs.*.result, 'failure')) }}
       run: exit 0
