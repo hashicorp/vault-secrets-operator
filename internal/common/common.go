@@ -681,7 +681,8 @@ type SyncableSecretMetaData struct {
 	Namespace string
 	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
 	Destination *secretsv1beta1.Destination
-	AuthRef     string
+	// AuthRef of the syncable-secret object. Maps to obj.Spec.VaultAuthRef.
+	AuthRef string
 }
 
 // NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
@@ -720,4 +721,18 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 	}
 
 	return meta, nil
+}
+
+// GetVaultClientMeta returns the VaultClientMeta for the supported object types.
+func GetVaultClientMeta(obj client.Object) (*secretsv1beta1.VaultClientMeta, error) {
+	switch t := obj.(type) {
+	case *secretsv1beta1.VaultDynamicSecret:
+		return t.Status.VaultClientMeta.DeepCopy(), nil
+	case *secretsv1beta1.VaultStaticSecret:
+		return t.Status.VaultClientMeta.DeepCopy(), nil
+	case *secretsv1beta1.VaultPKISecret:
+		return t.Status.VaultClientMeta.DeepCopy(), nil
+	default:
+		return nil, fmt.Errorf("unsupported type %T", t)
+	}
 }

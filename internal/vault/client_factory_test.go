@@ -332,7 +332,7 @@ func Test_cachingClientFactory_pruneOrphanClients(t *testing.T) {
 		for _, k := range keyTests {
 			c.cache.Add(k.key, &stubClient{
 				cacheKey: k.key,
-				clientStat: &ClientStat{
+				clientStat: &clientStat{
 					createTime: time.Now().Add(k.creationTimeOffset),
 				},
 			})
@@ -540,7 +540,7 @@ type stubClient struct {
 	cacheKey           ClientCacheKey
 	credentialProvider provider.CredentialProviderBase
 	isClone            bool
-	clientStat         *ClientStat
+	clientStat         *clientStat
 }
 
 func (c *stubClient) GetCacheKey() (ClientCacheKey, error) {
@@ -551,6 +551,6 @@ func (c *stubClient) IsClone() bool {
 	return c.isClone
 }
 
-func (c *stubClient) Stat() *ClientStat {
+func (c *stubClient) Stat() *clientStat {
 	return c.clientStat
 }

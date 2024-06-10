@@ -26,24 +26,63 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
-type ClientStat struct {
+type ClientStat interface {
+	Age() time.Duration
+	Reset()
+	RefCount() int
+	IncRefCount()
+	DecRefCount()
+}
+
+var _ ClientStat = (*clientStat)(nil)
+
+type clientStat struct {
 	// createTime is the time the client was created.
 	createTime time.Time
-	mu         sync.RWMutex
+	// refCount is the number of references to the client.
+	refCount int
+	mu       sync.RWMutex
 }
 
 // Age returns the duration since the client was created.
-func (m *ClientStat) Age() time.Duration {
+func (m *clientStat) Age() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return time.Since(m.createTime)
 }
 
 // Reset the client's creation time to the current time.
-func (m *ClientStat) Reset() {
+func (m *clientStat) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.createTime = time.Now()
+	m.refCount = 0
+}
+
+// IncRefCount increments the client's reference count. This is useful for
+// tracking the number of references to a client.
+func (m *clientStat) IncRefCount() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.refCount++
+}
+
+// DecRefCount decrements the client's reference count. This is useful for
+// tracking the number of references to a client.
+func (m *clientStat) DecRefCount() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.refCount > 0 {
+		m.refCount--
+	}
+}
+
+// RefCount returns the client's reference count. This is useful for tracking the
+// number of references to a client.
+func (m *clientStat) RefCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.refCount
 }
 
 type ClientOptions struct {
@@ -190,7 +229,7 @@ type Client interface {
 	SetNamespace(string)
 	Tainted() bool
 	Untaint() bool
-	Stat() *ClientStat
+	Stat() *clientStat
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -214,10 +253,10 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
-	clientStat         *ClientStat
+	clientStat         *clientStat
 }
 
-func (c *defaultClient) Stat() *ClientStat {
+func (c *defaultClient) Stat() *clientStat {
 	return c.clientStat
 }
 
@@ -798,7 +837,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.connObj = connObj
 	c.watcherDoneCh = opts.WatcherDoneCh
 
-	c.clientStat = &ClientStat{}
+	c.clientStat = &clientStat{}
 	c.clientStat.Reset()
 
 	return nil

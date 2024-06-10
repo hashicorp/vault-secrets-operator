@@ -335,6 +335,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
 	logger.V(consts.LogLevelTrace).Info("In deletion")
+	r.ClientFactory.UnregisterObjectRef(o.GetUID())
 	if finalizerSet {
 		logger.V(consts.LogLevelDebug).Info("Delete finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultPKIFinalizer) {

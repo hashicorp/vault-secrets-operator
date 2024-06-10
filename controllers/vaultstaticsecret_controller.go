@@ -209,6 +209,7 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	r.BackOffRegistry.Delete(objKey)
+	r.ClientFactory.UnregisterObjectRef(o.GetUID())
 	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer) {

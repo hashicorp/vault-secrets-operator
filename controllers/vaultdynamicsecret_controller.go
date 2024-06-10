@@ -651,6 +651,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.SyncRegistry.Delete(objKey)
 	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
+	r.ClientFactory.UnregisterObjectRef(o.GetUID())
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {
