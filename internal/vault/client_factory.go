@@ -40,7 +40,9 @@ const (
 	ClientCallbackOnCacheRemoval
 )
 
-var defaultPruneOrphanAge = 5 * time.Minute
+// defaultPruneOrphanAge is the default age at which orphaned clients are
+// eligible for pruning.
+var defaultPruneOrphanAge = 2 * time.Minute
 
 func (o ClientCallbackOn) String() string {
 	switch o {
@@ -249,8 +251,8 @@ func (m *cachingClientFactory) pruneStorage(ctx context.Context, client ctrlclie
 // onClientEvict should be called whenever an eviction from the ClientCache occurs.
 // It should always call Client.Close() to prevent leaking Go routines.
 func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlclient.Client, cacheKey ClientCacheKey, c Client) {
-	logger := m.logger.WithName("onClientEvict").WithValues("cacheKey", cacheKey)
-	logger.Info("Handling client cache eviction")
+	logger := log.FromContext(ctx).WithName("onClientEvict").WithValues("cacheKey", cacheKey)
+	logger.V(consts.LogLevelDebug).Info("Handling client cache eviction")
 	c.Close(m.revokeOnEvict)
 
 	if m.clientCacheKeyEncrypt == cacheKey {
@@ -261,7 +263,7 @@ func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlcli
 		if count, err := m.pruneStorage(ctx, client, cacheKey); err != nil {
 			logger.Error(err, "Failed to remove Client from storage")
 		} else {
-			logger.Info("Pruned storage", "count", count)
+			logger.V(consts.LogLevelDebug).Info("Pruned storage", "count", count)
 		}
 	}
 
@@ -845,40 +847,9 @@ func (m *cachingClientFactory) pruneOrphanClients(ctx context.Context) (int, err
 
 	logger := m.logger.WithName("pruneOrphanClients")
 
-	currentClientCacheKeys := map[ClientCacheKey]empty{}
-	addCurrentClientCacheKeys := func(meta secretsv1beta1.VaultClientMeta) {
-		if meta.CacheKey != "" {
-			key := ClientCacheKey(meta.CacheKey)
-			currentClientCacheKeys[key] = empty{}
-		}
-	}
-
-	var vssList secretsv1beta1.VaultStaticSecretList
-	err := m.ctrlClient.List(ctx, &vssList)
+	currentClientCacheKeys, err := GetGlobalVaultCacheKeys(ctx, m.ctrlClient)
 	if err != nil {
 		return 0, err
-	}
-
-	for _, o := range vssList.Items {
-		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
-	}
-
-	var vpsList secretsv1beta1.VaultPKISecretList
-	err = m.ctrlClient.List(ctx, &vpsList)
-	if err != nil {
-		return 0, err
-	}
-	for _, o := range vpsList.Items {
-		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
-	}
-
-	var vdsList secretsv1beta1.VaultDynamicSecretList
-	err = m.ctrlClient.List(ctx, &vdsList)
-	if err != nil {
-		return 0, err
-	}
-	for _, o := range vdsList.Items {
-		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
 	}
 
 	var toPrune []ClientCacheKey
@@ -1065,4 +1036,43 @@ type nullEventRecorder struct {
 
 func (n *nullEventRecorder) Event(_ runtime.Object, _, _, _ string) {}
 
-type empty struct{}
+// GetGlobalVaultCacheKeys returns the current set of vault.ClientCacheKey(s) that are in
+// use.
+func GetGlobalVaultCacheKeys(ctx context.Context, client ctrlclient.Client) (map[ClientCacheKey]int, error) {
+	currentClientCacheKeys := map[ClientCacheKey]int{}
+	addCurrentClientCacheKeys := func(meta secretsv1beta1.VaultClientMeta) {
+		if meta.CacheKey != "" {
+			key := ClientCacheKey(meta.CacheKey)
+			currentClientCacheKeys[key] = currentClientCacheKeys[key] + 1
+		}
+	}
+
+	var vssList secretsv1beta1.VaultStaticSecretList
+	err := client.List(ctx, &vssList)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, o := range vssList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+	var vpsList secretsv1beta1.VaultPKISecretList
+	err = client.List(ctx, &vpsList)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range vpsList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+
+	var vdsList secretsv1beta1.VaultDynamicSecretList
+	err = client.List(ctx, &vdsList)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range vdsList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+
+	return currentClientCacheKeys, nil
+}
