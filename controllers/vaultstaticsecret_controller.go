@@ -76,7 +76,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault auth login: %s", err)
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	var requeueAfter time.Duration
@@ -86,7 +86,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			logger.Error(err, "Field validation failed")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
 				"Field validation failed, err=%s", err)
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 		requeueAfter = computeHorizonWithJitter(d)
 	}
@@ -105,7 +105,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	kvReq, err := newKVRequest(o.Spec)
 	if err != nil {
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	resp, err := c.Read(ctx, kvReq)
@@ -144,7 +144,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
 		if err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 
 		// skip the next sync if the data has not changed since the last sync, and the
@@ -164,7 +164,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 				"Failed to update k8s secret: %s", err)
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 		reason := consts.ReasonSecretSynced
 		if doRolloutRestart {
