@@ -28,7 +28,7 @@ import (
 
 type ClientStat interface {
 	Age() time.Duration
-	CreatedAt() time.Time
+	CreationTimestamp() time.Time
 	Reset()
 	RefCount() int
 	IncRefCount()
@@ -38,32 +38,32 @@ type ClientStat interface {
 var _ ClientStat = (*clientStat)(nil)
 
 type clientStat struct {
-	// createdAt is the time the client was created.
-	createdAt time.Time
+	// creationTimestamp is the time the client was created.
+	creationTimestamp time.Time
 	// refCount is the number of references to the client.
 	refCount int
 	mu       sync.RWMutex
 }
 
-// CreatedAt returns the time the client was created.
-func (m *clientStat) CreatedAt() time.Time {
+// CreationTimestamp returns the time the client was created.
+func (m *clientStat) CreationTimestamp() time.Time {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.createdAt
+	return m.creationTimestamp
 }
 
 // Age returns the duration since the client was created.
 func (m *clientStat) Age() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return time.Since(m.createdAt)
+	return time.Since(m.creationTimestamp)
 }
 
 // Reset the client's creation time to the current time.
 func (m *clientStat) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.createdAt = time.Now()
+	m.creationTimestamp = time.Now()
 	m.refCount = 0
 }
 

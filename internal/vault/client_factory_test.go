@@ -333,7 +333,7 @@ func Test_cachingClientFactory_pruneOrphanClients(t *testing.T) {
 			c.cache.Add(k.key, &stubClient{
 				cacheKey: k.key,
 				clientStat: &clientStat{
-					createdAt: time.Now().Add(k.creationTimeOffset),
+					creationTimestamp: time.Now().Add(k.creationTimeOffset),
 				},
 			})
 		}

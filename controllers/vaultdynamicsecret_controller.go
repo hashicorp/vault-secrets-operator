@@ -150,7 +150,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// update the VaultClientMeta in the resource's status.
 	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
 	o.Status.VaultClientMeta.ID = c.ID()
-	o.Status.VaultClientMeta.CreatedAt = metav1.NewTime(c.Stat().CreatedAt())
+	o.Status.VaultClientMeta.CreationTimestamp = metav1.NewTime(c.Stat().CreationTimestamp())
 
 	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,

@@ -124,6 +124,6 @@ type VaultClientMeta struct {
 	// ID is the Vault ID of the authenticated client. The ID should never contain
 	// any sensitive information.
 	ID string `json:"id,omitempty"`
-	// CreatedAt is the time the client was created.
-	CreatedAt metav1.Time `json:"createdAt,omitempty"`
+	// CreationTimestamp is the time the client was created.
+	CreationTimestamp metav1.Time `json:"creationTimestamp,omitempty"`
 }

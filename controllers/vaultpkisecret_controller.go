@@ -178,7 +178,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	clientCacheKey, _ := c.GetCacheKey()
 	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
 	o.Status.VaultClientMeta.ID = c.ID()
-	o.Status.VaultClientMeta.CreatedAt = metav1.NewTime(c.Stat().CreatedAt())
+	o.Status.VaultClientMeta.CreationTimestamp = metav1.NewTime(c.Stat().CreationTimestamp())
 
 	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
 	if err != nil {

@@ -434,7 +434,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 				decrementReason = "cacheKeyChange"
 				incrementReason = "cacheKeyChange"
 			default:
-				if c, ok := m.cache.Get(cacheKey); ok && c.Stat().CreatedAt().Unix() != lastVaultClientMeta.CreatedAt.Unix() {
+				if c, ok := m.cache.Get(cacheKey); ok && c.Stat().CreationTimestamp().Unix() != lastVaultClientMeta.CreationTimestamp.Unix() {
 					incrementReason = "createdAtChange"
 				}
 			}
@@ -461,7 +461,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 				c.Stat().IncRefCount()
 				logger.Info("Increment ref count",
 					"lastVaultClientMeta", lastVaultClientMeta, "refCount", c.Stat().RefCount(),
-					"createdAt", c.Stat().CreatedAt(),
+					"creationTimestamp", c.Stat().CreationTimestamp(),
 					"reason", incrementReason,
 				)
 			}
