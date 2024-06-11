@@ -128,15 +128,14 @@ type cachingClientFactory struct {
 	requestCounterVec      *prometheus.CounterVec
 	requestErrorCounterVec *prometheus.CounterVec
 	taintedClientGauge     *prometheus.GaugeVec
-	// objRefClientGauge     *prometheus.GaugeVec
-	revokeOnEvict         bool
-	pruneStorageOnEvict   bool
-	ctrlClient            ctrlclient.Client
-	clientCallbacks       []ClientCallbackHandler
-	callbackHandlerCh     chan *ClientCallbackHandlerRequest
-	mu                    sync.RWMutex
-	onceDoWatcher         sync.Once
-	callbackHandlerCancel context.CancelFunc
+	revokeOnEvict          bool
+	pruneStorageOnEvict    bool
+	ctrlClient             ctrlclient.Client
+	clientCallbacks        []ClientCallbackHandler
+	callbackHandlerCh      chan *ClientCallbackHandlerRequest
+	mu                     sync.RWMutex
+	onceDoWatcher          sync.Once
+	callbackHandlerCancel  context.CancelFunc
 	// clientLocksLock is a lock for the clientLocks map.
 	clientLocksLock sync.RWMutex
 	// clientLocks is a map of cache keys to locks that allow for concurrent access

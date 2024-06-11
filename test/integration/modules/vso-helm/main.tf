@@ -58,14 +58,6 @@ resource "helm_release" "vault-secrets-operator" {
     value = var.operator_image_tag
   }
   set {
-    name  = "controller.manager.resources.limits.cpu"
-    value = "1000m"
-  }
-  set {
-    name  = "controller.manager.resources.limits.memory"
-    value = "512Mi"
-  }
-  set {
     name  = "controller.manager.clientCache.persistenceModel"
     value = var.client_cache_config.persistence_model
   }
