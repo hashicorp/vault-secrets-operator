@@ -811,6 +811,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `cacheKey` _string_ | CacheKey is the unique key used to identify the client cache. |  |  |
 | `id` _string_ | ID is the Vault ID of the authenticated client. The ID should never contain<br />any sensitive information. |  |  |
+| `createdAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | CreatedAt is the time the client was created. |  |  |
 
 
 #### VaultConnection

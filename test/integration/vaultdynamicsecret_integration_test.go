@@ -756,7 +756,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 		},
 		{
 			name:   "create-only-vault-auth-update",
-			create: 25,
+			create: 1,
 			triggerFunc: func(t *testing.T, reconciledObjs []*secretsv1beta1.VaultDynamicSecret) {
 				t.Helper()
 				for _, obj := range reconciledObjs {

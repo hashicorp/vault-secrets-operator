@@ -5,6 +5,7 @@ package v1beta1
 
 import (
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Destination provides the configuration that will be applied to the
@@ -123,4 +124,6 @@ type VaultClientMeta struct {
 	// ID is the Vault ID of the authenticated client. The ID should never contain
 	// any sensitive information.
 	ID string `json:"id,omitempty"`
+	// CreatedAt is the time the client was created.
+	CreatedAt metav1.Time `json:"createdAt,omitempty"`
 }

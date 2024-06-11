@@ -132,21 +132,25 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
-	vClient, err := r.ClientFactory.Get(ctx, r.Client, o)
+	defer r.updateStatus(ctx, o)
+
+	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
+		o.Status.VaultClientMeta = secretsv1beta1.VaultClientMeta{}
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault client: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	// we can ignore the error here, since it was handled above in the Get() call.
-	clientCacheKey, _ := vClient.GetCacheKey()
+	clientCacheKey, _ := c.GetCacheKey()
 	lastClientCacheKey := o.Status.VaultClientMeta.CacheKey
 	lastClientID := o.Status.VaultClientMeta.ID
 
 	// update the VaultClientMeta in the resource's status.
 	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
-	o.Status.VaultClientMeta.ID = vClient.ID()
+	o.Status.VaultClientMeta.ID = c.ID()
+	o.Status.VaultClientMeta.CreatedAt = metav1.NewTime(c.Stat().CreatedAt())
 
 	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,
@@ -192,9 +196,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 					leaseID, horizon)
-				if err := r.updateStatus(ctx, o); err != nil {
-					return ctrl.Result{}, err
-				}
 				return ctrl.Result{RequeueAfter: horizon}, nil
 			}
 		} else if inWindow {
@@ -203,16 +204,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"In rotation period after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 				leaseID, horizon)
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
 			return ctrl.Result{RequeueAfter: horizon}, nil
 		}
 	}
 
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
 		// Renew the lease and return from Reconcile if the lease is successfully renewed.
-		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
+		if secretLease, err := r.renewLease(ctx, c, o); err == nil {
 			if !r.isRenewableLease(secretLease, o, false) {
 				return ctrl.Result{}, nil
 			}
@@ -227,9 +225,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			o.Status.StaticCredsMetaData = secretsv1beta1.VaultStaticCredsMetaData{}
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = nowFunc().Unix()
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
 
 			leaseDuration := time.Duration(secretLease.LeaseDuration) * time.Second
 			if leaseDuration < 1 {
@@ -252,7 +247,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 					"Could not renew lease, lease_id=%s, err=%s", leaseID, err)
 			} else if vault.IsForbiddenError(err) {
 				logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
-				vClient.Taint()
+				c.Taint()
 			}
 			syncReason = consts.ReasonSecretLeaseRenewalError
 		}
@@ -271,12 +266,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// sync the secret
-	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
+	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, c, o, transOption)
 	if err != nil {
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
 			logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
-			vClient.Taint()
+			c.Taint()
 		}
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		horizon := entry.NextBackOff()
@@ -292,10 +287,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = nowFunc().Unix()
-	if err := r.updateStatus(ctx, o); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	horizon := r.computePostSyncHorizon(ctx, o)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 		"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
@@ -641,17 +632,19 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 // * revoking any associated outstanding leases
 // * removing our finalizer
 func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
-	logger := log.FromContext(ctx)
-	// We are ignoring errors inside `revokeLease`, otherwise we may fail to remove the finalizer.
+	logger := log.FromContext(ctx).WithName("handleDeletion")
+	// We are ignoring errors inside `handleLeaseRevocation`, otherwise we may fail to remove the finalizer.
 	// Worst case at this point we will leave a dangling lease instead of a secret which
 	// cannot be deleted. Events are emitted in these cases.
-	r.revokeLease(ctx, o, "")
+	r.handleLeaseRevocation(ctx, o)
 
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
 	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
-	r.ClientFactory.UnregisterObjectRef(o.GetUID())
+	if err := r.ClientFactory.UnregisterObjectRef(ctx, o); err != nil {
+		logger.Error(err, "Warning: failed to unregister object reference")
+	}
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {
@@ -665,18 +658,25 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	return nil
 }
 
-// revokeLease revokes the VDS secret's lease.
+// handleLeaseRevocation revokes the VDS secret's lease.
 // NOTE: Enabling revocation requires the VaultAuthMethod referenced by `o.Spec.VaultAuthRef` to have a policy
 // that includes `path "sys/leases/revoke" { capabilities = ["update"] }`, otherwise this will fail with permission
 // errors.
-func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, id string) {
-	logger := log.FromContext(ctx)
+func (r *VaultDynamicSecretReconciler) handleLeaseRevocation(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) {
+	logger := log.FromContext(ctx).WithName("handleLeaseRevocation")
 	// Allow us to override the SecretLease in the event that we want to revoke an old lease.
-	leaseID := id
-	if leaseID == "" {
-		leaseID = o.Status.SecretLease.ID
+	if !o.Spec.Revoke {
+		logger.V(consts.LogLevelDebug).Info("Lease revocation not enabled")
+		return
 	}
-	logger.Info("Revoking lease for credential ", "id", leaseID)
+
+	leaseID := o.Status.SecretLease.ID
+	if leaseID == "" {
+		logger.Info("No lease to revoke")
+		return
+	}
+
+	logger.V(consts.LogLevelDebug).Info("Revoking lease for credential ", "id", leaseID)
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
 		logger.Error(err, "Failed to get client when revoking lease for ", "id", leaseID)
@@ -691,7 +691,7 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	} else {
 		msg := "Lease revoked"
 		r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRevoke, msg+": %s", leaseID)
-		logger.Info("Lease revoked ", "id", leaseID)
+		logger.V(consts.LogLevelDebug).Info("Lease revoked ", "id", leaseID)
 	}
 }
 

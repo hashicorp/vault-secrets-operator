@@ -28,6 +28,7 @@ import (
 
 type ClientStat interface {
 	Age() time.Duration
+	CreatedAt() time.Time
 	Reset()
 	RefCount() int
 	IncRefCount()
@@ -37,25 +38,32 @@ type ClientStat interface {
 var _ ClientStat = (*clientStat)(nil)
 
 type clientStat struct {
-	// createTime is the time the client was created.
-	createTime time.Time
+	// createdAt is the time the client was created.
+	createdAt time.Time
 	// refCount is the number of references to the client.
 	refCount int
 	mu       sync.RWMutex
+}
+
+// CreatedAt returns the time the client was created.
+func (m *clientStat) CreatedAt() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.createdAt
 }
 
 // Age returns the duration since the client was created.
 func (m *clientStat) Age() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return time.Since(m.createTime)
+	return time.Since(m.createdAt)
 }
 
 // Reset the client's creation time to the current time.
 func (m *clientStat) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.createTime = time.Now()
+	m.createdAt = time.Now()
 	m.refCount = 0
 }
 
@@ -584,7 +592,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 
 				return
 			case renewal := <-watcher.RenewCh():
-				logger.V(consts.LogLevelDebug).Info("Successfully renewed the client")
+				logger.V(consts.LogLevelTrace).Info("Successfully renewed the client")
 
 				c.authSecret = renewal.Secret
 				c.lastRenewal = renewal.RenewedAt.Unix()
