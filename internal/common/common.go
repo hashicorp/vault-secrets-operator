@@ -99,6 +99,32 @@ func ParseResourceRef(refName, defaultNamespace string) (types.NamespacedName, e
 	return ref, nil
 }
 
+func VaultAuthGlobalResourceRef(o *secretsv1beta1.VaultAuth) (types.NamespacedName, error) {
+	var ref types.NamespacedName
+	authGlobalRef := o.Spec.VaultAuthGlobalRef
+	if authGlobalRef == nil {
+		return ref, fmt.Errorf("invalid VaultAuthGlobalRef for %s", client.ObjectKeyFromObject(o))
+	}
+
+	if authGlobalRef.Name == "" && authGlobalRef.Namespace == "" {
+		ref.Namespace = OperatorNamespace
+		ref.Name = consts.NameDefault
+	} else {
+		ref.Name = authGlobalRef.Name
+		ref.Namespace = authGlobalRef.Namespace
+		if ref.Namespace == "" {
+			ref.Namespace = o.GetNamespace()
+		}
+	}
+
+	if err := ValidateObjectKey(ref); err != nil {
+		return ref, fmt.Errorf("invalid VaultAuthGlobalRef for %s: %w",
+			client.ObjectKeyFromObject(o), err)
+	}
+
+	return ref, nil
+}
+
 // isAllowedNamespace computes whether a targetNamespace is allowed based on the AllowedNamespaces
 // field of the VaultAuth or HCPAuth objects.
 //
@@ -154,12 +180,11 @@ func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Obj
 		}
 	}
 
-	if authObj.Spec.VaultAuthGlobalRef != "" {
-		authObj, _, err = MergeInVaultAuthGlobal(ctx, c, authObj)
-		if err != nil {
-			return nil, err
-		}
+	authObj, _, err = MergeInVaultAuthGlobal(ctx, c, authObj)
+	if err != nil {
+		return nil, err
 	}
+
 	return authObj, nil
 }
 
@@ -169,12 +194,12 @@ func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Obj
 // case where no reference is specified in the VaultAuth object, the VaultAuth
 // object is returned as is.
 func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secretsv1beta1.VaultAuth) (*secretsv1beta1.VaultAuth, *secretsv1beta1.VaultAuthGlobal, error) {
-	if o.Spec.VaultAuthGlobalRef == "" {
+	if o.Spec.VaultAuthGlobalRef == nil {
 		return o, nil, nil
 	}
 
 	cObj := o.DeepCopy()
-	authGlobalRef, err := ParseResourceRef(cObj.Spec.VaultAuthGlobalRef, cObj.GetNamespace())
+	authGlobalRef, err := VaultAuthGlobalResourceRef(cObj)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -362,15 +387,54 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 
 	cObj.Spec.Namespace = firstNonZeroLen(strLenFunc,
 		cObj.Spec.Namespace, globalAuthNamespace, gObj.Spec.DefaultVaultNamespace)
-	cObj.Spec.Headers = firstNonZeroLen(mapLenFunc[string, string],
-		cObj.Spec.Headers, globalAuthHeaders, gObj.Spec.DefaultHeaders)
-	cObj.Spec.Params = firstNonZeroLen(mapLenFunc[string, string],
-		cObj.Spec.Params, globalAuthParams, gObj.Spec.DefaultParams)
+
+	paramsMergeStrategy := "none"
+	headersMergeStrategy := "none"
+	if cObj.Spec.VaultAuthGlobalRef.MergeStrategy != nil {
+		if cObj.Spec.VaultAuthGlobalRef.MergeStrategy.Headers != "" {
+			headersMergeStrategy = cObj.Spec.VaultAuthGlobalRef.MergeStrategy.Headers
+		}
+		if cObj.Spec.VaultAuthGlobalRef.MergeStrategy.Params != "" {
+			paramsMergeStrategy = cObj.Spec.VaultAuthGlobalRef.MergeStrategy.Params
+		}
+	}
+
+	switch paramsMergeStrategy {
+	case "union":
+		cObj.Spec.Params = mergeMaps(gObj.Spec.DefaultParams, globalAuthParams, cObj.Spec.Params)
+	case "replace":
+		cObj.Spec.Params = firstNonZeroLen(mapLenFunc[string, string],
+			cObj.Spec.Params, globalAuthParams, gObj.Spec.DefaultParams)
+	case "none":
+	default:
+		return nil, nil, fmt.Errorf("unsupported params merge strategy %q", paramsMergeStrategy)
+	}
+
+	switch headersMergeStrategy {
+	case "union":
+		cObj.Spec.Headers = mergeMaps(gObj.Spec.DefaultHeaders, globalAuthHeaders, cObj.Spec.Headers)
+	case "replace":
+		cObj.Spec.Headers = firstNonZeroLen(mapLenFunc[string, string],
+			cObj.Spec.Headers, globalAuthHeaders, gObj.Spec.DefaultHeaders)
+	case "none":
+	default:
+		return nil, nil, fmt.Errorf("unsupported headers merge strategy %q", headersMergeStrategy)
+	}
 
 	cObj.Spec.VaultConnectionRef = firstNonZeroLen(strLenFunc,
 		cObj.Spec.VaultConnectionRef, gObj.Spec.VaultConnectionRef)
 
 	return cObj, &gObj, nil
+}
+
+func mergeMaps[K comparable, V any](maps ...map[K]V) map[K]V {
+	ret := make(map[K]V)
+	for _, m := range maps {
+		for k, v := range m {
+			ret[k] = v
+		}
+	}
+	return ret
 }
 
 func strLenFunc(s string) int {

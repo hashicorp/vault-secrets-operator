@@ -16,9 +16,20 @@ locals {
   auth_role_operator = "auth-role-operator"
 
   # db locals
-  postgres_host       = "${data.kubernetes_service.postgres.metadata[0].name}.${helm_release.postgres.namespace}.svc.cluster.local:${data.kubernetes_service.postgres.spec[0].port[0].port}"
-  db_role             = "dev-postgres"
-  db_role_static      = "${local.db_role}-static"
-  db_role_static_user = "${local.db_role_static}-user"
-  k8s_secret_role     = "k8s-secret"
+  postgres_host                 = "${data.kubernetes_service.postgres.metadata[0].name}.${helm_release.postgres.namespace}.svc.cluster.local:${data.kubernetes_service.postgres.spec[0].port[0].port}"
+  db_role                       = "dev-postgres"
+  db_role_static                = "${local.db_role}-static"
+  db_role_static_user           = "${local.db_role_static}-user"
+  db_role_static_scheduled      = "${local.db_role_static}-scheduled"
+  db_role_static_user_scheduled = "${local.db_role_static}-user-scheduled"
+  k8s_secret_role               = "k8s-secret"
+
+  dev_token_policies = concat(
+    [
+      vault_policy.revocation.name,
+      vault_policy.db.name,
+      vault_policy.k8s_secrets.name,
+    ],
+    vault_policy.db-scheduled[*].name,
+  )
 }

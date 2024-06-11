@@ -28,6 +28,12 @@ output "db_role_static" {
 output "db_role_static_user" {
   value = local.db_role_static_user
 }
+output "db_role_static_scheduled" {
+  value = local.db_role_static_scheduled
+}
+output "db_role_static_user_scheduled" {
+  value = local.db_role_static_user_scheduled
+}
 output "k8s_secret_path" {
   value = vault_kubernetes_secret_backend.k8s_secrets.path
 }

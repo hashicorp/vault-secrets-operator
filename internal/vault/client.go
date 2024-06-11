@@ -809,8 +809,10 @@ type MockRequest struct {
 var _ ClientBase = (*MockRecordingVaultClient)(nil)
 
 type MockRecordingVaultClient struct {
-	Requests []*MockRequest
-	Id       string
+	ReadResponses  map[string][]Response
+	WriteResponses map[string][]Response
+	Requests       []*MockRequest
+	Id             string
 }
 
 func (m *MockRecordingVaultClient) ID() string {
@@ -827,6 +829,16 @@ func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Respo
 		Params: nil,
 	})
 
+	resps, ok := m.ReadResponses[s.Path()]
+	if ok {
+		if len(resps) == 0 {
+			return nil, fmt.Errorf("no more responses for %s", s.Path())
+		}
+		resp := resps[0]
+		resps = append(resps[:0], resps[1:]...)
+		return resp, nil
+	}
+
 	return &defaultResponse{
 		secret: &api.Secret{
 			Data: make(map[string]interface{}),
@@ -840,6 +852,17 @@ func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Res
 		Path:   s.Path(),
 		Params: s.Params(),
 	})
+
+	resps, ok := m.WriteResponses[s.Path()]
+	if ok {
+		if len(resps) == 0 {
+			return nil, fmt.Errorf("no more responses for %s", s.Path())
+		}
+		resp := resps[0]
+		resps = append(resps[:0], resps[1:]...)
+		return resp, nil
+	}
+
 	return &defaultResponse{
 		secret: &api.Secret{
 			Data: make(map[string]interface{}),
