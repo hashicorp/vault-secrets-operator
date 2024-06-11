@@ -136,10 +136,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault client: %s", err)
-		_, jitter := computeMaxJitterWithPercent(requeueDurationOnError, 0.5)
-		return ctrl.Result{
-			RequeueAfter: requeueDurationOnError + time.Duration(jitter),
-		}, nil
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	// we can ignore the error here, since it was handled above in the Get() call.
