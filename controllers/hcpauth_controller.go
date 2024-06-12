@@ -48,6 +48,12 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	if o.GetDeletionTimestamp() != nil {
+		logger.Info("Got deletion timestamp", "obj", o)
+		metrics.DeleteResourceStatus("hcpauth", o)
+		return ctrl.Result{}, nil
+	}
+
 	// perform a rudimentary health check on the HCP host on port 443.
 	conn, err := net.DialTimeout("tcp",
 		fmt.Sprintf("%s:443", hvsclient.DefaultHost), time.Second*5)

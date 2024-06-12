@@ -69,6 +69,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		r.referenceCache.Remove(VaultAuthGlobal, req.NamespacedName)
+		metrics.DeleteResourceStatus("vaultauth", o)
 		return r.handleFinalizer(ctx, o)
 	}
 
