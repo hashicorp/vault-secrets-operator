@@ -46,6 +46,9 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 
 			for i := 0; i < tt.clientCount; i++ {
 				_, err := cache.Add(&defaultClient{
+					clientStat: &clientStat{
+						refCount: 1,
+					},
 					authObj: &secretsv1beta1.VaultAuth{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:       fmt.Sprintf("auth-%d", i),
@@ -79,7 +82,7 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 			require.NoError(t, err)
 
 			var found int
-			assert.Len(t, mfs, 2)
+			assert.Len(t, mfs, 4)
 			for _, mf := range mfs {
 				name := mf.GetName()
 				m := mf.GetMetric()
@@ -93,6 +96,16 @@ func Test_clientCacheCollector_Collect(t *testing.T) {
 					}
 				}
 				if name == metricsFQNClientCacheSize {
+					found++
+					assert.Equal(t, float64(tt.size), *m[0].Gauge.Value)
+				}
+
+				if name == metricsFQNClientCacheTaintedClients {
+					found++
+					assert.Equal(t, float64(0), *m[0].Gauge.Value)
+				}
+
+				if name == metricsFQNClientCacheClientRefs {
 					found++
 					assert.Equal(t, float64(tt.size), *m[0].Gauge.Value)
 				}

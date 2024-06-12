@@ -33,12 +33,14 @@ const (
 
 	NameConfig                = "config"
 	NameLength                = "length"
+	NameTainted               = "tainted"
 	NameOperationsTotal       = "operations_total"
 	NameOperationsErrorsTotal = "operations_errors_total"
 	NameOperationsTimeSeconds = "operations_time_seconds"
 	NameRequestsTotal         = "requests_total"
 	NameRequestsErrorsTotal   = "requests_errors_total"
 	NameTaintedClients        = "tainted_clients"
+	NameClientRefs            = "client_refs"
 )
 
 var ResourceStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
