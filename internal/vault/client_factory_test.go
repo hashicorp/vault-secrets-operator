@@ -5,15 +5,20 @@ package vault
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -304,6 +309,217 @@ func Test_cachingClientFactory_callClientCallbacks(t *testing.T) {
 					return false
 				}, time.Second*1, time.Millisecond*100)
 			}
+		})
+	}
+}
+
+func Test_cachingClientFactory_pruneOrphanClients(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	type keyTest struct {
+		key                ClientCacheKey
+		creationTimeOffset time.Duration
+	}
+
+	newCache := func(size int, keyTests ...keyTest) *clientCache {
+		lruCache, err := lru.NewWithEvict[ClientCacheKey, Client](size, nil)
+		require.NoError(t, err)
+		c := &clientCache{
+			cache: lruCache,
+		}
+		for _, k := range keyTests {
+			c.cache.Add(k.key, &stubClient{
+				cacheKey: k.key,
+				clientStat: &clientStat{
+					creationTimestamp: time.Now().Add(k.creationTimeOffset),
+				},
+			})
+		}
+		return c
+	}
+
+	clientBuilder := newClientBuilder()
+	schemeLessBuilder := fake.NewClientBuilder()
+	tests := []struct {
+		name                string
+		cache               ClientCache
+		c                   ctrlclient.Client
+		want                int
+		createFunc          func(t *testing.T, c ctrlclient.Client) error
+		wantClientCacheKeys []ClientCacheKey
+		wantErr             assert.ErrorAssertionFunc
+	}{
+		{
+			name:    "empty-cache",
+			c:       clientBuilder.Build(),
+			cache:   newCache(1),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "no-referring-objects-purge",
+			c:    clientBuilder.Build(),
+			cache: newCache(1,
+				keyTest{
+					key:                "kubernetes-123456",
+					creationTimeOffset: -defaultPruneOrphanAge,
+				},
+			),
+			want:    1,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "prune-some",
+			c:    clientBuilder.Build(),
+			createFunc: func(t *testing.T, c ctrlclient.Client) error {
+				t.Helper()
+				var errs error
+				for _, o := range []ctrlclient.Object{
+					&secretsv1beta1.VaultStaticSecret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "vss-1",
+							Namespace: "default",
+						},
+						Status: secretsv1beta1.VaultStaticSecretStatus{
+							VaultClientMeta: secretsv1beta1.VaultClientMeta{
+								CacheKey: "kubernetes-123456",
+							},
+						},
+					},
+				} {
+					errs = errors.Join(errs, c.Create(ctx, o))
+				}
+				return errs
+			},
+			cache: newCache(2,
+				keyTest{
+					key:                "kubernetes-123455",
+					creationTimeOffset: -defaultPruneOrphanAge,
+				},
+				keyTest{
+					key:                "kubernetes-123456",
+					creationTimeOffset: -defaultPruneOrphanAge,
+				},
+			),
+			wantClientCacheKeys: []ClientCacheKey{
+				ClientCacheKey("kubernetes-123456"),
+			},
+			want:    1,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "none",
+			c:    clientBuilder.Build(),
+			cache: newCache(1,
+				keyTest{
+					key:                "kubernetes-123456",
+					creationTimeOffset: -defaultPruneOrphanAge,
+				},
+			),
+			createFunc: func(t *testing.T, c ctrlclient.Client) error {
+				t.Helper()
+				var errs error
+				for _, o := range []ctrlclient.Object{
+					&secretsv1beta1.VaultStaticSecret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "vss-1",
+							Namespace: "default",
+						},
+						Status: secretsv1beta1.VaultStaticSecretStatus{
+							VaultClientMeta: secretsv1beta1.VaultClientMeta{
+								CacheKey: "kubernetes-123456",
+							},
+						},
+					},
+					&secretsv1beta1.VaultPKISecret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "vps-1",
+							Namespace: "default",
+						},
+						Status: secretsv1beta1.VaultPKISecretStatus{
+							VaultClientMeta: secretsv1beta1.VaultClientMeta{
+								CacheKey: "kubernetes-123456",
+							},
+						},
+					},
+					&secretsv1beta1.VaultDynamicSecret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "vds-1",
+							Namespace: "default",
+						},
+						Status: secretsv1beta1.VaultDynamicSecretStatus{
+							VaultClientMeta: secretsv1beta1.VaultClientMeta{
+								CacheKey: "kubernetes-123456",
+							},
+						},
+					},
+				} {
+					errs = errors.Join(errs, c.Create(ctx, o))
+				}
+				return errs
+			},
+			wantErr: assert.NoError,
+			wantClientCacheKeys: []ClientCacheKey{
+				ClientCacheKey("kubernetes-123456"),
+			},
+			want: 0,
+		},
+		{
+			name: "no-prune-recent",
+			c:    clientBuilder.Build(),
+			cache: newCache(2,
+				keyTest{
+					key:                "kubernetes-123455",
+					creationTimeOffset: -(defaultPruneOrphanAge - time.Second*1),
+				},
+				keyTest{
+					key:                "kubernetes-123456",
+					creationTimeOffset: -(defaultPruneOrphanAge - time.Second*1),
+				},
+			),
+			wantClientCacheKeys: []ClientCacheKey{
+				ClientCacheKey("kubernetes-123455"),
+				ClientCacheKey("kubernetes-123456"),
+			},
+			want:    0,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "vss-scheme-not-set",
+			c:    schemeLessBuilder.Build(),
+			cache: newCache(1,
+				keyTest{
+					key:                "kubernetes-123456",
+					creationTimeOffset: -defaultPruneOrphanAge,
+				},
+			),
+			want: 0,
+			wantClientCacheKeys: []ClientCacheKey{
+				ClientCacheKey("kubernetes-123456"),
+			},
+			wantErr: func(t assert.TestingT, err error, msgAndArgs ...interface{}) bool {
+				return assert.ErrorContains(t, err, "no kind is registered for the type v1beta1.VaultStaticSecret")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &cachingClientFactory{
+				cache:      tt.cache,
+				ctrlClient: tt.c,
+			}
+
+			if tt.createFunc != nil {
+				require.NoError(t, tt.createFunc(t, tt.c))
+			}
+
+			got, err := m.pruneOrphanClients(ctx)
+			if !tt.wantErr(t, err, fmt.Sprintf("pruneOrphanClients(%v)", ctx)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "pruneOrphanClients(%v)", ctx)
+			assert.ElementsMatchf(t, tt.wantClientCacheKeys, m.cache.Keys(), "pruneOrphanClients(%v)", ctx)
 		})
 	}
 }

@@ -40,6 +40,10 @@ const (
 	ClientCallbackOnCacheRemoval
 )
 
+// defaultPruneOrphanAge is the default age at which orphaned clients are
+// eligible for pruning.
+var defaultPruneOrphanAge = 1 * time.Minute
+
 func (o ClientCallbackOn) String() string {
 	switch o {
 	case ClientCallbackOnLifetimeWatcherDone:
@@ -927,6 +931,7 @@ func (m *cachingClientFactory) startOrphanClientPruner(ctx context.Context) {
 	ctx_, cancel := context.WithCancel(ctx)
 	m.orphanPrunerCancel = cancel
 	// TODO: make period a command line option
+	ticker := time.NewTicker(30 * time.Minute)
 	go func() {
 		defer func() {
 			close(m.orphanPrunerClientCh)
@@ -957,9 +962,76 @@ func (m *cachingClientFactory) startOrphanClientPruner(ctx context.Context) {
 						m.cache.Remove(cacheKey)
 					}
 				}
+			case <-ticker.C:
+				// catch-all for the pruner
+				if count, err := m.pruneOrphanClients(ctx); err != nil {
+					logger.Error(err, "Prune orphan Vault Clients", "trigger", "tick")
+				} else {
+					logger.Info("Prune orphan Vault Clients", "count", count, "trigger", "tick")
+				}
 			}
 		}
 	}()
+}
+
+// pruneOrphanClients will remove all clients from the cache that are not
+// associated with any of the following custom resources:
+// secretsv1beta1.VaultStaticSecret, secretsv1beta1.VaultPKISecret,
+// secretsv1beta1.VaultDynamicSecret.
+//
+// The function will return the number of clients pruned. No clients will be
+// pruned if an error occurs when getting the custom resources.
+func (m *cachingClientFactory) pruneOrphanClients(ctx context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	logger := m.logger.WithName("pruneOrphanClients")
+
+	currentClientCacheKeys, err := GetGlobalVaultCacheKeys(ctx, m.ctrlClient)
+	if err != nil {
+		return 0, err
+	}
+
+	var toPrune []ClientCacheKey
+	for _, c := range m.cache.Values() {
+		key, err := c.GetCacheKey()
+		if err != nil {
+			continue
+		}
+
+		if _, ok := currentClientCacheKeys[key]; !ok {
+			if key == m.clientCacheKeyEncrypt {
+				continue
+			}
+			stat := c.Stat()
+			if stat == nil {
+				continue
+			}
+			// prune clients that have not been created in the last 5 minutes, this gives
+			// time for any referring resource to update their
+			// .status.vaultClientMeta.cacheKey
+			if stat.Age() >= defaultPruneOrphanAge {
+				toPrune = append(toPrune, key)
+			}
+		}
+	}
+
+	// TODO: ensure that this does not block forever...
+	var count int
+	wg := sync.WaitGroup{}
+	wg.Add(len(toPrune))
+	for _, key := range toPrune {
+		count++
+		go func() {
+			defer wg.Done()
+			m.cache.Remove(key)
+		}()
+	}
+	wg.Wait()
+
+	logger.V(consts.LogLevelDebug).Info(
+		"Pruned orphaned clients", "count", count, "pruned", toPrune)
+	return count, nil
 }
 
 // NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
@@ -1102,6 +1174,47 @@ type nullEventRecorder struct {
 }
 
 func (n *nullEventRecorder) Event(_ runtime.Object, _, _, _ string) {}
+
+// GetGlobalVaultCacheKeys returns the current set of vault.ClientCacheKey(s) that are in
+// use.
+func GetGlobalVaultCacheKeys(ctx context.Context, client ctrlclient.Client) (map[ClientCacheKey]int, error) {
+	currentClientCacheKeys := map[ClientCacheKey]int{}
+	addCurrentClientCacheKeys := func(meta secretsv1beta1.VaultClientMeta) {
+		if meta.CacheKey != "" {
+			key := ClientCacheKey(meta.CacheKey)
+			currentClientCacheKeys[key] = currentClientCacheKeys[key] + 1
+		}
+	}
+
+	var vssList secretsv1beta1.VaultStaticSecretList
+	err := client.List(ctx, &vssList)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, o := range vssList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+	var vpsList secretsv1beta1.VaultPKISecretList
+	err = client.List(ctx, &vpsList)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range vpsList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+
+	var vdsList secretsv1beta1.VaultDynamicSecretList
+	err = client.List(ctx, &vdsList)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range vdsList.Items {
+		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
+	}
+
+	return currentClientCacheKeys, nil
+}
 
 // getVaultClientMeta returns the VaultClientMeta for the provided Object. It
 // supports these types: VaultStaticSecret, VaultPKISecret, VaultDynamicSecret.
