@@ -113,7 +113,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "error getting resource from k8s", "obj", o)
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
 	if o.GetDeletionTimestamp() != nil {
@@ -132,7 +132,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
 	}
 
-	defer r.updateStatus(ctx, o)
+	defer func() {
+		if err := r.updateStatus(ctx, o); err != nil {
+			logger.Error(err, "Failed to update resource status")
+		}
+	}()
 
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {

@@ -31,8 +31,8 @@ type ClientStat interface {
 	CreationTimestamp() time.Time
 	Reset()
 	RefCount() int
-	IncRefCount()
-	DecRefCount()
+	IncRefCount() int
+	DecRefCount() int
 }
 
 var _ ClientStat = (*clientStat)(nil)
@@ -69,20 +69,27 @@ func (m *clientStat) Reset() {
 
 // IncRefCount increments the client's reference count. This is useful for
 // tracking the number of references to a client.
-func (m *clientStat) IncRefCount() {
+// Returns the previous reference count.
+func (m *clientStat) IncRefCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	last := m.refCount
 	m.refCount++
+
+	return last
 }
 
 // DecRefCount decrements the client's reference count. This is useful for
 // tracking the number of references to a client.
-func (m *clientStat) DecRefCount() {
+// Returns the previous reference count.
+func (m *clientStat) DecRefCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	last := m.refCount
 	if m.refCount > 0 {
 		m.refCount--
 	}
+	return last
 }
 
 // RefCount returns the client's reference count. This is useful for tracking the

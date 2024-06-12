@@ -160,7 +160,11 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	defer r.updateStatus(ctx, o)
+	defer func() {
+		if err := r.updateStatus(ctx, o); err != nil {
+			logger.Error(err, "Failed to update resource status")
+		}
+	}()
 
 	// assume that status is always invalid
 	o.Status.Valid = false

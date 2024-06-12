@@ -40,10 +40,6 @@ const (
 	ClientCallbackOnCacheRemoval
 )
 
-// defaultPruneOrphanAge is the default age at which orphaned clients are
-// eligible for pruning.
-var defaultPruneOrphanAge = 1 * time.Minute
-
 func (o ClientCallbackOn) String() string {
 	switch o {
 	case ClientCallbackOnLifetimeWatcherDone:
@@ -159,11 +155,11 @@ type cachingClientFactory struct {
 func (m *cachingClientFactory) UnregisterObjectRef(ctx context.Context, o ctrlclient.Object) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	logger := log.FromContext(context.Background()).WithName("UnregisterObjectRef").WithValues(
+	logger := log.FromContext(ctx).WithName("UnregisterObjectRef").WithValues(
 		"uid", o.GetUID(),
 	)
 
-	vaultClientMeta, err := GetVaultClientMeta(ctx, o)
+	vaultClientMeta, err := getVaultClientMeta(o)
 	if err != nil {
 		return err
 	}
@@ -172,9 +168,9 @@ func (m *cachingClientFactory) UnregisterObjectRef(ctx context.Context, o ctrlcl
 	logger.V(consts.LogLevelDebug).Info("Unregistering client reference",
 		"vaultClientMeta", vaultClientMeta)
 	if c, ok := m.cache.Get(cacheKey); ok && c.Stat() != nil {
-		c.Stat().DecRefCount()
+		lastRefCount := c.Stat().DecRefCount()
 		logger.V(consts.LogLevelDebug).Info("Writing to orphanPrunerClientCh",
-			"id", c.ID(), "cacheKey", cacheKey, "refCount", c.Stat().RefCount(),
+			"id", c.ID(), "cacheKey", cacheKey, "lastRefCount", lastRefCount, "refCount", c.Stat().RefCount(),
 		)
 		m.orphanPrunerClientCh <- c
 	}
@@ -402,7 +398,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	var cacheKey ClientCacheKey
 	var errs error
 	var tainted bool
-	var lastVaultClientMeta *secretsv1beta1.VaultClientMeta
+	var clientMeta *secretsv1beta1.VaultClientMeta
 	defer func() {
 		m.incrementRequestCounter(metrics.OperationGet, errs)
 		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationGet).Observe(
@@ -418,52 +414,8 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 			mt.Set(0)
 		}
 
-		var incrementReason string
-		var decrementReason string
-		var lastCacheKey ClientCacheKey
-		if lastVaultClientMeta != nil {
-			lastCacheKey = ClientCacheKey(lastVaultClientMeta.CacheKey)
-			logger.Info("Update client stats", "lastVaultClientMeta", lastVaultClientMeta)
-			switch {
-			case errs != nil:
-				decrementReason = "errorOnGet"
-			case lastCacheKey == "":
-				incrementReason = "newReference"
-			case lastCacheKey != cacheKey:
-				decrementReason = "cacheKeyChange"
-				incrementReason = "cacheKeyChange"
-			default:
-				if c, ok := m.cache.Get(cacheKey); ok && c.Stat().CreationTimestamp().Unix() != lastVaultClientMeta.CreationTimestamp.Unix() {
-					incrementReason = "createdAtChange"
-				}
-			}
-		}
-
-		if decrementReason != "" && lastCacheKey != "" {
-			lck, _ := m.clientLock(lastCacheKey)
-			lck.Lock()
-			defer lck.Unlock()
-			if c, ok := m.cache.Get(lastCacheKey); ok {
-				c.Stat().DecRefCount()
-				logger.Info("Decrement ref count on err",
-					"lastVaultClientMeta", lastVaultClientMeta,
-					"refCount", c.Stat().RefCount(),
-					"reason", decrementReason,
-				)
-				// send the client to the cache pruner.
-				m.orphanPrunerClientCh <- c
-			}
-		}
-
-		if incrementReason != "" {
-			if c, ok := m.cache.Get(cacheKey); ok {
-				c.Stat().IncRefCount()
-				logger.Info("Increment ref count",
-					"lastVaultClientMeta", lastVaultClientMeta, "refCount", c.Stat().RefCount(),
-					"creationTimestamp", c.Stat().CreationTimestamp(),
-					"reason", incrementReason,
-				)
-			}
+		if clientMeta != nil {
+			m.updateClientStatsAfterGet(ctx, cacheKey, clientMeta, errs)
 		}
 	}()
 
@@ -483,7 +435,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	lock.Lock()
 	defer lock.Unlock()
 
-	lastVaultClientMeta, err = GetVaultClientMeta(ctx, obj)
+	clientMeta, err = getVaultClientMeta(obj)
 	if err != nil {
 		errs = errors.Join(errs, err)
 		return nil, errs
@@ -589,6 +541,71 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	}
 
 	return c, errs
+}
+
+func (m *cachingClientFactory) updateClientStatsAfterGet(ctx context.Context, cacheKey ClientCacheKey,
+	clientMeta *secretsv1beta1.VaultClientMeta, errs error,
+) {
+	logger := log.FromContext(ctx).WithName("updateClientStatsAfterGet").WithValues(
+		"cacheKey", cacheKey,
+		"clientMeta", clientMeta,
+	)
+	if clientMeta == nil {
+		logger.V(consts.LogLevelTrace).Info("Skipping status update, client meta is nil")
+		return
+	}
+
+	lastCacheKey := ClientCacheKey(clientMeta.CacheKey)
+	var incrementReason string
+	var decrementReason string
+	logger.Info("Update client stats", "clientMeta", clientMeta)
+	switch {
+	// previous get errors
+	case errs != nil:
+		decrementReason = "errorOnGet"
+	case lastCacheKey == "" && cacheKey != "":
+		incrementReason = "newReference"
+	case lastCacheKey != cacheKey:
+		decrementReason = "cacheKeyChange"
+		incrementReason = "cacheKeyChange"
+	default:
+		if !clientMeta.CreationTimestamp.IsZero() {
+			c, ok := m.cache.Get(cacheKey)
+			if ok && c.Stat().CreationTimestamp().Unix() != clientMeta.CreationTimestamp.Unix() {
+				incrementReason = "creationTimestampChange"
+			}
+		}
+	}
+	if decrementReason == "" && incrementReason == "" {
+		logger.V(consts.LogLevelTrace).Info("Skipping ref count update, not required")
+		return
+	}
+
+	if decrementReason != "" && lastCacheKey != "" {
+		if c, ok := m.cache.Get(lastCacheKey); ok {
+			lastRefCount := c.Stat().DecRefCount()
+			logger.V(consts.LogLevelDebug).Info("Decrement ref count on err",
+				"lastRefCount", lastRefCount,
+				"refCount", c.Stat().RefCount(),
+				"creationTimestamp", c.Stat().CreationTimestamp(),
+				"reason", decrementReason,
+			)
+			// send the client to the cache pruner.
+			m.orphanPrunerClientCh <- c
+		}
+	}
+
+	if incrementReason != "" {
+		if c, ok := m.cache.Get(cacheKey); ok {
+			lastRefCount := c.Stat().IncRefCount()
+			logger.V(consts.LogLevelDebug).Info("Increment ref count",
+				"lastRefCount", lastRefCount,
+				"refCount", c.Stat().RefCount(),
+				"creationTimestamp", c.Stat().CreationTimestamp(),
+				"reason", incrementReason,
+			)
+		}
+	}
 }
 
 func (m *cachingClientFactory) storeClient(ctx context.Context, client ctrlclient.Client, c Client) error {
@@ -910,7 +927,6 @@ func (m *cachingClientFactory) startOrphanClientPruner(ctx context.Context) {
 	ctx_, cancel := context.WithCancel(ctx)
 	m.orphanPrunerCancel = cancel
 	// TODO: make period a command line option
-	ticker := time.NewTicker(30 * time.Minute)
 	go func() {
 		defer func() {
 			close(m.orphanPrunerClientCh)
@@ -932,7 +948,7 @@ func (m *cachingClientFactory) startOrphanClientPruner(ctx context.Context) {
 					continue
 				}
 
-				if c.Stat().RefCount() == 0 {
+				if c.Stat().RefCount() <= 0 {
 					cacheKey, err := c.GetCacheKey()
 					if err != nil {
 						logger.Error(err, "Prune orphan Vault Clients", "trigger", "wakeup")
@@ -941,72 +957,9 @@ func (m *cachingClientFactory) startOrphanClientPruner(ctx context.Context) {
 						m.cache.Remove(cacheKey)
 					}
 				}
-			case <-ticker.C:
-				if count, err := m.pruneOrphanClients(ctx); err != nil {
-					logger.Error(err, "Prune orphan Vault Clients", "trigger", "tick")
-				} else {
-					logger.Info("Prune orphan Vault Clients", "count", count, "trigger", "tick")
-				}
 			}
 		}
 	}()
-}
-
-// pruneOrphanClients will remove all clients from the cache that are not
-// associated with any of the following custom resources:
-// secretsv1beta1.VaultStaticSecret, secretsv1beta1.VaultPKISecret,
-// secretsv1beta1.VaultDynamicSecret.
-func (m *cachingClientFactory) pruneOrphanClients(ctx context.Context) (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	logger := m.logger.WithName("pruneOrphanClients")
-
-	currentClientCacheKeys, err := GetGlobalVaultCacheKeys(ctx, m.ctrlClient)
-	if err != nil {
-		return 0, err
-	}
-
-	var toPrune []ClientCacheKey
-	for _, c := range m.cache.Values() {
-		key, err := c.GetCacheKey()
-		if err != nil {
-			continue
-		}
-
-		if _, ok := currentClientCacheKeys[key]; !ok {
-			if key == m.clientCacheKeyEncrypt {
-				continue
-			}
-			stat := c.Stat()
-			if stat == nil {
-				continue
-			}
-			// prune clients that have not been created in the last 5 minutes, this gives
-			// time for any referring resource to update their
-			// .status.vaultClientMeta.cacheKey
-			if stat.Age() >= defaultPruneOrphanAge {
-				toPrune = append(toPrune, key)
-			}
-		}
-	}
-
-	// TODO: ensure that this does not block forever...
-	var count int
-	wg := sync.WaitGroup{}
-	wg.Add(len(toPrune))
-	for _, key := range toPrune {
-		count++
-		go func() {
-			defer wg.Done()
-			m.cache.Remove(key)
-		}()
-	}
-	wg.Wait()
-
-	logger.V(consts.LogLevelDebug).Info(
-		"Pruned orphaned clients", "count", count, "pruned", toPrune)
-	return count, nil
 }
 
 // NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
@@ -1150,48 +1103,11 @@ type nullEventRecorder struct {
 
 func (n *nullEventRecorder) Event(_ runtime.Object, _, _, _ string) {}
 
-// GetGlobalVaultCacheKeys returns the current set of vault.ClientCacheKey(s) that are in
-// use.
-func GetGlobalVaultCacheKeys(ctx context.Context, client ctrlclient.Client) (map[ClientCacheKey]int, error) {
-	currentClientCacheKeys := map[ClientCacheKey]int{}
-	addCurrentClientCacheKeys := func(meta secretsv1beta1.VaultClientMeta) {
-		if meta.CacheKey != "" {
-			key := ClientCacheKey(meta.CacheKey)
-			currentClientCacheKeys[key] = currentClientCacheKeys[key] + 1
-		}
-	}
-
-	var vssList secretsv1beta1.VaultStaticSecretList
-	err := client.List(ctx, &vssList)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, o := range vssList.Items {
-		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
-	}
-	var vpsList secretsv1beta1.VaultPKISecretList
-	err = client.List(ctx, &vpsList)
-	if err != nil {
-		return nil, err
-	}
-	for _, o := range vpsList.Items {
-		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
-	}
-
-	var vdsList secretsv1beta1.VaultDynamicSecretList
-	err = client.List(ctx, &vdsList)
-	if err != nil {
-		return nil, err
-	}
-	for _, o := range vdsList.Items {
-		addCurrentClientCacheKeys(o.Status.VaultClientMeta)
-	}
-
-	return currentClientCacheKeys, nil
-}
-
-func GetVaultClientMeta(ctx context.Context, o ctrlclient.Object) (*secretsv1beta1.VaultClientMeta, error) {
+// getVaultClientMeta returns the VaultClientMeta for the provided Object. It
+// supports these types: VaultStaticSecret, VaultPKISecret, VaultDynamicSecret.
+//
+// If o is not one of the supported types, an error is returned.
+func getVaultClientMeta(o ctrlclient.Object) (*secretsv1beta1.VaultClientMeta, error) {
 	switch t := o.(type) {
 	case *secretsv1beta1.VaultStaticSecret:
 		return &t.Status.VaultClientMeta, nil

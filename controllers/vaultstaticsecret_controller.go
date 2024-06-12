@@ -102,7 +102,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	defer r.updateStatus(ctx, o)
+	defer func() {
+		if err := r.updateStatus(ctx, o); err != nil {
+			logger.Error(err, "Failed to update resource status")
+		}
+	}()
 
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
