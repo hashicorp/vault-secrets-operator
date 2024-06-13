@@ -124,6 +124,7 @@ type cachingClientFactory struct {
 	requestCounterVec      *prometheus.CounterVec
 	requestErrorCounterVec *prometheus.CounterVec
 	taintedClientGauge     *prometheus.GaugeVec
+	clientRefGauge         *prometheus.GaugeVec
 	revokeOnEvict          bool
 	pruneStorageOnEvict    bool
 	ctrlClient             ctrlclient.Client
@@ -299,6 +300,9 @@ func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlcli
 	}
 
 	m.removeClientLock(cacheKey)
+	if m.clientRefGauge != nil {
+		m.clientRefGauge.DeleteLabelValues(cacheKey.String())
+	}
 }
 
 // Restore will attempt to restore a Client from storage. If storage is not enabled then no restoration will take place.
@@ -590,6 +594,11 @@ func (m *cachingClientFactory) updateClientStatsAfterGet(ctx context.Context, ca
 				"creationTimestamp", c.Stat().CreationTimestamp(),
 				"reason", decrementReason,
 			)
+			if m.clientRefGauge != nil {
+				m.clientRefGauge.WithLabelValues(cacheKey.String()).Set(
+					float64(c.Stat().RefCount()),
+				)
+			}
 			// send the client to the cache pruner.
 			m.orphanPrunerClientCh <- c
 		}
@@ -604,6 +613,11 @@ func (m *cachingClientFactory) updateClientStatsAfterGet(ctx context.Context, ca
 				"creationTimestamp", c.Stat().CreationTimestamp(),
 				"reason", incrementReason,
 			)
+			if m.clientRefGauge != nil {
+				m.clientRefGauge.WithLabelValues(cacheKey.String()).Set(
+					float64(c.Stat().RefCount()),
+				)
+			}
 		}
 	}
 }
@@ -1004,6 +1018,14 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 				metrics.LabelCacheKey,
 			},
 		),
+		clientRefGauge: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: metricsFQNClientRefs,
+				Help: "Client factory number of object references",
+			}, []string{
+				metrics.LabelCacheKey,
+			},
+		),
 	}
 
 	if config.CollectClientCacheMetrics {
@@ -1016,6 +1038,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 			factory.requestCounterVec,
 			factory.requestErrorCounterVec,
 			factory.taintedClientGauge,
+			factory.clientRefGauge,
 			clientFactoryOperationTimes,
 		)
 	}

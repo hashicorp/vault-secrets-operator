@@ -47,26 +47,41 @@ var (
 	// metricsFQNClientCacheEvictions for the ClientCache.
 	metricsFQNClientCloneCacheEvictions = prometheus.BuildFQName(
 		metrics.Namespace, subsystemClientCloneCache, "evictions")
+
+	// metricsFQNClientCacheTaintedClients for the ClientCache.
+	metricsFQNClientCacheTaintedClients = prometheus.BuildFQName(
+		metrics.Namespace, subsystemClientCache, metrics.NameTainted)
+
+	// metricsFQNClientCacheClientRefs for the ClientCache.
+	metricsFQNClientCacheClientRefs = prometheus.BuildFQName(
+		metrics.Namespace, subsystemClientCache, metrics.NameClientRefs)
 )
 
 var _ prometheus.Collector = (*clientCacheCollector)(nil)
 
 // clientCacheCollector provides a prometheus.Collector for ClientCache metrics.
 type clientCacheCollector struct {
-	cache    ClientCache
-	size     float64
-	sizeDesc *prometheus.Desc
-	lenDesc  *prometheus.Desc
+	cache       ClientCache
+	size        float64
+	sizeDesc    *prometheus.Desc
+	lenDesc     *prometheus.Desc
+	taintedDesc *prometheus.Desc
+	refsDesc    *prometheus.Desc
 }
 
 func (c clientCacheCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.sizeDesc
 	ch <- c.lenDesc
+	ch <- c.taintedDesc
+	ch <- c.refsDesc
 }
 
 func (c clientCacheCollector) Collect(ch chan<- prometheus.Metric) {
+	stats := c.cache.Stats()
 	ch <- prometheus.MustNewConstMetric(c.sizeDesc, prometheus.GaugeValue, c.size)
-	ch <- prometheus.MustNewConstMetric(c.lenDesc, prometheus.GaugeValue, float64(c.cache.Len()))
+	ch <- prometheus.MustNewConstMetric(c.lenDesc, prometheus.GaugeValue, float64(stats.Len))
+	ch <- prometheus.MustNewConstMetric(c.taintedDesc, prometheus.GaugeValue, float64(stats.Tainted))
+	ch <- prometheus.MustNewConstMetric(c.refsDesc, prometheus.GaugeValue, float64(stats.Refs))
 }
 
 func newClientCacheCollector(cache ClientCache, size int) prometheus.Collector {
@@ -80,6 +95,14 @@ func newClientCacheCollector(cache ClientCache, size int) prometheus.Collector {
 		lenDesc: prometheus.NewDesc(
 			metricsFQNClientCacheLength,
 			"Number of Vault Clients in the cache.",
+			nil, nil),
+		taintedDesc: prometheus.NewDesc(
+			metricsFQNClientCacheTaintedClients,
+			"Number of tainted Vault Clients in the cache.",
+			nil, nil),
+		refsDesc: prometheus.NewDesc(
+			metricsFQNClientCacheClientRefs,
+			"Total number of client object references.",
 			nil, nil),
 	}
 }

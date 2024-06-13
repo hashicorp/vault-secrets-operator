@@ -15,6 +15,12 @@ import (
 // In the case where the return value is true, the Client will be removed from the cache.
 type ClientCachePruneFilterFunc func(Client) bool
 
+type CacheStats struct {
+	Tainted int
+	Refs    int
+	Len     int
+}
+
 // ClientCache provides an interface for Caching a Client.
 type ClientCache interface {
 	Get(ClientCacheKey) (Client, bool)
@@ -26,6 +32,7 @@ type ClientCache interface {
 	Prune(filterFunc ClientCachePruneFilterFunc) []Client
 	Contains(key ClientCacheKey) bool
 	Purge() []ClientCacheKey
+	Stats() CacheStats
 }
 
 var _ ClientCache = (*clientCache)(nil)
@@ -40,6 +47,33 @@ type clientCache struct {
 	evictionCloneGauge prometheus.Gauge
 	hitCloneCounter    prometheus.Counter
 	missCloneCounter   prometheus.Counter
+	cacheStats         *CacheStats
+}
+
+func (c *clientCache) Stats() CacheStats {
+	// TODO: cache this result somehow.
+	if c.cacheStats != nil {
+		return CacheStats{
+			Len:  c.cacheStats.Len,
+			Refs: c.cacheStats.Refs,
+		}
+	}
+
+	stats := CacheStats{
+		Len: c.Len(),
+	}
+	for _, key := range c.Keys() {
+		if client, ok := c.cache.Peek(key); ok {
+			if client.Tainted() {
+				stats.Tainted++
+			}
+			if client.Stat() != nil {
+				stats.Refs += client.Stat().RefCount()
+			}
+		}
+	}
+
+	return stats
 }
 
 func (c *clientCache) Keys() []ClientCacheKey {
