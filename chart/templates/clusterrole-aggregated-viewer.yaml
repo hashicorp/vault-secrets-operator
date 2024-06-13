@@ -10,6 +10,7 @@ metadata:
   name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "aggregate-role-viewer" }}
   labels:
     app.kubernetes.io/component: rbac
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
     vso.hashicorp.com/role-instance: aggregate-role-viewer
 {{- include "vso.chart.labels" . | nindent 4 }}
 aggregationRule:

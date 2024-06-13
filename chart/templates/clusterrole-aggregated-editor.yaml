@@ -10,6 +10,7 @@ metadata:
   name: {{ printf "%s-%s" (include "vso.chart.fullname" .) "aggregate-role-editor" }}
   labels:
     app.kubernetes.io/component: rbac
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
     vso.hashicorp.com/role-instance: aggregate-role-editor
 {{- include "vso.chart.labels" . | nindent 4 }}
 aggregationRule:
