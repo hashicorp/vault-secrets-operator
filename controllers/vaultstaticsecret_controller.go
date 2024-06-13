@@ -11,6 +11,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,13 +73,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
 
-	c, err := r.ClientFactory.Get(ctx, r.Client, o)
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
-			"Failed to get Vault auth login: %s", err)
-		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
-	}
-
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
 		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
@@ -107,6 +101,25 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
+
+	defer func() {
+		if err := r.updateStatus(ctx, o); err != nil {
+			logger.Error(err, "Failed to update resource status")
+		}
+	}()
+
+	c, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		o.Status.VaultClientMeta = secretsv1beta1.VaultClientMeta{}
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+			"Failed to get Vault auth login: %s", err)
+		return ctrl.Result{}, err
+	}
+
+	clientCacheKey, _ := c.GetCacheKey()
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = c.ID()
+	o.Status.VaultClientMeta.CreationTimestamp = metav1.NewTime(c.Stat().CreationTimestamp())
 
 	resp, err := c.Read(ctx, kvReq)
 	if err != nil {
@@ -178,10 +191,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
-	if err := r.updateStatus(ctx, o); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
@@ -192,6 +201,7 @@ func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secre
 	logger.V(consts.LogLevelDebug).Info("Updating status")
 	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
+		logger.Error(err, "Failed to update status")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)
 	}
@@ -201,10 +211,13 @@ func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secre
 }
 
 func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o client.Object) error {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithName("handleDeletion")
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	r.BackOffRegistry.Delete(objKey)
+	if err := r.ClientFactory.UnregisterObjectRef(ctx, o); err != nil {
+		logger.Error(err, "Warning: failed to unregister object reference")
+	}
 	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer) {

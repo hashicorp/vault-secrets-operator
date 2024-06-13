@@ -14,6 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -95,10 +96,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Info(msg)
 		o.Status.Error = consts.ReasonK8sClientError
 		r.recordEvent(o, o.Status.Error, msg)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-
 		return ctrl.Result{
 			RequeueAfter: horizon,
 		}, nil
@@ -163,17 +160,29 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	defer func() {
+		if err := r.updateStatus(ctx, o); err != nil {
+			logger.Error(err, "Failed to update resource status")
+		}
+	}()
+
 	// assume that status is always invalid
 	o.Status.Valid = false
 	logger.Info("Must sync", "reason", syncReason)
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
+		o.Status.VaultClientMeta = secretsv1beta1.VaultClientMeta{}
 		o.Status.Error = consts.ReasonK8sClientError
 		logger.Error(err, "Get Vault client")
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
 	}
+
+	clientCacheKey, _ := c.GetCacheKey()
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = c.ID()
+	o.Status.VaultClientMeta.CreationTimestamp = metav1.NewTime(c.Stat().CreationTimestamp())
 
 	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
 	if err != nil {
@@ -184,10 +193,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Failed to issue certificate from Vault"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-
 		r.SyncRegistry.Add(req.NamespacedName)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
@@ -203,9 +208,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Failed to unmarshal PKI response"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -216,9 +218,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Invalid Vault secret data, serial_number cannot be empty"
 		logger.Error(nil, msg)
 		r.recordEvent(o, o.Status.Error, msg)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -230,9 +229,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Failed to marshal Vault secret data"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -261,9 +257,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err != nil {
 			logger.Error(err, "HMAC data")
 			o.Status.Error = consts.ReasonHMACDataError
-			if err := r.updateStatus(ctx, o); err != nil {
-				return ctrl.Result{}, err
-			}
 			return ctrl.Result{
 				RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 			}, nil
@@ -274,9 +267,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 		logger.Error(err, "Sync secret")
 		o.Status.Error = consts.ReasonSecretSyncError
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -306,11 +296,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
 	o.Status.LastRotation = time.Now().Unix()
-	if err := r.updateStatus(ctx, o); err != nil {
-		logger.Error(err, "Failed to update the status")
-		return ctrl.Result{}, err
-	}
-
 	r.SyncRegistry.Delete(req.NamespacedName)
 
 	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
@@ -322,14 +307,18 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
-	objKey := client.ObjectKeyFromObject(o)
-	r.SyncRegistry.Delete(objKey)
-	r.BackOffRegistry.Delete(objKey)
-
-	r.referenceCache.Remove(SecretTransformation, objKey)
 	finalizerSet := controllerutil.ContainsFinalizer(o, vaultPKIFinalizer)
 	logger := log.FromContext(ctx).WithName("handleDeletion").WithValues(
 		"finalizer", vaultPKIFinalizer, "isSet", finalizerSet)
+
+	objKey := client.ObjectKeyFromObject(o)
+	r.referenceCache.Remove(SecretTransformation, objKey)
+	r.SyncRegistry.Delete(objKey)
+	r.BackOffRegistry.Delete(objKey)
+	if err := r.ClientFactory.UnregisterObjectRef(ctx, o); err != nil {
+		logger.Error(err, "Warning: failed to unregister object reference")
+	}
+
 	logger.V(consts.LogLevelTrace).Info("In deletion")
 	if finalizerSet {
 		logger.V(consts.LogLevelDebug).Info("Delete finalizer")

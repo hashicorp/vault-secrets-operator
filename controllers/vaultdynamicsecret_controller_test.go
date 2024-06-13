@@ -992,6 +992,8 @@ func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
 	}
 }
 
+var _ vault.Client = (*stubVaultClient)(nil)
+
 type stubVaultClient struct {
 	vault.Client
 	cacheKey           vault.ClientCacheKey

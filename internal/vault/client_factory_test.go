@@ -11,6 +11,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
 )
 
 func Test_cachingClientFactory_RegisterClientCallbackHandler(t *testing.T) {
@@ -299,4 +306,35 @@ func Test_cachingClientFactory_callClientCallbacks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newClientBuilder returns a new fake.ClientBuilder with the necessary schemes.
+// copied from helpers
+func newClientBuilder() *fake.ClientBuilder {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+	return fake.NewClientBuilder().WithScheme(scheme)
+}
+
+var _ Client = (*stubClient)(nil)
+
+type stubClient struct {
+	Client
+	cacheKey           ClientCacheKey
+	credentialProvider provider.CredentialProviderBase
+	isClone            bool
+	clientStat         *clientStat
+}
+
+func (c *stubClient) GetCacheKey() (ClientCacheKey, error) {
+	return c.cacheKey, nil
+}
+
+func (c *stubClient) IsClone() bool {
+	return c.isClone
+}
+
+func (c *stubClient) Stat() *clientStat {
+	return c.clientStat
 }

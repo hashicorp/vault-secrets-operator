@@ -137,6 +137,9 @@ type VaultPKISecretStatus struct {
 	SecretMAC string `json:"secretMAC,omitempty"`
 	Valid     bool   `json:"valid"`
 	Error     string `json:"error"`
+	// VaultClientMeta contains the status of the Vault client and is used during
+	// resource reconciliation.
+	VaultClientMeta VaultClientMeta `json:"vaultClientMeta,omitempty"`
 }
 
 //+kubebuilder:object:root=true

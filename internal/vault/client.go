@@ -26,6 +26,80 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
+type ClientStat interface {
+	Age() time.Duration
+	CreationTimestamp() time.Time
+	Reset()
+	RefCount() int
+	IncRefCount() int
+	DecRefCount() int
+}
+
+var _ ClientStat = (*clientStat)(nil)
+
+type clientStat struct {
+	// creationTimestamp is the time the client was created.
+	creationTimestamp time.Time
+	// refCount is the number of references to the client.
+	refCount int
+	mu       sync.RWMutex
+}
+
+// CreationTimestamp returns the time the client was created.
+func (m *clientStat) CreationTimestamp() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.creationTimestamp
+}
+
+// Age returns the duration since the client was created.
+func (m *clientStat) Age() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return time.Since(m.creationTimestamp)
+}
+
+// Reset the client's creation time to the current time.
+func (m *clientStat) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.creationTimestamp = time.Now()
+	m.refCount = 0
+}
+
+// IncRefCount increments the client's reference count. This is useful for
+// tracking the number of references to a client.
+// Returns the previous reference count.
+func (m *clientStat) IncRefCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	last := m.refCount
+	m.refCount++
+
+	return last
+}
+
+// DecRefCount decrements the client's reference count. This is useful for
+// tracking the number of references to a client.
+// Returns the previous reference count.
+func (m *clientStat) DecRefCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	last := m.refCount
+	if m.refCount > 0 {
+		m.refCount--
+	}
+	return last
+}
+
+// RefCount returns the client's reference count. This is useful for tracking the
+// number of references to a client.
+func (m *clientStat) RefCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.refCount
+}
+
 type ClientOptions struct {
 	SkipRenewal   bool
 	WatcherDoneCh chan<- *ClientCallbackHandlerRequest
@@ -170,6 +244,7 @@ type Client interface {
 	SetNamespace(string)
 	Tainted() bool
 	Untaint() bool
+	Stat() *clientStat
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -193,6 +268,11 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
+	clientStat         *clientStat
+}
+
+func (c *defaultClient) Stat() *clientStat {
+	return c.clientStat
 }
 
 // Untaint the client, marking it as untainted. This should be done after the
@@ -519,7 +599,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 
 				return
 			case renewal := <-watcher.RenewCh():
-				logger.V(consts.LogLevelDebug).Info("Successfully renewed the client")
+				logger.V(consts.LogLevelTrace).Info("Successfully renewed the client")
 
 				c.authSecret = renewal.Secret
 				c.lastRenewal = renewal.RenewedAt.Unix()
@@ -771,6 +851,9 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	c.authObj = authObj
 	c.connObj = connObj
 	c.watcherDoneCh = opts.WatcherDoneCh
+
+	c.clientStat = &clientStat{}
+	c.clientStat.Reset()
 
 	return nil
 }
