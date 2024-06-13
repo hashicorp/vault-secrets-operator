@@ -61,6 +61,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
+		metrics.DeleteResourceStatus("vaultconnection", o)
 		return r.handleFinalizer(ctx, o)
 	}
 
