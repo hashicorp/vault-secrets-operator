@@ -22,9 +22,6 @@ var (
 	metricsFQNClientFactoryOpsTimeSeconds = prometheus.BuildFQName(
 		metrics.Namespace, subsystemClientFactory, metrics.NameOperationsTimeSeconds)
 
-	metricsFQNClientFactoryTaintedClients = prometheus.BuildFQName(
-		metrics.Namespace, subsystemClientFactory, metrics.NameTaintedClients)
-
 	// TODO: update to use Native Histograms once it is no longer an experimental Prometheus feature
 	// ref: https://github.com/prometheus/prometheus/milestone/10
 	clientFactoryOperationTimes = prometheus.NewHistogramVec(prometheus.HistogramOpts{
