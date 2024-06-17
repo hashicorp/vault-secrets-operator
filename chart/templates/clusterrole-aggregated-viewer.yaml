@@ -11,6 +11,9 @@ metadata:
   labels:
     app.kubernetes.io/component: rbac
     vso.hashicorp.com/role-instance: aggregate-role-viewer
+    {{- if .Values.controller.rbac.clusterRoleAggregation.userFacingRoles.view }}
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    {{- end -}}
 {{- include "vso.chart.labels" . | nindent 4 }}
 aggregationRule:
   clusterRoleSelectors:

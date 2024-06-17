@@ -11,6 +11,9 @@ metadata:
   labels:
     app.kubernetes.io/component: rbac
     vso.hashicorp.com/role-instance: aggregate-role-editor
+    {{- if .Values.controller.rbac.clusterRoleAggregation.userFacingRoles.edit }}
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    {{- end -}}
 {{- include "vso.chart.labels" . | nindent 4 }}
 aggregationRule:
   clusterRoleSelectors:
