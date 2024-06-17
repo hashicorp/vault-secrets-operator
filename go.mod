@@ -7,7 +7,7 @@ toolchain go1.22.2
 require (
 	cloud.google.com/go/compute/metadata v0.3.0
 	github.com/Masterminds/sprig/v3 v3.2.3
-	github.com/argoproj/argo-rollouts v1.6.6
+	github.com/argoproj/argo-rollouts v1.7.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/go-logr/logr v1.4.2
 	github.com/go-openapi/runtime v0.28.0
