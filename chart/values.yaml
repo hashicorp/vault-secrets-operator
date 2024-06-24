@@ -141,6 +141,14 @@ controller:
   # This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
   annotations: {}
 
+  # Controller pre-delete hook labels and annotations
+  preDeleteHook:
+    # Extra labels to attach to the pre-delete hook deployment. This should be formatted as a YAML object (map)
+    labels: {}
+
+    # This value defines additional annotations for the pre-delete hook deployment. This should be formatted as a YAML object (map)
+    annotations: {}
+
   # Settings related to the vault-secrets-operator container.
   manager:
 

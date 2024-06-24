@@ -170,12 +170,18 @@ metadata:
   labels:
     app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
+    {{- if .Values.controller.preDeleteHook.labels }}
+      {{- toYaml .Values.controller.labels | nindent 4 }}
+    {{- end }}
   annotations:
     # This is what defines this resource as a hook. Without this line, the
     # job is considered part of the release.
     "helm.sh/hook": pre-delete
     "helm.sh/hook-delete-policy": hook-succeeded
     {{- if .Values.controller.annotations }}
+      {{- toYaml .Values.controller.annotations | nindent 4 }}
+    {{- end }}
+    {{- if .Values.controller.preDeleteHook.annotations }}
       {{- toYaml .Values.controller.annotations | nindent 4 }}
     {{- end }}
 spec:
