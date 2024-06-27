@@ -13,10 +13,10 @@ import (
 // eventWatcherMeta - metadata for managing an event watcher goroutine
 type eventWatcherMeta struct {
 	// Cancel will close the watcher's context (and stop the watcher goroutine)
-	Cancel context.CancelFunc
+	Cancel context.CancelFunc `json:"-"`
 	// StoppedCh lets the watcher goroutine signal the caller that it has
 	// stopped (and removed itself from the registry)
-	StoppedCh chan struct{}
+	StoppedCh chan struct{} `json:"-"`
 	// LastGeneration is the generation of the VaultStaticSecret resource, used
 	// to detect if the event watcher needs to be recreated
 	LastGeneration int64
@@ -25,21 +25,26 @@ type eventWatcherMeta struct {
 	LastClientID string
 }
 
-type EventWatcherRegistry struct {
+// eventWatcherRegistry - registry for keeping track of running event watcher
+// goroutines keyed by object name, along with associated metadata for
+// rebuilding and killing the watchers
+type eventWatcherRegistry struct {
 	registry *gocache.Cache
 }
 
-func newEventWatcherRegistry() *EventWatcherRegistry {
-	return &EventWatcherRegistry{
+func newEventWatcherRegistry() *eventWatcherRegistry {
+	return &eventWatcherRegistry{
 		registry: gocache.New(gocache.NoExpiration, gocache.NoExpiration),
 	}
 }
 
-func (r *EventWatcherRegistry) Register(key types.NamespacedName, meta *eventWatcherMeta) {
+// Register - set event metadata in the registry for an object
+func (r *eventWatcherRegistry) Register(key types.NamespacedName, meta *eventWatcherMeta) {
 	r.registry.Set(key.String(), meta, gocache.NoExpiration)
 }
 
-func (r *EventWatcherRegistry) Get(key types.NamespacedName) (*eventWatcherMeta, bool) {
+// Get - retrieve event metadata from the registry for a given object
+func (r *eventWatcherRegistry) Get(key types.NamespacedName) (*eventWatcherMeta, bool) {
 	meta, ok := r.registry.Get(key.String())
 	if !ok {
 		return nil, false
@@ -48,6 +53,7 @@ func (r *EventWatcherRegistry) Get(key types.NamespacedName) (*eventWatcherMeta,
 	return meta.(*eventWatcherMeta), true
 }
 
-func (r *EventWatcherRegistry) Delete(key types.NamespacedName) {
+// Delete - remove event metadata from the registry for a given object
+func (r *eventWatcherRegistry) Delete(key types.NamespacedName) {
 	r.registry.Delete(key.String())
 }
