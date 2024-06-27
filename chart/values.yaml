@@ -101,6 +101,19 @@ controller:
       # @type: array<string>
       editorRoles: []
 
+      # userFacingRoles is a map of roles that will be aggregated into the viewer and editor ClusterRoles.
+      # See https://kubernetes.io/docs/reference/access-authn-authz/rbac/#user-facing-roles for more information.
+      # @type: object
+      userFacingRoles:
+        # view controls whether the aggregated viewer ClusterRole will be made available to the user-facing
+        # 'view' ClusterRole. Requires the viewerRoles to be set.
+        # @type: boolean
+        view: false
+        # view controls whether the aggregated editor ClusterRole will be made available to the user-facing
+        # 'edit' ClusterRole. Requires the editorRoles to be set.
+        # @type: boolean
+        edit: false
+
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
