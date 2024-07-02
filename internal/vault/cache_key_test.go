@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	authUID      = types.UID("c4fad6b9-e7bb-4ed8-bc38-67fd6dc85a35")
-	connUID      = types.UID("c4fad6b9-e7bb-4ed8-bc38-67fd6dc85a36")
-	providerUID  = types.UID("c4fad6b9-e7bb-4ed8-bc38-67fd6dc85a37")
-	computedHash = "2a8108711ae49ac0faa724"
+	authUID       = types.UID("c4fad6b9-e7bb-4ed8-bc38-67fd6dc85a35")
+	connUID       = types.UID("c4fad6b9-e7bb-4ed8-bc38-67fd6dc85a36")
+	providerUID   = types.UID("c4fad6b9-e7bb-4ed8-bc38-67fd6dc85a37")
+	computedHash  = "2a8108711ae49ac0faa724"
+	computedHash2 = "2a8108711ae49ac0faa725"
 )
 
 type computeClientCacheKeyTest struct {
@@ -334,6 +335,128 @@ func TestClientCacheKeyClone(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "ClientCacheKeyClone(%v, %v)", tt.key, tt.namespace)
+		})
+	}
+}
+
+func TestClientCacheKey_SameParent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		key     ClientCacheKey
+		other   ClientCacheKey
+		want    bool
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "same-parent-equal",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			want:    true,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "same-parent-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-/ns1/ns2",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s-/ns3/ns4",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			want:    true,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "other-parent-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-/ns1/ns2",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s-/ns3/ns4",
+				consts.ProviderMethodKubernetes, computedHash2),
+			),
+			want:    false,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "invalid-self-hash",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				consts.ProviderMethodKubernetes, computedHash[len(computedHash)-1:]),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			want:    false,
+			wantErr: assert.Error,
+		},
+		{
+			name: "invalid-other-hash",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s",
+				consts.ProviderMethodKubernetes, computedHash[len(computedHash)-1:]),
+			),
+			want:    false,
+			wantErr: assert.Error,
+		},
+		{
+			name: "invalid-other-method-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-/ns1/ns2",
+				"invalid", computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s-/ns3/ns4",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			want:    false,
+			wantErr: assert.Error,
+		},
+		{
+			name: "invalid-other-method-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-/ns1/ns2",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s-/ns3/ns4",
+				"invalid", computedHash),
+			),
+			want:    false,
+			wantErr: assert.Error,
+		},
+		{
+			name: "invalid-self-hash-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-/ns1/ns2",
+				consts.ProviderMethodKubernetes, computedHash[len(computedHash)-1:]),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s-/ns3/ns4",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			want:    false,
+			wantErr: assert.Error,
+		},
+		{
+			name: "invalid-other-hash-clone",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-/ns1/ns2",
+				consts.ProviderMethodKubernetes, computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s-/ns3/ns4",
+				consts.ProviderMethodKubernetes, computedHash[len(computedHash)-1:]),
+			),
+			want:    false,
+			wantErr: assert.Error,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.key.SameParent(tt.other)
+			if !tt.wantErr(t, err, fmt.Sprintf("SameParent(%v)", tt.other)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got,
+				"SameParent(%v)", tt.other)
 		})
 	}
 }

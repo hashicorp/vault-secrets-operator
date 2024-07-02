@@ -45,12 +45,12 @@ type clientCache struct {
 func (c *clientCache) Purge() []ClientCacheKey {
 	var purged []ClientCacheKey
 	for _, key := range c.cache.Keys() {
-		client, ok := c.Get(key)
+		_, ok := c.Get(key)
 		if !ok {
 			continue
 		}
 
-		if ok := c.remove(key, client); ok {
+		if ok := c.remove(key, false); ok {
 			purged = append(purged, key)
 		}
 	}
@@ -126,12 +126,7 @@ func (c *clientCache) Add(client Client) (bool, error) {
 // Returns true if the key was present in the cache.
 // If it was present then Client.Close() will be called.
 func (c *clientCache) Remove(key ClientCacheKey) bool {
-	var removed bool
-	if client, ok := c.cache.Peek(key); ok {
-		removed = c.remove(key, client)
-	}
-
-	return removed
+	return c.remove(key, true)
 }
 
 func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []Client {
@@ -139,7 +134,7 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []Client {
 	for _, k := range c.cache.Keys() {
 		if client, ok := c.cache.Peek(k); ok {
 			if filterFunc(client) {
-				if c.remove(k, client) {
+				if c.remove(k, false) {
 					pruned = append(pruned, client)
 				}
 			}
@@ -149,12 +144,25 @@ func (c *clientCache) Prune(filterFunc ClientCachePruneFilterFunc) []Client {
 	return pruned
 }
 
-func (c *clientCache) remove(key ClientCacheKey, client Client) bool {
-	if !client.IsClone() {
-		c.pruneClones(key)
+func (c *clientCache) remove(key ClientCacheKey, peek bool) bool {
+	remove := true
+	if key.IsClone() {
+		if peek {
+			_, remove = c.cloneCache.Peek(key)
+		}
+		if remove {
+			return c.cloneCache.Remove(key)
+		}
+	} else {
+		if peek {
+			_, remove = c.cache.Peek(key)
+		}
+		if remove {
+			c.pruneClones(key)
+			return c.cache.Remove(key)
+		}
 	}
-
-	return c.cache.Remove(key)
+	return false
 }
 
 func (c *clientCache) pruneClones(cacheKey ClientCacheKey) {

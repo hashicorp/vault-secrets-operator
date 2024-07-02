@@ -712,15 +712,21 @@ func (m *cachingClientFactory) startClientCallbackHandler(ctx context.Context) {
 					continue
 				}
 
-				if req.Client.IsClone() {
-					continue
-				}
-
 				cacheKey, err := req.Client.GetCacheKey()
 				if err != nil {
 					logger.Error(err, "Invalid client, client callbacks not executed",
 						"cacheKey", cacheKey)
 					continue
+				}
+
+				if cacheKey.IsClone() {
+					parentCacheKey, err := cacheKey.Parent()
+					if err != nil {
+						logger.Error(err, "Invalid client clone, client callbacks not executed",
+							"cacheKey", cacheKey)
+						continue
+					}
+					cacheKey = parentCacheKey
 				}
 
 				// remove the client from the cache, it will be recreated when a reconciler
