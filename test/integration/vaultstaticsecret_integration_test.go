@@ -56,6 +56,12 @@ func TestVaultStaticSecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	// The events tests require Vault Enterprise >= 1.16.3, and since that
+	// changes the app policy required we need to set a flag in the test
+	// terraform
+	rootVaultClient := getVaultClient(t, "")
+	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
+
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
@@ -77,6 +83,9 @@ func TestVaultStaticSecret(t *testing.T) {
 	}
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
+		if atLeast_v1_16_3 {
+			tfOptions.Vars["use_events"] = true
+		}
 	}
 	tfOptions = setCommonTFOptions(t, tfOptions)
 
@@ -264,6 +273,7 @@ func TestVaultStaticSecret(t *testing.T) {
 		create           int
 		createTypes      []string
 		version          int
+		useEvents        bool
 	}{
 		{
 			name: "existing",
@@ -315,6 +325,32 @@ func TestVaultStaticSecret(t *testing.T) {
 			existing:    getExisting(),
 			create:      2,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
+		},
+		{
+			name: "events-both",
+			expectedExisting: []expectedData{
+				{
+					initial: map[string]interface{}{"username": "bob", "fruit": "banana"},
+					update:  map[string]interface{}{"username": "bob", "fruit": "apple"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+			},
+			existing: func() []*secretsv1beta1.VaultStaticSecret {
+				vss := getExisting()
+				for _, v := range vss {
+					v.Spec.SyncConfig = &secretsv1beta1.SyncConfig{
+						InstantUpdates: true,
+					}
+					v.Spec.RefreshAfter = "1h"
+				}
+				return vss
+			}(),
+			create:      2,
+			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
+			useEvents:   true,
 		},
 	}
 
@@ -402,6 +438,9 @@ func TestVaultStaticSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.useEvents && !(entTests && atLeast_v1_16_3) {
+				t.Skip("Skipping because events tests require Vault Enterprise >= 1.16.3")
+			}
 			var count int
 			require.Equal(t, len(tt.existing), len(tt.expectedExisting))
 
@@ -465,6 +504,12 @@ func TestVaultStaticSecret(t *testing.T) {
 						}
 						if tt.version != 0 {
 							vssObj.Spec.Version = tt.version
+						}
+						if tt.useEvents {
+							vssObj.Spec.SyncConfig = &secretsv1beta1.SyncConfig{
+								InstantUpdates: true,
+							}
+							vssObj.Spec.RefreshAfter = "1h"
 						}
 
 						if !skipCleanup {

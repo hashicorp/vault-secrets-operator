@@ -52,6 +52,15 @@ type VaultStaticSecretSpec struct {
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
 	Destination Destination `json:"destination"`
+	// SyncConfig configures sync behavior from Vault to VSO
+	SyncConfig *SyncConfig `json:"syncConfig,omitempty"`
+}
+
+// SyncConfig configures sync behavior from Vault to VSO
+type SyncConfig struct {
+	// InstantUpdates is a flag to indicate that event-driven updates are
+	// enabled for this VaultStaticSecret
+	InstantUpdates bool `json:"instantUpdates,omitempty"`
 }
 
 // VaultStaticSecretStatus defines the observed state of VaultStaticSecret

@@ -380,3 +380,21 @@ func newClientBuilder() *fake.ClientBuilder {
 	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 	return fake.NewClientBuilder().WithScheme(scheme)
 }
+
+func Test_waitForStoppedCh(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	t.Cleanup(cancel)
+	stoppedCh := make(chan struct{}, 1)
+
+	err := waitForStoppedCh(ctx, stoppedCh)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	t.Cleanup(cancel2)
+
+	stoppedCh <- struct{}{}
+	err = waitForStoppedCh(ctx2, stoppedCh)
+	assert.NoError(t, err)
+}
