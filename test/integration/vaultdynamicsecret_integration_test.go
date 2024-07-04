@@ -51,12 +51,16 @@ type dynamicK8SOutputs struct {
 	DefaultLeaseTTLSeconds    int    `json:"default_lease_ttl_seconds"`
 	NonRenewableK8STokenTTL   int    `json:"non_renewable_k8s_token_ttl"`
 	// should always be non-renewable
-	K8SSecretPath  string `json:"k8s_secret_path"`
-	K8SSecretRole  string `json:"k8s_secret_role"`
-	DBPath         string `json:"db_path"`
-	TransitPath    string `json:"transit_path"`
-	TransitKeyName string `json:"transit_key_name"`
-	TransitRef     string `json:"transit_ref"`
+	K8SSecretPath      string   `json:"k8s_secret_path"`
+	K8SSecretRole      string   `json:"k8s_secret_role"`
+	DBPath             string   `json:"db_path"`
+	TransitPath        string   `json:"transit_path"`
+	TransitKeyName     string   `json:"transit_key_name"`
+	TransitRef         string   `json:"transit_ref"`
+	XnsK8sSAs          []string `json:"xns_k8s_sas"`
+	XnsVaultNS         string   `json:"xns_vault_ns"`
+	WithXns            bool     `json:"with_xns"`
+	XnsMemberEntityIDs []string `json:"xns_member_entity_ids"`
 }
 
 // updated in init()
@@ -192,9 +196,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 		created = append(created, o)
 	}
 
-	//for _, o := range conns {
+	// for _, o := range conns {
 	//	create(o)
-	//}
+	// }
 	for _, o := range auths {
 		create(o)
 	}
@@ -675,6 +679,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			// set a high default lease ttl to avoid renewals during the test
 			"vault_db_default_lease_ttl": 600,
 			"with_static_role_scheduled": withStaticRoleScheduled,
+			"with_xns":                   true,
 		},
 	}
 	if entTests {
@@ -701,7 +706,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			terraform.Destroy(t, tfOptions)
 			assert.NoError(t, os.RemoveAll(tempDir))
 		} else {
-			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
+			t.Logf("Skipping cleanup, name=%s, tfdir=%s", t.Name(), tfDir)
 		}
 	})
 
@@ -734,9 +739,28 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 	tests := []struct {
 		name        string
 		create      int
+		xns         bool
 		triggerFunc func(t *testing.T, reconciledObjs []*secretsv1beta1.VaultDynamicSecret)
 		expected    map[string]int
 	}{
+		{
+			name:   "xns",
+			xns:    true,
+			create: len(outputs.XnsK8sSAs),
+			triggerFunc: func(t *testing.T, _ []*secretsv1beta1.VaultDynamicSecret) {
+				t.Helper()
+				cfg := api.DefaultConfig()
+				cfg.Address = vaultAddr
+				vc, err := api.NewClient(cfg)
+				assert.NoError(t, err)
+				vc.SetToken(vaultToken)
+				if outputs.Namespace != "" {
+					vc.SetNamespace(outputs.Namespace)
+				}
+
+				revokeTokenForEntityIDs(t, vc, ctx, outputs.XnsMemberEntityIDs)
+			},
+		},
 		{
 			name:   "create-only",
 			create: 25,
@@ -826,6 +850,10 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.xns && !outputs.WithXns {
+				t.Skipf("skipping xns test %s, test infrastructre not supported", tt.name)
+			}
+
 			var objsCreated []*secretsv1beta1.VaultDynamicSecret
 			t.Cleanup(func() {
 				if !skipCleanup {
@@ -839,13 +867,19 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			// create secrets tests
 			for idx := 0; idx < tt.create; idx++ {
 				nameSuffix := fmt.Sprintf("%s-%d", testSuffix, idx)
-				sa := &corev1.ServiceAccount{
-					ObjectMeta: v1.ObjectMeta{
-						Namespace: outputs.K8sNamespace,
-						Name:      fmt.Sprintf("sa-%s", nameSuffix),
-					},
+				var saName string
+				if !tt.xns {
+					sa := &corev1.ServiceAccount{
+						ObjectMeta: v1.ObjectMeta{
+							Namespace: outputs.K8sNamespace,
+							Name:      fmt.Sprintf("sa-%s", nameSuffix),
+						},
+					}
+					createObj(sa)
+					saName = sa.ObjectMeta.Name
+				} else {
+					saName = outputs.XnsK8sSAs[idx]
 				}
-				createObj(sa)
 
 				connObj := &secretsv1beta1.VaultConnection{
 					ObjectMeta: v1.ObjectMeta{
@@ -870,12 +904,17 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 						VaultConnectionRef: connObj.GetName(),
 						Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 							Role:           outputs.AuthRole,
-							ServiceAccount: sa.ObjectMeta.Name,
+							ServiceAccount: saName,
 							TokenAudiences: []string{"vault"},
 						},
 					},
 				}
 				createObj(authObj)
+
+				vdsVaultNS := outputs.Namespace
+				if tt.xns {
+					vdsVaultNS = outputs.XnsVaultNS
+				}
 
 				dest := fmt.Sprintf("dest-%s", nameSuffix)
 				vdsObj := &secretsv1beta1.VaultDynamicSecret{
@@ -884,7 +923,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 						Name:      dest,
 					},
 					Spec: secretsv1beta1.VaultDynamicSecretSpec{
-						Namespace:    outputs.Namespace,
+						Namespace:    vdsVaultNS,
 						Mount:        outputs.DBPath,
 						Path:         "creds/" + outputs.DBRole,
 						Revoke:       true,
@@ -1219,4 +1258,76 @@ func awaitDynamicSecretReconciled(t *testing.T, ctx context.Context, client ctrl
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 20),
 	))
 	return &vdsObjFinal, valid
+}
+
+func revokeTokenForEntityIDs(t *testing.T, vc *api.Client, ctx context.Context, entityIDs []string) {
+	t.Helper()
+
+	if !assert.Greater(t, len(entityIDs), 0, "no entity IDs to revoke") {
+		return
+	}
+
+	resp, err := vc.Logical().ListWithContext(ctx, "auth/token/accessors")
+	if !assert.NoError(t, err, "failed to list token accessors") {
+		return
+	}
+	if !assert.NotNil(t, resp, "response is nil") {
+		return
+	}
+
+	accessors, ok := resp.Data["keys"].([]interface{})
+	if !assert.True(t, ok, "keys not found in response") {
+		return
+	}
+
+	entityIDMap := map[string]bool{}
+	for _, id := range entityIDs {
+		entityIDMap[id] = true
+	}
+
+	var toRevoke []string
+	for _, accessor := range accessors {
+		resp, err := vc.Logical().WriteWithContext(ctx, "auth/token/lookup-accessor",
+			map[string]any{
+				"accessor": accessor,
+			},
+		)
+		if !assert.NoError(t, err, "failed to lookup accessor %s", accessor) {
+			return
+		}
+
+		if !assert.NotNil(t, resp, "response is nil") {
+			return
+		}
+
+		if !assert.NotNil(t, resp.Data, "data is nil") {
+			return
+		}
+
+		entityID, ok := resp.Data["entity_id"].(string)
+		if !assert.True(t, ok, "entity_id is not a string") {
+			return
+		}
+
+		if _, ok := entityIDMap[entityID]; ok {
+			toRevoke = append(toRevoke, accessor.(string))
+		}
+	}
+
+	if !assert.Equal(t, len(toRevoke), len(entityIDs), "not all accessors found") {
+		return
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(toRevoke))
+	for _, accessor := range toRevoke {
+		go func(accessor string) {
+			defer wg.Done()
+			_, err := vc.Logical().WriteWithContext(ctx, "auth/token/revoke-accessor", map[string]interface{}{
+				"accessor": accessor,
+			})
+			assert.NoError(t, err, "failed to revoke accessor %s", accessor)
+		}(accessor)
+	}
+	wg.Wait()
 }

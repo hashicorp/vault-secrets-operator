@@ -79,6 +79,8 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
     "default",
     # used by some tests that create their own service accounts
     "sa-*",
+    # used by xns tests
+    "xns-*"
   ]
   bound_service_account_namespaces = [kubernetes_namespace.dev.metadata[0].name]
   token_period                     = var.vault_token_period

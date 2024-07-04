@@ -23,10 +23,14 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
 	vaultcredsconsts "github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 )
 
 func Test_defaultClient_CheckExpiry(t *testing.T) {
+	t.Parallel()
+
 	type fields struct {
 		lastResp    *api.Secret
 		lastRenewal int64
@@ -172,6 +176,8 @@ func Test_defaultClient_CheckExpiry(t *testing.T) {
 }
 
 func Test_defaultClient_Init(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	ca, err := generateCA()
@@ -403,6 +409,8 @@ func Test_defaultClient_Init(t *testing.T) {
 }
 
 func Test_defaultClient_Validate(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	tests := []struct {
@@ -614,6 +622,8 @@ func Test_defaultClient_Validate(t *testing.T) {
 }
 
 func Test_defaultClient_Read(t *testing.T) {
+	t.Parallel()
+
 	handlerFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 		m, err := json.Marshal(
 			&api.Secret{
@@ -837,6 +847,8 @@ func Test_defaultClient_Read(t *testing.T) {
 }
 
 func Test_defaultClient_Close(t *testing.T) {
+	t.Parallel()
+
 	handlerFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodPut {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -894,6 +906,8 @@ func Test_defaultClient_Close(t *testing.T) {
 }
 
 func Test_defaultClient_hashAccessor(t *testing.T) {
+	t.Parallel()
+
 	accessor := "3cb18a45-eb9e-0ed8-149b-ae4f83808925"
 	want := fmt.Sprintf("%x", blake2b.Sum256([]byte(accessor)))
 	tests := []struct {
@@ -952,6 +966,8 @@ func Test_defaultClient_hashAccessor(t *testing.T) {
 }
 
 func Test_defaultClient_Taint(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 	}{
@@ -969,6 +985,8 @@ func Test_defaultClient_Taint(t *testing.T) {
 }
 
 func Test_defaultClient_Tainted(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		tainted    bool
@@ -998,6 +1016,8 @@ func Test_defaultClient_Tainted(t *testing.T) {
 }
 
 func Test_defaultClient_Untaint(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		tainted    bool
@@ -1022,6 +1042,113 @@ func Test_defaultClient_Untaint(t *testing.T) {
 
 			got := c.Untaint()
 			tt.assertFunc(t, got, "Untaint()")
+		})
+	}
+}
+
+func Test_defaultClient_Clone(t *testing.T) {
+	t.Parallel()
+
+	vc, err := api.NewClient(&api.Config{})
+	require.NoError(t, err)
+
+	vcc, err := vc.Clone()
+	vcc.SetNamespace("baz")
+	require.NoError(t, err)
+
+	authObj := &secretsv1beta1.VaultAuth{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: "vso",
+		},
+	}
+	connObj := &secretsv1beta1.VaultConnection{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: "vso",
+		},
+	}
+	authSecret := &api.Secret{
+		Auth: &api.SecretAuth{
+			Accessor: "accessor",
+		},
+	}
+
+	credsProvider := &vault.KubernetesCredentialProvider{}
+	tests := []struct {
+		name               string
+		client             *api.Client
+		isClone            bool
+		authObj            *secretsv1beta1.VaultAuth
+		connObj            *secretsv1beta1.VaultConnection
+		credentialProvider provider.CredentialProviderBase
+		namespace          string
+		authSecret         *api.Secret
+		skipRenewal        bool
+		lastRenewal        int64
+		targetNamespace    string
+		id                 string
+		want               Client
+		wantErr            assert.ErrorAssertionFunc
+	}{
+		{
+			name:               "valid-clone",
+			client:             vc,
+			id:                 "foo",
+			authObj:            authObj,
+			connObj:            connObj,
+			credentialProvider: credsProvider,
+			targetNamespace:    "k8s",
+			authSecret:         authSecret,
+			want: &defaultClient{
+				client:             vcc,
+				id:                 "foo",
+				isClone:            true,
+				skipRenewal:        true,
+				authObj:            authObj,
+				connObj:            connObj,
+				credentialProvider: credsProvider,
+				targetNamespace:    "k8s",
+				authSecret:         authSecret,
+			},
+			namespace: "baz",
+			wantErr:   assert.NoError,
+		},
+		{
+			name:      "invalid-clone-a-clone",
+			namespace: "baz",
+			isClone:   true,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "cannot clone a clone")
+			},
+		},
+		{
+			name: "invalid-empty-namespace",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "namespace cannot be empty")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				client:             tt.client,
+				isClone:            tt.isClone,
+				authObj:            tt.authObj,
+				connObj:            tt.connObj,
+				authSecret:         tt.authSecret,
+				credentialProvider: tt.credentialProvider,
+				skipRenewal:        tt.skipRenewal,
+				lastRenewal:        tt.lastRenewal,
+				targetNamespace:    tt.targetNamespace,
+				id:                 tt.id,
+			}
+			got, err := c.Clone(tt.namespace)
+			if !tt.wantErr(t, err, fmt.Sprintf("Clone(%v)", tt.namespace)) {
+				return
+			}
+
+			assert.Equalf(t, tt.want, got, "Clone(%v)", tt.namespace)
 		})
 	}
 }

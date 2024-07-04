@@ -84,3 +84,10 @@ variable "with_static_role_scheduled" {
   type    = bool
   default = true
 }
+
+# vault_xns is a boolean that determines if the test should run with cross-namespace support
+# requires vault_enterprise to be true
+variable "with_xns" {
+  type    = bool
+  default = false
+}

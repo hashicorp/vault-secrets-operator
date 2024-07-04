@@ -11,8 +11,10 @@ locals {
 
   # auth locals
   auth_mount         = "${local.name_prefix}-auth-mount"
+  auth_mount_xns     = "${local.name_prefix}-auth-mount-xns"
   auth_policy        = "${local.name_prefix}-auth-policy"
   auth_role          = "auth-role"
+  auth_role_xns      = "auth-role-xns"
   auth_role_operator = "auth-role-operator"
 
   # db locals
@@ -23,6 +25,11 @@ locals {
   db_role_static_scheduled      = "${local.db_role_static}-scheduled"
   db_role_static_user_scheduled = "${local.db_role_static}-user-scheduled"
   k8s_secret_role               = "k8s-secret"
+
+  xns_sa_count          = var.vault_enterprise ? 10 : 0
+  with_xns              = var.vault_enterprise && var.with_xns
+  xns_namespace         = local.with_xns ? vault_namespace.xns[0].path_fq : null
+  xns_member_entity_ids = local.with_xns ? one(vault_identity_group.xns-parent[*]).member_entity_ids : []
 
   dev_token_policies = concat(
     [
