@@ -335,6 +335,11 @@ eventLoop:
 			return
 		default:
 			if shouldBackoff {
+				nextBackoff := retryBackoff.NextBackOff()
+				if nextBackoff == backoff.Stop {
+					logger.Error(fmt.Errorf("backoff limit reached"), "Backoff limit reached, requeuing")
+					break eventLoop
+				}
 				time.Sleep(retryBackoff.NextBackOff())
 			}
 			err := r.streamStaticSecretEvents(ctx, o, wsClient)
