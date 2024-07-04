@@ -31,6 +31,7 @@ import (
 	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/shell"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1087,6 +1088,26 @@ func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, c
 			}
 		},
 	))
+}
+
+// vaultVersionGreaterThanOrEqual returns true if the running Vault version is
+// greater than or equal to minVersionStr
+func vaultVersionGreaterThanOrEqual(t *testing.T, client *api.Client, minVersionStr string) bool {
+	t.Helper()
+	vaultVersion := getVaultVersion(t, client)
+	minVersion, err := version.NewVersion(minVersionStr)
+	require.NoError(t, err)
+	return vaultVersion.GreaterThanOrEqual(minVersion)
+}
+
+// getVaultVersion returns the running Vault version as a *version.Version
+func getVaultVersion(t *testing.T, client *api.Client) *version.Version {
+	t.Helper()
+	sys, err := client.Sys().Health()
+	require.NoError(t, err)
+	v, err := version.NewVersion(sys.Version)
+	require.NoError(t, err)
+	return v
 }
 
 var (

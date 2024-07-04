@@ -261,3 +261,12 @@ func maybeAddFinalizer(ctx context.Context, c client.Client, o client.Object, fi
 
 	return false, nil
 }
+
+func waitForStoppedCh(ctx context.Context, stoppedCh chan struct{}) error {
+	select {
+	case <-stoppedCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}

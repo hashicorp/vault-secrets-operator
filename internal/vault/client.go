@@ -170,6 +170,7 @@ type Client interface {
 	SetNamespace(string)
 	Tainted() bool
 	Untaint() bool
+	WebsocketClient(string) (*WebsocketClient, error)
 }
 
 var _ Client = (*defaultClient)(nil)
