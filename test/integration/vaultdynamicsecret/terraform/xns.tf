@@ -17,7 +17,7 @@ resource "kubernetes_service_account" "xns" {
   count = local.xns_sa_count
   metadata {
     namespace = kubernetes_namespace.dev.metadata[0].name
-    name      = "xns-sa-${count.index}"
+    name      = "${local.name_prefix}-xns-sa-${count.index}"
     labels = {
       "x-ns" : local.with_xns
     }
