@@ -114,7 +114,7 @@ runs:
           make_target+='-ent'
           export VAULT_IMAGE_TAG='${{ inputs.vault-version }}-ent'
         fi
-        make $make_target VERSION=${{ inputs.version }} INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT= EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+        make $make_target VERSION=${{ inputs.version }} INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
     - name: Store kind cluster logs
       if: success()
       uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
