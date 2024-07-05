@@ -854,6 +854,10 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 				t.Skipf("skipping xns test %s, test infrastructre not supported", tt.name)
 			}
 
+			if outputs.WithXns && !tt.xns {
+				t.Skipf("skipping non-xns test %s, debugging CI", tt.name)
+			}
+
 			var objsCreated []*secretsv1beta1.VaultDynamicSecret
 			t.Cleanup(func() {
 				if !skipCleanup {
