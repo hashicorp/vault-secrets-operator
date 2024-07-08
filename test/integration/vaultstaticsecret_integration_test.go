@@ -337,6 +337,70 @@ func TestVaultStaticSecret(t *testing.T) {
 					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
 					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
 				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
+				{
+					initial: map[string]interface{}{"username": "alice", "fruit": "chicle"},
+					update:  map[string]interface{}{"username": "abcd", "fruit": "mango"},
+				},
 			},
 			existing: func() []*secretsv1beta1.VaultStaticSecret {
 				vss := getExisting()
