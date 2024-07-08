@@ -412,7 +412,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				}
 				return vss
 			}(),
-			create:      2,
+			create:      18,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 			useEvents:   true,
 		},
