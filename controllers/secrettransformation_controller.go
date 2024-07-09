@@ -53,6 +53,12 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
+	if o.GetDeletionTimestamp() != nil {
+		logger.Info("Got deletion timestamp", "obj", o)
+		metrics.DeleteResourceStatus("secrettransformation", o)
+		return ctrl.Result{}, nil
+	}
+
 	o.Status.Valid = true
 	o.Status.Error = ""
 	errs := ValidateSecretTransformation(ctx, o)

@@ -9,6 +9,7 @@ metadata:
   name: {{ template "vso.chart.fullname" . }}-test
   namespace: {{ .Release.Namespace }}
   labels:
+    app.kubernetes.io/component: controller-manager
     app: {{ template "vso.chart.name" . }}
     chart: {{ template "vso.chart.chart" . }}
     heritage: {{ .Release.Service }}

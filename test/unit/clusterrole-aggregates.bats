@@ -1,5 +1,10 @@
 #!/usr/bin/env bats
 
+#
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+#
+
 load _helpers
 
 #--------------------------------------------------------------------
@@ -29,6 +34,32 @@ load _helpers
    local actual=$(echo "$object" | \
      yq '.[0].matchLabels["vso.hashicorp.com/aggregate-to-viewer"]' | tee /dev/stderr)
    [ "${actual}" = "true" ]
+}
+
+@test "clusterRoleAggregatedViewer: all user-facing" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/clusterrole-aggregated-viewer.yaml \
+        --set 'controller.rbac.clusterRoleAggregation.viewerRoles={*}' \
+        --set 'controller.rbac.clusterRoleAggregation.userFacingRoles.view=true' \
+        . | tee /dev/stderr)
+
+   local selectors
+   selectors=$(echo "$object" | yq '.aggregationRule.clusterRoleSelectors' | tee /dev/stderr)
+   actual=$(echo "$selectors" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$selectors" | yq '.[0].matchLabels | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$selectors" | \
+     yq '.[0].matchLabels["vso.hashicorp.com/aggregate-to-viewer"]' | tee /dev/stderr)
+   [ "${actual}" = "true" ]
+
+   local labels
+   labels=$(echo "$object" | yq '.metadata.labels' | tee /dev/stderr)
+   actual=$(echo "$labels" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "8" ]
+   [ "$(echo "${labels}" | \
+    yq '."rbac.authorization.k8s.io/aggregate-to-view" == "true"')" = "true" ]
 }
 
 @test "clusterRoleAggregatedViewer: subset" {
@@ -79,6 +110,32 @@ load _helpers
    local actual=$(echo "$object" | \
      yq '.[0].matchLabels["vso.hashicorp.com/aggregate-to-editor"]' | tee /dev/stderr)
    [ "${actual}" = "true" ]
+}
+
+@test "clusterRoleAggregatedEditor: all user-facing" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/clusterrole-aggregated-editor.yaml \
+        --set 'controller.rbac.clusterRoleAggregation.editorRoles={*}' \
+        --set 'controller.rbac.clusterRoleAggregation.userFacingRoles.edit=true' \
+        . | tee /dev/stderr)
+
+   local selectors
+   selectors=$(echo "$object" | yq '.aggregationRule.clusterRoleSelectors' | tee /dev/stderr)
+   actual=$(echo "$selectors" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$selectors" | yq '.[0].matchLabels | length' | tee /dev/stderr)
+   [ "${actual}" = "1" ]
+   actual=$(echo "$selectors" | \
+     yq '.[0].matchLabels["vso.hashicorp.com/aggregate-to-editor"]' | tee /dev/stderr)
+   [ "${actual}" = "true" ]
+
+   local labels
+   labels=$(echo "$object" | yq '.metadata.labels' | tee /dev/stderr)
+   actual=$(echo "$labels" | yq '. | length' | tee /dev/stderr)
+   [ "${actual}" = "8" ]
+   [ "$(echo "${labels}" | \
+    yq '."rbac.authorization.k8s.io/aggregate-to-edit" == "true"')" = "true" ]
 }
 
 @test "clusterRoleAggregatedEditor: subset" {

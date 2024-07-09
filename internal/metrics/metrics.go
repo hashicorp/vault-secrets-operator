@@ -67,6 +67,12 @@ func SetResourceStatus(controller string, o client.Object, valid bool) {
 	}
 }
 
+// DeleteResourceStatus deletes the client.Object from the set of resources
+// status metrics for the given controller.
+func DeleteResourceStatus(controller string, o client.Object) {
+	ResourceStatus.DeleteLabelValues(controller, o.GetName(), o.GetNamespace())
+}
+
 // NewBuildInfoGauge provides the Operator's build info as a Prometheus metric.
 func NewBuildInfoGauge(info apimachineryversion.Info) prometheus.Gauge {
 	metric := prometheus.NewGauge(

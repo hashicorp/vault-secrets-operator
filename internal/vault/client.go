@@ -106,6 +106,11 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, err
 	}
 
+	authObj, _, err = common.MergeInVaultAuthGlobal(ctx, client, authObj)
+	if err != nil {
+		return nil, err
+	}
+
 	connObj, err := common.FindVaultConnectionByUID(ctx, client, entry.VaultConnectionNamespace,
 		entry.VaultConnectionUID, entry.VaultConnectionGeneration)
 	if err != nil {
@@ -165,6 +170,7 @@ type Client interface {
 	SetNamespace(string)
 	Tainted() bool
 	Untaint() bool
+	WebsocketClient(string) (*WebsocketClient, error)
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -277,6 +283,10 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 		return nil, errors.New("namespace cannot be empty")
 	}
 
+	if c.isClone {
+		return nil, errors.New("cannot clone a clone")
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -294,6 +304,7 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 		skipRenewal:        true,
 		targetNamespace:    c.targetNamespace,
 		credentialProvider: c.credentialProvider,
+		id:                 c.id,
 	}
 	client.SetNamespace(namespace)
 
@@ -803,8 +814,10 @@ type MockRequest struct {
 var _ ClientBase = (*MockRecordingVaultClient)(nil)
 
 type MockRecordingVaultClient struct {
-	Requests []*MockRequest
-	Id       string
+	ReadResponses  map[string][]Response
+	WriteResponses map[string][]Response
+	Requests       []*MockRequest
+	Id             string
 }
 
 func (m *MockRecordingVaultClient) ID() string {
@@ -821,6 +834,16 @@ func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Respo
 		Params: nil,
 	})
 
+	resps, ok := m.ReadResponses[s.Path()]
+	if ok {
+		if len(resps) == 0 {
+			return nil, fmt.Errorf("no more responses for %s", s.Path())
+		}
+		resp := resps[0]
+		resps = append(resps[:0], resps[1:]...)
+		return resp, nil
+	}
+
 	return &defaultResponse{
 		secret: &api.Secret{
 			Data: make(map[string]interface{}),
@@ -834,6 +857,17 @@ func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Res
 		Path:   s.Path(),
 		Params: s.Params(),
 	})
+
+	resps, ok := m.WriteResponses[s.Path()]
+	if ok {
+		if len(resps) == 0 {
+			return nil, fmt.Errorf("no more responses for %s", s.Path())
+		}
+		resp := resps[0]
+		resps = append(resps[:0], resps[1:]...)
+		return resp, nil
+	}
+
 	return &defaultResponse{
 		secret: &api.Secret{
 			Data: make(map[string]interface{}),

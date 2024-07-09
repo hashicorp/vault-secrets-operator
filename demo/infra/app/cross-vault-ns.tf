@@ -138,6 +138,36 @@ resource "vault_kubernetes_auth_backend_role" "tenant-sa-uid" {
   audience = "vault"
 }
 
+resource "kubernetes_manifest" "tenant-vault-auth-global" {
+  manifest = {
+    apiVersion = "secrets.hashicorp.com/v1beta1"
+    kind       = "VaultAuthGlobal"
+    metadata = {
+      name      = "vso-auth-global"
+      namespace = local.k8s_namespace
+      labels = {
+        "x-ns" : var.vault_enterprise
+      }
+    }
+    spec = {
+      defaultAuthMethod = "kubernetes"
+      kubernetes = {
+        namespace      = vault_auth_backend.default.namespace
+        mount          = vault_auth_backend.default.path
+        serviceAccount = kubernetes_service_account.tenant.metadata[0].name
+        audiences = [
+          "vault"
+        ]
+      }
+    }
+  }
+
+  field_manager {
+    # force field manager conflicts to be overridden
+    force_conflicts = true
+  }
+}
+
 # VaultAuth for service account UID K8s auth role
 resource "kubernetes_manifest" "tenant-vault-auth-sa-uid" {
   manifest = {
@@ -151,15 +181,11 @@ resource "kubernetes_manifest" "tenant-vault-auth-sa-uid" {
       }
     }
     spec = {
-      namespace = vault_auth_backend.default.namespace
-      mount     = vault_auth_backend.default.path
-      method    = "kubernetes"
+      vaultAuthGlobalRef = {
+        name = kubernetes_manifest.tenant-vault-auth-global.manifest.metadata.name
+      }
       kubernetes = {
-        role           = vault_kubernetes_auth_backend_role.tenant-sa-uid.role_name
-        serviceAccount = kubernetes_service_account.tenant.metadata[0].name
-        audiences = [
-          "vault"
-        ]
+        role = vault_kubernetes_auth_backend_role.tenant-sa-uid.role_name
       }
     }
   }
@@ -182,15 +208,11 @@ resource "kubernetes_manifest" "tenant-vault-auth-sa-name" {
       }
     }
     spec = {
-      namespace = vault_auth_backend.default.namespace
-      mount     = vault_auth_backend.default.path
-      method    = "kubernetes"
+      vaultAuthGlobalRef = {
+        name = kubernetes_manifest.tenant-vault-auth-global.manifest.metadata.name
+      }
       kubernetes = {
-        role           = vault_kubernetes_auth_backend_role.tenant-sa-name.role_name
-        serviceAccount = kubernetes_service_account.tenant.metadata[0].name
-        audiences = [
-          "vault"
-        ]
+        role = vault_kubernetes_auth_backend_role.tenant-sa-name.role_name
       }
     }
   }

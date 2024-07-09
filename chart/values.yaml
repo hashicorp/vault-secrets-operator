@@ -4,7 +4,6 @@
 # Top level configuration for the vault secrets operator deployment.
 # This consists of a controller and a kube rbac proxy container.
 controller:
-
   # Set the number of replicas for the operator.
   # @type: integer
   replicas: 1
@@ -102,6 +101,19 @@ controller:
       # @type: array<string>
       editorRoles: []
 
+      # userFacingRoles is a map of roles that will be aggregated into the viewer and editor ClusterRoles.
+      # See https://kubernetes.io/docs/reference/access-authn-authz/rbac/#user-facing-roles for more information.
+      # @type: object
+      userFacingRoles:
+        # view controls whether the aggregated viewer ClusterRole will be made available to the user-facing
+        # 'view' ClusterRole. Requires the viewerRoles to be set.
+        # @type: boolean
+        view: false
+        # view controls whether the aggregated editor ClusterRole will be made available to the user-facing
+        # 'edit' ClusterRole. Requires the editorRoles to be set.
+        # @type: boolean
+        edit: false
+
   # Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
   # controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
   kubeRbacProxy:
@@ -182,6 +194,15 @@ controller:
 
     # Backoff settings for the controller manager. These settings control the backoff behavior
     # when the controller encounters an error while fetching secrets from the SecretSource.
+    # For example given the following settings:
+    #   initialInterval: 5s
+    #   maxInterval: 60s
+    #   randomizationFactor: 0.5
+    #   multiplier: 1.5
+    #
+    # The backoff retry sequence might be something like:
+    #  5.5s, 7.5s, 11.25s, 16.87s, 25.3125s, 37.96s, 56.95, 60.95s...
+    # @type: object
     backoffOnSecretSourceError:
       # Initial interval between retries.
       # @type: duration
@@ -189,13 +210,21 @@ controller:
       # Maximum interval between retries.
       # @type: duration
       maxInterval: "60s"
-      # Maximum elapsed time before giving up.
+      # Maximum elapsed time without a successful sync from the secret's source.
+      # It's important to note that setting this option to anything other than
+      # its default will result in the secret sync no longer being retried after
+      # reaching the max elapsed time.
       # @type: duration
       maxElapsedTime: "0s"
-      # Randomization factor to add jitter to the interval between retries.
+      # Randomization factor randomizes the backoff interval between retries.
+      # This helps to spread out the retries to avoid a thundering herd.
+      # If the value is 0, then the backoff interval will not be randomized.
+      # It is recommended to set this to a value that is greater than 0.
       # @type: float
       randomizationFactor: 0.5
-      # Sets the multiplier for increasing the interval between retries.
+      # Sets the multiplier that is used to increase the backoff interval between retries.
+      # This value should always be set to a value greater than 0.
+      # The value must be greater than zero.
       # @type: float
       multiplier: 1.5
 
@@ -752,6 +781,33 @@ telemetry:
     # Timeout for Prometheus scrapes
     # @type: string
     scrapeTimeout: 10s
+
+# Configure the behaviour of Helm hooks.
+hooks:
+  # Resources common to all hooks.
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  # Configure the Helm pre-upgrade hook that handles custom resource definition (CRD) upgrades.
+  upgradeCRDs:
+    # Set to true to automatically upgrade the CRDs.
+    # Disabling this will require manual intervention to upgrade the CRDs, so it is recommended to
+    # always leave it enabled.
+    # @type: boolean
+    enabled: true
+
+    # Limit the number of retries for the CRD upgrade.
+    # @type: integer
+    backoffLimit:  5
+
+    # Set the timeout for the CRD upgrade. The operation should typically take less than 5s
+    # to complete.
+    # @type: string
+    executionTimeout: 30s
 
 ## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored.
 tests:

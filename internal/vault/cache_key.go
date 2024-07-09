@@ -26,7 +26,8 @@ var (
 	cacheKeyRe             = regexp.MustCompile(fmt.Sprintf(
 		`(%s)-[[:xdigit:]]{22}`,
 		strings.Join(credentials.ProviderMethodsSupported, "|")))
-	cloneKeyRe = regexp.MustCompile(fmt.Sprintf(`^%s-.+$`, cacheKeyRe))
+	cacheKeyLeftAnchoredRe = regexp.MustCompile(fmt.Sprintf(`^(%s)`, cacheKeyRe))
+	cloneKeyRe             = regexp.MustCompile(fmt.Sprintf(`^(%s)-.+$`, cacheKeyRe))
 )
 
 // ClientCacheKey is a type that holds the unique value of an entity in a ClientCache.
@@ -37,8 +38,33 @@ func (k ClientCacheKey) String() string {
 	return string(k)
 }
 
+// IsClone returns true if the ClientCacheKey is a clone of another key.
 func (k ClientCacheKey) IsClone() bool {
 	return cloneKeyRe.MatchString(k.String())
+}
+
+// Parent returns the parent CacheKey of this key. Returns an error if the key
+// is invalid.
+func (k ClientCacheKey) Parent() (ClientCacheKey, error) {
+	m := cacheKeyLeftAnchoredRe.FindStringSubmatch(k.String())
+	if len(m) != 3 {
+		return "", fmt.Errorf("invalid cache key: %s", k.String())
+	}
+	return ClientCacheKey(m[1]), nil
+}
+
+// SameParent returns true if the two keys have the same parent cache key.
+func (k ClientCacheKey) SameParent(other ClientCacheKey) (bool, error) {
+	p1, err := k.Parent()
+	if err != nil {
+		return false, err
+	}
+
+	p2, err := other.Parent()
+	if err != nil {
+		return false, err
+	}
+	return p1 == p2, nil
 }
 
 // ComputeClientCacheKeyFromClient for use in a ClientCache. It is derived from the configuration the Client.

@@ -69,7 +69,6 @@ resource "vault_kubernetes_auth_backend_config" "dev" {
   kubernetes_host        = var.k8s_host
   disable_iss_validation = true
 }
-
 resource "vault_kubernetes_auth_backend_role" "dev" {
   namespace         = vault_auth_backend.default.namespace
   backend           = vault_kubernetes_auth_backend_config.dev.backend
@@ -79,15 +78,13 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
     "default",
     # used by some tests that create their own service accounts
     "sa-*",
+    # used by xns tests
+    "${local.name_prefix}-xns-sa-*"
   ]
   bound_service_account_namespaces = [kubernetes_namespace.dev.metadata[0].name]
   token_period                     = var.vault_token_period
-  token_policies = [
-    vault_policy.revocation.name,
-    vault_policy.db.name,
-    vault_policy.k8s_secrets.name,
-  ]
-  audience = "vault"
+  token_policies                   = local.dev_token_policies
+  audience                         = "vault"
 }
 
 resource "vault_policy" "revocation" {

@@ -28,6 +28,12 @@ output "db_role_static" {
 output "db_role_static_user" {
   value = local.db_role_static_user
 }
+output "db_role_static_scheduled" {
+  value = local.db_role_static_scheduled
+}
+output "db_role_static_user_scheduled" {
+  value = local.db_role_static_user_scheduled
+}
 output "k8s_secret_path" {
   value = vault_kubernetes_secret_backend.k8s_secrets.path
 }
@@ -54,4 +60,20 @@ output "default_lease_ttl_seconds" {
 
 output "non_renewable_k8s_token_ttl" {
   value = vault_kubernetes_secret_backend_role.k8s_secrets.token_default_ttl
+}
+
+output "xns_k8s_sas" {
+  value = concat(kubernetes_service_account.xns[*].metadata[0].name)
+}
+
+output "xns_vault_ns" {
+  value = local.xns_namespace
+}
+
+output "with_xns" {
+  value = local.with_xns
+}
+
+output "xns_member_entity_ids" {
+  value = local.xns_member_entity_ids
 }

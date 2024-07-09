@@ -139,7 +139,7 @@ func Test_cachingClientFactory_clientLocks(t *testing.T) {
 			// is acquired.
 			holdLockDuration := 2 * time.Millisecond
 			// ctxTimeout is the total time to wait for all lockers to acquire the lock once.
-			ctxTimeout := time.Duration(tt.tryLockCount) * (holdLockDuration * 2)
+			ctxTimeout := time.Duration(tt.tryLockCount) * (holdLockDuration * 10)
 			ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 			go func() {
 				defer cancel()

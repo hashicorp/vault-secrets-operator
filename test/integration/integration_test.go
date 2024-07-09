@@ -31,6 +31,7 @@ import (
 	"github.com/gruntwork-io/terratest/modules/retry"
 	"github.com/gruntwork-io/terratest/modules/shell"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,7 +52,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
@@ -238,6 +239,8 @@ func TestMain(m *testing.M) {
 						"Failed to k8s.KubectlDeleteFromKustomizeE(t, k8sOpts, kustomizeConfigPath), err=%s", err)
 				}
 			}
+		} else {
+			t.Logf("Skipping cleanup main, tfdir=%s", tfDir)
 		}
 	}
 
@@ -749,9 +752,9 @@ func assertRolloutRestarts(
 		assert.True(t, restartAt.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", restartAt, expectedAnnotation, timeNow)
 
-		//if s.ReadyReplicas != *s.Replicas {
+		// if s.ReadyReplicas != *s.Replicas {
 		//	errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
-		//}
+		// }
 
 		/*
 				=== NAME  TestVaultPKISecret/mixed/mixed-existing-0
@@ -792,7 +795,7 @@ func createJWTTokenSecret(t *testing.T, ctx context.Context, crdClient ctrlclien
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			vault.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
+			consts.ProviderSecretKeyJWT: []byte(tokenReq.Status.Token),
 		},
 	}
 	require.Nil(t, crdClient.Create(ctx, secretObj))
@@ -1087,6 +1090,26 @@ func assertRemediationOnDestinationDeletion(t *testing.T, ctx context.Context, c
 			}
 		},
 	))
+}
+
+// vaultVersionGreaterThanOrEqual returns true if the running Vault version is
+// greater than or equal to minVersionStr
+func vaultVersionGreaterThanOrEqual(t *testing.T, client *api.Client, minVersionStr string) bool {
+	t.Helper()
+	vaultVersion := getVaultVersion(t, client)
+	minVersion, err := version.NewVersion(minVersionStr)
+	require.NoError(t, err)
+	return vaultVersion.GreaterThanOrEqual(minVersion)
+}
+
+// getVaultVersion returns the running Vault version as a *version.Version
+func getVaultVersion(t *testing.T, client *api.Client) *version.Version {
+	t.Helper()
+	sys, err := client.Sys().Health()
+	require.NoError(t, err)
+	v, err := version.NewVersion(sys.Version)
+	require.NoError(t, err)
+	return v
 }
 
 var (
