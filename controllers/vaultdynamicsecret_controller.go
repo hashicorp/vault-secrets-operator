@@ -792,7 +792,7 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 	for _, o := range l.Items {
 		if o.Status.VaultClientMeta.CacheKey == "" {
 			logger.V(consts.LogLevelWarning).Info("Skipping, cacheKey is empty",
-				client.ObjectKeyFromObject(&o))
+				"object", client.ObjectKeyFromObject(&o))
 			continue
 		}
 

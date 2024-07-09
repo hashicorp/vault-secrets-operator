@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -347,7 +348,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 		key     ClientCacheKey
 		other   ClientCacheKey
 		want    bool
-		wantErr assert.ErrorAssertionFunc
+		wantErr require.ErrorAssertionFunc
 	}{
 		{
 			name: "same-parent-equal",
@@ -358,7 +359,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash),
 			),
 			want:    true,
-			wantErr: assert.NoError,
+			wantErr: require.NoError,
 		},
 		{
 			name: "same-parent-clone",
@@ -369,7 +370,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash),
 			),
 			want:    true,
-			wantErr: assert.NoError,
+			wantErr: require.NoError,
 		},
 		{
 			name: "other-parent-clone",
@@ -380,7 +381,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash2),
 			),
 			want:    false,
-			wantErr: assert.NoError,
+			wantErr: require.NoError,
 		},
 		{
 			name: "invalid-self-hash",
@@ -391,7 +392,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash),
 			),
 			want:    false,
-			wantErr: assert.Error,
+			wantErr: require.Error,
 		},
 		{
 			name: "invalid-other-hash",
@@ -402,7 +403,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash[len(computedHash)-1:]),
 			),
 			want:    false,
-			wantErr: assert.Error,
+			wantErr: require.Error,
 		},
 		{
 			name: "invalid-other-method-clone",
@@ -413,7 +414,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash),
 			),
 			want:    false,
-			wantErr: assert.Error,
+			wantErr: require.Error,
 		},
 		{
 			name: "invalid-other-method-clone",
@@ -424,7 +425,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				"invalid", computedHash),
 			),
 			want:    false,
-			wantErr: assert.Error,
+			wantErr: require.Error,
 		},
 		{
 			name: "invalid-self-hash-clone",
@@ -435,7 +436,7 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash),
 			),
 			want:    false,
-			wantErr: assert.Error,
+			wantErr: require.Error,
 		},
 		{
 			name: "invalid-other-hash-clone",
@@ -446,15 +447,13 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 				consts.ProviderMethodKubernetes, computedHash[len(computedHash)-1:]),
 			),
 			want:    false,
-			wantErr: assert.Error,
+			wantErr: require.Error,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.key.SameParent(tt.other)
-			if !tt.wantErr(t, err, fmt.Sprintf("SameParent(%v)", tt.other)) {
-				return
-			}
+			tt.wantErr(t, err, fmt.Sprintf("SameParent(%v)", tt.other))
 			assert.Equalf(t, tt.want, got,
 				"SameParent(%v)", tt.other)
 		})

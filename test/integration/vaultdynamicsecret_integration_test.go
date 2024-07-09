@@ -856,7 +856,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			}
 
 			if tt.xns && !outputs.WithXns {
-				t.Skipf("skipping xns test %s, test infrastructre not supported", tt.name)
+				t.Skipf("skipping xns test %s, test infrastructure not supported", tt.name)
 			}
 
 			var objsCreated []*secretsv1beta1.VaultDynamicSecret
