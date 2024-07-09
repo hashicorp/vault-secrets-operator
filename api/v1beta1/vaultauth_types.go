@@ -320,7 +320,7 @@ func (a *VaultAuthConfigGCP) Validate() error {
 type VaultAuthGlobalRef struct {
 	// Name of the VaultAuthGlobal resource.
 	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 	// Namespace of the VaultAuthGlobal resource. If not provided, the namespace of
 	// the referring VaultAuth resource is used.
 	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
@@ -328,6 +328,15 @@ type VaultAuthGlobalRef struct {
 	// MergeStrategy configures the merge strategy for HTTP headers and parameters
 	// that are included in all Vault authentication requests.
 	MergeStrategy *MergeStrategy `json:"mergeStrategy,omitempty"`
+	// Default when set to true will use the default VaultAuthGlobal resource as the
+	// default if Name is not set. The "allow-global-defaults" option must be set on
+	// the operator's -global-vault-auth-options flag
+	//
+	// The VaultAuthGlobal search order is:
+	// 1. The VaultAuthGlobal in Namespace.
+	// 2. The VaultAuthGlobal in the VaultAuth Namespace.
+	// 3. The VaultAuthGlobal in the Operator's namespace.
+	Default *bool `json:"default,omitempty"`
 }
 
 // MergeStrategy provides the configuration for merging HTTP headers and
@@ -423,8 +432,8 @@ type VaultAuthStatus struct {
 	SpecHash   string             `json:"specHash,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // VaultAuth is the Schema for the vaultauths API
 type VaultAuth struct {
@@ -444,7 +453,7 @@ type StorageEncryption struct {
 	KeyName string `json:"keyName"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // VaultAuthList contains a list of VaultAuth
 type VaultAuthList struct {

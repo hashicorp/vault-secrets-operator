@@ -78,9 +78,13 @@ spec:
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
-        {{- $opts := include "vso.globalTransformationOptions" . -}}
-        {{- if $opts }}
-        - --global-transformation-options={{ $opts }}
+        {{- $gTransOpts := include "vso.globalTransformationOptions" . -}}
+        {{- if $gTransOpts }}
+        - --global-transformation-options={{ $gTransOpts }}
+        {{- end }}
+        {{- $gVaultAuthOpts := include "vso.globalVaultAuthOptions" . -}}
+        {{- if $gVaultAuthOpts }}
+        - --global-vault-auth-options={{ $gVaultAuthOpts }}
         {{- end }}
         {{- with include "vso.backoffOnSecretSourceError" . }}
         {{- . -}}

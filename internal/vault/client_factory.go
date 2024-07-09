@@ -139,6 +139,8 @@ type cachingClientFactory struct {
 	// only one encryption client is created. This is necessary because the
 	// encryption client is not stored in the cache.
 	encClientLock sync.RWMutex
+	// GlobalVaultAuthOptions is a struct that contains global VaultAuth options.
+	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -277,7 +279,7 @@ func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Cl
 		)
 	}()
 
-	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj)
+	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj, m.clientOptions())
 	if err != nil {
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 			"Failed to get cacheKey from obj, err=%s", err)
@@ -362,7 +364,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		)
 	}()
 
-	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj)
+	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj, m.clientOptions())
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
@@ -568,7 +570,8 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 
 func (m *cachingClientFactory) clientOptions() *ClientOptions {
 	return &ClientOptions{
-		WatcherDoneCh: m.callbackHandlerCh,
+		WatcherDoneCh:          m.callbackHandlerCh,
+		GlobalVaultAuthOptions: m.GlobalVaultAuthOptions,
 	}
 }
 
@@ -793,13 +796,14 @@ func (m *cachingClientFactory) callClientCallbacks(ctx context.Context, c Client
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
 	factory := &cachingClientFactory{
-		storage:            cacheStorage,
-		recorder:           config.Recorder,
-		persist:            config.Persist,
-		ctrlClient:         client,
-		callbackHandlerCh:  make(chan *ClientCallbackHandlerRequest),
-		encryptionRequired: config.StorageConfig.EnforceEncryption,
-		clientLocks:        make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
+		storage:                cacheStorage,
+		recorder:               config.Recorder,
+		persist:                config.Persist,
+		ctrlClient:             client,
+		callbackHandlerCh:      make(chan *ClientCallbackHandlerRequest),
+		encryptionRequired:     config.StorageConfig.EnforceEncryption,
+		clientLocks:            make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
+		GlobalVaultAuthOptions: config.GlobalVaultAuthOptions,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -863,6 +867,7 @@ type CachingClientFactoryConfig struct {
 	Recorder                  record.EventRecorder
 	MetricsRegistry           prometheus.Registerer
 	PruneStorageOnEvict       bool
+	GlobalVaultAuthOptions    *common.GlobalVaultAuthOptions
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.

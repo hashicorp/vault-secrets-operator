@@ -38,17 +38,19 @@ type VaultAuthReconciler struct {
 	Recorder       record.EventRecorder
 	ClientFactory  vault.CachingClientFactory
 	referenceCache ResourceReferenceCache
+	// GlobalVaultAuthOptions is a struct that contains global VaultAuth options.
+	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
 }
 
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths/finalizers,verbs=update
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=serviceaccounts/token,verbs=get;list;create;watch
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultauths/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts/token,verbs=get;list;create;watch
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // needed for managing cached Clients, duplicated in vaultconnection_controller.go
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch;deletecollection
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch;deletecollection
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile reconciles the secretsv1beta1.VaultAuth resource.
 // Each reconciliation will validate the resource's configuration
@@ -92,7 +94,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			Reason:             "VaultAuthGlobalRef",
 		}
 
-		mObj, gObj, err := common.MergeInVaultAuthGlobal(ctx, r.Client, o)
+		mObj, gObj, err := common.MergeInVaultAuthGlobal(ctx, r.Client, o, r.GlobalVaultAuthOptions)
 		if err != nil {
 			condition.Message = err.Error()
 			condition.Status = "False"

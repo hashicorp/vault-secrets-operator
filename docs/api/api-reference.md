@@ -729,6 +729,7 @@ _Appears in:_
 | `name` _string_ | Name of the VaultAuthGlobal resource. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
 | `namespace` _string_ | Namespace of the VaultAuthGlobal resource. If not provided, the namespace of<br />the referring VaultAuth resource is used. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
 | `mergeStrategy` _[MergeStrategy](#mergestrategy)_ | MergeStrategy configures the merge strategy for HTTP headers and parameters<br />that are included in all Vault authentication requests. |  |  |
+| `default` _boolean_ | Default when set to true will use the default VaultAuthGlobal resource as the<br />default if Name is not set. The "allow-global-defaults" option must be set on<br />the operator's -global-vault-auth-options flag<br /><br />The VaultAuthGlobal search order is:<br />1. The VaultAuthGlobal in Namespace.<br />2. The VaultAuthGlobal in the VaultAuth Namespace.<br />3. The VaultAuthGlobal in the Operator's namespace. |  |  |
 
 
 #### VaultAuthGlobalSpec

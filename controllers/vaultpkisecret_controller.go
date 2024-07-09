@@ -37,27 +37,27 @@ var minHorizon = time.Second * 1
 // VaultPKISecretReconciler reconciles a VaultPKISecret object
 type VaultPKISecretReconciler struct {
 	client.Client
-	Scheme                     *runtime.Scheme
-	ClientFactory              vault.ClientFactory
-	HMACValidator              helpers.HMACValidator
-	Recorder                   record.EventRecorder
-	SyncRegistry               *SyncRegistry
-	BackOffRegistry            *BackOffRegistry
-	referenceCache             ResourceReferenceCache
-	GlobalTransformationOption *helpers.GlobalTransformationOption
+	Scheme                      *runtime.Scheme
+	ClientFactory               vault.ClientFactory
+	HMACValidator               helpers.HMACValidator
+	Recorder                    record.EventRecorder
+	SyncRegistry                *SyncRegistry
+	BackOffRegistry             *BackOffRegistry
+	referenceCache              ResourceReferenceCache
+	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 }
 
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/finalizers,verbs=update
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //
 // required for rollout-restart
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -143,7 +143,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)

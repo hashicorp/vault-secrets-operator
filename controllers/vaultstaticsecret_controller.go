@@ -28,6 +28,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-secure-stdlib/parseutil"
+
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
@@ -42,14 +43,14 @@ const (
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
 type VaultStaticSecretReconciler struct {
 	client.Client
-	Scheme                     *runtime.Scheme
-	Recorder                   record.EventRecorder
-	ClientFactory              vault.ClientFactory
-	SecretDataBuilder          *helpers.SecretDataBuilder
-	HMACValidator              helpers.HMACValidator
-	referenceCache             ResourceReferenceCache
-	GlobalTransformationOption *helpers.GlobalTransformationOption
-	BackOffRegistry            *BackOffRegistry
+	Scheme                      *runtime.Scheme
+	Recorder                    record.EventRecorder
+	ClientFactory               vault.ClientFactory
+	SecretDataBuilder           *helpers.SecretDataBuilder
+	HMACValidator               helpers.HMACValidator
+	referenceCache              ResourceReferenceCache
+	GlobalTransformationOptions *helpers.GlobalTransformationOptions
+	BackOffRegistry             *BackOffRegistry
 	// SourceCh is used to trigger a requeue of resource instances from an
 	// external source. Should be set on a source.Channel in SetupWithManager.
 	// This channel should be closed when the controller is stopped.
@@ -57,17 +58,17 @@ type VaultStaticSecretReconciler struct {
 	eventWatcherRegistry *eventWatcherRegistry
 }
 
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/finalizers,verbs=update
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 //
 // required for rollout-restart
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -111,7 +112,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)

@@ -27,8 +27,9 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal   bool
-	WatcherDoneCh chan<- *ClientCallbackHandlerRequest
+	SkipRenewal            bool
+	WatcherDoneCh          chan<- *ClientCallbackHandlerRequest
+	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -57,7 +58,7 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 		}
 	default:
 		// otherwise we fall back to the common.GetVaultAuthNamespaced() to decide whether, or not obj is supported.
-		a, err := common.GetVaultAuthNamespaced(ctx, client, obj)
+		a, err := common.GetVaultAuthNamespaced(ctx, client, obj, opts.GlobalVaultAuthOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +107,11 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 		return nil, err
 	}
 
-	authObj, _, err = common.MergeInVaultAuthGlobal(ctx, client, authObj)
+	var globalVaultAuthOpts *common.GlobalVaultAuthOptions
+	if opts != nil {
+		globalVaultAuthOpts = opts.GlobalVaultAuthOptions
+	}
+	authObj, _, err = common.MergeInVaultAuthGlobal(ctx, client, authObj, globalVaultAuthOpts)
 	if err != nil {
 		return nil, err
 	}

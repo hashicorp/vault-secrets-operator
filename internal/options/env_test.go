@@ -31,6 +31,8 @@ func TestParse(t *testing.T) {
 				"VSO_BACKOFF_MAX_ELAPSED_TIME":       "24h",
 				"VSO_BACKOFF_RANDOMIZATION_FACTOR":   "0.5",
 				"VSO_BACKOFF_MULTIPLIER":             "2.5",
+				"VSO_GLOBAL_TRANSFORMATION_OPTIONS":  "gOpt1,gOpt2",
+				"VSO_GLOBAL_VAULT_AUTH_OPTIONS":      "vOpt1,vOpt2",
 			},
 			wantOptions: VSOEnvOptions{
 				OutputFormat:                "json",
@@ -42,6 +44,8 @@ func TestParse(t *testing.T) {
 				BackoffMaxElapsedTime:       time.Hour * 24,
 				BackoffRandomizationFactor:  0.5,
 				BackoffMultiplier:           2.5,
+				GlobalTransformationOptions: []string{"gOpt1", "gOpt2"},
+				GlobalVaultAuthOptions:      []string{"vOpt1", "vOpt2"},
 			},
 		},
 	}

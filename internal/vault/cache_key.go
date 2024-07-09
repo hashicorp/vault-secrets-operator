@@ -80,8 +80,8 @@ func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
 // This operation calls out to the Kubernetes API multiple times.
 //
 // See computeClientCacheKey for more details on how the client cache is derived.
-func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object) (ClientCacheKey, error) {
-	authObj, err := common.GetVaultAuthNamespaced(ctx, client, obj)
+func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error) {
+	authObj, err := common.GetVaultAuthNamespaced(ctx, client, obj, opts.GlobalVaultAuthOptions)
 	if err != nil {
 		return "", err
 	}

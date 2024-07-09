@@ -55,14 +55,14 @@ var _ reconcile.Reconciler = &VaultDynamicSecretReconciler{}
 // VaultDynamicSecretReconciler reconciles a VaultDynamicSecret object
 type VaultDynamicSecretReconciler struct {
 	client.Client
-	Scheme                     *runtime.Scheme
-	Recorder                   record.EventRecorder
-	ClientFactory              vault.ClientFactory
-	HMACValidator              helpers.HMACValidator
-	SyncRegistry               *SyncRegistry
-	BackOffRegistry            *BackOffRegistry
-	referenceCache             ResourceReferenceCache
-	GlobalTransformationOption *helpers.GlobalTransformationOption
+	Scheme                      *runtime.Scheme
+	Recorder                    record.EventRecorder
+	ClientFactory               vault.ClientFactory
+	HMACValidator               helpers.HMACValidator
+	SyncRegistry                *SyncRegistry
+	BackOffRegistry             *BackOffRegistry
+	referenceCache              ResourceReferenceCache
+	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	// sourceCh is used to trigger a requeue of resource instances from an
 	// external source. Should be set on a source.Channel in SetupWithManager.
 	// This channel should be closed when the controller is stopped.
@@ -263,7 +263,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = consts.ReasonSecretRotated
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
