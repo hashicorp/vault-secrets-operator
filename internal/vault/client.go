@@ -283,6 +283,10 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 		return nil, errors.New("namespace cannot be empty")
 	}
 
+	if c.isClone {
+		return nil, errors.New("cannot clone a clone")
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -300,6 +304,7 @@ func (c *defaultClient) Clone(namespace string) (Client, error) {
 		skipRenewal:        true,
 		targetNamespace:    c.targetNamespace,
 		credentialProvider: c.credentialProvider,
+		id:                 c.id,
 	}
 	client.SetNamespace(namespace)
 

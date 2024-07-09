@@ -239,6 +239,8 @@ func TestMain(m *testing.M) {
 						"Failed to k8s.KubectlDeleteFromKustomizeE(t, k8sOpts, kustomizeConfigPath), err=%s", err)
 				}
 			}
+		} else {
+			t.Logf("Skipping cleanup main, tfdir=%s", tfDir)
 		}
 	}
 
@@ -750,9 +752,9 @@ func assertRolloutRestarts(
 		assert.True(t, restartAt.Before(timeNow),
 			"timestamp value %q for %q is in the future, now=%q", restartAt, expectedAnnotation, timeNow)
 
-		//if s.ReadyReplicas != *s.Replicas {
+		// if s.ReadyReplicas != *s.Replicas {
 		//	errs = errors.Join(errs, fmt.Errorf("expected ready replicas %d, actual %d", s.Replicas, s.ReadyReplicas))
-		//}
+		// }
 
 		/*
 				=== NAME  TestVaultPKISecret/mixed/mixed-existing-0

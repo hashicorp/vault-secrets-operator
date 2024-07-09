@@ -26,6 +26,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
@@ -1017,6 +1018,8 @@ func (p *stubCredentialProvider) GetNamespace() string {
 
 func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 	t.Parallel()
+	key1 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa724")
+	key2 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa725")
 
 	builder := newClientBuilder()
 	// instances in the same namespace that should be included by the callback.
@@ -1028,29 +1031,62 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			},
 			Status: secretsv1beta1.VaultDynamicSecretStatus{
 				VaultClientMeta: secretsv1beta1.VaultClientMeta{
-					CacheKey: "kubernetes-12345",
+					CacheKey: key1,
 				},
 			},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "default",
-				Name:      "canary",
+				Name:      "baz-ns",
 			},
 			Status: secretsv1beta1.VaultDynamicSecretStatus{
 				VaultClientMeta: secretsv1beta1.VaultClientMeta{
-					CacheKey: "kubernetes-54321",
+					CacheKey: fmt.Sprintf("%s-ns1/ns2", key1),
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "canary-invalid-key",
+			},
+			Status: secretsv1beta1.VaultDynamicSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: fmt.Sprintf("%s-ns1/ns2", key1[:len(key1)-1]),
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "canary-other-key-and-vault-ns",
+			},
+			Status: secretsv1beta1.VaultDynamicSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: fmt.Sprintf("%s-ns1/ns2", key2),
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "canary-other-key",
+			},
+			Status: secretsv1beta1.VaultDynamicSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: key2,
 				},
 			},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "other",
-				Name:      "canary-other-ns",
+				Name:      "canary-other-k8s-ns",
 			},
 			Status: secretsv1beta1.VaultDynamicSecretStatus{
 				VaultClientMeta: secretsv1beta1.VaultClientMeta{
-					CacheKey: "kubernetes-12345",
+					CacheKey: key2,
 				},
 			},
 		},
@@ -1068,13 +1104,19 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			name:      "matching-instances",
 			instances: instances,
 			c: &stubVaultClient{
-				cacheKey:           "kubernetes-12345",
+				cacheKey:           vault.ClientCacheKey(key1),
 				credentialProvider: &stubCredentialProvider{namespace: "default"},
 			},
 			want: []any{
 				reconcile.Request{
 					NamespacedName: types.NamespacedName{
 						Name:      "baz",
+						Namespace: "default",
+					},
+				},
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      "baz-ns",
 						Namespace: "default",
 					},
 				},
@@ -1124,7 +1166,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			r.vaultClientCallback(ctx, tt.c)
 			assert.Eventuallyf(t, func() bool {
 				return len(q.AddedAfter) == len(tt.want)
-			}, handler.enqueueDurationForJitter, time.Millisecond*100,
+			}, handler.enqueueDurationForJitter, time.Millisecond*500,
 				"expected %d syncs, got %d", len(tt.want), len(q.AddedAfter))
 
 			assert.ElementsMatchf(t, tt.want, q.AddedAfter,

@@ -73,20 +73,20 @@ type VaultDynamicSecretReconciler struct {
 	runtimePodUID types.UID
 }
 
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 //
 // required for rollout-restart
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 // needed for managing cached Clients, duplicated in vaultconnection_controller.go
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete;update;patch
 
 // Reconcile ensures that the VaultDynamicSecret Custom Resource is synced from Vault to its
 // configured Kubernetes secret. The resource will periodically be reconciled to renew the
@@ -790,7 +790,14 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 
 	reqs := map[client.ObjectKey]empty{}
 	for _, o := range l.Items {
-		if o.Status.VaultClientMeta.CacheKey == cacheKey.String() {
+		if o.Status.VaultClientMeta.CacheKey == "" {
+			logger.V(consts.LogLevelWarning).Info("Skipping, cacheKey is empty",
+				"object", client.ObjectKeyFromObject(&o))
+			continue
+		}
+
+		curCacheKey := vault.ClientCacheKey(o.Status.VaultClientMeta.CacheKey)
+		if ok, err := curCacheKey.SameParent(cacheKey); ok {
 			evt := event.GenericEvent{
 				Object: &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: metav1.ObjectMeta{
@@ -811,6 +818,9 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 					"Sending GenericEvent to the SourceCh", "evt", evt)
 				r.SourceCh <- evt
 			}
+		} else if err != nil {
+			logger.V(consts.LogLevelWarning).Info(
+				"Skipping, cacheKey error", "error", err)
 		}
 	}
 }
