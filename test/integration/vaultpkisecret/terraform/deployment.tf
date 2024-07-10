@@ -41,8 +41,9 @@ resource "kubernetes_deployment" "vso" {
           }
         }
         container {
-          image = "nginx:latest"
-          name  = "example"
+          image             = "nginx:latest"
+          name              = "example"
+          image_pull_policy = "IfNotPresent"
 
           volume_mount {
             name       = "secrets"

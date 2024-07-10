@@ -177,3 +177,67 @@ func Test_computePKIRenewalWindow(t *testing.T) {
 		})
 	}
 }
+
+func Test_convertToK8sTLSSecretData(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		data map[string][]byte
+		want map[string][]byte
+	}{
+		{
+			name: "empty",
+			data: map[string][]byte{},
+			want: map[string][]byte{},
+		},
+		{
+			name: "without-ca",
+			data: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+			},
+			want: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"tls.key":     []byte("v_private_key"),
+				"tls.crt":     []byte("v_certificate"),
+			},
+		},
+		{
+			name: "with-ca-chain",
+			data: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"ca_chain":    []byte("v_ca_chain"),
+			},
+			want: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"ca_chain":    []byte("v_ca_chain"),
+				"tls.key":     []byte("v_private_key"),
+				"tls.crt":     []byte("v_certificate\nv_ca_chain"),
+			},
+		},
+		{
+			name: "with-issuing-ca",
+			data: map[string][]byte{
+				"private_key": []byte("v_private_key"), "certificate": []byte("v_certificate"),
+				"issuing_ca": []byte("v_issuing_ca"),
+			},
+			want: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"issuing_ca":  []byte("v_issuing_ca"),
+				"tls.key":     []byte("v_private_key"),
+				"tls.crt":     []byte("v_certificate\nv_issuing_ca"),
+				"ca.crt":      []byte("v_issuing_ca"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, convertToK8sTLSSecretData(tt.data), "convertToK8sTLSSecretData(%v)", tt.data)
+		})
+	}
+}
