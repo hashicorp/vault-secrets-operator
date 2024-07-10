@@ -236,6 +236,8 @@ func main() {
 	}
 	if len(vsoEnvOptions.GlobalTransformationOptions) > 0 {
 		globalTransOptsSet = vsoEnvOptions.GlobalTransformationOptions
+	} else if globalTransformationOpts != "" {
+		globalTransOptsSet = strings.Split(globalTransformationOpts, ",")
 	}
 	if vsoEnvOptions.BackoffInitialInterval != 0 {
 		backoffInitialInterval = vsoEnvOptions.BackoffInitialInterval
@@ -251,12 +253,7 @@ func main() {
 	}
 	if len(vsoEnvOptions.GlobalVaultAuthOptions) > 0 {
 		globalVaultAuthOptsSet = vsoEnvOptions.GlobalVaultAuthOptions
-	}
-
-	if globalTransformationOpts != "" && len(globalTransOptsSet) == 0 {
-		globalTransOptsSet = strings.Split(globalTransformationOpts, ",")
-	}
-	if globalVaultAuthOpts != "" && len(globalVaultAuthOptsSet) == 0 {
+	} else if globalVaultAuthOpts != "" {
 		globalVaultAuthOptsSet = strings.Split(globalVaultAuthOpts, ",")
 	}
 
