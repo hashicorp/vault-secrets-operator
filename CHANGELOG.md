@@ -1,3 +1,9 @@
+## 0.7.1 (May 30th, 2024)
+
+Fix:
+* Helm: fix invalid value name for telemetry.serviceMonitor.enabled (#786): [GH-790](https://github.com/hashicorp/vault-secrets-operator/pull/790)
+
+
 ## 0.7.0 (May 27th, 2024)
 **Important**: this release contains CRD schema changes that must be applied manually when deploying VSO with Helm. 
 Please see [updating-crds](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#updating-crds-when-using-helm) for more details.

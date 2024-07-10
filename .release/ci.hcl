@@ -11,7 +11,10 @@ project "vault-secrets-operator" {
   github {
     organization = "hashicorp"
     repository = "vault-secrets-operator"
-    release_branches = ["main"]
+    release_branches = [
+      "main",
+      "release/**",
+    ]
   }
 }
 
