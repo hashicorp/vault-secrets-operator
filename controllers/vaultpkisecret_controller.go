@@ -4,10 +4,12 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -244,16 +246,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	// If using data transformation (templates), avoid generating tls.key and tls.crt.
 	if o.Spec.Destination.Type == corev1.SecretTypeTLS && len(transOption.KeyedTemplates) == 0 {
-		data[corev1.TLSCertKey] = data["certificate"]
-		// the ca_chain includes the issuing ca
-		if len(data["ca_chain"]) > 0 {
-			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte("\n")...)
-			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte(data["ca_chain"])...)
-		} else if len(data["issuing_ca"]) > 0 {
-			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], []byte("\n")...)
-			data[corev1.TLSCertKey] = append(data[corev1.TLSCertKey], data["issuing_ca"]...)
-		}
-		data[corev1.TLSPrivateKeyKey] = data["private_key"]
+		data = convertToK8sTLSSecretData(data)
 	}
 
 	if b, err := json.Marshal(data); err == nil {
@@ -493,4 +486,32 @@ func computePKIRenewalWindow(ctx context.Context, o *secretsv1beta1.VaultPKISecr
 		"horizon", horizon).Info("Computed certificate renewal window with spec.expiryOffset")
 
 	return horizon, inWindow
+}
+
+func convertToK8sTLSSecretData(data map[string][]byte) map[string][]byte {
+	ret := maps.Clone(data)
+	if v, ok := ret["certificate"]; ok {
+		ret[corev1.TLSCertKey] = v
+	}
+
+	if v, ok := ret["private_key"]; ok {
+		ret[corev1.TLSPrivateKeyKey] = v
+	}
+
+	// the ca_chain includes the issuing ca
+	var caData []byte
+	if v, ok := data["ca_chain"]; ok && len(v) > 0 {
+		caData = v
+	} else if v, ok := data["issuing_ca"]; ok && len(v) > 0 {
+		ret[corev1.ServiceAccountRootCAKey] = v
+		caData = v
+	}
+
+	if len(caData) > 0 {
+		if _, ok := ret[corev1.TLSCertKey]; ok {
+			ret[corev1.TLSCertKey] = bytes.Join([][]byte{ret[corev1.TLSCertKey], caData}, []byte("\n"))
+		}
+	}
+
+	return ret
 }
