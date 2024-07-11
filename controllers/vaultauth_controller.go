@@ -81,11 +81,6 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	var conditions []metav1.Condition
 	if o.Spec.VaultAuthGlobalRef != nil {
-		globalRef, err := common.VaultAuthGlobalResourceRef(o)
-		r.referenceCache.Set(
-			VaultAuthGlobal, req.NamespacedName,
-			globalRef)
-
 		condition := metav1.Condition{
 			Type:               "VaultAuthGlobalRef",
 			Status:             "True",

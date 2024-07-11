@@ -855,8 +855,8 @@ func (in *VaultAuthGlobalRef) DeepCopyInto(out *VaultAuthGlobalRef) {
 		*out = new(MergeStrategy)
 		**out = **in
 	}
-	if in.Default != nil {
-		in, out := &in.Default, &out.Default
+	if in.AllowDefault != nil {
+		in, out := &in.AllowDefault, &out.AllowDefault
 		*out = new(bool)
 		**out = **in
 	}

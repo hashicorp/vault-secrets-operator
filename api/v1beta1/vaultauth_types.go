@@ -328,15 +328,17 @@ type VaultAuthGlobalRef struct {
 	// MergeStrategy configures the merge strategy for HTTP headers and parameters
 	// that are included in all Vault authentication requests.
 	MergeStrategy *MergeStrategy `json:"mergeStrategy,omitempty"`
-	// Default when set to true will use the default VaultAuthGlobal resource as the
-	// default if Name is not set. The "allow-global-defaults" option must be set on
-	// the operator's -global-vault-auth-options flag
+	// AllowDefault when set to true will use the default VaultAuthGlobal resource
+	// as the default if Name is not set. The 'allow-default-globals' option must be
+	// set on the operator's '-global-vault-auth-options' flag
 	//
-	// The VaultAuthGlobal search order is:
-	// 1. The VaultAuthGlobal in Namespace.
-	// 2. The VaultAuthGlobal in the VaultAuth Namespace.
-	// 3. The VaultAuthGlobal in the Operator's namespace.
-	Default *bool `json:"default,omitempty"`
+	// The default VaultAuthGlobal search is conditional.
+	// When a ref Namespace is not set, the search follows the order:
+	//  1. The referring VaultAuth Namespace.
+	//  2. The Operator's namespace.
+	// Otherwise, the search follows the order:
+	//  1. The VaultAuthGlobal ref Namespace.
+	AllowDefault *bool `json:"allowDefault,omitempty"`
 }
 
 // MergeStrategy provides the configuration for merging HTTP headers and

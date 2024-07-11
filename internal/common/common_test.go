@@ -846,9 +846,13 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 	}
 
 	wantK8sUnionParamsOverrideDefaultRef := wantK8sUnionParamsOverride.DeepCopy()
-	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.Default = pointer.Bool(true)
+	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.AllowDefault = pointer.Bool(true)
 	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.Name = ""
 	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.Namespace = "baz"
+
+	wantK8sUnionParamsOverrideDefaultRefNoNs := wantK8sUnionParamsOverrideDefaultRef.DeepCopy()
+	wantK8sUnionParamsOverrideDefaultRefNoNs.Spec.VaultAuthGlobalRef.Namespace = ""
+	wantK8sUnionParamsOverrideDefaultRefNoNs.Spec.VaultAuthGlobalRef.Name = ""
 
 	wantK8sReplaceParams := wantK8sBase.DeepCopy()
 	wantK8sReplaceParams.Spec.VaultAuthGlobalRef.MergeStrategy.Params = "replace"
@@ -1534,8 +1538,8 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 						"baz": "override",
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
-						Namespace: "baz",
-						Default:   pointer.Bool(true),
+						Namespace:    "baz",
+						AllowDefault: pointer.Bool(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1551,6 +1555,34 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name: "merge-strategy-union-params-override-default-ref-no-ns",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gObj: gObjWithParamsDefault.DeepCopy(),
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: true,
+			},
+			want:    wantK8sUnionParamsOverrideDefaultRefNoNs,
+			wantErr: assert.NoError,
+		},
+		{
 			name: "merge-strategy-union-params-override-default-operator-ns",
 			c:    builder.Build(),
 			o: &secretsv1beta1.VaultAuth{
@@ -1563,8 +1595,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 						"baz": "override",
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
-						Namespace: "baz",
-						Default:   pointer.Bool(true),
+						AllowDefault: pointer.Bool(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1576,7 +1607,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			gOpts: &GlobalVaultAuthOptions{
 				AllowDefaultGlobals: true,
 			},
-			want:    wantK8sUnionParamsOverrideDefaultRef,
+			want:    wantK8sUnionParamsOverrideDefaultRefNoNs,
 			wantErr: assert.NoError,
 		},
 		{
@@ -1592,8 +1623,8 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 						"baz": "override",
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
-						Namespace: "baz",
-						Default:   pointer.Bool(true),
+						Namespace:    "baz",
+						AllowDefault: pointer.Bool(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1611,7 +1642,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid-global-opts-no-default-found",
+			name: "invalid-global-opts-no-default-found-with-ref-ns",
 			c:    builder.Build(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1623,8 +1654,37 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 						"baz": "override",
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
-						Namespace: "baz",
-						Default:   pointer.Bool(true),
+						Namespace:    "baz",
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: true,
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				var e *DefaultVaultAuthNotFoundError
+				return assert.ErrorAs(t, err, &e)
+			},
+		},
+		{
+			name: "invalid-global-opts-no-default-found-without-ref-ns",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						AllowDefault: pointer.Bool(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},

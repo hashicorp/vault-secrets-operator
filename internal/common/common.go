@@ -125,22 +125,18 @@ func ParseResourceRef(refName, defaultNamespace string) (types.NamespacedName, e
 	return ref, nil
 }
 
-func VaultAuthGlobalResourceRef(o *secretsv1beta1.VaultAuth) (types.NamespacedName, error) {
+func vaultAuthGlobalResourceRef(o *secretsv1beta1.VaultAuth) (types.NamespacedName, error) {
 	var ref types.NamespacedName
 	authGlobalRef := o.Spec.VaultAuthGlobalRef
 	if authGlobalRef == nil {
 		return ref, fmt.Errorf("invalid VaultAuthGlobalRef for %s", client.ObjectKeyFromObject(o))
 	}
 
-	if authGlobalRef.Name == "" && authGlobalRef.Namespace == "" {
-		ref.Namespace = OperatorNamespace
-		ref.Name = consts.NameDefault
-	} else {
-		ref.Name = authGlobalRef.Name
+	ref.Name = authGlobalRef.Name
+	if authGlobalRef.Namespace != "" {
 		ref.Namespace = authGlobalRef.Namespace
-		if ref.Namespace == "" {
-			ref.Namespace = o.GetNamespace()
-		}
+	} else if ref.Name != "" {
+		ref.Namespace = o.GetNamespace()
 	}
 
 	if err := ValidateObjectKey(ref); err != nil {
@@ -227,10 +223,10 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 	var withDefaultVaultAuthGlobal bool
 	if globalOpts != nil {
 		if globalOpts.AllowDefaultGlobals {
-			if o.Spec.VaultAuthGlobalRef.Default != nil {
-				withDefaultVaultAuthGlobal = *o.Spec.VaultAuthGlobalRef.Default
+			if o.Spec.VaultAuthGlobalRef.AllowDefault != nil {
+				withDefaultVaultAuthGlobal = *o.Spec.VaultAuthGlobalRef.AllowDefault
 			}
-		} else if o.Spec.VaultAuthGlobalRef.Default != nil && *o.Spec.VaultAuthGlobalRef.Default {
+		} else if o.Spec.VaultAuthGlobalRef.AllowDefault != nil && *o.Spec.VaultAuthGlobalRef.AllowDefault {
 			return nil, nil, &DefaultVaultAuthNotAllowedError{
 				ObjRef:  client.ObjectKeyFromObject(o),
 				RefKind: "VaultAuth",
@@ -239,7 +235,7 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 	}
 
 	cObj := o.DeepCopy()
-	authGlobalRef, err := VaultAuthGlobalResourceRef(cObj)
+	authGlobalRef, err := vaultAuthGlobalResourceRef(cObj)
 	var objKeyError error
 	if err != nil {
 		if errors.Is(err, InvalidObjectKeyError) {
@@ -258,9 +254,14 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			return nil, nil, fmt.Errorf(
 				"invalid object ref and global default not set: %w", objKeyError)
 		} else if authGlobalRef.Name == "" {
-			obj, err := FindVaultAuthGlobalDefault(ctx, c,
-				authGlobalRef.Namespace, cObj.Namespace, OperatorNamespace,
-			)
+			var searchNamespaces []string
+			if authGlobalRef.Namespace != "" {
+				// limit search to the specified namespace
+				searchNamespaces = []string{authGlobalRef.Namespace}
+			} else {
+				searchNamespaces = []string{cObj.Namespace, OperatorNamespace}
+			}
+			obj, err := FindVaultAuthGlobalDefault(ctx, c, searchNamespaces...)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -792,10 +793,16 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 // an error is returned.
 func FindVaultAuthGlobalDefault(ctx context.Context, c client.Client, namespaces ...string) (*secretsv1beta1.VaultAuthGlobal, error) {
 	var authGlobal secretsv1beta1.VaultAuthGlobal
+	seen := make(map[string]struct{})
 	for _, ns := range namespaces {
 		if ns == "" {
 			continue
 		}
+		if _, ok := seen[ns]; ok {
+			continue
+		}
+
+		seen[ns] = struct{}{}
 		objKey := types.NamespacedName{Namespace: ns, Name: consts.NameDefault}
 		if err := c.Get(ctx, objKey, &authGlobal); err != nil {
 			if apierrors.IsNotFound(err) {
