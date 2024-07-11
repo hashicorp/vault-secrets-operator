@@ -192,6 +192,17 @@ controller:
       # in the destination K8s Secret.
       excludeRaw: false
 
+    # Global Vault auth options. In addition to the boolean options
+    # below, these options may be set via the
+    # `VSO_GLOBAL_VAULT_OPTION_OPTIONS` environment variable as a
+    # comma-separated list. Valid values are: `allow-default-globals`
+    globalVaultAuthOptions:
+      # allowDefaultGlobals directs the operator search for a "default"
+      # VaultAuthGlobal if none is specified on the referring VaultAuth CR.
+      # Default: true
+      # @type: boolean
+      allowDefaultGlobals: true
+
     # Backoff settings for the controller manager. These settings control the backoff behavior
     # when the controller encounters an error while fetching secrets from the SecretSource.
     # For example given the following settings:

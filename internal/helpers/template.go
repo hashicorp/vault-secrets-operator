@@ -113,14 +113,14 @@ func (k *KeyedTemplate) Cmp(other *KeyedTemplate) int {
 	)
 }
 
-type GlobalTransformationOption struct {
+type GlobalTransformationOptions struct {
 	// RenderOptionExcludeRaw sets the global sync option for controlling the exclusion
 	// of _raw from the destination secret.
 	// This is usually set from main via the command line arg --global-transformation-options
 	ExcludeRaw bool
 }
 
-func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, globalOpt *GlobalTransformationOption) (*SecretTransformationOption, error) {
+func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, globalOpt *GlobalTransformationOptions) (*SecretTransformationOption, error) {
 	meta, err := common.NewSyncableSecretMetaData(obj)
 	if err != nil {
 		return nil, err

@@ -164,12 +164,25 @@ imagePullSecrets:
 
 
 {{/*
-globalTransformationOptions configures the manager's --global-transformation-options
+globalTransformationOptions configures the manager's --global-transformation-options flag.
 */}}
 {{- define "vso.globalTransformationOptions" -}}
 {{- $opts := list -}}
 {{- if .Values.controller.manager.globalTransformationOptions.excludeRaw }}
 {{- $opts = mustAppend $opts "exclude-raw" -}}
+{{- end -}}
+{{- if $opts -}}
+{{- $opts | join "," -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+globalVaultAuthOptions configures the manager's --global-vault-auth-options flag.
+*/}}
+{{- define "vso.globalVaultAuthOptions" -}}
+{{- $opts := list -}}
+{{- if .Values.controller.manager.globalVaultAuthOptions.allowDefaultGlobals }}
+{{- $opts = mustAppend $opts "allow-default-globals" -}}
 {{- end -}}
 {{- if $opts -}}
 {{- $opts | join "," -}}

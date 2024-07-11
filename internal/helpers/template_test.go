@@ -618,7 +618,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	tests := []struct {
 		name            string
 		obj             ctrlclient.Object
-		globalOpt       *GlobalTransformationOption
+		globalOpt       *GlobalTransformationOptions
 		secretTransObjs []*secretsv1beta1.SecretTransformation
 		want            *SecretTransformationOption
 		wantErr         assert.ErrorAssertionFunc
@@ -1222,7 +1222,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 		},
 		{
 			name: "exclude-raw-from-global-opt",
-			globalOpt: &GlobalTransformationOption{
+			globalOpt: &GlobalTransformationOptions{
 				ExcludeRaw: true,
 			},
 			obj: newSecretObj(t,

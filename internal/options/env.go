@@ -27,7 +27,7 @@ type VSOEnvOptions struct {
 	MaxConcurrentReconciles *int `split_words:"true"`
 
 	// GlobalTransformationOptions is VSO_GLOBAL_TRANSFORMATION_OPTIONS environment variable option
-	GlobalTransformationOptions string `split_words:"true"`
+	GlobalTransformationOptions []string `split_words:"true"`
 
 	// BackoffInitialInterval is VSO_BACKOFF_INITIAL_INTERVAL environment variable option
 	BackoffInitialInterval time.Duration `split_words:"true"`
@@ -43,6 +43,9 @@ type VSOEnvOptions struct {
 
 	// BackoffMultiplier is VSO_BACKOFF_MULTIPLIER environment variable option
 	BackoffMultiplier float64 `split_words:"true"`
+
+	// GlobalVaultAuthOptions is VSO_GLOBAL_VAULT_AUTH_OPTIONS environment variable option
+	GlobalVaultAuthOptions []string `split_words:"true"`
 }
 
 // Parse environment variable options, prefixed with "VSO_"

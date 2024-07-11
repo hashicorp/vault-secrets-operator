@@ -5,6 +5,7 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -48,6 +49,31 @@ func (n *NamespaceNotAllowedError) Error() string {
 	return fmt.Sprintf(
 		"target namespace %q is not allowed by kind=%s obj=%s, allowedNamespaces=%v",
 		n.TargetNS, refKind, n.ObjRef, n.AllowedNS)
+}
+
+type DefaultVaultAuthNotAllowedError struct {
+	ObjRef  types.NamespacedName
+	RefKind string
+	Global  bool
+}
+
+func (n *DefaultVaultAuthNotAllowedError) Error() string {
+	refKind := n.RefKind
+	if refKind == "" {
+		refKind = "unknown"
+	}
+	return fmt.Sprintf(
+		"default vault auth is not allowed by kind=%s obj=%s: global=%t", refKind, n.ObjRef, n.Global)
+}
+
+type DefaultVaultAuthNotFoundError struct {
+	Namespaces []string
+	Global     bool
+}
+
+func (n *DefaultVaultAuthNotFoundError) Error() string {
+	return fmt.Sprintf(
+		"default vault auth not found in namespaces=%v: global=%t", n.Namespaces, n.Global)
 }
 
 func init() {
@@ -99,22 +125,18 @@ func ParseResourceRef(refName, defaultNamespace string) (types.NamespacedName, e
 	return ref, nil
 }
 
-func VaultAuthGlobalResourceRef(o *secretsv1beta1.VaultAuth) (types.NamespacedName, error) {
+func vaultAuthGlobalResourceRef(o *secretsv1beta1.VaultAuth) (types.NamespacedName, error) {
 	var ref types.NamespacedName
 	authGlobalRef := o.Spec.VaultAuthGlobalRef
 	if authGlobalRef == nil {
 		return ref, fmt.Errorf("invalid VaultAuthGlobalRef for %s", client.ObjectKeyFromObject(o))
 	}
 
-	if authGlobalRef.Name == "" && authGlobalRef.Namespace == "" {
-		ref.Namespace = OperatorNamespace
-		ref.Name = consts.NameDefault
-	} else {
-		ref.Name = authGlobalRef.Name
+	ref.Name = authGlobalRef.Name
+	if authGlobalRef.Namespace != "" {
 		ref.Namespace = authGlobalRef.Namespace
-		if ref.Namespace == "" {
-			ref.Namespace = o.GetNamespace()
-		}
+	} else if ref.Name != "" {
+		ref.Namespace = o.GetNamespace()
 	}
 
 	if err := ValidateObjectKey(ref); err != nil {
@@ -161,7 +183,7 @@ func isAllowedNamespace(obj ctrlclient.Object, targetNamespace string, allowed .
 	return false
 }
 
-func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.VaultAuth, error) {
+func GetVaultAuthNamespaced(ctx context.Context, c ctrlclient.Client, obj ctrlclient.Object, globalOpts *GlobalVaultAuthOptions) (*secretsv1beta1.VaultAuth, error) {
 	authRef, err := getAuthRefNamespacedName(obj)
 	if err != nil {
 		return nil, err
@@ -180,7 +202,7 @@ func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Obj
 		}
 	}
 
-	authObj, _, err = MergeInVaultAuthGlobal(ctx, c, authObj)
+	authObj, _, err = MergeInVaultAuthGlobal(ctx, c, authObj, globalOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -193,20 +215,64 @@ func GetVaultAuthNamespaced(ctx context.Context, c client.Client, obj client.Obj
 // VaultAuthGlobal object is fetched and merged into the VaultAuth object. In the
 // case where no reference is specified in the VaultAuth object, the VaultAuth
 // object is returned as is.
-func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secretsv1beta1.VaultAuth) (*secretsv1beta1.VaultAuth, *secretsv1beta1.VaultAuthGlobal, error) {
+func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secretsv1beta1.VaultAuth, globalOpts *GlobalVaultAuthOptions) (*secretsv1beta1.VaultAuth, *secretsv1beta1.VaultAuthGlobal, error) {
 	if o.Spec.VaultAuthGlobalRef == nil {
 		return o, nil, nil
 	}
 
+	var withDefaultVaultAuthGlobal bool
+	if globalOpts != nil {
+		if globalOpts.AllowDefaultGlobals {
+			if o.Spec.VaultAuthGlobalRef.AllowDefault != nil {
+				withDefaultVaultAuthGlobal = *o.Spec.VaultAuthGlobalRef.AllowDefault
+			}
+		} else if o.Spec.VaultAuthGlobalRef.AllowDefault != nil && *o.Spec.VaultAuthGlobalRef.AllowDefault {
+			return nil, nil, &DefaultVaultAuthNotAllowedError{
+				ObjRef:  client.ObjectKeyFromObject(o),
+				RefKind: "VaultAuth",
+			}
+		}
+	}
+
 	cObj := o.DeepCopy()
-	authGlobalRef, err := VaultAuthGlobalResourceRef(cObj)
+	authGlobalRef, err := vaultAuthGlobalResourceRef(cObj)
+	var objKeyError error
 	if err != nil {
-		return nil, nil, err
+		if errors.Is(err, InvalidObjectKeyError) {
+			if !withDefaultVaultAuthGlobal {
+				return nil, nil, err
+			}
+			objKeyError = err
+		} else {
+			return nil, nil, err
+		}
 	}
 
 	var gObj secretsv1beta1.VaultAuthGlobal
-	if err := c.Get(ctx, authGlobalRef, &gObj); err != nil {
-		return nil, nil, fmt.Errorf("failed getting %s, err=%w", authGlobalRef, err)
+	if objKeyError != nil {
+		if !withDefaultVaultAuthGlobal {
+			return nil, nil, fmt.Errorf(
+				"invalid object ref and global default not set: %w", objKeyError)
+		} else if authGlobalRef.Name == "" {
+			var searchNamespaces []string
+			if authGlobalRef.Namespace != "" {
+				// limit search to the specified namespace
+				searchNamespaces = []string{authGlobalRef.Namespace}
+			} else {
+				searchNamespaces = []string{cObj.Namespace, OperatorNamespace}
+			}
+			obj, err := FindVaultAuthGlobalDefault(ctx, c, searchNamespaces...)
+			if err != nil {
+				return nil, nil, err
+			}
+			gObj = *obj
+		} else {
+			return nil, nil, fmt.Errorf("invalid object ref: %w", objKeyError)
+		}
+	} else {
+		if err := c.Get(ctx, authGlobalRef, &gObj); err != nil {
+			return nil, nil, fmt.Errorf("failed getting %s, err=%w", authGlobalRef, err)
+		}
 	}
 
 	if !isAllowedNamespace(&gObj, cObj.GetNamespace(), gObj.Spec.AllowedNamespaces...) {
@@ -720,4 +786,43 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 	}
 
 	return meta, nil
+}
+
+// FindVaultAuthGlobalDefault returns the default VaultAuthGlobal object in the
+// given namespaces. If the default object is not found in the given namespaces,
+// an error is returned.
+func FindVaultAuthGlobalDefault(ctx context.Context, c client.Client, namespaces ...string) (*secretsv1beta1.VaultAuthGlobal, error) {
+	var authGlobal secretsv1beta1.VaultAuthGlobal
+	seen := make(map[string]struct{})
+	for _, ns := range namespaces {
+		if ns == "" {
+			continue
+		}
+		if _, ok := seen[ns]; ok {
+			continue
+		}
+
+		seen[ns] = struct{}{}
+		objKey := types.NamespacedName{Namespace: ns, Name: consts.NameDefault}
+		if err := c.Get(ctx, objKey, &authGlobal); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		return &authGlobal, nil
+	}
+
+	return nil, &DefaultVaultAuthNotFoundError{
+		Namespaces: namespaces,
+		Global:     true,
+	}
+}
+
+// GlobalVaultAuthOptions provides options for controlling the handling of
+// VaultAuth and VaultAuthGlobal objects.
+type GlobalVaultAuthOptions struct {
+	// AllowDefaultGlobals enables the use of the default VaultAuthGlobal objects.
+	// This configuration overrides the VaultAuthGlobalRef.Default field.
+	AllowDefaultGlobals bool
 }

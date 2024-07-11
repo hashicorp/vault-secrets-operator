@@ -47,26 +47,26 @@ var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
 type HCPVaultSecretsAppReconciler struct {
 	client.Client
-	Scheme                     *runtime.Scheme
-	Recorder                   record.EventRecorder
-	SecretDataBuilder          *helpers.SecretDataBuilder
-	HMACValidator              helpers.HMACValidator
-	MinRefreshAfter            time.Duration
-	referenceCache             ResourceReferenceCache
-	GlobalTransformationOption *helpers.GlobalTransformationOption
-	BackOffRegistry            *BackOffRegistry
+	Scheme                      *runtime.Scheme
+	Recorder                    record.EventRecorder
+	SecretDataBuilder           *helpers.SecretDataBuilder
+	HMACValidator               helpers.HMACValidator
+	MinRefreshAfter             time.Duration
+	referenceCache              ResourceReferenceCache
+	GlobalTransformationOptions *helpers.GlobalTransformationOptions
+	BackOffRegistry             *BackOffRegistry
 }
 
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //
 // required for rollout-restart
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
-//+kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 
 // Reconcile a secretsv1beta1.HCPVaultSecretsApp Custom Resource instance. Each
@@ -104,7 +104,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOption)
+	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)

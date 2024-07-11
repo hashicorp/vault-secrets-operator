@@ -37,13 +37,14 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/options"
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
-	//+kubebuilder:scaffold:imports
+	// +kubebuilder:scaffold:imports
 )
 
 var (
@@ -65,7 +66,7 @@ func init() {
 	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 
 	utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
-	//+kubebuilder:scaffold:scheme
+	// +kubebuilder:scaffold:scheme
 }
 
 // upgradeCRDs upgrades the CRDs in the cluster to the latest version.
@@ -136,6 +137,7 @@ func main() {
 	var preDeleteHookTimeoutSeconds int
 	var minRefreshAfterHVSA time.Duration
 	var globalTransformationOpts string
+	var globalVaultAuthOpts string
 	var backoffInitialInterval time.Duration
 	var backoffMaxInterval time.Duration
 	var backoffRandomizationFactor float64
@@ -174,6 +176,10 @@ func main() {
 		fmt.Sprintf("Set global secret transformation options as a comma delimited string. "+
 			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS. "+
 			"Valid values are: %v", []string{"exclude-raw"}))
+	flag.StringVar(&globalVaultAuthOpts, "global-vault-auth-options", "allow-default-globals",
+		fmt.Sprintf("Set global vault auth options as a comma delimited string. "+
+			"Also set from environment variable VSO_GLOBAL_VAULT_AUTH_OPTIONS. "+
+			"Valid values are: %v", []string{"allow-default-globals"}))
 	flag.DurationVar(&backoffInitialInterval, "backoff-initial-interval", time.Second*5,
 		"Initial interval between retries on secret source errors. "+
 			"All errors are tried using an exponential backoff strategy. "+
@@ -213,6 +219,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	var globalTransOptsSet []string
+	var globalVaultAuthOptsSet []string
 	// Set options from env if any are set
 	if vsoEnvOptions.OutputFormat != "" {
 		outputFormat = vsoEnvOptions.OutputFormat
@@ -226,8 +234,10 @@ func main() {
 	if vsoEnvOptions.MaxConcurrentReconciles != nil {
 		controllerOptions.MaxConcurrentReconciles = *vsoEnvOptions.MaxConcurrentReconciles
 	}
-	if vsoEnvOptions.GlobalTransformationOptions != "" {
-		globalTransformationOpts = vsoEnvOptions.GlobalTransformationOptions
+	if len(vsoEnvOptions.GlobalTransformationOptions) > 0 {
+		globalTransOptsSet = vsoEnvOptions.GlobalTransformationOptions
+	} else if globalTransformationOpts != "" {
+		globalTransOptsSet = strings.Split(globalTransformationOpts, ",")
 	}
 	if vsoEnvOptions.BackoffInitialInterval != 0 {
 		backoffInitialInterval = vsoEnvOptions.BackoffInitialInterval
@@ -241,6 +251,12 @@ func main() {
 	if vsoEnvOptions.BackoffMultiplier != 0 {
 		backoffMultiplier = vsoEnvOptions.BackoffMultiplier
 	}
+	if len(vsoEnvOptions.GlobalVaultAuthOptions) > 0 {
+		globalVaultAuthOptsSet = vsoEnvOptions.GlobalVaultAuthOptions
+	} else if globalVaultAuthOpts != "" {
+		globalVaultAuthOptsSet = strings.Split(globalVaultAuthOpts, ",")
+	}
+
 	// versionInfo is used when setting up the buildInfo metric below
 	versionInfo := version.Version()
 	if printVersion {
@@ -287,19 +303,30 @@ func main() {
 		backoff.WithMaxElapsedTime(backoffMaxElapsedTime),
 	}
 
-	globalTransOpt := &helpers.GlobalTransformationOption{}
-	if globalTransformationOpts != "" {
-		for _, v := range strings.Split(globalTransformationOpts, ",") {
-			switch v {
-			case "exclude-raw":
-				globalTransOpt.ExcludeRaw = true
-			default:
-				setupLog.Error(fmt.Errorf("unsupported rendering option %q", v),
-					"Invalid argument for --global-transformation-options")
-				os.Exit(1)
-			}
+	globalTransOptions := &helpers.GlobalTransformationOptions{}
+	for _, v := range globalTransOptsSet {
+		switch v {
+		case "exclude-raw":
+			globalTransOptions.ExcludeRaw = true
+		default:
+			setupLog.Error(fmt.Errorf("unsupported rendering option %q", v),
+				"Invalid argument for --global-transformation-options")
+			os.Exit(1)
 		}
 	}
+
+	globalVaultAuthOptions := &common.GlobalVaultAuthOptions{}
+	for _, v := range globalVaultAuthOptsSet {
+		switch v {
+		case "allow-default-globals":
+			globalVaultAuthOptions.AllowDefaultGlobals = true
+		default:
+			setupLog.Error(fmt.Errorf("unsupported global vault auth option %q", v),
+				"Invalid argument for --global-vault-auth-options")
+			os.Exit(1)
+		}
+	}
+	cfc.GlobalVaultAuthOptions = globalVaultAuthOptions
 
 	config := ctrl.GetConfigOrDie()
 
@@ -352,6 +379,7 @@ func main() {
 					"clientCachePersistenceModel": clientCachePersistenceModel,
 					"clientCacheSize":             strconv.Itoa(cfc.ClientCacheSize),
 					"globalTransformationOptions": globalTransformationOpts,
+					"globalVaultAuthOptions":      globalVaultAuthOpts,
 					"maxConcurrentReconciles":     strconv.Itoa(controllerOptions.MaxConcurrentReconciles),
 				},
 			},
@@ -379,7 +407,7 @@ func main() {
 		// the manager stops, so would be fine to enable this option. However,
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
-		//LeaderElectionReleaseOnCancel: true,
+		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "Unable to start manager")
@@ -415,36 +443,37 @@ func main() {
 	hmacValidator := helpers.NewHMACValidator(cfc.StorageConfig.HMACSecretObjKey)
 	secretDataBuilder := helpers.NewSecretsDataBuilder()
 	if err = (&controllers.VaultStaticSecretReconciler{
-		Client:                     mgr.GetClient(),
-		Scheme:                     mgr.GetScheme(),
-		Recorder:                   mgr.GetEventRecorderFor("VaultStaticSecret"),
-		SecretDataBuilder:          secretDataBuilder,
-		HMACValidator:              hmacValidator,
-		ClientFactory:              clientFactory,
-		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
-		GlobalTransformationOption: globalTransOpt,
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("VaultStaticSecret"),
+		SecretDataBuilder:           secretDataBuilder,
+		HMACValidator:               hmacValidator,
+		ClientFactory:               clientFactory,
+		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
+		GlobalTransformationOptions: globalTransOptions,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultStaticSecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultPKISecretReconciler{
-		Client:                     mgr.GetClient(),
-		Scheme:                     mgr.GetScheme(),
-		ClientFactory:              clientFactory,
-		HMACValidator:              hmacValidator,
-		SyncRegistry:               controllers.NewSyncRegistry(),
-		Recorder:                   mgr.GetEventRecorderFor("VaultPKISecret"),
-		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
-		GlobalTransformationOption: globalTransOpt,
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		ClientFactory:               clientFactory,
+		HMACValidator:               hmacValidator,
+		SyncRegistry:                controllers.NewSyncRegistry(),
+		Recorder:                    mgr.GetEventRecorderFor("VaultPKISecret"),
+		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
+		GlobalTransformationOptions: globalTransOptions,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultPKISecret")
 		os.Exit(1)
 	}
 	if err = (&controllers.VaultAuthReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("VaultAuth"),
-		ClientFactory: clientFactory,
+		Client:                 mgr.GetClient(),
+		Scheme:                 mgr.GetScheme(),
+		Recorder:               mgr.GetEventRecorderFor("VaultAuth"),
+		ClientFactory:          clientFactory,
+		GlobalVaultAuthOptions: globalVaultAuthOptions,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultAuth")
 		os.Exit(1)
@@ -471,14 +500,14 @@ func main() {
 	}
 
 	vdsReconciler := &controllers.VaultDynamicSecretReconciler{
-		Client:                     mgr.GetClient(),
-		Scheme:                     mgr.GetScheme(),
-		Recorder:                   mgr.GetEventRecorderFor("VaultDynamicSecret"),
-		ClientFactory:              clientFactory,
-		HMACValidator:              hmacValidator,
-		SyncRegistry:               controllers.NewSyncRegistry(),
-		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
-		GlobalTransformationOption: globalTransOpt,
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("VaultDynamicSecret"),
+		ClientFactory:               clientFactory,
+		HMACValidator:               hmacValidator,
+		SyncRegistry:                controllers.NewSyncRegistry(),
+		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
+		GlobalTransformationOptions: globalTransOptions,
 	}
 	if err = vdsReconciler.SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
@@ -498,14 +527,14 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.HCPVaultSecretsAppReconciler{
-		Client:                     mgr.GetClient(),
-		Scheme:                     mgr.GetScheme(),
-		Recorder:                   mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
-		SecretDataBuilder:          secretDataBuilder,
-		HMACValidator:              hmacValidator,
-		MinRefreshAfter:            minRefreshAfterHVSA,
-		BackOffRegistry:            controllers.NewBackOffRegistry(backoffOpts...),
-		GlobalTransformationOption: globalTransOpt,
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
+		SecretDataBuilder:           secretDataBuilder,
+		HMACValidator:               hmacValidator,
+		MinRefreshAfter:             minRefreshAfterHVSA,
+		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
+		GlobalTransformationOptions: globalTransOptions,
 	}).SetupWithManager(mgr, controllerOptions); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
 		os.Exit(1)
@@ -525,7 +554,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "VaultAuthGlobal")
 		os.Exit(1)
 	}
-	//+kubebuilder:scaffold:builder
+	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "Unable to set up health check")
@@ -544,6 +573,8 @@ func main() {
 		"backoffMaxElapsedTime", backoffMaxElapsedTime,
 		"backoffInitialInterval", backoffInitialInterval,
 		"backoffRandomizationFactor", backoffRandomizationFactor,
+		"globalTransformationOptions", globalTransformationOpts,
+		"globalVaultAuthOptions", globalVaultAuthOpts,
 	)
 
 	mgr.GetCache()

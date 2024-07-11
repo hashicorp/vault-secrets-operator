@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -768,6 +769,12 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		"baz": "qux",
 	}
 
+	gObjWithParamsDefault := gObjWithParams.DeepCopy()
+	gObjWithParamsDefault.Name = consts.NameDefault
+
+	gObjWithParamsDefaultOperatorNS := gObjWithParamsDefault.DeepCopy()
+	gObjWithParamsDefaultOperatorNS.Namespace = OperatorNamespace
+
 	wantK8sBase := &secretsv1beta1.VaultAuth{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "foo",
@@ -838,6 +845,15 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		"baz": "override",
 	}
 
+	wantK8sUnionParamsOverrideDefaultRef := wantK8sUnionParamsOverride.DeepCopy()
+	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.AllowDefault = pointer.Bool(true)
+	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.Name = ""
+	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.Namespace = "baz"
+
+	wantK8sUnionParamsOverrideDefaultRefNoNs := wantK8sUnionParamsOverrideDefaultRef.DeepCopy()
+	wantK8sUnionParamsOverrideDefaultRefNoNs.Spec.VaultAuthGlobalRef.Namespace = ""
+	wantK8sUnionParamsOverrideDefaultRefNoNs.Spec.VaultAuthGlobalRef.Name = ""
+
 	wantK8sReplaceParams := wantK8sBase.DeepCopy()
 	wantK8sReplaceParams.Spec.VaultAuthGlobalRef.MergeStrategy.Params = "replace"
 	wantK8sReplaceParams.Spec.Params = map[string]string{
@@ -868,6 +884,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		c       client.Client
 		o       *secretsv1beta1.VaultAuth
 		gObj    *secretsv1beta1.VaultAuthGlobal
+		gOpts   *GlobalVaultAuthOptions
 		want    *secretsv1beta1.VaultAuth
 		wantErr assert.ErrorAssertionFunc
 	}{
@@ -1508,6 +1525,181 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			want:    wantK8sUnionParamsOverride,
 			wantErr: assert.NoError,
 		},
+		{
+			name: "merge-strategy-union-params-override-default-ref-ns",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Namespace:    "baz",
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gObj: gObjWithParamsDefault.DeepCopy(),
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: true,
+			},
+			want:    wantK8sUnionParamsOverrideDefaultRef,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "merge-strategy-union-params-override-default-ref-no-ns",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gObj: gObjWithParamsDefault.DeepCopy(),
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: true,
+			},
+			want:    wantK8sUnionParamsOverrideDefaultRefNoNs,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "merge-strategy-union-params-override-default-operator-ns",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gObj: gObjWithParamsDefaultOperatorNS.DeepCopy(),
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: true,
+			},
+			want:    wantK8sUnionParamsOverrideDefaultRefNoNs,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "invalid-global-opts-defaults-not-allowed",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Namespace:    "baz",
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gObj: gObjWithParamsDefault.DeepCopy(),
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: false,
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				var e *DefaultVaultAuthNotAllowedError
+				return assert.ErrorAs(t, err, &e)
+			},
+		},
+		{
+			name: "invalid-global-opts-no-default-found-with-ref-ns",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						Namespace:    "baz",
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: true,
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				var e *DefaultVaultAuthNotFoundError
+				return assert.ErrorAs(t, err, &e)
+			},
+		},
+		{
+			name: "invalid-global-opts-no-default-found-without-ref-ns",
+			c:    builder.Build(),
+			o: &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "baz",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Params: map[string]string{
+						"baz": "override",
+					},
+					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
+						AllowDefault: pointer.Bool(true),
+						MergeStrategy: &secretsv1beta1.MergeStrategy{
+							Params: "union",
+						},
+					},
+					Method: "kubernetes",
+				},
+			},
+			gOpts: &GlobalVaultAuthOptions{
+				AllowDefaultGlobals: true,
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				var e *DefaultVaultAuthNotFoundError
+				return assert.ErrorAs(t, err, &e)
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1518,7 +1710,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 				require.NoError(t, tt.c.Create(ctx, tt.gObj))
 			}
 
-			got, _, err := MergeInVaultAuthGlobal(ctx, tt.c, tt.o)
+			got, _, err := MergeInVaultAuthGlobal(ctx, tt.c, tt.o, tt.gOpts)
 			if !tt.wantErr(t, err, fmt.Sprintf("MergeInVaultAuthGlobal(%v, %v, %v)", ctx, tt.c, tt.o)) {
 				return
 			}
