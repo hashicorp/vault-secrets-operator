@@ -404,7 +404,20 @@ load _helpers
     [ "${actual}" = "my-project" ]
 }
 
-@test "defaultAuthMethod/CR: with vaultAuthGlobalRef" {
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/default" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '. | has("vaultAuthGlobalRef")')" = "false" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/enabled" {
     cd "$(chart_dir)"
     local actual
     actual=$(helm template \
@@ -422,7 +435,11 @@ load _helpers
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.params')" = "none" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.headers')" = "none" ]
+}
 
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/defaults/empty-params" {
+    cd "$(chart_dir)"
+    local actual
     actual=$(helm template \
         --debug \
         -s templates/default-vault-auth-method.yaml  \
@@ -439,7 +456,11 @@ load _helpers
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy | has("params")')" = "false" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.headers')" = "none" ]
+}
 
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/mergeStrategy/empty-headers" {
+    cd "$(chart_dir)"
+    local actual
     actual=$(helm template \
         --debug \
         -s templates/default-vault-auth-method.yaml  \
@@ -456,7 +477,11 @@ load _helpers
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.params')" = "none" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy | has("headers")')" = "false" ]
+}
 
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/allowDefault=true" {
+    cd "$(chart_dir)"
+    local actual
     actual=$(helm template \
         --debug \
         -s templates/default-vault-auth-method.yaml  \
@@ -471,7 +496,11 @@ load _helpers
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.allowDefault')" = "true" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+}
 
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/allowDefault=false" {
+    cd "$(chart_dir)"
+    local actual
     actual=$(helm template \
         --debug \
         -s templates/default-vault-auth-method.yaml  \
@@ -486,7 +515,11 @@ load _helpers
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.allowDefault')" = "false" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
     [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+}
 
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/mergeStrategy/params=union-headers=replace" {
+    cd "$(chart_dir)"
+    local actual
     actual=$(helm template \
         --debug \
         -s templates/default-vault-auth-method.yaml  \
