@@ -398,3 +398,149 @@ func Test_waitForStoppedCh(t *testing.T) {
 	err = waitForStoppedCh(ctx2, stoppedCh)
 	assert.NoError(t, err)
 }
+
+func TestVaultAuthReconciler_updateConditions(t *testing.T) {
+	t0 := nowFunc().Truncate(time.Second)
+	tests := []struct {
+		name      string
+		current   []metav1.Condition
+		updates   []metav1.Condition
+		expectLen int
+	}{
+		{
+			name: "no-conditions",
+		},
+		{
+			name: "initial-conditions",
+			updates: []metav1.Condition{
+				{
+					Type:   "Available",
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expectLen: 1,
+		},
+		{
+			name: "unchanged-conditions",
+			current: []metav1.Condition{
+				{
+					Type:               "Available",
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(t0),
+				},
+			},
+			updates: []metav1.Condition{
+				{
+					Type:               "Available",
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(t0),
+				},
+			},
+			expectLen: 1,
+		},
+		{
+			name: "unchanged-conditions-with-duplicate-updates",
+			current: []metav1.Condition{
+				{
+					Type:               "Available",
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(t0),
+				},
+			},
+			updates: []metav1.Condition{
+				{
+					Type:               "Available",
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(t0),
+				},
+				{
+					Type:               "Available",
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(t0),
+				},
+			},
+			expectLen: 1,
+		},
+		{
+			name: "condition-status-transition",
+			current: []metav1.Condition{
+				{
+					Type:               "Available",
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(nowFunc().Add(-time.Minute)),
+				},
+				{
+					Type:               "Progressing",
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(nowFunc().Add(-time.Minute)),
+				},
+			},
+			updates: []metav1.Condition{
+				{
+					Type:   "Available",
+					Status: metav1.ConditionTrue,
+				},
+				{
+					Type:   "Progressing",
+					Status: metav1.ConditionFalse,
+				},
+			},
+			expectLen: 2,
+		},
+		{
+			name: "condition-status-transition-appending-new-condition",
+			current: []metav1.Condition{
+				{
+					Type:               "Available",
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(nowFunc().Add(-time.Minute)),
+				},
+			},
+			updates: []metav1.Condition{
+				{
+					Type:   "Available",
+					Status: metav1.ConditionTrue,
+				},
+				{
+					Type:   "Progressing",
+					Status: metav1.ConditionFalse,
+				},
+			},
+			expectLen: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origUpdates := make([]metav1.Condition, len(tt.updates))
+			seen := make(map[string]bool)
+			for idx, cond := range tt.updates {
+				key := fmt.Sprintf("%s/%s", cond.Type, cond.Reason)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				origUpdates[idx] = cond
+			}
+
+			got := updateConditions(tt.current, tt.updates...)
+			assert.Equalf(t, tt.expectLen, len(got),
+				"expected %d conditions, got %d", tt.expectLen, len(got))
+			for _, orig := range origUpdates {
+				for _, cond := range got {
+					if cond.Reason == orig.Reason && orig.Status == cond.Status {
+						if orig.LastTransitionTime.IsZero() {
+							assert.False(t, cond.LastTransitionTime.IsZero())
+						} else {
+							assert.Equal(t, orig, cond)
+						}
+					} else if cond.Reason == orig.Reason && orig.Status != cond.Status {
+						assert.Greater(t, cond.LastTransitionTime.Time.Unix(), orig.LastTransitionTime.Time.Unix())
+					} else {
+						// not updated
+						assert.False(t, orig.LastTransitionTime.IsZero())
+					}
+				}
+			}
+		})
+	}
+}

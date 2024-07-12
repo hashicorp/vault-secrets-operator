@@ -82,20 +82,20 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	var conditions []metav1.Condition
 	if o.Spec.VaultAuthGlobalRef != nil {
 		condition := metav1.Condition{
-			Type:               "VaultAuthGlobalRef",
-			Status:             "True",
+			Type:               "Available",
+			Status:             metav1.ConditionTrue,
 			ObservedGeneration: o.Generation,
-			LastTransitionTime: metav1.NewTime(nowFunc()),
 			Reason:             "VaultAuthGlobalRef",
 		}
 
 		mObj, gObj, err := common.MergeInVaultAuthGlobal(ctx, r.Client, o, r.GlobalVaultAuthOptions)
 		if err != nil {
 			condition.Message = err.Error()
-			condition.Status = "False"
+			condition.Status = metav1.ConditionFalse
 		} else {
 			o = mObj
-			condition.Message = fmt.Sprintf("%s:%s:%d",
+			condition.Message = fmt.Sprintf(
+				"VaultAuthGlobal successfully merged, key=%s, uid=%s, generation=%d",
 				client.ObjectKeyFromObject(gObj), gObj.UID, gObj.Generation)
 			r.referenceCache.Set(
 				VaultAuthGlobal, req.NamespacedName,
@@ -105,8 +105,6 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	} else {
 		r.referenceCache.Remove(VaultAuthGlobal, req.NamespacedName)
 	}
-
-	o.Status.Conditions = conditions
 
 	// ensure that the vaultConnectionRef is set for any VaultAuth resource in the operator namespace.
 	if o.Namespace == common.OperatorNamespace && o.Spec.VaultConnectionRef == "" {
@@ -178,7 +176,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		o.Status.Error = ""
 	}
 
-	if err := r.updateStatus(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o, conditions...); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -195,9 +193,10 @@ func (r *VaultAuthReconciler) recordEvent(a *secretsv1beta1.VaultAuth, reason, m
 	r.Recorder.Eventf(a, eventType, reason, msg, i...)
 }
 
-func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth) error {
+func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx)
 	metrics.SetResourceStatus("vaultauth", o, o.Status.Valid)
+	o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err
