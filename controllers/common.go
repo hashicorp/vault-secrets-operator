@@ -295,6 +295,13 @@ func updateConditions(current []metav1.Condition, updates ...metav1.Condition) [
 				if cond.Status != newCond.Status {
 					newCond.LastTransitionTime = metav1.NewTime(nowFunc())
 				}
+				if newCond.LastTransitionTime.IsZero() {
+					if cond.LastTransitionTime.IsZero() {
+						newCond.LastTransitionTime = metav1.NewTime(nowFunc())
+					} else {
+						newCond.LastTransitionTime = cond.LastTransitionTime
+					}
+				}
 				ret = append(ret, newCond)
 				updated = true
 				break

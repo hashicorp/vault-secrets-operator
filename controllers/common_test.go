@@ -431,9 +431,24 @@ func TestVaultAuthReconciler_updateConditions(t *testing.T) {
 			},
 			updates: []metav1.Condition{
 				{
-					Type:               "Available",
-					Status:             metav1.ConditionTrue,
-					LastTransitionTime: metav1.NewTime(t0),
+					Type:   "Available",
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expectLen: 1,
+		},
+		{
+			name: "unchanged-conditions-no-last-transition-time",
+			current: []metav1.Condition{
+				{
+					Type:   "Available",
+					Status: metav1.ConditionTrue,
+				},
+			},
+			updates: []metav1.Condition{
+				{
+					Type:   "Available",
+					Status: metav1.ConditionTrue,
 				},
 			},
 			expectLen: 1,
