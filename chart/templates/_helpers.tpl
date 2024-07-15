@@ -298,3 +298,39 @@ logging args
 {{- $ret | toYaml | nindent 8 -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+vaultAuthGlobalRef generates the global-vault-auth-global-ref flag for the manager.
+*/}}
+{{- define "vso.vaulAuthGlobalRef" -}}
+{{- if .Values.controller.manager.globalVaultAuthOptions.allowDefaultGlobals }}
+--global-vault-auth-global-ref
+{{- end -}}
+{{- end -}}
+
+{{/*
+vaultAuthGlobalRef generates the default VaultAuth spec.vaultAuthGlobalRef.
+*/}}
+{{- define "vso.vaultAuthGlobalRef" -}}
+{{- $ret := dict -}}
+{{- with .Values.defaultAuthMethod.vaultAuthGlobalRef -}}
+{{ $_ := set $ret "namespace" .namespace -}}
+{{ $_ = set $ret "name" .name -}}
+{{ if ne .allowDefault nil -}}
+{{- $_ = set $ret "allowDefault" .allowDefault -}}
+{{- end -}}
+{{- $strat := dict -}}
+{{- if .mergeStrategy.headers -}}
+{{- $_ = set $strat "headers" .mergeStrategy.headers -}}
+{{- end -}}
+{{- if .mergeStrategy.params -}}
+{{- $_ = set $strat "params" .mergeStrategy.params -}}
+{{- end -}}
+{{- if $strat -}}
+{{- $_ = set $ret "mergeStrategy" $strat -}}
+{{- end -}}
+{{- end -}}
+{{- if $ret -}}
+{{- $ret | toYaml | nindent 4 -}}
+{{- end -}}
+{{- end -}}

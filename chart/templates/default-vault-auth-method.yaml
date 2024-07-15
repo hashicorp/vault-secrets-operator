@@ -24,4 +24,8 @@ spec:
   mount: {{ .Values.defaultAuthMethod.mount }}
   {{- $kubeServiceAccount := .Values.defaultAuthMethod.kubernetes.serviceAccount }}
   {{- include "vso.vaultAuthMethod" (list .Values.defaultAuthMethod $kubeServiceAccount . ) }}
+  {{- if .Values.defaultAuthMethod.vaultAuthGlobalRef.enabled }}
+  vaultAuthGlobalRef:
+  {{- include "vso.vaultAuthGlobalRef" . }}
+  {{- end }}
 {{- end }}

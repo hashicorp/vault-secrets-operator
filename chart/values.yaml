@@ -746,6 +746,40 @@ defaultAuthMethod:
   # @type: map
   headers: {}
 
+  # VaultAuthGlobalRef
+  vaultAuthGlobalRef:
+    #  toggles the inclusion of the VaultAuthGlobal configuration in the
+    # default VaultAuth CR.
+    # @type: boolean
+    enabled: false
+    # Name of the VaultAuthGlobal CR to reference.
+    # @type: string
+    name: ""
+
+    # Namespace of the VaultAuthGlobal CR to reference.
+    # @type: string
+    namespace: ""
+
+    # allow default globals
+    # @type: boolean
+    allowDefault:
+
+    mergeStrategy:
+      # merge strategy for headers
+      # @type: string
+      # Valid values are: "replace", "merge", "none"
+      # Default: "replace"
+      # @type: string
+      headers: none
+
+      # merge strategy for params
+      # @type: string
+      # Valid values are: "replace", "merge", "none"
+      # Default: "replace"
+      # @type: string
+      params: none
+
+
 # Configures a Prometheus ServiceMonitor
 telemetry:
   serviceMonitor:

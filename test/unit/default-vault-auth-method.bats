@@ -1,5 +1,10 @@
 #!/usr/bin/env bats
 
+#
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+#
+
 load _helpers
 
 #--------------------------------------------------------------------
@@ -397,4 +402,140 @@ load _helpers
     [ "${actual}" = "test-cluster" ]
     actual=$(echo "$object" | yq '.spec.gcp.projectID' | tee /dev/stderr)
     [ "${actual}" = "my-project" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/default" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '. | has("vaultAuthGlobalRef")')" = "false" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/enabled" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.name=foo' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.namespace=baz' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef | has("allowDefault")')" = "false" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.params')" = "none" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.headers')" = "none" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/defaults/empty-params" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.name=foo' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.namespace=baz' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.mergeStrategy.params=' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef | has("allowDefault")')" = "false" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy | has("params")')" = "false" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.headers')" = "none" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/mergeStrategy/empty-headers" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.name=foo' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.namespace=baz' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.mergeStrategy.headers=' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef | has("allowDefault")')" = "false" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.params')" = "none" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy | has("headers")')" = "false" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/allowDefault=true" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.name=foo' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.namespace=baz' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.allowDefault=true' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.allowDefault')" = "true" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/allowDefault=false" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.name=foo' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.namespace=baz' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.allowDefault=false' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.allowDefault')" = "false" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+}
+
+@test "defaultAuthMethod/CR: with vaultAuthGlobalRef/mergeStrategy/params=union-headers=replace" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        --debug \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.enabled=true' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.name=foo' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.namespace=baz' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.allowDefault=false' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.mergeStrategy.params=union' \
+        --set 'defaultAuthMethod.vaultAuthGlobalRef.mergeStrategy.headers=replace' \
+        . | tee /dev/stderr |
+    yq '.spec' | tee /dev/stderr)
+
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.allowDefault')" = "false" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.name')" = "foo" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.namespace')" = "baz" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.params')" = "union" ]
+    [ "$(echo "$actual" | yq '.vaultAuthGlobalRef.mergeStrategy.headers')" = "replace" ]
 }
