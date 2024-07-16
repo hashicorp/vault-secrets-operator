@@ -1207,8 +1207,12 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			},
 			gObj: gObj.DeepCopy(),
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err,
-					`unsupported auth method "invalid" for global auth merge`)
+				var wantErr *InvalidMergeError
+				if assert.ErrorAs(t, err, &wantErr) {
+					return assert.EqualError(t, wantErr.Err,
+						`unsupported auth method "invalid" for global auth merge`)
+				}
+				return false
 			},
 		},
 		{
