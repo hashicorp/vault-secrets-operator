@@ -9,12 +9,12 @@ import (
 
 // SecretTransformationStatus defines the observed state of SecretTransformation
 type SecretTransformationStatus struct {
-	Valid bool   `json:"valid"`
+	Valid *bool  `json:"valid"`
 	Error string `json:"error"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // SecretTransformation is the Schema for the secrettransformations API
 type SecretTransformation struct {
@@ -55,7 +55,7 @@ type SourceTemplate struct {
 	Text string `json:"text"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // SecretTransformationList contains a list of SecretTransformation
 type SecretTransformationList struct {

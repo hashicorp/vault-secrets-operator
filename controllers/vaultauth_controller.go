@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -76,7 +77,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// assume that status is always invalid
-	o.Status.Valid = false
+	o.Status.Valid = pointer.Bool(false)
 	var errs error
 
 	var conditions []metav1.Condition
@@ -90,6 +91,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		mObj, gObj, err := common.MergeInVaultAuthGlobal(ctx, r.Client, o, r.GlobalVaultAuthOptions)
 		if err != nil {
+			errs = errors.Join(errs, err)
 			condition.Message = err.Error()
 			condition.Status = metav1.ConditionFalse
 		} else {
@@ -168,11 +170,13 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	o.Status.SpecHash = specHash
 
+	var horizon time.Duration
 	if errs != nil {
-		o.Status.Valid = false
+		o.Status.Valid = pointer.Bool(false)
 		o.Status.Error = errs.Error()
+		horizon = computeHorizonWithJitter(requeueDurationOnError)
 	} else {
-		o.Status.Valid = true
+		o.Status.Valid = pointer.Bool(true)
 		o.Status.Error = ""
 	}
 
@@ -180,22 +184,31 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	r.recordEvent(o, consts.ReasonAccepted, "Successfully handled VaultAuth resource request")
-	return ctrl.Result{}, nil
+	if errs == nil {
+		r.recordEvent(o, consts.ReasonAccepted, "Successfully handled VaultAuth resource request")
+	} else {
+		logger.Error(errs, "Failed to handle VaultAuth resource request", "horizon", horizon)
+		r.recordEvent(o, consts.ReasonAccepted,
+			fmt.Sprintf("Failed to handle VaultAuth resource request: err=%s", errs))
+	}
+
+	return ctrl.Result{
+		RequeueAfter: horizon,
+	}, nil
 }
 
-func (r *VaultAuthReconciler) recordEvent(a *secretsv1beta1.VaultAuth, reason, msg string, i ...interface{}) {
+func (r *VaultAuthReconciler) recordEvent(o *secretsv1beta1.VaultAuth, reason, msg string, i ...interface{}) {
 	eventType := corev1.EventTypeNormal
-	if !a.Status.Valid {
+	if !pointer.BoolDeref(o.Status.Valid, false) {
 		eventType = corev1.EventTypeWarning
 	}
 
-	r.Recorder.Eventf(a, eventType, reason, msg, i...)
+	r.Recorder.Eventf(o, eventType, reason, msg, i...)
 }
 
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultauth", o, o.Status.Valid)
+	metrics.SetResourceStatus("vaultauth", o, pointer.BoolDeref(o.Status.Valid, false))
 	o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
