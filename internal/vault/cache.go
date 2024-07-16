@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/golang-lru/v2"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

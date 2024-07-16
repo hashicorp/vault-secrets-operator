@@ -7,14 +7,11 @@ import (
 	"context"
 	"errors"
 
-	"k8s.io/utils/pointer"
-
-	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -23,6 +20,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
@@ -68,7 +66,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// assume that status is always invalid
-	o.Status.Valid = pointer.Bool(false)
+	o.Status.Valid = ptr.To(false)
 
 	vaultConfig := &vault.ClientConfig{
 		CACertSecretRef: o.Spec.CACertSecretRef,
@@ -94,7 +92,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
 			errs = errors.Join(errs, err)
 		} else {
-			o.Status.Valid = pointer.Bool(true)
+			o.Status.Valid = ptr.To(true)
 		}
 	}
 
@@ -126,7 +124,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultConnection) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultconnection", o, pointer.BoolDeref(o.Status.Valid, false))
+	metrics.SetResourceStatus("vaultconnection", o, ptr.Deref(o.Status.Valid, false))
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

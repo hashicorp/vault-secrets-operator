@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -231,7 +231,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 	}
 	s := &corev1.Secret{
 		// we always store Clients in an Immutable secret as an anti-tampering mitigation.
-		Immutable: pointer.Bool(true),
+		Immutable: ptr.To(true),
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            fmt.Sprintf(NamePrefixVCC + cacheKey.String()),
 			Namespace:       common.OperatorNamespace,
