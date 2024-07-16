@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -562,7 +563,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 
 		if status == nil {
 			status = &secretsv1beta1.SecretTransformationStatus{
-				Valid: true,
+				Valid: pointer.Bool(true),
 			}
 		}
 
@@ -1211,7 +1212,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 						},
 					},
 					&secretsv1beta1.SecretTransformationStatus{
-						Valid: false,
+						Valid: pointer.Bool(false),
 						Error: "",
 					}),
 			},

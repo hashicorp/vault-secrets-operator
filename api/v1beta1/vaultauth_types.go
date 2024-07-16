@@ -428,7 +428,7 @@ type VaultAuthSpec struct {
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid      bool               `json:"valid,omitempty"`
+	Valid      *bool              `json:"valid,omitempty"`
 	Error      string             `json:"error,omitempty"`
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	SpecHash   string             `json:"specHash,omitempty"`

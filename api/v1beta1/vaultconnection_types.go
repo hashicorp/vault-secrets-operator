@@ -28,11 +28,11 @@ type VaultConnectionSpec struct {
 // VaultConnectionStatus defines the observed state of VaultConnection
 type VaultConnectionStatus struct {
 	// Valid auth mechanism.
-	Valid bool `json:"valid"`
+	Valid *bool `json:"valid"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // VaultConnection is the Schema for the vaultconnections API
 type VaultConnection struct {
@@ -43,7 +43,7 @@ type VaultConnection struct {
 	Status VaultConnectionStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // VaultConnectionList contains a list of VaultConnection
 type VaultConnectionList struct {
