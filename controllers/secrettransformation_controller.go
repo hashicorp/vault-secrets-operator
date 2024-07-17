@@ -10,7 +10,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -60,11 +60,11 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, nil
 	}
 
-	o.Status.Valid = pointer.Bool(true)
+	o.Status.Valid = ptr.To(true)
 	o.Status.Error = ""
 	errs := ValidateSecretTransformation(ctx, o)
 	if errs != nil {
-		o.Status.Valid = pointer.Bool(false)
+		o.Status.Valid = ptr.To(false)
 		o.Status.Error = errs.Error()
 		logger.Error(err, "Failed to validate configured templates")
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonInvalidConfiguration,
@@ -80,7 +80,7 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 
 func (r *SecretTransformationReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.SecretTransformation) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("secrettransformation", o, pointer.BoolDeref(o.Status.Valid, false))
+	metrics.SetResourceStatus("secrettransformation", o, ptr.Deref(o.Status.Valid, false))
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

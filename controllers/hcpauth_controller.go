@@ -13,7 +13,7 @@ import (
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -70,10 +70,10 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Error(err, "Validation failed")
 		errs = errors.Join(err)
 		o.Status.Error = err.Error()
-		o.Status.Valid = pointer.Bool(false)
+		o.Status.Valid = ptr.To(true)
 	} else {
 		o.Status.Error = ""
-		o.Status.Valid = pointer.Bool(true)
+		o.Status.Valid = ptr.To(true)
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
@@ -92,7 +92,7 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 func (r *HCPAuthReconciler) updateStatus(ctx context.Context, a *secretsv1beta1.HCPAuth) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("hcpauth", a, pointer.BoolDeref(a.Status.Valid, false))
+	metrics.SetResourceStatus("hcpauth", a, ptr.Deref(a.Status.Valid, false))
 	if err := r.Status().Update(ctx, a); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

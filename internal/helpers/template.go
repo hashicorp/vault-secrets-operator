@@ -14,7 +14,7 @@ import (
 
 	"github.com/hashicorp/golang-lru/v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -218,7 +218,7 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 			continue
 		}
 
-		if !pointer.BoolDeref(obj.Status.Valid, false) {
+		if !ptr.Deref(obj.Status.Valid, false) {
 			errs = errors.Join(errs,
 				&InvalidSecretTransformationRefError{
 					objKey: objKey,

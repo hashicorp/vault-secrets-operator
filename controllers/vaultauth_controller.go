@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -77,7 +77,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// assume that status is always invalid
-	o.Status.Valid = pointer.Bool(false)
+	o.Status.Valid = ptr.To(false)
 	var errs error
 
 	var conditions []metav1.Condition
@@ -172,11 +172,11 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	var horizon time.Duration
 	if errs != nil {
-		o.Status.Valid = pointer.Bool(false)
+		o.Status.Valid = ptr.To(false)
 		o.Status.Error = errs.Error()
 		horizon = computeHorizonWithJitter(requeueDurationOnError)
 	} else {
-		o.Status.Valid = pointer.Bool(true)
+		o.Status.Valid = ptr.To(true)
 		o.Status.Error = ""
 	}
 
@@ -199,7 +199,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 func (r *VaultAuthReconciler) recordEvent(o *secretsv1beta1.VaultAuth, reason, msg string, i ...interface{}) {
 	eventType := corev1.EventTypeNormal
-	if !pointer.BoolDeref(o.Status.Valid, false) {
+	if !ptr.Deref(o.Status.Valid, false) {
 		eventType = corev1.EventTypeWarning
 	}
 
@@ -208,7 +208,7 @@ func (r *VaultAuthReconciler) recordEvent(o *secretsv1beta1.VaultAuth, reason, m
 
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultauth", o, pointer.BoolDeref(o.Status.Valid, false))
+	metrics.SetResourceStatus("vaultauth", o, ptr.Deref(o.Status.Valid, false))
 	o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")

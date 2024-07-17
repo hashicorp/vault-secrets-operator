@@ -15,7 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -205,7 +205,7 @@ func createHMACKeySecret(ctx context.Context, client ctrlclient.Client, objKey c
 			Namespace: objKey.Namespace,
 			Labels:    hmacSecretLabels,
 		},
-		Immutable: pointer.Bool(true),
+		Immutable: ptr.To(true),
 		Data: map[string][]byte{
 			HMACKeyName: key,
 		},

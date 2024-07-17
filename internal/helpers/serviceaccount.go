@@ -9,7 +9,7 @@ import (
 	v12 "k8s.io/api/authentication/v1"
 	"k8s.io/api/core/v1"
 	v13 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
@@ -24,7 +24,7 @@ func RequestSAToken(ctx context.Context, client client.Client, sa *v1.ServiceAcc
 			GenerateName: TokenGenerateName,
 		},
 		Spec: v12.TokenRequestSpec{
-			ExpirationSeconds: pointer.Int64(expirationSeconds),
+			ExpirationSeconds: ptr.To(expirationSeconds),
 			Audiences:         audiences,
 		},
 		Status: v12.TokenRequestStatus{},
