@@ -333,11 +333,12 @@ type VaultAuthGlobalRef struct {
 	// set on the operator's '-global-vault-auth-options' flag
 	//
 	// The default VaultAuthGlobal search is conditional.
-	// When a ref Namespace is not set, the search follows the order:
-	//  1. The referring VaultAuth Namespace.
-	//  2. The Operator's namespace.
-	// Otherwise, the search follows the order:
-	//  1. The VaultAuthGlobal ref Namespace.
+	// When a ref Namespace is set, the search for the default
+	// VaultAuthGlobal resource is constrained to that namespace.
+	// Otherwise, the search order is:
+	// 1. The default VaultAuthGlobal resource in the referring VaultAuth resource's
+	// namespace.
+	// 2. The default VaultAuthGlobal resource in the Operator's namespace.
 	AllowDefault *bool `json:"allowDefault,omitempty"`
 }
 
