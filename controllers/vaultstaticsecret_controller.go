@@ -499,6 +499,14 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
+
+	r.ClientFactory.RegisterClientCallbackHandler(
+		vault.ClientCallbackHandler{
+			On:       vault.ClientCallbackOnLifetimeWatcherDone | vault.ClientCallbackOnCacheRemoval,
+			Callback: r.vaultClientCallback,
+		},
+	)
+
 	r.SourceCh = make(chan event.GenericEvent)
 	r.eventWatcherRegistry = newEventWatcherRegistry()
 
@@ -525,6 +533,69 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 			),
 		).
 		Complete(r)
+}
+
+// vaultClientCallback requests reconciliation of all VaultStaticSecret
+// instances that were synced with Client
+func (r *VaultStaticSecretReconciler) vaultClientCallback(ctx context.Context, c vault.Client) {
+	logger := log.FromContext(ctx).WithName("vaultClientCallback")
+
+	cacheKey, err := c.GetCacheKey()
+	if err != nil {
+		// should never get here
+		logger.Error(err, "Invalid cache key, skipping syncing of VaultStaticSecret instances")
+		return
+	}
+
+	logger = logger.WithValues("cacheKey", cacheKey, "controller", "vss")
+	var l secretsv1beta1.VaultStaticSecretList
+	if err := r.Client.List(ctx, &l, client.InNamespace(
+		c.GetCredentialProvider().GetNamespace()),
+	); err != nil {
+		logger.Error(err, "Failed to list VaultStaticSecret instances")
+		return
+	}
+
+	if len(l.Items) == 0 {
+		return
+	}
+
+	reqs := map[client.ObjectKey]empty{}
+	for _, o := range l.Items {
+		if o.Status.VaultClientMeta.CacheKey == "" {
+			logger.V(consts.LogLevelWarning).Info("Skipping, cacheKey is empty",
+				"object", client.ObjectKeyFromObject(&o))
+			continue
+		}
+
+		curCacheKey := vault.ClientCacheKey(o.Status.VaultClientMeta.CacheKey)
+		if ok, err := curCacheKey.SameParent(cacheKey); ok {
+			evt := event.GenericEvent{
+				Object: &secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: o.GetNamespace(),
+						Name:      o.GetName(),
+					},
+				},
+			}
+
+			objKey := client.ObjectKeyFromObject(evt.Object)
+			if _, ok := reqs[objKey]; !ok {
+				// deduplicating is probably not necessary, but we do it just in case.
+				reqs[objKey] = empty{}
+				logger.V(consts.LogLevelDebug).Info("Enqueuing VaultStaticSecret instance",
+					"objKey", objKey)
+				// TODO(tvoran): not sure we need a sync registry for VSS?
+				// r.SyncRegistry.Add(objKey)
+				logger.V(consts.LogLevelDebug).Info(
+					"Sending GenericEvent to the SourceCh", "evt", evt)
+				r.SourceCh <- evt
+			}
+		} else if err != nil {
+			logger.V(consts.LogLevelWarning).Info(
+				"Skipping, cacheKey error", "error", err)
+		}
+	}
 }
 
 func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.ReadRequest, error) {
