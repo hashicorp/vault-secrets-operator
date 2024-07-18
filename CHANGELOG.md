@@ -36,7 +36,7 @@ Fix:
 * VDS: work around Vault DB static creds TTL rollover bug: [GH-730](https://github.com/hashicorp/vault-secrets-operator/pull/730)
 
 Build:
-* CI: bump Vault verisons: [GH-797](https://github.com/hashicorp/vault-secrets-operator/pull/797)
+* CI: bump Vault versions: [GH-797](https://github.com/hashicorp/vault-secrets-operator/pull/797)
 
 Dependency Updates:
 * Bump cloud.google.com/go/compute/metadata from 0.4.0 to 0.5.0: [GH-853](https://github.com/hashicorp/vault-secrets-operator/pull/853)
