@@ -87,7 +87,7 @@ Fix:
 * VDS: Selectively log calls to SyncRegistry.Delete(): [GH-718](https://github.com/hashicorp/vault-secrets-operator/pull/718)
 
 Build:
-* CI: test against vault-1.16.2: [GH-715](https://github.com/hashicorp/vault-secrets-operator/pull/715)
+* CI: Bump test vault versions: [GH-861](https://github.com/hashicorp/vault-secrets-operator/pull/861)
 * Bump GH actions for node 16 obsolescence: [GH-738](https://github.com/hashicorp/vault-secrets-operator/pull/738)
 
 Dependency Updates:
