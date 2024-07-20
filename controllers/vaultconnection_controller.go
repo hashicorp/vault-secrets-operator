@@ -68,13 +68,11 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// assume that status is always invalid
 	o.Status.Valid = ptr.To(false)
 
-	vaultConfig := &vault.ClientConfig{
-		CACertSecretRef: o.Spec.CACertSecretRef,
-		K8sNamespace:    o.ObjectMeta.Namespace,
-		Address:         o.Spec.Address,
-		SkipTLSVerify:   o.Spec.SkipTLSVerify,
-		TLSServerName:   o.Spec.TLSServerName,
-		Headers:         o.Spec.Headers,
+	vaultConfig, err := vault.NewClientConfigFromConnObj(o, "")
+	if err != nil {
+		return ctrl.Result{
+			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+		}, err
 	}
 
 	var errs error

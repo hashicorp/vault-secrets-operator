@@ -756,16 +756,10 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 		return errors.New("VaultAuth was nil")
 	}
 
-	cfg := &ClientConfig{
-		Address:         connObj.Spec.Address,
-		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
-		TLSServerName:   connObj.Spec.TLSServerName,
-		VaultNamespace:  authObj.Spec.Namespace,
-		K8sNamespace:    connObj.Namespace,
-		CACertSecretRef: connObj.Spec.CACertSecretRef,
-		Headers:         connObj.Spec.Headers,
+	cfg, err := NewClientConfigFromConnObj(connObj, authObj.Spec.Namespace)
+	if err != nil {
+		return err
 	}
-
 	vc, err := MakeVaultClient(ctx, cfg, client)
 	if err != nil {
 		return err
@@ -878,4 +872,26 @@ func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Res
 			Data: make(map[string]interface{}),
 		},
 	}, nil
+}
+
+// NewClientConfigFromConnObj creates a ClientConfig from a VaultConnection object.
+func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS string) (*ClientConfig, error) {
+	if connObj == nil {
+		return nil, errors.New("invalid nil VaultConnection")
+	}
+
+	cfg := &ClientConfig{
+		Address:         connObj.Spec.Address,
+		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
+		TLSServerName:   connObj.Spec.TLSServerName,
+		K8sNamespace:    connObj.Namespace,
+		CACertSecretRef: connObj.Spec.CACertSecretRef,
+		Headers:         connObj.Spec.Headers,
+		VaultNamespace:  vaultNS,
+	}
+
+	if connObj.Spec.Timeout != nil {
+		cfg.Timeout = connObj.Spec.Timeout
+	}
+	return cfg, nil
 }
