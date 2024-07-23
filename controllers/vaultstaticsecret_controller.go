@@ -96,6 +96,48 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
+	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
+	if !o.Spec.Destination.Create && !destExists {
+		logger.Info("Destination secret does not exist, either create it or "+
+			"set .spec.destination.create=true", "destination", o.Spec.Destination)
+		return ctrl.Result{RequeueAfter: requeueDurationOnError}, nil
+	}
+
+	// we can ignore the error here, since it was handled above in the Get() call.
+	clientCacheKey, _ := c.GetCacheKey()
+	lastClientCacheKey := o.Status.VaultClientMeta.CacheKey
+	lastClientID := o.Status.VaultClientMeta.ID
+
+	// update the VaultClientMeta in the resource's status.
+	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
+	o.Status.VaultClientMeta.ID = c.ID()
+
+	var syncReason string
+	switch {
+	// indicates that the resource has not been synced yet.
+	case o.Status.LastGeneration == 0:
+		syncReason = consts.ReasonInitialSync
+	// indicates that the resource has been updated since the last sync.
+	case o.GetGeneration() != o.Status.LastGeneration:
+		syncReason = consts.ReasonResourceUpdated
+	// indicates that the destination secret does not exist and the resource is configured to create it.
+	case o.Spec.Destination.Create && !destExists:
+		syncReason = consts.ReasonInexistentDestination
+	// indicates that the cache key has changed since the last sync. This can happen
+	// when the VaultAuth or VaultConnection objects are updated since the last sync.
+	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
+		syncReason = consts.ReasonVaultClientConfigChanged
+	// indicates that the Vault client ID has changed since the last sync. This can
+	// happen when the client has re-authenticated to Vault since the last sync.
+	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
+		syncReason = consts.ReasonVaultTokenRotated
+	// indicates that the secret has been changed in Vault since the last sync.
+	case o.GetGeneration() > 0:
+		syncReason = consts.ReasonSecretRotated
+	default:
+		syncReason = consts.ReasonSecretSynced
+	}
+
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
 		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
@@ -183,14 +225,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Failed to update k8s secret: %s", err)
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
-		reason := consts.ReasonSecretSynced
 		if doRolloutRestart {
-			reason = consts.ReasonSecretRotated
 			// rollout-restart errors are not retryable
 			// all error reporting is handled by helpers.HandleRolloutRestarts
 			_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 		}
-		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
+		r.Recorder.Event(o, corev1.EventTypeNormal, syncReason, "Secret synced")
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
@@ -585,8 +625,6 @@ func (r *VaultStaticSecretReconciler) vaultClientCallback(ctx context.Context, c
 				reqs[objKey] = empty{}
 				logger.V(consts.LogLevelDebug).Info("Enqueuing VaultStaticSecret instance",
 					"objKey", objKey)
-				// TODO(tvoran): not sure we need a sync registry for VSS?
-				// r.SyncRegistry.Add(objKey)
 				logger.V(consts.LogLevelDebug).Info(
 					"Sending GenericEvent to the SourceCh", "evt", evt)
 				r.SourceCh <- evt
