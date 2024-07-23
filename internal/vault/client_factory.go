@@ -665,7 +665,7 @@ func (m *cachingClientFactory) setupEncryptionClient(ctx context.Context, client
 	defer m.encClientLock.Unlock()
 
 	logger := log.FromContext(ctx).WithName("setupEncryptionClient")
-	logger.Info("Setting up Vault Client for storage encryption",
+	logger.V(consts.LogLevelTrace).Info("Setting up Vault Client for storage encryption",
 		"cacheKey", m.clientCacheKeyEncrypt)
 	encryptionVaultAuth, err := common.FindVaultAuthForStorageEncryption(ctx, client)
 	if err != nil {
@@ -686,12 +686,14 @@ func (m *cachingClientFactory) setupEncryptionClient(ctx context.Context, client
 	}
 
 	if m.clientCacheKeyEncrypt != "" && m.clientCacheKeyEncrypt != cacheKey {
-		logger.V(consts.LogLevelDebug).Info("Replacing old encryption client",
+		logger.V(consts.LogLevelTrace).Info("Replacing old encryption client",
 			"oldCacheKey", m.clientCacheKeyEncrypt, "newCacheKey", cacheKey)
 		m.cache.Remove(m.clientCacheKeyEncrypt)
 	}
 
 	m.clientCacheKeyEncrypt = cacheKey
+	logger.V(consts.LogLevelTrace).Info("Successfully setup Vault Client for storage encryption",
+		"cacheKey", m.clientCacheKeyEncrypt)
 	return vc, nil
 }
 
