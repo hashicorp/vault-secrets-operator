@@ -101,6 +101,7 @@ func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlc
 // NewClientFromStorageEntry restores a Client from provided clientCacheStorageEntry.
 // If the restoration fails an error will be returned.
 func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, entry *clientCacheStorageEntry, opts *ClientOptions) (Client, error) {
+	logger := log.FromContext(ctx).WithName("newClientFromStorageEntry").WithValues("entry", entry)
 	authObj, err := common.FindVaultAuthByUID(ctx, client, entry.VaultAuthNamespace,
 		entry.VaultAuthUID, entry.VaultAuthGeneration)
 	if err != nil {
@@ -142,7 +143,9 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 	c.Taint()
 	defer c.Untaint()
 
+	logger.V(consts.LogLevelDebug).Info("Validating restored client", "cacheKey", cacheKey)
 	if err := c.Validate(ctx); err != nil {
+		logger.V(consts.LogLevelDebug).Info("Invalid client after restoration", "cacheKey", cacheKey)
 		return nil, err
 	}
 
