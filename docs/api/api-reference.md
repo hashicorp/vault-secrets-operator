@@ -729,7 +729,7 @@ _Appears in:_
 | `name` _string_ | Name of the VaultAuthGlobal resource. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
 | `namespace` _string_ | Namespace of the VaultAuthGlobal resource. If not provided, the namespace of<br />the referring VaultAuth resource is used. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
 | `mergeStrategy` _[MergeStrategy](#mergestrategy)_ | MergeStrategy configures the merge strategy for HTTP headers and parameters<br />that are included in all Vault authentication requests. |  |  |
-| `allowDefault` _boolean_ | AllowDefault when set to true will use the default VaultAuthGlobal resource<br />as the default if Name is not set. The 'allow-default-globals' option must be<br />set on the operator's '-global-vault-auth-options' flag<br /><br />The default VaultAuthGlobal search is conditional.<br />When a ref Namespace is not set, the search follows the order:<br /> 1. The referring VaultAuth Namespace.<br /> 2. The Operator's namespace.<br />Otherwise, the search follows the order:<br /> 1. The VaultAuthGlobal ref Namespace. |  |  |
+| `allowDefault` _boolean_ | AllowDefault when set to true will use the default VaultAuthGlobal resource<br />as the default if Name is not set. The 'allow-default-globals' option must be<br />set on the operator's '-global-vault-auth-options' flag<br /><br />The default VaultAuthGlobal search is conditional.<br />When a ref Namespace is set, the search for the default<br />VaultAuthGlobal resource is constrained to that namespace.<br />Otherwise, the search order is:<br />1. The default VaultAuthGlobal resource in the referring VaultAuth resource's<br />namespace.<br />2. The default VaultAuthGlobal resource in the Operator's namespace. |  |  |
 
 
 #### VaultAuthGlobalSpec

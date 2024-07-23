@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -269,4 +270,49 @@ func waitForStoppedCh(ctx context.Context, stoppedCh chan struct{}) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// updateConditions updates the current conditions with updates, returning a new
+// set of metav1.Condition(s). It will update the LastTransitionTime if the condition has
+// changed. It will also append new conditions to the existing conditions. All
+// updates are deduplicated based on their type and reason.
+func updateConditions(current []metav1.Condition, updates ...metav1.Condition) []metav1.Condition {
+	seen := make(map[string]bool)
+	var ret []metav1.Condition
+	for _, newCond := range updates {
+		// we key conditions on their type and reason
+		// e.g: type=VaultAuthGlobal reason=Available, ...
+		key := fmt.Sprintf("%s/%s", newCond.Type, newCond.Reason)
+		if seen[key] {
+			// drop duplicate conditions
+			continue
+		}
+
+		seen[key] = true
+		var updated bool
+		for _, cond := range current {
+			if cond.Type == newCond.Type && cond.Reason == newCond.Reason {
+				if cond.Status != newCond.Status {
+					newCond.LastTransitionTime = metav1.NewTime(nowFunc())
+				}
+				if newCond.LastTransitionTime.IsZero() {
+					if cond.LastTransitionTime.IsZero() {
+						newCond.LastTransitionTime = metav1.NewTime(nowFunc())
+					} else {
+						newCond.LastTransitionTime = cond.LastTransitionTime
+					}
+				}
+				ret = append(ret, newCond)
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			if newCond.LastTransitionTime.IsZero() {
+				newCond.LastTransitionTime = metav1.NewTime(nowFunc())
+			}
+			ret = append(ret, newCond)
+		}
+	}
+	return ret
 }

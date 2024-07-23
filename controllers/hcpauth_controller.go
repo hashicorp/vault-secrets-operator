@@ -13,6 +13,7 @@ import (
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -27,11 +28,11 @@ type HCPAuthReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpauths,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpauths/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpauths/finalizers,verbs=update
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpauths,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpauths/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpauths/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile validates the HCPAuth CR instance, updating the instance's status
 // with the result.
@@ -69,10 +70,10 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Error(err, "Validation failed")
 		errs = errors.Join(err)
 		o.Status.Error = err.Error()
-		o.Status.Valid = false
+		o.Status.Valid = ptr.To(true)
 	} else {
 		o.Status.Error = ""
-		o.Status.Valid = true
+		o.Status.Valid = ptr.To(true)
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
@@ -91,7 +92,7 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 func (r *HCPAuthReconciler) updateStatus(ctx context.Context, a *secretsv1beta1.HCPAuth) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("hcpauth", a, a.Status.Valid)
+	metrics.SetResourceStatus("hcpauth", a, ptr.Deref(a.Status.Valid, false))
 	if err := r.Status().Update(ctx, a); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

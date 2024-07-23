@@ -76,6 +76,18 @@ func (n *DefaultVaultAuthNotFoundError) Error() string {
 		"default vault auth not found in namespaces=%v: global=%t", n.Namespaces, n.Global)
 }
 
+type InvalidMergeError struct {
+	Err error
+}
+
+func (n *InvalidMergeError) Error() string {
+	err := n.Err
+	if err == nil {
+		err = errors.New("unknown")
+	}
+	return fmt.Sprintf("invalid merge: %s", err)
+}
+
 func init() {
 	var err error
 	OperatorNamespace, err = utils.GetCurrentNamespace()
@@ -288,9 +300,11 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 	// object is used.
 	if cObj.Spec.Method == "" {
 		if gObj.Spec.DefaultAuthMethod == "" {
-			return nil, nil, fmt.Errorf(
-				"no auth method set in VaultAuth %s and no default method set in VaultAuthGlobal %s",
-				client.ObjectKeyFromObject(cObj), authGlobalRef)
+			return nil, nil, &InvalidMergeError{
+				Err: fmt.Errorf(
+					"no auth method set in VaultAuth %s and no default method set in VaultAuthGlobal %s",
+					client.ObjectKeyFromObject(cObj), authGlobalRef),
+			}
 		}
 		cObj.Spec.Method = gObj.Spec.DefaultAuthMethod
 	}
@@ -304,8 +318,10 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 		globalAuthMethod := gObj.Spec.Kubernetes
 		mergeTargetAuthMethod := cObj.Spec.Kubernetes
 		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
-			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
-				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+			return nil, nil, &InvalidMergeError{
+				Err: fmt.Errorf("global auth method %s is not configured "+
+					"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef),
+			}
 		}
 
 		if globalAuthMethod != nil {
@@ -315,12 +331,12 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			} else {
 				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, &InvalidMergeError{Err: err}
 				}
 				cObj.Spec.Kubernetes = merged
 			}
 			if err := cObj.Spec.Kubernetes.Validate(); err != nil {
-				return nil, nil, err
+				return nil, nil, &InvalidMergeError{Err: err}
 			}
 			globalAuthMount = globalAuthMethod.Mount
 			globalAuthNamespace = globalAuthMethod.Namespace
@@ -331,8 +347,10 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 		globalAuthMethod := gObj.Spec.JWT
 		mergeTargetAuthMethod := cObj.Spec.JWT
 		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
-			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
-				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+			return nil, nil, &InvalidMergeError{
+				Err: fmt.Errorf("global auth method %s is not configured "+
+					"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef),
+			}
 		}
 
 		if globalAuthMethod != nil {
@@ -342,12 +360,12 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			} else {
 				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, &InvalidMergeError{Err: err}
 				}
 				cObj.Spec.JWT = merged
 			}
 			if err := cObj.Spec.JWT.Validate(); err != nil {
-				return nil, nil, err
+				return nil, nil, &InvalidMergeError{Err: err}
 			}
 			globalAuthMount = globalAuthMethod.Mount
 			globalAuthNamespace = globalAuthMethod.Namespace
@@ -358,8 +376,10 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 		globalAuthMethod := gObj.Spec.AppRole
 		mergeTargetAuthMethod := cObj.Spec.AppRole
 		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
-			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
-				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+			return nil, nil, &InvalidMergeError{
+				Err: fmt.Errorf("global auth method %s is not configured "+
+					"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef),
+			}
 		}
 
 		if globalAuthMethod != nil {
@@ -369,12 +389,12 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			} else {
 				merged, err := mergeTargetAuthMethod.Merge(srcAuthMethod)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, &InvalidMergeError{Err: err}
 				}
 				cObj.Spec.AppRole = merged
 			}
 			if err := cObj.Spec.AppRole.Validate(); err != nil {
-				return nil, nil, err
+				return nil, nil, &InvalidMergeError{Err: err}
 			}
 			globalAuthMount = globalAuthMethod.Mount
 			globalAuthNamespace = globalAuthMethod.Namespace
@@ -401,7 +421,7 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 				cObj.Spec.AWS = merged
 			}
 			if err := cObj.Spec.AWS.Validate(); err != nil {
-				return nil, nil, err
+				return nil, nil, &InvalidMergeError{Err: err}
 			}
 			globalAuthMount = globalAuthMethod.Mount
 			globalAuthNamespace = globalAuthMethod.Namespace
@@ -412,8 +432,10 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 		globalAuthMethod := gObj.Spec.GCP
 		mergeTargetAuthMethod := cObj.Spec.GCP
 		if mergeTargetAuthMethod == nil && globalAuthMethod == nil {
-			return nil, nil, fmt.Errorf("global auth method %s is not configured "+
-				"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef)
+			return nil, nil, &InvalidMergeError{
+				Err: fmt.Errorf("global auth method %s is not configured "+
+					"in VaultAuthGlobal %s", cObj.Spec.Method, authGlobalRef),
+			}
 		}
 
 		if globalAuthMethod != nil {
@@ -428,7 +450,7 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 				cObj.Spec.GCP = merged
 			}
 			if err := cObj.Spec.GCP.Validate(); err != nil {
-				return nil, nil, err
+				return nil, nil, &InvalidMergeError{Err: err}
 			}
 			globalAuthMount = globalAuthMethod.Mount
 			globalAuthNamespace = globalAuthMethod.Namespace
@@ -436,19 +458,23 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			globalAuthHeaders = globalAuthMethod.Headers
 		}
 	default:
-		return nil, nil, fmt.Errorf(
-			"unsupported auth method %q for global auth merge",
-			cObj.Spec.Method,
-		)
+		return nil, nil, &InvalidMergeError{
+			Err: fmt.Errorf(
+				"unsupported auth method %q for global auth merge",
+				cObj.Spec.Method,
+			),
+		}
 	}
 
 	cObj.Spec.Mount = firstNonZeroLen(strLenFunc,
 		cObj.Spec.Mount, globalAuthMount, gObj.Spec.DefaultMount)
 	if cObj.Spec.Mount == "" {
-		return nil, nil, fmt.Errorf(
-			"mount is not set in VaultAuth %s after merge with %s",
-			client.ObjectKeyFromObject(cObj), authGlobalRef,
-		)
+		return nil, nil, &InvalidMergeError{
+			Err: fmt.Errorf(
+				"mount is not set in VaultAuth %s after merge with %s",
+				client.ObjectKeyFromObject(cObj), authGlobalRef,
+			),
+		}
 	}
 
 	cObj.Spec.Namespace = firstNonZeroLen(strLenFunc,
@@ -473,7 +499,7 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			cObj.Spec.Params, globalAuthParams, gObj.Spec.DefaultParams)
 	case "none":
 	default:
-		return nil, nil, fmt.Errorf("unsupported params merge strategy %q", paramsMergeStrategy)
+		return nil, nil, &InvalidMergeError{Err: fmt.Errorf("unsupported params merge strategy %q", paramsMergeStrategy)}
 	}
 
 	switch headersMergeStrategy {
@@ -484,7 +510,7 @@ func MergeInVaultAuthGlobal(ctx context.Context, c ctrlclient.Client, o *secrets
 			cObj.Spec.Headers, globalAuthHeaders, gObj.Spec.DefaultHeaders)
 	case "none":
 	default:
-		return nil, nil, fmt.Errorf("unsupported headers merge strategy %q", headersMergeStrategy)
+		return nil, nil, &InvalidMergeError{Err: fmt.Errorf("unsupported headers merge strategy %q", headersMergeStrategy)}
 	}
 
 	cObj.Spec.VaultConnectionRef = firstNonZeroLen(strLenFunc,

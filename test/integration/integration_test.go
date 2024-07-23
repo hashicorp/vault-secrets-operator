@@ -45,7 +45,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -920,7 +920,7 @@ func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Clien
 					"test": key.Name,
 				},
 			},
-			Replicas: pointer.Int32(3),
+			Replicas: ptr.To[int32](3),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: v1.ObjectMeta{
 					Labels: map[string]string{
@@ -937,7 +937,7 @@ func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Clien
 							},
 						},
 					},
-					TerminationGracePeriodSeconds: pointer.Int64(2),
+					TerminationGracePeriodSeconds: ptr.To[int64](2),
 				},
 			},
 			Strategy: appsv1.DeploymentStrategy{
@@ -970,7 +970,7 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 					"test": key.Name,
 				},
 			},
-			Replicas: pointer.Int32(2),
+			Replicas: ptr.To[int32](2),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: v1.ObjectMeta{
 					Labels: map[string]string{
@@ -987,14 +987,14 @@ func createArgoRolloutV1alpha1(t *testing.T, ctx context.Context, client ctrlcli
 							},
 						},
 					},
-					TerminationGracePeriodSeconds: pointer.Int64(2),
+					TerminationGracePeriodSeconds: ptr.To[int64](2),
 				},
 			},
 			Strategy: argorolloutsv1alpha1.RolloutStrategy{
 				Canary: &argorolloutsv1alpha1.CanaryStrategy{
 					Steps: []argorolloutsv1alpha1.CanaryStep{
 						{
-							SetWeight: pointer.Int32(50),
+							SetWeight: ptr.To[int32](50),
 						},
 						{
 							Pause: &argorolloutsv1alpha1.RolloutPause{

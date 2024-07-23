@@ -17,7 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -104,38 +104,38 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 
 	storeLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metrics.LabelOperation),
-			Value: pointer.String(metrics.OperationStore),
+			Name:  ptr.To(metrics.LabelOperation),
+			Value: ptr.To(metrics.OperationStore),
 		},
 	}
 	restoreLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metrics.LabelOperation),
-			Value: pointer.String(metrics.OperationRestore),
+			Name:  ptr.To(metrics.LabelOperation),
+			Value: ptr.To(metrics.OperationRestore),
 		},
 	}
 	purgeLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metrics.LabelOperation),
-			Value: pointer.String(metrics.OperationPurge),
+			Name:  ptr.To(metrics.LabelOperation),
+			Value: ptr.To(metrics.OperationPurge),
 		},
 	}
 	pruneLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metrics.LabelOperation),
-			Value: pointer.String(metrics.OperationPrune),
+			Name:  ptr.To(metrics.LabelOperation),
+			Value: ptr.To(metrics.OperationPrune),
 		},
 	}
 	deleteLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metrics.LabelOperation),
-			Value: pointer.String(metrics.OperationDelete),
+			Name:  ptr.To(metrics.LabelOperation),
+			Value: ptr.To(metrics.OperationDelete),
 		},
 	}
 	configLabelPairs := []*io_prometheus_client.LabelPair{
 		{
-			Name:  pointer.String(metricsLabelEnforceEncryption),
-			Value: pointer.String("false"),
+			Name:  ptr.To(metricsLabelEnforceEncryption),
+			Value: ptr.To("false"),
 		},
 	}
 
@@ -179,13 +179,13 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			expectMetrics: expectMetrics{
 				store: &expected{
 					reqs: &expectedMetricVec{
-						total:       pointer.Float64(5),
+						total:       ptr.To[float64](5),
 						labelPairs:  storeLabelPairs,
-						errorsTotal: pointer.Float64(2),
+						errorsTotal: ptr.To[float64](2),
 					},
 					ops: &expectedMetricVec{
-						total:       pointer.Float64(5),
-						errorsTotal: pointer.Float64(2),
+						total:       ptr.To[float64](5),
+						errorsTotal: ptr.To[float64](2),
 						labelPairs:  storeLabelPairs,
 					},
 				},
@@ -200,23 +200,23 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			expectMetrics: expectMetrics{
 				store: &expected{
 					reqs: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 				},
 				restore: &expected{
 					reqs: &expectedMetricVec{
-						total:       pointer.Float64(2),
-						errorsTotal: pointer.Float64(4),
+						total:       ptr.To[float64](2),
+						errorsTotal: ptr.To[float64](4),
 						labelPairs:  restoreLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:       pointer.Float64(2),
-						errorsTotal: pointer.Float64(4),
+						total:       ptr.To[float64](2),
+						errorsTotal: ptr.To[float64](4),
 						labelPairs:  restoreLabelPairs,
 					},
 				},
@@ -230,35 +230,35 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			expectMetrics: expectMetrics{
 				store: &expected{
 					reqs: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 				},
 				prune: &expected{
 					reqs: &expectedMetricVec{
-						total:       pointer.Float64(2),
-						errorsTotal: pointer.Float64(1),
+						total:       ptr.To[float64](2),
+						errorsTotal: ptr.To[float64](1),
 						labelPairs:  pruneLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:       pointer.Float64(2),
-						errorsTotal: pointer.Float64(1),
+						total:       ptr.To[float64](2),
+						errorsTotal: ptr.To[float64](1),
 						labelPairs:  pruneLabelPairs,
 					},
 				},
 				delete: &expected{
 					reqs: &expectedMetricVec{
-						total:       pointer.Float64(2),
-						errorsTotal: pointer.Float64(1),
+						total:       ptr.To[float64](2),
+						errorsTotal: ptr.To[float64](1),
 						labelPairs:  deleteLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:       pointer.Float64(2),
-						errorsTotal: pointer.Float64(1),
+						total:       ptr.To[float64](2),
+						errorsTotal: ptr.To[float64](1),
 						labelPairs:  deleteLabelPairs,
 					},
 				},
@@ -273,33 +273,33 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			expectMetrics: expectMetrics{
 				store: &expected{
 					reqs: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 				},
 				purge: &expected{
 					reqs: &expectedMetricVec{
-						total:       pointer.Float64(1),
-						errorsTotal: pointer.Float64(1),
+						total:       ptr.To[float64](1),
+						errorsTotal: ptr.To[float64](1),
 						labelPairs:  purgeLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:       pointer.Float64(1),
-						errorsTotal: pointer.Float64(1),
+						total:       ptr.To[float64](1),
+						errorsTotal: ptr.To[float64](1),
 						labelPairs:  purgeLabelPairs,
 					},
 				},
 				prune: &expected{
 					reqs: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: pruneLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: pruneLabelPairs,
 					},
 				},
@@ -314,21 +314,21 @@ func Test_clientCacheStorage_Metrics(t *testing.T) {
 			expectMetrics: expectMetrics{
 				store: &expected{
 					reqs: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: storeLabelPairs,
 					},
 				},
 				restore: &expected{
 					reqs: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: restoreLabelPairs,
 					},
 					ops: &expectedMetricVec{
-						total:      pointer.Float64(4),
+						total:      ptr.To[float64](4),
 						labelPairs: restoreLabelPairs,
 					},
 				},

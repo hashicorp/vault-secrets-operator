@@ -1,3 +1,59 @@
+## 0.8.0 (July 18th, 2024)
+**Important**
+
+* Helm: CRD schema changes are now automatically applied at upgrade time.
+ 
+  *See [updating-crds](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/installation#updating-crds-when-using-helm) for more details.*
+
+* This release contains CRD schema changes which remove the field validation on most VaultAuth spec fields. That means invalid VaultAuth
+  configurations will no longer be handled at resource application time. Please review the VSO logs and K8s
+  events when troubleshooting Vault authentication issues.
+
+Features:
+* Helm: add support for auto upgrading CRDs: [GH-789](https://github.com/hashicorp/vault-secrets-operator/pull/789)
+* VaultStaticSecret: support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates): [GH-771](https://github.com/hashicorp/vault-secrets-operator/pull/771)
+* Add new [VaultAuthGlobal](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#vaultauthglobal-custom-resource) type for shared VaultAuth configurations: 
+ [GH-735](https://github.com/hashicorp/vault-secrets-operator/pull/735)
+ [GH-800](https://github.com/hashicorp/vault-secrets-operator/pull/800)
+ [GH-847](https://github.com/hashicorp/vault-secrets-operator/pull/847)
+ [GH-855](https://github.com/hashicorp/vault-secrets-operator/pull/855)
+ [GH-850](https://github.com/hashicorp/vault-secrets-operator/pull/850)
+* CachingClientFactory: support client taints to trigger Vault client token validation: 
+  [GH-717](https://github.com/hashicorp/vault-secrets-operator/pull/717)
+  [GH-769](https://github.com/hashicorp/vault-secrets-operator/pull/769)
+
+Improvements:
+* VPS: add ca.crt from issuing CA for tls secret type: [GH-848](https://github.com/hashicorp/vault-secrets-operator/pull/848)
+* Helm: support setting VaultAuthGlobalRef on VaultAuth: [GH-851](https://github.com/hashicorp/vault-secrets-operator/pull/851)
+* Migrate to k8s.io/utils/ptr: [GH-856](https://github.com/hashicorp/vault-secrets-operator/pull/856)
+* Core: update backoff option docs: [GH-801](https://github.com/hashicorp/vault-secrets-operator/pull/801)
+ 
+Fix:
+* VaultAuth: set valid status on VaultAuthGlobal deref error: [GH-854](https://github.com/hashicorp/vault-secrets-operator/pull/854)
+* VDS: properly handle the clone cache key variant during client callback execution: [GH-835](https://github.com/hashicorp/vault-secrets-operator/pull/835)
+* Core: delete resource status metrics upon object deletion: [GH-815](https://github.com/hashicorp/vault-secrets-operator/pull/815)
+* VSS: use a constant backoff on some reconciliation errors: [GH-811](https://github.com/hashicorp/vault-secrets-operator/pull/811)
+* VDS: work around Vault DB static creds TTL rollover bug: [GH-730](https://github.com/hashicorp/vault-secrets-operator/pull/730)
+
+Build:
+* CI: bump Vault versions: [GH-797](https://github.com/hashicorp/vault-secrets-operator/pull/797)
+
+Dependency Updates:
+* Bump cloud.google.com/go/compute/metadata from 0.4.0 to 0.5.0: [GH-853](https://github.com/hashicorp/vault-secrets-operator/pull/853)
+* Bump github.com/gruntwork-io/terratest from 0.46.16 to 0.47.0: [GH-852](https://github.com/hashicorp/vault-secrets-operator/pull/852)
+* Bump github.com/hashicorp/go-getter from 1.7.4 to 1.7.5: [GH-834](https://github.com/hashicorp/vault-secrets-operator/pull/834)
+* Bump github.com/hashicorp/go-retryablehttp from 0.7.1 to 0.7.7: [GH-833](https://github.com/hashicorp/vault-secrets-operator/pull/833)
+* Bump github.com/hashicorp/go-version from 1.6.0 to 1.7.0: [GH-810](https://github.com/hashicorp/vault-secrets-operator/pull/810)
+* Bump golang.org/x/crypto from 0.24.0 to 0.25.0: [GH-843](https://github.com/hashicorp/vault-secrets-operator/pull/843)
+* Bump google.golang.org/api from 0.186.0 to 0.188.0: [GH-846](https://github.com/hashicorp/vault-secrets-operator/pull/846)
+* Bump google.golang.org/grpc from 1.64.0 to 1.64.1: [GH-845](https://github.com/hashicorp/vault-secrets-operator/pull/845)
+* Bump k8s.io/api from 0.30.1 to 0.30.2: [GH-822](https://github.com/hashicorp/vault-secrets-operator/pull/822)
+* Bump k8s.io/apiextensions-apiserver from 0.30.1 to 0.30.2: [GH-828](https://github.com/hashicorp/vault-secrets-operator/pull/828)
+* Bump k8s.io/client-go from 0.30.1 to 0.30.2: [GH-830](https://github.com/hashicorp/vault-secrets-operator/pull/830)
+* Bump sigs.k8s.io/controller-runtime from 0.18.3 to 0.18.4: [GH-808](https://github.com/hashicorp/vault-secrets-operator/pull/808)
+* Bump ubi9/ubi-micro from 9.4-6.1716471860 to 9.4-9: [GH-819](https://github.com/hashicorp/vault-secrets-operator/pull/819)
+* Bump ubi9/ubi-minimal from 9.4-949.1717074713 to 9.4-1134: [GH-820](https://github.com/hashicorp/vault-secrets-operator/pull/820)
+
 ## 0.7.1 (May 30th, 2024)
 
 Fix:
@@ -31,7 +87,7 @@ Fix:
 * VDS: Selectively log calls to SyncRegistry.Delete(): [GH-718](https://github.com/hashicorp/vault-secrets-operator/pull/718)
 
 Build:
-* CI: test against vault-1.16.2: [GH-715](https://github.com/hashicorp/vault-secrets-operator/pull/715)
+* CI: Bump test vault versions: [GH-861](https://github.com/hashicorp/vault-secrets-operator/pull/861)
 * Bump GH actions for node 16 obsolescence: [GH-738](https://github.com/hashicorp/vault-secrets-operator/pull/738)
 
 Dependency Updates:

@@ -18,6 +18,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -166,7 +167,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// assume that status is always invalid
-	o.Status.Valid = false
+	o.Status.Valid = ptr.To(false)
 	logger.Info("Must sync", "reason", syncReason)
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
@@ -294,7 +295,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	o.Status.Valid = true
+	o.Status.Valid = ptr.To(true)
 	o.Status.Error = ""
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
@@ -416,20 +417,20 @@ func (r *VaultPKISecretReconciler) getPath(spec secretsv1beta1.VaultPKISecretSpe
 	return strings.Join(parts, "/")
 }
 
-func (r *VaultPKISecretReconciler) recordEvent(p *secretsv1beta1.VaultPKISecret, reason, msg string, i ...interface{}) {
+func (r *VaultPKISecretReconciler) recordEvent(o *secretsv1beta1.VaultPKISecret, reason, msg string, i ...interface{}) {
 	eventType := corev1.EventTypeNormal
-	if !p.Status.Valid {
+	if !ptr.Deref(o.Status.Valid, false) {
 		eventType = corev1.EventTypeWarning
 	}
 
-	r.Recorder.Eventf(p, eventType, reason, msg, i...)
+	r.Recorder.Eventf(o, eventType, reason, msg, i...)
 }
 
 func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	logger := log.FromContext(ctx)
 	logger.V(consts.LogLevelTrace).Info("Update status called")
 
-	metrics.SetResourceStatus("vaultpkisecret", o, o.Status.Valid)
+	metrics.SetResourceStatus("vaultpkisecret", o, ptr.Deref(o.Status.Valid, false))
 
 	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {

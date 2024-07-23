@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -76,26 +77,27 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// assume that status is always invalid
-	o.Status.Valid = false
+	o.Status.Valid = ptr.To(false)
 	var errs error
 
 	var conditions []metav1.Condition
 	if o.Spec.VaultAuthGlobalRef != nil {
 		condition := metav1.Condition{
-			Type:               "VaultAuthGlobalRef",
-			Status:             "True",
+			Type:               "Available",
+			Status:             metav1.ConditionTrue,
 			ObservedGeneration: o.Generation,
-			LastTransitionTime: metav1.NewTime(nowFunc()),
 			Reason:             "VaultAuthGlobalRef",
 		}
 
 		mObj, gObj, err := common.MergeInVaultAuthGlobal(ctx, r.Client, o, r.GlobalVaultAuthOptions)
 		if err != nil {
+			errs = errors.Join(errs, err)
 			condition.Message = err.Error()
-			condition.Status = "False"
+			condition.Status = metav1.ConditionFalse
 		} else {
 			o = mObj
-			condition.Message = fmt.Sprintf("%s:%s:%d",
+			condition.Message = fmt.Sprintf(
+				"VaultAuthGlobal successfully merged, key=%s, uid=%s, generation=%d",
 				client.ObjectKeyFromObject(gObj), gObj.UID, gObj.Generation)
 			r.referenceCache.Set(
 				VaultAuthGlobal, req.NamespacedName,
@@ -105,8 +107,6 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	} else {
 		r.referenceCache.Remove(VaultAuthGlobal, req.NamespacedName)
 	}
-
-	o.Status.Conditions = conditions
 
 	// ensure that the vaultConnectionRef is set for any VaultAuth resource in the operator namespace.
 	if o.Namespace == common.OperatorNamespace && o.Spec.VaultConnectionRef == "" {
@@ -170,34 +170,46 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	o.Status.SpecHash = specHash
 
+	var horizon time.Duration
 	if errs != nil {
-		o.Status.Valid = false
+		o.Status.Valid = ptr.To(false)
 		o.Status.Error = errs.Error()
+		horizon = computeHorizonWithJitter(requeueDurationOnError)
 	} else {
-		o.Status.Valid = true
+		o.Status.Valid = ptr.To(true)
 		o.Status.Error = ""
 	}
 
-	if err := r.updateStatus(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o, conditions...); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r.recordEvent(o, consts.ReasonAccepted, "Successfully handled VaultAuth resource request")
-	return ctrl.Result{}, nil
+	if errs == nil {
+		r.recordEvent(o, consts.ReasonAccepted, "Successfully handled VaultAuth resource request")
+	} else {
+		logger.Error(errs, "Failed to handle VaultAuth resource request", "horizon", horizon)
+		r.recordEvent(o, consts.ReasonAccepted,
+			fmt.Sprintf("Failed to handle VaultAuth resource request: err=%s", errs))
+	}
+
+	return ctrl.Result{
+		RequeueAfter: horizon,
+	}, nil
 }
 
-func (r *VaultAuthReconciler) recordEvent(a *secretsv1beta1.VaultAuth, reason, msg string, i ...interface{}) {
+func (r *VaultAuthReconciler) recordEvent(o *secretsv1beta1.VaultAuth, reason, msg string, i ...interface{}) {
 	eventType := corev1.EventTypeNormal
-	if !a.Status.Valid {
+	if !ptr.Deref(o.Status.Valid, false) {
 		eventType = corev1.EventTypeWarning
 	}
 
-	r.Recorder.Eventf(a, eventType, reason, msg, i...)
+	r.Recorder.Eventf(o, eventType, reason, msg, i...)
 }
 
-func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth) error {
+func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultauth", o, o.Status.Valid)
+	metrics.SetResourceStatus("vaultauth", o, ptr.Deref(o.Status.Valid, false))
+	o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

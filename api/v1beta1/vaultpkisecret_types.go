@@ -135,7 +135,7 @@ type VaultPKISecretStatus struct {
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.
 	SecretMAC string `json:"secretMAC,omitempty"`
-	Valid     bool   `json:"valid"`
+	Valid     *bool  `json:"valid"`
 	Error     string `json:"error"`
 }
 

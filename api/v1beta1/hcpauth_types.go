@@ -49,12 +49,12 @@ type HCPAuthServicePrincipal struct {
 // HCPAuthStatus defines the observed state of HCPAuth
 type HCPAuthStatus struct {
 	// Valid auth mechanism.
-	Valid bool   `json:"valid"`
+	Valid *bool  `json:"valid"`
 	Error string `json:"error"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // HCPAuth is the Schema for the hcpauths API
 type HCPAuth struct {
@@ -65,7 +65,7 @@ type HCPAuth struct {
 	Status HCPAuthStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // HCPAuthList contains a list of HCPAuth
 type HCPAuthList struct {

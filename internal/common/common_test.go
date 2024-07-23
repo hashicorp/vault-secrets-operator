@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -846,7 +846,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 	}
 
 	wantK8sUnionParamsOverrideDefaultRef := wantK8sUnionParamsOverride.DeepCopy()
-	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.AllowDefault = pointer.Bool(true)
+	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.AllowDefault = ptr.To(true)
 	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.Name = ""
 	wantK8sUnionParamsOverrideDefaultRef.Spec.VaultAuthGlobalRef.Namespace = "baz"
 
@@ -1207,8 +1207,12 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 			},
 			gObj: gObj.DeepCopy(),
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err,
-					`unsupported auth method "invalid" for global auth merge`)
+				var wantErr *InvalidMergeError
+				if assert.ErrorAs(t, err, &wantErr) {
+					return assert.EqualError(t, wantErr.Err,
+						`unsupported auth method "invalid" for global auth merge`)
+				}
+				return false
 			},
 		},
 		{
@@ -1539,7 +1543,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
 						Namespace:    "baz",
-						AllowDefault: pointer.Bool(true),
+						AllowDefault: ptr.To(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1567,7 +1571,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 						"baz": "override",
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
-						AllowDefault: pointer.Bool(true),
+						AllowDefault: ptr.To(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1595,7 +1599,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 						"baz": "override",
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
-						AllowDefault: pointer.Bool(true),
+						AllowDefault: ptr.To(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1624,7 +1628,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
 						Namespace:    "baz",
-						AllowDefault: pointer.Bool(true),
+						AllowDefault: ptr.To(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1655,7 +1659,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
 						Namespace:    "baz",
-						AllowDefault: pointer.Bool(true),
+						AllowDefault: ptr.To(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
@@ -1684,7 +1688,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 						"baz": "override",
 					},
 					VaultAuthGlobalRef: &secretsv1beta1.VaultAuthGlobalRef{
-						AllowDefault: pointer.Bool(true),
+						AllowDefault: ptr.To(true),
 						MergeStrategy: &secretsv1beta1.MergeStrategy{
 							Params: "union",
 						},
