@@ -335,6 +335,8 @@ type storageEncryptionClientTest struct {
 }
 
 func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	builder := testutils.NewFakeClientBuilder()
 	vcObj := &secretsv1beta1.VaultConnection{
@@ -383,6 +385,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 
 	authHandlerFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPut {
+			w.WriteHeader(http.StatusOK)
 			s := &api.Secret{
 				Auth: &api.SecretAuth{
 					LeaseDuration: 100,
@@ -399,7 +402,6 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			w.WriteHeader(http.StatusOK)
 			return
 		} else {
 			w.WriteHeader(http.StatusMethodNotAllowed)
