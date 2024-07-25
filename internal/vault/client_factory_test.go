@@ -322,7 +322,7 @@ type storageEncryptionClientTest struct {
 	client                ctrlclient.Client
 	clientCacheKeyEncrypt ClientCacheKey
 	clientCache           ClientCache
-	want                  Client
+	setupTimeout          time.Duration
 	wantErr               assert.ErrorAssertionFunc
 	connObj               *secretsv1beta1.VaultConnection
 	authObj               *secretsv1beta1.VaultAuth
@@ -337,7 +337,7 @@ type storageEncryptionClientTest struct {
 func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 	ctx := context.Background()
 	builder := testutils.NewFakeClientBuilder()
-	objVCDefault := &secretsv1beta1.VaultConnection{
+	vcObj := &secretsv1beta1.VaultConnection{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      consts.NameDefault,
 			Namespace: common.OperatorNamespace,
@@ -346,16 +346,23 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 			},
 			UID: connUID,
 		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Timeout: &metav1.Duration{Duration: 10 * time.Second},
+		},
 	}
 
-	objSA := &corev1.ServiceAccount{
+	vcObjTimeout5s := vcObj.DeepCopy()
+	vcObjTimeout5s.Spec.Timeout = &metav1.Duration{Duration: 5 * time.Second}
+
+	saObj := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: common.OperatorNamespace,
 			UID:       providerUID,
 		},
 	}
-	objVABase := &secretsv1beta1.VaultAuth{
+
+	vaObj := &secretsv1beta1.VaultAuth{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: common.OperatorNamespace,
@@ -400,12 +407,23 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		}
 	}
 
+	authHandlerBlockingFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPut {
+			time.Sleep(time.Second * 30)
+			w.WriteHeader(http.StatusRequestTimeout)
+			return
+		} else {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+	}
+
 	factoryFunc := func(ctx context.Context, c ctrlclient.Client, obj ctrlclient.Object, s string) (provider.CredentialProviderBase, error) {
 		switch authObj := obj.(type) {
 		case *secretsv1beta1.VaultAuth:
 			switch authObj.Spec.Method {
 			case vconsts.ProviderMethodKubernetes:
-				p := credentials.NewFakeCredentialProvider().WithUID(objSA.GetUID())
+				p := credentials.NewFakeCredentialProvider().WithUID(saObj.GetUID())
 				if err := p.Init(ctx, c, authObj, s); err != nil {
 					return nil, err
 				}
@@ -424,11 +442,10 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		},
 		{
 			name:         "concurrency",
-			wantErr:      assert.NoError,
 			client:       builder.Build(),
-			connObj:      objVCDefault.DeepCopy(),
-			saObj:        objSA.DeepCopy(),
-			authObj:      objVABase.DeepCopy(),
+			connObj:      vcObj.DeepCopy(),
+			saObj:        saObj.DeepCopy(),
+			authObj:      vaObj.DeepCopy(),
 			testScenario: 1,
 			factoryFunc:  factoryFunc,
 			testHandler: &testHandler{
@@ -436,14 +453,29 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 			},
 			callCount:          30,
 			expectRequestCount: 1,
+			wantErr:            assert.NoError,
+		},
+		{
+			name:         "concurrency-blocking",
+			client:       builder.Build(),
+			connObj:      vcObj.DeepCopy(),
+			saObj:        saObj.DeepCopy(),
+			authObj:      vaObj.DeepCopy(),
+			testScenario: 1,
+			factoryFunc:  factoryFunc,
+			testHandler: &testHandler{
+				handlerFunc: authHandlerFunc,
+			},
+			callCount:          30,
+			expectRequestCount: 1,
+			wantErr:            assert.NoError,
 		},
 		{
 			name:         "concurrency-invalid-client",
-			wantErr:      assert.NoError,
 			client:       builder.Build(),
-			connObj:      objVCDefault.DeepCopy(),
-			saObj:        objSA.DeepCopy(),
-			authObj:      objVABase.DeepCopy(),
+			connObj:      vcObj.DeepCopy(),
+			saObj:        saObj.DeepCopy(),
+			authObj:      vaObj.DeepCopy(),
 			testScenario: 2,
 			factoryFunc:  factoryFunc,
 			testHandler: &testHandler{
@@ -451,20 +483,58 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 			},
 			callCount:          30,
 			expectRequestCount: 31,
+			wantErr:            assert.NoError,
 		},
 		{
 			name:         "full-lifecycle",
-			wantErr:      assert.NoError,
 			client:       builder.Build(),
-			connObj:      objVCDefault.DeepCopy(),
-			saObj:        objSA.DeepCopy(),
-			authObj:      objVABase.DeepCopy(),
+			connObj:      vcObj.DeepCopy(),
+			saObj:        saObj.DeepCopy(),
+			authObj:      vaObj.DeepCopy(),
 			testScenario: 3,
 			factoryFunc:  factoryFunc,
 			testHandler: &testHandler{
 				handlerFunc: authHandlerFunc,
 			},
 			expectRequestCount: 3,
+			wantErr:            assert.NoError,
+		},
+		{
+			name:        "vault-client-request-timeout",
+			client:      builder.Build(),
+			connObj:     vcObjTimeout5s.DeepCopy(),
+			saObj:       saObj.DeepCopy(),
+			authObj:     vaObj.DeepCopy(),
+			factoryFunc: factoryFunc,
+			testHandler: &testHandler{
+				handlerFunc: authHandlerBlockingFunc,
+			},
+			expectRequestCount: 1,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if assert.ErrorIs(t, err, context.DeadlineExceeded, i...) {
+					return assert.ErrorContains(t, err, "failed to setup encryption client")
+				}
+				return false
+			},
+		},
+		{
+			name:        "vault-client-setup-timeout",
+			client:      builder.Build(),
+			connObj:     vcObj.DeepCopy(),
+			saObj:       saObj.DeepCopy(),
+			authObj:     vaObj.DeepCopy(),
+			factoryFunc: factoryFunc,
+			testHandler: &testHandler{
+				handlerFunc: authHandlerBlockingFunc,
+			},
+			expectRequestCount: 1,
+			setupTimeout:       time.Second * 1,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				if assert.ErrorIs(t, err, context.DeadlineExceeded, i...) {
+					return assert.ErrorContains(t, err, "setup timed out after")
+				}
+				return false
+			},
 		},
 	}
 
@@ -507,6 +577,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				clientCacheKeyEncrypt:     tt.clientCacheKeyEncrypt,
 				credentialProviderFactory: credentials.NewFakeCredentialProviderFactory(tt.factoryFunc),
 				cache:                     tt.clientCache,
+				encClientSetupTimeout:     tt.setupTimeout,
 			}
 
 			got0, err := m.storageEncryptionClient(ctx, tt.client)
@@ -635,6 +706,7 @@ func assertStorageEncryptionClient(t *testing.T, tt storageEncryptionClientTest,
 
 func invalidateClient(t *testing.T, client Client) {
 	t.Helper()
+
 	secret := client.GetTokenSecret()
 	require.NotNil(t, secret)
 	secret.Auth.LeaseDuration = 0
