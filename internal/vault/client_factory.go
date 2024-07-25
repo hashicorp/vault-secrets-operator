@@ -768,7 +768,7 @@ func (m *cachingClientFactory) setEncryptionClient(ctx context.Context, client c
 		err = fmt.Errorf("failed to setup encryption client: %w", err)
 		return nil, err
 	case c := <-doneCh:
-		return c, err
+		return c, nil
 	}
 }
 
