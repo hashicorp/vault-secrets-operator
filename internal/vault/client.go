@@ -27,14 +27,16 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal            bool
-	WatcherDoneCh          chan<- *ClientCallbackHandlerRequest
-	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
+	SkipRenewal               bool
+	WatcherDoneCh             chan<- *ClientCallbackHandlerRequest
+	GlobalVaultAuthOptions    *common.GlobalVaultAuthOptions
+	CredentialProviderFactory credentials.CredentialProviderFactory
 }
 
 func defaultClientOptions() *ClientOptions {
 	return &ClientOptions{
-		SkipRenewal: false,
+		SkipRenewal:               false,
+		CredentialProviderFactory: credentials.NewCredentialProviderFactory(),
 	}
 }
 
@@ -590,7 +592,18 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 		return errs
 	}
 
-	c.client.SetToken(resp.Secret().Auth.ClientToken)
+	secret := resp.Secret()
+	if secret == nil {
+		errs = fmt.Errorf("empty response from Vault, path=%q", path)
+		return errs
+	}
+
+	if secret.Auth == nil {
+		errs = fmt.Errorf("auth secret is nil")
+		return errs
+	}
+
+	c.client.SetToken(secret.Auth.ClientToken)
 
 	c.authSecret = resp.Secret()
 	c.lastRenewal = time.Now().Unix()
@@ -768,7 +781,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 		return err
 	}
 
-	credentialProvider, err := credentials.NewCredentialProvider(ctx, client, authObj, providerNamespace)
+	credentialProvider, err := opts.CredentialProviderFactory.New(ctx, client, authObj, providerNamespace)
 	if err != nil {
 		return err
 	}

@@ -24,6 +24,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
@@ -141,6 +142,8 @@ type cachingClientFactory struct {
 	encClientLock sync.RWMutex
 	// GlobalVaultAuthOptions is a struct that contains global VaultAuth options.
 	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
+	// credentialProviderFactory is a function that returns a CredentialProvider.
+	credentialProviderFactory credentials.CredentialProviderFactory
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -579,8 +582,9 @@ func (m *cachingClientFactory) restoreClient(ctx context.Context, client ctrlcli
 
 func (m *cachingClientFactory) clientOptions() *ClientOptions {
 	return &ClientOptions{
-		WatcherDoneCh:          m.callbackHandlerCh,
-		GlobalVaultAuthOptions: m.GlobalVaultAuthOptions,
+		WatcherDoneCh:             m.callbackHandlerCh,
+		GlobalVaultAuthOptions:    m.GlobalVaultAuthOptions,
+		CredentialProviderFactory: m.credentialProviderFactory,
 	}
 }
 
@@ -632,16 +636,21 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 // has enforceEncryption enabled.
 func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
 	logger := log.FromContext(ctx).WithName("storageEncryptionClient")
+
+	if client == nil {
+		return nil, fmt.Errorf("client is nil")
+	}
+
 	logger.V(consts.LogLevelDebug).Info("Getting Vault Client for storage encryption")
 
 	if m.clientCacheKeyEncrypt == "" {
-		return m.setupEncryptionClient(ctx, client)
+		return m.setEncryptionClient(ctx, client)
 	}
 
 	var err error
 	c, ok := m.cache.Get(m.clientCacheKeyEncrypt)
 	if !ok {
-		c, err = m.setupEncryptionClient(ctx, client)
+		c, err = m.setEncryptionClient(ctx, client)
 		if err != nil {
 			return nil, err
 		}
@@ -651,7 +660,7 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 		logger.V(consts.LogLevelWarning).Info("Restored Vault client is invalid, recreating it",
 			"cacheKey", m.clientCacheKeyEncrypt, "reason", reason)
 
-		c, err = m.setupEncryptionClient(ctx, client)
+		c, err = m.setEncryptionClient(ctx, client)
 		if err != nil {
 			return nil, err
 		}
@@ -660,27 +669,45 @@ func (m *cachingClientFactory) storageEncryptionClient(ctx context.Context, clie
 	return c, nil
 }
 
-func (m *cachingClientFactory) setupEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
+// setEncryptionClient sets up a Client for storage encryption.
+func (m *cachingClientFactory) setEncryptionClient(ctx context.Context, client ctrlclient.Client) (Client, error) {
+	var err error
 	m.encClientLock.Lock()
-	defer m.encClientLock.Unlock()
+	defer func() {
+		if err != nil {
+			if m.clientCacheKeyEncrypt != "" {
+				m.cache.Remove(m.clientCacheKeyEncrypt)
+				m.clientCacheKeyEncrypt = ""
+			}
+		}
+		m.encClientLock.Unlock()
+	}()
 
-	logger := log.FromContext(ctx).WithName("setupEncryptionClient")
+	logger := log.FromContext(ctx).WithName("setEncryptionClient")
 	logger.V(consts.LogLevelTrace).Info("Setting up Vault Client for storage encryption",
 		"cacheKey", m.clientCacheKeyEncrypt)
 	encryptionVaultAuth, err := common.FindVaultAuthForStorageEncryption(ctx, client)
 	if err != nil {
 		logger.Error(err, "Failed to find VaultAuth for storage encryption")
+		if m.clientCacheKeyEncrypt != "" {
+			m.cache.Remove(m.clientCacheKeyEncrypt)
+			m.clientCacheKeyEncrypt = ""
+		}
 		return nil, err
 	}
 
-	vc, err := NewClientWithLogin(ctx, client, encryptionVaultAuth, nil)
+	var c Client
+	c, err = NewClientWithLogin(ctx, client, encryptionVaultAuth, &ClientOptions{
+		CredentialProviderFactory: m.credentialProviderFactory,
+	})
 	if err != nil {
 		logger.Error(err, "Failed to create Vault client for storage encryption")
 		return nil, err
 	}
 
 	// cache the new Client for future requests.
-	cacheKey, err := m.cacheClient(ctx, vc, false)
+	var cacheKey ClientCacheKey
+	cacheKey, err = m.cacheClient(ctx, c, false)
 	if err != nil {
 		return nil, err
 	}
@@ -694,7 +721,7 @@ func (m *cachingClientFactory) setupEncryptionClient(ctx context.Context, client
 	m.clientCacheKeyEncrypt = cacheKey
 	logger.V(consts.LogLevelTrace).Info("Successfully setup Vault Client for storage encryption",
 		"cacheKey", m.clientCacheKeyEncrypt)
-	return vc, nil
+	return c, nil
 }
 
 func (m *cachingClientFactory) incrementRequestCounter(operation string, err error) {
@@ -821,14 +848,15 @@ func (m *cachingClientFactory) callClientCallbacks(ctx context.Context, c Client
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
 	factory := &cachingClientFactory{
-		storage:                cacheStorage,
-		recorder:               config.Recorder,
-		persist:                config.Persist,
-		ctrlClient:             client,
-		callbackHandlerCh:      make(chan *ClientCallbackHandlerRequest),
-		encryptionRequired:     config.StorageConfig.EnforceEncryption,
-		clientLocks:            make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
-		GlobalVaultAuthOptions: config.GlobalVaultAuthOptions,
+		storage:                   cacheStorage,
+		recorder:                  config.Recorder,
+		persist:                   config.Persist,
+		ctrlClient:                client,
+		callbackHandlerCh:         make(chan *ClientCallbackHandlerRequest),
+		encryptionRequired:        config.StorageConfig.EnforceEncryption,
+		clientLocks:               make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
+		GlobalVaultAuthOptions:    config.GlobalVaultAuthOptions,
+		credentialProviderFactory: config.CredentialProviderFactory,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -893,16 +921,18 @@ type CachingClientFactoryConfig struct {
 	MetricsRegistry           prometheus.Registerer
 	PruneStorageOnEvict       bool
 	GlobalVaultAuthOptions    *common.GlobalVaultAuthOptions
+	CredentialProviderFactory credentials.CredentialProviderFactory
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
 func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 	return &CachingClientFactoryConfig{
-		StorageConfig:       DefaultClientCacheStorageConfig(),
-		ClientCacheSize:     10000,
-		Recorder:            &nullEventRecorder{},
-		MetricsRegistry:     ctrlmetrics.Registry,
-		PruneStorageOnEvict: true,
+		StorageConfig:             DefaultClientCacheStorageConfig(),
+		ClientCacheSize:           10000,
+		Recorder:                  &nullEventRecorder{},
+		MetricsRegistry:           ctrlmetrics.Registry,
+		PruneStorageOnEvict:       true,
+		CredentialProviderFactory: credentials.NewCredentialProviderFactory(),
 	}
 }
 

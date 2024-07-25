@@ -24,13 +24,14 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func TestFindSecretsOwnedByObj(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	clientBuilder := newClientBuilder()
+	clientBuilder := testutils.NewFakeClientBuilder()
 	defaultClient := clientBuilder.Build()
 
 	owner := &secretsv1beta1.VaultDynamicSecret{
@@ -187,7 +188,7 @@ func TestSyncSecret(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	clientBuilder := newClientBuilder()
+	clientBuilder := testutils.NewFakeClientBuilder()
 
 	defaultOwner := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta: metav1.TypeMeta{

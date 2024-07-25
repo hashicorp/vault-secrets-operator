@@ -5,12 +5,28 @@ package vault
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials"
+	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
+	vconsts "github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func Test_cachingClientFactory_RegisterClientCallbackHandler(t *testing.T) {
@@ -299,4 +315,327 @@ func Test_cachingClientFactory_callClientCallbacks(t *testing.T) {
 			}
 		})
 	}
+}
+
+type storageEncryptionClientTest struct {
+	name                  string
+	client                ctrlclient.Client
+	clientCacheKeyEncrypt ClientCacheKey
+	clientCache           ClientCache
+	want                  Client
+	wantErr               assert.ErrorAssertionFunc
+	connObj               *secretsv1beta1.VaultConnection
+	authObj               *secretsv1beta1.VaultAuth
+	saObj                 *corev1.ServiceAccount
+	testHandler           *testHandler
+	factoryFunc           credentials.CredentialProviderFactoryFunc
+	testScenario          int
+	callCount             int
+	expectRequestCount    int
+}
+
+func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
+	ctx := context.Background()
+	builder := testutils.NewFakeClientBuilder()
+	objVCDefault := &secretsv1beta1.VaultConnection{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      consts.NameDefault,
+			Namespace: common.OperatorNamespace,
+			Labels: map[string]string{
+				"cacheStorageEncryption": "true",
+			},
+			UID: connUID,
+		},
+	}
+
+	objSA := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: common.OperatorNamespace,
+			UID:       providerUID,
+		},
+	}
+	objVABase := &secretsv1beta1.VaultAuth{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: common.OperatorNamespace,
+			Labels: map[string]string{
+				"cacheStorageEncryption": "true",
+			},
+			UID: authUID,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Method: vconsts.ProviderMethodKubernetes,
+			Mount:  "baz",
+			StorageEncryption: &secretsv1beta1.StorageEncryption{
+				Mount:   "foo",
+				KeyName: "baz",
+			},
+		},
+	}
+
+	authHandlerFunc := func(t *testHandler, w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPut {
+			w.WriteHeader(http.StatusOK)
+			s := &api.Secret{
+				Auth: &api.SecretAuth{
+					LeaseDuration: 100,
+					Accessor:      fmt.Sprintf("foo-%d", t.requestCount),
+				},
+			}
+			b, err := json.Marshal(s)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, err = w.Write(b)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			return
+		} else {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+	}
+
+	factoryFunc := func(ctx context.Context, c ctrlclient.Client, obj ctrlclient.Object, s string) (provider.CredentialProviderBase, error) {
+		switch authObj := obj.(type) {
+		case *secretsv1beta1.VaultAuth:
+			switch authObj.Spec.Method {
+			case vconsts.ProviderMethodKubernetes:
+				p := credentials.NewFakeCredentialProvider().WithUID(objSA.GetUID())
+				if err := p.Init(ctx, c, authObj, s); err != nil {
+					return nil, err
+				}
+				return p, nil
+			default:
+				return nil, fmt.Errorf("unsupported authentication method %s", authObj.Spec.Method)
+			}
+		}
+		return nil, fmt.Errorf("unsupported auth object %T", obj)
+	}
+
+	tests := []storageEncryptionClientTest{
+		{
+			name:    "nil-client",
+			wantErr: assert.Error,
+		},
+		{
+			name:         "concurrency",
+			wantErr:      assert.NoError,
+			client:       builder.Build(),
+			connObj:      objVCDefault.DeepCopy(),
+			saObj:        objSA.DeepCopy(),
+			authObj:      objVABase.DeepCopy(),
+			testScenario: 1,
+			factoryFunc:  factoryFunc,
+			testHandler: &testHandler{
+				handlerFunc: authHandlerFunc,
+			},
+			callCount:          30,
+			expectRequestCount: 1,
+		},
+		{
+			name:         "concurrency-invalid-client",
+			wantErr:      assert.NoError,
+			client:       builder.Build(),
+			connObj:      objVCDefault.DeepCopy(),
+			saObj:        objSA.DeepCopy(),
+			authObj:      objVABase.DeepCopy(),
+			testScenario: 2,
+			factoryFunc:  factoryFunc,
+			testHandler: &testHandler{
+				handlerFunc: authHandlerFunc,
+			},
+			callCount:          30,
+			expectRequestCount: 31,
+		},
+		{
+			name:         "full-lifecycle",
+			wantErr:      assert.NoError,
+			client:       builder.Build(),
+			connObj:      objVCDefault.DeepCopy(),
+			saObj:        objSA.DeepCopy(),
+			authObj:      objVABase.DeepCopy(),
+			testScenario: 3,
+			factoryFunc:  factoryFunc,
+			testHandler: &testHandler{
+				handlerFunc: authHandlerFunc,
+			},
+			expectRequestCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.clientCache == nil {
+				c, err := NewClientCache(5, nil, nil)
+				require.NoError(t, err)
+				tt.clientCache = c
+			}
+
+			if tt.testHandler != nil {
+				var l net.Listener
+				config, l := NewTestHTTPServer(t, tt.testHandler.handler())
+				t.Cleanup(func() {
+					assert.NoError(t, l.Close())
+				})
+
+				if tt.connObj != nil {
+					tt.connObj.Spec.Address = config.Address
+				}
+			}
+
+			if tt.saObj != nil {
+				err := tt.client.Create(ctx, tt.saObj)
+				require.NoError(t, err)
+			}
+
+			if tt.connObj != nil {
+				err := tt.client.Create(ctx, tt.connObj)
+				require.NoError(t, err)
+			}
+
+			if tt.authObj != nil {
+				err := tt.client.Create(ctx, tt.authObj)
+				require.NoError(t, err)
+			}
+
+			m := &cachingClientFactory{
+				clientCacheKeyEncrypt:     tt.clientCacheKeyEncrypt,
+				credentialProviderFactory: credentials.NewFakeCredentialProviderFactory(tt.factoryFunc),
+				cache:                     tt.clientCache,
+			}
+
+			got0, err := m.storageEncryptionClient(ctx, tt.client)
+			if !tt.wantErr(t, err, fmt.Sprintf("storageEncryptionClient(%v, %v)", ctx, tt.client)) {
+				return
+			}
+			if err != nil {
+				assert.Nil(t, got0)
+				return
+			}
+
+			switch tt.testScenario {
+			case 1, 2:
+				require.GreaterOrEqual(t, tt.callCount, 10, "not enough calls for test scenario")
+				ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+				go func() {
+					defer cancel()
+					time.Sleep(time.Second * 30)
+				}()
+
+				doneCh := make(chan Client)
+				t.Cleanup(func() {
+					close(doneCh)
+				})
+
+				if tt.testScenario == 2 {
+					invalidateClient(t, got0)
+				}
+
+				for i := 0; i < tt.callCount; i++ {
+					go func() {
+						g, err := m.storageEncryptionClient(ctx, tt.client)
+						defer func() {
+							doneCh <- g
+						}()
+						require.NoError(t, err)
+						if tt.testScenario == 2 {
+							// invalidate the client by setting LeaseDuration to 0, this tests that there
+							// are no deadlocks
+							invalidateClient(t, g)
+						} else {
+							assert.Equalf(t, got0, g, "unexpected client")
+						}
+						assertStorageEncryptionClient(t, tt, g)
+					}()
+				}
+
+				var actualCallCount int
+				for i := 0; i < tt.callCount; i++ {
+					select {
+					case <-ctx.Done():
+						assert.Fail(t, "timeout waiting for client creation")
+						break
+					case <-doneCh:
+						actualCallCount++
+					}
+				}
+				assert.Equalf(t, tt.callCount, actualCallCount, "unexpected number of function calls")
+				assert.Equalf(t, tt.expectRequestCount, tt.testHandler.requestCount, "unexpected number of requests")
+			case 3:
+				// full lifecycle test
+				cacheKey, err := got0.GetCacheKey()
+				require.NoError(t, err)
+
+				assertStorageEncryptionClient(t, tt, got0)
+				assert.Equalf(t, 1, tt.clientCache.Len(), "unexpected cache length")
+				cachedClient, ok := tt.clientCache.Get(cacheKey)
+				if assert.Truef(t, ok, "expected client to be cached, cacheKey=%v", cacheKey) {
+					assert.Equalf(t, got0, cachedClient, "unexpected cached client")
+				}
+
+				// get the client again to test cache hit
+				require.Equalf(t, m.clientCacheKeyEncrypt, cacheKey, "unexpected cache key")
+				got1, err := m.storageEncryptionClient(ctx, tt.client)
+				require.NoError(t, err)
+				require.Equalf(t, got1, cachedClient, "unexpected cached client")
+				require.Equalf(t, m.clientCacheKeyEncrypt, cacheKey, "unexpected cache key")
+				assert.Equalf(t, 1, tt.testHandler.requestCount, "unexpected request count")
+				assertStorageEncryptionClient(t, tt, got1)
+
+				invalidateClient(t, got1)
+				got2, err := m.storageEncryptionClient(ctx, tt.client)
+				require.NoError(t, err)
+				require.NotEqualf(t, got2, cachedClient, "unexpected cached client")
+				assertStorageEncryptionClient(t, tt, got2)
+
+				// Update the auth object to trigger a new client cache key is set on the next call
+				tt.authObj.Generation++
+				require.NoError(t, tt.client.Update(ctx, tt.authObj))
+				// remove the cached client to trigger a new client creation
+				tt.clientCache.Remove(cacheKey)
+				got3, err := m.storageEncryptionClient(ctx, tt.client)
+				require.NoError(t, err)
+				assert.NotEqual(t, cacheKey, m.clientCacheKeyEncrypt, "expected new cache key")
+				assert.Equalf(t, 1, tt.clientCache.Len(), "unexpected cache length")
+				assert.NotEqual(t, got2, got3)
+				assertStorageEncryptionClient(t, tt, got3)
+
+				// unset the storage encryption to trigger an error
+				// remove the cached client to trigger a new client creation
+				tt.authObj.Spec.StorageEncryption = nil
+				require.NoError(t, tt.client.Update(ctx, tt.authObj))
+				// Set LeaseDuration to 0 to force handling of an invalid Client
+				invalidateClient(t, got3)
+				got4, err := m.storageEncryptionClient(ctx, tt.client)
+				require.Error(t, err)
+				assert.Nil(t, got4)
+				assert.Equalf(t, 0, tt.clientCache.Len(), "unexpected cache length")
+				assert.Equalf(t, ClientCacheKey(""), m.clientCacheKeyEncrypt, "unexpected cache key")
+
+				assert.Equalf(t, tt.expectRequestCount, tt.testHandler.requestCount, "unexpected request count")
+			default:
+				require.Fail(t, "unknown test scenario %d", tt.testScenario)
+			}
+		})
+	}
+}
+
+func assertStorageEncryptionClient(t *testing.T, tt storageEncryptionClientTest, got Client) {
+	t.Helper()
+
+	assert.Equalf(t, tt.connObj, got.GetVaultConnectionObj(), "unexpected vault connection object")
+	assert.Equalf(t, tt.authObj, got.GetVaultAuthObj(), "unexpected vault auth object")
+	assert.Equalf(t, tt.saObj.UID, got.GetCredentialProvider().GetUID(), "unexpected credential provider UID")
+}
+
+func invalidateClient(t *testing.T, client Client) {
+	t.Helper()
+	secret := client.GetTokenSecret()
+	require.NotNil(t, secret)
+	secret.Auth.LeaseDuration = 0
 }

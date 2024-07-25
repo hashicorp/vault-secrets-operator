@@ -19,10 +19,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 var (
-	clientBuilder     = newClientBuilder()
+	clientBuilder     = testutils.NewFakeClientBuilder()
 	defaultHMACKey    []byte
 	defaultHMACObjKey = client.ObjectKey{
 		Namespace: "vso",
