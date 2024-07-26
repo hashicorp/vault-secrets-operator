@@ -17,6 +17,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func Test_renderTemplates(t *testing.T) {
@@ -575,7 +576,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientBuilder := newClientBuilder()
+	clientBuilder := testutils.NewFakeClientBuilder()
 
 	defaultKeyedTemplates := []*KeyedTemplate{
 		{

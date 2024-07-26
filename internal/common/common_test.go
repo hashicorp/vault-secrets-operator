@@ -14,16 +14,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func Test_GetConnectionNamespacedName(t *testing.T) {
@@ -321,9 +318,7 @@ func Test_isAllowedNamespace(t *testing.T) {
 func TestGetHCPAuthForObj(t *testing.T) {
 	t.Parallel()
 
-	scheme := runtime.NewScheme()
-	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
-	clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
+	clientBuilder := testutils.NewFakeClientBuilder()
 
 	ctx := context.Background()
 	tests := []struct {
@@ -691,18 +686,11 @@ func TestNewSyncableSecretMetaData(t *testing.T) {
 	}
 }
 
-func newClientBuilder() *fake.ClientBuilder {
-	scheme := runtime.NewScheme()
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
-	return fake.NewClientBuilder().WithScheme(scheme)
-}
-
 func Test_MergeInVaultAuthGlobal(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	builder := newClientBuilder()
+	builder := testutils.NewFakeClientBuilder()
 
 	gObj := &secretsv1beta1.VaultAuthGlobal{
 		ObjectMeta: metav1.ObjectMeta{

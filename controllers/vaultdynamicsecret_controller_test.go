@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 	"github.com/hashicorp/vault-secrets-operator/internal/vault"
 )
 
@@ -1021,7 +1022,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 	key1 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa724")
 	key2 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa725")
 
-	builder := newClientBuilder()
+	builder := testutils.NewFakeClientBuilder()
 	// instances in the same namespace that should be included by the callback.
 	instances := []*secretsv1beta1.VaultDynamicSecret{
 		{

@@ -566,6 +566,12 @@ func main() {
 	}
 
 	setupLog.Info("Starting manager",
+		"gitVersion", versionInfo.GitVersion,
+		"gitCommit", versionInfo.GitCommit,
+		"gitTreeState", versionInfo.GitTreeState,
+		"buildDate", versionInfo.BuildDate,
+		"goVersion", versionInfo.GoVersion,
+		"platform", versionInfo.Platform,
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
 		"backoffMultiplier", backoffMultiplier,

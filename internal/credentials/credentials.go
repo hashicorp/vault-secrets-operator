@@ -16,6 +16,8 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
 )
 
+type CredentialProviderFactoryFunc func(context.Context, client.Client, client.Object, string) (provider.CredentialProviderBase, error)
+
 var ProviderMethodsSupported = []string{
 	consts.ProviderMethodKubernetes,
 	consts.ProviderMethodJWT,
@@ -25,6 +27,8 @@ var ProviderMethodsSupported = []string{
 	hcp.ProviderMethodServicePrincipal,
 }
 
+// NewCredentialProvider returns a new provider.CredentialProviderBase instance
+// for the given object. It supports objects of type VaultAuth and HCPAuth.
 func NewCredentialProvider(ctx context.Context, client client.Client, obj client.Object, providerNamespace string) (provider.CredentialProviderBase, error) {
 	var p provider.CredentialProviderBase
 	switch authObj := obj.(type) {
@@ -68,4 +72,27 @@ func NewCredentialProvider(ctx context.Context, client client.Client, obj client
 		return nil, fmt.Errorf("unsupported auth object %T", authObj)
 	}
 	return p, nil
+}
+
+// CredentialProviderFactory provides an interface for setting up new
+// provider.CredentialProvider instances.
+type CredentialProviderFactory interface {
+	New(ctx context.Context, c client.Client, obj client.Object, providerNamespace string) (provider.CredentialProviderBase, error)
+}
+
+type defaultCredentialProviderFactory struct {
+	factoryFunc CredentialProviderFactoryFunc
+}
+
+// New returns a new provider.CredentialProviderBase instance for the given
+// object. It supports objects of type VaultAuth and HCPAuth.
+func (f *defaultCredentialProviderFactory) New(ctx context.Context, c client.Client, obj client.Object, providerNamespace string) (provider.CredentialProviderBase, error) {
+	return f.factoryFunc(ctx, c, obj, providerNamespace)
+}
+
+// NewCredentialProviderFactory returns a new CredentialProviderFactory.
+func NewCredentialProviderFactory() CredentialProviderFactory {
+	return &defaultCredentialProviderFactory{
+		factoryFunc: NewCredentialProvider,
+	}
 }
