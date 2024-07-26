@@ -204,36 +204,6 @@ load _helpers
       yq '.spec.template.spec.containers[0].env[0].value == "64s"')" = "true" ]
 }
 
-@test "hookUpgradeCRDs: Job extended with imagePullSecrets" {
-    pushd "$(chart_dir)" > /dev/stderr
-    local object
-    object=$(helm template \
-        --set controller.imagePullSecrets[0].name='pullSecret1' \
-        -s templates/hook-upgrade-crds.yaml \
-        . )
-
-    # assert that we have 4 documents using a base 0 index
-    [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
-
-    local job
-    job="$(echo "${object}" | yq 'select(di == 3)' | tee /dev/stderr)"
-    [ "$(echo "${job}" | yq '.kind == "Job"')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '.spec.backoffLimit == 5')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '.spec.template.spec.containers[0].command[0] == "/scripts/upgrade-crds"')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.containers[0].resources | length) == 2')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.containers[0].env | length == 1)')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.imagePullSecrets | length == 1)')" = "true" ]
-    [ "$(echo "${job}" | \
-      yq '(.spec.template.spec.imagePullSecrets[0].name == "pullSecret1")')" = "true" ]
-}
-
 @test "hookUpgradeCRDs: Job extended with imagePullPolicy" {
     pushd "$(chart_dir)" > /dev/stderr
     local object
@@ -260,4 +230,30 @@ load _helpers
       yq '(.spec.template.spec.containers[0].env | length == 1)')" = "true" ]
     [ "$(echo "${job}" | \
       yq '(.spec.template.spec.containers[0].imagePullPolicy == "_Always_")')" = "true" ]
+    popd > /dev/stderr
+}
+
+@test "hookUpgradeCRDs: ServiceAccount extended with imagePullSecrets" {
+    pushd "$(chart_dir)" > /dev/stderr
+    local object
+    object=$(helm template \
+        --set controller.imagePullSecrets[0].name='pullSecret1' \
+        --set controller.imagePullSecrets[1].name='pullSecret2' \
+        -s templates/hook-upgrade-crds.yaml \
+        . )
+
+    # assert that we have 4 documents using a base 0 index
+    [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
+
+    local sa
+    sa="$(echo "${object}" | yq 'select(di == 0)' | tee /dev/stderr)"
+    [ "$(echo "${sa}" | \
+      yq '.kind == "ServiceAccount"')" = "true" ]
+    [ "$(echo "${sa}" | \
+      yq '(.imagePullSecrets | length) == "2"')" = "true" ]
+    [ "$(echo "${sa}" | \
+      yq '(.imagePullSecrets[0].name == "pullSecret1")')" = "true" ]
+    [ "$(echo "${sa}" | \
+      yq '(.imagePullSecrets[1].name == "pullSecret2")')" = "true" ]
+    popd > /dev/stderr
 }

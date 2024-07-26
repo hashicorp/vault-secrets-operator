@@ -1116,14 +1116,9 @@ load _helpers
   cd "$(chart_dir)"
   local job
   job=$(helm template \
-      --set controller.imagePullSecrets[0].name='pullSecret1' \
       -s templates/deployment.yaml  \
       . | tee /dev/stderr |
       yq 'select(.kind == "Job")' | tee /dev/stderr)
-  [ "$(echo "${job}" | \
-    yq '(.spec.template.spec.imagePullSecrets | length == 1)')" = "true" ]
-  [ "$(echo "${job}" | \
-    yq '(.spec.template.spec.imagePullSecrets[0].name == "pullSecret1")')" = "true" ]
   [ "$(echo "${job}" | \
     yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
   [ "$(echo "${job}" | \
