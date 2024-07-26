@@ -194,9 +194,14 @@ spec:
       serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
       securityContext:
         {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
+      {{- with .Values.controller.imagePullSecrets }}
+      imagePullSecrets:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
+        imagePullPolicy: {{ .Values.controller.manager.image.pullPolicy }}
         args:
         - --uninstall
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}

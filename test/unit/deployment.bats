@@ -1111,3 +1111,29 @@ load _helpers
    actual=$(echo "$object" | yq '.strategy.rollingUpdate.maxUnavailable' | tee /dev/stderr)
    [ "${actual}" = "1" ]
 }
+
+@test "controller/Deployment: hookPreDelete Job" {
+  cd "$(chart_dir)"
+  local job
+  job=$(helm template \
+      --set controller.imagePullSecrets[0].name='pullSecret1' \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Job")' | tee /dev/stderr)
+  [ "$(echo "${job}" | \
+    yq '(.spec.template.spec.imagePullSecrets | length == 1)')" = "true" ]
+  [ "$(echo "${job}" | \
+    yq '(.spec.template.spec.imagePullSecrets[0].name == "pullSecret1")')" = "true" ]
+  [ "$(echo "${job}" | \
+    yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
+  [ "$(echo "${job}" | \
+    yq '.spec.template.spec.containers[0].command[0] == "/vault-secrets-operator"')" = "true" ]
+  [ "$(echo "${job}" | \
+    yq '(.spec.template.spec.containers[0].args | length) == "2"')" = "true" ]
+  [ "$(echo "${job}" | \
+    yq '.spec.template.spec.containers[0].args[0]  == "--uninstall"')" = "true" ]
+  [ "$(echo "${job}" | \
+    yq '.spec.template.spec.containers[0].args[1]  == "--pre-delete-hook-timeout-seconds=120"')" = "true" ]
+  [ "$(echo "${job}" | \
+    yq '(.spec.template.spec.containers[0].imagePullPolicy == "IfNotPresent")')" = "true" ]
+}

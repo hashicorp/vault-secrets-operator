@@ -26,7 +26,7 @@ load _helpers
         -s templates/hook-upgrade-crds.yaml \
         . | tee /dev/stderr)
 
-    # assert that we have 4 documents using an base 0 index
+    # assert that we have 4 documents using a base 0 index
     [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
 
     local sa
@@ -77,6 +77,8 @@ load _helpers
       yq '.metadata.annotations."helm.sh/hook-delete-policy" == "hook-succeeded,before-hook-creation"')" = "true" ]
     [ "$(echo "${job}"  | \
       yq '.metadata.annotations."helm.sh/hook-weight" == "99"')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.imagePullSecrets | length == 0)')" = "true" ]
 }
 
 
@@ -87,7 +89,7 @@ load _helpers
         -s templates/hook-upgrade-crds.yaml \
         . )
 
-    # assert that we have 4 documents using an base 0 index
+    # assert that we have 4 documents using a base 0 index
     [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
 
     local cr
@@ -114,7 +116,7 @@ load _helpers
         -s templates/hook-upgrade-crds.yaml \
         . )
 
-    # assert that we have 4 documents using an base 0 index
+    # assert that we have 4 documents using a base 0 index
     [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
 
     local job
@@ -130,6 +132,8 @@ load _helpers
       yq '(.spec.template.spec.containers[0].resources | length) == 2')" = "true" ]
     [ "$(echo "${job}" | \
       yq '(.spec.template.spec.containers[0].env | length == 1)')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '.spec.template.spec.containers[0].imagePullPolicy == "IfNotPresent"')" = "true" ]
 }
 
 @test "hookUpgradeCRDs: Job extended with defaults" {
@@ -139,7 +143,7 @@ load _helpers
         -s templates/hook-upgrade-crds.yaml \
         . )
 
-    # assert that we have 4 documents using an base 0 index
+    # assert that we have 4 documents using a base 0 index
     [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
 
     local job
@@ -170,7 +174,7 @@ load _helpers
         --set hooks.resources.requests.memory='65Mi' \
         . )
 
-    # assert that we have 4 documents using an base 0 index
+    # assert that we have 4 documents using a base 0 index
     [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
 
     local job
@@ -198,4 +202,62 @@ load _helpers
       yq '.spec.template.spec.containers[0].env[0].name == "VSO_UPGRADE_CRDS_TIMEOUT"')" = "true" ]
     [ "$(echo "${job}" | \
       yq '.spec.template.spec.containers[0].env[0].value == "64s"')" = "true" ]
+}
+
+@test "hookUpgradeCRDs: Job extended with imagePullSecrets" {
+    pushd "$(chart_dir)" > /dev/stderr
+    local object
+    object=$(helm template \
+        --set controller.imagePullSecrets[0].name='pullSecret1' \
+        -s templates/hook-upgrade-crds.yaml \
+        . )
+
+    # assert that we have 4 documents using a base 0 index
+    [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
+
+    local job
+    job="$(echo "${object}" | yq 'select(di == 3)' | tee /dev/stderr)"
+    [ "$(echo "${job}" | yq '.kind == "Job"')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '.spec.backoffLimit == 5')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '.spec.template.spec.containers[0].command[0] == "/scripts/upgrade-crds"')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.containers[0].resources | length) == 2')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.containers[0].env | length == 1)')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.imagePullSecrets | length == 1)')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.imagePullSecrets[0].name == "pullSecret1")')" = "true" ]
+}
+
+@test "hookUpgradeCRDs: Job extended with imagePullPolicy" {
+    pushd "$(chart_dir)" > /dev/stderr
+    local object
+    object=$(helm template \
+        --set controller.manager.image.pullPolicy='_Always_' \
+        -s templates/hook-upgrade-crds.yaml \
+        . )
+
+    # assert that we have 4 documents using a base 0 index
+    [ "$(echo "${object}" | yq '. | di' | tee /dev/stderr | tail -n1)" = "3" ]
+
+    local job
+    job="$(echo "${object}" | yq 'select(di == 3)' | tee /dev/stderr)"
+    [ "$(echo "${job}" | yq '.kind == "Job"')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '.spec.backoffLimit == 5')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.containers | length) == "1"')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '.spec.template.spec.containers[0].command[0] == "/scripts/upgrade-crds"')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.containers[0].resources | length) == 2')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.containers[0].env | length == 1)')" = "true" ]
+    [ "$(echo "${job}" | \
+      yq '(.spec.template.spec.containers[0].imagePullPolicy == "_Always_")')" = "true" ]
 }

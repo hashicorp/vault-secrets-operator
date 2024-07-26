@@ -88,9 +88,14 @@ spec:
       serviceAccountName: {{ template "vso.chart.fullname" . }}-upgrade-crds
       securityContext:
         {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
+      {{- with .Values.controller.imagePullSecrets }}
+      imagePullSecrets:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: pre-upgrade-crds
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
+        imagePullPolicy: {{ .Values.controller.manager.image.pullPolicy }}
         env:
         - name: VSO_UPGRADE_CRDS_TIMEOUT
           value: {{ .Values.hooks.upgradeCRDs.executionTimeout }}
