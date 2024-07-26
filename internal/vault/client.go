@@ -605,7 +605,7 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 
 	c.client.SetToken(secret.Auth.ClientToken)
 
-	c.authSecret = resp.Secret()
+	c.authSecret = secret
 	c.lastRenewal = time.Now().Unix()
 
 	id, err := c.hashAccessor()

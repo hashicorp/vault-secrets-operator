@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"sync"
 	"testing"
@@ -318,20 +317,18 @@ func Test_cachingClientFactory_callClientCallbacks(t *testing.T) {
 }
 
 type storageEncryptionClientTest struct {
-	name                  string
-	client                ctrlclient.Client
-	clientCacheKeyEncrypt ClientCacheKey
-	clientCache           ClientCache
-	setupTimeout          time.Duration
-	wantErr               assert.ErrorAssertionFunc
-	connObj               *secretsv1beta1.VaultConnection
-	authObj               *secretsv1beta1.VaultAuth
-	saObj                 *corev1.ServiceAccount
-	testHandler           *testHandler
-	factoryFunc           credentials.CredentialProviderFactoryFunc
-	testScenario          int
-	callCount             int
-	expectRequestCount    int
+	name               string
+	client             ctrlclient.Client
+	setupTimeout       time.Duration
+	wantErr            assert.ErrorAssertionFunc
+	connObj            *secretsv1beta1.VaultConnection
+	authObj            *secretsv1beta1.VaultAuth
+	saObj              *corev1.ServiceAccount
+	testHandler        *testHandler
+	factoryFunc        credentials.CredentialProviderFactoryFunc
+	testScenario       int
+	callCount          int
+	expectRequestCount int
 }
 
 func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
@@ -399,7 +396,6 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			w.WriteHeader(http.StatusOK)
 			return
 		} else {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -540,14 +536,10 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.clientCache == nil {
-				c, err := NewClientCache(5, nil, nil)
-				require.NoError(t, err)
-				tt.clientCache = c
-			}
+			clientCache, err := NewClientCache(5, nil, nil)
+			require.NoError(t, err)
 
 			if tt.testHandler != nil {
-				var l net.Listener
 				config, l := NewTestHTTPServer(t, tt.testHandler.handler())
 				t.Cleanup(func() {
 					assert.NoError(t, l.Close())
@@ -574,9 +566,8 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 			}
 
 			m := &cachingClientFactory{
-				clientCacheKeyEncrypt:     tt.clientCacheKeyEncrypt,
 				credentialProviderFactory: credentials.NewFakeCredentialProviderFactory(tt.factoryFunc),
-				cache:                     tt.clientCache,
+				cache:                     clientCache,
 				encClientSetupTimeout:     tt.setupTimeout,
 			}
 
@@ -643,8 +634,8 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				require.NoError(t, err)
 
 				assertStorageEncryptionClient(t, tt, got0)
-				assert.Equalf(t, 1, tt.clientCache.Len(), "unexpected cache length")
-				cachedClient, ok := tt.clientCache.Get(cacheKey)
+				assert.Equalf(t, 1, m.cache.Len(), "unexpected cache length")
+				cachedClient, ok := m.cache.Get(cacheKey)
 				if assert.Truef(t, ok, "expected client to be cached, cacheKey=%v", cacheKey) {
 					assert.Equalf(t, got0, cachedClient, "unexpected cached client")
 				}
@@ -668,11 +659,11 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				tt.authObj.Generation++
 				require.NoError(t, tt.client.Update(ctx, tt.authObj))
 				// remove the cached client to trigger a new client creation
-				tt.clientCache.Remove(cacheKey)
+				m.cache.Remove(cacheKey)
 				got3, err := m.storageEncryptionClient(ctx, tt.client)
 				require.NoError(t, err)
 				assert.NotEqual(t, cacheKey, m.clientCacheKeyEncrypt, "expected new cache key")
-				assert.Equalf(t, 1, tt.clientCache.Len(), "unexpected cache length")
+				assert.Equalf(t, 1, m.cache.Len(), "unexpected cache length")
 				assert.NotEqual(t, got2, got3)
 				assertStorageEncryptionClient(t, tt, got3)
 
@@ -685,7 +676,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				got4, err := m.storageEncryptionClient(ctx, tt.client)
 				require.Error(t, err)
 				assert.Nil(t, got4)
-				assert.Equalf(t, 0, tt.clientCache.Len(), "unexpected cache length")
+				assert.Equalf(t, 0, m.cache.Len(), "unexpected cache length")
 				assert.Equalf(t, ClientCacheKey(""), m.clientCacheKeyEncrypt, "unexpected cache key")
 
 				assert.Equalf(t, tt.expectRequestCount, tt.testHandler.requestCount, "unexpected request count")
