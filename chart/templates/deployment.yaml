@@ -11,7 +11,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
-{{ include "vso.imagePullSecrets" .}}
+{{ include "vso.imagePullSecrets" . }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -197,6 +197,7 @@ spec:
       containers:
       - name: pre-delete-controller-cleanup
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
+        imagePullPolicy: {{ .Values.controller.manager.image.pullPolicy }}
         args:
         - --uninstall
         - --pre-delete-hook-timeout-seconds={{ .Values.controller.preDeleteHookTimeoutSeconds }}
