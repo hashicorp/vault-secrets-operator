@@ -585,7 +585,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 			switch tt.testScenario {
 			case 1, 2:
 				require.GreaterOrEqual(t, tt.callCount, 10, "not enough calls for test scenario")
-				ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+				ctx_, cancel := context.WithTimeout(ctx, time.Second*30)
 				go func() {
 					defer cancel()
 					time.Sleep(time.Second * 30)
@@ -621,7 +621,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				var actualCallCount int
 				for i := 0; i < tt.callCount; i++ {
 					select {
-					case <-ctx.Done():
+					case <-ctx_.Done():
 						assert.Fail(t, "timeout waiting for client creation")
 						break
 					case <-doneCh:
