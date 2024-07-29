@@ -1,3 +1,26 @@
+## 0.8.1 (July 29th, 2024)
+
+Improvements:
+* Log build info on startup: [GH-872](https://github.com/hashicorp/vault-secrets-operator/pull/872)
+* API: Support setting the Vault request timeout on a VaultConnection: [GH-862](https://github.com/hashicorp/vault-secrets-operator/pull/862)
+
+Fix:
+* Fix: encryption client deadlocking the factory: [GH-868](https://github.com/hashicorp/vault-secrets-operator/pull/868)
+* Helm(hooks): honor imagePullPolicy and imagePullSecrets: [GH-873](https://github.com/hashicorp/vault-secrets-operator/pull/873)
+
+Build:
+* SEC-090: Automated trusted workflow pinning (2024-07-22): [GH-866](https://github.com/hashicorp/vault-secrets-operator/pull/866)
+* SEC-090: Automated trusted workflow pinning (2024-07-17): [GH-859](https://github.com/hashicorp/vault-secrets-operator/pull/859)
+
+Dependency Updates:
+* Bump github.com/onsi/gomega from 1.33.1 to 1.34.0: [GH-874](https://github.com/hashicorp/vault-secrets-operator/pull/874)
+* Bump google.golang.org/api from 0.188.0 to 0.189.0: [GH-875](https://github.com/hashicorp/vault-secrets-operator/pull/875)
+* Bump k8s.io/apiextensions-apiserver from 0.30.2 to 0.30.3: [GH-864](https://github.com/hashicorp/vault-secrets-operator/pull/864)
+* Bump k8s.io/client-go from 0.30.2 to 0.30.3: [GH-865](https://github.com/hashicorp/vault-secrets-operator/pull/865)
+* Bump ubi9/ubi-micro from 9.4-9 to 9.4-13: [GH-870](https://github.com/hashicorp/vault-secrets-operator/pull/870)
+* Bump ubi9/ubi-minimal from 9.4-1134 to 9.4-1194: [GH-869](https://github.com/hashicorp/vault-secrets-operator/pull/869)
+
+
 ## 0.8.0 (July 18th, 2024)
 **Important**
 
@@ -53,6 +76,7 @@ Dependency Updates:
 * Bump sigs.k8s.io/controller-runtime from 0.18.3 to 0.18.4: [GH-808](https://github.com/hashicorp/vault-secrets-operator/pull/808)
 * Bump ubi9/ubi-micro from 9.4-6.1716471860 to 9.4-9: [GH-819](https://github.com/hashicorp/vault-secrets-operator/pull/819)
 * Bump ubi9/ubi-minimal from 9.4-949.1717074713 to 9.4-1134: [GH-820](https://github.com/hashicorp/vault-secrets-operator/pull/820)
+
 
 ## 0.7.1 (May 30th, 2024)
 
