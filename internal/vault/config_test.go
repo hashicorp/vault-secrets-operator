@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-rootcerts"
+	"github.com/hashicorp/vault/api"
 	vconsts "github.com/hashicorp/vault/sdk/helper/consts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +23,10 @@ import (
 )
 
 func TestMakeVaultClient(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
 	testCABytes, err := generateCA()
 	require.NoError(t, err)
 
@@ -72,6 +78,16 @@ func TestMakeVaultClient(t *testing.T) {
 			CACert:        nil,
 			expectedError: nil,
 		},
+		"vault timeout not nil": {
+			vaultConfig: &ClientConfig{
+				VaultNamespace: "vault-test-namespace",
+				Timeout: &v1.Duration{
+					Duration: 10 * time.Second,
+				},
+			},
+			CACert:        nil,
+			expectedError: nil,
+		},
 		"headers": {
 			vaultConfig: &ClientConfig{
 				Headers: map[string]string{
@@ -114,7 +130,7 @@ func TestMakeVaultClient(t *testing.T) {
 				clientBuilder = clientBuilder.WithObjects(&caCertSecret)
 			}
 			fakeClient := clientBuilder.Build()
-			vaultClient, err := MakeVaultClient(context.Background(), tc.vaultConfig, fakeClient)
+			vaultClient, err := MakeVaultClient(ctx, tc.vaultConfig, fakeClient)
 			if tc.expectedError != nil {
 				assert.EqualError(t, err, tc.expectedError.Error())
 				assert.Nil(t, vaultClient)
@@ -137,11 +153,24 @@ func TestMakeVaultClient(t *testing.T) {
 					require.NotNil(t, tlsConfig.RootCAs)
 					expectedCertPool, err := rootcerts.AppendCertificate(testCABytes)
 					require.NoError(t, err)
-					assert.True(t, tlsConfig.RootCAs.Equal(expectedCertPool), "The CA cert in the client doesn't match the expected cert")
+					assert.Truef(t, tlsConfig.RootCAs.Equal(expectedCertPool),
+						"expected CA cert pool %v, got %v", expectedCertPool, tlsConfig.RootCAs,
+					)
 				}
 
 				expectedHeaders := makeVaultHttpHeaders(t, tc.vaultConfig.VaultNamespace, tc.vaultConfig.Headers)
-				assert.Equal(t, expectedHeaders, vaultClient.Headers(), "The headers in the client don't match the expected headers")
+				assert.Equalf(t, expectedHeaders, vaultClient.Headers(),
+					"expected headers %v, got %v", expectedHeaders, vaultClient.Headers(),
+				)
+
+				var expectedTimeout time.Duration
+				if tc.vaultConfig.Timeout != nil {
+					expectedTimeout = tc.vaultConfig.Timeout.Duration
+				} else {
+					expectedTimeout = api.DefaultConfig().Timeout
+				}
+				assert.Equalf(t, expectedTimeout, vaultConfig.Timeout,
+					"expected timeout %v, got %v", expectedTimeout, vaultConfig.Timeout)
 			}
 		})
 	}

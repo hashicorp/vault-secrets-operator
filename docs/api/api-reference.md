@@ -883,6 +883,7 @@ _Appears in:_
 | `tlsServerName` _string_ | TLSServerName to use as the SNI host for TLS connections. |  |  |
 | `caCertSecretRef` _string_ | CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`. |  |  |
 | `skipTLSVerify` _boolean_ | SkipTLSVerify for TLS connections. | false |  |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | Timeout applied to all Vault requests for this connection. If not set, the<br />default timeout from the Vault API client config is used. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
 
 
 

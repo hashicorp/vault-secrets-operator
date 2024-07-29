@@ -192,6 +192,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			VaultConnectionRef: consts.NameDefault,
 			Method:             vaultcredsconsts.ProviderMethodKubernetes,
 			Mount:              "kubernetes",
+			Namespace:          "baz-ns",
 			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
 				Role:           "vso-role",
 				ServiceAccount: consts.NameDefault,
@@ -378,9 +379,11 @@ func Test_defaultClient_Init(t *testing.T) {
 			c := &defaultClient{}
 
 			err := c.Init(ctx, tt.client, tt.authObj, tt.connObj, tt.providerNamespace, tt.opts)
-			tt.wantErr(t, err,
+			if !tt.wantErr(t, err,
 				fmt.Sprintf("Init(%v, %v, %v, %v, %v, %v)",
-					ctx, tt.client, tt.authObj, tt.connObj, tt.providerNamespace, tt.opts))
+					ctx, tt.client, tt.authObj, tt.connObj, tt.providerNamespace, tt.opts)) {
+				return
+			}
 
 			opts := tt.opts
 			if opts == nil {
@@ -396,6 +399,9 @@ func Test_defaultClient_Init(t *testing.T) {
 
 			assert.Equal(t, tt.connObj, c.connObj)
 			assert.Equal(t, tt.authObj, c.authObj)
+
+			assert.Equalf(t, c.Namespace(), tt.authObj.Spec.Namespace,
+				"expected namespace %q, got %q", tt.authObj.Spec.Namespace, c.Namespace())
 
 			if assert.NotNil(t, c.client, "vault client not set from Init()") {
 				return
@@ -1149,6 +1155,71 @@ func Test_defaultClient_Clone(t *testing.T) {
 			}
 
 			assert.Equalf(t, tt.want, got, "Clone(%v)", tt.namespace)
+		})
+	}
+}
+
+func TestNewClientConfigFromConnObj(t *testing.T) {
+	t.Parallel()
+	connObjBase := &secretsv1beta1.VaultConnection{
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address:         "https://vault.example.com",
+			Headers:         map[string]string{"foo": "bar"},
+			TLSServerName:   "baz.biff",
+			CACertSecretRef: "ca.crt",
+			SkipTLSVerify:   true,
+			Timeout:         &metav1.Duration{Duration: 10 * time.Second},
+		},
+	}
+
+	connObjNilTimeout := connObjBase.DeepCopy()
+	connObjNilTimeout.Spec.Timeout = nil
+
+	tests := []struct {
+		name    string
+		connObj *secretsv1beta1.VaultConnection
+		vaultNS string
+		want    *ClientConfig
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name:    "all-fields",
+			connObj: connObjBase,
+			want: &ClientConfig{
+				Address:         "https://vault.example.com",
+				Headers:         map[string]string{"foo": "bar"},
+				TLSServerName:   "baz.biff",
+				CACertSecretRef: "ca.crt",
+				SkipTLSVerify:   true,
+				Timeout:         &metav1.Duration{Duration: 10 * time.Second},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "nil-timeout",
+			connObj: connObjNilTimeout,
+			want: &ClientConfig{
+				Address:         "https://vault.example.com",
+				Headers:         map[string]string{"foo": "bar"},
+				TLSServerName:   "baz.biff",
+				CACertSecretRef: "ca.crt",
+				SkipTLSVerify:   true,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "nil-connObj",
+			wantErr: assert.Error,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewClientConfigFromConnObj(tt.connObj, tt.vaultNS)
+			if !tt.wantErr(t, err, fmt.Sprintf("NewClientConfigFromConnObj(%v, %v)", tt.connObj, tt.vaultNS)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got,
+				"NewClientConfigFromConnObj(%v, %v)", tt.connObj, tt.vaultNS)
 		})
 	}
 }

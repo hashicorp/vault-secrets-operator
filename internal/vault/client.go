@@ -27,14 +27,16 @@ import (
 )
 
 type ClientOptions struct {
-	SkipRenewal            bool
-	WatcherDoneCh          chan<- *ClientCallbackHandlerRequest
-	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
+	SkipRenewal               bool
+	WatcherDoneCh             chan<- *ClientCallbackHandlerRequest
+	GlobalVaultAuthOptions    *common.GlobalVaultAuthOptions
+	CredentialProviderFactory credentials.CredentialProviderFactory
 }
 
 func defaultClientOptions() *ClientOptions {
 	return &ClientOptions{
-		SkipRenewal: false,
+		SkipRenewal:               false,
+		CredentialProviderFactory: credentials.NewCredentialProviderFactory(),
 	}
 }
 
@@ -101,6 +103,7 @@ func NewClientWithLogin(ctx context.Context, client ctrlclient.Client, obj ctrlc
 // NewClientFromStorageEntry restores a Client from provided clientCacheStorageEntry.
 // If the restoration fails an error will be returned.
 func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, entry *clientCacheStorageEntry, opts *ClientOptions) (Client, error) {
+	logger := log.FromContext(ctx).WithName("newClientFromStorageEntry").WithValues("entry", entry)
 	authObj, err := common.FindVaultAuthByUID(ctx, client, entry.VaultAuthNamespace,
 		entry.VaultAuthUID, entry.VaultAuthGeneration)
 	if err != nil {
@@ -142,7 +145,9 @@ func NewClientFromStorageEntry(ctx context.Context, client ctrlclient.Client, en
 	c.Taint()
 	defer c.Untaint()
 
+	logger.V(consts.LogLevelDebug).Info("Validating restored client", "cacheKey", cacheKey)
 	if err := c.Validate(ctx); err != nil {
+		logger.V(consts.LogLevelDebug).Info("Invalid client after restoration", "cacheKey", cacheKey)
 		return nil, err
 	}
 
@@ -587,9 +592,20 @@ func (c *defaultClient) Login(ctx context.Context, client ctrlclient.Client) err
 		return errs
 	}
 
-	c.client.SetToken(resp.Secret().Auth.ClientToken)
+	secret := resp.Secret()
+	if secret == nil {
+		errs = fmt.Errorf("empty response from Vault, path=%q", path)
+		return errs
+	}
 
-	c.authSecret = resp.Secret()
+	if secret.Auth == nil {
+		errs = fmt.Errorf("auth secret is nil")
+		return errs
+	}
+
+	c.client.SetToken(secret.Auth.ClientToken)
+
+	c.authSecret = secret
 	c.lastRenewal = time.Now().Unix()
 
 	id, err := c.hashAccessor()
@@ -756,22 +772,16 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 		return errors.New("VaultAuth was nil")
 	}
 
-	cfg := &ClientConfig{
-		Address:         connObj.Spec.Address,
-		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
-		TLSServerName:   connObj.Spec.TLSServerName,
-		VaultNamespace:  authObj.Spec.Namespace,
-		K8sNamespace:    connObj.Namespace,
-		CACertSecretRef: connObj.Spec.CACertSecretRef,
-		Headers:         connObj.Spec.Headers,
+	cfg, err := NewClientConfigFromConnObj(connObj, authObj.Spec.Namespace)
+	if err != nil {
+		return err
 	}
-
 	vc, err := MakeVaultClient(ctx, cfg, client)
 	if err != nil {
 		return err
 	}
 
-	credentialProvider, err := credentials.NewCredentialProvider(ctx, client, authObj, providerNamespace)
+	credentialProvider, err := opts.CredentialProviderFactory.New(ctx, client, authObj, providerNamespace)
 	if err != nil {
 		return err
 	}
@@ -878,4 +888,26 @@ func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Res
 			Data: make(map[string]interface{}),
 		},
 	}, nil
+}
+
+// NewClientConfigFromConnObj creates a ClientConfig from a VaultConnection object.
+func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS string) (*ClientConfig, error) {
+	if connObj == nil {
+		return nil, errors.New("invalid nil VaultConnection")
+	}
+
+	cfg := &ClientConfig{
+		Address:         connObj.Spec.Address,
+		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
+		TLSServerName:   connObj.Spec.TLSServerName,
+		K8sNamespace:    connObj.Namespace,
+		CACertSecretRef: connObj.Spec.CACertSecretRef,
+		Headers:         connObj.Spec.Headers,
+		VaultNamespace:  vaultNS,
+	}
+
+	if connObj.Spec.Timeout != nil {
+		cfg.Timeout = connObj.Spec.Timeout
+	}
+	return cfg, nil
 }

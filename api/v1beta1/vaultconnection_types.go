@@ -7,9 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // VaultConnectionSpec defines the desired state of VaultConnection
 type VaultConnectionSpec struct {
 	// Address of the Vault server
@@ -23,6 +20,11 @@ type VaultConnectionSpec struct {
 	// SkipTLSVerify for TLS connections.
 	// +kubebuilder:default=false
 	SkipTLSVerify bool `json:"skipTLSVerify"`
+	// Timeout applied to all Vault requests for this connection. If not set, the
+	// default timeout from the Vault API client config is used.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }
 
 // VaultConnectionStatus defines the observed state of VaultConnection

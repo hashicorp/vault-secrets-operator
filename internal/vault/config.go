@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	vconsts "github.com/hashicorp/vault/sdk/helper/consts"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -38,6 +39,9 @@ type ClientConfig struct {
 	VaultNamespace string
 	// Headers are http headers to set on the Vault client
 	Headers map[string]string
+	// Timeout applied to all Vault requests. If not set, the default timeout from
+	// the Vault API client config is used.
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }
 
 // MakeVaultClient creates a Vault api.Client from a ClientConfig.
@@ -86,6 +90,10 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		CACertBytes:   b,
 	}); err != nil {
 		return nil, err
+	}
+
+	if cfg.Timeout != nil {
+		config.Timeout = cfg.Timeout.Duration
 	}
 
 	config.CloneToken = true

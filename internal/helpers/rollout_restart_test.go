@@ -17,13 +17,14 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func TestRolloutRestart(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	builder := newClientBuilder()
+	builder := testutils.NewFakeClientBuilder()
 	// use one second ago timestamp to compare against rollout restartAt
 	// since argo.Rollout's Spec.RestartAt rounds down to the nearest second
 	// and often equals to time.Now()
