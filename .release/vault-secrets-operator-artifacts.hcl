@@ -1,0 +1,14 @@
+schema = 1
+artifacts {
+  zip = [
+    "vault-secrets-operator_${version}_linux_amd64.zip",
+    "vault-secrets-operator_${version}_linux_arm64.zip",
+  ]
+  container = [
+    "vault-secrets-operator_release-default_linux_amd64_${version}_${commit_sha}.docker.tar",
+    "vault-secrets-operator_release-default_linux_arm64_${version}_${commit_sha}.docker.tar",
+    "vault-secrets-operator_release-ubi-redhat_linux_amd64_${version}_${commit_sha}.docker.redhat.tar",
+    "vault-secrets-operator_release-ubi_linux_amd64_${version}_${commit_sha}.docker.tar",
+    "vault-secrets-operator_release-ubi_linux_arm64_${version}_${commit_sha}.docker.tar",
+  ]
+}
