@@ -434,6 +434,21 @@ func TestVaultStaticSecret(t *testing.T) {
 				awaitRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
 			}
 		}
+
+		if expectInitial && obj.Spec.SyncConfig != nil && obj.Spec.SyncConfig.InstantUpdates {
+			// Ensure the event watcher is started so that subsequent updates
+			// are detected and synced.
+			objEvents := corev1.EventList{}
+			require.NoError(t, crdClient.List(ctx, &objEvents,
+				ctrlclient.InNamespace(obj.Namespace),
+				ctrlclient.MatchingFields{
+					"involvedObject.name": obj.Name,
+					"reason":              consts.ReasonEventWatcherStarted,
+				},
+			))
+			assert.Greater(t, len(objEvents.Items), 0,
+				"expected EventWatcherStarted event for %s", obj.Name)
+		}
 	}
 
 	for _, tt := range tests {
