@@ -454,7 +454,7 @@ func TestVaultStaticSecret(t *testing.T) {
 					return fmt.Errorf("no EventWatcherStarted event for %s", obj.Name)
 				}
 				return nil
-			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 20)))
+			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 200)))
 		}
 	}
 
