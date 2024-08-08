@@ -679,8 +679,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			// set a high default lease ttl to avoid renewals during the test
 			"vault_db_default_lease_ttl": 600,
 			"with_static_role_scheduled": withStaticRoleScheduled,
-			// disabling until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released
-			"with_xns": false,
+			"with_xns":                   true,
 		},
 	}
 	if entTests {
@@ -851,10 +850,6 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.xns {
-				t.Skipf("skipping xns test %s, until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released", tt.name)
-			}
-
 			if tt.xns && !outputs.WithXns {
 				t.Skipf("skipping xns test %s, test infrastructure not supported", tt.name)
 			}
