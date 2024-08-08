@@ -436,18 +436,25 @@ func TestVaultStaticSecret(t *testing.T) {
 		}
 
 		if expectInitial && obj.Spec.SyncConfig != nil && obj.Spec.SyncConfig.InstantUpdates {
-			// Ensure the event watcher is started so that subsequent updates
+			// Ensure the event watcher has started so that subsequent updates
 			// are detected and synced.
-			objEvents := corev1.EventList{}
-			require.NoError(t, crdClient.List(ctx, &objEvents,
-				ctrlclient.InNamespace(obj.Namespace),
-				ctrlclient.MatchingFields{
-					"involvedObject.name": obj.Name,
-					"reason":              consts.ReasonEventWatcherStarted,
-				},
-			))
-			assert.Greater(t, len(objEvents.Items), 0,
-				"expected EventWatcherStarted event for %s", obj.Name)
+			assert.NoError(t, backoff.Retry(func() error {
+				objEvents := corev1.EventList{}
+				err := crdClient.List(ctx, &objEvents,
+					ctrlclient.InNamespace(obj.Namespace),
+					ctrlclient.MatchingFields{
+						"involvedObject.name": obj.Name,
+						"reason":              consts.ReasonEventWatcherStarted,
+					},
+				)
+				if err != nil {
+					return err
+				}
+				if len(objEvents.Items) == 0 {
+					return fmt.Errorf("no EventWatcherStarted event for %s", obj.Name)
+				}
+				return nil
+			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10)))
 		}
 	}
 
