@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -433,7 +434,9 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 
 	// We made it past the initial websocket connection, so emit a "good" event
 	// status
-	logger.V(consts.LogLevelDebug).Info("VaultStaticSecret object is %#v", o)
+	logger.V(consts.LogLevelDebug).Info("VaultStaticSecret object is", "object", o)
+	m, err := meta.Accessor(o)
+	logger.V(consts.LogLevelDebug).Info("meta accessor", "meta", m, "err", err)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
