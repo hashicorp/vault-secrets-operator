@@ -433,6 +433,7 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 
 	// We made it past the initial websocket connection, so emit a "good" event
 	// status
+	logger.V(consts.LogLevelDebug).Info("VaultStaticSecret object is %#v", o)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
