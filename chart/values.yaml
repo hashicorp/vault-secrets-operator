@@ -121,7 +121,7 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: gcr.io/kubebuilder/kube-rbac-proxy
-      tag: v0.15.0
+      tag: v0.16.0
 
     # Configures the default resources for the kube rbac proxy container.
     # For more information on configuring resources, see the K8s documentation:
