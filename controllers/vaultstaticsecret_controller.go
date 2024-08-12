@@ -210,6 +210,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
 	}
+	logger.V(consts.LogLevelDebug).Info("CHECK after updateStatus(): VaultStaticSecret object is", "object", o, "path", o.Spec.Path, "dest", o.Spec.Destination)
 
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
@@ -250,6 +251,7 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 
 func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, c vault.Client) error {
 	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
+	logger.V(consts.LogLevelDebug).Info("CHECK VaultStaticSecret object is", "object", o, "path", o.Spec.Path, "dest", o.Spec.Destination)
 	name := client.ObjectKeyFromObject(o)
 
 	meta, ok := r.eventWatcherRegistry.Get(name)
@@ -315,11 +317,14 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 // to any errors returned.
 func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
+	logger.V(consts.LogLevelDebug).Info("CHECK VaultStaticSecret object is", "object", o, "path", o.Spec.Path, "dest", o.Spec.Destination)
 	name := client.ObjectKeyFromObject(o)
 	defer func() {
 		r.eventWatcherRegistry.Delete(name)
 		close(stoppedCh)
 	}()
+
+	logger.V(consts.LogLevelDebug).Info("CHECK VaultStaticSecret name is", "name", name)
 
 	// Use the same backoff options used for Vault reads in Reconcile()
 	retryBackoff := backoff.NewExponentialBackOff(r.BackOffRegistry.opts...)
@@ -434,9 +439,9 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 
 	// We made it past the initial websocket connection, so emit a "good" event
 	// status
-	logger.V(consts.LogLevelDebug).Info("VaultStaticSecret object is", "object", o)
+	logger.V(consts.LogLevelDebug).Info("CHECK VaultStaticSecret object is", "object", o, "path", o.Spec.Path, "dest", o.Spec.Destination)
 	m, err := meta.Accessor(o)
-	logger.V(consts.LogLevelDebug).Info("meta accessor", "meta", m, "err", err)
+	logger.V(consts.LogLevelDebug).Info("CHECK meta accessor", "meta", m, "err", err)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
