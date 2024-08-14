@@ -69,7 +69,7 @@ resource "kubernetes_manifest" "vault-connection-default" {
       namespace = local.operator_namespace
     }
     spec = {
-      address = var.
+      address = var.k8s_vault_connection_address
     }
   }
 

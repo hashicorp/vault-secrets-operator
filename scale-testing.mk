@@ -7,7 +7,6 @@ EKS_K8S_VERSION ?= 1.26
 
 # directories for cloud hosted k8s infrastructure for running tests
 # root directory for all integration tests
-#INTEGRATION_TEST_ROOT = ./test/integration
 TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing
 TF_EKS_STATE_DIR ?= $(TF_EKS_SRC_DIR)/state
 
