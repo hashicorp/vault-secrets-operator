@@ -53,6 +53,22 @@ variable "vault_test_namespace" {
   default = ""
 }
 
+variable "cpu_limits" {
+  default = ""
+}
+
+variable "memory_limits" {
+  default = ""
+}
+
+variable "cpu_requests" {
+  default = ""
+}
+
+variable "memory_requests" {
+  default = ""
+}
+
 variable "client_cache_config" {
   type = object({
     persistence_model                = string

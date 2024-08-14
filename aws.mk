@@ -16,6 +16,7 @@ include ./Makefile
 .PHONY: create-eks
 create-eks: ## Create a new EKS cluster
 	@mkdir -p $(TF_EKS_STATE_DIR)
+	rm -f $(TF_EKS_STATE_DIR)/*.tf
 	cp -v $(TF_EKS_SRC_DIR)/*.tf $(TF_EKS_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) init -upgrade
 	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) apply -auto-approve \

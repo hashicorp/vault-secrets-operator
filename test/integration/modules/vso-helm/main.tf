@@ -1,8 +1,18 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
+locals {
+  name = "vso-${random_string.suffix.result}"
+}
+
+resource "random_string" "suffix" {
+  length  = 4
+  special = false
+  upper   = false
+}
+
 resource "helm_release" "vault-secrets-operator" {
-  name             = "test"
+  name             = local.name
   namespace        = var.operator_namespace
   create_namespace = true
   wait             = true
@@ -118,5 +128,33 @@ resource "helm_release" "vault-secrets-operator" {
   set_list {
     name  = "controller.rbac.clusterRoleAggregation.editorRoles"
     value = ["*"]
+  }
+  dynamic "set" {
+    for_each = var.cpu_limits != "" ? [""] : []
+    content {
+      name  = "controller.manager.resources.limits.cpu"
+      value = var.cpu_limits
+    }
+  }
+  dynamic "set" {
+    for_each = var.memory_limits != "" ? [""] : []
+    content {
+      name  = "controller.manager.resources.limits.memory"
+      value = var.memory_limits
+    }
+  }
+  dynamic "set" {
+    for_each = var.cpu_requests != "" ? [""] : []
+    content {
+      name  = "controller.manager.resources.requests.cpu"
+      value = var.cpu_requests
+    }
+  }
+  dynamic "set" {
+    for_each = var.memory_requests != "" ? [""] : []
+    content {
+      name  = "controller.manager.resources.requests.memory"
+      value = var.memory_requests
+    }
   }
 }
