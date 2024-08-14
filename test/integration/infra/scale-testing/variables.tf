@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 variable "kubernetes_version" {
-  type = string
+  type    = string
   default = "1.26"
 }
 
@@ -17,7 +17,7 @@ variable "vpc_id" {
 }
 
 variable "vpc_private_subnets" {
-  type = list(string)
+  type    = list(string)
   default = []
 }
 

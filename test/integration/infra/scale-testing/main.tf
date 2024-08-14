@@ -51,7 +51,7 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  enable_irsa = true
+  enable_irsa                              = true
   enable_cluster_creator_admin_permissions = true
 
   eks_managed_node_group_defaults = {
@@ -98,12 +98,12 @@ module "eks" {
 }
 
 data "aws_eks_cluster" "cluster" {
-  name = module.eks.cluster_name
+  name       = module.eks.cluster_name
   depends_on = [module.eks.cluster_endpoint]
 }
 
 data "aws_eks_cluster_auth" "cluster" {
-  name = module.eks.cluster_name
+  name       = module.eks.cluster_name
   depends_on = [module.eks.cluster_endpoint]
 }
 
@@ -124,13 +124,13 @@ module "vso-helm" {
 }
 
 module "vault" {
-  source = "../../../modules/vault"
-  vault_license_path = var.vault_license_path
-  k8s_namespace = var.k8s_namespace
-  k8s_service_account = var.k8s_service_account
-  k8s_config_context = var.k8s_config_context
-  k8s_config_path = var.k8s_config_path
+  source               = "../../../modules/vault"
+  vault_license_path   = var.vault_license_path
+  k8s_namespace        = var.k8s_namespace
+  k8s_service_account  = var.k8s_service_account
+  k8s_config_context   = var.k8s_config_context
+  k8s_config_path      = var.k8s_config_path
   vault_image_repo_ent = var.vault_image_repo_ent
-  vault_image_tag_ent = var.vault_image_tag_ent
-  vault_chart_version = var.vault_chart_version
+  vault_image_tag_ent  = var.vault_image_tag_ent
+  vault_chart_version  = var.vault_chart_version
 }
