@@ -39,7 +39,7 @@ resource "helm_release" "vault" {
   }
   set {
     name  = "server.image.tag"
-    value = local.vault_image_tag
+    value = local.vault_image_tag_ent
   }
   set {
     name  = "server.logLevel"
