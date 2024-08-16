@@ -124,6 +124,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		AppName: o.Spec.AppName,
 		Types: []string{
 			helpers.HVSSecretTypeKV,
+			helpers.HVSSecretTypeRotating,
 		},
 	}
 

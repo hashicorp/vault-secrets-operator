@@ -1304,6 +1304,29 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 					},
 					Type: HVSSecretTypeKV,
 				},
+				{
+					CreatedAt:     strfmt.NewDateTime(),
+					CreatedByID:   "vso-2 uuid",
+					LatestVersion: 1,
+					Name:          "rotatingfoo",
+					Provider:      "providerfoo",
+					SyncStatus:    nil,
+					RotatingVersion: &models.Secrets20231128OpenSecretRotatingVersion{
+						CreatedAt:   strfmt.DateTime{},
+						CreatedByID: "vault-secrets-rotator",
+						ExpiresAt:   strfmt.DateTime{},
+						Keys: []string{
+							"api_key_one",
+							"api_key_two",
+						},
+						Values: map[string]string{
+							"api_key_one": "123456",
+							"api_key_two": "654321",
+						},
+						Version: 1,
+					},
+					Type: HVSSecretTypeRotating,
+				},
 			},
 		},
 	}
@@ -1366,9 +1389,11 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			name: "valid",
 			resp: respValid,
 			want: map[string][]byte{
-				"bar":            []byte("foo"),
-				"foo":            []byte("qux"),
-				SecretDataKeyRaw: rawValid,
+				"bar":                     []byte("foo"),
+				"foo":                     []byte("qux"),
+				"rotatingfoo_api_key_one": []byte("123456"),
+				"rotatingfoo_api_key_two": []byte("654321"),
+				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
 		},
@@ -1387,9 +1412,11 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				},
 			},
 			want: map[string][]byte{
-				"bar":            []byte("FOO"),
-				"foo":            []byte("qux"),
-				SecretDataKeyRaw: rawValid,
+				"bar":                     []byte("FOO"),
+				"foo":                     []byte("qux"),
+				"rotatingfoo_api_key_one": []byte("123456"),
+				"rotatingfoo_api_key_two": []byte("654321"),
+				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
 		},
@@ -1428,12 +1455,31 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
       "version": 2
     },
     "type": "kv"
+  },
+  "rotatingfoo": {
+    "created_at": "1970-01-01T00:00:00.000Z",
+    "latest_version": 1,
+    "name": "rotatingfoo",
+    "provider": "providerfoo",
+    "rotating_version": {
+      "created_at": "0001-01-01T00:00:00.000Z",
+      "expires_at": "0001-01-01T00:00:00.000Z",
+      "keys": [
+        "api_key_one",
+        "api_key_two"
+      ],
+      "revoked_at": "0001-01-01T00:00:00.000Z",
+      "version": 1
+    },
+    "type": "rotating"
   }
 }`,
 				),
-				"bar":            []byte("foo"),
-				"foo":            []byte("qux"),
-				SecretDataKeyRaw: rawValid,
+				"bar":                     []byte("foo"),
+				"foo":                     []byte("qux"),
+				"rotatingfoo_api_key_one": []byte("123456"),
+				"rotatingfoo_api_key_two": []byte("654321"),
+				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
 		},
@@ -1465,8 +1511,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				Includes: []string{"foo"},
 			},
 			want: map[string][]byte{
-				"foo":            []byte("qux"),
-				SecretDataKeyRaw: rawValid,
+				"foo":                     []byte("qux"),
+				"rotatingfoo_api_key_one": []byte("123456"),
+				"rotatingfoo_api_key_two": []byte("654321"),
+				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
 		},
@@ -1517,8 +1565,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				ExcludeRaw: true,
 			},
 			want: map[string][]byte{
-				"bar": []byte("foo"),
-				"foo": []byte("qux"),
+				"bar":                     []byte("foo"),
+				"foo":                     []byte("qux"),
+				"rotatingfoo_api_key_one": []byte("123456"),
+				"rotatingfoo_api_key_two": []byte("654321"),
 			},
 			wantErr: assert.NoError,
 		},
