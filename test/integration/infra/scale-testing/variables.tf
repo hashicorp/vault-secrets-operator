@@ -3,7 +3,7 @@
 
 variable "kubernetes_version" {
   type    = string
-  default = "1.26"
+  default = "1.30"
 }
 
 variable "region" {
@@ -187,7 +187,7 @@ variable "vault_enterprise" {
 }
 
 variable "vault_chart_version" {
-  default = "0.27.0"
+  default = "0.28.1"
 }
 
 variable "install_kube_prometheus" {

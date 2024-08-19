@@ -3,7 +3,7 @@
 
 # AWS variables for cloud hosted k8s testing
 AWS_REGION ?= us-east-2
-EKS_K8S_VERSION ?= 1.26
+EKS_K8S_VERSION ?= 1.30
 
 # directories for cloud hosted k8s infrastructure for running tests
 TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks

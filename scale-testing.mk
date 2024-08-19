@@ -3,7 +3,7 @@
 
 # AWS variables for cloud hosted k8s testing
 AWS_REGION ?= us-east-2
-EKS_K8S_VERSION ?= 1.26
+EKS_K8S_VERSION ?= 1.30
 
 # directories for cloud hosted k8s infrastructure for running tests
 # root directory for all integration tests
@@ -15,8 +15,12 @@ include ./Makefile
 ##@ EKS
 
 .PHONY: create-eks
-create-eks: ## Create a new EKS cluster
+create-eks: set-vault-license ## Create a new EKS cluster
 	@mkdir -p $(TF_EKS_STATE_DIR)
+ifeq ($(VAULT_ENTERPRISE), true)
+    ## ensure that the license is *not* emitted to the console
+	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_EKS_STATE_DIR)/license.auto.tfvars
+endif
 	rm -f $(TF_EKS_STATE_DIR)/*.tf
 	cp -v $(TF_EKS_SRC_DIR)/*.tf $(TF_EKS_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) init -upgrade

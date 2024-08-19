@@ -14,7 +14,7 @@ resource "kubernetes_secret" "vault_license" {
     name      = "vault-license"
   }
   data = {
-    license = local.vault_license
+    license = var.vault_license
   }
 }
 
