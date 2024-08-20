@@ -21,10 +21,6 @@ variable "vpc_private_subnets" {
   default = []
 }
 
-variable "eks_node_group_instance_type" {
-  default = 2
-}
-
 variable "eks_node_group_instance_count" {
   default = 2
 }

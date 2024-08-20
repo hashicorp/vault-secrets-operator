@@ -8,7 +8,15 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "2.16.1"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "2.13.1"
+    }
   }
+}
+
+provider "aws" {
+  region = var.region
 }
 
 provider "kubernetes" {
