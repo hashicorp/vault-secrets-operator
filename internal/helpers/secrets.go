@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
-	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/models"
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
+	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,7 +24,10 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/utils"
 )
 
-const SecretDataKeyRaw = "_raw"
+const (
+	SecretDataKeyRaw = "_raw"
+	HVSSecretTypeKV  = "kv"
+)
 
 var SecretDataErrorContainsRaw = fmt.Errorf("key '%s' not permitted in Secret data", SecretDataKeyRaw)
 
@@ -494,12 +497,11 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	data := make(map[string][]byte)
 	hasTemplates := len(opt.KeyedTemplates) > 0
 	for _, v := range p.Secrets {
-		ver := v.Version
-		if ver == nil {
+		if v.StaticVersion == nil {
 			continue
 		}
 
-		if ver.Type != "kv" {
+		if v.Type != HVSSecretTypeKV {
 			continue
 		}
 
@@ -513,7 +515,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 			// maps secret name to its secret metadata
 			metadata[v.Name] = m
 		}
-		secrets[v.Name] = ver.Value
+		secrets[v.Name] = v.StaticVersion.Value
 	}
 
 	if hasTemplates {
@@ -526,7 +528,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	return makeK8sData(secrets, data, raw, opt)
 }
 
-func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret) (map[string]any, error) {
+func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20231128OpenSecret) (map[string]any, error) {
 	b, err := v.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -534,7 +536,13 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20230613OpenSecret)
 
 	// unmarshal to non-open secret, which should/must not contain any
 	// secret/confidential data.
-	var ss models.Secrets20230613Secret
+	//
+	// Note: In API 2023-11-28, this conversion will lose the CreatedByID
+	// field from OpenSecret{}, since it doesn't correspond to CreatedBy in
+	// Secret{}
+	// https://github.com/hashicorp/hcp-sdk-go/blob/v0.106.0/clients/cloud-vault-secrets/preview/2023-11-28/models/secrets20231128_open_secret.go#L27
+	// https://github.com/hashicorp/hcp-sdk-go/blob/v0.106.0/clients/cloud-vault-secrets/preview/2023-11-28/models/secrets20231128_secret.go#L27
+	var ss models.Secrets20231128Secret
 	if err := json.Unmarshal(b, &ss); err != nil {
 		return nil, err
 	}

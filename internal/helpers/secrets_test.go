@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/go-openapi/strfmt"
-	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
-	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/models"
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
+	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -1274,42 +1274,35 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 	t.Parallel()
 
 	respValid := &hvsclient.OpenAppSecretsOK{
-		Payload: &models.Secrets20230613OpenAppSecretsResponse{
-			Secrets: []*models.Secrets20230613OpenSecret{
+		Payload: &models.Secrets20231128OpenAppSecretsResponse{
+			Secrets: []*models.Secrets20231128OpenSecret{
 				{
-					CreatedAt: strfmt.NewDateTime(),
-					CreatedBy: &models.Secrets20230613Principal{
-						Name: "vso",
-					},
-					LatestVersion: "",
+					CreatedAt:     strfmt.NewDateTime(),
+					CreatedByID:   "vso uuid",
+					LatestVersion: 1,
 					Name:          "bar",
 					SyncStatus:    nil,
-					Version: &models.Secrets20230613OpenSecretVersion{
-						CreatedAt: strfmt.DateTime{},
-						CreatedBy: &models.Secrets20230613Principal{
-							Name: "vso-0",
-						},
-						Type:    "kv",
-						Value:   "foo",
-						Version: "1",
+					StaticVersion: &models.Secrets20231128OpenSecretStaticVersion{
+						CreatedAt:   strfmt.DateTime{},
+						CreatedByID: "vso uuid",
+						Value:       "foo",
+						Version:     1,
 					},
+					Type: HVSSecretTypeKV,
 				},
 				{
-					CreatedAt: strfmt.NewDateTime(),
-					CreatedBy: &models.Secrets20230613Principal{
-						Name: "vso-1",
-					},
-					LatestVersion: "",
+					CreatedAt:     strfmt.NewDateTime(),
+					CreatedByID:   "vso-1 uuid",
+					LatestVersion: 2,
 					Name:          "foo",
 					SyncStatus:    nil,
-					Version: &models.Secrets20230613OpenSecretVersion{
-						CreatedAt: strfmt.DateTime{},
-						CreatedBy: &models.Secrets20230613Principal{
-							Name: "vso-1",
-						},
-						Type:  "kv",
-						Value: "qux",
+					StaticVersion: &models.Secrets20231128OpenSecretStaticVersion{
+						CreatedAt:   strfmt.DateTime{},
+						CreatedByID: "vso-1 uuid",
+						Value:       "qux",
+						Version:     2,
 					},
+					Type: HVSSecretTypeKV,
 				},
 			},
 		},
@@ -1319,25 +1312,20 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	respValidUnsupportedType := &hvsclient.OpenAppSecretsOK{
-		Payload: &models.Secrets20230613OpenAppSecretsResponse{
-			Secrets: []*models.Secrets20230613OpenSecret{
+		Payload: &models.Secrets20231128OpenAppSecretsResponse{
+			Secrets: []*models.Secrets20231128OpenSecret{
 				{
 					Name: "biff",
-					Version: &models.Secrets20230613OpenSecretVersion{
-						CreatedAt: strfmt.DateTime{},
-						CreatedBy: nil,
-						Type:      "kv",
-						Value:     "baz",
+					Type: HVSSecretTypeKV,
+					StaticVersion: &models.Secrets20231128OpenSecretStaticVersion{
+						CreatedAt:   strfmt.DateTime{},
+						CreatedByID: "",
+						Value:       "baz",
 					},
 				},
 				{
 					Name: "baz",
-					Version: &models.Secrets20230613OpenSecretVersion{
-						CreatedAt: strfmt.DateTime{},
-						CreatedBy: nil,
-						Type:      "_unsupported_",
-						Value:     "qux",
-					},
+					Type: "_unsupported_",
 				},
 			},
 		},
@@ -1347,21 +1335,21 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	respContainsRaw := &hvsclient.OpenAppSecretsOK{
-		Payload: &models.Secrets20230613OpenAppSecretsResponse{
-			Secrets: []*models.Secrets20230613OpenSecret{
+		Payload: &models.Secrets20231128OpenAppSecretsResponse{
+			Secrets: []*models.Secrets20231128OpenSecret{
 				{
 					CreatedAt:     strfmt.DateTime{},
-					CreatedBy:     nil,
-					LatestVersion: "",
+					CreatedByID:   "",
+					LatestVersion: 1,
 					Name:          SecretDataKeyRaw,
 					SyncStatus:    nil,
-					Version: &models.Secrets20230613OpenSecretVersion{
-						CreatedAt: strfmt.DateTime{},
-						CreatedBy: nil,
-						Type:      "kv",
-						Value:     "foo",
-						Version:   "",
+					StaticVersion: &models.Secrets20231128OpenSecretStaticVersion{
+						CreatedAt:   strfmt.DateTime{},
+						CreatedByID: "",
+						Value:       "foo",
+						Version:     1,
 					},
+					Type: HVSSecretTypeKV,
 				},
 			},
 		},
@@ -1423,32 +1411,23 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"metadata.json": []byte(`{
   "bar": {
     "created_at": "1970-01-01T00:00:00.000Z",
-    "created_by": {
-      "name": "vso"
-    },
+    "latest_version": 1,
     "name": "bar",
-    "version": {
+    "static_version": {
       "created_at": "0001-01-01T00:00:00.000Z",
-      "created_by": {
-        "name": "vso-0"
-      },
-      "type": "kv",
-      "version": "1"
-    }
+      "version": 1
+    },
+    "type": "kv"
   },
   "foo": {
     "created_at": "1970-01-01T00:00:00.000Z",
-    "created_by": {
-      "name": "vso-1"
-    },
+    "latest_version": 2,
     "name": "foo",
-    "version": {
+    "static_version": {
       "created_at": "0001-01-01T00:00:00.000Z",
-      "created_by": {
-        "name": "vso-1"
-      },
-      "type": "kv"
-    }
+      "version": 2
+    },
+    "type": "kv"
   }
 }`,
 				),

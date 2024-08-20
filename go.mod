@@ -19,7 +19,7 @@ require (
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.3.0
 	github.com/hashicorp/go-version v1.7.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hashicorp/hcp-sdk-go v0.65.0
+	github.com/hashicorp/hcp-sdk-go v0.106.0
 	github.com/hashicorp/vault/api v1.13.0
 	github.com/hashicorp/vault/sdk v0.13.0
 	github.com/kelseyhightower/envconfig v1.4.0
