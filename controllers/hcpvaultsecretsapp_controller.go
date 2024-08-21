@@ -11,7 +11,7 @@ import (
 	"time"
 
 	httptransport "github.com/go-openapi/runtime/client"
-	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
 	hcpconfig "github.com/hashicorp/hcp-sdk-go/config"
 	hcpclient "github.com/hashicorp/hcp-sdk-go/httpclient"
 	"github.com/hashicorp/hcp-sdk-go/profile"
@@ -122,6 +122,9 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	params := &hvsclient.OpenAppSecretsParams{
 		Context: ctx,
 		AppName: o.Spec.AppName,
+		Types: []string{
+			helpers.HVSSecretTypeKV,
+		},
 	}
 
 	resp, err := c.OpenAppSecrets(params, nil)
