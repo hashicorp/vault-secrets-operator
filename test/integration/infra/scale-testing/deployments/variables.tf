@@ -1,37 +1,13 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-variable "kubernetes_version" {
-  type    = string
-  default = "1.30"
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-2"
-}
-
-variable "vpc_id" {
-  default = ""
-}
-
-variable "vpc_private_subnets" {
-  type    = list(string)
-  default = []
-}
-
-variable "eks_node_group_instance_count" {
-  default = 2
-}
-
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }
 
 # The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
 variable "operator_helm_chart_path" {
-  default = "../../../../../chart"
+  default = "../../../../../../chart"
 }
 
 variable "enable_default_connection" {
