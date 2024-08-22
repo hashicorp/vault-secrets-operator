@@ -14,24 +14,6 @@ TF_DEPLOY_STATE_DIR ?= $(TF_DEPLOY_SRC_DIR)/state
 
 include ./Makefile
 
-.PHONY: set-vault-license
-set-vault-license:
-ifeq ($(VAULT_ENTERPRISE), true)
-ifdef VAULT_LICENSE_CI
-	@echo Getting license from VAULT_LICENSE_CI
-	$(eval _VAULT_LICENSE=$(shell printenv VAULT_LICENSE_CI))
-else ifdef VAULT_LICENSE
-	@echo Getting license from VAULT_LICENSE
-	$(eval _VAULT_LICENSE=$(shell printenv VAULT_LICENSE))
-else ifdef VAULT_LICENSE_PATH
-	@echo Getting license from VAULT_LICENSE_PATH
-	$(eval _VAULT_LICENSE=$(shell cat $(VAULT_LICENSE_PATH)))
-	@test -n "$(_VAULT_LICENSE)" || ( echo vault license is empty; exit 1)
-else
-	$(error no valid vault license source provided, choices are VAULT_LICENSE_CI, VAULT_LICENSE, VAULT_LICENSE_PATH)
-endif
-endif
-
 .PHONY: create-eks
 create-eks: set-vault-license ## Create a new EKS cluster
 	@mkdir -p $(TF_EKS_STATE_DIR)
@@ -48,7 +30,7 @@ endif
 	rm -f $(TF_EKS_STATE_DIR)/*.tfvars
 
 .PHONY: deploy-workload
-deploy-workload: create-eks ## Deploy the workload to the EKS cluster
+deploy-workload: set-vault-license ## Deploy the workload to the EKS cluster
 	@mkdir -p $(TF_DEPLOY_STATE_DIR)
 	rm -f $(TF_DEPLOY_STATE_DIR)/*.tf
 	cp -v $(TF_DEPLOY_SRC_DIR)/*.tf $(TF_DEPLOY_STATE_DIR)/.
