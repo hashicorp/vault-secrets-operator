@@ -15,12 +15,8 @@ TF_DEPLOY_STATE_DIR ?= $(TF_DEPLOY_SRC_DIR)/state
 include ./Makefile
 
 .PHONY: create-eks
-create-eks: set-vault-license ## Create a new EKS cluster
+create-eks: ## Create a new EKS cluster
 	@mkdir -p $(TF_EKS_STATE_DIR)
-ifeq ($(VAULT_ENTERPRISE), true)
-    ## ensure that the license is *not* emitted to the console
-	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_EKS_STATE_DIR)/license.auto.tfvars
-endif
 	rm -f $(TF_EKS_STATE_DIR)/*.tf
 	cp -v $(TF_EKS_SRC_DIR)/*.tf $(TF_EKS_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) init -upgrade
@@ -32,6 +28,10 @@ endif
 .PHONY: deploy-workload
 deploy-workload: set-vault-license ## Deploy the workload to the EKS cluster
 	@mkdir -p $(TF_DEPLOY_STATE_DIR)
+ifeq ($(VAULT_ENTERPRISE), true)
+    ## ensure that the license is *not* emitted to the console
+	@echo "vault_license = \"$(_VAULT_LICENSE)\"" > $(TF_EKS_STATE_DIR)/license.auto.tfvars
+endif
 	rm -f $(TF_DEPLOY_STATE_DIR)/*.tf
 	cp -v $(TF_DEPLOY_SRC_DIR)/*.tf $(TF_DEPLOY_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_DEPLOY_STATE_DIR) init -upgrade
