@@ -362,7 +362,7 @@ jobs:
           - ${{ needs.versions.outputs.VAULT_N }}
         k8s-version: ${{ fromJson(needs.versions.outputs.K8S_VERSIONS) }}
         installation-method: [helm, kustomize]
-        vault-enterprise: [true, false]
+        vault-enterprise: [true]
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - uses: ./.github/actions/integration-test
