@@ -84,6 +84,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.Error(err, "error getting resource from k8s", "secret", o)
 		return ctrl.Result{}, err
 	}
+	logger.V(consts.LogLevelDebug).Info("CHECK Reconciling VaultStaticSecret", "req", req.NamespacedName, "object.name", o.Name, "object.namespace", o.Namespace)
 
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
@@ -442,6 +443,7 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 	logger.V(consts.LogLevelDebug).Info("CHECK VaultStaticSecret object is", "object", o, "path", o.Spec.Path, "dest", o.Spec.Destination)
 	m, err := meta.Accessor(o)
 	logger.V(consts.LogLevelDebug).Info("CHECK meta accessor", "meta", m, "err", err)
+	// TODO(tvoran): occasionally the object name is empty on the event here
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
