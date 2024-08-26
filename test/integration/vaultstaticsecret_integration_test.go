@@ -484,6 +484,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				for _, kvType := range tt.createTypes {
 					count++
 					name := fmt.Sprintf("create-%s-%d", kvType, idx)
+					fmt.Printf("TESTCHECK - name is %s\n", name)
 					t.Run(name, func(t *testing.T) {
 						// capture idx and kvType for parallel test
 						idx := idx
@@ -501,6 +502,7 @@ func TestVaultStaticSecret(t *testing.T) {
 						}
 
 						dest := fmt.Sprintf("%s-%s-%d", tt.name, kvType, idx)
+						fmt.Printf("TESTCHECK - dest is %s\n", dest)
 						expected := expectedData{
 							initial: map[string]interface{}{"dest-initial": dest},
 							update:  map[string]interface{}{"dest-updated": dest},
