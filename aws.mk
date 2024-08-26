@@ -3,7 +3,7 @@
 
 # AWS variables for cloud hosted k8s testing
 AWS_REGION ?= us-east-2
-EKS_K8S_VERSION ?= 1.26
+EKS_K8S_VERSION ?= 1.30
 
 # directories for cloud hosted k8s infrastructure for running tests
 TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/eks
@@ -16,6 +16,7 @@ include ./Makefile
 .PHONY: create-eks
 create-eks: ## Create a new EKS cluster
 	@mkdir -p $(TF_EKS_STATE_DIR)
+	rm -f $(TF_EKS_STATE_DIR)/*.tf
 	cp -v $(TF_EKS_SRC_DIR)/*.tf $(TF_EKS_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) init -upgrade
 	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) apply -auto-approve \

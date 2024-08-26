@@ -1,42 +1,13 @@
-# Copyright (c) HashiCorp, Inck
+# Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
-variable "k8s_vault_connection_address" {
-  default = ""
-}
-
-# The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
-variable "operator_helm_chart_path" {
-  default = "../../../../chart"
-}
 
 variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }
 
-variable "operator_allowednamespaces" {
-  type    = list(string)
-  default = []
-}
-
-variable "operator_image_repo" {
-  default = "hashicorp/vault-secrets-operator"
-}
-
-variable "operator_image_tag" {
-  default = "0.0.0-dev"
-}
-
-variable "k8s_auth_default_token_audiences" {
-  type    = list(string)
-  default = []
-}
-
-variable "k8s_auth_default_mount" {
-  default = ""
-}
-
-variable "k8s_auth_default_role" {
-  default = ""
+# The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
+variable "operator_helm_chart_path" {
+  default = "../../../../../../chart"
 }
 
 variable "enable_default_connection" {
@@ -49,8 +20,38 @@ variable "enable_default_auth_method" {
   default = true
 }
 
+variable "k8s_vault_connection_address" {
+  default = ""
+}
+
+variable "k8s_auth_default_mount" {
+  default = ""
+}
+
 variable "vault_test_namespace" {
   default = ""
+}
+
+variable "operator_allowednamespaces" {
+  type    = list(string)
+  default = []
+}
+
+variable "k8s_auth_default_role" {
+  default = ""
+}
+
+variable "k8s_auth_default_token_audiences" {
+  type    = list(string)
+  default = []
+}
+
+variable "operator_image_repo" {
+  default = "hashicorp/vault-secrets-operator"
+}
+
+variable "operator_image_tag" {
+  default = "0.8.1"
 }
 
 variable "cpu_limits" {
@@ -111,3 +112,63 @@ variable "manager_extra_args" {
     "-zap-log-level=5"
   ]
 }
+
+variable "vault_license_path" {
+  default = ""
+}
+
+variable "vault_license" {
+  default = ""
+}
+
+variable "k8s_namespace" {
+  default = "vault"
+}
+
+variable "k8s_service_account" {
+  default = "vault"
+}
+
+variable "k8s_config_context" {
+  default = "kind-vault-secrets-operator"
+}
+
+variable "k8s_config_path" {
+  default = "~/.kube/config"
+}
+
+variable "vault_image_repo" {
+  default = "docker.mirror.hashicorp.services/hashicorp/vault"
+}
+
+variable "vault_image_repo_ent" {
+  default = "docker.mirror.hashicorp.services/hashicorp/vault-enterprise"
+}
+
+variable "vault_image_tag" {
+  default = "1.17"
+}
+
+variable "vault_image_tag_ent" {
+  default = "1.17-ent"
+}
+
+variable "vault_enterprise" {
+  type    = bool
+  default = true
+}
+
+variable "vault_chart_version" {
+  default = "0.28.1"
+}
+
+variable "install_kube_prometheus" {
+  type    = bool
+  default = false
+}
+
+variable "metrics_server_enabled" {
+  type    = bool
+  default = true
+}
+
