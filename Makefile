@@ -309,8 +309,8 @@ copy-config: ## Copy kustomize config to CONFIG_BUILD_DIR
 set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_DIR
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
 
-.PHONY: set-image integration-test
-integration-test: set-image setup-vault ## Run integration tests for Vault Community
+.PHONY: integration-test-go
+integration-test-go:
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
@@ -320,6 +320,9 @@ integration-test: set-image setup-vault ## Run integration tests for Vault Commu
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
+
+.PHONY: set-image integration-test
+integration-test: set-image setup-vault integration-test-go ## Run integration tests for Vault Community
 
 .PHONY: integration-test-helm
 integration-test-helm: setup-integration-test ## Run integration tests for Vault Community

@@ -47,6 +47,8 @@ type vssK8SOutputs struct {
 }
 
 func TestVaultStaticSecret(t *testing.T) {
+	fmt.Println("running TestVaultStaticSecret")
+
 	if testInParallel {
 		t.Parallel()
 	}

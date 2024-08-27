@@ -125,6 +125,35 @@ const (
 )
 
 func TestMain(m *testing.M) {
+	fmt.Println("running TestMain")
+
+	if os.Getenv("SCALE_TESTS") != "" {
+		fmt.Println("SCALE_TESTING_CLUSTER_NAME", os.Getenv("SCALE_TESTING_CLUSTER_NAME"))
+		fmt.Println("TESTARGS", os.Getenv("TESTARGS"))
+		clusterName = os.Getenv("SCALE_TESTING_CLUSTER_NAME")
+		if clusterName == "" {
+			os.Stderr.WriteString("error: SCALE_TESTING_CLUSTER_NAME is not set\n")
+			os.Exit(1)
+		}
+		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+		// add schemes to support other rollout restart targets
+		utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
+
+		restConfig = *ctrl.GetConfigOrDie()
+
+		os.Setenv("VAULT_ADDR", vaultAddr)
+		os.Setenv("VAULT_TOKEN", vaultToken)
+		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
+
+		_ = m.Run()
+		// TODO export logs
+		//if err := exportKindLogs("TestMainVSO", result != 0); err != nil {
+		//	log.Printf("Error failed to exportKindLogs(), err=%s", err)
+		//}
+		return
+	}
+
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		clusterName = os.Getenv("KIND_CLUSTER_NAME")
 		if clusterName == "" {

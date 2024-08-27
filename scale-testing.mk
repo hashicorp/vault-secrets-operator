@@ -12,6 +12,7 @@ TF_EKS_STATE_DIR ?= $(TF_EKS_SRC_DIR)/state
 TF_DEPLOY_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/deployments
 TF_DEPLOY_STATE_DIR ?= $(TF_DEPLOY_SRC_DIR)/state
 
+SCALE_TESTS=1
 include ./Makefile
 
 .PHONY: create-eks
@@ -43,3 +44,27 @@ destroy-eks: ## Destroy the EKS cluster
 	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) destroy -auto-approve \
 		-var region=$(AWS_REGION) \
 		-var kubernetes_version=$(EKS_K8S_VERSION) || exit 1
+
+.PHONY: connect-cluster
+connect-cluster:
+	aws eks --region $(AWS_REGION) update-kubeconfig \
+		--name $(shell $(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) output cluster_name)
+
+.PHONY: scale-test-port-forward
+scale-test-port-forward:
+	@bash -c 'trap exit SIGINT; while true; do kubectl port-forward -n vault vault-0 8200; done';
+
+.PHONY: scale-test
+scale-test:
+	SCALE_TESTS=true \
+	SCALE_TESTING_CLUSTER_NAME=$(shell $(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) output cluster_name) \
+	K8S_CLUSTER_CONTEXT=$(shell kubectl config current-context) \
+	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
+	VAULT_OIDC_DISC_URL=$(shell kubectl get --raw /.well-known/openid-configuration | jq -r '.issuer') \
+	VAULT_OIDC_CA=false \
+	INTEGRATION_TESTS=true K8S_CLUSTER_CONTEXT=$(shell kubectl config current-context) \
+	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
+	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
+	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
+	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... -test.v -test.run TestVaultStaticSecret -timeout=30m
