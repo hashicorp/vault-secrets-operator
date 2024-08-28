@@ -155,6 +155,10 @@ spec:
       affinity:
       {{- toYaml .Values.controller.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.controller.topologySpreadConstraints }}
+      topologySpreadConstraints:
+      {{- include "vso.topologySpreadConstraints" . | nindent 8 }}
+      {{- end }}
       volumes:
       - downwardAPI:
           items:

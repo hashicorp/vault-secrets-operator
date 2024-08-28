@@ -66,6 +66,17 @@ controller:
   #           - antarctica-west1
   affinity: {}
 
+  # TopologySpreadConstraints settings for vault-secrets-operator pod.
+  # The value is an array of PodSpec TopologySpreadConstraint maps.
+  # A labelSelector for the pods will be added automatically to the template in case it is not set.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/
+  # Example:
+  # topologySpreadConstraints:
+  # - maxSkew: 1
+  #   topologyKey: zone
+  #   whenUnsatisfiable: DoNotSchedule
+  topologySpreadConstraints: []
+
   # Configure the PodDisruptionBudget for the controller deployment.
   podDisruptionBudget:
 
