@@ -1,0 +1,30 @@
+{{- /*
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+*/ -}}
+
+{{- if .Values.defaultAuthGlobal.enabled }}
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuthGlobal
+metadata:
+  name: default
+  namespace: {{ .Release.Namespace }}
+  labels:
+    control-plane: controller-manager
+    component: controller-manager
+    app.kubernetes.io/component: controller-manager
+  {{- include "vso.chart.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.defaultAuthGlobal.defaultVaultNamespace }}
+  defaultVaultNamespace: {{ .Values.defaultAuthGlobal.defaultVaultNamespace }}
+  {{- end }}
+  {{- if .Values.defaultAuthGlobal.allowedNamespaces }}
+  allowedNamespaces:
+  {{- toYaml .Values.defaultAuthGlobal.allowedNamespaces | nindent 4 }}
+  {{- end }}
+  defaultAuthMethod: {{ .Values.defaultAuthGlobal.defaultAuthMethod }}
+  defaultMount: {{ .Values.defaultAuthGlobal.defaultMount }}
+  {{- if .Values.defaultAuthGlobal.methods }}
+  {{- toYaml .Values.defaultAuthGlobal.methods | nindent 4 }}
+  {{- end }}
+{{- end }}

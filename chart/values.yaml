@@ -780,6 +780,61 @@ defaultAuthMethod:
       params: none
 
 
+# Configures and deploys the default VaultAuthGlobal CR. The name is 'default' and will
+# always be installed in the same namespace as the operator.
+# NOTE:
+# * It is strongly recommended to deploy the vault secrets operator in a secure Vault environment
+#   which includes a configuration utilizing TLS and installing Vault into its own restricted namespace.
+defaultAuthGlobal:
+  # toggles the deployment of the VaultAuthGlobal CR
+  # @type: boolean
+  enabled: false
+
+  # Default Vault namespace for the VaultAuthGlobal CR
+  # @type: string
+  defaultVaultNamespace: ""
+
+  # Kubernetes namespace glob patterns which are allow-listed for use with the default VaultAuthGlobal.
+  # @type: array<string>
+  allowedNamespaces: []
+
+  # Default Vault Auth method to be used with the VaultAuthGlobal CR
+  # @type: string
+  defaultAuthMethod: kubernetes
+
+  # Default Mount path for the Vault Auth Method.
+  # @type: string
+  defaultMount: kubernetes
+
+  # Params to use when authenticating to Vault
+  # params:
+  #   param-something1: "foo"
+  # @type: map
+  params: {}
+
+  # Headers to be included in all Vault requests.
+  # headers:
+  #   X-vault-something1: "foo"
+  # @type: map
+  headers: {}
+
+  # Vault Auth method settings to include in the VaultAuthGlobal CR.
+  # The value is a map of auth methods (kubernetes, jwt, appRole, aws and gcp) and its configuration spec.
+  # ref:
+  # - https://developer.hashicorp.com/vault/docs/platform/k8s/vso/api-reference#vaultauthglobalconfigkubernetes
+  # - https://developer.hashicorp.com/vault/docs/platform/k8s/vso/api-reference#vaultauthglobalconfigjwt
+  # - https://developer.hashicorp.com/vault/docs/platform/k8s/vso/api-reference#vaultauthglobalconfigapprole
+  # - https://developer.hashicorp.com/vault/docs/platform/k8s/vso/api-reference#vaultauthglobalconfigaws
+  # - https://developer.hashicorp.com/vault/docs/platform/k8s/vso/api-reference#vaultauthglobalconfiggcp
+  # @type: map
+  # Example:
+  # methods:
+  #  kubernetes:
+  #    role: "auth-role"
+  #    serviceAccount: "default"
+  methods: {}
+
+
 # Configures a Prometheus ServiceMonitor
 telemetry:
   serviceMonitor:
