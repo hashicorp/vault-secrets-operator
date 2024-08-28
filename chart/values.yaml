@@ -66,6 +66,23 @@ controller:
   #           - antarctica-west1
   affinity: {}
 
+  # Configure the PodDisruptionBudget for the controller deployment.
+  podDisruptionBudget:
+
+    # toggles the deployment of the PodDisruptionBudget for the controller.
+    # @type: boolean
+    enabled: false
+
+    # Sets the maximum number of pods that can be unavailable during the eviction.
+    # This field cannot be set if minAvailable is set.
+    # @type: integer
+    maxUnavailable: 0
+
+    # Sets the numer of pods that must be available during the eviction.
+    # This field cannot be set if maxUnavailable is set.
+    # @type: integer
+    minAvailable: 1
+
   rbac:
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
     clusterRoleAggregation:
