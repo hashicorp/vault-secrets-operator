@@ -909,6 +909,12 @@ hooks:
     # @type: string
     executionTimeout: 30s
 
+# A list of additional kubernetes manifests to be installed alongside the operator.
+# For example, this could be used to install a Secret containing the CA certificate referenced in the default VaultConnection.
+# @type: array
+extraManifests: []
+
+
 ## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored.
 tests:
   # @type: boolean
