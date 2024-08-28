@@ -29,3 +29,12 @@ module "vault" {
   vault_image_tag_ent  = var.vault_image_tag_ent
   vault_chart_version  = var.vault_chart_version
 }
+
+resource "local_file" "env_file" {
+  filename = "${path.module}/outputs.env"
+  content  = <<EOT
+OPERATOR_IMAGE_REPO=${var.operator_image_repo}
+OPERATOR_IMAGE_TAG=${var.operator_image_tag}
+OPERATOR_NAMESPACE=${var.operator_namespace}
+EOT
+}

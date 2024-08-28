@@ -135,6 +135,9 @@ func TestMain(m *testing.M) {
 			os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
 			os.Exit(1)
 		}
+		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
+		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
+
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
 		// add schemes to support other rollout restart targets
