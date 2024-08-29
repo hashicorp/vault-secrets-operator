@@ -8,6 +8,10 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Set the priority class for the operator.
+  # @type: string
+  priorityClassName: ""
+
   # Configure update strategy for multi-replica deployments.
   # Kubernetes supports types Recreate, and RollingUpdate
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
