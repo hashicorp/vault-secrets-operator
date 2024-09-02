@@ -482,8 +482,8 @@ github.com/hashicorp/hcl v1.0.1-vault-5 h1:kI3hhbbyzr4dldA8UdTb7ZlVVlI2DACdCfz31
 github.com/hashicorp/hcl v1.0.1-vault-5/go.mod h1:XYhtn6ijBSAj6n4YqAaf7RBPS4I06AItNorpy+MoQNM=
 github.com/hashicorp/hcl/v2 v2.9.1 h1:eOy4gREY0/ZQHNItlfuEZqtcQbXIxzojlP301hDpnac=
 github.com/hashicorp/hcl/v2 v2.9.1/go.mod h1:FwWsfWEjyV/CMj8s/gqAuiviY72rJ1/oayI9WftqcKg=
-github.com/hashicorp/hcp-sdk-go v0.106.0 h1:6irIN4XGXtdHGgcu7LAVo2tk6l1jfRGi4/cTmNo9XC0=
-github.com/hashicorp/hcp-sdk-go v0.106.0/go.mod h1:vQ4fzdL1AmhIAbCw+4zmFe5Hbpajj3NvRWkJoVuxmAk=
+github.com/hashicorp/hcp-sdk-go v0.110.0 h1:eaDO6XoEb0H+g00Ka3C+ZbRibhwWyA2YNmv48xFCL2w=
+github.com/hashicorp/hcp-sdk-go v0.110.0/go.mod h1:vQ4fzdL1AmhIAbCw+4zmFe5Hbpajj3NvRWkJoVuxmAk=
 github.com/hashicorp/terraform-json v0.13.0 h1:Li9L+lKD1FO5RVFRM1mMMIBDoUHslOniyEi5CM+FWGY=
 github.com/hashicorp/terraform-json v0.13.0/go.mod h1:y5OdLBCT+rxbwnpxZs9kGL7R9ExU76+cpdY8zHwoazk=
 github.com/hashicorp/vault/api v1.13.0 h1:RTCGpE2Rgkn9jyPcFlc7YmNocomda44k5ck8FKMH41Y=
