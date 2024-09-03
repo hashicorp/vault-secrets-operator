@@ -28,6 +28,7 @@ const (
 	SecretDataKeyRaw      = "_raw"
 	HVSSecretTypeKV       = "kv"
 	HVSSecretTypeRotating = "rotating"
+	HVSSecretTypeDynamic  = "dynamic"
 )
 
 var SecretDataErrorContainsRaw = fmt.Errorf("key '%s' not permitted in Secret data", SecretDataKeyRaw)
@@ -498,7 +499,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	data := make(map[string][]byte)
 	hasTemplates := len(opt.KeyedTemplates) > 0
 	for _, v := range p.Secrets {
-		if v.StaticVersion == nil && v.RotatingVersion == nil {
+		if v.StaticVersion == nil && v.RotatingVersion == nil && v.DynamicInstance == nil {
 			continue
 		}
 
@@ -511,6 +512,12 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 			for rvk, rvv := range v.RotatingVersion.Values {
 				rName := fmt.Sprintf("%s_%s", v.Name, rvk)
 				secrets[rName] = rvv
+			}
+		case HVSSecretTypeDynamic:
+			// Since dynamic secrets have multiple values, prefix each key with
+			// the secret name to avoid collisions.
+			for dynamicKey, dynamicValue := range v.DynamicInstance.Values {
+				secrets[v.Name+"_"+dynamicKey] = dynamicValue
 			}
 		default:
 			continue

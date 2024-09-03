@@ -130,24 +130,86 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	resp, err := c.OpenAppSecrets(params, nil)
 	if err != nil {
-		logger.Error(err, "Get App Secret", "appName", o.Spec.AppName)
+		logger.Error(err, "Get App Secrets", "appName", o.Spec.AppName)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
 			RequeueAfter: entry.NextBackOff(),
 		}, nil
-	} else {
-		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
+
+	// Also fetch the unopened AppSecrets to get the full list of secrets
+	// (including dynamic)
+	secretsListParams := &hvsclient.ListAppSecretsParams{
+		Context: ctx,
+		AppName: o.Spec.AppName,
+		// Type is currently non-functional, so we have to filter the list
+		// ourselves
+		// Type: ptr.To(helpers.HVSSecretTypeDynamic),
+	}
+	appSecretsList, err := c.ListAppSecrets(secretsListParams, nil)
+	if err != nil {
+		logger.Error(err, "List App Secrets", "appName", o.Spec.AppName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+		return ctrl.Result{
+			RequeueAfter: entry.NextBackOff(),
+		}, nil
+	}
+
+	// Fetch the shadowed dynamic secret k8s secret from the operator namespace,
+	// if there is one
+	// shadowName := client.ObjectKeyFromObject(o)
+	// shadowName.Namespace = common.OperatorNamespace
+	// shadowSecret, err := helpers.GetSecret(ctx, r.Client, shadowName)
+
+	// Compare shadowed dynamic secrets with app list
+	// - if secret in app list but not in shadowed, fetch and shadow
+	// - if secret in shadow but not in app list, remove from shadow
+	// - if secret in shadow and app list, we've fetched it before, so check if
+	//   it's time to get a new cred for it
+
+	// When fetching/processing the dynamic secrets, and there's an error, it'd
+	// be great if we could save any that were already fetched in this Reconcile
+	// to the shadow secret, so that in the next reconcile they aren't blindly
+	// fetched again. (Not the worst thing, since the credential will be
+	// discarded and not leaked, but will just be more creds generated than
+	// necessary, api limits, etc.)
+
+	if appSecretsList.Payload != nil {
+		// Fetch each dynamic secret that either hasn't been retrieved yet
+		// (shadowed in a k8s secret) or is up for rotation
+		for _, appSecret := range appSecretsList.Payload.Secrets {
+			if appSecret.Type != helpers.HVSSecretTypeDynamic {
+				continue
+			}
+			secretParams := &hvsclient.OpenAppSecretParams{
+				Context:    ctx,
+				AppName:    o.Spec.AppName,
+				SecretName: appSecret.Name,
+			}
+			dynamicResp, err := c.OpenAppSecret(secretParams, nil)
+			if err != nil {
+				logger.Error(err, "Get Dynamic Secret",
+					"appName", o.Spec.AppName, "secretName", appSecret.Name)
+				entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+				return ctrl.Result{
+					RequeueAfter: entry.NextBackOff(),
+				}, nil
+			}
+			if dynamicResp != nil && dynamicResp.Payload != nil {
+				resp.Payload.Secrets = append(resp.Payload.Secrets, dynamicResp.Payload.Secret)
+			}
+		}
+	}
+
+	// Remove from backoff registry now that we're done with HVS API calls
+	r.BackOffRegistry.Delete(req.NamespacedName)
+
+	// update/create the shadowed dynamic secret k8s secret with the current
+	// list of dynamic secrets
 
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
-
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
-			"Failed setting up SecretTransformationOption: %s", err)
-		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
-	}
 
 	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp, transOption)
 	if err != nil {
