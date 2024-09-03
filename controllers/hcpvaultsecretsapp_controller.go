@@ -12,6 +12,7 @@ import (
 
 	httptransport "github.com/go-openapi/runtime/client"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
+	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	hcpconfig "github.com/hashicorp/hcp-sdk-go/config"
 	hcpclient "github.com/hashicorp/hcp-sdk-go/httpclient"
 	"github.com/hashicorp/hcp-sdk-go/profile"
@@ -40,6 +41,7 @@ const (
 	headerUserAgent    = "User-Agent"
 
 	hcpVaultSecretsAppFinalizer = "hcpvaultsecretsapp.secrets.hashicorp.com/finalizer"
+	defaultDyanmicRenewPercent  = 67
 )
 
 var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
@@ -99,9 +101,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 				"Field validation failed, err=%s", err)
 			return ctrl.Result{}, err
 		}
-		if d.Seconds() > 0 {
-			requeueAfter = computeHorizonWithJitter(d)
-		}
+		requeueAfter = d
 	}
 
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
@@ -130,24 +130,45 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	resp, err := c.OpenAppSecrets(params, nil)
 	if err != nil {
-		logger.Error(err, "Get App Secret", "appName", o.Spec.AppName)
+		logger.Error(err, "Get App Secrets", "appName", o.Spec.AppName)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
 			RequeueAfter: entry.NextBackOff(),
 		}, nil
-	} else {
-		r.BackOffRegistry.Delete(req.NamespacedName)
+	}
+
+	dynamicSecrets, err := getHVSDynamicSecrets(ctx, c, o.Spec.AppName)
+	if err != nil {
+		logger.Error(err, "Get Dynamic Secrets", "appName", o.Spec.AppName)
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+		return ctrl.Result{
+			RequeueAfter: entry.NextBackOff(),
+		}, nil
+	}
+	// Add the dynamic secrets to the OpenAppSecrets response to be processed
+	// along with the rest of the App secrets
+	resp.Payload.Secrets = append(resp.Payload.Secrets, dynamicSecrets...)
+
+	// Remove this app from the backoff registry now that we're done with HVS
+	// API calls
+	r.BackOffRegistry.Delete(req.NamespacedName)
+
+	// Calculate next requeue time based on whichever comes first between the
+	// current `requeueAfter` and all the dynamic secret renewal times. Also set
+	// the dynamic secret statuses while looping through the dynamic secrets.
+	renewPercent := getDynamicRenewPercent(o.Spec.SyncConfig)
+	o.Status.DynamicSecrets = nil
+	for _, secret := range dynamicSecrets {
+		requeueAfter = getNextRequeue(requeueAfter, secret.DynamicInstance, renewPercent, time.Now())
+		o.Status.DynamicSecrets = append(o.Status.DynamicSecrets, makeHVSDynamicStatus(secret))
+	}
+	if requeueAfter.Seconds() > 0 {
+		requeueAfter = computeHorizonWithJitter(requeueAfter)
 	}
 
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
-
-	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
-			"Failed setting up SecretTransformationOption: %s", err)
-		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
-	}
 
 	data, err := r.SecretDataBuilder.WithHVSAppSecrets(resp, transOption)
 	if err != nil {
@@ -317,4 +338,94 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 // injectRequestInformation is copied from https://github.com/hashicorp/vlt/blob/f1f50c53433aa1c6dd0e7f0f929553bb4e5d2c63/internal/command/transport.go#L25
 func injectRequestInformation(runtime *httptransport.Runtime) {
 	runtime.Transport = &transport{child: runtime.Transport}
+}
+
+// getHVSDynamicSecrets returns the "open" dynamic secrets for the given HVS app
+func getHVSDynamicSecrets(ctx context.Context, c hvsclient.ClientService, appName string) ([]*models.Secrets20231128OpenSecret, error) {
+	// Fetch the unopened AppSecrets to get the full list of secrets (including
+	// dynamic)
+	secretsListParams := &hvsclient.ListAppSecretsParams{
+		Context: ctx,
+		AppName: appName,
+		// Type is currently non-functional, so we have to filter the list
+		// ourselves
+		// Type: ptr.To(helpers.HVSSecretTypeDynamic),
+	}
+	appSecretsList, err := c.ListAppSecrets(secretsListParams, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list app Secrets for app %s: %w", appName, err)
+	}
+
+	dynamicSecrets := make([]*models.Secrets20231128OpenSecret, 0)
+
+	if appSecretsList.Payload != nil {
+		// TODO(tvoran): only fetch/create dynamic secrets that are new or are
+		// due for rotation
+		for _, appSecret := range appSecretsList.Payload.Secrets {
+			if appSecret.Type != helpers.HVSSecretTypeDynamic {
+				continue
+			}
+			secretParams := &hvsclient.OpenAppSecretParams{
+				Context:    ctx,
+				AppName:    appName,
+				SecretName: appSecret.Name,
+			}
+			dynamicResp, err := c.OpenAppSecret(secretParams, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get dynamic secret %s in app %s: %w",
+					appSecret.Name, appName, err)
+			}
+			if dynamicResp != nil && dynamicResp.Payload != nil {
+				dynamicSecrets = append(dynamicSecrets, dynamicResp.Payload.Secret)
+			}
+		}
+	}
+
+	return dynamicSecrets, nil
+}
+
+// getDynamicRenewPercent returns the default renewal percent or the synconfig
+// dynamic renewal percent in that order of precendence
+func getDynamicRenewPercent(syncConfig *secretsv1beta1.HVSSyncConfig) int {
+	renewPercent := defaultDyanmicRenewPercent
+	if syncConfig != nil && syncConfig.Dynamic != nil && syncConfig.Dynamic.RenewalPercent != 0 {
+		renewPercent = syncConfig.Dynamic.RenewalPercent
+	}
+	return renewPercent
+}
+
+func makeHVSDynamicStatus(secret *models.Secrets20231128OpenSecret) secretsv1beta1.HVSDynamicStatus {
+	status := secretsv1beta1.HVSDynamicStatus{
+		Name: secret.Name,
+	}
+	if secret.DynamicInstance != nil {
+		status.CreatedAt = secret.DynamicInstance.CreatedAt.String()
+		status.ExpiresAt = secret.DynamicInstance.ExpiresAt.String()
+		status.TTL = secret.DynamicInstance.TTL
+	}
+	return status
+}
+
+// getNextRequeue returns whichever is less between the current `requeueAfter`
+// and the next renewal time of the dynamic secret instance
+func getNextRequeue(requeueAfter time.Duration, dynamicInstance *models.Secrets20231128OpenSecretDynamicInstance, renewPercent int, now time.Time) time.Duration {
+	if dynamicInstance == nil {
+		return requeueAfter
+	}
+	nextRequeue := requeueAfter
+
+	// Calculate the time when the dynamic secret should be renewed
+	fullTTL := time.Time(dynamicInstance.ExpiresAt).Sub(time.Time(dynamicInstance.CreatedAt))
+	renewPoint := fullTTL * time.Duration(renewPercent) / 100
+	renewTime := time.Time(dynamicInstance.CreatedAt).Add(renewPoint)
+	howLongUntilRenewTime := renewTime.Sub(now)
+
+	if howLongUntilRenewTime < requeueAfter {
+		nextRequeue = howLongUntilRenewTime
+	}
+	if nextRequeue < 0 {
+		nextRequeue = 1 * time.Second
+	}
+
+	return nextRequeue
 }

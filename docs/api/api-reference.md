@@ -187,8 +187,61 @@ _Appears in:_
 | `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h | 600s | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s)<br />consuming the HCP Vault Secrets App does not support dynamically reloading a<br />rotated secret. In that case one, or more RolloutRestartTarget(s) can be<br />configured here. The Operator will trigger a "rollout-restart" for each target<br />whenever the Vault secret changes between reconciliation events. See<br />RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the HCP Vault<br />Application secrets to Kubernetes. |  |  |
+| `syncConfig` _[HVSSyncConfig](#hvssyncconfig)_ | SyncConfig configures sync behavior from HVS to VSO |  |  |
 
 
+
+
+#### HVSDynamicStatus
+
+
+
+HVSDynamicStatus defines the observed state of a dynamic secret within an HCP
+Vault Secrets App
+
+
+
+_Appears in:_
+- [HCPVaultSecretsAppStatus](#hcpvaultsecretsappstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name of the dynamic secret |  |  |
+| `createdAt` _string_ | CreatedAt is the timestamp string of when the dynamic secret was created |  |  |
+| `expiresAt` _string_ | ExpiresAt is the timestamp string of when the dynamic secret will expire |  |  |
+| `ttl` _string_ | TTL is the time-to-live of the dynamic secret in seconds |  |  |
+
+
+#### HVSDynamicSyncConfig
+
+
+
+HVSDynamicSyncConfig configures sync behavior for HVS dynamic secrets.
+
+
+
+_Appears in:_
+- [HVSSyncConfig](#hvssyncconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `renewalPercent` _integer_ | RenewalPercent is the percent out of 100 of a dynamic secret's TTL when<br />new secrets are generated. Defaults to 67 percent minus jitter. | 67 | Maximum: 100 <br />Minimum: 0 <br /> |
+
+
+#### HVSSyncConfig
+
+
+
+HVSSyncConfig configures sync behavior from HVS to VSO
+
+
+
+_Appears in:_
+- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `dynamic` _[HVSDynamicSyncConfig](#hvsdynamicsyncconfig)_ | Dynamic configures sync behavior for dynamic secrets. |  |  |
 
 
 #### MergeStrategy
