@@ -52,10 +52,10 @@ import-deploy-vars:
 connect-cluster: import-aws-vars ## Connect to the EKS cluster
 	aws eks --region $(AWS_REGION) update-kubeconfig --name $(EKS_CLUSTER_NAME)
 
-.PHONY: scale-test
-scale-test: connect-cluster import-aws-vars import-deploy-vars
+.PHONY: scale-tests
+scale-tests: connect-cluster import-aws-vars import-deploy-vars
 	$(MAKE) port-forward &
-	SCALE_TESTS=true \
+	SCALE_TESTS=true VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE) \
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) \
 	OPERATOR_IMAGE_REPO=$(OPERATOR_IMAGE_REPO) OPERATOR_IMAGE_TAG=$(OPERATOR_IMAGE_TAG) \
 	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
@@ -65,7 +65,7 @@ scale-test: connect-cluster import-aws-vars import-deploy-vars
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
-	go test github.com/hashicorp/vault-secrets-operator/test/integration/... -test.v -test.run TestVaultStaticSecret/existing -timeout=30m
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... -test.v -test.run TestVaultStaticSecret -timeout=30m
 
 .PHONY: destroy-eks
 destroy-eks: ## Destroy the EKS cluster
