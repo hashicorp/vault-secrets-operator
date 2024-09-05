@@ -346,12 +346,12 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 			UID: connUID,
 		},
 		Spec: secretsv1beta1.VaultConnectionSpec{
-			Timeout: &metav1.Duration{Duration: 10 * time.Second},
+			Timeout: "10s",
 		},
 	}
 
 	vcObjTimeout5s := vcObj.DeepCopy()
-	vcObjTimeout5s.Spec.Timeout = &metav1.Duration{Duration: 5 * time.Second}
+	vcObjTimeout5s.Spec.Timeout = "5s"
 
 	saObj := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
