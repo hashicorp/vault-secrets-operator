@@ -906,8 +906,12 @@ func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS
 		VaultNamespace:  vaultNS,
 	}
 
-	if connObj.Spec.Timeout != nil {
-		cfg.Timeout = connObj.Spec.Timeout
+	if connObj.Spec.Timeout != "" {
+		d, err := time.ParseDuration(connObj.Spec.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse timeout: %w", err)
+		}
+		cfg.Timeout = &d
 	}
 	return cfg, nil
 }

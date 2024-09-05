@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/hashicorp/vault-secrets-operator/internal/consts"
@@ -81,9 +82,7 @@ func TestMakeVaultClient(t *testing.T) {
 		"vault timeout not nil": {
 			vaultConfig: &ClientConfig{
 				VaultNamespace: "vault-test-namespace",
-				Timeout: &v1.Duration{
-					Duration: 10 * time.Second,
-				},
+				Timeout:        ptr.To[time.Duration](10 * time.Second),
 			},
 			CACert:        nil,
 			expectedError: nil,
@@ -165,7 +164,7 @@ func TestMakeVaultClient(t *testing.T) {
 
 				var expectedTimeout time.Duration
 				if tc.vaultConfig.Timeout != nil {
-					expectedTimeout = tc.vaultConfig.Timeout.Duration
+					expectedTimeout = *tc.vaultConfig.Timeout
 				} else {
 					expectedTimeout = api.DefaultConfig().Timeout
 				}

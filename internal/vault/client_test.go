@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -1168,12 +1169,12 @@ func TestNewClientConfigFromConnObj(t *testing.T) {
 			TLSServerName:   "baz.biff",
 			CACertSecretRef: "ca.crt",
 			SkipTLSVerify:   true,
-			Timeout:         &metav1.Duration{Duration: 10 * time.Second},
+			Timeout:         "10s",
 		},
 	}
 
-	connObjNilTimeout := connObjBase.DeepCopy()
-	connObjNilTimeout.Spec.Timeout = nil
+	connObjEmptyTimeout := connObjBase.DeepCopy()
+	connObjEmptyTimeout.Spec.Timeout = ""
 
 	tests := []struct {
 		name    string
@@ -1191,13 +1192,13 @@ func TestNewClientConfigFromConnObj(t *testing.T) {
 				TLSServerName:   "baz.biff",
 				CACertSecretRef: "ca.crt",
 				SkipTLSVerify:   true,
-				Timeout:         &metav1.Duration{Duration: 10 * time.Second},
+				Timeout:         ptr.To[time.Duration](10 * time.Second),
 			},
 			wantErr: assert.NoError,
 		},
 		{
-			name:    "nil-timeout",
-			connObj: connObjNilTimeout,
+			name:    "empty-timeout",
+			connObj: connObjEmptyTimeout,
 			want: &ClientConfig{
 				Address:         "https://vault.example.com",
 				Headers:         map[string]string{"foo": "bar"},
