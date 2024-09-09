@@ -79,7 +79,8 @@ func TestVaultStaticSecret(t *testing.T) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
-			"k8s_config_context": k8sConfigContext,
+			"k8s_config_context":           k8sConfigContext,
+			"k8s_vault_connection_address": testVaultAddress,
 		},
 	}
 	if entTests {

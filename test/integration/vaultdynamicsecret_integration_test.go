@@ -83,8 +83,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 		t.Parallel()
 	}
 
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	var clusterName string
+	if os.Getenv("SCALE_TESTS") != "" {
+		// When SCALE_TESTS is set, use EKS cluster
+		clusterName = os.Getenv("EKS_CLUSTER_NAME")
+		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		// Otherwise, use KIND cluster
+		clusterName = os.Getenv("KIND_CLUSTER_NAME")
+		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	}
+
+	//clusterName := os.Getenv("KIND_CLUSTER_NAME")
+	//require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
@@ -644,8 +655,18 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 		t.Parallel()
 	}
 
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	var clusterName string
+	if os.Getenv("SCALE_TESTS") != "" {
+		// When SCALE_TESTS is set, use EKS cluster
+		clusterName = os.Getenv("EKS_CLUSTER_NAME")
+		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		// Otherwise, use KIND cluster
+		clusterName = os.Getenv("KIND_CLUSTER_NAME")
+		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	}
+	//clusterName := os.Getenv("KIND_CLUSTER_NAME")
+	//require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
