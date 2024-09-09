@@ -125,44 +125,59 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	fmt.Println("running TestMain")
-
-	if os.Getenv("SCALE_TESTS") != "" {
-		fmt.Println("EKS_CLUSTER_NAME", os.Getenv("EKS_CLUSTER_NAME"))
-		fmt.Println("TESTARGS", os.Getenv("TESTARGS"))
-		clusterName = os.Getenv("EKS_CLUSTER_NAME")
-		if clusterName == "" {
-			os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
-			os.Exit(1)
-		}
-		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
-		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
-
-		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-		utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
-		// add schemes to support other rollout restart targets
-		utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
-
-		restConfig = *ctrl.GetConfigOrDie()
-
-		os.Setenv("VAULT_ADDR", vaultAddr)
-		os.Setenv("VAULT_TOKEN", vaultToken)
-		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
-
-		_ = m.Run()
-		// TODO export logs
-		//if err := exportKindLogs("TestMainVSO", result != 0); err != nil {
-		//	log.Printf("Error failed to exportKindLogs(), err=%s", err)
-		//}
-		return
-	}
+	//if os.Getenv("SCALE_TESTS") != "" {
+	//	fmt.Println("EKS_CLUSTER_NAME", os.Getenv("EKS_CLUSTER_NAME"))
+	//	fmt.Println("TESTARGS", os.Getenv("TESTARGS"))
+	//	clusterName = os.Getenv("EKS_CLUSTER_NAME")
+	//	if clusterName == "" {
+	//		os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
+	//		os.Exit(1)
+	//	}
+	//	operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
+	//	operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
+	//
+	//	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	//	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
+	//	// add schemes to support other rollout restart targets
+	//	utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
+	//
+	//	restConfig = *ctrl.GetConfigOrDie()
+	//
+	//	os.Setenv("VAULT_ADDR", vaultAddr)
+	//	os.Setenv("VAULT_TOKEN", vaultToken)
+	//	os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
+	//
+	//	_ = m.Run()
+	//	// TODO export logs
+	//	//if err := exportKindLogs("TestMainVSO", result != 0); err != nil {
+	//	//	log.Printf("Error failed to exportKindLogs(), err=%s", err)
+	//	//}
+	//	//return
+	//} else {
+	//	os.Exit(0)
+	//}
 
 	if os.Getenv("INTEGRATION_TESTS") != "" {
-		clusterName = os.Getenv("KIND_CLUSTER_NAME")
-		if clusterName == "" {
-			os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
-			os.Exit(1)
+		if os.Getenv("SCALE_TESTS") != "" {
+			// When SCALE_TESTS is set, use EKS cluster
+			clusterName = os.Getenv("EKS_CLUSTER_NAME")
+			if clusterName == "" {
+				os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
+				os.Exit(1)
+			}
+		} else {
+			// Otherwise, use KIND cluster
+			clusterName = os.Getenv("KIND_CLUSTER_NAME")
+			if clusterName == "" {
+				os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
+				os.Exit(1)
+			}
 		}
+		//clusterName = os.Getenv("KIND_CLUSTER_NAME")
+		//if clusterName == "" {
+		//	os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
+		//	os.Exit(1)
+		//}
 		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))

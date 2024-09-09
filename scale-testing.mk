@@ -5,6 +5,11 @@
 AWS_REGION ?= us-east-2
 EKS_K8S_VERSION ?= 1.30
 
+#OPERATOR_NAMESPACE ?= vault-secrets-operator-system
+#IMAGE_TAG_BASE ?= hashicorp/vault-secrets-operator
+#K8S_VAULT_NAMESPACE ?= vault
+VERSION ?= 0.8.1
+
 # directories for cloud hosted k8s infrastructure for running tests
 # root directory for all integration tests
 TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/eks-cluster
@@ -44,28 +49,28 @@ endif
 import-aws-vars:
 -include $(TF_EKS_STATE_DIR)/outputs.env
 
-.PHONY: import-deploy-vars
-import-deploy-vars:
--include $(TF_DEPLOY_STATE_DIR)/outputs.env
+#.PHONY: import-deploy-vars
+#import-deploy-vars:
+#-include $(TF_DEPLOY_STATE_DIR)/outputs.env
 
 .PHONY: connect-cluster
 connect-cluster: import-aws-vars ## Connect to the EKS cluster
 	aws eks --region $(AWS_REGION) update-kubeconfig --name $(EKS_CLUSTER_NAME)
 
-.PHONY: scale-tests
-scale-tests: connect-cluster import-aws-vars import-deploy-vars
+.PHONY: set image scale-tests
+scale-tests: set-image connect-cluster import-aws-vars
 	$(MAKE) port-forward &
 	SCALE_TESTS=true VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE) \
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) \
-	OPERATOR_IMAGE_REPO=$(OPERATOR_IMAGE_REPO) OPERATOR_IMAGE_TAG=$(OPERATOR_IMAGE_TAG) \
+	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	VAULT_OIDC_DISC_URL=$(EKS_OIDC_URL) VAULT_OIDC_CA=false \
-	INTEGRATION_TESTS=true EKS_CLUSTER_NAME=$(EKS_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) \
+	INTEGRATION_TESTS=true EKS_CLUSTER_NAME=$(EKS_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
-	go test github.com/hashicorp/vault-secrets-operator/test/integration/... -test.v -test.run TestVaultStaticSecret -timeout=30m
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... -test.v -test.run TestVaultDynamicSecret -timeout=30m
 
 .PHONY: destroy-eks
 destroy-eks: ## Destroy the EKS cluster
