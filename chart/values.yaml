@@ -120,7 +120,7 @@ controller:
     # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
     image:
       pullPolicy: IfNotPresent
-      repository: gcr.io/kubebuilder/kube-rbac-proxy
+      repository: quay.io/brancz/kube-rbac-proxy
       tag: v0.18.1
 
     # Configures the default resources for the kube rbac proxy container.
