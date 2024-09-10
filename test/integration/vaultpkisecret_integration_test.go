@@ -38,7 +38,7 @@ type vpsK8SOutputs struct {
 }
 
 func TestVaultPKISecret(t *testing.T) {
-	//t.Skipf("Skipping test %s for VAULT-25273", t.Name())
+	t.Skipf("Skipping test %s for VAULT-25273", t.Name())
 
 	if testInParallel {
 		t.Parallel()
@@ -47,8 +47,6 @@ func TestVaultPKISecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
-	//clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	//require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	var clusterName string
 	if os.Getenv("SCALE_TESTS") != "" {
 		// When SCALE_TESTS is set, use EKS cluster

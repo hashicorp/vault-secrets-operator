@@ -9,6 +9,7 @@ EKS_K8S_VERSION ?= 1.30
 #IMAGE_TAG_BASE ?= hashicorp/vault-secrets-operator
 #K8S_VAULT_NAMESPACE ?= vault
 VERSION ?= 0.8.1
+INTEGRATION_TESTS_PARALLEL ?= true
 
 # directories for cloud hosted k8s infrastructure for running tests
 # root directory for all integration tests
@@ -49,10 +50,6 @@ endif
 import-aws-vars:
 -include $(TF_EKS_STATE_DIR)/outputs.env
 
-#.PHONY: import-deploy-vars
-#import-deploy-vars:
-#-include $(TF_DEPLOY_STATE_DIR)/outputs.env
-
 .PHONY: connect-cluster
 connect-cluster: import-aws-vars ## Connect to the EKS cluster
 	aws eks --region $(AWS_REGION) update-kubeconfig --name $(EKS_CLUSTER_NAME)
@@ -70,7 +67,7 @@ scale-tests: set-image connect-cluster import-aws-vars
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
-	go test github.com/hashicorp/vault-secrets-operator/test/integration/... -test.v -test.run TestVaultDynamicSecret -timeout=30m
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: destroy-eks
 destroy-eks: ## Destroy the EKS cluster

@@ -13,4 +13,3 @@ module "vault" {
   vault_image_tag_ent  = var.vault_image_tag_ent
   vault_chart_version  = var.vault_chart_version
 }
-
