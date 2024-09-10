@@ -73,6 +73,7 @@ var (
 	// make tests more verbose
 	withExtraVerbosity = os.Getenv("WITH_EXTRA_VERBOSITY") != ""
 	testInParallel     = os.Getenv("INTEGRATION_TESTS_PARALLEL") != ""
+	isScaleTest        = os.Getenv("SCALE_TESTS") != ""
 	// set in TestMain
 	clusterName       string
 	operatorImageRepo string
@@ -127,40 +128,8 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	//if os.Getenv("SCALE_TESTS") != "" {
-	//	fmt.Println("EKS_CLUSTER_NAME", os.Getenv("EKS_CLUSTER_NAME"))
-	//	fmt.Println("TESTARGS", os.Getenv("TESTARGS"))
-	//	clusterName = os.Getenv("EKS_CLUSTER_NAME")
-	//	if clusterName == "" {
-	//		os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
-	//		os.Exit(1)
-	//	}
-	//	operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
-	//	operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
-	//
-	//	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	//	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
-	//	// add schemes to support other rollout restart targets
-	//	utilruntime.Must(argorolloutsv1alpha1.AddToScheme(scheme))
-	//
-	//	restConfig = *ctrl.GetConfigOrDie()
-	//
-	//	os.Setenv("VAULT_ADDR", vaultAddr)
-	//	os.Setenv("VAULT_TOKEN", vaultToken)
-	//	os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
-	//
-	//	_ = m.Run()
-	//	// TODO export logs
-	//	//if err := exportKindLogs("TestMainVSO", result != 0); err != nil {
-	//	//	log.Printf("Error failed to exportKindLogs(), err=%s", err)
-	//	//}
-	//	//return
-	//} else {
-	//	os.Exit(0)
-	//}
-
 	if os.Getenv("INTEGRATION_TESTS") != "" {
-		if os.Getenv("SCALE_TESTS") != "" {
+		if isScaleTest {
 			// When SCALE_TESTS is set, use EKS cluster
 			clusterName = os.Getenv("EKS_CLUSTER_NAME")
 			if clusterName == "" {
@@ -175,11 +144,7 @@ func TestMain(m *testing.M) {
 				os.Exit(1)
 			}
 		}
-		//clusterName = os.Getenv("KIND_CLUSTER_NAME")
-		//if clusterName == "" {
-		//	os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
-		//	os.Exit(1)
-		//}
+
 		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -227,8 +192,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	tfDir, err := files.CopyTerraformFolderToDest(
-		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
+	var tfDir string
+	if isScaleTest {
+		tfDir, err = files.CopyTerraformFolderToDest(
+			path.Join(testRoot, "operator-scale/terraform"), tempDir, "terraform")
+	} else {
+		tfDir, err = files.CopyTerraformFolderToDest(
+			path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
+	}
 
 	log.Printf("Test Root: %s", testRoot)
 	_, err = copyModulesDir(tfDir)
@@ -261,6 +232,9 @@ func TestMain(m *testing.M) {
 			"vault_token":   os.Getenv("VAULT_TOKEN"),
 		},
 	})
+	if isScaleTest {
+		tfOptions.Vars["cluster_name"] = clusterName
+	}
 
 	b, err := json.Marshal(tfOptions.Vars)
 	if err != nil {
@@ -645,6 +619,9 @@ func deployOperatorWithKustomizeE(t *testing.T, k8sOpts *k8s.KubectlOptions, kus
 // undeploying the Operator from Kubernetes.
 func exportKindLogsT(t *testing.T) {
 	t.Helper()
+	if isScaleTest {
+		return
+	}
 	require.NoError(t, exportKindLogs(t.Name(), t.Failed()))
 }
 

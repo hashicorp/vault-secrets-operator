@@ -1,34 +1,42 @@
 terraform {
   required_providers {
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.16.1"
-    }
     helm = {
       source  = "hashicorp/helm"
       version = "2.13.1"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.30.0"
+    }
+    aws = {
+      source  = "hashicorp/aws"
+      version = "5.49.0"
+    }
   }
 }
 
-data "terraform_remote_state" "eks" {
-  backend = "local"
-
-  config = {
-    path = "../../eks-cluster/state/terraform.tfstate"
-  }
+data "aws_eks_cluster" "cluster" {
+  name = var.cluster_name
 }
 
 provider "kubernetes" {
-  host                   = data.terraform_remote_state.eks.outputs.cluster_endpoint
-  cluster_ca_certificate = base64decode(data.terraform_remote_state.eks.outputs.cluster_certificate_authority)
-  token                  = data.terraform_remote_state.eks.outputs.eks_cluster_token
+  host                   = data.aws_eks_cluster.cluster.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    args        = ["eks", "get-token", "--cluster-name", data.aws_eks_cluster.cluster.name]
+    command     = "aws"
+  }
 }
 
 provider "helm" {
   kubernetes {
-    host                   = data.terraform_remote_state.eks.outputs.cluster_endpoint
-    cluster_ca_certificate = base64decode(data.terraform_remote_state.eks.outputs.cluster_certificate_authority)
-    token                  = data.terraform_remote_state.eks.outputs.eks_cluster_token
+    host                   = data.aws_eks_cluster.cluster.endpoint
+    cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      args        = ["eks", "get-token", "--cluster-name", data.aws_eks_cluster.cluster.name]
+      command     = "aws"
+    }
   }
 }
