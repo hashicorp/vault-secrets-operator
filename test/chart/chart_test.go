@@ -30,7 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/utils"
+	"github.com/hashicorp/vault-secrets-operator/utils"
 )
 
 var (

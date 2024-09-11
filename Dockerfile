@@ -21,8 +21,15 @@ RUN go mod download
 # Copy the go source
 COPY main.go main.go
 COPY api/ api/
-COPY internal/ internal/
+COPY common/ common/
+COPY consts/ consts/
 COPY controllers/ controllers/
+COPY credentials/ credentials/
+COPY helpers/ helpers/
+COPY internal/ internal/
+COPY template/ template/
+COPY utils/ utils/
+COPY vault/ vault/
 
 # These flags gets redynamically computed on each `docker build` invocation, keep this under `go mod download` and friends
 # so it doesn't unnecessarily bust the Docker cache.

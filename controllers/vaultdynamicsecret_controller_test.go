@@ -23,13 +23,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
+	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 func Test_computeRelativeHorizon(t *testing.T) {
