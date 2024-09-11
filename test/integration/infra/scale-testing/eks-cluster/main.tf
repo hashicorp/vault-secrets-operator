@@ -97,6 +97,16 @@ module "eks" {
   }
 }
 
+data "aws_eks_cluster" "cluster" {
+  name       = module.eks.cluster_name
+  depends_on = [module.eks.cluster_endpoint]
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name       = module.eks.cluster_name
+  depends_on = [module.eks.cluster_endpoint]
+}
+
 resource "local_file" "env_file" {
   filename = "${path.module}/outputs.env"
   content  = <<EOT
