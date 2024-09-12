@@ -37,7 +37,7 @@ provider "kubernetes" {
 }
 
 module "operator_common" {
-  source                       = "../../modules/operator-common"
+  source                       = "../../modules/operator"
   deploy_operator_via_helm     = var.deploy_operator_via_helm
   operator_namespace           = var.operator_namespace
   operator_image_repo          = var.operator_image_repo

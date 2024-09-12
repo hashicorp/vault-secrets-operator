@@ -54,6 +54,13 @@ import-aws-vars:
 connect-cluster: import-aws-vars ## Connect to the EKS cluster
 	aws eks --region $(AWS_REGION) update-kubeconfig --name $(EKS_CLUSTER_NAME)
 
+.PHONY: cleanup-port-forward
+cleanup-port-forward: ## Kill orphan port-forward processes
+	@echo "Cleaning up orphan port-forward processes"
+	@pkill -f 'kubectl port-forward' && \
+		echo "Port-forward processes terminated successfully." || \
+		echo "No port-forward processes found or an error occurred."
+
 .PHONY: set image scale-tests
 scale-tests: set-image connect-cluster import-aws-vars
 	$(MAKE) port-forward &
