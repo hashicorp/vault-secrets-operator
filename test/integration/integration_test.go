@@ -50,10 +50,12 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+
+	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var (

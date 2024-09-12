@@ -26,9 +26,10 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 type vssK8SOutputs struct {
@@ -587,17 +588,17 @@ func assertHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, ori
 
 	// TODO: this test is unreliable in CI. We can reenable it once we can capture
 	//  the Operator logs from the Kind cluster for further analysis
-	//assertSecretDataHMAC(t, ctx, client, vssObj)
-	//if t.Failed() {
+	// assertSecretDataHMAC(t, ctx, client, vssObj)
+	// if t.Failed() {
 	//	return
-	//}
+	// }
 
 	// TODO: this test is unreliable in CI. We can reenable it once we can capture
 	//  the Operator logs from the Kind cluster for further analysis
-	//assertHMACTriggeredRemediation(t, ctx, client, vssObj)
-	//if t.Failed() {
+	// assertHMACTriggeredRemediation(t, ctx, client, vssObj)
+	// if t.Failed() {
 	//	return
-	//}
+	// }
 }
 
 func awaitSecretHMACStatus(t *testing.T, ctx context.Context, client ctrlclient.Client,
