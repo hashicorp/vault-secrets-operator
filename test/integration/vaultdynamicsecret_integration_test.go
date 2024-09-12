@@ -29,9 +29,9 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
 type dynamicK8SOutputs struct {

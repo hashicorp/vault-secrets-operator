@@ -35,14 +35,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+	"github.com/hashicorp/vault-secrets-operator/utils"
+	vclient "github.com/hashicorp/vault-secrets-operator/vault"
+
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 	"github.com/hashicorp/vault-secrets-operator/internal/options"
-	"github.com/hashicorp/vault-secrets-operator/internal/utils"
-	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	// +kubebuilder:scaffold:imports
 )

@@ -24,7 +24,7 @@ type VaultConnectionSpec struct {
 	// default timeout from the Vault API client config is used.
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
-	Timeout *metav1.Duration `json:"timeout,omitempty"`
+	Timeout string `json:"timeout,omitempty"`
 }
 
 // VaultConnectionStatus defines the observed state of VaultConnection
