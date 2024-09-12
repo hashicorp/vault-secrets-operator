@@ -25,7 +25,6 @@ provider "helm" {
 provider "kubernetes" {
   config_context = var.k8s_config_context
   config_path    = var.k8s_config_path
-  count = 0
 }
 
 resource "kubernetes_namespace" "vault" {

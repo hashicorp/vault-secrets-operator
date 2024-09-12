@@ -94,9 +94,6 @@ func TestVaultDynamicSecret(t *testing.T) {
 		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	}
 
-	//clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	//require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
-
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
@@ -665,8 +662,6 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 		clusterName = os.Getenv("KIND_CLUSTER_NAME")
 		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	}
-	//clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	//require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
