@@ -321,6 +321,12 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}, wg *sync.WaitGroup) {
 	wg.Done()
 	logger := log.FromContext(ctx).WithName("getEvents")
+	if o == nil {
+		logger.Error(fmt.Errorf("nil VaultStaticSecret object"), "nil VaultStaticSecret object")
+		close(stoppedCh)
+		return
+	}
+
 	name := client.ObjectKeyFromObject(o)
 	defer func() {
 		r.eventWatcherRegistry.Delete(name)
