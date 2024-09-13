@@ -160,7 +160,7 @@ func Test_getNextRequeue(t *testing.T) {
 			// renewal should come before the current requeueAfter, so the
 			// expected renewal time is 82% of the TTL (49m12s) minus the time
 			// since the secret was created (30m).
-			requeueAfter: computeHorizonWithJitter(2 * time.Hour),
+			requeueAfter: 2 * time.Hour,
 			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
 				CreatedAt: strfmt.DateTime(now.Add(-30 * time.Minute)),
 				ExpiresAt: strfmt.DateTime(now.Add(30 * time.Minute)),
