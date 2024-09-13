@@ -297,10 +297,7 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 	// being garbage collected before the goroutine is started/evaluated
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go func(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
-		defer wg.Done()
-		go r.getEvents(watchCtx, o, wsClient, stoppedCh)
-	}(ctx, o, wsClient, stoppedCh)
+	go r.getEvents(watchCtx, o, wsClient, stoppedCh, wg)
 	wg.Wait()
 
 	return nil
@@ -321,7 +318,8 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 
 // getEvents calls streamStaticSecretEvents in a loop, collecting and responding
 // to any errors returned.
-func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
+func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}, wg *sync.WaitGroup) {
+	wg.Done()
 	logger := log.FromContext(ctx).WithName("getEvents")
 	name := client.ObjectKeyFromObject(o)
 	defer func() {
