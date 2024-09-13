@@ -297,10 +297,10 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 	// being garbage collected before the goroutine is started/evaluated
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go func() {
+	go func(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
 		defer wg.Done()
 		go r.getEvents(watchCtx, o, wsClient, stoppedCh)
-	}()
+	}(ctx, o, wsClient, stoppedCh)
 	wg.Wait()
 
 	return nil
