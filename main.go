@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -288,6 +289,7 @@ func main() {
 		os.Exit(0)
 	}
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	klog.SetLogger(ctrl.Log)
 
 	if backoffMultiplier <= 0 {
 		setupLog.Error(errors.New("invalid option"),
