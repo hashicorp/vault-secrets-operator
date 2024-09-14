@@ -295,6 +295,9 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 	r.eventWatcherRegistry.Register(name, updatedMeta)
 	// Pass a dereferenced VSS object here to avoid the effect of the VSS object
 	// being garbage collected before the goroutine is started/evaluated
+	if o.Namespace == "" || o.Name == "" {
+		return fmt.Errorf("empty namespace or name")
+	}
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go r.getEvents(watchCtx, o, wsClient, stoppedCh, wg)
@@ -321,8 +324,8 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}, wg *sync.WaitGroup) {
 	wg.Done()
 	logger := log.FromContext(ctx).WithName("getEvents")
-	if o == nil {
-		logger.Error(fmt.Errorf("nil VaultStaticSecret object"), "nil VaultStaticSecret object")
+	if o.Namespace == "" || o.Name == "" {
+		logger.Error(fmt.Errorf("empty namespace or name"), "Empty namespace or name, stopping getEvents")
 		close(stoppedCh)
 		return
 	}
