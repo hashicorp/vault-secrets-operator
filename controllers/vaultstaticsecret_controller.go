@@ -441,6 +441,10 @@ type eventMsg struct {
 
 func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient) error {
 	logger := log.FromContext(ctx).WithName("streamStaticSecretEvents")
+	if o.Namespace == "" || o.Name == "" {
+		logger.Error(fmt.Errorf("empty namespace or name"), "Empty namespace or name, stopping streamStaticSecretEvents")
+		return fmt.Errorf("empty namespace or name")
+	}
 	conn, err := wsClient.Connect(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to vault websocket: %w", err)
