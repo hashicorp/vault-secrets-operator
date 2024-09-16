@@ -14,10 +14,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/reference"
 	"nhooyr.io/websocket"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -447,9 +447,9 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 		return fmt.Errorf("empty namespace or name")
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Starting event watcher",
-			"namespace", o.Namespace, "name", o.Name, "meta", o.ObjectMeta)
-		a, e := meta.Accessor(o)
-		logger.V(consts.LogLevelDebug).Info("accessor", "accessor", a, "error", e)
+			"namespace", o.Namespace, "name", o.Name, "o", o)
+		ref, e := reference.GetReference(r.Scheme, o)
+		logger.V(consts.LogLevelDebug).Info("getreference", "ref", ref, "error", e)
 	}
 	conn, err := wsClient.Connect(ctx)
 	if err != nil {
@@ -458,8 +458,18 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 	defer conn.Close(websocket.StatusNormalClosure, "closing event watcher")
 
 	// We made it past the initial websocket connection, so emit a "good" event
-	// status
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
+	// status. Make the object up just to be sure it's not empty?
+	r.Recorder.Eventf(
+		&secretsv1beta1.VaultStaticSecret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: o.Namespace,
+				Name:      o.Name,
+			},
+		},
+		corev1.EventTypeNormal,
+		consts.ReasonEventWatcherStarted,
+		"Started watching events",
+	)
 
 	for {
 		select {
