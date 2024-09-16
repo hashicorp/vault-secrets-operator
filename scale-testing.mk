@@ -10,6 +10,7 @@ EKS_K8S_VERSION ?= 1.30
 #K8S_VAULT_NAMESPACE ?= vault
 VERSION ?= 0.8.1
 INTEGRATION_TESTS_PARALLEL ?= true
+SKIP_HCPVSAPPS_TESTS ?= true
 
 # directories for cloud hosted k8s infrastructure for running tests
 # root directory for all integration tests
@@ -56,13 +57,13 @@ connect-cluster: import-aws-vars ## Connect to the EKS cluster
 
 .PHONY: cleanup-port-forward
 cleanup-port-forward: ## Kill orphan port-forward processes
-	@echo "Cleaning up orphan port-forward processes"
-	@pkill -f 'kubectl port-forward' && \
+	@echo "Cleaning up orphan port-forward processes..."
+	@pgrep -f 'kubectl port-forward -n $(K8S_VAULT_NAMESPACE) statefulset/vault' | xargs -r kill -9 && \
 		echo "Port-forward processes terminated successfully." || \
 		echo "No port-forward processes found or an error occurred."
 
 .PHONY: set image scale-tests
-scale-tests: set-image connect-cluster import-aws-vars
+scale-tests: cleanup-port-forward set-image connect-cluster import-aws-vars
 	$(MAKE) port-forward &
 	SCALE_TESTS=true VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE) \
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) \
@@ -72,7 +73,7 @@ scale-tests: set-image connect-cluster import-aws-vars
 	INTEGRATION_TESTS=true EKS_CLUSTER_NAME=$(EKS_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
-	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
+	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) SKIP_HCPVSAPPS_TESTS=$(SKIP_HCPVSAPPS_TESTS) \
 	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
