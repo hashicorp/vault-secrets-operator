@@ -446,7 +446,7 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 		logger.Error(fmt.Errorf("empty namespace or name"), "Empty namespace or name, stopping streamStaticSecretEvents")
 		return fmt.Errorf("empty namespace or name")
 	} else {
-		logger.V(consts.LogLevelDebug).Info("Starting event watcher",
+		logger.V(consts.LogLevelDebug).Info(fmt.Sprintf("Starting event watcher for %+v", o),
 			"namespace", o.Namespace, "name", o.Name, "o", o)
 		ref, e := reference.GetReference(r.Scheme, o)
 		logger.V(consts.LogLevelDebug).Info("getreference", "ref", ref, "error", e)
@@ -459,13 +459,16 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 
 	// We made it past the initial websocket connection, so emit a "good" event
 	// status. Make the object up just to be sure it's not empty?
+	objRef := corev1.ObjectReference{
+		Kind:            "VaultStaticSecret",
+		APIVersion:      "secrets.hashicorp.com/v1beta1",
+		Name:            o.Name,
+		Namespace:       o.Namespace,
+		UID:             o.UID,
+		ResourceVersion: o.ResourceVersion,
+	}
 	r.Recorder.Eventf(
-		&secretsv1beta1.VaultStaticSecret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: o.Namespace,
-				Name:      o.Name,
-			},
-		},
+		&objRef,
 		corev1.EventTypeNormal,
 		consts.ReasonEventWatcherStarted,
 		"Started watching events",
