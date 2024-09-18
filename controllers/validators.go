@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/template"
+	"github.com/hashicorp/vault-secrets-operator/template"
 )
 
 type ValidatorFunc func(context.Context, client.Object) error

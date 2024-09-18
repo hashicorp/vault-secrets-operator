@@ -34,9 +34,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 const (

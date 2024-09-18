@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
 func syncableSecretPredicate(syncReg *SyncRegistry) predicate.Predicate {

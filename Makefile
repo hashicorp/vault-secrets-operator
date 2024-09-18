@@ -4,7 +4,7 @@
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
-KUBE_RBAC_PROXY_VERSION = v0.15.0
+KUBE_RBAC_PROXY_VERSION = v0.18.1
 
 GO_VERSION = $(shell cat .go-version)
 
