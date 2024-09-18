@@ -64,9 +64,9 @@ func TestVaultPKISecret(t *testing.T) {
 
 	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
 	vpsCreateCount := getEnvInt("VPS_CREATE_COUNT", -1)
-	createOnlyCount := getEnvInt("VSS_CREATE_ONLY", 1)
-	mixedCount := getEnvInt("VSS_MIXED_CREATE", defaultCreate)
-	createTLSCount := getEnvInt("VSS_MIXED_CREATE", 2)
+	createOnlyCount := getEnvInt("VPS_CREATE_ONLY", 1)
+	mixedCount := getEnvInt("VPS_MIXED_CREATE", defaultCreate)
+	createTLSCount := getEnvInt("VPS_MIXED_CREATE", 2)
 
 	if vpsCreateCount != -1 {
 		createOnlyCount = vpsCreateCount

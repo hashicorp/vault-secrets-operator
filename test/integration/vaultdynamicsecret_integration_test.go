@@ -100,8 +100,8 @@ func TestVaultDynamicSecret(t *testing.T) {
 	// TODO: Extend this to support other dynamic create test cases
 	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
 	vdsCreateCount := getEnvInt("VDS_CREATE_COUNT", -1)
-	createOnlyCount := getEnvInt("VSS_CREATE_ONLY", defaultCreate)
-	mixedCount := getEnvInt("VSS_MIXED_CREATE", defaultCreate)
+	createOnlyCount := getEnvInt("VDS_CREATE_ONLY", defaultCreate)
+	mixedCount := getEnvInt("VDS_MIXED_CREATE", defaultCreate)
 
 	if vdsCreateCount != -1 {
 		createOnlyCount = vdsCreateCount
