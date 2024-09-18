@@ -323,13 +323,7 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 // getEvents calls streamStaticSecretEvents in a loop, collecting and responding
 // to any errors returned.
 func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}, wg *sync.WaitGroup) {
-	wg.Done()
 	logger := log.FromContext(ctx).WithName("getEvents")
-	if o.Namespace == "" || o.Name == "" {
-		logger.Error(fmt.Errorf("empty namespace or name"), "Empty namespace or name, stopping getEvents")
-		close(stoppedCh)
-		return
-	}
 
 	name := client.ObjectKeyFromObject(o)
 	defer func() {
@@ -343,6 +337,13 @@ func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv
 	shouldBackoff := false
 	errorThreshold := 5
 	errorCount := 0
+
+	wg.Done()
+	if o.Namespace == "" || o.Name == "" {
+		logger.Error(fmt.Errorf("empty namespace or name"), "Empty namespace or name, stopping getEvents")
+		close(stoppedCh)
+		return
+	}
 
 eventLoop:
 	for {
@@ -449,7 +450,7 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 		logger.V(consts.LogLevelDebug).Info(fmt.Sprintf("Starting event watcher for %+v", o),
 			"namespace", o.Namespace, "name", o.Name, "o", o)
 		ref, e := reference.GetReference(r.Scheme, o)
-		logger.V(consts.LogLevelDebug).Info("getreference", "ref", ref, "error", e)
+		logger.V(consts.LogLevelDebug).Info(fmt.Sprintf("getreference %+v", ref), "error", e)
 	}
 	conn, err := wsClient.Connect(ctx)
 	if err != nil {
@@ -458,19 +459,8 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 	defer conn.Close(websocket.StatusNormalClosure, "closing event watcher")
 
 	// We made it past the initial websocket connection, so emit a "good" event
-	// status. Make the object up just to be sure it's not empty?
-	objRef := corev1.ObjectReference{
-		Kind:            "VaultStaticSecret",
-		APIVersion:      "secrets.hashicorp.com/v1beta1",
-		Name:            o.Name,
-		Namespace:       o.Namespace,
-		UID:             o.UID,
-		ResourceVersion: o.ResourceVersion,
-	}
-	r.Recorder.Eventf(
-		&objRef,
-		corev1.EventTypeNormal,
-		consts.ReasonEventWatcherStarted,
+	// status.
+	r.recordEvent(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted,
 		"Started watching events",
 	)
 
@@ -531,6 +521,23 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 			}
 		}
 	}
+}
+
+// recordEvent records an event on the VaultStaticSecret resource, but manually
+// constructs the object reference (since occasionally calling Recorder.Eventf()
+// with a VSS the resulting Event has no name or namespace)
+func (r *VaultStaticSecretReconciler) recordEvent(o *secretsv1beta1.VaultStaticSecret, eventType, reason, message string) {
+	objRef := corev1.ObjectReference{
+		Kind:            VaultStaticSecret.String(),
+		APIVersion:      secretsv1beta1.GroupVersion.String(),
+		Name:            o.Name,
+		Namespace:       o.Namespace,
+		UID:             o.UID,
+		ResourceVersion: o.ResourceVersion,
+	}
+	r.Recorder.Eventf(&objRef, eventType, reason, message)
+	fmt.Printf("object name %s namespace %s\n", objRef.Name, objRef.Namespace)
+	fmt.Printf("object metadata name %s namespace %s\n", o.ObjectMeta.Name, o.ObjectMeta.Namespace)
 }
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
