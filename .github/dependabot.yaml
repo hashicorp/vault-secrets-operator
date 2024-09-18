@@ -11,10 +11,6 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
     groups:
       gomod-breaking:
         update-types:
@@ -23,6 +19,10 @@ updates:
         update-types:
           - minor
           - patch
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
     # Disable version updates and only check security updates for github
     # actions, since we can't bump the versions until they're on our allow-list
     open-pull-requests-limit: 0
