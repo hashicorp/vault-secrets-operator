@@ -97,6 +97,17 @@ func TestVaultDynamicSecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	// TODO: Extend this to support other dynamic create test cases
+	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
+	vdsCreateCount := getEnvInt("VDS_CREATE_COUNT", -1)
+	createOnlyCount := getEnvInt("VSS_CREATE_ONLY", defaultCreate)
+	mixedCount := getEnvInt("VSS_MIXED_CREATE", defaultCreate)
+
+	if vdsCreateCount != -1 {
+		createOnlyCount = vdsCreateCount
+		mixedCount = vdsCreateCount
+	}
+
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
 	var created []ctrlclient.Object
@@ -236,7 +247,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:            "create-only",
-			create:          5,
+			create:          createOnlyCount,
 			withArgoRollout: true,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
@@ -246,7 +257,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:               "mixed",
-			create:             5,
+			create:             mixedCount,
 			createStatic:       5,
 			createNonRenewable: 5,
 			existing:           5,

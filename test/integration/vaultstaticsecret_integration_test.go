@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -56,6 +57,31 @@ func TestVaultStaticSecret(t *testing.T) {
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	// Read counts from environment variables or set defaults
+	// You can either set VSS_CREATE_COUNT to set the count for all tests, or
+	// set the specific count for each test.
+	// If VSS_CREATE_COUNT is set, it will override the specific test counts.
+	// If VSS_CREATE_COUNT is not set, the specific test counts will be used.
+	// If no counts are set, the default count will be used.
+	defaultCreate := 2 // Default count if no VSS_CREATE_COUNT is set
+	vssCreateCount := getEnvInt("VSS_CREATE_COUNT", -1)
+	kvv1Count := getEnvInt("VSS_KVV1_CREATE", defaultCreate)
+	kvv2Count := getEnvInt("VSS_KVV2_CREATE", defaultCreate)
+	bothCount := getEnvInt("VSS_BOTH_CREATE", defaultCreate)
+	kvv2FixedCount := getEnvInt("VSS_KVV2_FIXED_CREATE", defaultCreate)
+	mixedBothCount := getEnvInt("VSS_MIXED_BOTH_CREATE", defaultCreate)
+	eventsBothCount := getEnvInt("VSS_EVENTS_BOTH_CREATE", defaultCreate)
+
+	// Apply VSS_CREATE_COUNT if it is set
+	if vssCreateCount != -1 {
+		kvv1Count = vssCreateCount
+		kvv2Count = vssCreateCount
+		bothCount = vssCreateCount
+		kvv2FixedCount = vssCreateCount
+		mixedBothCount = vssCreateCount
+		eventsBothCount = vssCreateCount
+	}
 
 	// The events tests require Vault Enterprise >= 1.16.3, and since that
 	// changes the app policy required we need to set a flag in the test
@@ -292,23 +318,23 @@ func TestVaultStaticSecret(t *testing.T) {
 		},
 		{
 			name:        "create-kv-v1",
-			create:      2,
+			create:      kvv1Count,
 			createTypes: []string{consts.KVSecretTypeV1},
 		},
 		{
 			name:        "create-kv-v2",
-			create:      1,
+			create:      kvv2Count,
 			createTypes: []string{consts.KVSecretTypeV2},
 		},
 		{
 			name:        "create-kv-v2-fixed-version",
-			create:      2,
+			create:      kvv2FixedCount,
 			createTypes: []string{consts.KVSecretTypeV2},
 			version:     1,
 		},
 		{
 			name:        "create-both",
-			create:      2,
+			create:      bothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
@@ -324,7 +350,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				},
 			},
 			existing:    getExisting(),
-			create:      2,
+			create:      mixedBothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
@@ -349,7 +375,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				}
 				return vss
 			}(),
-			create:      2,
+			create:      eventsBothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 			useEvents:   true,
 		},
@@ -544,6 +570,17 @@ func TestVaultStaticSecret(t *testing.T) {
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
+}
+
+// getEnvInt reads an integer value from an environment variable.
+// If the env variable is not set or if it's not a valid integer, it returns the default value.
+func getEnvInt(key string, defaultValue int) int {
+	if value, exists := os.LookupEnv(key); exists {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
 }
 
 func assertNoHMAC(t *testing.T, origVSSObj *secretsv1beta1.VaultStaticSecret) {
