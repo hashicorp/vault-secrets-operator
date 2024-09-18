@@ -292,8 +292,9 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 	// launch the goroutine to watch events
 	logger.V(consts.LogLevelDebug).Info("Starting event watcher", "meta", updatedMeta)
 	r.eventWatcherRegistry.Register(name, updatedMeta)
-	// Pass a dereferenced VSS object here to avoid the effect of the VSS object
-	// being garbage collected before the goroutine is started/evaluated
+	// Pass a dereferenced VSS object here because it seems to avoid an issue
+	// where the EventWatcherStarted event is occasionally emitted without a
+	// name or namespace attached.
 	go r.getEvents(watchCtx, *o, wsClient, stoppedCh)
 
 	return nil
