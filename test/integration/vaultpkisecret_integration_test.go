@@ -62,6 +62,18 @@ func TestVaultPKISecret(t *testing.T) {
 		k8sConfigContext = "kind-" + clusterName
 	}
 
+	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
+	vpsCreateCount := getEnvInt("VPS_CREATE_COUNT", -1)
+	createOnlyCount := getEnvInt("VSS_CREATE_ONLY", 1)
+	mixedCount := getEnvInt("VSS_MIXED_CREATE", defaultCreate)
+	createTLSCount := getEnvInt("VSS_MIXED_CREATE", 2)
+
+	if vpsCreateCount != -1 {
+		createOnlyCount = vpsCreateCount
+		mixedCount = vpsCreateCount
+		createTLSCount = vpsCreateCount
+	}
+
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)
 
@@ -218,16 +230,16 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 		{
 			name:   "create-only",
-			create: 1,
+			create: createOnlyCount,
 		},
 		{
 			name:     "mixed",
 			existing: getExisting(),
-			create:   5,
+			create:   mixedCount,
 		},
 		{
 			name:       "create-tls",
-			create:     2,
+			create:     createTLSCount,
 			secretType: corev1.SecretTypeTLS,
 		},
 	}
