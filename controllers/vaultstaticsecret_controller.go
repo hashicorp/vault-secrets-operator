@@ -469,10 +469,14 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 				if o.Spec.Type == consts.KVSecretTypeV2 {
 					specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
 				}
+				specNamespace := strings.Trim(o.Spec.Namespace, "/")
+				if o.Spec.Namespace == "" {
+					specNamespace = strings.Trim(wsClient.Namespace(), "/")
+				}
 				logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
-					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace,
+					"namespace", namespace, "path", path, "spec.namespace", specNamespace,
 					"spec path", specPath)
-				if namespace == o.Spec.Namespace && path == specPath {
+				if namespace == specNamespace && path == specPath {
 					logger.V(consts.LogLevelDebug).Info("Event matches, sending requeue",
 						"namespace", namespace, "path", path)
 					r.SourceCh <- event.GenericEvent{
