@@ -189,7 +189,7 @@ func Test_getNextRequeue(t *testing.T) {
 				TTL:       "3600s",
 			},
 			renewPercent: defaultDyanmicRenewPercent,
-			expected:     1 * time.Second,
+			expected:     defaultDynamicRequeue,
 		},
 		"future dynamic secret": {
 			requeueAfter: 1 * time.Hour,
@@ -200,6 +200,16 @@ func Test_getNextRequeue(t *testing.T) {
 			},
 			renewPercent: defaultDyanmicRenewPercent,
 			expected:     1 * time.Hour,
+		},
+		"reqeueAfter is zero": {
+			requeueAfter: 0,
+			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now),
+				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+				TTL:       "3600s",
+			},
+			renewPercent: defaultDyanmicRenewPercent,
+			expected:     time.Duration(40*time.Minute + 12*time.Second), // 1h*0.67
 		},
 	}
 

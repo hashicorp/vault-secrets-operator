@@ -42,7 +42,14 @@ const (
 	headerUserAgent    = "User-Agent"
 
 	hcpVaultSecretsAppFinalizer = "hcpvaultsecretsapp.secrets.hashicorp.com/finalizer"
-	defaultDyanmicRenewPercent  = 67
+
+	// defaultDyanmicRenewPercent is the default renewal point in the dynamic
+	// secret's TTL, expressed as a percent out of 100
+	defaultDyanmicRenewPercent = 67
+
+	// defaultDynamicRequeue is for use when a dynamic secret needs to be
+	// renewed ASAP so we need a requeue time that's not zero
+	defaultDynamicRequeue = 1 * time.Second
 )
 
 var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
@@ -421,11 +428,11 @@ func getNextRequeue(requeueAfter time.Duration, dynamicInstance *models.Secrets2
 	renewTime := time.Time(dynamicInstance.CreatedAt).Add(renewPoint)
 	howLongUntilRenewTime := renewTime.Sub(now)
 
-	if howLongUntilRenewTime < requeueAfter {
+	if howLongUntilRenewTime < requeueAfter || requeueAfter == 0 {
 		nextRequeue = howLongUntilRenewTime
 	}
-	if nextRequeue < 0 {
-		nextRequeue = 1 * time.Second
+	if nextRequeue <= 0 {
+		nextRequeue = defaultDynamicRequeue
 	}
 
 	return nextRequeue
