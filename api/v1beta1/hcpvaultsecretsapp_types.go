@@ -32,6 +32,37 @@ type HCPVaultSecretsAppSpec struct {
 	// Destination provides configuration necessary for syncing the HCP Vault
 	// Application secrets to Kubernetes.
 	Destination Destination `json:"destination"`
+	// SyncConfig configures sync behavior from HVS to VSO
+	SyncConfig *HVSSyncConfig `json:"syncConfig,omitempty"`
+}
+
+// HVSSyncConfig configures sync behavior from HVS to VSO
+type HVSSyncConfig struct {
+	// Dynamic configures sync behavior for dynamic secrets.
+	Dynamic *HVSDynamicSyncConfig `json:"dynamic,omitempty"`
+}
+
+// HVSDynamicSyncConfig configures sync behavior for HVS dynamic secrets.
+type HVSDynamicSyncConfig struct {
+	// RenewalPercent is the percent out of 100 of a dynamic secret's TTL when
+	// new secrets are generated. Defaults to 67 percent minus jitter.
+	// +kubebuilder:default=67
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	RenewalPercent int `json:"renewalPercent,omitempty"`
+}
+
+// HVSDynamicStatus defines the observed state of a dynamic secret within an HCP
+// Vault Secrets App
+type HVSDynamicStatus struct {
+	// Name of the dynamic secret
+	Name string `json:"name,omitempty"`
+	// CreatedAt is the timestamp string of when the dynamic secret was created
+	CreatedAt string `json:"createdAt,omitempty"`
+	// ExpiresAt is the timestamp string of when the dynamic secret will expire
+	ExpiresAt string `json:"expiresAt,omitempty"`
+	// TTL is the time-to-live of the dynamic secret in seconds
+	TTL string `json:"ttl,omitempty"`
 }
 
 // HCPVaultSecretsAppStatus defines the observed state of HCPVaultSecretsApp
@@ -47,6 +78,9 @@ type HCPVaultSecretsAppStatus struct {
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.
 	SecretMAC string `json:"secretMAC,omitempty"`
+	// DynamicSecrets lists the last observed state of any dynamic secrets
+	// within the HCP Vault Secrets App
+	DynamicSecrets []HVSDynamicStatus `json:"dynamicSecrets,omitempty"`
 }
 
 //+kubebuilder:object:root=true
