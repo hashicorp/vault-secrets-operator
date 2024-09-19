@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -464,10 +465,10 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 			if modified {
 				namespace := strings.Trim(messageMap.Data.Namespace, "/")
 				path := messageMap.Data.Event.Metadata.Path
-				specPath := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+				specPathPattern := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
 
 				if o.Spec.Type == consts.KVSecretTypeV2 {
-					specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+					specPathPattern = strings.Join([]string{o.Spec.Mount, "*", o.Spec.Path}, "/")
 				}
 				specNamespace := strings.Trim(o.Spec.Namespace, "/")
 				if o.Spec.Namespace == "" {
@@ -475,8 +476,13 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 				}
 				logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
 					"namespace", namespace, "path", path, "spec.namespace", specNamespace,
-					"spec path", specPath)
-				if namespace == specNamespace && path == specPath {
+					"spec.path", specPathPattern)
+
+				pathMatched, err := filepath.Match(specPathPattern, path)
+				if err != nil {
+					return fmt.Errorf("failed to match secret paht: %w", err)
+				}
+				if namespace == specNamespace && pathMatched {
 					logger.V(consts.LogLevelDebug).Info("Event matches, sending requeue",
 						"namespace", namespace, "path", path)
 					r.SourceCh <- event.GenericEvent{
