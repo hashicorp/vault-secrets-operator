@@ -443,9 +443,9 @@ type eventMsg struct {
 
 func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient) error {
 	logger := log.FromContext(ctx).WithName("streamStaticSecretEvents")
-	r.recordEvent(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted,
-		"Starting streamStaticSecretEvents",
-	)
+	// r.recordEvent(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted,
+	// 	"Starting streamStaticSecretEvents",
+	// )
 	if o.Namespace == "" || o.Name == "" {
 		logger.Error(fmt.Errorf("empty namespace or name"), "Empty namespace or name, stopping streamStaticSecretEvents")
 		return fmt.Errorf("empty namespace or name")
@@ -455,9 +455,9 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 		ref, e := reference.GetReference(r.Scheme, o)
 		logger.V(consts.LogLevelDebug).Info(fmt.Sprintf("getreference %+v", ref), "error", e)
 	}
-	r.recordEvent(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted,
-		"Going to connect to wsClient",
-	)
+	// r.recordEvent(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted,
+	// 	"Going to connect to wsClient",
+	// )
 
 	conn, err := wsClient.Connect(ctx)
 	if err != nil {
@@ -542,7 +542,7 @@ func (r *VaultStaticSecretReconciler) recordEvent(o *secretsv1beta1.VaultStaticS
 		UID:             o.UID,
 		ResourceVersion: o.ResourceVersion,
 	}
-	r.Recorder.Eventf(&objRef, eventType, reason, message)
+	r.Recorder.Event(&objRef, eventType, reason, message)
 	fmt.Printf("object name %s namespace %s\n", objRef.Name, objRef.Namespace)
 	fmt.Printf("object metadata name %s namespace %s\n", o.ObjectMeta.Name, o.ObjectMeta.Namespace)
 }
