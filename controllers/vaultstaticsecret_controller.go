@@ -437,6 +437,16 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 	// status
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
+	specPathPattern := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+	if o.Spec.Type == consts.KVSecretTypeV2 {
+		specPathPattern = strings.Join([]string{o.Spec.Mount, "*", o.Spec.Path}, "/")
+	}
+
+	specNamespace := strings.Trim(o.Spec.Namespace, "/")
+	if o.Spec.Namespace == "" {
+		specNamespace = strings.Trim(wsClient.Namespace(), "/")
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -465,15 +475,7 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 			if modified {
 				namespace := strings.Trim(messageMap.Data.Namespace, "/")
 				path := messageMap.Data.Event.Metadata.Path
-				specPathPattern := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
 
-				if o.Spec.Type == consts.KVSecretTypeV2 {
-					specPathPattern = strings.Join([]string{o.Spec.Mount, "*", o.Spec.Path}, "/")
-				}
-				specNamespace := strings.Trim(o.Spec.Namespace, "/")
-				if o.Spec.Namespace == "" {
-					specNamespace = strings.Trim(wsClient.Namespace(), "/")
-				}
 				logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
 					"namespace", namespace, "path", path, "spec.namespace", specNamespace,
 					"spec.path", specPathPattern)
