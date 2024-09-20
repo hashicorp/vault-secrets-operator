@@ -50,6 +50,7 @@ type VaultStaticSecretReconciler struct {
 	SecretDataBuilder           *helpers.SecretDataBuilder
 	HMACValidator               helpers.HMACValidator
 	HMACHorizon                 time.Duration
+	MinRefreshAfter             time.Duration
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	BackOffRegistry             *BackOffRegistry
@@ -100,7 +101,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
-		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
+		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", r.MinRefreshAfter)
 		if err != nil {
 			logger.Error(err, "Field validation failed")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,

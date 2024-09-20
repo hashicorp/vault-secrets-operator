@@ -138,6 +138,7 @@ func main() {
 	var preDeleteHookTimeoutSeconds int
 	var minRefreshAfterHVSA time.Duration
 	var hmacHorizonVSS time.Duration
+	var minRefreshAfterVSS time.Duration
 	var globalTransformationOpts string
 	var globalVaultAuthOpts string
 	var backoffInitialInterval time.Duration
@@ -176,6 +177,8 @@ func main() {
 		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
 	flag.DurationVar(&hmacHorizonVSS, "hmac-horizon-vss", time.Second*60,
 		"Duration between VaultStaticSecret resource reconciliation, when using HMAC.")
+	flag.DurationVar(&minRefreshAfterVSS, "min-refresh-after-vss", 0,
+		"Minimum duration between VaultStaticSecret resource reconciliation.")
 	flag.StringVar(&globalTransformationOpts, "global-transformation-options", "",
 		fmt.Sprintf("Set global secret transformation options as a comma delimited string. "+
 			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS. "+
@@ -453,6 +456,7 @@ func main() {
 		SecretDataBuilder:           secretDataBuilder,
 		HMACValidator:               hmacValidator,
 		HMACHorizon:                 hmacHorizonVSS,
+		MinRefreshAfter:             minRefreshAfterVSS,
 		ClientFactory:               clientFactory,
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOptions: globalTransOptions,
