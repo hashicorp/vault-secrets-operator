@@ -2,7 +2,7 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 */}}
-
+{{- if .Values.controller.rbac.create }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -60,3 +60,4 @@ subjects:
 - kind: ServiceAccount
   name: '{{ include "vso.chart.fullname" . }}-controller-manager'
   namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -18,6 +18,7 @@ metadata:
     helm.sh/hook-delete-policy: "hook-succeeded,before-hook-creation"
     helm.sh/hook-weight: "1"
 {{ include "vso.imagePullSecrets" . }}
+{{- if .Values.controller.rbac.create }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -62,6 +63,7 @@ roleRef:
   kind: ClusterRole
   name: {{ template "vso.chart.fullname" . }}-upgrade-crds
   apiGroup: rbac.authorization.k8s.io
+{{- end }}
 ---
 apiVersion: batch/v1
 kind: Job

@@ -67,6 +67,8 @@ controller:
   affinity: {}
 
   rbac:
+    # If true, create the necessary ClusterRole, ClusterRoleBinding, Role, RoleBinding for the operator.
+    create: true
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
     clusterRoleAggregation:
       # viewerRoles is a list of roles that will be aggregated into the viewer ClusterRole.
