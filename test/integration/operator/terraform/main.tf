@@ -26,7 +26,7 @@ provider "vault" {
 
 data "aws_eks_cluster" "cluster" {
   count = var.with_eks ? 1 : 0
-  name = var.cluster_name
+  name  = var.cluster_name
 }
 
 provider "helm" {
@@ -38,13 +38,13 @@ provider "helm" {
 }
 
 provider "kubernetes" {
-  alias = "kind"
+  alias          = "kind"
   config_context = var.k8s_config_context
   config_path    = var.k8s_config_path
 }
 
 provider "kubernetes" {
-  alias = "eks"
+  alias                  = "eks"
   host                   = var.with_eks ? data.aws_eks_cluster.cluster[0].endpoint : ""
   cluster_ca_certificate = var.with_eks ? base64decode(data.aws_eks_cluster.cluster[0].certificate_authority[0].data) : ""
   exec {
@@ -70,7 +70,7 @@ provider "helm" {
 module "operator_eks" {
   count = var.with_eks ? 1 : 0
   providers = {
-    helm = helm.eks
+    helm       = helm.eks
     kubernetes = kubernetes.eks
   }
 
@@ -88,7 +88,7 @@ module "operator_kind" {
   count = !var.with_eks ? 1 : 0
 
   providers = {
-    helm = helm.kind
+    helm       = helm.kind
     kubernetes = kubernetes.kind
   }
 

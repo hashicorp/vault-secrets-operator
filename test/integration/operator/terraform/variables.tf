@@ -74,6 +74,6 @@ variable "cluster_name" {
 }
 
 variable "with_eks" {
-  type = bool
+  type    = bool
   default = false
 }
