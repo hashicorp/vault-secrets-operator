@@ -51,6 +51,7 @@ type VaultStaticSecretReconciler struct {
 	HMACValidator               helpers.HMACValidator
 	HMACHorizon                 time.Duration
 	MinRefreshAfter             time.Duration
+	DefaultRefreshAfter         time.Duration
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	BackOffRegistry             *BackOffRegistry
@@ -109,6 +110,8 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 		requeueAfter = computeHorizonWithJitter(d)
+	} else if r.DefaultRefreshAfter > 0 {
+		requeueAfter = computeHorizonWithJitter(r.DefaultRefreshAfter)
 	}
 
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,

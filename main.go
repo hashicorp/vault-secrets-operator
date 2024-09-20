@@ -139,6 +139,7 @@ func main() {
 	var minRefreshAfterHVSA time.Duration
 	var hmacHorizonVSS time.Duration
 	var minRefreshAfterVSS time.Duration
+	var defaultRefreshAfterVSS time.Duration
 	var globalTransformationOpts string
 	var globalVaultAuthOpts string
 	var backoffInitialInterval time.Duration
@@ -179,6 +180,8 @@ func main() {
 		"Duration between VaultStaticSecret resource reconciliation, when using HMAC.")
 	flag.DurationVar(&minRefreshAfterVSS, "min-refresh-after-vss", 0,
 		"Minimum duration between VaultStaticSecret resource reconciliation.")
+	flag.DurationVar(&defaultRefreshAfterVSS, "default-refresh-after-vss", 0,
+		"Global default for refreshAfter of VaultStaticSecret resources. Set to 0 to disable.")
 	flag.StringVar(&globalTransformationOpts, "global-transformation-options", "",
 		fmt.Sprintf("Set global secret transformation options as a comma delimited string. "+
 			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS. "+
@@ -457,6 +460,7 @@ func main() {
 		HMACValidator:               hmacValidator,
 		HMACHorizon:                 hmacHorizonVSS,
 		MinRefreshAfter:             minRefreshAfterVSS,
+		DefaultRefreshAfter:         defaultRefreshAfterVSS,
 		ClientFactory:               clientFactory,
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOptions: globalTransOptions,
