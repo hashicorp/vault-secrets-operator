@@ -49,6 +49,7 @@ type VaultStaticSecretReconciler struct {
 	ClientFactory               vault.ClientFactory
 	SecretDataBuilder           *helpers.SecretDataBuilder
 	HMACValidator               helpers.HMACValidator
+	HMACHorizon                 time.Duration
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	BackOffRegistry             *BackOffRegistry
@@ -153,8 +154,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
 		if requeueAfter == 0 {
-			// hardcoding a default horizon here, perhaps we will want to make this value public?
-			requeueAfter = computeHorizonWithJitter(time.Second * 60)
+			requeueAfter = computeHorizonWithJitter(r.HMACHorizon)
 		}
 
 		// doRolloutRestart only if this is not the first time this secret has been synced
