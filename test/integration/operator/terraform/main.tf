@@ -22,6 +22,10 @@ terraform {
   }
 }
 
+provider "aws" {
+  region = var.region
+}
+
 provider "vault" {
   # Configuration options
   address = var.vault_address
@@ -73,6 +77,7 @@ provider "helm" {
 
 module "operator_eks" {
   count = var.with_eks ? 1 : 0
+
   providers = {
     helm       = helm.eks
     kubernetes = kubernetes.eks
