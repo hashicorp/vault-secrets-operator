@@ -143,8 +143,9 @@ jobs:
           make ci-build BUILD_DIR="${BUILD_DIR}"
           OUT_DIR="${BUILD_DIR}/out"
           mkdir -p "${OUT_DIR}"
+          cp -a LICENSE "${BUILD_DIR}/LICENSE.txt"
           ZIP_FILE="${OUT_DIR}/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip"
-          zip -r -j "${ZIP_FILE}" dist/${{ env.GOOS }}/${{ env.GOARCH }}/${{ env.PKG_NAME }} LICENSE
+          zip -r -j "${ZIP_FILE}" dist/${{ env.GOOS }}/${{ env.GOARCH }}/${{ env.PKG_NAME }} ${BUILD_DIR}/LICENSE.txt
           echo "path=${ZIP_FILE}" >> $GITHUB_OUTPUT
           echo "name=$(basename ${ZIP_FILE})" >> $GITHUB_OUTPUT
       - name: Upload binary
