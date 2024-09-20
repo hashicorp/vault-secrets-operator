@@ -78,6 +78,7 @@ var (
 	clusterName       string
 	operatorImageRepo string
 	operatorImageTag  string
+	withEKS           bool
 
 	// extended in TestMain
 	scheme = ctrlruntime.NewScheme()
@@ -130,6 +131,7 @@ const (
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		if isScaleTest {
+			withEKS = true
 			// When SCALE_TESTS is set, use EKS cluster
 			clusterName = os.Getenv("EKS_CLUSTER_NAME")
 			if clusterName == "" {
@@ -192,14 +194,16 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	var tfDir string
-	if isScaleTest {
-		tfDir, err = files.CopyTerraformFolderToDest(
-			path.Join(testRoot, "operator-scale/terraform"), tempDir, "terraform")
-	} else {
-		tfDir, err = files.CopyTerraformFolderToDest(
-			path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
-	}
+	tfDir, err := files.CopyTerraformFolderToDest(
+		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
+	//var tfDir string
+	//if isScaleTest {
+	//	tfDir, err = files.CopyTerraformFolderToDest(
+	//		path.Join(testRoot, "operator-scale/terraform"), tempDir, "terraform")
+	//} else {
+	//	tfDir, err = files.CopyTerraformFolderToDest(
+	//		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
+	//}
 
 	log.Printf("Test Root: %s", testRoot)
 	_, err = copyModulesDir(tfDir)
@@ -224,6 +228,7 @@ func TestMain(m *testing.M) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
+			"with_eks":                     withEKS,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_config_context":           k8sConfigContext,
 			"k8s_vault_namespace":          k8sVaultNamespace,

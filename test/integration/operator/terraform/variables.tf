@@ -67,3 +67,13 @@ variable "operator_image_repo" {
 variable "operator_image_tag" {
   default = "0.0.0-dev"
 }
+
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+}
+
+variable "with_eks" {
+  type = bool
+  default = false
+}

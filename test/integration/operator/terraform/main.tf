@@ -24,7 +24,13 @@ provider "vault" {
   token   = var.vault_token
 }
 
+data "aws_eks_cluster" "cluster" {
+  count = var.with_eks ? 1 : 0
+  name = var.cluster_name
+}
+
 provider "helm" {
+  alias = "kind"
   kubernetes {
     config_context = var.k8s_config_context
     config_path    = var.k8s_config_path
@@ -32,11 +38,60 @@ provider "helm" {
 }
 
 provider "kubernetes" {
+  alias = "kind"
   config_context = var.k8s_config_context
   config_path    = var.k8s_config_path
 }
 
-module "operator_common" {
+provider "kubernetes" {
+  alias = "eks"
+  host                   = var.with_eks ? data.aws_eks_cluster.cluster[0].endpoint : ""
+  cluster_ca_certificate = var.with_eks ? base64decode(data.aws_eks_cluster.cluster[0].certificate_authority[0].data) : ""
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    args        = ["eks", "get-token", "--cluster-name", var.with_eks ? data.aws_eks_cluster.cluster[0].name : ""]
+    command     = "aws"
+  }
+}
+
+provider "helm" {
+  alias = "eks"
+  kubernetes {
+    host                   = var.with_eks ? data.aws_eks_cluster.cluster[0].endpoint : ""
+    cluster_ca_certificate = var.with_eks ? base64decode(data.aws_eks_cluster.cluster[0].certificate_authority[0].data) : ""
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      args        = ["eks", "get-token", "--cluster-name", var.with_eks ? data.aws_eks_cluster.cluster[0].name : ""]
+      command     = "aws"
+    }
+  }
+}
+
+module "operator_eks" {
+  count = var.with_eks ? 1 : 0
+  providers = {
+    helm = helm.eks
+    kubernetes = kubernetes.eks
+  }
+
+  source                       = "../../modules/operator"
+  deploy_operator_via_helm     = var.deploy_operator_via_helm
+  operator_namespace           = var.operator_namespace
+  operator_image_repo          = var.operator_image_repo
+  operator_image_tag           = var.operator_image_tag
+  enable_default_connection    = var.enable_default_connection
+  operator_helm_chart_path     = var.operator_helm_chart_path
+  k8s_vault_connection_address = var.k8s_vault_connection_address
+}
+
+module "operator_kind" {
+  count = !var.with_eks ? 1 : 0
+
+  providers = {
+    helm = helm.kind
+    kubernetes = kubernetes.kind
+  }
+
   source                       = "../../modules/operator"
   deploy_operator_via_helm     = var.deploy_operator_via_helm
   operator_namespace           = var.operator_namespace
