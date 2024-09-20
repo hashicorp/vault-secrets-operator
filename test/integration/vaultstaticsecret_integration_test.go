@@ -437,7 +437,8 @@ func TestVaultStaticSecret(t *testing.T) {
 		}
 
 		if expectInitial && obj.Spec.SyncConfig != nil && obj.Spec.SyncConfig.InstantUpdates {
-			// Ensure the event watcher has started so that subsequent updates
+			// Ensure the (Vault) event watcher has started by waiting for the
+			// EventWatcherStarted k8s event so that subsequent Vault updates
 			// are detected and synced.
 			assert.NoError(t, backoff.Retry(func() error {
 				objEvents := corev1.EventList{}
