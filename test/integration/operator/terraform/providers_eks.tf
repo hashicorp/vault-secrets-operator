@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 data "aws_eks_cluster" "cluster" {
-  name  = var.cluster_name
+  name = var.cluster_name
 }
 
 provider "kubernetes" {
