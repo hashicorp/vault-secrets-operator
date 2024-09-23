@@ -73,14 +73,3 @@ variable "cluster_name" {
   type        = string
   default     = ""
 }
-
-variable "with_eks" {
-  type    = bool
-  default = false
-}
-
-variable "aws_region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-2"
-}
