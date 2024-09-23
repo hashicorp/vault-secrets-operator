@@ -79,6 +79,7 @@ var (
 	operatorImageRepo string
 	operatorImageTag  string
 	withEKS           bool
+	awsRegion         string
 
 	// extended in TestMain
 	scheme = ctrlruntime.NewScheme()
@@ -131,6 +132,7 @@ const (
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		if isScaleTest {
+			awsRegion = os.Getenv("AWS_REGION")
 			withEKS = true
 			// When SCALE_TESTS is set, use EKS cluster
 			clusterName = os.Getenv("EKS_CLUSTER_NAME")
@@ -228,6 +230,7 @@ func TestMain(m *testing.M) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
+			"aws_region":                   awsRegion,
 			"with_eks":                     withEKS,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_config_context":           k8sConfigContext,
