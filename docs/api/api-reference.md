@@ -991,7 +991,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
 | `namespace` _string_ | Namespace where the secrets engine is mounted in Vault.<br />In case this parameter is not provided, the namespace will be inferred from the `namespace` parameter of the utilized VaultAuth resource. |  |  |
 | `mount` _string_ | Mount path of the secret's engine in Vault. |  |  |
 | `requestHTTPMethod` _string_ | RequestHTTPMethod to use when syncing Secrets from Vault.<br />Setting a value here is not typically required.<br />If left unset the Operator will make requests using the GET method.<br />In the case where Params are specified the Operator will use the PUT method.<br />Please consult https://developer.hashicorp.com/vault/docs/secrets if you are<br />uncertain about what method to use.<br />Of note, the Vault client treats PUT and POST as being equivalent.<br />The underlying Vault client implementation will always use the PUT method. |  | Enum: [GET POST PUT] <br /> |
@@ -1057,7 +1057,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
 | `namespace` _string_ | Namespace to get the secret from in Vault<br />In case this parameter is not provided, the namespace will be inferred from the `namespace` parameter of the utilized VaultAuth resource. |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `role` _string_ | Role in Vault to use when issuing TLS certificates. |  |  |
@@ -1170,7 +1170,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
 | `namespace` _string_ | Namespace to get the secret from in Vault.<br />In case this parameter is not provided, the namespace will be inferred from the `namespace` parameter of the utilized VaultAuth resource. |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for,<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |

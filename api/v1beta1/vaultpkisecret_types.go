@@ -14,8 +14,7 @@ import (
 
 // VaultPKISecretSpec defines the desired state of VaultPKISecret
 type VaultPKISecretSpec struct {
-	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
-	// eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace.
+	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
 	// Namespace to get the secret from in Vault
