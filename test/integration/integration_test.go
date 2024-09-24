@@ -194,9 +194,9 @@ func TestMain(m *testing.M) {
 
 	var providerFile string
 	if isScaleTest {
-		providerFile = "providers_kind.tf"
-	} else {
 		providerFile = "providers_eks.tf"
+	} else {
+		providerFile = "providers_kind.tf"
 	}
 	providersDir := filepath.Join(testRoot, "operator/providers")
 
