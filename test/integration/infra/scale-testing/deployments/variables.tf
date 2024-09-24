@@ -55,13 +55,11 @@ variable "vault_chart_version" {
   default = "0.28.1"
 }
 
-variable "install_kube_prometheus" {
-  type    = bool
-  default = false
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-2"
 }
 
-variable "metrics_server_enabled" {
-  type    = bool
-  default = true
-}
+
 

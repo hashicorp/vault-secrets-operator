@@ -192,29 +192,22 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	var removeProviderFile string
+	var providerFile string
 	if isScaleTest {
-		removeProviderFile = "providers_kind.tf"
+		providerFile = "providers_kind.tf"
 	} else {
-		removeProviderFile = "providers_eks.tf"
+		providerFile = "providers_eks.tf"
 	}
+	providersDir := filepath.Join(testRoot, "operator/providers")
 
 	tfDir, err := files.CopyTerraformFolderToDest(
 		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
 
-	// remove unnecessary provider file
-	if err := os.Remove(filepath.Join(tfDir, removeProviderFile)); err != nil {
-		log.Printf("Failed to remove provider file, err=%s", err)
+	// copy the provider file to the terraform directory
+	if err := files.CopyFile(filepath.Join(providersDir, providerFile), filepath.Join(tfDir, providerFile)); err != nil {
+		log.Printf("Failed to copy provider file, err=%s", err)
+		os.Exit(1)
 	}
-
-	//var tfDir string
-	//if isScaleTest {
-	//	tfDir, err = files.CopyTerraformFolderToDest(
-	//		path.Join(testRoot, "operator-scale/terraform"), tempDir, "terraform")
-	//} else {
-	//	tfDir, err = files.CopyTerraformFolderToDest(
-	//		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
-	//}
 
 	log.Printf("Test Root: %s", testRoot)
 	_, err = copyModulesDir(tfDir)
