@@ -16,6 +16,8 @@ SKIP_HCPVSAPPS_TESTS ?= true
 # root directory for all integration tests
 TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/eks-cluster
 TF_EKS_STATE_DIR ?= $(TF_EKS_SRC_DIR)/state
+TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/eks-cluster
+TF_EKS_STATE_DIR ?= $(TF_EKS_SRC_DIR)/state
 TF_DEPLOY_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/deployments
 TF_DEPLOY_STATE_DIR ?= $(TF_DEPLOY_SRC_DIR)/state
 
@@ -33,6 +35,8 @@ create-eks: ## Create a new EKS cluster
 		-var region=$(AWS_REGION) \
 		-var kubernetes_version=$(EKS_K8S_VERSION) || exit 1
 	rm -f $(TF_EKS_STATE_DIR)/*.tfvars
+
+.PHONY: create-eks-prometheus
 
 .PHONY: deploy-workload
 deploy-workload: set-vault-license ## Deploy the workload to the EKS cluster
