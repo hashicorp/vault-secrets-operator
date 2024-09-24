@@ -194,11 +194,11 @@ func TestMain(m *testing.M) {
 
 	var providerFile string
 	if isScaleTest {
-		providerFile = "providers_eks.tf"
+		providerFile = "eks.tf"
 	} else {
-		providerFile = "providers_kind.tf"
+		providerFile = "kind.tf"
 	}
-	providersDir := filepath.Join(testRoot, "operator/providers")
+	providersDir := path.Join(testRoot, "operator/providers")
 
 	tfDir, err := files.CopyTerraformFolderToDest(
 		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
