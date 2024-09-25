@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 
 	httptransport "github.com/go-openapi/runtime/client"
@@ -20,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,16 +46,22 @@ const (
 
 	hcpVaultSecretsAppFinalizer = "hcpvaultsecretsapp.secrets.hashicorp.com/finalizer"
 
-	// defaultDyanmicRenewPercent is the default renewal point in the dynamic
+	// defaultDynamicRenewPercent is the default renewal point in the dynamic
 	// secret's TTL, expressed as a percent out of 100
-	defaultDyanmicRenewPercent = 67
+	defaultDynamicRenewPercent = 67
 
 	// defaultDynamicRequeue is for use when a dynamic secret needs to be
 	// renewed ASAP so we need a requeue time that's not zero
 	defaultDynamicRequeue = 1 * time.Second
 )
 
-var userAgent = fmt.Sprintf("vso/%s", version.Version().String())
+var (
+	userAgent = fmt.Sprintf("vso/%s", version.Version().String())
+	// hvsErrorRe is a regexp to parse the error message from the HVS API
+	// The error message is expected to be in the format:
+	// [METHOD PATH_PATTERN][STATUS_CODE]
+	hvsErrorRe = regexp.MustCompile(`\[(\w+) (.+)\]\[(\d+)\]`)
+)
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
 type HCPVaultSecretsAppReconciler struct {
@@ -136,7 +145,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		},
 	}
 
-	resp, err := c.OpenAppSecrets(params, nil)
+	resp, err := fetchOpenSecretsPaginated(ctx, c, params, nil)
 	if err != nil {
 		logger.Error(err, "Get App Secrets", "appName", o.Spec.AppName)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
@@ -350,6 +359,8 @@ func injectRequestInformation(runtime *httptransport.Runtime) {
 
 // getHVSDynamicSecrets returns the "open" dynamic secrets for the given HVS app
 func getHVSDynamicSecrets(ctx context.Context, c hvsclient.ClientService, appName string) ([]*models.Secrets20231128OpenSecret, error) {
+	logger := log.FromContext(ctx).WithName("getHVSDynamicSecrets")
+
 	// Fetch the unopened AppSecrets to get the full list of secrets (including
 	// dynamic)
 	secretsListParams := &hvsclient.ListAppSecretsParams{
@@ -359,43 +370,54 @@ func getHVSDynamicSecrets(ctx context.Context, c hvsclient.ClientService, appNam
 		// ourselves
 		// Type: ptr.To(helpers.HVSSecretTypeDynamic),
 	}
-	appSecretsList, err := c.ListAppSecrets(secretsListParams, nil)
+
+	filter := func(secret *models.Secrets20231128Secret) bool {
+		if secret == nil {
+			return false
+		}
+		return secret.Type == helpers.HVSSecretTypeDynamic
+	}
+
+	listResp, err := listSecretsPaginated(ctx, c, secretsListParams, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list app Secrets for app %s: %w", appName, err)
 	}
 
-	dynamicSecrets := make([]*models.Secrets20231128OpenSecret, 0)
-
-	if appSecretsList.Payload != nil {
+	var secrets []*models.Secrets20231128OpenSecret
+	if listResp.Payload != nil {
 		// TODO(tvoran): only fetch/create dynamic secrets that are new or are
 		// due for rotation
-		for _, appSecret := range appSecretsList.Payload.Secrets {
-			if appSecret.Type != helpers.HVSSecretTypeDynamic {
-				continue
-			}
+		for _, appSecret := range listResp.Payload.Secrets {
 			secretParams := &hvsclient.OpenAppSecretParams{
 				Context:    ctx,
 				AppName:    appName,
 				SecretName: appSecret.Name,
 			}
-			dynamicResp, err := c.OpenAppSecret(secretParams, nil)
+			resp, err := c.OpenAppSecret(secretParams, nil)
 			if err != nil {
+				if errResp := parseHVSErrorResponse(err); errResp != nil && errResp.StatusCode == http.StatusNotFound {
+					logger.V(consts.LogLevelWarning).Info(
+						"Dynamic secret not found, skipping",
+						"appName", appName, "secretName", appSecret.Name)
+					continue
+				}
+
 				return nil, fmt.Errorf("failed to get dynamic secret %s in app %s: %w",
 					appSecret.Name, appName, err)
 			}
-			if dynamicResp != nil && dynamicResp.Payload != nil {
-				dynamicSecrets = append(dynamicSecrets, dynamicResp.Payload.Secret)
+			if resp != nil && resp.Payload != nil {
+				secrets = append(secrets, resp.Payload.Secret)
 			}
 		}
 	}
 
-	return dynamicSecrets, nil
+	return secrets, nil
 }
 
 // getDynamicRenewPercent returns the default renewal percent or the synconfig
 // dynamic renewal percent in that order of precendence
 func getDynamicRenewPercent(syncConfig *secretsv1beta1.HVSSyncConfig) int {
-	renewPercent := defaultDyanmicRenewPercent
+	renewPercent := defaultDynamicRenewPercent
 	if syncConfig != nil && syncConfig.Dynamic != nil && syncConfig.Dynamic.RenewalPercent != 0 {
 		renewPercent = syncConfig.Dynamic.RenewalPercent
 	}
@@ -436,4 +458,143 @@ func getNextRequeue(requeueAfter time.Duration, dynamicInstance *models.Secrets2
 	}
 
 	return nextRequeue
+}
+
+type (
+	// openSecretFilter is a function that filters out secrets from the OpenAppSecrets API response.
+	// The function should return true to keep the secret.
+	openSecretFilter func(*models.Secrets20231128OpenSecret) bool
+	// secretFilter is a function that filters out secrets from the ListAppSecrets API response
+	// The function should return true to keep the secret.
+	secretFilter func(*models.Secrets20231128Secret) bool
+)
+
+// fetchOpenSecretsPaginated fetches all pages of the OpenAppSecrets API call and returns a slice of responses.
+// Note: Some attributes of the params will be modified in the process of fetching the secrets.
+func fetchOpenSecretsPaginated(ctx context.Context, c hvsclient.ClientService, params *hvsclient.OpenAppSecretsParams, filter openSecretFilter) (*hvsclient.OpenAppSecretsOK, error) {
+	if params == nil {
+		return nil, fmt.Errorf("params is nil")
+	}
+
+	logger := log.FromContext(ctx).WithName("fetchOpenSecretsPaginated")
+	logger.V(consts.LogLevelDebug).Info("Fetching OpenSecrets",
+		"appName", params.AppName, "types", params.Types)
+
+	var resp *hvsclient.OpenAppSecretsOK
+	var secrets []*models.Secrets20231128OpenSecret
+	var err error
+	for {
+		resp, err = c.OpenAppSecrets(params, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp == nil {
+			return nil, fmt.Errorf("failed to open app secrets: response is nil")
+		}
+
+		for _, secret := range resp.Payload.Secrets {
+			if filter != nil && !filter(secret) {
+				continue
+			}
+			secrets = append(secrets, secret)
+		}
+
+		if resp.Payload.Pagination == nil || resp.Payload.Pagination.NextPageToken == "" {
+			break
+		}
+
+		params.PaginationNextPageToken = ptr.To(resp.Payload.Pagination.NextPageToken)
+	}
+
+	if resp != nil {
+		resp = &hvsclient.OpenAppSecretsOK{
+			Payload: &models.Secrets20231128OpenAppSecretsResponse{
+				Secrets:    secrets,
+				Pagination: resp.Payload.Pagination,
+			},
+		}
+	}
+
+	return resp, nil
+}
+
+// listSecretsPaginated fetches all pages of the AppSecrets API call and returns a slice of responses.
+// Note: Some attributes of the params will be modified in the process of fetching the secrets.
+func listSecretsPaginated(ctx context.Context, c hvsclient.ClientService, params *hvsclient.ListAppSecretsParams, filter secretFilter) (*hvsclient.ListAppSecretsOK, error) {
+	if params == nil {
+		return nil, fmt.Errorf("params is nil")
+	}
+
+	logger := log.FromContext(ctx).WithName("listSecretsPaginated")
+	logger.V(consts.LogLevelDebug).Info("Listing Secrets", "appName")
+
+	var resp *hvsclient.ListAppSecretsOK
+	var secrets []*models.Secrets20231128Secret
+	var err error
+	for {
+		resp, err = c.ListAppSecrets(params, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open app secrets: %w", err)
+		}
+
+		if resp != nil {
+			for _, secret := range resp.Payload.Secrets {
+				if filter != nil && !filter(secret) {
+					continue
+				}
+				secrets = append(secrets, secret)
+			}
+		}
+
+		if resp.Payload.Pagination == nil || resp.Payload.Pagination.NextPageToken == "" {
+			break
+		}
+
+		params.PaginationNextPageToken = ptr.To(resp.Payload.Pagination.NextPageToken)
+	}
+
+	if resp != nil {
+		resp = &hvsclient.ListAppSecretsOK{
+			Payload: &models.Secrets20231128ListAppSecretsResponse{
+				Secrets:    secrets,
+				Pagination: resp.Payload.Pagination,
+			},
+		}
+	}
+	return resp, nil
+}
+
+// hvsErrorResponse contains the method, path pattern, and status code of an HVS API error
+// response.
+type hvsErrorResponse struct {
+	Method      string
+	PathPattern string
+	StatusCode  int
+}
+
+// parseHVSErrorResponse parses the error message from the HVS API and returns
+// the method, path pattern, and status code if the error message matches the
+// expected format.
+func parseHVSErrorResponse(err error) *hvsErrorResponse {
+	if err == nil {
+		return nil
+	}
+
+	matches := hvsErrorRe.FindStringSubmatch(err.Error())
+	if len(matches) != 4 {
+		return nil
+	}
+
+	code, err := strconv.Atoi(matches[3])
+	if err != nil {
+		// should never happen since the regex is looking for digits
+		return nil
+	}
+
+	return &hvsErrorResponse{
+		Method:      matches[1],
+		PathPattern: matches[2],
+		StatusCode:  code,
+	}
 }
