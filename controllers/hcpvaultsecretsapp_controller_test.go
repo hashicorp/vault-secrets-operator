@@ -793,7 +793,7 @@ func Test_listSecretsPaginated(t *testing.T) {
 	}
 }
 
-func Test_parseHVSErrorResponse(t *testing.T) {
+func Test_parseHVSResponseError(t *testing.T) {
 	t.Parallel()
 
 	errorMessageFmt := `[%s %s][%d]`
@@ -801,7 +801,7 @@ func Test_parseHVSErrorResponse(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
-		want *hvsErrorResponse
+		want *hvsResponseErrorStatus
 	}{
 		{
 			name: "nil",
@@ -815,7 +815,7 @@ func Test_parseHVSErrorResponse(t *testing.T) {
 		{
 			name: "status-error-forbidden-get",
 			err:  fmt.Errorf(errorMessageFmt, http.MethodGet, pathPattern, http.StatusForbidden),
-			want: &hvsErrorResponse{
+			want: &hvsResponseErrorStatus{
 				Method:      http.MethodGet,
 				PathPattern: pathPattern,
 				StatusCode:  http.StatusForbidden,
@@ -824,7 +824,7 @@ func Test_parseHVSErrorResponse(t *testing.T) {
 		{
 			name: "status-error-forbidden-post",
 			err:  fmt.Errorf(errorMessageFmt, http.MethodPost, pathPattern, http.StatusForbidden),
-			want: &hvsErrorResponse{
+			want: &hvsResponseErrorStatus{
 				Method:      http.MethodPost,
 				PathPattern: pathPattern,
 				StatusCode:  http.StatusForbidden,
@@ -833,7 +833,7 @@ func Test_parseHVSErrorResponse(t *testing.T) {
 		{
 			name: "status-error-not-found",
 			err:  fmt.Errorf(errorMessageFmt, http.MethodGet, pathPattern, http.StatusNotFound),
-			want: &hvsErrorResponse{
+			want: &hvsResponseErrorStatus{
 				Method:      http.MethodGet,
 				PathPattern: pathPattern,
 				StatusCode:  http.StatusNotFound,
@@ -842,7 +842,7 @@ func Test_parseHVSErrorResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, parseHVSErrorResponse(tt.err), "parseHVSErrorResponse(%v)", tt.err)
+			assert.Equalf(t, tt.want, parseHVSResponseError(tt.err), "parseHVSResponseError(%v)", tt.err)
 		})
 	}
 }

@@ -60,7 +60,7 @@ var (
 	// hvsErrorRe is a regexp to parse the error message from the HVS API
 	// The error message is expected to be in the format:
 	// [METHOD PATH_PATTERN][STATUS_CODE]
-	hvsErrorRe = regexp.MustCompile(`\[(\w+) (.+)\]\[(\d+)\]`)
+	hvsErrorRe = regexp.MustCompile(`\[(\w+) (.+)]\[(\d+)]`)
 )
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
@@ -395,7 +395,7 @@ func getHVSDynamicSecrets(ctx context.Context, c hvsclient.ClientService, appNam
 			}
 			resp, err := c.OpenAppSecret(secretParams, nil)
 			if err != nil {
-				if errResp := parseHVSErrorResponse(err); errResp != nil && errResp.StatusCode == http.StatusNotFound {
+				if errResp := parseHVSResponseError(err); errResp != nil && errResp.StatusCode == http.StatusNotFound {
 					logger.V(consts.LogLevelWarning).Info(
 						"Dynamic secret not found, skipping",
 						"appName", appName, "secretName", appSecret.Name)
@@ -565,18 +565,18 @@ func listSecretsPaginated(ctx context.Context, c hvsclient.ClientService, params
 	return resp, nil
 }
 
-// hvsErrorResponse contains the method, path pattern, and status code of an HVS API error
+// hvsResponseErrorStatus contains the method, path pattern, and status code of an HVS API error
 // response.
-type hvsErrorResponse struct {
+type hvsResponseErrorStatus struct {
 	Method      string
 	PathPattern string
 	StatusCode  int
 }
 
-// parseHVSErrorResponse parses the error message from the HVS API and returns
+// parseHVSResponseError parses the error message from the HVS API and returns
 // the method, path pattern, and status code if the error message matches the
 // expected format.
-func parseHVSErrorResponse(err error) *hvsErrorResponse {
+func parseHVSResponseError(err error) *hvsResponseErrorStatus {
 	if err == nil {
 		return nil
 	}
@@ -592,7 +592,7 @@ func parseHVSErrorResponse(err error) *hvsErrorResponse {
 		return nil
 	}
 
-	return &hvsErrorResponse{
+	return &hvsResponseErrorStatus{
 		Method:      matches[1],
 		PathPattern: matches[2],
 		StatusCode:  code,
