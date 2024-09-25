@@ -204,7 +204,7 @@ func TestMain(m *testing.M) {
 		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
 
 	// copy the provider file to the terraform directory
-	if err := files.CopyFile(path.Join(providersDir, providerFile), path.Join(tfDir, providerFile)); err != nil {
+	if err := files.CopyFile(path.Join(providersDir, providerFile), path.Join(tfDir, "providers.tf")); err != nil {
 		log.Printf("Failed to copy provider file, err=%s", err)
 		os.Exit(1)
 	}
