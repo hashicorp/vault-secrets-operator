@@ -18,12 +18,6 @@ terraform {
   }
 }
 
-provider "vault" {
-  # Configuration options
-  address = var.vault_address
-  token   = var.vault_token
-}
-
 module "operator" {
   source                       = "../../modules/operator"
   deploy_operator_via_helm     = var.deploy_operator_via_helm
