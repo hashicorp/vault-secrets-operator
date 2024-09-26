@@ -527,7 +527,7 @@ func listSecretsPaginated(ctx context.Context, c hvsclient.ClientService, params
 	}
 
 	logger := log.FromContext(ctx).WithName("listSecretsPaginated")
-	logger.V(consts.LogLevelDebug).Info("Listing Secrets", "appName")
+	logger.V(consts.LogLevelDebug).Info("Listing Secrets", "appName", params.AppName)
 
 	var resp *hvsclient.ListAppSecretsOK
 	var secrets []*models.Secrets20231128Secret
