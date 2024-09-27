@@ -507,16 +507,12 @@ func fetchOpenSecretsPaginated(ctx context.Context, c hvsclient.ClientService, p
 		params.PaginationNextPageToken = ptr.To(resp.Payload.Pagination.NextPageToken)
 	}
 
-	if resp != nil {
-		resp = &hvsclient.OpenAppSecretsOK{
-			Payload: &models.Secrets20231128OpenAppSecretsResponse{
-				Secrets:    secrets,
-				Pagination: resp.Payload.Pagination,
-			},
-		}
-	}
-
-	return resp, nil
+	return &hvsclient.OpenAppSecretsOK{
+		Payload: &models.Secrets20231128OpenAppSecretsResponse{
+			Secrets:    secrets,
+			Pagination: resp.Payload.Pagination,
+		},
+	}, nil
 }
 
 // listSecretsPaginated fetches all pages of the AppSecrets API call and returns a slice of responses.
@@ -538,13 +534,15 @@ func listSecretsPaginated(ctx context.Context, c hvsclient.ClientService, params
 			return nil, fmt.Errorf("failed to open app secrets: %w", err)
 		}
 
-		if resp != nil {
-			for _, secret := range resp.Payload.Secrets {
-				if filter != nil && !filter(secret) {
-					continue
-				}
-				secrets = append(secrets, secret)
+		if resp == nil {
+			return nil, fmt.Errorf("failed to list app secrets: response is nil")
+		}
+
+		for _, secret := range resp.Payload.Secrets {
+			if filter != nil && !filter(secret) {
+				continue
 			}
+			secrets = append(secrets, secret)
 		}
 
 		if resp.Payload.Pagination == nil || resp.Payload.Pagination.NextPageToken == "" {
@@ -554,15 +552,12 @@ func listSecretsPaginated(ctx context.Context, c hvsclient.ClientService, params
 		params.PaginationNextPageToken = ptr.To(resp.Payload.Pagination.NextPageToken)
 	}
 
-	if resp != nil {
-		resp = &hvsclient.ListAppSecretsOK{
-			Payload: &models.Secrets20231128ListAppSecretsResponse{
-				Secrets:    secrets,
-				Pagination: resp.Payload.Pagination,
-			},
-		}
-	}
-	return resp, nil
+	return &hvsclient.ListAppSecretsOK{
+		Payload: &models.Secrets20231128ListAppSecretsResponse{
+			Secrets:    secrets,
+			Pagination: resp.Payload.Pagination,
+		},
+	}, nil
 }
 
 // hvsResponseErrorStatus contains the method, path pattern, and status code of an HVS API error
