@@ -20,7 +20,7 @@ type VaultAuthGlobalSpec struct {
 	AllowedNamespaces []string `json:"allowedNamespaces,omitempty"`
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
-	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
+	// the namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
 	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
 	// DefaultVaultNamespace to auth to in Vault, if not specified the namespace of the auth
