@@ -38,22 +38,18 @@ provider "helm" {
   }
 }
 
-resource "kubernetes_namespace" prometheus {
-  metadata {
-    name = "prometheus"
-  }
-}
-
-resource "helm_release" "prometheus" {
-  depends_on       = [kubernetes_namespace.prometheus]
-  name             = "prometheus"
+resource "helm_release" "kube-prometheus" {
+#  count            = true ? 1 : 0
+  name             = "kube-prometheus"
   repository       = "https://prometheus-community.github.io/helm-charts"
   chart            = "kube-prometheus-stack"
-  namespace        = kubernetes_namespace.prometheus.id
+  namespace        = "kube-prometheus"
   create_namespace = true
+  wait             = true
+  wait_for_jobs    = true
   version          = "62.7.0"
-  values           = [
-    file("values.yaml")
-  ]
+#  values           = [
+#    file("values.yaml")
+#  ]
   timeout = 2000
 }

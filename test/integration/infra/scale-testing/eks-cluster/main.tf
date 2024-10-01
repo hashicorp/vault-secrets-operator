@@ -40,6 +40,49 @@ module "vpc" {
   }
 }
 
+# Amazon EKS cluster must have an Amazon EBS CSI driver installed to setup ingestion from Prometheus server
+# See https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-onboard-ingest-metrics-new-Prometheus.html
+# The EBS CSI driver requires IAM permissions to talk to Amazon EBS to manage the volume on user's behalf. The following module
+# https://github.com/terraform-aws-modules/terraform-aws-iam/tree/v5.44.1/modules/iam-role-for-service-accounts-eks
+# configures the exact IAM role for the EBS CSI driver.
+# This module is designed to use in conjunction with eks module for easy integration
+module "ebs_csi_irsa_role" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "5.44.1"
+
+  role_name             = "${module.eks.cluster_name}-ebs-csi"
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      # the driver Deployment service account is ebs-csi-controller-sa by default
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+}
+
+locals {
+  # K8s service account
+  amsp_ingest_sa = "amsp-ingest"
+  prometheus_k8s_namespace = "prometheus"
+}
+
+module "amazon_managed_service_prometheus_irsa_role" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "5.44.1"
+
+  role_name      = "${module.eks.cluster_name}-amazon-managed-service-prometheus"
+  attach_amazon_managed_service_prometheus_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["${local.prometheus_k8s_namespace}:${local.amsp_ingest_sa}"]
+    }
+  }
+}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.2.1"
@@ -47,6 +90,13 @@ module "eks" {
   cluster_name                   = local.cluster_name
   cluster_version                = var.kubernetes_version
   cluster_endpoint_public_access = true
+
+  cluster_addons = {
+    aws-ebs-csi-driver = {
+      service_account_role_arn = module.ebs_csi_irsa_role.iam_role_arn
+      most_recent = true
+   }
+  }
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets

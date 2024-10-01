@@ -15,3 +15,8 @@ variable "region" {
 variable "eks_node_group_instance_count" {
   default = 2
 }
+
+variable "with_prometheus" {
+  type    = bool
+  default = true
+}
