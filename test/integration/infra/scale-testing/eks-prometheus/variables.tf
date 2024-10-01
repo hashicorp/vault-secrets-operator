@@ -12,6 +12,12 @@ variable "cluster_name" {
   type = string
 }
 
+variable "prometheus_namespace" {
+  description = "K8s namespace to deploy prometheus server"
+  type = string
+}
+
+variable ""
 variable "with_eks" {
   type    = bool
   default = false

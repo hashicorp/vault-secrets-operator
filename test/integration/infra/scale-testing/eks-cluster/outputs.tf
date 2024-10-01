@@ -33,3 +33,13 @@ output "eks_node_role_arn" {
   description = "IAM role for the EKS nodes"
   value       = module.eks.eks_managed_node_groups["default_node_group"]["iam_role_arn"]
 }
+
+output "prometheus_k8s_namespace" {
+  description = "K8s namespace to deploy prometheus"
+  value = local.prometheus_k8s_namespace
+}
+
+output "amsp_ingest_sa" {
+  description = "K8s service account for Amazon Managed Service for Prometheus ingest"
+  value = local.amsp_ingest_sa
+}
