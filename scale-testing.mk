@@ -5,9 +5,6 @@
 AWS_REGION ?= us-east-2
 EKS_K8S_VERSION ?= 1.30
 
-#OPERATOR_NAMESPACE ?= vault-secrets-operator-system
-#IMAGE_TAG_BASE ?= hashicorp/vault-secrets-operator
-#K8S_VAULT_NAMESPACE ?= vault
 VERSION ?= 0.8.1
 INTEGRATION_TESTS_PARALLEL ?= true
 SKIP_HCPVSAPPS_TESTS ?= true
@@ -35,7 +32,7 @@ create-eks: ## Create a new EKS cluster
 	rm -f $(TF_EKS_STATE_DIR)/*.tfvars
 
 .PHONY: deploy-workload
-deploy-workload: set-vault-license ## Deploy the workload to the EKS cluster
+deploy-workload: set-vault-license import-aws-vars ## Deploy the workload to the EKS cluster
 	@mkdir -p $(TF_DEPLOY_STATE_DIR)
 ifeq ($(VAULT_ENTERPRISE), true)
     ## ensure that the license is *not* emitted to the console
@@ -44,7 +41,8 @@ endif
 	rm -f $(TF_DEPLOY_STATE_DIR)/*.tf
 	cp -v $(TF_DEPLOY_SRC_DIR)/*.tf $(TF_DEPLOY_STATE_DIR)/.
 	$(TERRAFORM) -chdir=$(TF_DEPLOY_STATE_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_DEPLOY_STATE_DIR) apply -auto-approve || exit 1
+	$(TERRAFORM) -chdir=$(TF_DEPLOY_STATE_DIR) apply -auto-approve \
+		-var cluster_name=$(EKS_CLUSTER_NAME) || exit 1
 	rm -f $(TF_DEPLOY_STATE_DIR)/*.tfvars
 
 .PHONY: import-aws-vars
@@ -70,7 +68,8 @@ scale-tests: cleanup-port-forward set-image connect-cluster import-aws-vars
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	VAULT_OIDC_DISC_URL=$(EKS_OIDC_URL) VAULT_OIDC_CA=false \
-	INTEGRATION_TESTS=true EKS_CLUSTER_NAME=$(EKS_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	INTEGRATION_TESTS=true EKS_CLUSTER_NAME=$(EKS_CLUSTER_NAME) \
+	K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) \
 	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_AWS_STATIC_CREDS_TEST=$(SKIP_AWS_STATIC_CREDS_TEST) \
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) SKIP_HCPVSAPPS_TESTS=$(SKIP_HCPVSAPPS_TESTS) \

@@ -30,16 +30,8 @@ variable "k8s_config_path" {
   default = "~/.kube/config"
 }
 
-variable "vault_image_repo" {
-  default = "docker.mirror.hashicorp.services/hashicorp/vault"
-}
-
 variable "vault_image_repo_ent" {
   default = "docker.mirror.hashicorp.services/hashicorp/vault-enterprise"
-}
-
-variable "vault_image_tag" {
-  default = "1.17"
 }
 
 variable "vault_image_tag_ent" {

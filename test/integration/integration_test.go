@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 	"testing"
@@ -232,6 +233,7 @@ func TestMain(m *testing.M) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
+			"cluster_name":                 clusterName,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_config_context":           k8sConfigContext,
 			"k8s_vault_namespace":          k8sVaultNamespace,
@@ -240,9 +242,6 @@ func TestMain(m *testing.M) {
 			"vault_token":   os.Getenv("VAULT_TOKEN"),
 		},
 	})
-	if isScaleTest {
-		tfOptions.Vars["cluster_name"] = clusterName
-	}
 
 	b, err := json.Marshal(tfOptions.Vars)
 	if err != nil {
@@ -1169,4 +1168,15 @@ func setupSignalHandler() (context.Context, context.CancelFunc) {
 	}()
 
 	return ctx, cancel
+}
+
+// getEnvInt reads an integer value from an environment variable.
+// If the env variable is not set or if it's not a valid integer, it returns the default value.
+func getEnvInt(key string, defaultValue int) int {
+	if value, exists := os.LookupEnv(key); exists {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
 }

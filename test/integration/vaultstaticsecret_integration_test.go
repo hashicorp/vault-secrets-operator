@@ -12,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"testing"
 	"time"
 
@@ -570,17 +569,6 @@ func TestVaultStaticSecret(t *testing.T) {
 			assert.Greater(t, count, 0, "no tests were run")
 		})
 	}
-}
-
-// getEnvInt reads an integer value from an environment variable.
-// If the env variable is not set or if it's not a valid integer, it returns the default value.
-func getEnvInt(key string, defaultValue int) int {
-	if value, exists := os.LookupEnv(key); exists {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
 }
 
 func assertNoHMAC(t *testing.T, origVSSObj *secretsv1beta1.VaultStaticSecret) {
