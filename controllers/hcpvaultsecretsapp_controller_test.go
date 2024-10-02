@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,8 +18,11 @@ import (
 	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/common"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
@@ -238,98 +242,416 @@ func Test_getHVSDynamicSecrets(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p := newFakeHVSTransportWithOpts(t, tt.opts)
 			client := hvsclient.New(p, nil)
-			resp, err := getHVSDynamicSecrets(context.Background(), client, "appName")
+			resp, err := getHVSDynamicSecrets(context.Background(), client,
+				"appName", defaultDynamicRenewPercent, nil)
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected, resp)
+			assert.Equal(t, tt.expected, resp.secrets)
 			assert.Equal(t, tt.wantNumRequests, p.numRequests)
 		})
 	}
 }
 
-func Test_getNextRequeue(t *testing.T) {
+func Test_getHVSDynamicSecrets_withShadowSecrets(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+
+	exampleStatic := &models.Secrets20231128OpenSecret{
+		Name: "static",
+		StaticVersion: &models.Secrets20231128OpenSecretStaticVersion{
+			Value: "value",
+		},
+		Type: "static",
+	}
+
+	exampleDynamic1 := &models.Secrets20231128OpenSecret{
+		Name: "dynamic1",
+		DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+			Values: map[string]string{
+				"secret_key": "key1",
+				"secret_id":  "id1",
+			},
+		},
+		Type:      "dynamic",
+		CreatedAt: strfmt.DateTime(now),
+	}
+
+	// This version has a different top-level CreatedAt time than
+	// exampleDynamic1 as though the dynamic secret was deleted and recreated
+	// with the same name in HVS
+	exampleDynamic1ReCreated := &models.Secrets20231128OpenSecret{
+		Name: exampleDynamic1.Name,
+		DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+			Values: map[string]string{
+				"secret_key": "recreatedkey1",
+				"secret_id":  "recreatedid1",
+			},
+		},
+		Type:      "dynamic",
+		CreatedAt: strfmt.DateTime(now.Add(1 * time.Second)),
+	}
+
+	// This version has a different top-level LatestVersion than exampleDynamic1
+	exampleDynamic1NewVersion := &models.Secrets20231128OpenSecret{
+		Name: exampleDynamic1.Name,
+		DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+			Values: map[string]string{
+				"secret_key": "newversionkey1",
+				"secret_id":  "newversionid1",
+			},
+		},
+		Type:          "dynamic",
+		CreatedAt:     strfmt.DateTime(now),
+		LatestVersion: 1,
+	}
+
+	exampleDynamic2 := &models.Secrets20231128OpenSecret{
+		Name: "dynamic2",
+		DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+			Values: map[string]string{
+				"secret_key": "key2",
+				"secret_id":  "id2",
+			},
+		},
+		Type: "dynamic",
+	}
+
+	exampleShadow1Expired := &models.Secrets20231128OpenSecret{
+		Name: exampleDynamic1.Name,
+		DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+			Values: map[string]string{
+				"secret_key": "oldkey1",
+				"secret_id":  "oldid1",
+			},
+			CreatedAt: strfmt.DateTime(now.Add(-1 * time.Hour)),
+			ExpiresAt: strfmt.DateTime(now),
+			TTL:       "3600s",
+		},
+		Type: "dynamic",
+	}
+
+	exampleShadow1NotExpired := &models.Secrets20231128OpenSecret{
+		Name: exampleDynamic1.Name,
+		DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+			Values: map[string]string{
+				"secret_key": "oldkey1",
+				"secret_id":  "oldid1",
+			},
+			CreatedAt: strfmt.DateTime(now),
+			ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+			TTL:       "3600s",
+		},
+		Type:      "dynamic",
+		CreatedAt: strfmt.DateTime(now),
+	}
+
+	tests := map[string]struct {
+		shadowSecrets   map[string]*models.Secrets20231128OpenSecret
+		secretResponses []*models.Secrets20231128OpenSecret
+		expected        []*models.Secrets20231128OpenSecret
+		wantNumRequests int
+	}{
+		"one new and one ready for renewal": {
+			shadowSecrets: map[string]*models.Secrets20231128OpenSecret{
+				exampleShadow1Expired.Name: exampleShadow1Expired,
+			},
+			secretResponses: []*models.Secrets20231128OpenSecret{
+				exampleStatic,
+				exampleDynamic1,
+				exampleDynamic2,
+			},
+			expected: []*models.Secrets20231128OpenSecret{
+				exampleDynamic1,
+				exampleDynamic2,
+			},
+			wantNumRequests: 3,
+		},
+		"one new and one not ready for renewal": {
+			shadowSecrets: map[string]*models.Secrets20231128OpenSecret{
+				"dynamic1": exampleShadow1NotExpired,
+			},
+			secretResponses: []*models.Secrets20231128OpenSecret{
+				exampleStatic,
+				exampleDynamic1,
+				exampleDynamic2,
+			},
+			expected: []*models.Secrets20231128OpenSecret{
+				exampleShadow1NotExpired,
+				exampleDynamic2,
+			},
+			wantNumRequests: 2,
+		},
+		"old shadow secret no longer in HVS": {
+			shadowSecrets: map[string]*models.Secrets20231128OpenSecret{
+				"dynamic1": exampleShadow1NotExpired,
+			},
+			secretResponses: []*models.Secrets20231128OpenSecret{
+				exampleStatic,
+			},
+			expected:        nil,
+			wantNumRequests: 1,
+		},
+		"one recreated since last reconcile": {
+			shadowSecrets: map[string]*models.Secrets20231128OpenSecret{
+				"dynamic1": exampleShadow1NotExpired,
+			},
+			secretResponses: []*models.Secrets20231128OpenSecret{
+				exampleStatic,
+				exampleDynamic1ReCreated,
+				exampleDynamic2,
+			},
+			expected: []*models.Secrets20231128OpenSecret{
+				exampleDynamic1ReCreated,
+				exampleDynamic2,
+			},
+			wantNumRequests: 3,
+		},
+		"one new version since last reconcile": {
+			shadowSecrets: map[string]*models.Secrets20231128OpenSecret{
+				"dynamic1": exampleShadow1NotExpired,
+			},
+			secretResponses: []*models.Secrets20231128OpenSecret{
+				exampleStatic,
+				exampleDynamic1NewVersion,
+				exampleDynamic2,
+			},
+			expected: []*models.Secrets20231128OpenSecret{
+				exampleDynamic1NewVersion,
+				exampleDynamic2,
+			},
+			wantNumRequests: 3,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Construct the fake transport opts from the secrets in secretResponses
+			opts := &fakeHVSTransportOpts{}
+			var listSecrets []*models.Secrets20231128Secret
+			for _, secret := range tt.secretResponses {
+				b, err := secret.MarshalBinary()
+				require.NoError(t, err)
+				s := &models.Secrets20231128Secret{}
+				require.NoError(t, s.UnmarshalBinary(b))
+				listSecrets = append(listSecrets, s)
+				opts.openSecretResponses = append(opts.openSecretResponses, &hvsclient.OpenAppSecretOK{
+					Payload: &models.Secrets20231128OpenAppSecretResponse{
+						Secret: secret,
+					},
+				})
+			}
+			opts.listSecretsResponses = []*hvsclient.ListAppSecretsOK{
+				{
+					Payload: &models.Secrets20231128ListAppSecretsResponse{
+						Secrets: listSecrets,
+					},
+				},
+			}
+			p := newFakeHVSTransportWithOpts(t, opts)
+			client := hvsclient.New(p, nil)
+
+			// Run the dynamic secrets scenario with the given shadow/cached secrets
+			resp, err := getHVSDynamicSecrets(context.Background(), client,
+				"appName", defaultDynamicRenewPercent, tt.shadowSecrets)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, resp.secrets)
+			assert.Equal(t, tt.wantNumRequests, p.numRequests)
+		})
+	}
+}
+
+func Test_getTimeToNextRenewal(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
 
 	tests := map[string]struct {
-		requeueAfter    time.Duration
+		currentRenewal  nextRenewalDetails
 		dynamicInstance *models.Secrets20231128OpenSecretDynamicInstance
 		renewPercent    int
-		expected        time.Duration
+		expected        nextRenewalDetails
 	}{
 		"new dynamic secret": {
 			// A new dynamic secret is being evaluated, and its renewal is
-			// before next requeueAfter
-			requeueAfter: 2 * time.Hour,
+			// before current next renewal
+			currentRenewal: nextRenewalDetails{
+				timeToNextRenewal: 2 * time.Hour,
+				ttl:               135 * time.Minute,
+			},
 			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
 				CreatedAt: strfmt.DateTime(now),
 				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
 				TTL:       "3600s",
 			},
 			renewPercent: defaultDynamicRenewPercent,
-			expected:     time.Duration(40*time.Minute + 12*time.Second), // 1h*0.67
+			expected: nextRenewalDetails{
+				timeToNextRenewal: time.Duration(40*time.Minute + 12*time.Second), // 1h*0.67
+				ttl:               1 * time.Hour,
+			},
 		},
 		"mid-ttl of the dynamic secret": {
 			// The dynamic secret is halfway through its TTL, and the its
-			// renewal should come before the current requeueAfter, so the
+			// renewal should come before the current nextRenewal, so the
 			// expected renewal time is 82% of the TTL (49m12s) minus the time
 			// since the secret was created (30m).
-			requeueAfter: 2 * time.Hour,
+			currentRenewal: nextRenewalDetails{
+				timeToNextRenewal: 2 * time.Hour,
+				ttl:               135 * time.Minute,
+			},
 			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
 				CreatedAt: strfmt.DateTime(now.Add(-30 * time.Minute)),
 				ExpiresAt: strfmt.DateTime(now.Add(30 * time.Minute)),
 				TTL:       "3600s",
 			},
 			renewPercent: 82,
-			expected:     time.Duration(19*time.Minute + 12*time.Second), // 1h*0.82 - 30m
+			expected: nextRenewalDetails{
+				timeToNextRenewal: time.Duration(19*time.Minute + 12*time.Second), // 1h*0.82 - 30m
+				ttl:               1 * time.Hour,
+			},
 		},
-		"requeueAfter is shorter": {
-			requeueAfter: 1 * time.Hour,
+		"current next renewal is first": {
+			currentRenewal: nextRenewalDetails{
+				timeToNextRenewal: 1 * time.Hour,
+				ttl:               90 * time.Minute,
+			},
 			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
 				CreatedAt: strfmt.DateTime(now),
 				ExpiresAt: strfmt.DateTime(now.Add(2 * time.Hour)),
 				TTL:       "7200s",
 			},
 			renewPercent: defaultDynamicRenewPercent,
-			expected:     1 * time.Hour,
+			expected: nextRenewalDetails{
+				timeToNextRenewal: 1 * time.Hour,
+				ttl:               90 * time.Minute,
+			},
 		},
 		"expired dynamic secret": {
-			// Somehow this dynamic secret expired an hour ago, so requeue
-			// immediately.
-			requeueAfter: 1 * time.Hour,
+			// Somehow this dynamic secret expired an hour ago, so it takes the
+			// next renewal slot with the defaultDynamicRequeue time
+			currentRenewal: nextRenewalDetails{
+				timeToNextRenewal: 1 * time.Hour,
+				ttl:               90 * time.Minute,
+			},
 			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
 				CreatedAt: strfmt.DateTime(now.Add(-2 * time.Hour)),
 				ExpiresAt: strfmt.DateTime(now.Add(-1 * time.Hour)),
 				TTL:       "3600s",
 			},
 			renewPercent: defaultDynamicRenewPercent,
-			expected:     defaultDynamicRequeue,
+			expected: nextRenewalDetails{
+				timeToNextRenewal: defaultDynamicRequeue,
+				ttl:               1 * time.Hour,
+			},
 		},
 		"future dynamic secret": {
-			requeueAfter: 1 * time.Hour,
+			currentRenewal: nextRenewalDetails{
+				timeToNextRenewal: 1 * time.Hour,
+				ttl:               90 * time.Minute,
+			},
 			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
 				CreatedAt: strfmt.DateTime(now.Add(1 * time.Hour)),
 				ExpiresAt: strfmt.DateTime(now.Add(2 * time.Hour)),
 				TTL:       "3600s",
 			},
 			renewPercent: defaultDynamicRenewPercent,
-			expected:     1 * time.Hour,
+			expected: nextRenewalDetails{
+				timeToNextRenewal: 1 * time.Hour,
+				ttl:               90 * time.Minute,
+			},
 		},
-		"reqeueAfter is zero": {
-			requeueAfter: 0,
+		"currentRenewal is blank": {
+			currentRenewal: nextRenewalDetails{},
 			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
 				CreatedAt: strfmt.DateTime(now),
 				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
 				TTL:       "3600s",
 			},
 			renewPercent: defaultDynamicRenewPercent,
-			expected:     time.Duration(40*time.Minute + 12*time.Second), // 1h*0.67
+			expected: nextRenewalDetails{
+				timeToNextRenewal: time.Duration(40*time.Minute + 12*time.Second), // 1h*0.67
+				ttl:               1 * time.Hour,
+			},
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := getNextRequeue(tc.requeueAfter, tc.dynamicInstance, tc.renewPercent, now)
+			got := getTimeToNextRenewal(tc.currentRenewal, tc.dynamicInstance, tc.renewPercent, now)
+			assert.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func Test_timeForRenewal(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+
+	tests := map[string]struct {
+		dynamicInstance *models.Secrets20231128OpenSecretDynamicInstance
+		renewPercent    int
+		expected        bool
+	}{
+		"new dynamic secret": {
+			// A fairly new dynamic secret is being evaluated
+			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now.Add(-5 * time.Minute)),
+				ExpiresAt: strfmt.DateTime(now.Add(55 * time.Minute)),
+				TTL:       "3600s",
+			},
+			renewPercent: defaultDynamicRenewPercent,
+			expected:     false,
+		},
+		"mid-ttl of the dynamic secret": {
+			// The dynamic secret is halfway through its TTL, which is less than
+			// 82% of its TTL
+			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now.Add(-30 * time.Minute)),
+				ExpiresAt: strfmt.DateTime(now.Add(30 * time.Minute)),
+				TTL:       "3600s",
+			},
+			renewPercent: 82,
+			expected:     false,
+		},
+		"past renewal percent point": {
+			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now.Add(-45 * time.Minute)),
+				ExpiresAt: strfmt.DateTime(now.Add(15 * time.Minute)),
+				TTL:       "3600s",
+			},
+			renewPercent: 70,
+			expected:     true,
+		},
+		"expired dynamic secret": {
+			// Somehow this dynamic secret expired an hour ago, so definitely
+			// time to renew it
+			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now.Add(-2 * time.Hour)),
+				ExpiresAt: strfmt.DateTime(now.Add(-1 * time.Hour)),
+				TTL:       "3600s",
+			},
+			renewPercent: defaultDynamicRenewPercent,
+			expected:     true,
+		},
+		"future dynamic secret": {
+			dynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+				ExpiresAt: strfmt.DateTime(now.Add(2 * time.Hour)),
+				TTL:       "3600s",
+			},
+			renewPercent: defaultDynamicRenewPercent,
+			expected:     false,
+		},
+		"no dynamic secret metadata": {
+			dynamicInstance: nil,
+			renewPercent:    defaultDynamicRenewPercent,
+			expected:        true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := timeForRenewal(tc.dynamicInstance, tc.renewPercent, now)
 			assert.Equal(t, tc.expected, got)
 		})
 	}
@@ -843,6 +1165,46 @@ func Test_parseHVSResponseError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equalf(t, tt.want, parseHVSResponseError(tt.err), "parseHVSResponseError(%v)", tt.err)
+		})
+	}
+}
+
+func Test_makeShadowObjKey(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		o    *secretsv1beta1.HCPVaultSecretsApp
+		want client.ObjectKey
+	}{
+		"normal": {
+			o: &secretsv1beta1.HCPVaultSecretsApp{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns",
+					Name:      "name",
+				},
+			},
+			want: client.ObjectKey{
+				Namespace: common.OperatorNamespace,
+				Name:      shadowSecretPrefix + "-" + helpers.HashString("ns-name"),
+			},
+		},
+		"long-name": {
+			o: &secretsv1beta1.HCPVaultSecretsApp{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "mytestnamespace",
+					Name:      strings.Repeat("a", 63),
+				},
+			},
+			want: client.ObjectKey{
+				Namespace: common.OperatorNamespace,
+				Name: fmt.Sprintf("%s-%s", shadowSecretPrefix,
+					helpers.HashString("mytestnamespace-"+strings.Repeat("a", 63))),
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tt.want, makeShadowObjKey(tt.o))
 		})
 	}
 }

@@ -45,10 +45,10 @@ type HVSSyncConfig struct {
 // HVSDynamicSyncConfig configures sync behavior for HVS dynamic secrets.
 type HVSDynamicSyncConfig struct {
 	// RenewalPercent is the percent out of 100 of a dynamic secret's TTL when
-	// new secrets are generated. Defaults to 67 percent minus jitter.
+	// new secrets are generated. Defaults to 67 percent plus up to 10% jitter.
 	// +kubebuilder:default=67
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Maximum=90
 	RenewalPercent int `json:"renewalPercent,omitempty"`
 }
 
