@@ -14,11 +14,14 @@ import (
 
 // VaultPKISecretSpec defines the desired state of VaultPKISecret
 type VaultPKISecretSpec struct {
-	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace.
+	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
+	// the namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator
+	// will default to the `default` VaultAuth, configured in the operator's namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
 
-	// Namespace to get the secret from in Vault
-	// In case this parameter is not provided, the namespace will be inferred from the `namespace` parameter of the utilized VaultAuth resource.
+	// Namespace of the secrets engine mount in Vault. If not set, the namespace that's
+	// part of VaultAuth resource will be inferred.
 	Namespace string `json:"namespace,omitempty"`
 
 	// Mount for the secret in Vault
@@ -37,7 +40,7 @@ type VaultPKISecretSpec struct {
 	// The rotation time will be difference between the expiration and the offset.
 	// Should be in duration notation e.g. 30s, 120s, etc.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\\.[0-9]+)?(s|m|h))$`
 	ExpiryOffset string `json:"expiryOffset,omitempty"`
 
 	// IssuerRef reference to an existing PKI issuer, either by Vault-generated
@@ -90,7 +93,7 @@ type VaultPKISecretSpec struct {
 	// not when generating a CSR for an intermediate CA.
 	// Should be in duration notation e.g. 120s, 2h, etc.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\\.[0-9]+)?(s|m|h))$`
 	TTL string `json:"ttl,omitempty"`
 
 	// Format for the certificate. Choices: "pem", "der", "pem_bundle".

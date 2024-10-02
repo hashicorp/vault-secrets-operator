@@ -12,10 +12,13 @@ import (
 
 // VaultStaticSecretSpec defines the desired state of VaultStaticSecret
 type VaultStaticSecretSpec struct {
-	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace, eg: `namespaceA/vaultAuthRefB`. If no value is specified for VaultAuthRef the Operator will default to the `default` VaultAuth, configured in the operator's namespace.
+	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
+	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the
+	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
+	// default to the `default` VaultAuth, configured in the operator's namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
-	// Namespace to get the secret from in Vault. 
-	// In case this parameter is not provided, the namespace will be inferred from the `namespace` parameter of the utilized VaultAuth resource.
+	// Namespace of the secrets engine mount in Vault. If not set, the namespace that's
+	// part of VaultAuth resource will be inferred.
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
@@ -32,7 +35,7 @@ type VaultStaticSecretSpec struct {
 	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\\.[0-9]+)?(s|m|h))$`
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// HMACSecretData determines whether the Operator computes the
 	// HMAC of the Secret's data. The MAC value will be stored in
