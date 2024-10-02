@@ -331,6 +331,7 @@ func setCommonTFOptions(t *testing.T, opts *terraform.Options) *terraform.Option
 		opts.Logger = logger.Discard
 	}
 
+	opts.TerraformBinary = "terraform"
 	opts = terraform.WithDefaultRetryableErrors(t, opts)
 	opts.MaxRetries = 30
 	opts.TimeBetweenRetries = time.Millisecond * 500
