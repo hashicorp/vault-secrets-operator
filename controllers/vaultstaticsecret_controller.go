@@ -293,7 +293,10 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 	// launch the goroutine to watch events
 	logger.V(consts.LogLevelDebug).Info("Starting event watcher", "meta", updatedMeta)
 	r.eventWatcherRegistry.Register(name, updatedMeta)
-	go r.getEvents(watchCtx, o, wsClient, stoppedCh)
+	// Pass a dereferenced VSS object here because it seems to avoid an issue
+	// where the EventWatcherStarted event is occasionally emitted without a
+	// name or namespace attached.
+	go r.getEvents(watchCtx, *o, wsClient, stoppedCh)
 
 	return nil
 }
@@ -313,9 +316,9 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 
 // getEvents calls streamStaticSecretEvents in a loop, collecting and responding
 // to any errors returned.
-func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
+func (r *VaultStaticSecretReconciler) getEvents(ctx context.Context, o secretsv1beta1.VaultStaticSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
-	name := client.ObjectKeyFromObject(o)
+	name := client.ObjectKeyFromObject(&o)
 	defer func() {
 		r.eventWatcherRegistry.Delete(name)
 		close(stoppedCh)
@@ -344,7 +347,7 @@ eventLoop:
 				}
 				time.Sleep(retryBackoff.NextBackOff())
 			}
-			err := r.streamStaticSecretEvents(ctx, o, wsClient)
+			err := r.streamStaticSecretEvents(ctx, &o, wsClient)
 			if err != nil {
 				if strings.Contains(err.Error(), "use of closed network connection") ||
 					strings.Contains(err.Error(), "context canceled") {
@@ -363,7 +366,7 @@ eventLoop:
 				// For any other errors, we emit the error as an event on the
 				// VaultStaticSecret, reload the client and try connecting
 				// again.
-				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+				r.Recorder.Eventf(&o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
 					"Error while watching events: %s", err)
 
 				if errorCount >= errorThreshold {
@@ -371,7 +374,7 @@ eventLoop:
 					break eventLoop
 				}
 
-				newVaultClient, err := r.ClientFactory.Get(ctx, r.Client, o)
+				newVaultClient, err := r.ClientFactory.Get(ctx, r.Client, &o)
 				if err != nil {
 					logger.Error(err, "Failed to retrieve Vault client")
 					break eventLoop
@@ -384,7 +387,7 @@ eventLoop:
 				}
 
 				// Update the LastClientID in the event registry
-				key := client.ObjectKeyFromObject(o)
+				key := client.ObjectKeyFromObject(&o)
 				meta, ok := r.eventWatcherRegistry.Get(key)
 				if !ok {
 					logger.Error(
@@ -434,7 +437,7 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 
 	// We made it past the initial websocket connection, so emit a "good" event
 	// status
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
+	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
 		select {

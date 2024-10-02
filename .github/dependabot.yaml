@@ -11,6 +11,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      gomod-breaking:
+        update-types:
+          - major
+      gomod-backward-compatible:
+        update-types:
+          - minor
+          - patch
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
