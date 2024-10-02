@@ -545,6 +545,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 				prefixedKey := fmt.Sprintf("%s_%s", v.Name, rotatingKey)
 				secrets[prefixedKey] = rotatingValue
 			}
+			secrets[v.Name] = v.RotatingVersion.Values
 		case HVSSecretTypeDynamic:
 			// Since dynamic secrets have multiple values, prefix each key with
 			// the secret name to avoid collisions.
@@ -552,6 +553,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 				prefixedKey := fmt.Sprintf("%s_%s", v.Name, dynamicKey)
 				secrets[prefixedKey] = dynamicValue
 			}
+			secrets[v.Name] = v.RotatingVersion.Values
 		default:
 			continue
 		}

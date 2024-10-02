@@ -1335,6 +1335,12 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 	rawValid, err := respValid.GetPayload().MarshalBinary()
 	require.NoError(t, err)
 
+	rotatingValueRaw, err := marshalJSON(map[string]string{
+		"api_key_one": "123456",
+		"api_key_two": "654321",
+	})
+	require.NoError(t, err)
+
 	respValidUnsupportedType := &hvsclient.OpenAppSecretsOK{
 		Payload: &models.Secrets20231128OpenAppSecretsResponse{
 			Secrets: []*models.Secrets20231128OpenSecret{
@@ -1394,6 +1400,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1417,6 +1424,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1480,6 +1488,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1515,6 +1524,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1570,6 +1580,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
 			},
 			wantErr: assert.NoError,
 		},
