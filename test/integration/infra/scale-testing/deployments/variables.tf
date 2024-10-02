@@ -53,5 +53,52 @@ variable "region" {
   default     = "us-east-2"
 }
 
+# variable "server_ha_enabled" {
+#   default = ""
+# }
+#
+# variable "vault_instance_count" {
+#   description = "How many vault instances are in the cluster"
+#   type        = number
+#   default     = null
+# }
+#
+# variable "server_ha_raft_enabled" {
+#   default = ""
+# }
+#
+# variable "server_resources_requests_cpu" {
+#   default = ""
+# }
+#
+# variable "server_limits_memory" {
+#   default = ""
+# }
+#
+# variable "server_limits_cpu" {
+#   default = ""
+# }
+#
+# variable "server_ha_raft_config" {
+#   default = ""
+# }
+#
+# variable "server_data_storage_size" {
+#   default = ""
+# }
+#
+# variable "kubeconfig_base64" {
+#   type        = string
+#   description = "The base64 encoded version of the Kubernetes configuration file"
+# }
+#
+# variable "context_name" {
+#   type        = string
+#   description = "The name of the k8s context for Vault"
+# }
 
+variable "with_enos" {
+  type    = bool
+  default = false
+}
 

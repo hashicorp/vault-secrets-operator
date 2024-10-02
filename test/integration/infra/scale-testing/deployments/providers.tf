@@ -12,6 +12,19 @@ terraform {
       source  = "hashicorp/aws"
       version = "5.49.0"
     }
+    enos = {
+      source = "registry.terraform.io/hashicorp-forge/enos"
+      version = ">= 0.5.5"
+    }
+  }
+}
+
+provider "enos" {
+  transport = {
+    kubernetes = {
+      kubeconfig_base64 = filebase64("~/.kube/config")
+      context_name      = "arn:aws:eks:us-east-2:104902550792:cluster/eks-on8b"
+    }
   }
 }
 

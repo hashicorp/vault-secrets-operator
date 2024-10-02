@@ -12,4 +12,10 @@ module "vault" {
   vault_image_repo_ent = var.vault_image_repo_ent
   vault_image_tag_ent  = var.vault_image_tag_ent
   vault_chart_version  = var.vault_chart_version
+  with_enos            = true
+  kubeconfig_base64 = filebase64("~/.kube/config")
+  context_name      = "arn:aws:eks:us-east-2:104902550792:cluster/eks-on8b"
+  vault_instance_count = 1
+#   context_name = var.context_name
+#   kubeconfig_base64 = var.kubeconfig_base64
 }
