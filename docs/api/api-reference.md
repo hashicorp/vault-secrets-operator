@@ -799,7 +799,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with<br />this VaultAuthGlobal. This field allows administrators to customize which<br />Kubernetes namespaces are authorized to reference this resource. While Vault<br />will still enforce its own rules, this has the added configurability of<br />restricting which VaultAuthMethods can be used by which namespaces. Accepted<br />values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's and the referring<br />VaultAuthMethod's namespace, this is the default behavior. |  |  |
-| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
+| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />the namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
 | `defaultVaultNamespace` _string_ | DefaultVaultNamespace to auth to in Vault, if not specified the namespace of the auth<br />method will be used. This can be used as a default Vault namespace for all<br />auth methods. |  |  |
 | `defaultAuthMethod` _string_ | DefaultAuthMethod to use when authenticating to Vault. |  | Enum: [kubernetes jwt appRole aws gcp] <br /> |
 | `defaultMount` _string_ | DefaultMount to use when authenticating to auth method. If not specified the mount of<br />the auth method configured in Vault will be used. |  |  |
@@ -845,7 +845,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
+| `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />the namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
 | `vaultAuthGlobalRef` _[VaultAuthGlobalRef](#vaultauthglobalref)_ | VaultAuthGlobalRef. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
 | `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which VaultAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]{"*"} - wildcard, all namespaces.<br />[]{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this<br />is the default behavior. |  |  |
@@ -991,8 +991,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will<br />default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
-| `namespace` _string_ | Namespace where the secrets engine is mounted in Vault. |  |  |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to<br />the namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator<br />will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
+| `namespace` _string_ | Namespace of the secrets engine mount in Vault. If not set, the namespace that's<br />part of VaultAuth resource will be inferred. |  |  |
 | `mount` _string_ | Mount path of the secret's engine in Vault. |  |  |
 | `requestHTTPMethod` _string_ | RequestHTTPMethod to use when syncing Secrets from Vault.<br />Setting a value here is not typically required.<br />If left unset the Operator will make requests using the GET method.<br />In the case where Params are specified the Operator will use the PUT method.<br />Please consult https://developer.hashicorp.com/vault/docs/secrets if you are<br />uncertain about what method to use.<br />Of note, the Vault client treats PUT and POST as being equivalent.<br />The underlying Vault client implementation will always use the PUT method. |  | Enum: [GET POST PUT] <br /> |
 | `path` _string_ | Path in Vault to get the credentials for, and is relative to Mount.<br />Please consult https://developer.hashicorp.com/vault/docs/secrets if you are<br />uncertain about what 'path' should be set to. |  |  |
@@ -1057,8 +1057,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will<br />default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
-| `namespace` _string_ | Namespace to get the secret from in Vault |  |  |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to<br />the namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator<br />will default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
+| `namespace` _string_ | Namespace of the secrets engine mount in Vault. If not set, the namespace that's<br />part of VaultAuth resource will be inferred. |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `role` _string_ | Role in Vault to use when issuing TLS certificates. |  |  |
 | `revoke` _boolean_ | Revoke the certificate when the resource is deleted. |  |  |
@@ -1170,8 +1170,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to<br />namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will<br />default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
-| `namespace` _string_ | Namespace to get the secret from in Vault |  |  |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the<br />namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will<br />default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
+| `namespace` _string_ | Namespace of the secrets engine mount in Vault. If not set, the namespace that's<br />part of VaultAuth resource will be inferred. |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for,<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
