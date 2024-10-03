@@ -507,19 +507,37 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 		case HVSSecretTypeKV:
 			secrets[v.Name] = v.StaticVersion.Value
 		case HVSSecretTypeRotating:
+			if v.RotatingVersion == nil {
+				return nil, fmt.Errorf("rotating secret %s has no RotatingVersion", v.Name)
+			}
 			// Since rotating secrets have multiple values, prefix each key with
 			// the secret name to avoid collisions.
 			for rotatingKey, rotatingValue := range v.RotatingVersion.Values {
 				prefixedKey := fmt.Sprintf("%s_%s", v.Name, rotatingKey)
 				secrets[prefixedKey] = rotatingValue
 			}
+
+			vals := make(map[string]any, len(v.RotatingVersion.Values))
+			for k, v := range v.RotatingVersion.Values {
+				vals[k] = v
+			}
+			secrets[v.Name] = vals
 		case HVSSecretTypeDynamic:
+			if v.DynamicInstance == nil {
+				return nil, fmt.Errorf("dynamic secret %s has no DynamicInstance", v.Name)
+			}
 			// Since dynamic secrets have multiple values, prefix each key with
 			// the secret name to avoid collisions.
 			for dynamicKey, dynamicValue := range v.DynamicInstance.Values {
 				prefixedKey := fmt.Sprintf("%s_%s", v.Name, dynamicKey)
 				secrets[prefixedKey] = dynamicValue
 			}
+
+			vals := make(map[string]any, len(v.DynamicInstance.Values))
+			for k, v := range v.DynamicInstance.Values {
+				vals[k] = v
+			}
+			secrets[v.Name] = vals
 		default:
 			continue
 		}
@@ -563,6 +581,15 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20231128OpenSecret)
 	var ss models.Secrets20231128Secret
 	if err := json.Unmarshal(b, &ss); err != nil {
 		return nil, err
+	}
+
+	if v.Type == HVSSecretTypeDynamic {
+		// open dynamic secrets do not share the same fields as the non-open secrets, so
+		// we need to convert them here.
+		if ss.DynamicConfig == nil {
+			ss.DynamicConfig = &models.Secrets20231128SecretDynamicConfig{}
+		}
+		ss.DynamicConfig.TTL = v.DynamicInstance.TTL
 	}
 
 	sv, err := ss.MarshalBinary()
