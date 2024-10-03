@@ -1469,6 +1469,13 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 							Text: `{{- .Metadata | mustToPrettyJson -}}`,
 						},
 					},
+					{
+						Key: "dyn_ttl",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `{{- get (get (get .Metadata "dyn") "dynamic_config") "ttl" -}}`,
+						},
+					},
 				},
 			},
 			want: map[string][]byte{
@@ -1530,6 +1537,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"dyn":                     dynValueRaw,
 				"dyn_val_one":             []byte("123456"),
 				"dyn_val_two":             []byte("654321"),
+				"dyn_ttl":                 []byte("1h"),
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1546,15 +1554,31 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 							Text: `{{- get .Secrets "bar" | upper -}}`,
 						},
 					},
+					{
+						Key: "dyn_template_val_one",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `{{- get (get .Secrets "dyn") "val_one" -}}`,
+						},
+					},
+					{
+						Key: "dyn_template_val_two",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl3",
+							Text: `{{- get (get .Secrets "dyn") "val_two" -}}`,
+						},
+					},
 				},
 				Excludes: []string{"foo"},
 			},
 			want: map[string][]byte{
-				"bar":            []byte("FOO"),
-				"dyn":            dynValueRaw,
-				"dyn_val_one":    []byte("123456"),
-				"dyn_val_two":    []byte("654321"),
-				SecretDataKeyRaw: rawValid,
+				"bar":                  []byte("FOO"),
+				"dyn":                  dynValueRaw,
+				"dyn_val_one":          []byte("123456"),
+				"dyn_val_two":          []byte("654321"),
+				"dyn_template_val_one": []byte("123456"),
+				"dyn_template_val_two": []byte("654321"),
+				SecretDataKeyRaw:       rawValid,
 			},
 			wantErr: assert.NoError,
 		},
@@ -1642,7 +1666,6 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 
 			s := &SecretDataBuilder{}
 			got, err := s.WithHVSAppSecrets(tt.resp, tt.opt)
-			assert.Equalf(t, tt.want["metadata.json"], got["metadata.json"], "WithHVSAppSecrets(%v, %v)", tt.resp, tt.opt)
 			if !tt.wantErr(t, err, fmt.Sprintf("WithHVSAppSecrets(%v, %v)", tt.resp, tt.opt)) {
 				return
 			}

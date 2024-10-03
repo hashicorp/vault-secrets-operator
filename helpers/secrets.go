@@ -516,7 +516,12 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 				prefixedKey := fmt.Sprintf("%s_%s", v.Name, rotatingKey)
 				secrets[prefixedKey] = rotatingValue
 			}
-			secrets[v.Name] = v.RotatingVersion.Values
+
+			vals := make(map[string]any, len(v.RotatingVersion.Values))
+			for k, v := range v.RotatingVersion.Values {
+				vals[k] = v
+			}
+			secrets[v.Name] = vals
 		case HVSSecretTypeDynamic:
 			if v.DynamicInstance == nil {
 				return nil, fmt.Errorf("dynamic secret %s has no DynamicInstance", v.Name)
@@ -527,7 +532,12 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 				prefixedKey := fmt.Sprintf("%s_%s", v.Name, dynamicKey)
 				secrets[prefixedKey] = dynamicValue
 			}
-			secrets[v.Name] = v.DynamicInstance.Values
+
+			vals := make(map[string]any, len(v.DynamicInstance.Values))
+			for k, v := range v.DynamicInstance.Values {
+				vals[k] = v
+			}
+			secrets[v.Name] = vals
 		default:
 			continue
 		}
