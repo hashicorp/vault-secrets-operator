@@ -68,7 +68,7 @@ type VaultDynamicSecretSpec struct {
 	// max_ttl. The source secret's lease duration takes precedence over this
 	// configuration when it is greater than 0.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern=`^([0-9]+(\\.[0-9]+)?(s|m|h))$`
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 }
 
@@ -138,7 +138,7 @@ type VaultDynamicSecret struct {
 	Status VaultDynamicSecretStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // VaultDynamicSecretList contains a list of VaultDynamicSecret
 type VaultDynamicSecretList struct {

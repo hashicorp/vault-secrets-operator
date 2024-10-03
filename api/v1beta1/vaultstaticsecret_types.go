@@ -35,7 +35,7 @@ type VaultStaticSecretSpec struct {
 	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern=`^([0-9]+(\\.[0-9]+)?(s|m|h))$`
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// HMACSecretData determines whether the Operator computes the
 	// HMAC of the Secret's data. The MAC value will be stored in
@@ -78,8 +78,8 @@ type VaultStaticSecretStatus struct {
 	SecretMAC string `json:"secretMAC,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // VaultStaticSecret is the Schema for the vaultstaticsecrets API
 type VaultStaticSecret struct {
@@ -90,7 +90,7 @@ type VaultStaticSecret struct {
 	Status VaultStaticSecretStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // VaultStaticSecretList contains a list of VaultStaticSecret
 type VaultStaticSecretList struct {

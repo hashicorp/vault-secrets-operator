@@ -40,7 +40,7 @@ type VaultPKISecretSpec struct {
 	// The rotation time will be difference between the expiration and the offset.
 	// Should be in duration notation e.g. 30s, 120s, etc.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern=`^([0-9]+(\\.[0-9]+)?(s|m|h))$`
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	ExpiryOffset string `json:"expiryOffset,omitempty"`
 
 	// IssuerRef reference to an existing PKI issuer, either by Vault-generated
@@ -93,7 +93,7 @@ type VaultPKISecretSpec struct {
 	// not when generating a CSR for an intermediate CA.
 	// Should be in duration notation e.g. 120s, 2h, etc.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern=`^([0-9]+(\\.[0-9]+)?(s|m|h))$`
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	TTL string `json:"ttl,omitempty"`
 
 	// Format for the certificate. Choices: "pem", "der", "pem_bundle".
@@ -140,8 +140,8 @@ type VaultPKISecretStatus struct {
 	Error     string `json:"error"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // VaultPKISecret is the Schema for the vaultpkisecrets API
 type VaultPKISecret struct {
@@ -177,7 +177,7 @@ func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 	return m
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // VaultPKISecretList contains a list of VaultPKISecret
 type VaultPKISecretList struct {
