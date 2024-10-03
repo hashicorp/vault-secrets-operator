@@ -1565,7 +1565,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 						Key: "dyn_template_val_two",
 						Template: secretsv1beta1.Template{
 							Name: "tmpl3",
-							Text: `{{- get (get .Secrets "dyn") "val_two" -}}`,
+							Text: `{{- dig "dyn" "val_two" "<missing>" .Secrets -}}`,
 						},
 					},
 				},
