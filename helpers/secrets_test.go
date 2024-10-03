@@ -1328,12 +1328,41 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 					},
 					Type: HVSSecretTypeRotating,
 				},
+				{
+					CreatedAt:     strfmt.NewDateTime(),
+					CreatedByID:   "vso-3 uuid",
+					LatestVersion: 1,
+					Name:          "dyn",
+					Provider:      "providerfoo",
+					SyncStatus:    nil,
+					DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+						TTL:       "1h",
+						CreatedAt: strfmt.DateTime{},
+						ExpiresAt: strfmt.DateTime{},
+						Values: map[string]string{
+							"val_one": "123456",
+							"val_two": "654321",
+						},
+					},
+					Type: HVSSecretTypeDynamic,
+				},
 			},
 		},
 	}
 
 	rawValid, err := respValid.GetPayload().MarshalBinary()
 	require.NoError(t, err)
+
+	rotatingValueRaw, err := marshalJSON(map[string]string{
+		"api_key_one": "123456",
+		"api_key_two": "654321",
+	})
+	require.NoError(t, err)
+
+	dynValueRaw, err := marshalJSON(map[string]string{
+		"val_one": "123456",
+		"val_two": "654321",
+	})
 
 	respValidUnsupportedType := &hvsclient.OpenAppSecretsOK{
 		Payload: &models.Secrets20231128OpenAppSecretsResponse{
@@ -1394,6 +1423,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1417,6 +1450,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1433,6 +1470,13 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 							Text: `{{- .Metadata | mustToPrettyJson -}}`,
 						},
 					},
+					{
+						Key: "dyn_ttl",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `{{- get (get (get .Metadata "dyn") "dynamic_config") "ttl" -}}`,
+						},
+					},
 				},
 			},
 			want: map[string][]byte{
@@ -1446,6 +1490,16 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
       "version": 1
     },
     "type": "kv"
+  },
+  "dyn": {
+    "created_at": "1970-01-01T00:00:00.000Z",
+    "dynamic_config": {
+      "ttl": "1h"
+    },
+    "latest_version": 1,
+    "name": "dyn",
+    "provider": "providerfoo",
+    "type": "dynamic"
   },
   "foo": {
     "created_at": "1970-01-01T00:00:00.000Z",
@@ -1480,6 +1534,11 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
+				"dyn_ttl":                 []byte("1h"),
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1496,12 +1555,31 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 							Text: `{{- get .Secrets "bar" | upper -}}`,
 						},
 					},
+					{
+						Key: "dyn_template_val_one",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `{{- get (get .Secrets "dyn") "val_one" -}}`,
+						},
+					},
+					{
+						Key: "dyn_template_val_two",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl3",
+							Text: `{{- dig "dyn" "val_two" "<missing>" .Secrets -}}`,
+						},
+					},
 				},
 				Excludes: []string{"foo"},
 			},
 			want: map[string][]byte{
-				"bar":            []byte("FOO"),
-				SecretDataKeyRaw: rawValid,
+				"bar":                  []byte("FOO"),
+				"dyn":                  dynValueRaw,
+				"dyn_val_one":          []byte("123456"),
+				"dyn_val_two":          []byte("654321"),
+				"dyn_template_val_one": []byte("123456"),
+				"dyn_template_val_two": []byte("654321"),
+				SecretDataKeyRaw:       rawValid,
 			},
 			wantErr: assert.NoError,
 		},
@@ -1515,6 +1593,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1527,6 +1606,9 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			},
 			want: map[string][]byte{
 				"bar":            []byte("foo"),
+				"dyn":            dynValueRaw,
+				"dyn_val_one":    []byte("123456"),
+				"dyn_val_two":    []byte("654321"),
 				SecretDataKeyRaw: rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1570,6 +1652,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
 			},
 			wantErr: assert.NoError,
 		},
