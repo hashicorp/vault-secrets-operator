@@ -196,15 +196,21 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// API calls
 	r.BackOffRegistry.Delete(req.NamespacedName)
 
-	// Calculate next requeue time based on whichever comes first between the
-	// current `requeueAfter` and the next dynamic secret renewal time.
 	if len(dynamicSecrets.statuses) > 0 {
 		o.Status.DynamicSecrets = dynamicSecrets.statuses
 	}
-	if dynamicSecrets.nextRenewal.timeToNextRenewal > 0 &&
-		dynamicSecrets.nextRenewal.timeToNextRenewal < requeueAfter {
+	// Calculate next requeue time based on whichever comes first between the
+	// current `requeueAfter` and the next dynamic secret renewal time.
+	if dynamicSecrets.nextRenewal.timeToNextRenewal > 0 {
+		_, j := computeMaxJitter(dynamicSecrets.nextRenewal.ttl)
+		nextDynamicRequeue := dynamicSecrets.nextRenewal.timeToNextRenewal + time.Duration(j)
 
-		requeueAfter = computeDynamicHorizonWithJitter(dynamicSecrets.nextRenewal.ttl, renewPercent)
+		if requeueAfter == 0 || nextDynamicRequeue < requeueAfter {
+			logger.V(consts.LogLevelTrace).Info("Setting requeueAfter to the next dynamic secret renewal time",
+				"appName", o.Spec.AppName, "requeueAfter", requeueAfter,
+				"nextDynamicRequeue", nextDynamicRequeue)
+			requeueAfter = nextDynamicRequeue
+		}
 	}
 
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
