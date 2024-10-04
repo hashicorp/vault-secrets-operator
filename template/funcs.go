@@ -160,6 +160,7 @@ var allowedSprigFuncs = []string{
 	"set",
 	"sha1sum",
 	"sha256sum",
+	"sha512sum",
 	"shuffle",
 	"slice",
 	"snakecase",
