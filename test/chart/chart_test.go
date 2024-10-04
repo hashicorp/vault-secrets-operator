@@ -176,14 +176,25 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	var expectCRDUpgrade bool
 	// expectUpgradeMap is used to determine if a CRD should have been upgraded.
 	expectUpgradeMap := map[string]bool{}
-	for _, crd := range wantCRDs {
-		if o, ok := incomingCRDsMap[crd.Name]; ok {
-			if reflect.DeepEqual(o.Spec, crd.Spec) && reflect.DeepEqual(o.ObjectMeta, crd.ObjectMeta) {
-				expectUpgradeMap[crd.Name] = false
-			} else {
-				expectCRDUpgrade = true
-				expectUpgradeMap[crd.Name] = true
+	for _, want := range wantCRDs {
+		if incoming, ok := incomingCRDsMap[want.Name]; ok {
+			if reflect.DeepEqual(incoming.Spec, want.Spec) {
+				// changes to annotations/labels do not result in a resource generation bump, so
+				// we can unset them before comparing.
+				incomingObjMetaC := incoming.ObjectMeta.DeepCopy()
+				incomingObjMetaC.Annotations = nil
+				incomingObjMetaC.Labels = nil
+				wantObjMetaC := want.ObjectMeta.DeepCopy()
+				wantObjMetaC.Annotations = nil
+				wantObjMetaC.Labels = nil
+				if reflect.DeepEqual(incomingObjMetaC, wantObjMetaC) {
+					expectUpgradeMap[want.Name] = false
+					continue
+				}
 			}
+
+			expectCRDUpgrade = true
+			expectUpgradeMap[want.Name] = true
 		}
 	}
 

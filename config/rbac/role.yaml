@@ -11,6 +11,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - serviceaccounts
   verbs:
   - get
   - list
@@ -38,14 +39,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - serviceaccounts
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - serviceaccounts/token
   verbs:
   - create
@@ -56,23 +49,7 @@ rules:
   - apps
   resources:
   - daemonsets
-  verbs:
-  - get
-  - list
-  - patch
-  - watch
-- apiGroups:
-  - apps
-  resources:
   - deployments
-  verbs:
-  - get
-  - list
-  - patch
-  - watch
-- apiGroups:
-  - apps
-  resources:
   - statefulsets
   verbs:
   - get
@@ -92,213 +69,13 @@ rules:
   - secrets.hashicorp.com
   resources:
   - hcpauths
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - hcpauths/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - hcpauths/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - hcpvaultsecretsapps
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - hcpvaultsecretsapps/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - hcpvaultsecretsapps/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - secrettransformations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - secrettransformations/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - secrettransformations/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - vaultauthglobals
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultauthglobals/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultauthglobals/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - vaultauths
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultauths/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultauths/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - vaultconnections
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultconnections/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultconnections/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - vaultdynamicsecrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultdynamicsecrets/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultdynamicsecrets/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - vaultpkisecrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultpkisecrets/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
-  - vaultpkisecrets/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - secrets.hashicorp.com
-  resources:
   - vaultstaticsecrets
   verbs:
   - create
@@ -311,12 +88,28 @@ rules:
 - apiGroups:
   - secrets.hashicorp.com
   resources:
+  - hcpauths/finalizers
+  - hcpvaultsecretsapps/finalizers
+  - secrettransformations/finalizers
+  - vaultauthglobals/finalizers
+  - vaultauths/finalizers
+  - vaultconnections/finalizers
+  - vaultdynamicsecrets/finalizers
+  - vaultpkisecrets/finalizers
   - vaultstaticsecrets/finalizers
   verbs:
   - update
 - apiGroups:
   - secrets.hashicorp.com
   resources:
+  - hcpauths/status
+  - hcpvaultsecretsapps/status
+  - secrettransformations/status
+  - vaultauthglobals/status
+  - vaultauths/status
+  - vaultconnections/status
+  - vaultdynamicsecrets/status
+  - vaultpkisecrets/status
   - vaultstaticsecrets/status
   verbs:
   - get
