@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
 	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	corev1 "k8s.io/api/core/v1"
@@ -436,18 +438,32 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 	return errs
 }
 
-// CreateOrUpdateSecret creates a k8s secret if it doesn't exist, or updates an
-// existing secret.
-func CreateOrUpdateSecret(ctx context.Context, client ctrlclient.Client, dest *corev1.Secret) error {
+// StoreImmutableSecret creates a k8s secret if it doesn't exist, or deletes and
+// then creates an existing secret.
+func StoreImmutableSecret(ctx context.Context, client ctrlclient.Client, dest *corev1.Secret) error {
 	objKey := ctrlclient.ObjectKeyFromObject(dest)
-	_, exists, err := getSecretExists(ctx, client, objKey)
+	err := client.Create(ctx, dest)
+	if apierrors.IsAlreadyExists(err) {
+		// since the Secret is immutable we need to always recreate it
+		err = DeleteSecret(ctx, client, objKey)
+		if err != nil {
+			return err
+		}
+
+		// we want to retry create since the previous Delete() call is eventually consistent.
+		bo := backoff.NewExponentialBackOff()
+		bo.MaxInterval = 2 * time.Second
+		err = backoff.Retry(func() error {
+			return client.Create(ctx, dest)
+		}, backoff.WithMaxRetries(bo, 5))
+		if err != nil {
+			return err
+		}
+	}
 	if err != nil {
 		return err
 	}
-	if exists {
-		return client.Update(ctx, dest)
-	}
-	return client.Create(ctx, dest)
+	return nil
 }
 
 // DeleteSecret deletes a k8s secret, returning nil if the secret doesn't exist.

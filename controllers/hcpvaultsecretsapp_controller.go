@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -59,6 +60,10 @@ const (
 	// shadowSecretPrefix is used for naming k8s secrets that store a cached
 	// copy of HVS dynamic secret responses
 	shadowSecretPrefix = "vso-hvs"
+
+	// fieldMACMessage is the field name for the MAC of the data cached in the
+	// shadow secret
+	fieldMACMessage = "vso-messageMAC"
 )
 
 var (
@@ -169,12 +174,10 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Get shadowed dynamic secret data (if any)
-	shadowSecrets, err := getShadowSecretData(ctx, r.Client, o)
+	shadowSecrets, err := r.getShadowSecretData(ctx, o)
 	if err != nil {
-		logger.Error(err, "Get Shadow Secret Data", "appName", o.Spec.AppName)
-		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
-		}, nil
+		logger.Error(err, "Failed to get shadow secret data, proceeding without shadow cache",
+			"appName", o.Spec.AppName)
 	}
 
 	renewPercent := getDynamicRenewPercent(o.Spec.SyncConfig)
@@ -259,16 +262,15 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 			// all error reporting is handled by helpers.HandleRolloutRestarts
 			_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 		}
+		if err := r.storeShadowSecretData(ctx, o, dynamicSecrets.secrets); err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
+				"Failed to store shadow secret data for appName %s: %s",
+				o.Spec.AppName, err)
+			return ctrl.Result{}, nil
+		}
 		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
 	} else {
 		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonSecretSync, "Secret sync not required")
-	}
-
-	if err := storeShadowSecretData(ctx, r.Client, o, dynamicSecrets.secrets); err != nil {
-		logger.Error(err, "Store shadow secret data", "appName", o.Spec.AppName)
-		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
-		}, nil
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
@@ -399,16 +401,33 @@ func injectRequestInformation(runtime *httptransport.Runtime) {
 }
 
 // getShadowSecretData retrieves shadowed secret data from a k8s secret
-func getShadowSecretData(ctx context.Context, k8sClient client.Client, o *secretsv1beta1.HCPVaultSecretsApp) (map[string]*models.Secrets20231128OpenSecret, error) {
+func (r *HCPVaultSecretsAppReconciler) getShadowSecretData(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) (map[string]*models.Secrets20231128OpenSecret, error) {
 	// Get the shadow secret for the HCPVaultSecretsApp
 	shadowObjKey := makeShadowObjKey(o)
-	shadowSecret, err := helpers.GetSecret(ctx, k8sClient, shadowObjKey)
+	shadowSecret, err := helpers.GetSecret(ctx, r.Client, shadowObjKey)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get shadow secret %s/%s: %w",
 			shadowObjKey.Namespace, shadowObjKey.Name, err)
+	}
+	// Verify the hmac of the data in the shadow secret
+	lastHMAC := shadowSecret.Data[fieldMACMessage]
+	delete(shadowSecret.Data, fieldMACMessage)
+	dataBytes, err := json.Marshal(shadowSecret.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal shadow secret data %s/%s: %w",
+			o.Namespace, o.Name, err)
+	}
+	valid, _, err := r.HMACValidator.Validate(ctx, r.Client, dataBytes, lastHMAC)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate HMAC of HVS shadow secret data for %s/%s: %w",
+			o.Namespace, o.Name, err)
+	}
+	if !valid {
+		return nil, fmt.Errorf("HVS shadow secret %s for %s/%s has been tampered with",
+			shadowObjKey.String(), o.Namespace, o.Name)
 	}
 	// Decode shadowSecret.Data into a map of OpenSecret's
 	if shadowSecret != nil {
@@ -427,15 +446,16 @@ func getShadowSecretData(ctx context.Context, k8sClient client.Client, o *secret
 	return nil, nil
 }
 
-func storeShadowSecretData(ctx context.Context, k8sClient client.Client, o *secretsv1beta1.HCPVaultSecretsApp, secrets []*models.Secrets20231128OpenSecret) error {
+func (r *HCPVaultSecretsAppReconciler) storeShadowSecretData(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp, secrets []*models.Secrets20231128OpenSecret) error {
 	shadowObjKey := makeShadowObjKey(o)
 
 	// Delete the shadow secret if there are no secrets to store
 	if len(secrets) == 0 {
-		return helpers.DeleteSecret(ctx, k8sClient, shadowObjKey)
+		return helpers.DeleteSecret(ctx, r.Client, shadowObjKey)
 	}
 
 	shadowSecret := &corev1.Secret{
+		Immutable: ptr.To(true),
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      shadowObjKey.Name,
 			Namespace: shadowObjKey.Namespace,
@@ -453,7 +473,20 @@ func storeShadowSecretData(ctx context.Context, k8sClient client.Client, o *secr
 	}
 	shadowSecret.Data = shadowSecretData
 
-	if err := helpers.CreateOrUpdateSecret(ctx, k8sClient, shadowSecret); err != nil {
+	// HMAC the shadowSecretData, store along with the secrets
+	b, err := json.Marshal(shadowSecretData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal shadow secret data %s/%s: %w",
+			o.Namespace, o.Name, err)
+	}
+	h, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+	if err != nil {
+		return fmt.Errorf("failed to HMAC shadow secret data %s/%s: %w",
+			o.Namespace, o.Name, err)
+	}
+	shadowSecret.Data[fieldMACMessage] = h
+
+	if err := helpers.StoreImmutableSecret(ctx, r.Client, shadowSecret); err != nil {
 		return fmt.Errorf("failed to create or update shadow secret %s/%s: %w",
 			shadowObjKey.Namespace, shadowObjKey.Name, err)
 	}
@@ -462,7 +495,7 @@ func storeShadowSecretData(ctx context.Context, k8sClient client.Client, o *secr
 }
 
 type nextRenewalDetails struct {
-	// How long until the next renewal
+	// How long until the next renewal (StartTime + renewPercent of TTL - now)
 	timeToNextRenewal time.Duration
 	// Full ttl of the secret
 	ttl time.Duration
@@ -474,7 +507,9 @@ type hvsDynamicSecretResult struct {
 	statuses    []secretsv1beta1.HVSDynamicStatus
 }
 
-// getHVSDynamicSecrets returns the "open" dynamic secrets for the given HVS app
+// getHVSDynamicSecrets returns the "open" dynamic secrets for the given HVS
+// app, a slice of HCPVaultSecretsApp statuses, and the details of the next
+// renewal
 func getHVSDynamicSecrets(ctx context.Context, c hvsclient.ClientService, appName string, renewPercent int, shadowSecrets map[string]*models.Secrets20231128OpenSecret) (*hvsDynamicSecretResult, error) {
 	logger := log.FromContext(ctx).WithName("getHVSDynamicSecrets")
 
@@ -512,7 +547,8 @@ func getHVSDynamicSecrets(ctx context.Context, c hvsclient.ClientService, appNam
 				if timeForRenewal(s.DynamicInstance, renewPercent, time.Now()) {
 					logger.V(consts.LogLevelTrace).Info("Dynamic secret is due for renewal",
 						"appName", appName, "secretName", appSecret.Name,
-						"expiresAt", s.DynamicInstance.ExpiresAt)
+						"expiresAt", s.DynamicInstance.ExpiresAt, "renewPercent", renewPercent,
+						"ttl", s.DynamicInstance.TTL)
 					renew = true
 				} else if s.LatestVersion != appSecret.LatestVersion {
 					logger.V(consts.LogLevelTrace).Info("Dynamic secret latest version has changed",
@@ -532,9 +568,12 @@ func getHVSDynamicSecrets(ctx context.Context, c hvsclient.ClientService, appNam
 					// hasn't changed, and it hasn't been deleted/recreated with
 					// the same name, so it's safe to add the shadowed secret to
 					// the return list and skip renewal.
-					logger.Info("Skipping dynamic secret renewal", "appName", appName, "secretName", appSecret.Name)
+					logger.V(consts.LogLevelTrace).Info("Skipping dynamic secret renewal",
+						"appName", appName, "secretName", appSecret.Name,
+						"expires_at", s.DynamicInstance.ExpiresAt)
 					secrets = append(secrets, s)
-					nextRenewal = getTimeToNextRenewal(nextRenewal, s.DynamicInstance, renewPercent, time.Now())
+					nextRenewal = getTimeToNextRenewal(nextRenewal, s.DynamicInstance,
+						renewPercent, time.Now())
 					statuses = append(statuses, makeHVSDynamicStatus(s))
 					continue
 				}

@@ -34,7 +34,8 @@ var hmacSecretLabels = map[string]string{
 // stored in o.Status.SecretHMAC, returning true if they are equal. The computed
 // new-MAC will be returned so that o.Status.SecretHMAC can be updated.
 //
-// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret,
+// VaultPKISecret, HCPVaultSecretsApp
 func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 	validator HMACValidator, obj ctrlclient.Object, data map[string][]byte,
 ) (bool, []byte, error) {
@@ -80,7 +81,7 @@ func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 // HMACDestinationSecret compares the HMAC value stored in o.Status.SecretHMAC to
 // the HMAC of the destination K8s Secret data.
 // Supported types for obj are:
-// VaultDynamicSecret, VaultStaticSecret, VaultPKISecret
+// VaultDynamicSecret, VaultStaticSecret, VaultPKISecret, HCPVaultSecretsApp
 func HMACDestinationSecret(ctx context.Context, client ctrlclient.Client,
 	validator HMACValidator, obj ctrlclient.Object,
 ) (bool, error) {
