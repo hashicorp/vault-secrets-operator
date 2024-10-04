@@ -110,7 +110,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			refCache:     cache,
 			createEvents: createEvents,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantAddedAfter:  wantAddedAfterValid,
 			maxRequeueAfter: time.Second * 10,
@@ -122,7 +122,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			refCache:     cache,
 			createEvents: createEvents,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantAddedAfter: wantAddedAfterValid,
 			wantRefCache:   cache,
@@ -133,7 +133,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			refCache:     cache,
 			createEvents: createEvents,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantAddedAfter:  wantAddedAfterValid,
 			maxRequeueAfter: time.Second * -1,
@@ -146,7 +146,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			createEvents: createEvents,
 			validator:    &validatorFunc{},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantValidObjects: []client.Object{
 				createEvent.Object,
@@ -162,7 +162,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			createEvents: createEvents,
 			validator:    &validatorFunc{},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantInvalidObjects: []client.Object{
 				createEvent.Object,
@@ -178,7 +178,7 @@ func Test_enqueueRefRequestsHandler_Create(t *testing.T) {
 			},
 			createEvents: createEvents,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 		},
 	}
@@ -250,7 +250,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			refCache:     cache,
 			updateEvents: updateEventsEnqueue,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantAddedAfter: wantAddedAfterValid,
 			wantRefCache:   cache,
@@ -262,7 +262,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			updateEvents: updateEventsEnqueue,
 			validator:    &validatorFunc{},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantValidObjects: []client.Object{
 				objectNew,
@@ -278,7 +278,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			updateEvents: updateEventsEnqueue,
 			validator:    &validatorFunc{},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			wantInvalidObjects: []client.Object{
 				objectNew,
@@ -294,7 +294,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			},
 			updateEvents: updateEventsEnqueue,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 		},
 		{
@@ -303,7 +303,7 @@ func Test_enqueueRefRequestsHandler_Update(t *testing.T) {
 			refCache:     cache,
 			updateEvents: updateEventsNoEnqueue,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 		},
 	}
@@ -353,7 +353,7 @@ func Test_enqueueRefRequestsHandler_Delete(t *testing.T) {
 			kind:     SecretTransformation,
 			refCache: cache,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			deleteEvents: []event.DeleteEvent{
 				{
@@ -369,7 +369,7 @@ func Test_enqueueRefRequestsHandler_Delete(t *testing.T) {
 			kind:     SecretTransformation,
 			refCache: cache,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			deleteEvents: []event.DeleteEvent{
 				{
@@ -383,7 +383,7 @@ func Test_enqueueRefRequestsHandler_Delete(t *testing.T) {
 			kind:     SecretTransformation,
 			refCache: cache,
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			deleteEvents: []event.DeleteEvent{
 				{
@@ -469,17 +469,17 @@ func assertEnqueueRefRequestHandler(t *testing.T, ctx context.Context, tt testCa
 	}
 }
 
-var _ workqueue.RateLimitingInterface = &DelegatingQueue{}
+var _ workqueue.TypedRateLimitingInterface[reconcile.Request] = &DelegatingQueue{}
 
 type DelegatingQueue struct {
-	workqueue.Interface
+	workqueue.TypedRateLimitingInterface[reconcile.Request]
 	mu                 sync.Mutex
 	AddedAfter         []any
 	AddedAfterDuration []time.Duration
 }
 
 // AddAfter implements RateLimitingInterface.
-func (q *DelegatingQueue) AddAfter(item interface{}, d time.Duration) {
+func (q *DelegatingQueue) AddAfter(item reconcile.Request, d time.Duration) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.AddedAfter = append(q.AddedAfter, item)
@@ -487,11 +487,11 @@ func (q *DelegatingQueue) AddAfter(item interface{}, d time.Duration) {
 	q.Add(item)
 }
 
-func (q *DelegatingQueue) AddRateLimited(item interface{}) {}
+func (q *DelegatingQueue) AddRateLimited(item reconcile.Request) {}
 
-func (q *DelegatingQueue) Forget(item interface{}) {}
+func (q *DelegatingQueue) Forget(item reconcile.Request) {}
 
-func (q *DelegatingQueue) NumRequeues(item interface{}) int {
+func (q *DelegatingQueue) NumRequeues(item reconcile.Request) int {
 	return 0
 }
 
@@ -553,7 +553,7 @@ func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
 				deleteEventSupported,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:             gvk,
 			wantAddedAfter:  wantAddedAfterValid,
@@ -567,7 +567,7 @@ func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
 				deleteEventSupported,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:             gvk,
 			wantAddedAfter:  wantAddedAfterValid,
@@ -581,7 +581,7 @@ func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
 				deleteEventSupported,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:            gvk,
 			wantAddedAfter: wantAddedAfterValid,
@@ -594,7 +594,7 @@ func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
 				deleteEventSupported,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:             gvk,
 			wantAddedAfter:  wantAddedAfterValid,
@@ -607,7 +607,7 @@ func Test_enqueueOnDeletionRequestHandler_Delete(t *testing.T) {
 				deleteEventUnsupported,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk: gvk,
 		},
@@ -671,7 +671,7 @@ func Test_enqueueOnDeletionRequestHandler_Create(t *testing.T) {
 				createEvent,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:            gvk,
 			wantAddedAfter: nil,
@@ -683,7 +683,7 @@ func Test_enqueueOnDeletionRequestHandler_Create(t *testing.T) {
 				createEventUnsupported,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:            gvk,
 			wantAddedAfter: nil,
@@ -767,7 +767,7 @@ func Test_enqueueOnDeletionRequestHandler_Update(t *testing.T) {
 				updateEvent,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:            gvk,
 			wantAddedAfter: nil,
@@ -779,7 +779,7 @@ func Test_enqueueOnDeletionRequestHandler_Update(t *testing.T) {
 				updateEventUnsupported,
 			},
 			q: &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			},
 			gvk:            gvk,
 			wantAddedAfter: nil,
