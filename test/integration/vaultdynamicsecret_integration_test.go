@@ -64,8 +64,11 @@ type dynamicK8SOutputs struct {
 	XnsMemberEntityIDs []string `json:"xns_member_entity_ids"`
 }
 
-// updated in init()
-var withStaticRoleScheduled = true
+var (
+	enablePersistence bool
+	// updated in init()
+	withStaticRoleScheduled = true
+)
 
 func init() {
 	vaultImageTag := os.Getenv("VAULT_IMAGE_TAG")
@@ -86,6 +89,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	var clusterName string
 	if os.Getenv("SCALE_TESTS") != "" {
+		enablePersistence = false
 		// When SCALE_TESTS is set, use EKS cluster
 		clusterName = os.Getenv("EKS_CLUSTER_NAME")
 		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
@@ -100,7 +104,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	// TODO: Extend this to support other dynamic create test cases
 	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
-	vdsCreateCount := getEnvInt("VDS_CREATE_COUNT", -1)
+	vdsCreateCount := getEnvInt("VDS_CREATE_COUNT", defaultCreate)
 
 	// Counts can't be <= 0, if they are, the default count will be used.
 	if vdsCreateCount <= 0 {
@@ -145,6 +149,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 15,
 			"with_static_role_scheduled": withStaticRoleScheduled,
+			"enable_persistence":         enablePersistence,
 		},
 	}
 	if entTests {
@@ -671,6 +676,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 	var clusterName string
 	if os.Getenv("SCALE_TESTS") != "" {
+		enablePersistence = false
 		// When SCALE_TESTS is set, use EKS cluster
 		clusterName = os.Getenv("EKS_CLUSTER_NAME")
 		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
@@ -713,7 +719,8 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			"vault_db_default_lease_ttl": 600,
 			"with_static_role_scheduled": withStaticRoleScheduled,
 			// disabling until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released
-			"with_xns": false,
+			"with_xns":           false,
+			"enable_persistence": enablePersistence,
 		},
 	}
 	if entTests {

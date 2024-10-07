@@ -65,7 +65,7 @@ func TestVaultStaticSecret(t *testing.T) {
 	// If no counts are set, the default count will be used.
 	// Counts can't be <= 0, if they are, the default count will be used.
 	defaultCreate := 2 // Default count if no VSS_CREATE_COUNT is set
-	vssCreateCount := getEnvInt("VSS_CREATE_COUNT", -1)
+	vssCreateCount := getEnvInt("VSS_CREATE_COUNT", defaultCreate)
 
 	// Ensure vssCreateCount is valid
 	if vssCreateCount <= 0 {

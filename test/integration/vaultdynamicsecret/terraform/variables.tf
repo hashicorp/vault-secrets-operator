@@ -91,3 +91,10 @@ variable "with_xns" {
   type    = bool
   default = false
 }
+
+# enable_persistence is a boolean that determines if the test should run with persistence enabled
+# if scale tests are run, this should be set to false
+variable "enable_persistence" {
+  type    = bool
+  default = true
+}

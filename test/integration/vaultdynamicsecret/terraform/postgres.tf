@@ -10,7 +10,7 @@ resource "helm_release" "postgres" {
 
   set {
     name  = "primary.persistence.enabled"
-    value = "false"
+    value = var.enable_persistence ? "true" : "false"
   }
 
   repository = "https://charts.bitnami.com/bitnami"
