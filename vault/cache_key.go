@@ -5,7 +5,6 @@ package vault
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,6 +16,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/common"
 	"github.com/hashicorp/vault-secrets-operator/credentials"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
 var (
@@ -153,8 +153,7 @@ func computeClientCacheKey(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1
 		authObj.GetUID(), authObj.GetGeneration(),
 		connObj.GetUID(), connObj.GetGeneration(), providerUID)
 
-	sum := sha256.Sum256([]byte(input))
-	key := strings.ToLower(method + "-" + fmt.Sprintf("%x%x", sum[0:7], sum[len(sum)-4:]))
+	key := strings.ToLower(method + "-" + helpers.HashString(input))
 	if len(key) > 63 {
 		return "", errorKeyLengthExceeded
 	}

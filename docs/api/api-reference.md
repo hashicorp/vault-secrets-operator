@@ -225,7 +225,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `renewalPercent` _integer_ | RenewalPercent is the percent out of 100 of a dynamic secret's TTL when<br />new secrets are generated. Defaults to 67 percent minus jitter. | 67 | Maximum: 100 <br />Minimum: 0 <br /> |
+| `renewalPercent` _integer_ | RenewalPercent is the percent out of 100 of a dynamic secret's TTL when<br />new secrets are generated. Defaults to 67 percent plus up to 10% jitter. | 67 | Maximum: 90 <br />Minimum: 0 <br /> |
 
 
 #### HVSSyncConfig

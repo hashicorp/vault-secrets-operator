@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/go-openapi/strfmt"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
@@ -1718,4 +1719,70 @@ func TestHasOwnerLabels(t *testing.T) {
 			assert.Equalf(t, tt.want, HasOwnerLabels(tt.o), "HasOwnerLabels(%v)", tt.o)
 		})
 	}
+}
+
+func TestHVSShadowSecretData(t *testing.T) {
+	now := time.Now()
+	secrets := []*models.Secrets20231128OpenSecret{
+		{
+			CreatedAt:     strfmt.DateTime(now),
+			CreatedByID:   "some uuid",
+			LatestVersion: 1,
+			Name:          "bar",
+			Provider:      "providerfoo",
+			SyncStatus:    nil,
+			Type:          HVSSecretTypeDynamic,
+			DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now),
+				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+				TTL:       "3600s",
+				Values: map[string]string{
+					"api_key_one": "123456",
+					"api_key_two": "654321",
+				},
+			},
+		},
+	}
+
+	k8sShadowData, err := MakeHVSShadowSecretData(secrets)
+	require.NoError(t, err)
+
+	roundTripSecrets, err := FromHVSShadowSecret(k8sShadowData["bar"])
+	require.NoError(t, err)
+
+	checkDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets)
+
+	// Store the shadow data again in a secret
+	k8sShadowData2, err := MakeHVSShadowSecretData([]*models.Secrets20231128OpenSecret{
+		roundTripSecrets,
+	})
+	require.NoError(t, err)
+
+	// Ensure the shadow data is the same
+	assert.Equal(t, k8sShadowData, k8sShadowData2)
+
+	// Ensure the data conversion still comes back equal to the original
+	roundTripSecrets2, err := FromHVSShadowSecret(k8sShadowData2["bar"])
+	require.NoError(t, err)
+
+	checkDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets2)
+}
+
+func checkDynamicOpenSecretEqual(t *testing.T, want, got *models.Secrets20231128OpenSecret) {
+	t.Helper()
+
+	assert.Equal(t, want.CreatedAt.String(), got.CreatedAt.String())
+	assert.Equal(t, want.CreatedByID, got.CreatedByID)
+	assert.Equal(t, want.LatestVersion, got.LatestVersion)
+	assert.Equal(t, want.Name, got.Name)
+	assert.Equal(t, want.Provider, got.Provider)
+	assert.Equal(t, want.SyncStatus, got.SyncStatus)
+	assert.Equal(t, want.Type, got.Type)
+
+	assert.Equal(t, want.DynamicInstance.CreatedAt.String(),
+		got.DynamicInstance.CreatedAt.String())
+	assert.Equal(t, want.DynamicInstance.ExpiresAt.String(),
+		got.DynamicInstance.ExpiresAt.String())
+	assert.Equal(t, want.DynamicInstance.TTL, got.DynamicInstance.TTL)
+	assert.Equal(t, want.DynamicInstance.Values, got.DynamicInstance.Values)
 }

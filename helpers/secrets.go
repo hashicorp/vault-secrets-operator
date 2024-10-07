@@ -5,16 +5,21 @@ package helpers
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
 	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -433,6 +438,49 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 	return errs
 }
 
+// StoreImmutableSecret creates a k8s secret if it doesn't exist, or deletes and
+// then creates an existing secret.
+func StoreImmutableSecret(ctx context.Context, client ctrlclient.Client, dest *corev1.Secret) error {
+	objKey := ctrlclient.ObjectKeyFromObject(dest)
+	err := client.Create(ctx, dest)
+	if apierrors.IsAlreadyExists(err) {
+		// since the Secret is immutable we need to always recreate it
+		err = DeleteSecret(ctx, client, objKey)
+		if err != nil {
+			return err
+		}
+
+		// we want to retry create since the previous Delete() call is eventually consistent.
+		bo := backoff.NewExponentialBackOff()
+		bo.MaxInterval = 2 * time.Second
+		err = backoff.Retry(func() error {
+			return client.Create(ctx, dest)
+		}, backoff.WithMaxRetries(bo, 5))
+		if err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteSecret deletes a k8s secret, returning nil if the secret doesn't exist.
+func DeleteSecret(ctx context.Context, client ctrlclient.Client, objKey client.ObjectKey) error {
+	s := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      objKey.Name,
+			Namespace: objKey.Namespace,
+		},
+	}
+	err := client.Delete(ctx, s)
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 // SecretDataBuilder constructs K8s Secret data from various sources.
 type SecretDataBuilder struct{}
 
@@ -650,4 +698,39 @@ func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
 
 func NewSecretsDataBuilder() *SecretDataBuilder {
 	return &SecretDataBuilder{}
+}
+
+// MakeHVSShadowSecretData converts a list of HVS OpenSecrets to k8s secret
+// data. Only dynamic secrets are included.
+func MakeHVSShadowSecretData(secrets []*models.Secrets20231128OpenSecret) (map[string][]byte, error) {
+	data := make(map[string][]byte)
+	for _, v := range secrets {
+		if v.DynamicInstance == nil {
+			continue
+		}
+		secretData, err := v.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		data[v.Name] = secretData
+	}
+
+	return data, nil
+}
+
+// FromHVSShadowSecret converts a k8s secret data entry to an HVS OpenSecret.
+func FromHVSShadowSecret(data []byte) (*models.Secrets20231128OpenSecret, error) {
+	secret := &models.Secrets20231128OpenSecret{}
+	if err := secret.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+
+	return secret, nil
+}
+
+// HashString returns the first eight + last four characters of the sha256 sum
+// of the input string.
+func HashString(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return strings.ToLower(fmt.Sprintf("%x%x", sum[0:7], sum[len(sum)-4:]))
 }
