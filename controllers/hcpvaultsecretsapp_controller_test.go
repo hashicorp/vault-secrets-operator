@@ -448,10 +448,10 @@ func Test_getHVSDynamicSecrets_withShadowSecrets(t *testing.T) {
 				},
 			}
 			p := newFakeHVSTransportWithOpts(t, opts)
-			client := hvsclient.New(p, nil)
+			c := hvsclient.New(p, nil)
 
 			// Run the dynamic secrets scenario with the given shadow/cached secrets
-			resp, err := getHVSDynamicSecrets(context.Background(), client,
+			resp, err := getHVSDynamicSecrets(context.Background(), c,
 				"appName", defaultDynamicRenewPercent, tt.shadowSecrets)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, resp.secrets)
@@ -485,7 +485,7 @@ func Test_getTimeToNextRenewal(t *testing.T) {
 			},
 			renewPercent: defaultDynamicRenewPercent,
 			expected: nextRenewalDetails{
-				timeToNextRenewal: time.Duration(40*time.Minute + 12*time.Second), // 1h*0.67
+				timeToNextRenewal: 40*time.Minute + 12*time.Second, // 1h*0.67
 				ttl:               1 * time.Hour,
 			},
 		},
@@ -568,7 +568,7 @@ func Test_getTimeToNextRenewal(t *testing.T) {
 			},
 			renewPercent: defaultDynamicRenewPercent,
 			expected: nextRenewalDetails{
-				timeToNextRenewal: time.Duration(40*time.Minute + 12*time.Second), // 1h*0.67
+				timeToNextRenewal: 40*time.Minute + 12*time.Second, // 1h*0.67
 				ttl:               1 * time.Hour,
 			},
 		},
@@ -681,6 +681,22 @@ func Test_makeDynamicRenewPercent(t *testing.T) {
 				},
 			},
 			expected: 42,
+		},
+		"syncConfig.Dynamic.RenewalPercent is over 90": {
+			syncConfig: &secretsv1beta1.HVSSyncConfig{
+				Dynamic: &secretsv1beta1.HVSDynamicSyncConfig{
+					RenewalPercent: 91,
+				},
+			},
+			expected: 90,
+		},
+		"syncConfig.Dynamic.RenewalPercent is under 0": {
+			syncConfig: &secretsv1beta1.HVSSyncConfig{
+				Dynamic: &secretsv1beta1.HVSDynamicSyncConfig{
+					RenewalPercent: -1,
+				},
+			},
+			expected: 0,
 		},
 	}
 

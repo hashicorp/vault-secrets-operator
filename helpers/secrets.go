@@ -700,14 +700,15 @@ func NewSecretsDataBuilder() *SecretDataBuilder {
 	return &SecretDataBuilder{}
 }
 
-// MakeHVSShadowSecretData converts a list of HVS OpenSecrets to k8s secret data.
+// MakeHVSShadowSecretData converts a list of HVS OpenSecrets to k8s secret
+// data. Only dynamic secrets are included.
 func MakeHVSShadowSecretData(secrets []*models.Secrets20231128OpenSecret) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 	for _, v := range secrets {
 		if v.DynamicInstance == nil {
 			continue
 		}
-		secretData, err := marshalJSON(v)
+		secretData, err := v.MarshalBinary()
 		if err != nil {
 			return nil, err
 		}
@@ -719,12 +720,12 @@ func MakeHVSShadowSecretData(secrets []*models.Secrets20231128OpenSecret) (map[s
 
 // FromHVSShadowSecret converts a k8s secret data entry to an HVS OpenSecret.
 func FromHVSShadowSecret(data []byte) (*models.Secrets20231128OpenSecret, error) {
-	var secret models.Secrets20231128OpenSecret
-	if err := json.Unmarshal(data, &secret); err != nil {
+	secret := &models.Secrets20231128OpenSecret{}
+	if err := secret.UnmarshalBinary(data); err != nil {
 		return nil, err
 	}
 
-	return &secret, nil
+	return secret, nil
 }
 
 // HashString returns the first eight + last four characters of the sha256 sum

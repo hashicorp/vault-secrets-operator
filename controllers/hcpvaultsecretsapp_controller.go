@@ -73,11 +73,8 @@ var (
 	// [METHOD PATH_PATTERN][STATUS_CODE]
 	hvsErrorRe = regexp.MustCompile(`\[(\w+) (.+)]\[(\d+)]`)
 
-	shadowSecretLabels = map[string]string{
-		"app.kubernetes.io/name":       "vault-secrets-operator",
-		"app.kubernetes.io/managed-by": "hashicorp-vso",
-		"app.kubernetes.io/component":  "hvs-dynamic-secret-cache",
-	}
+	hvsaLabelPrefix = fmt.Sprintf("%s.%s", "hcpvaultsecretsapps",
+		secretsv1beta1.GroupVersion.Group)
 )
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
@@ -176,8 +173,12 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Get shadowed dynamic secret data (if any)
 	shadowSecrets, err := r.getShadowSecretData(ctx, o)
 	if err != nil {
-		logger.Error(err, "Failed to get shadow secret data, proceeding without shadow cache",
-			"appName", o.Spec.AppName)
+		// If we can't get the shadow secret data, log a warning and proceed
+		// without retrying since user intervention would be required to fix it
+		// and the shadow secret will just be recreated at the end of
+		// Reconcile().
+		logger.V(consts.LogLevelWarning).Info("Failed to get shadow secret data, proceeding without shadow cache",
+			"appName", o.Spec.AppName, "err", err)
 	}
 
 	renewPercent := getDynamicRenewPercent(o.Spec.SyncConfig)
@@ -199,9 +200,8 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// API calls
 	r.BackOffRegistry.Delete(req.NamespacedName)
 
-	if len(dynamicSecrets.statuses) > 0 {
-		o.Status.DynamicSecrets = dynamicSecrets.statuses
-	}
+	o.Status.DynamicSecrets = dynamicSecrets.statuses
+
 	// Calculate next requeue time based on whichever comes first between the
 	// current `requeueAfter` and the next dynamic secret renewal time.
 	if dynamicSecrets.nextRenewal.timeToNextRenewal > 0 {
@@ -429,6 +429,17 @@ func (r *HCPVaultSecretsAppReconciler) getShadowSecretData(ctx context.Context, 
 		return nil, fmt.Errorf("HVS shadow secret %s for %s/%s has been tampered with",
 			shadowObjKey.String(), o.Namespace, o.Name)
 	}
+	// Check labels match
+	expectedLabels, err := makeShadowLabels(o)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make shadow secret labels for %s/%s: %w",
+			o.Namespace, o.Name, err)
+	}
+	if !helpers.MatchingLabels(expectedLabels, shadowSecret.Labels) {
+		return nil, fmt.Errorf("shadow secret labels %v did not match expected labels %v for %s/%s",
+			shadowSecret.Labels, expectedLabels,
+			shadowObjKey.Namespace, shadowObjKey.Name)
+	}
 	// Decode shadowSecret.Data into a map of OpenSecret's
 	if shadowSecret != nil {
 		openSecrets := make(map[string]*models.Secrets20231128OpenSecret)
@@ -454,17 +465,20 @@ func (r *HCPVaultSecretsAppReconciler) storeShadowSecretData(ctx context.Context
 		return helpers.DeleteSecret(ctx, r.Client, shadowObjKey)
 	}
 
+	labels, err := makeShadowLabels(o)
+	if err != nil {
+		return fmt.Errorf("failed to make shadow secret labels for %s/%s: %w",
+			o.Namespace, o.Name, err)
+	}
+
 	shadowSecret := &corev1.Secret{
 		Immutable: ptr.To(true),
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      shadowObjKey.Name,
 			Namespace: shadowObjKey.Namespace,
-			Labels:    shadowSecretLabels,
+			Labels:    labels,
 		},
 	}
-	shadowSecret.ObjectMeta.Labels["hvs-app-name"] = o.Spec.AppName
-	shadowSecret.ObjectMeta.Labels["hcpvaultsecretsapp/name"] = o.Name
-	shadowSecret.ObjectMeta.Labels["hcpvaultsecretsapp/namespace"] = o.Namespace
 
 	shadowSecretData, err := helpers.MakeHVSShadowSecretData(secrets)
 	if err != nil {
@@ -492,6 +506,20 @@ func (r *HCPVaultSecretsAppReconciler) storeShadowSecretData(ctx context.Context
 	}
 
 	return nil
+}
+
+func makeShadowLabels(o *secretsv1beta1.HCPVaultSecretsApp) (map[string]string, error) {
+	labels, err := helpers.OwnerLabelsForObj(o)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get owner labels for %s/%s: %w",
+			o.Namespace, o.Name, err)
+	}
+	labels["app.kubernetes.io/component"] = "hvs-dynamic-secret-cache"
+	labels[hvsaLabelPrefix+"/hvs-app-name"] = o.Spec.AppName
+	labels[hvsaLabelPrefix+"/name"] = o.Name
+	labels[hvsaLabelPrefix+"/namespace"] = o.Namespace
+
+	return labels, nil
 }
 
 type nextRenewalDetails struct {
@@ -670,7 +698,7 @@ func getDynamicRenewPercent(syncConfig *secretsv1beta1.HVSSyncConfig) int {
 	if syncConfig != nil && syncConfig.Dynamic != nil && syncConfig.Dynamic.RenewalPercent != 0 {
 		renewPercent = syncConfig.Dynamic.RenewalPercent
 	}
-	return renewPercent
+	return capRenewalPercent(renewPercent)
 }
 
 func makeHVSDynamicStatus(secret *models.Secrets20231128OpenSecret) secretsv1beta1.HVSDynamicStatus {
