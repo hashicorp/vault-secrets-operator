@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path"
@@ -100,13 +101,18 @@ func TestVaultDynamicSecret(t *testing.T) {
 	// TODO: Extend this to support other dynamic create test cases
 	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
 	vdsCreateCount := getEnvInt("VDS_CREATE_COUNT", -1)
+
+	// Counts can't be <= 0, if they are, the default count will be used.
+	if vdsCreateCount <= 0 {
+		log.Printf("Invalid VDS_CREATE_COUNT: %d, using default count: %d", vdsCreateCount, defaultCreate)
+		vdsCreateCount = defaultCreate
+	}
+
 	createOnlyCount := getEnvInt("VDS_CREATE_ONLY", defaultCreate)
 	mixedCount := getEnvInt("VDS_MIXED_CREATE", defaultCreate)
 
-	if vdsCreateCount != -1 {
-		createOnlyCount = vdsCreateCount
-		mixedCount = vdsCreateCount
-	}
+	createOnlyCount = vdsCreateCount
+	mixedCount = vdsCreateCount
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -64,15 +65,20 @@ func TestVaultPKISecret(t *testing.T) {
 
 	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
 	vpsCreateCount := getEnvInt("VPS_CREATE_COUNT", -1)
+
+	// Ensure vpsCreateCount is valid
+	if vpsCreateCount <= 0 {
+		log.Printf("Invalid VPS_CREATE_COUNT: %d, using default count: %d", vpsCreateCount, defaultCreate)
+		vpsCreateCount = defaultCreate
+	}
+
 	createOnlyCount := getEnvInt("VPS_CREATE_ONLY", 1)
 	mixedCount := getEnvInt("VPS_MIXED_CREATE", defaultCreate)
 	createTLSCount := getEnvInt("VPS_MIXED_CREATE", 2)
 
-	if vpsCreateCount != -1 {
-		createOnlyCount = vpsCreateCount
-		mixedCount = vpsCreateCount
-		createTLSCount = vpsCreateCount
-	}
+	createOnlyCount = vpsCreateCount
+	mixedCount = vpsCreateCount
+	createTLSCount = vpsCreateCount
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)

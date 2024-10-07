@@ -5,6 +5,8 @@
 AWS_REGION ?= us-east-2
 EKS_K8S_VERSION ?= 1.30
 
+# testing dev instances is currently not supported
+# TODO: create the docker registry (e.g. ECR) to enable dev builds
 VERSION ?= 0.8.1
 INTEGRATION_TESTS_PARALLEL ?= true
 SKIP_HCPVSAPPS_TESTS ?= true

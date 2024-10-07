@@ -63,8 +63,16 @@ func TestVaultStaticSecret(t *testing.T) {
 	// If VSS_CREATE_COUNT is set, it will override the specific test counts.
 	// If VSS_CREATE_COUNT is not set, the specific test counts will be used.
 	// If no counts are set, the default count will be used.
+	// Counts can't be <= 0, if they are, the default count will be used.
 	defaultCreate := 2 // Default count if no VSS_CREATE_COUNT is set
 	vssCreateCount := getEnvInt("VSS_CREATE_COUNT", -1)
+
+	// Ensure vssCreateCount is valid
+	if vssCreateCount <= 0 {
+		log.Printf("Invalid VSS_CREATE_COUNT %d, using default count %d", vssCreateCount, defaultCreate)
+		vssCreateCount = defaultCreate
+	}
+
 	kvv1Count := getEnvInt("VSS_KVV1_CREATE", defaultCreate)
 	kvv2Count := getEnvInt("VSS_KVV2_CREATE", defaultCreate)
 	bothCount := getEnvInt("VSS_BOTH_CREATE", defaultCreate)
@@ -72,15 +80,12 @@ func TestVaultStaticSecret(t *testing.T) {
 	mixedBothCount := getEnvInt("VSS_MIXED_BOTH_CREATE", defaultCreate)
 	eventsBothCount := getEnvInt("VSS_EVENTS_BOTH_CREATE", defaultCreate)
 
-	// Apply VSS_CREATE_COUNT if it is set
-	if vssCreateCount != -1 {
-		kvv1Count = vssCreateCount
-		kvv2Count = vssCreateCount
-		bothCount = vssCreateCount
-		kvv2FixedCount = vssCreateCount
-		mixedBothCount = vssCreateCount
-		eventsBothCount = vssCreateCount
-	}
+	kvv1Count = vssCreateCount
+	kvv2Count = vssCreateCount
+	bothCount = vssCreateCount
+	kvv2FixedCount = vssCreateCount
+	mixedBothCount = vssCreateCount
+	eventsBothCount = vssCreateCount
 
 	// The events tests require Vault Enterprise >= 1.16.3, and since that
 	// changes the app policy required we need to set a flag in the test
