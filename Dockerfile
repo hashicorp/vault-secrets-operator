@@ -81,6 +81,10 @@ WORKDIR /
 
 COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /$BIN_NAME
 COPY dist/$TARGETOS/$TARGETARCH/scripts /scripts
+
+# May not be necessary, but copying the license to be consistent with the ubi image.
+COPY LICENSE /licenses/copyright.txt
+# Copy license to conform to HC IPS-002
 COPY LICENSE /usr/share/doc/$PRODUCT_NAME/LICENSE.txt
 
 
@@ -118,7 +122,12 @@ WORKDIR /
 
 COPY dist/$TARGETOS/$TARGETARCH/$BIN_NAME /$BIN_NAME
 COPY dist/$TARGETOS/$TARGETARCH/scripts /scripts
+
+# Copy license for Red Hat certification.
+COPY LICENSE /licenses/copyright.txt
+# Copy license to conform to HC IPS-002
 COPY LICENSE /usr/share/doc/$PRODUCT_NAME/LICENSE.txt
+
 COPY --from=build-ubi /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/pki/ca-trust/extracted/pem/
 
 USER 65532:65532
