@@ -1,7 +1,7 @@
 ## 0.9.0 (October 8th, 2024)
 
 Features:
-* Add support for syncing [HVS rotating secrets](https://developer.hashicorp.com/hcp/docs/vault-secrets/auto-rotation): [GH-893](https://github.com/hashicorp/vault-secrets-operator/pull/893)
+* Add support for syncing [HVS rotating secrets](https://developer.hashicorp.com/hcp/docs/vault-secrets/auto-rotation): [GH-893](https://github.com/hashicorp/vault-secrets-operator/pull/893) [GH-889](https://github.com/hashicorp/vault-secrets-operator/pull/889)
 * Add support for syncing [HVS dynamic secrets](https://developer.hashicorp.com/hcp/docs/vault-secrets/dynamic-secrets): [GH-917](https://github.com/hashicorp/vault-secrets-operator/pull/917) [GH-939](https://github.com/hashicorp/vault-secrets-operator/pull/939) [GH-934](https://github.com/hashicorp/vault-secrets-operator/pull/934) [GH-941](https://github.com/hashicorp/vault-secrets-operator/pull/941)
 
 Fix:
