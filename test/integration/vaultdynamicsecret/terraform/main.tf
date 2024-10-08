@@ -13,15 +13,16 @@ terraform {
     }
     vault = {
       source  = "hashicorp/vault"
-      version = "4.2.0"
+      version = "4.4.0"
     }
   }
 }
 
 provider "vault" {
   # Configuration options
-  address = var.vault_address
-  token   = var.vault_token
+  address          = var.vault_address
+  token            = var.vault_token
+  skip_child_token = true
 }
 
 provider "helm" {
