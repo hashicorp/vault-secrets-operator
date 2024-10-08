@@ -1,3 +1,31 @@
+## 0.9.0 (October 8th, 2024)
+
+Features:
+* Add support for syncing [HVS rotating secrets](https://developer.hashicorp.com/hcp/docs/vault-secrets/auto-rotation): [GH-893](https://github.com/hashicorp/vault-secrets-operator/pull/893)
+* Add support for syncing [HVS dynamic secrets](https://developer.hashicorp.com/hcp/docs/vault-secrets/dynamic-secrets): [GH-917](https://github.com/hashicorp/vault-secrets-operator/pull/917) [GH-939](https://github.com/hashicorp/vault-secrets-operator/pull/939) [GH-934](https://github.com/hashicorp/vault-secrets-operator/pull/934) [GH-941](https://github.com/hashicorp/vault-secrets-operator/pull/941)
+
+Fix:
+* VC: update `spec.timeout` to be a string: [GH-906](https://github.com/hashicorp/vault-secrets-operator/pull/906)
+
+Improvements:
+* VSS(instant-updates): more stable event watcher: [GH-898](https://github.com/hashicorp/vault-secrets-operator/pull/898)
+* Bump kube-rbac-proxy to 0.18.1: [GH-909](https://github.com/hashicorp/vault-secrets-operator/pull/909)
+
+Build:
+* Upgrade controller-gen to 0.16.3: [GH-944](https://github.com/hashicorp/vault-secrets-operator/pull/944)
+* SEC-090: Automated trusted workflow pinning (2024-08-13): [GH-888](https://github.com/hashicorp/vault-secrets-operator/pull/888)
+* SEC-090: Automated trusted workflow pinning (2024-08-19): [GH-897](https://github.com/hashicorp/vault-secrets-operator/pull/897)
+* SEC-090: Automated trusted workflow pinning (2024-09-30): [GH-937](https://github.com/hashicorp/vault-secrets-operator/pull/937)
+* Use dependabot groups for Go deps: [GH-924](https://github.com/hashicorp/vault-secrets-operator/pull/924)
+* Conform to IPS-002: [GH-947](https://github.com/hashicorp/vault-secrets-operator/pull/947)
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 14 updates: [GH-943](https://github.com/hashicorp/vault-secrets-operator/pull/943)
+* Bump golang.org/x/crypto from 0.27.0 to 0.28.0 in the gomod-backward-compatible group: [GH-945](https://github.com/hashicorp/vault-secrets-operator/pull/945)
+* Bump ubi9/ubi-micro from 9.4-13 to 9.4-15: [GH-904](https://github.com/hashicorp/vault-secrets-operator/pull/904)
+* Bump ubi9/ubi-minimal from 9.4-1227.1725849298 to 9.4-1227.1726694542: [GH-930](https://github.com/hashicorp/vault-secrets-operator/pull/930)
+
+
 ## 0.8.1 (July 29th, 2024)
 
 Improvements:
