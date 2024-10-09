@@ -27,18 +27,41 @@ var maxRequeueAfter = time.Second * 1
 // instance. It includes a ValidatorFunc that prevents the referring objects from
 // being queued for reconciliation.
 func NewEnqueueRefRequestsHandlerST(refCache ResourceReferenceCache, syncReg *SyncRegistry) handler.EventHandler {
-	return NewEnqueueRefRequestsHandler(
-		SecretTransformation, refCache, syncReg,
-		ValidateSecretTransformation,
-	)
+	return NewEnqueueRefRequestsHandlerWithOptions(&EnqueueRefRequestOptions{
+		Validator:    ValidateSecretTransformation,
+		SyncRegistry: syncReg,
+		RefCache:     refCache,
+		Kind:         SecretTransformation,
+	})
 }
 
+type EnqueueRefRequestOptions struct {
+	Validator       ValidatorFunc
+	MaxRequeueAfter time.Duration
+	SyncRegistry    *SyncRegistry
+	RefCache        ResourceReferenceCache
+	Kind            ResourceKind
+}
+
+// NewEnqueueRefRequestsHandler returns a handler.EventHandler for Watchers of ResourceKind.
+// Deprecated: Use NewEnqueueRefRequestsHandlerWithOptions instead.
 func NewEnqueueRefRequestsHandler(kind ResourceKind, refCache ResourceReferenceCache, syncReg *SyncRegistry, validator ValidatorFunc) handler.EventHandler {
+	return NewEnqueueRefRequestsHandlerWithOptions(&EnqueueRefRequestOptions{
+		Kind:         kind,
+		RefCache:     refCache,
+		SyncRegistry: syncReg,
+		Validator:    validator,
+	})
+}
+
+// NewEnqueueRefRequestsHandlerWithOptions returns a handler.EventHandler for
+// Watchers of ResourceKind.
+func NewEnqueueRefRequestsHandlerWithOptions(opts *EnqueueRefRequestOptions) handler.EventHandler {
 	return &enqueueRefRequestsHandler{
-		kind:      kind,
-		refCache:  refCache,
-		syncReg:   syncReg,
-		validator: validator,
+		kind:      opts.Kind,
+		refCache:  opts.RefCache,
+		syncReg:   opts.SyncRegistry,
+		validator: opts.Validator,
 	}
 }
 

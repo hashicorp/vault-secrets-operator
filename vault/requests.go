@@ -4,18 +4,25 @@
 package vault
 
 import (
+	"maps"
+	"net/http"
 	"net/url"
 	"strconv"
 )
 
-type ReadRequest interface {
+type BaseRequest interface {
 	Path() string
+	Headers() http.Header
+}
+
+type ReadRequest interface {
+	BaseRequest
 	Values() url.Values
 }
 
 type WriteRequest interface {
-	Path() string
-	Params() map[string]any
+	BaseRequest
+	Data() map[string]any
 }
 
 var (
@@ -26,21 +33,32 @@ var (
 )
 
 type defaultWriteRequest struct {
-	path   string
-	params map[string]any
+	path    string
+	params  map[string]any
+	headers http.Header
+	data    []byte
+}
+
+func (r *defaultWriteRequest) Headers() http.Header {
+	return maps.Clone(r.headers)
 }
 
 func (r *defaultWriteRequest) Path() string {
 	return r.path
 }
 
-func (r *defaultWriteRequest) Params() map[string]any {
+func (r *defaultWriteRequest) Data() map[string]any {
 	return r.params
 }
 
 type defaultReadRequest struct {
-	path   string
-	values url.Values
+	path    string
+	values  url.Values
+	headers http.Header
+}
+
+func (r *defaultReadRequest) Headers() http.Header {
+	return maps.Clone(r.headers)
 }
 
 func (r *defaultReadRequest) Path() string {
@@ -54,8 +72,13 @@ func (r *defaultReadRequest) Values() url.Values {
 // kvReadRequestV1 can be used in ClientBase.Read to get KV version 1 secrets
 // from Vault.
 type kvReadRequestV1 struct {
-	mount string
-	path  string
+	mount   string
+	path    string
+	headers http.Header
+}
+
+func (r *kvReadRequestV1) Headers() http.Header {
+	return maps.Clone(r.headers)
 }
 
 func (r *kvReadRequestV1) Path() string {
@@ -72,6 +95,11 @@ type kvReadRequestV2 struct {
 	mount   string
 	path    string
 	version int
+	headers http.Header
+}
+
+func (r *kvReadRequestV2) Headers() http.Header {
+	return maps.Clone(r.headers)
 }
 
 func (r *kvReadRequestV2) Path() string {
@@ -89,31 +117,35 @@ func (r *kvReadRequestV2) Values() url.Values {
 	return vals
 }
 
-func NewKVReadRequestV1(mount, path string) ReadRequest {
+func NewKVReadRequestV1(mount, path string, headers http.Header) ReadRequest {
 	return &kvReadRequestV1{
-		mount: mount,
-		path:  path,
+		mount:   mount,
+		path:    path,
+		headers: headers,
 	}
 }
 
-func NewKVReadRequestV2(mount, path string, version int) ReadRequest {
+func NewKVReadRequestV2(mount, path string, version int, headers http.Header) ReadRequest {
 	return &kvReadRequestV2{
 		mount:   mount,
 		path:    path,
+		headers: headers,
 		version: version,
 	}
 }
 
-func NewReadRequest(path string, values url.Values) ReadRequest {
+func NewReadRequest(path string, values url.Values, headers http.Header) ReadRequest {
 	return &defaultReadRequest{
-		path:   path,
-		values: values,
+		path:    path,
+		values:  values,
+		headers: headers,
 	}
 }
 
-func NewWriteRequest(path string, params map[string]any) WriteRequest {
+func NewWriteRequest(path string, params map[string]any, headers http.Header) WriteRequest {
 	return &defaultWriteRequest{
-		path:   path,
-		params: params,
+		path:    path,
+		params:  params,
+		headers: headers,
 	}
 }

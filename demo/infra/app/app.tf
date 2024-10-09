@@ -3,7 +3,7 @@
 
 data "kubernetes_namespace" "operator" {
   metadata {
-    name = var.operator_namespace
+    name = var.create_namespace ? kubernetes_namespace.vso[0].metadata[0].name : var.operator_namespace
   }
 }
 
@@ -24,6 +24,8 @@ resource "kubernetes_manifest" "vault-connection-default" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 resource "kubernetes_manifest" "vault-auth-default" {
@@ -45,6 +47,8 @@ resource "kubernetes_manifest" "vault-auth-default" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 resource "kubernetes_manifest" "vault-dynamic-secret" {
@@ -91,6 +95,8 @@ resource "kubernetes_manifest" "vault-dynamic-secret" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 resource "kubernetes_manifest" "templates" {
@@ -166,6 +172,8 @@ EOF
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 resource "kubernetes_deployment" "example" {
@@ -210,8 +218,9 @@ resource "kubernetes_deployment" "example" {
           }
         }
         container {
-          image = "postgres:latest"
-          name  = "demo"
+          image             = "postgres:latest"
+          image_pull_policy = "IfNotPresent"
+          name              = "demo"
           command = [
             "sh", "-c", "while : ; do psql $PGURL -c 'select 1;' ; sleep 30; done"
           ]

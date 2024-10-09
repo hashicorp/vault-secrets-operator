@@ -168,6 +168,8 @@ func (n DocNode) FormattedKind() string {
 		// will show it as that is handled above via the typeAnnotation regex
 		// match.
 		return ""
+	case "seq":
+		return "array"
 	default:
 		return fmt.Sprintf("%s '%v'", UnknownKindError, n.KindTag)
 	}
