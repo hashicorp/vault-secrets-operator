@@ -49,7 +49,7 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 	}
 
 	testID := "hvs"
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
+	clusterName := kindClusterName
 	assert.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")

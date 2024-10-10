@@ -57,6 +57,27 @@ func TestVaultStaticSecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
+	defaultCreate := 2 // Default count if no VSS_CREATE_COUNT is set
+	if vssCreateCount, exists := getEnvInt(t, "VSS_CREATE_COUNT"); exists {
+		defaultCreate = vssCreateCount
+	}
+
+	kvv1Count, kvv2Count, bothCount, kvv2FixedCount, mixedBothCount, eventsBothCount := defaultCreate, defaultCreate, defaultCreate, defaultCreate, defaultCreate, defaultCreate
+
+	counts := map[string]*int{
+		"VSS_KVV1_CREATE":        &kvv1Count,
+		"VSS_KVV2_CREATE":        &kvv2Count,
+		"VSS_BOTH_CREATE":        &bothCount,
+		"VSS_KVV2_FIXED_CREATE":  &kvv2FixedCount,
+		"VSS_MIXED_BOTH_CREATE":  &mixedBothCount,
+		"VSS_EVENTS_BOTH_CREATE": &eventsBothCount,
+	}
+	for key, count := range counts {
+		if v, exists := getEnvInt(t, key); exists {
+			*count = v
+		}
+	}
+
 	// The events tests require Vault Enterprise >= 1.16.3, and since that
 	// changes the app policy required we need to set a flag in the test
 	// terraform
@@ -292,23 +313,23 @@ func TestVaultStaticSecret(t *testing.T) {
 		},
 		{
 			name:        "create-kv-v1",
-			create:      2,
+			create:      kvv1Count,
 			createTypes: []string{consts.KVSecretTypeV1},
 		},
 		{
 			name:        "create-kv-v2",
-			create:      1,
+			create:      kvv2Count,
 			createTypes: []string{consts.KVSecretTypeV2},
 		},
 		{
 			name:        "create-kv-v2-fixed-version",
-			create:      2,
+			create:      kvv2FixedCount,
 			createTypes: []string{consts.KVSecretTypeV2},
 			version:     1,
 		},
 		{
 			name:        "create-both",
-			create:      2,
+			create:      bothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
@@ -324,7 +345,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				},
 			},
 			existing:    getExisting(),
-			create:      2,
+			create:      mixedBothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
@@ -349,7 +370,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				}
 				return vss
 			}(),
-			create:      2,
+			create:      eventsBothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 			useEvents:   true,
 		},

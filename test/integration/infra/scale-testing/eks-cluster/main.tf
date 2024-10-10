@@ -106,3 +106,13 @@ data "aws_eks_cluster_auth" "cluster" {
   name       = module.eks.cluster_name
   depends_on = [module.eks.cluster_endpoint]
 }
+
+resource "local_file" "env_file" {
+  filename = "${path.module}/outputs.env"
+  content  = <<EOT
+EKS_OIDC_URL=${module.eks.cluster_oidc_issuer_url}
+EKS_CLUSTER_NAME=${module.eks.cluster_name}
+AWS_REGION=${var.region}
+K8S_CLUSTER_CONTEXT=${module.eks.cluster_arn}
+EOT
+}
