@@ -57,35 +57,26 @@ func TestVaultStaticSecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
-	// Read counts from environment variables or set defaults
-	// You can either set VSS_CREATE_COUNT to set the count for all tests, or
-	// set the specific count for each test.
-	// If VSS_CREATE_COUNT is set, it will override the specific test counts.
-	// If VSS_CREATE_COUNT is not set, the specific test counts will be used.
-	// If no counts are set, the default count will be used.
-	// Counts can't be <= 0, if they are, the default count will be used.
 	defaultCreate := 2 // Default count if no VSS_CREATE_COUNT is set
-	vssCreateCount := getEnvInt("VSS_CREATE_COUNT", defaultCreate)
-
-	// Ensure vssCreateCount is valid
-	if vssCreateCount <= 0 {
-		log.Printf("Invalid VSS_CREATE_COUNT %d, using default count %d", vssCreateCount, defaultCreate)
-		vssCreateCount = defaultCreate
+	if vssCreateCount, exists := getEnvInt(t, "VSS_CREATE_COUNT"); exists {
+		defaultCreate = vssCreateCount
 	}
 
-	kvv1Count := getEnvInt("VSS_KVV1_CREATE", defaultCreate)
-	kvv2Count := getEnvInt("VSS_KVV2_CREATE", defaultCreate)
-	bothCount := getEnvInt("VSS_BOTH_CREATE", defaultCreate)
-	kvv2FixedCount := getEnvInt("VSS_KVV2_FIXED_CREATE", defaultCreate)
-	mixedBothCount := getEnvInt("VSS_MIXED_BOTH_CREATE", defaultCreate)
-	eventsBothCount := getEnvInt("VSS_EVENTS_BOTH_CREATE", defaultCreate)
+	kvv1Count, kvv2Count, bothCount, kvv2FixedCount, mixedBothCount, eventsBothCount := defaultCreate, defaultCreate, defaultCreate, defaultCreate, defaultCreate, defaultCreate
 
-	kvv1Count = vssCreateCount
-	kvv2Count = vssCreateCount
-	bothCount = vssCreateCount
-	kvv2FixedCount = vssCreateCount
-	mixedBothCount = vssCreateCount
-	eventsBothCount = vssCreateCount
+	counts := map[string]*int{
+		"VSS_KVV1_CREATE":        &kvv1Count,
+		"VSS_KVV2_CREATE":        &kvv2Count,
+		"VSS_BOTH_CREATE":        &bothCount,
+		"VSS_KVV2_FIXED_CREATE":  &kvv2FixedCount,
+		"VSS_MIXED_BOTH_CREATE":  &mixedBothCount,
+		"VSS_EVENTS_BOTH_CREATE": &eventsBothCount,
+	}
+	for key, count := range counts {
+		if v, exists := getEnvInt(t, key); exists {
+			*count = v
+		}
+	}
 
 	// The events tests require Vault Enterprise >= 1.16.3, and since that
 	// changes the app policy required we need to set a flag in the test

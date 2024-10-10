@@ -9,7 +9,6 @@ EKS_K8S_VERSION ?= 1.30
 # TODO: create the docker registry (e.g. ECR) to enable dev builds
 VERSION ?= 0.8.1
 INTEGRATION_TESTS_PARALLEL ?= true
-SKIP_HCPVSAPPS_TESTS ?= true
 
 # directories for cloud hosted k8s infrastructure for running tests
 # root directory for all integration tests
@@ -18,20 +17,9 @@ TF_EKS_STATE_DIR ?= $(TF_EKS_SRC_DIR)/state
 TF_DEPLOY_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/deployments
 TF_DEPLOY_STATE_DIR ?= $(TF_DEPLOY_SRC_DIR)/state
 
-SCALE_TESTS=1
+SCALE_TESTS ?= 1
 
-include ./Makefile
-
-.PHONY: create-eks
-create-eks: ## Create a new EKS cluster
-	@mkdir -p $(TF_EKS_STATE_DIR)
-	rm -f $(TF_EKS_STATE_DIR)/*.tf
-	cp -v $(TF_EKS_SRC_DIR)/*.tf $(TF_EKS_STATE_DIR)/.
-	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) init -upgrade
-	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) apply -auto-approve \
-		-var region=$(AWS_REGION) \
-		-var kubernetes_version=$(EKS_K8S_VERSION) || exit 1
-	rm -f $(TF_EKS_STATE_DIR)/*.tfvars
+include ./aws.mk
 
 .PHONY: deploy-workload
 deploy-workload: set-vault-license import-aws-vars ## Deploy the workload to the EKS cluster
@@ -47,12 +35,8 @@ endif
 		-var cluster_name=$(EKS_CLUSTER_NAME) || exit 1
 	rm -f $(TF_DEPLOY_STATE_DIR)/*.tfvars
 
-.PHONY: import-aws-vars
-import-aws-vars:
--include $(TF_EKS_STATE_DIR)/outputs.env
-
-.PHONY: connect-cluster
-connect-cluster: import-aws-vars ## Connect to the EKS cluster
+.PHONY: update-kubeconfig
+update-kubeconfig: import-aws-vars
 	aws eks --region $(AWS_REGION) update-kubeconfig --name $(EKS_CLUSTER_NAME)
 
 .PHONY: cleanup-port-forward
@@ -63,7 +47,7 @@ cleanup-port-forward: ## Kill orphan port-forward processes
 		echo "No port-forward processes found or an error occurred."
 
 .PHONY: set image scale-tests
-scale-tests: cleanup-port-forward set-image connect-cluster import-aws-vars
+scale-tests: cleanup-port-forward set-image update-kubeconfig import-aws-vars
 	$(MAKE) port-forward &
 	SCALE_TESTS=true VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE) \
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) \
@@ -77,9 +61,3 @@ scale-tests: cleanup-port-forward set-image connect-cluster import-aws-vars
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) SKIP_HCPVSAPPS_TESTS=$(SKIP_HCPVSAPPS_TESTS) \
 	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
-
-.PHONY: destroy-eks
-destroy-eks: ## Destroy the EKS cluster
-	$(TERRAFORM) -chdir=$(TF_EKS_STATE_DIR) destroy -auto-approve \
-		-var region=$(AWS_REGION) \
-		-var kubernetes_version=$(EKS_K8S_VERSION) || exit 1

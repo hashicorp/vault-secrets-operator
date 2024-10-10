@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -49,13 +48,13 @@ func TestVaultPKISecret(t *testing.T) {
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
 	var clusterName string
-	if os.Getenv("SCALE_TESTS") != "" {
+	if isScaleTest {
 		// When SCALE_TESTS is set, use EKS cluster
-		clusterName = os.Getenv("EKS_CLUSTER_NAME")
+		clusterName = eksClusterName
 		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
 	} else {
 		// Otherwise, use KIND cluster
-		clusterName = os.Getenv("KIND_CLUSTER_NAME")
+		clusterName = kindClusterName
 		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	}
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
@@ -63,22 +62,21 @@ func TestVaultPKISecret(t *testing.T) {
 		k8sConfigContext = "kind-" + clusterName
 	}
 
-	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
-	vpsCreateCount := getEnvInt("VPS_CREATE_COUNT", defaultCreate)
-
-	// Ensure vpsCreateCount is valid
-	if vpsCreateCount <= 0 {
-		log.Printf("Invalid VPS_CREATE_COUNT: %d, using default count: %d", vpsCreateCount, defaultCreate)
-		vpsCreateCount = defaultCreate
+	defaultCreate := 5 // Default count if no VPS_CREATE_COUNT is set
+	if vpsCreateCount, exists := getEnvInt(t, "VPS_CREATE_COUNT"); exists {
+		defaultCreate = vpsCreateCount
 	}
 
-	createOnlyCount := getEnvInt("VPS_CREATE_ONLY", 1)
-	mixedCount := getEnvInt("VPS_MIXED_CREATE", defaultCreate)
-	createTLSCount := getEnvInt("VPS_MIXED_CREATE", 2)
-
-	createOnlyCount = vpsCreateCount
-	mixedCount = vpsCreateCount
-	createTLSCount = vpsCreateCount
+	createOnlyCount, mixedCount, createTLSCount := defaultCreate, defaultCreate, defaultCreate
+	if v, exists := getEnvInt(t, "VPS_CREATE_ONLY"); exists {
+		createOnlyCount = v
+	}
+	if v, exists := getEnvInt(t, "VPS_MIXED_CREATE"); exists {
+		mixedCount = v
+	}
+	if v, exists := getEnvInt(t, "VPS_MIXED_CREATE"); exists {
+		createTLSCount = v
+	}
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.Nil(t, err)

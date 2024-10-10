@@ -52,6 +52,7 @@ SKIP_CLEANUP ?=
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
 SKIP_GCP_TESTS ?= true
+SKIP_HCPVSAPPS_TESTS ?= false
 
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*

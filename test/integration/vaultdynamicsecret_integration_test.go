@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"os"
 	"path"
@@ -65,7 +64,7 @@ type dynamicK8SOutputs struct {
 }
 
 var (
-	enablePersistence bool
+	postgresEnablePersistence bool
 	// updated in init()
 	withStaticRoleScheduled = true
 )
@@ -88,14 +87,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 	}
 
 	var clusterName string
-	if os.Getenv("SCALE_TESTS") != "" {
-		enablePersistence = false
+	if isScaleTest {
+		postgresEnablePersistence = false
 		// When SCALE_TESTS is set, use EKS cluster
-		clusterName = os.Getenv("EKS_CLUSTER_NAME")
+		clusterName = eksClusterName
 		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
 	} else {
 		// Otherwise, use KIND cluster
-		clusterName = os.Getenv("KIND_CLUSTER_NAME")
+		clusterName = kindClusterName
 		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	}
 
@@ -104,19 +103,17 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	// TODO: Extend this to support other dynamic create test cases
 	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
-	vdsCreateCount := getEnvInt("VDS_CREATE_COUNT", defaultCreate)
-
-	// Counts can't be <= 0, if they are, the default count will be used.
-	if vdsCreateCount <= 0 {
-		log.Printf("Invalid VDS_CREATE_COUNT: %d, using default count: %d", vdsCreateCount, defaultCreate)
-		vdsCreateCount = defaultCreate
+	if vdsCreateCount, exists := getEnvInt(t, "VDS_CREATE_COUNT"); exists {
+		defaultCreate = vdsCreateCount
 	}
 
-	createOnlyCount := getEnvInt("VDS_CREATE_ONLY", defaultCreate)
-	mixedCount := getEnvInt("VDS_MIXED_CREATE", defaultCreate)
-
-	createOnlyCount = vdsCreateCount
-	mixedCount = vdsCreateCount
+	createOnlyCount, mixedCount := defaultCreate, defaultCreate
+	if v, exists := getEnvInt(t, "VDS_CREATE_ONLY"); exists {
+		createOnlyCount = v
+	}
+	if v, exists := getEnvInt(t, "VDS_MIXED_CREATE"); exists {
+		mixedCount = v
+	}
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -142,14 +139,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"k8s_config_context":  k8sConfigContext,
 			"k8s_vault_namespace": k8sVaultNamespace,
 			// the service account is created in test/integration/infra/main.tf
-			"k8s_vault_service_account":  "vault",
-			"name_prefix":                "vds",
-			"vault_address":              os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 15,
-			"with_static_role_scheduled": withStaticRoleScheduled,
-			"enable_persistence":         enablePersistence,
+			"k8s_vault_service_account":   "vault",
+			"name_prefix":                 "vds",
+			"vault_address":               os.Getenv("VAULT_ADDRESS"),
+			"vault_token":                 os.Getenv("VAULT_TOKEN"),
+			"vault_token_period":          120,
+			"vault_db_default_lease_ttl":  15,
+			"with_static_role_scheduled":  withStaticRoleScheduled,
+			"postgres_enable_persistence": postgresEnablePersistence,
 		},
 	}
 	if entTests {
@@ -675,14 +672,14 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 	}
 
 	var clusterName string
-	if os.Getenv("SCALE_TESTS") != "" {
-		enablePersistence = false
+	if isScaleTest {
+		postgresEnablePersistence = false
 		// When SCALE_TESTS is set, use EKS cluster
-		clusterName = os.Getenv("EKS_CLUSTER_NAME")
+		clusterName = eksClusterName
 		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
 	} else {
 		// Otherwise, use KIND cluster
-		clusterName = os.Getenv("KIND_CLUSTER_NAME")
+		clusterName = kindClusterName
 		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 	}
 
@@ -719,8 +716,8 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			"vault_db_default_lease_ttl": 600,
 			"with_static_role_scheduled": withStaticRoleScheduled,
 			// disabling until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released
-			"with_xns":           false,
-			"enable_persistence": enablePersistence,
+			"with_xns":                    false,
+			"postgres_enable_persistence": postgresEnablePersistence,
 		},
 	}
 	if entTests {

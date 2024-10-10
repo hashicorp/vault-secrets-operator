@@ -75,6 +75,8 @@ var (
 	withExtraVerbosity = os.Getenv("WITH_EXTRA_VERBOSITY") != ""
 	testInParallel     = os.Getenv("INTEGRATION_TESTS_PARALLEL") != ""
 	isScaleTest        = os.Getenv("SCALE_TESTS") != ""
+	eksClusterName     = os.Getenv("EKS_CLUSTER_NAME")
+	kindClusterName    = os.Getenv("KIND_CLUSTER_NAME")
 	// set in TestMain
 	clusterName       string
 	operatorImageRepo string
@@ -132,14 +134,14 @@ func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
 		if isScaleTest {
 			// When SCALE_TESTS is set, use EKS cluster
-			clusterName = os.Getenv("EKS_CLUSTER_NAME")
+			clusterName = eksClusterName
 			if clusterName == "" {
 				os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
 				os.Exit(1)
 			}
 		} else {
 			// Otherwise, use KIND cluster
-			clusterName = os.Getenv("KIND_CLUSTER_NAME")
+			clusterName = kindClusterName
 			if clusterName == "" {
 				os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
 				os.Exit(1)
@@ -1171,13 +1173,18 @@ func setupSignalHandler() (context.Context, context.CancelFunc) {
 	return ctx, cancel
 }
 
-// getEnvInt reads an integer value from an environment variable.
-// If the env variable is not set or if it's not a valid integer, it returns the default value.
-func getEnvInt(key string, defaultValue int) int {
-	if value, exists := os.LookupEnv(key); exists {
+// getEnvInt fetches an integer from an environment variable. It returns the value
+// and a boolean indicating if the variable exists and is valid. If conversion fails,
+// the test fails.
+func getEnvInt(t *testing.T, key string) (int, bool) {
+	t.Helper()
+	value, exists := os.LookupEnv(key)
+	if exists {
 		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
+			return intValue, true
+		} else {
+			require.NoErrorf(t, err, "failed to convert %s=%s to int", key, value)
 		}
 	}
-	return defaultValue
+	return 0, false
 }
