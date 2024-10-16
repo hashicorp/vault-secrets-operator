@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"maps"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,11 +18,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/common"
@@ -1750,7 +1753,7 @@ func TestHVSShadowSecretData(t *testing.T) {
 	roundTripSecrets, err := FromHVSShadowSecret(k8sShadowData["bar"])
 	require.NoError(t, err)
 
-	checkDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets)
+	testutils.CheckDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets)
 
 	// Store the shadow data again in a secret
 	k8sShadowData2, err := MakeHVSShadowSecretData([]*models.Secrets20231128OpenSecret{
@@ -1765,24 +1768,131 @@ func TestHVSShadowSecretData(t *testing.T) {
 	roundTripSecrets2, err := FromHVSShadowSecret(k8sShadowData2["bar"])
 	require.NoError(t, err)
 
-	checkDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets2)
+	testutils.CheckDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets2)
 }
 
-func checkDynamicOpenSecretEqual(t *testing.T, want, got *models.Secrets20231128OpenSecret) {
-	t.Helper()
+func TestStoreImmutableSecret(t *testing.T) {
+	t.Parallel()
 
-	assert.Equal(t, want.CreatedAt.String(), got.CreatedAt.String())
-	assert.Equal(t, want.CreatedByID, got.CreatedByID)
-	assert.Equal(t, want.LatestVersion, got.LatestVersion)
-	assert.Equal(t, want.Name, got.Name)
-	assert.Equal(t, want.Provider, got.Provider)
-	assert.Equal(t, want.SyncStatus, got.SyncStatus)
-	assert.Equal(t, want.Type, got.Type)
+	secretKey := types.NamespacedName{
+		Name:      "foo",
+		Namespace: "bar",
+	}
 
-	assert.Equal(t, want.DynamicInstance.CreatedAt.String(),
-		got.DynamicInstance.CreatedAt.String())
-	assert.Equal(t, want.DynamicInstance.ExpiresAt.String(),
-		got.DynamicInstance.ExpiresAt.String())
-	assert.Equal(t, want.DynamicInstance.TTL, got.DynamicInstance.TTL)
-	assert.Equal(t, want.DynamicInstance.Values, got.DynamicInstance.Values)
+	tests := map[string]struct {
+		existingSecret *corev1.Secret
+	}{
+		"existing": {
+			existingSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretKey.Name,
+					Namespace: secretKey.Namespace,
+					UID:       "123",
+				},
+			},
+		},
+		"no existing secret": {
+			existingSecret: nil,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			b := fake.NewClientBuilder()
+			if tt.existingSecret != nil {
+				b = b.WithObjects(tt.existingSecret)
+			}
+			c := b.Build()
+			newSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretKey.Name,
+					Namespace: secretKey.Namespace,
+				},
+			}
+			err := StoreImmutableSecret(context.Background(), c, newSecret)
+			require.NoError(t, err)
+
+			// Check stored secret
+			checkSecret := &corev1.Secret{}
+			err = c.Get(context.Background(), secretKey, checkSecret)
+			require.NoError(t, err)
+			require.NotNil(t, checkSecret)
+			if tt.existingSecret != nil {
+				assert.NotEqual(t, tt.existingSecret.UID, checkSecret.UID)
+			}
+		})
+	}
+}
+
+func TestDeleteSecret(t *testing.T) {
+	t.Parallel()
+
+	secretKey := types.NamespacedName{
+		Name:      "foo",
+		Namespace: "bar",
+	}
+
+	tests := map[string]struct {
+		existingSecret *corev1.Secret
+	}{
+		"existing": {
+			existingSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretKey.Name,
+					Namespace: secretKey.Namespace,
+				},
+			},
+		},
+		"no existing secret": {
+			existingSecret: nil,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			b := fake.NewClientBuilder()
+			if tt.existingSecret != nil {
+				b = b.WithObjects(tt.existingSecret)
+			}
+			c := b.Build()
+			err := DeleteSecret(context.Background(), c, secretKey)
+			require.NoError(t, err)
+			if tt.existingSecret != nil {
+				err := c.Get(context.Background(), secretKey, &corev1.Secret{})
+				assert.True(t, errors.IsNotFound(err))
+			}
+		})
+	}
+}
+
+func TestHashString(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		s    string
+		want string
+	}{
+		"empty": {
+			s:    "",
+			want: "e3b0c44298fc1c7852b855",
+		},
+		"long string": {
+			// Pretend the string is a 63 character namespace + 63 character
+			// name
+			s:    fmt.Sprintf("%s-%s", strings.Repeat("a", 63), strings.Repeat("b", 63)),
+			want: "95921c3805f821ea5c14b8",
+		},
+		"short string": {
+			s:    "bar",
+			want: "fcde2b2edba56b8fbf8fb9",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			hs := HashString(tt.s)
+			assert.Equal(t, tt.want, hs)
+			assert.Len(t, hs, 22)
+		})
+	}
 }
