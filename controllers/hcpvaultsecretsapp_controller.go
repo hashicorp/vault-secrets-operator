@@ -128,7 +128,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", r.MinRefreshAfter)
 		if err != nil {
 			logger.Error(err, "Field validation failed")
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonHVSStaticSecret,
 				"Field validation failed, err=%s", err)
 			return ctrl.Result{}, err
 		}
@@ -189,7 +189,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	dynamicSecrets, err := getHVSDynamicSecrets(ctx, c, o.Spec.AppName, renewPercent, shadowSecrets)
 	if err != nil {
 		logger.Error(err, "Get Dynamic Secrets", "appName", o.Spec.AppName)
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultDynamicSecret,
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonHVSDynamicSecret,
 			"Failed to get hvs dynamic secrets: %s", err)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
