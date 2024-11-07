@@ -44,6 +44,10 @@ inputs:
   github-token:
     description: 'GitHub token'
     required: true
+  publish-swagger:
+    description: 'Optional: Publish Swagger and OpenAPI spec artifacts'
+    required: false
+    default: false  
 runs:
   using: "composite"
   steps:
@@ -115,6 +119,34 @@ runs:
           export VAULT_IMAGE_TAG='${{ inputs.vault-version }}-ent'
         fi
         make $make_target VERSION=${{ inputs.version }} INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
+    - name: Setup kubectl
+      if: success()
+      uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f # v4.0.0
+      with:
+        version: latest
+    - name: Install swagger2openapi
+      if: success()
+      run: |
+      npm install -g swagger2openapi    
+    - name: Retrieve and convert Kubernetes Swagger spec
+      if: success()
+      run: |
+        kubectl proxy &
+        sleep 5
+        curl http://localhost:8001/openapi/v2 > build/k8s-swagger-v2.json
+        swagger2openapi --outfile build/k8s-openapi-v3.json build/k8s-swagger-v2.json
+    - name: Store k8s-swagger-v2.json artifact
+      if: success() && inputs.publish-swagger == 'true'
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+      with:
+        name: k8s-swagger-v2.json
+        path: build/k8s-swagger-v2.json
+    - name: Store k8s-openapi-v3.json artifact
+      if: success() && inputs.publish-swagger == 'true'
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+      with:
+        name: k8s-openapi-v3.json
+        path: build/k8s-openapi-v3.json
     - name: Store kind cluster logs
       if: success()
       uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
