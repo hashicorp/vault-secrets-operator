@@ -126,10 +126,12 @@ runs:
         version: latest
     - name: Install swagger2openapi
       if: success()
+      shell: bash
       run: |
         npm install -g swagger2openapi    
     - name: Retrieve and convert Kubernetes Swagger spec
       if: success()
+      shell: bash
       run: |
         kubectl proxy &
         sleep 5
