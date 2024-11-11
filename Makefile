@@ -23,7 +23,7 @@ CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-KIND_K8S_VERSION ?= v1.30.0
+KIND_K8S_VERSION ?= v1.31.2
 VAULT_HELM_VERSION ?= 0.25.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
@@ -251,7 +251,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
 .PHONY: docker-build
-docker-build: test ## Build docker image with the manager.
+docker-build: ## Build docker image with the manager.
 	docker build -t $(IMG) . --target=dev \
 	--build-arg GOOS=$(GOOS) \
 	--build-arg GOARCH=$(GOARCH) \
