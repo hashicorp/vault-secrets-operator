@@ -344,7 +344,7 @@ jobs:
       - run: echo "setting versions"
     outputs:
       # JSON encoded array of k8s versions
-      K8S_VERSIONS: '["1.31.2", "1.30.0", "1.29.4", "1.28.9", "1.27.13"]'
+      K8S_VERSIONS: '["1.31.2", "1.30.6", "1.29.10", "1.28.9", "1.27.13"]'
       VAULT_N: "1.17.2"
       VAULT_N_1: "1.16.6"
       VAULT_N_2: "1.15.12"
