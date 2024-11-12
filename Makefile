@@ -24,7 +24,7 @@ VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
 KIND_K8S_VERSION ?= v1.31.2
-VAULT_HELM_VERSION ?= 0.25.0
+VAULT_HELM_VERSION ?= 0.29.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
 
