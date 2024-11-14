@@ -5,10 +5,6 @@ variable "operator_namespace" {
   default = "vault-secrets-operator-system"
 }
 
-variable "name_prefix" {
-  type = string
-}
-
 variable "k8s_config_context" {
   default = "kind-vault-secrets-operator"
 }
@@ -19,18 +15,6 @@ variable "k8s_config_path" {
 
 variable "k8s_host" {
   default = "https://kubernetes.default.svc"
-}
-
-variable "k8s_vault_namespace" {
-  type = string
-}
-
-variable "k8s_vault_service_account" {
-  type = string
-}
-
-variable "postgres_secret_name" {
-  default = "postgres-postgresql"
 }
 
 variable "vault_enterprise" {
@@ -45,9 +29,6 @@ variable "vault_token_period" {
 variable "vault_db_default_lease_ttl" {
   default = 60
 }
-
-variable "vault_address" {}
-variable "vault_token" {}
 
 variable "deploy_operator_via_helm" {
   type    = bool
@@ -78,23 +59,4 @@ variable "operator_image_repo" {
 
 variable "operator_image_tag" {
   default = "0.0.0-dev"
-}
-
-variable "with_static_role_scheduled" {
-  type    = bool
-  default = true
-}
-
-# vault_xns is a boolean that determines if the test should run with cross-namespace support
-# requires vault_enterprise to be true
-variable "with_xns" {
-  type    = bool
-  default = false
-}
-
-# postgres_enable_persistence is a boolean that determines if the test should run with persistence enabled
-# if scale tests are run, this should be set to false
-variable "postgres_enable_persistence" {
-  type    = bool
-  default = true
 }

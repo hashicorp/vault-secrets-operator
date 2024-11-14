@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 	"testing"
@@ -73,6 +74,9 @@ var (
 	// make tests more verbose
 	withExtraVerbosity = os.Getenv("WITH_EXTRA_VERBOSITY") != ""
 	testInParallel     = os.Getenv("INTEGRATION_TESTS_PARALLEL") != ""
+	isScaleTest        = os.Getenv("SCALE_TESTS") != ""
+	eksClusterName     = os.Getenv("EKS_CLUSTER_NAME")
+	kindClusterName    = os.Getenv("KIND_CLUSTER_NAME")
 	// set in TestMain
 	clusterName       string
 	operatorImageRepo string
@@ -128,11 +132,22 @@ const (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
-		clusterName = os.Getenv("KIND_CLUSTER_NAME")
-		if clusterName == "" {
-			os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
-			os.Exit(1)
+		if isScaleTest {
+			// When SCALE_TESTS is set, use EKS cluster
+			clusterName = eksClusterName
+			if clusterName == "" {
+				os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
+				os.Exit(1)
+			}
+		} else {
+			// Otherwise, use KIND cluster
+			clusterName = kindClusterName
+			if clusterName == "" {
+				os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
+				os.Exit(1)
+			}
 		}
+
 		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -180,8 +195,22 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	var providerFile string
+	if isScaleTest {
+		providerFile = "eks.tf"
+	} else {
+		providerFile = "kind.tf"
+	}
+	providersDir := path.Join(testRoot, "operator/providers")
+
 	tfDir, err := files.CopyTerraformFolderToDest(
 		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
+
+	// copy the provider file to the terraform directory
+	if err := files.CopyFile(path.Join(providersDir, providerFile), path.Join(tfDir, "providers.tf")); err != nil {
+		log.Printf("Failed to copy provider file, err=%s", err)
+		os.Exit(1)
+	}
 
 	log.Printf("Test Root: %s", testRoot)
 	_, err = copyModulesDir(tfDir)
@@ -206,6 +235,7 @@ func TestMain(m *testing.M) {
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
+			"cluster_name":                 clusterName,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_config_context":           k8sConfigContext,
 			"k8s_vault_namespace":          k8sVaultNamespace,
@@ -599,6 +629,9 @@ func deployOperatorWithKustomizeE(t *testing.T, k8sOpts *k8s.KubectlOptions, kus
 // undeploying the Operator from Kubernetes.
 func exportKindLogsT(t *testing.T) {
 	t.Helper()
+	if isScaleTest {
+		return
+	}
 	require.NoError(t, exportKindLogs(t.Name(), t.Failed()))
 }
 
@@ -1138,4 +1171,20 @@ func setupSignalHandler() (context.Context, context.CancelFunc) {
 	}()
 
 	return ctx, cancel
+}
+
+// getEnvInt fetches an integer from an environment variable. It returns the value
+// and a boolean indicating if the variable exists and is valid. If conversion fails,
+// the test fails.
+func getEnvInt(t *testing.T, key string) (int, bool) {
+	t.Helper()
+	value, exists := os.LookupEnv(key)
+	if exists {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue, true
+		} else {
+			require.NoErrorf(t, err, "failed to convert %s=%s to int", key, value)
+		}
+	}
+	return 0, false
 }

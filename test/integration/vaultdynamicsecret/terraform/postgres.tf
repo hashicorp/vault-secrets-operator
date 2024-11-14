@@ -8,6 +8,11 @@ resource "helm_release" "postgres" {
   wait             = true
   wait_for_jobs    = true
 
+  set {
+    name  = "primary.persistence.enabled"
+    value = var.postgres_enable_persistence ? "true" : "false"
+  }
+
   repository = "https://charts.bitnami.com/bitnami"
   chart      = "postgresql"
 }
