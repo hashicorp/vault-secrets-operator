@@ -128,7 +128,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", r.MinRefreshAfter)
 		if err != nil {
 			logger.Error(err, "Field validation failed")
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonHVSSecret,
 				"Field validation failed, err=%s", err)
 			return ctrl.Result{}, err
 		}
@@ -147,6 +147,8 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	c, err := r.hvsClient(ctx, o)
 	if err != nil {
 		logger.Error(err, "Get HCP Vault Secrets Client")
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonHVSClientConfigError,
+			"Failed to instantiate HVS client: %s", err)
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
 		}, nil
@@ -164,6 +166,8 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	resp, err := fetchOpenSecretsPaginated(ctx, c, params, nil)
 	if err != nil {
 		logger.Error(err, "Get App Secrets", "appName", o.Spec.AppName)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonHVSSecret,
+			"Failed to get HVS App secrets: %s", err)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
 			RequeueAfter: entry.NextBackOff(),
@@ -185,6 +189,8 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	dynamicSecrets, err := getHVSDynamicSecrets(ctx, c, o.Spec.AppName, renewPercent, shadowSecrets)
 	if err != nil {
 		logger.Error(err, "Get Dynamic Secrets", "appName", o.Spec.AppName)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonHVSSecret,
+			"Failed to get HVS dynamic secrets: %s", err)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
 			RequeueAfter: entry.NextBackOff(),

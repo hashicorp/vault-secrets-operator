@@ -94,12 +94,12 @@ ENTRYPOINT ["/vault-secrets-operator"]
 
 # ubi build image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4-1227.1726694542 AS build-ubi
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5 AS build-ubi
 RUN microdnf --refresh --assumeyes upgrade ca-certificates
 
 # ubi release image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-micro:9.4-15 AS release-ubi
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.5 AS release-ubi
 
 ENV BIN_NAME=vault-secrets-operator
 ARG PRODUCT_VERSION
