@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -241,6 +242,10 @@ func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1b
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.referenceCache = newResourceReferenceCache()
+	ctrlmetrics.Registry.MustRegister(
+		newResourceReferenceCacheCollector(r.referenceCache, "vaultauth"),
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultAuth{}).
 		Watches(
