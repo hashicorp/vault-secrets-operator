@@ -162,6 +162,61 @@ load _helpers
     [ "${actual}" = "true" ]
 }
 
+@test "controller/Deployment: clientCache.numLocks unset" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+      -s templates/deployment.yaml  \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual
+    actual=$(echo "$object" | yq 'contains(["--client-cache-num-locks"])' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+}
+
+@test "controller/Deployment: clientCache.numLocks can be set" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.numLocks=500' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual
+    actual=$(echo "$object" | yq 'contains(["--client-cache-num-locks=500"])' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: clientCache.numLocks set to zero" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.numLocks=0' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual
+    actual=$(echo "$object" | yq 'contains(["--client-cache-num-locks=0"])' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: clientCache.numLocks set to negative value" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+      -s templates/deployment.yaml  \
+      --set 'controller.manager.clientCache.numLocks=-1' \
+      . | tee /dev/stderr |
+      yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+   local actual
+    actual=$(echo "$object" | yq 'contains(["--client-cache-num-locks=-1"])' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+}
+
 #--------------------------------------------------------------------
 # maxConcurrentReconciles
 

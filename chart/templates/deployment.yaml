@@ -75,6 +75,9 @@ spec:
         {{- if .Values.controller.manager.clientCache.cacheSize }}
         - --client-cache-size={{ .Values.controller.manager.clientCache.cacheSize }}
         {{- end }}
+        {{- with include "vso.clientCacheNumLocks" . }}
+        - {{ . }}
+        {{- end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
