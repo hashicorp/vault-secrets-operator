@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	httptransport "github.com/go-openapi/runtime/client"
@@ -90,6 +91,21 @@ type HCPVaultSecretsAppReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 }
 
+var orphanedShadowSecretManager = NewOrphanedShadowSecretManager()
+
+type OrphanedShadowSecretManager struct {
+	// activeCleanupRoutines is a map of HCPVaultSecretsApp namespaced names, where the corresponing value is true
+	// when a cleanup routing is running to delete orphaned shadow secrets for the HCPVaultSecretsApp if the app was deleted.
+	activeCleanupRoutines map[string]bool
+	mu                    sync.Mutex
+}
+
+func NewOrphanedShadowSecretManager() *OrphanedShadowSecretManager {
+	return &OrphanedShadowSecretManager{
+		activeCleanupRoutines: make(map[string]bool),
+	}
+}
+
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
@@ -121,6 +137,45 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
+	shouldInitiateShadowSecretCleanupRoutine := false
+
+	orphanedShadowSecretManager.mu.Lock()
+	// since each HVPVaultSecretsApp has a unique NamespacedName, we can use the it to keep track
+	// of whether a cleanup routine is running for the HCPVaultSecretsApp already
+	if !orphanedShadowSecretManager.activeCleanupRoutines[req.NamespacedName.String()] {
+		orphanedShadowSecretManager.activeCleanupRoutines[req.NamespacedName.String()] = true
+		shouldInitiateShadowSecretCleanupRoutine = true
+	}
+	orphanedShadowSecretManager.mu.Unlock()
+
+	// start a cleanup routine to periodically check if an HCPVaultSecretsApp has been deleted
+	// so that any orphaned shadow secrets can be deleted
+	if shouldInitiateShadowSecretCleanupRoutine {
+		go func() {
+			// check for cleanup every 5 minutes
+			ticker := time.NewTicker(5 * time.Minute)
+
+			for {
+				select {
+				case <-ticker.C:
+					orphanedShadowSecretsRemoved, err := r.cleanupShadowSecrets(ctx, req)
+					if err != nil {
+						logger.Error(err, "Failed to cleanup shadow secrets", "obj", o)
+					}
+
+					// if the orphaned shadow secrets have been removed, remove the HCPVaultSecretsApp from the active cleanup routines
+					// and stop the ticker so that the cleanup is not run again
+					if orphanedShadowSecretsRemoved {
+						orphanedShadowSecretManager.mu.Lock()
+						delete(orphanedShadowSecretManager.activeCleanupRoutines, req.NamespacedName.String())
+						orphanedShadowSecretManager.mu.Unlock()
+						ticker.Stop()
+					}
+				}
+			}
+		}()
 	}
 
 	var requeueAfter time.Duration
@@ -322,6 +377,26 @@ func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 			builder.WithPredicates(&secretsPredicate{}),
 		).
 		Complete(r)
+}
+
+// returns true if the HCPVaultSecretsApp was deleted and the shadow secret was cleaned up
+func (r *HCPVaultSecretsAppReconciler) cleanupShadowSecrets(ctx context.Context, req ctrl.Request) (bool, error) {
+	o := &secretsv1beta1.HCPVaultSecretsApp{}
+	if err := r.Client.Get(context.Background(), req.NamespacedName, o); err != nil {
+		if apierrors.IsNotFound(err) {
+			// since the HCPVaultSecretsApp does not exist, we return true to indicate that the shadow secret was cleaned up
+			return true, nil
+		}
+
+		return false, err
+	}
+
+	// attempt to delete the shadow secret if the HCPVaultSecretsApp has been deleted
+	if o.GetDeletionTimestamp() != nil {
+		return true, r.handleDeletion(ctx, o)
+	}
+
+	return false, nil
 }
 
 func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) (hvsclient.ClientService, error) {
