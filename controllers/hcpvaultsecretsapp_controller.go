@@ -93,9 +93,6 @@ type HCPVaultSecretsAppReconciler struct {
 // initializedOrphanedShadowSecretCleanup is used to ensure that only one orphaned shadow secret cleanup goroutine is started
 var initializedOrphanedShadowSecretCleanup = false
 
-// map of HCPVaultSecretsApp namespace/names to their respective HCPVaultSecretsApp instances
-var HCPVaultSecretsAppMap = map[string]*secretsv1beta1.HCPVaultSecretsApp{}
-
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
@@ -127,39 +124,6 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
-	}
-
-	// keep track of the HCPVaultSecretsApp for the cleanup goroutine
-	if HCPVaultSecretsAppMap[req.NamespacedName.String()] == nil {
-		HCPVaultSecretsAppMap[req.NamespacedName.String()] = o
-	}
-
-	if !initializedOrphanedShadowSecretCleanup {
-		initializedOrphanedShadowSecretCleanup = true
-
-		go func() {
-			// check for cleanup every 1 hour
-			ticker := time.NewTicker(1 * time.Hour)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ticker.C:
-					for _, hcpVaultSecretsApp := range HCPVaultSecretsAppMap {
-						// attempt to delete any existing orphaned shadow secrets if the HCPVaultSecretsApp was deleted
-						if hcpVaultSecretsApp.GetDeletionTimestamp() != nil {
-							if err := r.handleDeletion(ctx, hcpVaultSecretsApp); err != nil {
-								logger.Error(err, "error deleting shadow secret", "secret", hcpVaultSecretsApp)
-								continue
-							}
-
-							// remove the HCPVaultSecretsApp from the map once the orphaned shadow secrets have been cleaned up
-							delete(HCPVaultSecretsAppMap, req.NamespacedName.String())
-						}
-					}
-				}
-			}
-		}()
 	}
 
 	var requeueAfter time.Duration
