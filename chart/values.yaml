@@ -267,6 +267,16 @@ controller:
       # @type: integer
       cacheSize:
 
+      # Defines the number of locks to use for the Vault client cache controller.
+      #
+      # Setting this value less than 1 will cause the manager to set the number of locks equal
+      # to the number of logical CPUs of the run host.
+      #
+      # See the VSO help output for more information.
+      #
+      # @type: integer
+      numLocks:
+
       # StorageEncryption provides the necessary configuration to encrypt the client storage
       # cache within Kubernetes objects using (required) Vault Transit Engine.
       # This should only be configured when client cache persistence with encryption is enabled and
