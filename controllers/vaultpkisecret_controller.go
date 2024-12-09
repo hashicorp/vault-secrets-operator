@@ -358,7 +358,7 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts contr
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.referenceCache, r.SyncRegistry),
 		).
-		Watches(
+		WatchesMetadata(
 			&corev1.Secret{},
 			&enqueueOnDeletionRequestHandler{
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultPKISecret.String()),

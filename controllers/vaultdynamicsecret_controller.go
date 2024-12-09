@@ -617,7 +617,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.referenceCache, r.SyncRegistry),
 		).
-		Watches(
+		WatchesMetadata(
 			&corev1.Secret{},
 			&enqueueOnDeletionRequestHandler{
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultDynamicSecret.String()),
