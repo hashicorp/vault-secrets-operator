@@ -514,6 +514,11 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.referenceCache, nil),
 		).
+		// In order to reduce the operator's memory usage, we only watch for the
+		// Secret's metadata. That is sufficient for us to know when a Secret is
+		// deleted. If we ever need to access to the Secret's data, we can always fetch
+		// it from the API server in a RequestHandler, selectively based on the Secret's
+		// labels.
 		WatchesMetadata(
 			&corev1.Secret{},
 			&enqueueOnDeletionRequestHandler{
