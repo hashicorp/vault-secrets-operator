@@ -18,6 +18,7 @@ import (
 	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -400,6 +401,15 @@ func main() {
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// disable caching of K8s Secrets to avoid OOM issues. Caching is not needed for
+				// the operator.
+				DisableFor: []client.Object{
+					&corev1.Secret{},
+				},
+			},
+		},
 		Metrics: server.Options{
 			BindAddress: metricsAddr,
 		},
