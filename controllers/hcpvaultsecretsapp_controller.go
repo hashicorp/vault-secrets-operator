@@ -90,6 +90,9 @@ type HCPVaultSecretsAppReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 }
 
+// initializedOrphanedShadowSecretCleanup is used to ensure that only one orphaned shadow secret cleanup goroutine is started
+var initializedOrphanedShadowSecretCleanup = false
+
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
@@ -122,6 +125,42 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
+
+	go func() {
+		// this goroutine clean ups orphaned shadow secrets once per hour
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// retrieve all shadow secrets in the vso namespace
+				secrets := &corev1.SecretList{}
+				if err := r.Client.List(ctx, secrets, client.InNamespace(common.OperatorNamespace)); err != nil {
+					logger.Error(err, "Failed to list secrets")
+					continue
+				}
+
+				for _, secret := range secrets.Items {
+					appName := secret.Labels[hvsaLabelPrefix+"/hvs-app-name"]
+					app := &secretsv1beta1.HCPVaultSecretsApp{}
+
+					// get the HCPVaultSecretsApp associated with the shadow secret
+					if err := r.Client.Get(ctx, client.ObjectKey{Namespace: secret.Namespace, Name: appName}, app); err != nil {
+						logger.Error(err, "Failed to get HCPVaultSecretsApp")
+						continue
+					}
+
+					// check if it was deleted and remove the shadow secret if it was
+					if app.GetDeletionTimestamp() != nil {
+						if err := r.Client.Delete(ctx, &secret); err != nil {
+							logger.Error(err, "Failed to delete orphaned shadow secret")
+						}
+					}
+				}
+			}
+		}
+	}()
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
