@@ -158,6 +158,7 @@ func main() {
 	flag.IntVar(&cfc.ClientCacheSize, "client-cache-size", cfc.ClientCacheSize,
 		"Size of the in-memory LRU client cache. "+
 			"Also set from environment variable VSO_CLIENT_CACHE_SIZE.")
+	// update chart/values.yaml if changing the default value
 	flag.IntVar(&cfc.ClientCacheNumLocks, "client-cache-num-locks", 100,
 		"Number of locks to use for the client cache. "+
 			"Increasing this value may improve performance during Vault client creation, but requires more memory. "+
