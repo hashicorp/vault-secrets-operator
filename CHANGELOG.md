@@ -16,6 +16,7 @@ Dependency Updates:
 * Bump the gomod-backward-compatible group across 1 directory with 9 updates: [GH-958](https://github.com/hashicorp/vault-secrets-operator/pull/958)
 * Bump ubi9/ubi-micro from 9.4-15 to 9.5: [GH-970](https://github.com/hashicorp/vault-secrets-operator/pull/970)
 * Bump ubi9/ubi-minimal from 9.4-1227.1726694542 to 9.5: [GH-971](https://github.com/hashicorp/vault-secrets-operator/pull/971)
+* Bump golang.org/x/crypto from 0.28.0 to 0.31.0: [GH-987](https://github.com/hashicorp/vault-secrets-operator/pull/987)
 
 
 ## 0.9.0 (October 8th, 2024)
