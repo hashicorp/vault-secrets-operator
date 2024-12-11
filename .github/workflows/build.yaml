@@ -389,7 +389,7 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
-          make integration-test-oom KIND_K8S_VERSION="v${{ matrix.k8s-version }}"
+          make integration-test-oom KIND_K8S_VERSION="v${{ matrix.k8s-version }}" VERSION=${{ needs.get-product-version.outputs.product-version }}
   latest-vault:
     name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }} ${{ matrix.installation-method }} enterprise=${{ matrix.vault-enterprise }}
     needs:
