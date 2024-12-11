@@ -1,3 +1,23 @@
+## 0.9.1 (December 11th, 2024)
+
+Fix:
+* Memory: Prevent OOM due to large K8s Secrets cache: [GH-982](https://github.com/hashicorp/vault-secrets-operator/pull/982) [GH-984](https://github.com/hashicorp/vault-secrets-operator/pull/984)
+
+Improvements:
+* add events for HVS client failures: [GH-960](https://github.com/hashicorp/vault-secrets-operator/pull/960)
+* Memory: Use the mutex pool provided by K8s keymutex: [GH-975](https://github.com/hashicorp/vault-secrets-operator/pull/975)
+
+Build:
+* SEC-090: Automated trusted workflow pinning (2024-10-28): [GH-957](https://github.com/hashicorp/vault-secrets-operator/pull/957)
+* Bump K8s version: [GH-968](https://github.com/hashicorp/vault-secrets-operator/pull/968)
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group with 2 updates: [GH-950](https://github.com/hashicorp/vault-secrets-operator/pull/950)
+* Bump the gomod-backward-compatible group across 1 directory with 9 updates: [GH-958](https://github.com/hashicorp/vault-secrets-operator/pull/958)
+* Bump ubi9/ubi-micro from 9.4-15 to 9.5: [GH-970](https://github.com/hashicorp/vault-secrets-operator/pull/970)
+* Bump ubi9/ubi-minimal from 9.4-1227.1726694542 to 9.5: [GH-971](https://github.com/hashicorp/vault-secrets-operator/pull/971)
+
+
 ## 0.9.0 (October 8th, 2024)
 
 Features:
