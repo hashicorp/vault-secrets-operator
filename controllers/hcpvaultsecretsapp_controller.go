@@ -343,7 +343,7 @@ func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.
 				return err
 			}
 
-			logger.Info("Deleted resources associated with orphaned HCPVaultSecretsApp", "app", o.Name)
+			logger.Info("Deleted orphaned resources associated with HCPVaultSecretsApp", "app", o.Name)
 		}
 	}
 
