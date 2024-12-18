@@ -304,6 +304,7 @@ func (r *HCPVaultSecretsAppReconciler) startShadowSecretCleanupRoutine(ctx conte
 	// cleanup of orphaned shadow secrets runs once every hour
 	ticker := time.NewTicker(1 * time.Hour)
 
+	// this process is expected to run indefinitely
 	for {
 		select {
 		case <-ticker.C:
