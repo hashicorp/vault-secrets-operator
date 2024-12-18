@@ -24,6 +24,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -90,6 +91,10 @@ type HCPVaultSecretsAppReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 }
 
+// orphanedShadowSecretCleanupInitialized is used to ensure that the goroutine that does cleanup of shadow secrets
+// that belong to deleted HCPVaultSecretsApp instances is only started once
+var orphanedShadowSecretCleanupInitialized = false
+
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
@@ -121,6 +126,12 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
+	if !orphanedShadowSecretCleanupInitialized {
+		go r.startShadowSecretCleanupRoutine(ctx)
+		// prevent the shadow secret cleanup goroutine from being started more than once
+		orphanedShadowSecretCleanupInitialized = true
 	}
 
 	var requeueAfter time.Duration
@@ -286,6 +297,58 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
+}
+
+func (r *HCPVaultSecretsAppReconciler) startShadowSecretCleanupRoutine(ctx context.Context) {
+	logger := log.FromContext(ctx)
+	// cleanup of orphaned shadow secrets runs once every hour
+	ticker := time.NewTicker(1 * time.Hour)
+
+	// this process is expected to run indefinitely
+	for {
+		select {
+		case <-ticker.C:
+			err := r.cleanupOrphanedShadowSecrets(ctx)
+			if err != nil {
+				logger.Error(err, "Failed to cleanup orphaned shadow secrets")
+			}
+		}
+	}
+}
+
+func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.Context) error {
+	logger := log.FromContext(ctx)
+
+	// get all secrets in the operator namespace
+	secrets := corev1.SecretList{}
+	if err := r.List(ctx, &secrets, client.InNamespace(common.OperatorNamespace)); err != nil {
+		logger.Error(err, "Failed to list secrets")
+	}
+
+	for _, secret := range secrets.Items {
+		namespace := secret.Labels[hvsaLabelPrefix+"/namespace"]
+		name := secret.Labels[hvsaLabelPrefix+"/name"]
+
+		o := &secretsv1beta1.HCPVaultSecretsApp{}
+
+		// get the HCPVaultSecretsApp instance that that the shadow secret belongs to (if applicable)
+		err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, o)
+		if err != nil {
+			logger.Error(err, "Error getting resource from k8s", "secret", secret.Name)
+			continue
+		}
+
+		// delete the HCPVaultSecretsApp if it no longer exists
+		if o.GetDeletionTimestamp() != nil {
+			if err := r.handleDeletion(ctx, o); err != nil {
+				return err
+			}
+
+			logger.Info("Deleted orphaned resources associated with HCPVaultSecretsApp", "app", o.Name)
+		}
+	}
+
+	return nil
 }
 
 func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) error {
