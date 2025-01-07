@@ -98,6 +98,12 @@ spec:
         {{- with .Values.controller.manager.extraArgs }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- if .Values.controller.manager.kubeClient.qps }}
+        - --kube-client-qps={{ .Values.controller.manager.kubeClient.qps }}
+        {{- end }}
+        {{- if .Values.controller.manager.kubeClient.burst }}
+        - --kube-client-burst={{ .Values.controller.manager.kubeClient.burst }}
+        {{- end }}
         command:
         - /vault-secrets-operator
         env:
@@ -113,7 +119,7 @@ spec:
           value: {{ .Values.controller.kubernetesClusterDomain }}
         {{- range .Values.controller.manager.extraEnv }}
         - name: {{ .name }}
-          value: {{ .value }}
+          value: {{ .value | quote }}
         {{- end }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         imagePullPolicy: {{ .Values.controller.manager.image.pullPolicy }}

@@ -465,6 +465,21 @@ controller:
     # @type: integer
     maxConcurrentReconciles:
 
+    kubeClient:
+      # QPS indicates the maximum QPS to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_QPS` environment variable.
+      # Default: 0
+      # @type: float
+      qps:
+
+      # Maximum burst for throttling requests to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_BURST` environment variable.
+      # Default: 0
+      # @type: int
+      burst:
+
     # Defines additional environment variables to be added to the
     # vault-secrets-operator manager container.
     # Example:
