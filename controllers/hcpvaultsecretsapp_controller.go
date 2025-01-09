@@ -322,21 +322,31 @@ func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.
 	}
 
 	for _, secret := range secrets.Items {
-		namespace := secret.Labels[hvsaLabelPrefix+"/namespace"]
-		name := secret.Labels[hvsaLabelPrefix+"/name"]
-
 		o := &secretsv1beta1.HCPVaultSecretsApp{}
 
+		namespace := secret.Labels[hvsaLabelPrefix+"/namespace"]
+		name := secret.Labels[hvsaLabelPrefix+"/name"]
+		namespacedName := types.NamespacedName{Namespace: namespace, Name: name}
+
 		// get the HCPVaultSecretsApp instance that that the shadow secret belongs to (if applicable)
-		err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, o)
+		err := r.Get(ctx, namespacedName, o)
 		if err != nil && !apierrors.IsNotFound(err) {
 			logger.Error(err, "Error getting resource from k8s", "secret", secret.Name)
 			continue
 		}
 
-		// delete the HCPVaultSecretsApp if it no longer exists
-		if apierrors.IsNotFound(err) || o.GetDeletionTimestamp() != nil {
+		// only delete the shadow secret if the HCPVaultSecretsApp instance no longer exists
+		// or if the shadow secret's owner label does not match the HCPVaultSecretsApp instance UID
+		if apierrors.IsNotFound(err) || o.GetUID() != types.UID(secret.Labels[labelOwnerRefUID]) {
+			if err := r.Client.Delete(ctx, &secret); err != nil {
+				logger.Error(err, "Failed to delete secret", "secret", secret.Name)
+				return err
+			}
+
+			logger.Info("Deleted orphaned shadow secret", "secret", secret.Name)
+		} else if o.GetDeletionTimestamp() != nil {
 			if err := r.handleDeletion(ctx, o); err != nil {
+				logger.Error(err, "Failed to handle deletion of HCPVaultSecretsApp", "app", o.Name)
 				return err
 			}
 
