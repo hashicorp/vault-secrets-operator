@@ -334,3 +334,14 @@ vaultAuthGlobalRef generates the default VaultAuth spec.vaultAuthGlobalRef.
 {{- $ret | toYaml | nindent 4 -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+clientCache numLocks
+*/}}
+{{- define "vso.clientCacheNumLocks" -}}
+{{- with .Values.controller.manager.clientCache -}}
+{{- if or .numLocks (eq .numLocks 0) -}}
+--client-cache-num-locks={{ .numLocks }}
+{{- end -}}
+{{- end -}}
+{{- end -}}

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/keymutex"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -98,57 +99,42 @@ func Test_cachingClientFactory_clientLocks(t *testing.T) {
 		name         string
 		cacheKey     ClientCacheKey
 		tryLockCount int
-		wantInLocks  bool
-		clientLocks  map[ClientCacheKey]*sync.RWMutex
+		clientMutex  keymutex.KeyMutex
 	}{
 		{
 			name:         "single-new",
 			cacheKey:     ClientCacheKey("single"),
 			tryLockCount: 1,
-			wantInLocks:  false,
 		},
 		{
-			name:     "single-existing",
-			cacheKey: ClientCacheKey("single-existing"),
-			clientLocks: map[ClientCacheKey]*sync.RWMutex{
-				ClientCacheKey("single-existing"): {},
-			},
+			name:         "single-existing",
+			cacheKey:     ClientCacheKey("single-existing"),
+			clientMutex:  keymutex.NewHashed(1),
 			tryLockCount: 1,
-			wantInLocks:  true,
 		},
 		{
 			name:         "concurrent-new",
 			cacheKey:     ClientCacheKey("concurrent-new"),
 			tryLockCount: 10,
-			wantInLocks:  false,
 		},
 		{
-			name:     "concurrent-existing",
-			cacheKey: ClientCacheKey("concurrent-existing"),
-			clientLocks: map[ClientCacheKey]*sync.RWMutex{
-				ClientCacheKey("concurrent-existing"): {},
-			},
+			name:         "concurrent-existing",
+			cacheKey:     ClientCacheKey("concurrent-existing"),
+			clientMutex:  keymutex.NewHashed(1),
 			tryLockCount: 10,
-			wantInLocks:  true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Greater(t, tt.tryLockCount, 0, "no test tryLockCount provided")
 
-			if tt.clientLocks == nil {
-				tt.clientLocks = make(map[ClientCacheKey]*sync.RWMutex)
+			if tt.clientMutex == nil {
+				tt.clientMutex = keymutex.NewHashed(0)
 			}
 
 			m := &cachingClientFactory{
-				clientLocks: tt.clientLocks,
+				clientMutex: tt.clientMutex,
 			}
-
-			got, inLocks := m.clientLock(tt.cacheKey)
-			if !tt.wantInLocks {
-				assert.Equal(t, got, tt.clientLocks[tt.cacheKey])
-			}
-			require.Equal(t, tt.wantInLocks, inLocks)
 
 			// holdLockDuration is the duration each locker will hold the lock for after it
 			// is acquired.
@@ -166,10 +152,10 @@ func Test_cachingClientFactory_clientLocks(t *testing.T) {
 			for i := 0; i < tt.tryLockCount; i++ {
 				go func(ctx context.Context) {
 					defer wg.Done()
-					lck, _ := m.clientLock(tt.cacheKey)
-					lck.Lock()
-					defer lck.Unlock()
-					assert.Equal(t, got, lck)
+					m.clientMutex.LockKey(string(tt.cacheKey))
+					defer func() {
+						require.NoError(t, m.clientMutex.UnlockKey(string(tt.cacheKey)))
+					}()
 
 					lockTimer := time.NewTimer(holdLockDuration)
 					defer lockTimer.Stop()

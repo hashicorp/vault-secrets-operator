@@ -18,6 +18,7 @@ import (
 	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -158,6 +159,12 @@ func main() {
 	flag.IntVar(&cfc.ClientCacheSize, "client-cache-size", cfc.ClientCacheSize,
 		"Size of the in-memory LRU client cache. "+
 			"Also set from environment variable VSO_CLIENT_CACHE_SIZE.")
+	// update chart/values.yaml if changing the default value
+	flag.IntVar(&cfc.ClientCacheNumLocks, "client-cache-num-locks", 100,
+		"Number of locks to use for the client cache. "+
+			"Increasing this value may improve performance during Vault client creation, but requires more memory. "+
+			"When the value is <= 0 the number of locks will be set to the number of logical CPUs of the run host. "+
+			"Also set from environment variable VSO_CLIENT_CACHE_NUM_LOCKS.")
 	flag.StringVar(&clientCachePersistenceModel, "client-cache-persistence-model", defaultPersistenceModel,
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed. "+
@@ -228,6 +235,9 @@ func main() {
 	}
 	if vsoEnvOptions.ClientCacheSize != nil {
 		cfc.ClientCacheSize = *vsoEnvOptions.ClientCacheSize
+	}
+	if vsoEnvOptions.ClientCacheNumLocks != nil {
+		cfc.ClientCacheNumLocks = *vsoEnvOptions.ClientCacheNumLocks
 	}
 	if vsoEnvOptions.ClientCachePersistenceModel != "" {
 		clientCachePersistenceModel = vsoEnvOptions.ClientCachePersistenceModel
@@ -391,6 +401,15 @@ func main() {
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// disable caching of K8s Secrets to avoid OOM issues. Caching is not needed for
+				// the operator.
+				DisableFor: []client.Object{
+					&corev1.Secret{},
+				},
+			},
+		},
 		Metrics: server.Options{
 			BindAddress: metricsAddr,
 		},

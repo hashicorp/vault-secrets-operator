@@ -161,7 +161,7 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.9.0
+      tag: 0.9.1
 
     # logging
     logging:
@@ -266,6 +266,18 @@ controller:
       # default: 10000
       # @type: integer
       cacheSize:
+
+      # Defines the number of locks to use for the Vault client cache controller.
+      # May also be set via the `VSO_CLIENT_CACHE_NUM_LOCKS` environment variable.
+      #
+      # Setting this value less than 1 will cause the manager to set the number of locks equal
+      # to the number of logical CPUs of the run host.
+      #
+      # See the VSO help output for more information.
+      #
+      # default: 100
+      # @type: integer
+      numLocks:
 
       # StorageEncryption provides the necessary configuration to encrypt the client storage
       # cache within Kubernetes objects using (required) Vault Transit Engine.
