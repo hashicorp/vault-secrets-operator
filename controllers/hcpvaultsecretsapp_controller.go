@@ -76,6 +76,8 @@ var (
 
 	hvsaLabelPrefix = fmt.Sprintf("%s.%s", "hcpvaultsecretsapps",
 		secretsv1beta1.GroupVersion.Group)
+
+	labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1beta1.GroupVersion.Group)
 )
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
