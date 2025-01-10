@@ -41,7 +41,7 @@ var SecretDataErrorContainsRaw = fmt.Errorf("key '%s' not permitted in Secret da
 // labelOwnerRefUID is used as the primary key when listing the Secrets owned by
 // a specific VSO object. It should be included in every Secret that is created
 // by VSO.
-var labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1beta1.GroupVersion.Group)
+var LabelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1beta1.GroupVersion.Group)
 
 // OwnerLabels will be applied to any k8s secret we create. They are used in Secret ownership checks.
 // There are similar labels in the vault package. It's important that component secret's value never
@@ -66,7 +66,7 @@ func OwnerLabelsForObj(obj ctrlclient.Object) (map[string]string, error) {
 	for k, v := range OwnerLabels {
 		l[k] = v
 	}
-	l[labelOwnerRefUID] = uid
+	l[LabelOwnerRefUID] = uid
 
 	return l, nil
 }
@@ -84,7 +84,7 @@ func matchingLabelsForObj(obj ctrlclient.Object) (ctrlclient.MatchingLabels, err
 	for k, v := range l {
 		m[k] = v
 	}
-	m[labelOwnerRefUID] = string(obj.GetUID())
+	m[LabelOwnerRefUID] = string(obj.GetUID())
 
 	return m, nil
 }

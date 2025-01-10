@@ -76,8 +76,6 @@ var (
 
 	hvsaLabelPrefix = fmt.Sprintf("%s.%s", "hcpvaultsecretsapps",
 		secretsv1beta1.GroupVersion.Group)
-
-	labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1beta1.GroupVersion.Group)
 )
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
@@ -335,7 +333,7 @@ func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.
 			continue
 		}
 
-		if o.GetDeletionTimestamp() != nil && o.GetUID() == types.UID(secret.Labels[labelOwnerRefUID]) {
+		if o.GetDeletionTimestamp() != nil && o.GetUID() == types.UID(secret.Labels[helpers.LabelOwnerRefUID]) {
 			if err := r.handleDeletion(ctx, o); err != nil {
 				logger.Error(err, "Failed to handle deletion of HCPVaultSecretsApp", "app", o.Name)
 				return err
