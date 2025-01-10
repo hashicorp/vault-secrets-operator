@@ -1253,10 +1253,6 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 		"HCPVaultSecretsApp and shadow secret marked for deletion, HCPVaultSecretsApp is owner of shadow secret": {
 			o: hvsApp.DeepCopy(),
 			secret: &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       VaultDynamicSecret.String(),
-					APIVersion: secretsv1beta1.GroupVersion.Version,
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:         common.OperatorNamespace,
 					Name:              "shadow-secret",
@@ -1276,10 +1272,6 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 		"HCPVaultSecretsApp not owner of shadow secret, shadow secret marked for deletion": {
 			o: hvsApp.DeepCopy(),
 			secret: &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       VaultDynamicSecret.String(),
-					APIVersion: secretsv1beta1.GroupVersion.Version,
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:         common.OperatorNamespace,
 					Name:              "shadow-secret",
@@ -1294,10 +1286,6 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 		},
 		"HCPVaultSecretsApp not found, shadow secret marked for deletion": {
 			secret: &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       VaultDynamicSecret.String(),
-					APIVersion: secretsv1beta1.GroupVersion.Version,
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: common.OperatorNamespace,
 					Name:      "shadow-secret",
