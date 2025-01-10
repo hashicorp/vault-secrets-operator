@@ -335,22 +335,20 @@ func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.
 			continue
 		}
 
-		// only delete the shadow secret if the HCPVaultSecretsApp instance no longer exists
-		// or if the shadow secret's owner label does not match the HCPVaultSecretsApp instance UID
-		if apierrors.IsNotFound(err) || o.GetUID() != types.UID(secret.Labels[labelOwnerRefUID]) {
-			if err := r.Client.Delete(ctx, &secret); err != nil {
-				logger.Error(err, "Failed to delete secret", "secret", secret.Name)
-				return err
-			}
-
-			logger.Info("Deleted orphaned shadow secret", "secret", secret.Name)
-		} else if o.GetDeletionTimestamp() != nil {
+		if o.GetDeletionTimestamp() != nil && o.GetUID() == types.UID(secret.Labels[labelOwnerRefUID]) {
 			if err := r.handleDeletion(ctx, o); err != nil {
 				logger.Error(err, "Failed to handle deletion of HCPVaultSecretsApp", "app", o.Name)
 				return err
 			}
 
 			logger.Info("Deleted orphaned resources associated with HCPVaultSecretsApp", "app", o.Name)
+		} else if apierrors.IsNotFound(err) || secret.GetDeletionTimestamp() != nil {
+			if err := r.Client.Delete(ctx, &secret); err != nil {
+				logger.Error(err, "Failed to delete secret", "secret", secret.Name)
+				return err
+			}
+
+			logger.Info("Deleted orphaned shadow secret", "secret", secret.Name)
 		}
 	}
 
