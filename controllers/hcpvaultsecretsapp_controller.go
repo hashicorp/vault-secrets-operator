@@ -296,7 +296,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *HCPVaultSecretsAppReconciler) startShadowSecretCleanupRoutine(ctx context.Context) {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithName("startShadowSecretCleanupRoutine")
 	// cleanup of orphaned shadow secrets runs once every hour
 	ticker := time.NewTicker(1 * time.Hour)
 
