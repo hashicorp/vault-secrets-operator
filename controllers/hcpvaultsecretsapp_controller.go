@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/hashicorp/vault-secrets-operator/credentials"
 	"github.com/hashicorp/vault-secrets-operator/credentials/hcp"
@@ -371,11 +372,10 @@ func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
 
-	if !orphanedShadowSecretCleanupInitialized {
-		go r.startShadowSecretCleanupRoutine(context.Background())
-		// prevent the shadow secret cleanup goroutine from being started more than once
-		orphanedShadowSecretCleanupInitialized = true
-	}
+	mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		go r.startShadowSecretCleanupRoutine(ctx)
+		return nil
+	}))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
