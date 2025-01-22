@@ -8,8 +8,10 @@ resource "helm_release" "postgres" {
   wait             = true
   wait_for_jobs    = true
 
-  repository = "https://charts.bitnami.com/bitnami"
+  # ref: https://github.com/bitnami/charts/issues/30582#issuecomment-2494545610
+  repository = "oci://registry-1.docker.io/bitnamicharts"
   chart      = "postgresql"
+  version    = "16.2.2"
 
   set {
     name  = "auth.audit.logConnections"

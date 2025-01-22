@@ -23,8 +23,8 @@ CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-KIND_K8S_VERSION ?= v1.30.0
-VAULT_HELM_VERSION ?= 0.25.0
+KIND_K8S_VERSION ?= v1.31.2
+VAULT_HELM_VERSION ?= 0.29.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
 
@@ -344,6 +344,14 @@ integration-test-chart:
 	VERSION=$(VERSION) \
 	INTEGRATION_TESTS=true \
 	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
+
+.PHONY: integration-test-oom
+integration-test-oom:
+	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
+	VERSION=$(VERSION) \
+	INTEGRATION_TESTS=true \
+	KIND_K8S_VERSION=$(KIND_K8S_VERSION) \
+	go test github.com/hashicorp/vault-secrets-operator/test/oom/... $(TESTARGS) -timeout=10m
 
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally

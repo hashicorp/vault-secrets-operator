@@ -93,7 +93,7 @@ type VaultPKISecretSpec struct {
 	// not when generating a CSR for an intermediate CA.
 	// Should be in duration notation e.g. 120s, 2h, etc.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h|d))$`
 	TTL string `json:"ttl,omitempty"`
 
 	// Format for the certificate. Choices: "pem", "der", "pem_bundle".
