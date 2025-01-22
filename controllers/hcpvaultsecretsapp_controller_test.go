@@ -1262,7 +1262,7 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 						hvsaLabelPrefix + "/name":      hvsApp.GetName(),
 						hvsaLabelPrefix + "/namespace": hvsApp.GetNamespace(),
 						"app.kubernetes.io/component":  "hvs-dynamic-secret-cache",
-						labelOwnerRefUID:               string(hvsApp.GetUID()),
+						helpers.LabelOwnerRefUID:       string(hvsApp.GetUID()),
 					},
 				},
 			},
