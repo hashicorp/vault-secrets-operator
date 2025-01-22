@@ -92,10 +92,6 @@ type HCPVaultSecretsAppReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 }
 
-// orphanedShadowSecretCleanupInitialized is used to ensure that the goroutine that does cleanup of shadow secrets
-// that belong to deleted HCPVaultSecretsApp instances is only started once
-var orphanedShadowSecretCleanupInitialized = false
-
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps/finalizers,verbs=update
