@@ -82,14 +82,15 @@ var (
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
 type HCPVaultSecretsAppReconciler struct {
 	client.Client
-	Scheme                      *runtime.Scheme
-	Recorder                    record.EventRecorder
-	SecretDataBuilder           *helpers.SecretDataBuilder
-	HMACValidator               helpers.HMACValidator
-	MinRefreshAfter             time.Duration
-	referenceCache              ResourceReferenceCache
-	GlobalTransformationOptions *helpers.GlobalTransformationOptions
-	BackOffRegistry             *BackOffRegistry
+	Scheme                              *runtime.Scheme
+	Recorder                            record.EventRecorder
+	SecretDataBuilder                   *helpers.SecretDataBuilder
+	HMACValidator                       helpers.HMACValidator
+	MinRefreshAfter                     time.Duration
+	referenceCache                      ResourceReferenceCache
+	GlobalTransformationOptions         *helpers.GlobalTransformationOptions
+	BackOffRegistry                     *BackOffRegistry
+	CleanupOrphanedShadowSecretInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -292,8 +293,11 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 func (r *HCPVaultSecretsAppReconciler) startShadowSecretCleanupRoutine(ctx context.Context) {
 	logger := log.FromContext(ctx).WithName("startShadowSecretCleanupRoutine")
-	// cleanup of orphaned shadow secrets runs once every hour
+	// run the cleanup shadow secret routine every hour or as specified by the user
 	ticker := time.NewTicker(1 * time.Hour)
+	if r.CleanupOrphanedShadowSecretInterval > 0 {
+		ticker = time.NewTicker(r.CleanupOrphanedShadowSecretInterval)
+	}
 
 	// this process is expected to run indefinitely
 	for range ticker.C {
@@ -330,6 +334,7 @@ func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.
 			continue
 		}
 
+		// if the HCPVaultSecretsApp has been deleted, and the shadow secret belongs to it, delete both
 		if o.GetDeletionTimestamp() != nil && o.GetUID() == types.UID(secret.Labels[helpers.LabelOwnerRefUID]) {
 			if err := r.handleDeletion(ctx, o); err != nil {
 				logger.Error(err, "Failed to handle deletion of HCPVaultSecretsApp", "app", o.Name)
@@ -338,8 +343,9 @@ func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.
 
 			logger.Info("Deleted orphaned resources associated with HCPVaultSecretsApp", "app", o.Name)
 		} else if apierrors.IsNotFound(err) || secret.GetDeletionTimestamp() != nil {
-			if err := r.Client.Delete(ctx, &secret); err != nil {
-				logger.Error(err, "Failed to delete secret", "secret", secret.Name)
+			// otherwise, delete the single shadow secret if it has a deletion timestamp
+			if err := helpers.DeleteSecret(ctx, r.Client, namespacedName); err != nil {
+				logger.Error(err, "Failed to delete shadow secret", "secret", secret.Name)
 				return err
 			}
 
@@ -438,7 +444,7 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 	return hvsclient.New(cl, nil), nil
 }
 
-func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o client.Object) error {
+func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) error {
 	logger := log.FromContext(ctx)
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)

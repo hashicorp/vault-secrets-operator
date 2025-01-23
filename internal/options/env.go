@@ -49,6 +49,9 @@ type VSOEnvOptions struct {
 
 	// ClientCacheNumLocks is VSO_CLIENT_CACHE_NUM_LOCKS environment variable option
 	ClientCacheNumLocks *int `split_words:"true"`
+
+	// CleanupOrphanedShadowSecretInterval is VSO_CLEANUP_ORPHANED_SHADOW_SECRETS_INTERVAL environment variable option
+	CleanupOrphanedShadowSecretInterval time.Duration `split_words:"true"`
 }
 
 // Parse environment variable options, prefixed with "VSO_"
