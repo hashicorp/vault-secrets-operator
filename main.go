@@ -215,7 +215,7 @@ func main() {
 			"All errors are tried using an exponential backoff strategy. "+
 			"The value must be greater than zero. "+
 			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
-	flag.DurationVar(&cleanupOrphanedShadowSecretInterval, "cleanup-orphaned-shadow-secrets-interval", 1,
+	flag.DurationVar(&cleanupOrphanedShadowSecretInterval, "cleanup-orphaned-shadow-secrets-interval", 1*time.Hour,
 		"The time interval between each execution of the cleanup process for cached shadow secrets"+
 			"associated with a deleted HCPVaultSecretsApp. "+
 			"Also set from environment variable VSO_CLEANUP_ORPHANED_SHADOW_SECRET_INTERVAL.")
@@ -267,7 +267,7 @@ func main() {
 	if vsoEnvOptions.BackoffMultiplier != 0 {
 		backoffMultiplier = vsoEnvOptions.BackoffMultiplier
 	}
-	if vsoEnvOptions.CleanupOrphanedShadowSecretInterval != 0 {
+	if vsoEnvOptions.CleanupOrphanedShadowSecretInterval >= 0 {
 		cleanupOrphanedShadowSecretInterval = vsoEnvOptions.CleanupOrphanedShadowSecretInterval
 	}
 	if len(vsoEnvOptions.GlobalVaultAuthOptions) > 0 {
