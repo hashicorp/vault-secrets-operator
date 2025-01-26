@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	httptransport "github.com/go-openapi/runtime/client"
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/hashicorp/vault-secrets-operator/credentials"
 	"github.com/hashicorp/vault-secrets-operator/credentials/hcp"
@@ -90,6 +92,7 @@ type HCPVaultSecretsAppReconciler struct {
 	GlobalTransformationOptions         *helpers.GlobalTransformationOptions
 	BackOffRegistry                     *BackOffRegistry
 	CleanupOrphanedShadowSecretInterval time.Duration
+	once                                sync.Once
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -291,22 +294,24 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *HCPVaultSecretsAppReconciler) startOrphanedShadowSecretCleanup(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			if ctx.Err() != nil {
-				return fmt.Errorf("shadow secret cleanup context canceled err=%s", ctx.Err())
-			}
-		default:
-			// runs the cleanup process once every hour or as specified by the user
-			time.Sleep(r.CleanupOrphanedShadowSecretInterval)
+	var err error
 
-			err := r.cleanupOrphanedShadowSecrets(ctx)
-			if err != nil {
-				return fmt.Errorf("failed during cleanup of orphaned shadow secrets err=%s", err)
+	r.once.Do(func() {
+		for {
+			select {
+			case <-ctx.Done():
+				if ctx.Err() != nil {
+					err = ctx.Err()
+				}
+			default:
+				// runs the cleanup process once every hour or as specified by the user
+				time.Sleep(r.CleanupOrphanedShadowSecretInterval)
+				err = r.cleanupOrphanedShadowSecrets(ctx)
 			}
 		}
-	}
+	})
+
+	return fmt.Errorf("shadow secret cleanup error err=%s", err)
 }
 
 func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.Context) error {
@@ -374,6 +379,11 @@ func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
+
+	mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		err := r.startOrphanedShadowSecretCleanup(ctx)
+		return err
+	}))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
@@ -445,16 +455,7 @@ func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o *se
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	r.BackOffRegistry.Delete(objKey)
-
-	// secrets := corev1.SecretList{}
-	// if err := r.List(ctx, &secrets, client.InNamespace(common.OperatorNamespace)); err != nil {
-	// }
-
-	// for _, secret := range secrets.Items {
-	// 	if err := helpers.DeleteSecret(ctx, r.Client, objKey client.ObjectKey)
-	// }
 	shadowObjKey := makeShadowObjKey(o)
-
 	if err := helpers.DeleteSecret(ctx, r.Client, shadowObjKey); err != nil {
 		logger.Error(err, "Failed to delete shadow secret", "shadow secret", shadowObjKey)
 	}
