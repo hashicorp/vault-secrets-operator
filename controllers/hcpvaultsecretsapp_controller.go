@@ -303,9 +303,8 @@ func (r *HCPVaultSecretsAppReconciler) startOrphanedShadowSecretCleanup(ctx cont
 				if ctx.Err() != nil {
 					err = ctx.Err()
 				}
-			default:
-				// runs the cleanup process once every hour or as specified by the user
-				time.Sleep(r.CleanupOrphanedShadowSecretInterval)
+			// runs the cleanup process once every hour or as specified by the user
+			case <-time.After(r.CleanupOrphanedShadowSecretInterval):
 				err = r.cleanupOrphanedShadowSecrets(ctx)
 			}
 		}
