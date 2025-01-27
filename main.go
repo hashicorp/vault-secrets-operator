@@ -267,7 +267,7 @@ func main() {
 	if vsoEnvOptions.BackoffMultiplier != 0 {
 		backoffMultiplier = vsoEnvOptions.BackoffMultiplier
 	}
-	if vsoEnvOptions.CleanupOrphanedShadowSecretInterval >= 0 {
+	if vsoEnvOptions.CleanupOrphanedShadowSecretInterval != 0 {
 		cleanupOrphanedShadowSecretInterval = vsoEnvOptions.CleanupOrphanedShadowSecretInterval
 	}
 	if len(vsoEnvOptions.GlobalVaultAuthOptions) > 0 {
