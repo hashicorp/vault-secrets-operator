@@ -218,7 +218,7 @@ func main() {
 	flag.DurationVar(&cleanupOrphanedShadowSecretInterval, "cleanup-orphaned-shadow-secrets-interval", 1*time.Hour,
 		"The time interval between each execution of the cleanup process for cached shadow secrets"+
 			"associated with a deleted HCPVaultSecretsApp. "+
-			"Also set from environment variable VSO_CLEANUP_ORPHANED_SHADOW_SECRET_INTERVAL.")
+			"Also set from environment variable VSO_HVSA_CLEANUP_ORPHANED_SHADOW_SECRET_INTERVAL.")
 
 	opts := zap.Options{
 		Development: os.Getenv("VSO_LOGGER_DEVELOPMENT_MODE") != "",
@@ -267,8 +267,8 @@ func main() {
 	if vsoEnvOptions.BackoffMultiplier != 0 {
 		backoffMultiplier = vsoEnvOptions.BackoffMultiplier
 	}
-	if vsoEnvOptions.CleanupOrphanedShadowSecretInterval != 0 {
-		cleanupOrphanedShadowSecretInterval = vsoEnvOptions.CleanupOrphanedShadowSecretInterval
+	if vsoEnvOptions.HVSACleanupOrphanedShadowSecretInterval != 0 {
+		cleanupOrphanedShadowSecretInterval = vsoEnvOptions.HVSACleanupOrphanedShadowSecretInterval
 	}
 	if len(vsoEnvOptions.GlobalVaultAuthOptions) > 0 {
 		globalVaultAuthOptsSet = vsoEnvOptions.GlobalVaultAuthOptions
@@ -555,16 +555,15 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.HCPVaultSecretsAppReconciler{
-		Client:                              mgr.GetClient(),
-		Scheme:                              mgr.GetScheme(),
-		Recorder:                            mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
-		SecretDataBuilder:                   secretDataBuilder,
-		HMACValidator:                       hmacValidator,
-		MinRefreshAfter:                     minRefreshAfterHVSA,
-		BackOffRegistry:                     controllers.NewBackOffRegistry(backoffOpts...),
-		GlobalTransformationOptions:         globalTransOptions,
-		CleanupOrphanedShadowSecretInterval: cleanupOrphanedShadowSecretInterval,
-	}).SetupWithManager(mgr, controllerOptions); err != nil {
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
+		SecretDataBuilder:           secretDataBuilder,
+		HMACValidator:               hmacValidator,
+		MinRefreshAfter:             minRefreshAfterHVSA,
+		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
+		GlobalTransformationOptions: globalTransOptions,
+	}).SetupWithManager(mgr, controllerOptions, cleanupOrphanedShadowSecretInterval); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
 		os.Exit(1)
 	}
