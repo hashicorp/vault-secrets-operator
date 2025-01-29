@@ -1362,18 +1362,17 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 				assert.NoError(t, clientBuilder.Delete(ctx, tt.o))
 			}
 
-			err := r.cleanupOrphanedShadowSecrets(ctx)
-			assert.NoError(t, err)
+			r.cleanupOrphanedShadowSecrets(ctx)
 
 			if tt.isHCPVaultSecretsAppDeletionExpected {
 				deletedHVSApp := &secretsv1beta1.HCPVaultSecretsApp{}
-				err = r.Get(ctx, client.ObjectKeyFromObject(tt.o), deletedHVSApp)
+				err := r.Get(ctx, client.ObjectKeyFromObject(tt.o), deletedHVSApp)
 				assert.True(t, apierrors.IsNotFound(err))
 			}
 
 			if tt.isShadowSecretDeletionExpected {
 				deletedSecret := &corev1.Secret{}
-				err = r.Get(ctx, makeShadowObjKey(tt.secret), deletedSecret)
+				err := r.Get(ctx, makeShadowObjKey(tt.secret), deletedSecret)
 				assert.True(t, apierrors.IsNotFound(err))
 			} else {
 				secret := &corev1.Secret{}
