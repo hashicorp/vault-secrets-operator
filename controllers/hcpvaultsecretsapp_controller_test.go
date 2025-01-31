@@ -22,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/common"
@@ -1338,35 +1339,36 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientBuilder := testutils.NewFakeClientBuilder().Build()
+	clientBuilder := testutils.NewFakeClientBuilder()
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			client := clientBuilder.Build()
 			r := &HCPVaultSecretsAppReconciler{
-				Client:          clientBuilder,
+				Client:          client,
 				BackOffRegistry: NewBackOffRegistry(),
 				referenceCache:  newResourceReferenceCache(),
 			}
 
 			// create the HCPVaultSecretsApp if the test case has one
 			if tt.o != nil {
-				assert.NoError(t, clientBuilder.Create(ctx, tt.o))
+				assert.NoError(t, client.Create(ctx, tt.o))
 			}
 
 			// create the secret for the test case
-			assert.NoError(t, clientBuilder.Create(ctx, tt.secret))
+			assert.NoError(t, client.Create(ctx, tt.secret))
 
 			// DeleteTimestamp is a read-only field, so Delete will need to be called to
 			// simulate deletion of the HCPVaultSecretsApp
 			if tt.isHCPVaultSecretsAppDeletionExpected {
-				assert.NoError(t, clientBuilder.Delete(ctx, tt.o))
+				assert.NoError(t, client.Delete(ctx, tt.o))
 			}
 
 			r.cleanupOrphanedShadowSecrets(ctx)
 
 			if tt.isHCPVaultSecretsAppDeletionExpected {
 				deletedHVSApp := &secretsv1beta1.HCPVaultSecretsApp{}
-				err := r.Get(ctx, client.ObjectKeyFromObject(tt.o), deletedHVSApp)
+				err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(tt.o), deletedHVSApp)
 				assert.True(t, apierrors.IsNotFound(err))
 			}
 
@@ -1376,7 +1378,7 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 				assert.True(t, apierrors.IsNotFound(err))
 			} else {
 				secret := &corev1.Secret{}
-				err := r.Get(ctx, client.ObjectKeyFromObject(tt.secret), secret)
+				err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(tt.secret), secret)
 				assert.False(t, apierrors.IsNotFound(err))
 			}
 		})
