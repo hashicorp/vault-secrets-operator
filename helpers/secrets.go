@@ -34,6 +34,10 @@ const (
 	HVSSecretTypeKV       = "kv"
 	HVSSecretTypeRotating = "rotating"
 	HVSSecretTypeDynamic  = "dynamic"
+
+	ManagedByLabel = "app.kubernetes.io/managed-by"
+	AppNameLabel   = "app.kubernetes.io/name"
+	ComponentLabel = "app.kubernetes.io/component"
 )
 
 var SecretDataErrorContainsRaw = fmt.Errorf("key '%s' not permitted in Secret data", SecretDataKeyRaw)
@@ -48,10 +52,11 @@ var labelOwnerRefUID = fmt.Sprintf("%s/vso-ownerRefUID", secretsv1beta1.GroupVer
 // intersects with that of other components of the system, since this could lead to data loss.
 //
 // Make OwnerLabels public so that they can be accessed from tests.
+
 var OwnerLabels = map[string]string{
-	"app.kubernetes.io/name":       "vault-secrets-operator",
-	"app.kubernetes.io/managed-by": "hashicorp-vso",
-	"app.kubernetes.io/component":  "secret-sync",
+	ManagedByLabel: "hashicorp-vso",
+	AppNameLabel:   "vault-secrets-operator",
+	ComponentLabel: "secret-sync",
 }
 
 // OwnerLabelsForObj returns the canonical set of labels that should be set on
