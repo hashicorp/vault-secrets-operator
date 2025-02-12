@@ -356,6 +356,13 @@ func main() {
 	cfc.GlobalVaultAuthOptions = globalVaultAuthOptions
 
 	config := ctrl.GetConfigOrDie()
+	// set the Kube Client QPS and Burst config if they are set
+	if kubeClientQPS != 0 {
+		config.QPS = float32(kubeClientQPS)
+	}
+	if kubeClientBurst != 0 {
+		config.Burst = kubeClientBurst
+	}
 
 	defaultClient, err := client.NewWithWatch(config, client.Options{
 		Scheme: scheme,
