@@ -119,7 +119,7 @@ spec:
           value: {{ .Values.controller.kubernetesClusterDomain }}
         {{- range .Values.controller.manager.extraEnv }}
         - name: {{ .name }}
-          value: {{ .value }}
+          value: {{ .value | quote }}
         {{- end }}
         image: {{ .Values.controller.manager.image.repository }}:{{ .Values.controller.manager.image.tag }}
         imagePullPolicy: {{ .Values.controller.manager.image.pullPolicy }}
