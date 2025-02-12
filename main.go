@@ -145,6 +145,8 @@ func main() {
 	var backoffRandomizationFactor float64
 	var backoffMultiplier float64
 	var backoffMaxElapsedTime time.Duration
+	var kubeClientQPS float64
+	var kubeClientBurst int
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -214,6 +216,14 @@ func main() {
 			"All errors are tried using an exponential backoff strategy. "+
 			"The value must be greater than zero. "+
 			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
+	flag.Float64Var(&kubeClientQPS, "kube-client-qps", 0,
+		"QPS indicates the maximum QPS to the kubernetes API. "+
+			"When the value is 0, the kubernetes client's default is used."+
+			"Also set from environment variable VSO_KUBE_CLIENT_QPS.")
+	flag.IntVar(&kubeClientBurst, "kube-client-burst", 0,
+		"Maximum burst for throttling requests to the kubernetes API."+
+			"When the value is 0, the kubernetes client's default is used."+
+			"Also set from environment variable VSO_KUBE_CLIENT_BURST.")
 
 	opts := zap.Options{
 		Development: os.Getenv("VSO_LOGGER_DEVELOPMENT_MODE") != "",
@@ -266,6 +276,12 @@ func main() {
 		globalVaultAuthOptsSet = vsoEnvOptions.GlobalVaultAuthOptions
 	} else if globalVaultAuthOpts != "" {
 		globalVaultAuthOptsSet = strings.Split(globalVaultAuthOpts, ",")
+	}
+	if vsoEnvOptions.KubeClientQPS != 0 {
+		kubeClientQPS = vsoEnvOptions.KubeClientQPS
+	}
+	if vsoEnvOptions.KubeClientBurst != nil {
+		kubeClientBurst = *vsoEnvOptions.KubeClientBurst
 	}
 
 	// versionInfo is used when setting up the buildInfo metric below
