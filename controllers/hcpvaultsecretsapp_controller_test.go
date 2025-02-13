@@ -1232,6 +1232,19 @@ func Test_makeShadowObjKey(t *testing.T) {
 func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 	deletionTimestamp := metav1.Now()
 
+	hvsApp := &secretsv1beta1.HCPVaultSecretsApp{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       HCPVaultSecretsApp.String(),
+			APIVersion: secretsv1beta1.GroupVersion.Version,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			UID:        "hvsAppUID",
+			Namespace:  "hvsAppNamespace",
+			Name:       "hvsApp",
+			Finalizers: []string{hcpVaultSecretsAppFinalizer},
+		},
+	}
+
 	tests := map[string]struct {
 		o                                    *secretsv1beta1.HCPVaultSecretsApp
 		secret                               *corev1.Secret
@@ -1239,29 +1252,17 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 		isShadowSecretDeletionExpected       bool
 	}{
 		"deleted-secret-hvsapp-owner": {
-			o: &secretsv1beta1.HCPVaultSecretsApp{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       HCPVaultSecretsApp.String(),
-					APIVersion: secretsv1beta1.GroupVersion.Version,
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					UID:        "hvsApp1UID",
-					Namespace:  "hvsApp1Namespace",
-					Name:       "hvsApp1",
-					Finalizers: []string{hcpVaultSecretsAppFinalizer},
-				},
-			},
+			o: hvsApp.DeepCopy(),
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:         common.OperatorNamespace,
-					Name:              "shadowSecret1",
+					Name:              "shadowSecret",
 					DeletionTimestamp: &deletionTimestamp,
-					Finalizers:        []string{vaultDynamicSecretFinalizer},
 					Labels: map[string]string{
-						hvsaLabelPrefix + "/namespace": "hvsApp1Namespace",
-						hvsaLabelPrefix + "/name":      "hvsApp1",
+						hvsaLabelPrefix + "/namespace": hvsApp.GetNamespace(),
+						hvsaLabelPrefix + "/name":      hvsApp.GetName(),
+						helpers.LabelOwnerRefUID:       string(hvsApp.GetUID()),
 						"app.kubernetes.io/component":  "hvs-dynamic-secret-cache",
-						helpers.LabelOwnerRefUID:       "hvsApp1UID",
 					},
 				},
 			},
@@ -1269,26 +1270,17 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 			isShadowSecretDeletionExpected:       true,
 		},
 		"deleted-secret-hvsapp-not-owner": {
-			o: &secretsv1beta1.HCPVaultSecretsApp{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       HCPVaultSecretsApp.String(),
-					APIVersion: secretsv1beta1.GroupVersion.Version,
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					UID:        "hvsApp2UID",
-					Namespace:  "hvsApp2Namespace",
-					Name:       "hvsApp2",
-					Finalizers: []string{hcpVaultSecretsAppFinalizer},
-				},
-			},
+			o: hvsApp.DeepCopy(),
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:         common.OperatorNamespace,
-					Name:              "shadowSecret2",
+					Name:              "shadowSecret",
 					DeletionTimestamp: &deletionTimestamp,
-					Finalizers:        []string{vaultDynamicSecretFinalizer},
 					Labels: map[string]string{
-						"app.kubernetes.io/component": "hvs-dynamic-secret-cache",
+						hvsaLabelPrefix + "/namespace": "",
+						hvsaLabelPrefix + "/name":      "",
+						helpers.LabelOwnerRefUID:       "",
+						"app.kubernetes.io/component":  "hvs-dynamic-secret-cache",
 					},
 				},
 			},
@@ -1297,40 +1289,46 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 		"deleted-secret-hvsapp-not-found": {
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: common.OperatorNamespace,
-					Name:      "shadowSecret3",
-					Labels: map[string]string{
-						"app.kubernetes.io/component": "hvs-dynamic-secret-cache",
-					},
+					Namespace:         common.OperatorNamespace,
+					Name:              "shadowSecret",
 					DeletionTimestamp: &deletionTimestamp,
-					Finalizers:        []string{hcpVaultSecretsAppFinalizer},
+					Labels: map[string]string{
+						hvsaLabelPrefix + "/namespace": "",
+						hvsaLabelPrefix + "/name":      "",
+						helpers.LabelOwnerRefUID:       "",
+						"app.kubernetes.io/component":  "hvs-dynamic-secret-cache",
+					},
 				},
 			},
 			isShadowSecretDeletionExpected: true,
 		},
 		"secret-not-dynamic": {
-			o: &secretsv1beta1.HCPVaultSecretsApp{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       HCPVaultSecretsApp.String(),
-					APIVersion: secretsv1beta1.GroupVersion.Version,
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					UID:        "hvsApp4UID",
-					Namespace:  "hvsApp4Namespace",
-					Name:       "hvsApp4",
-					Finalizers: []string{hcpVaultSecretsAppFinalizer},
-				},
-			},
+			o: hvsApp.DeepCopy(),
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:         common.OperatorNamespace,
 					Name:              "nonShadowSecret",
 					DeletionTimestamp: &deletionTimestamp,
-					Finalizers:        []string{vaultDynamicSecretFinalizer},
 					Labels: map[string]string{
-						hvsaLabelPrefix + "/namespace": "hvsApp4Namespace",
-						hvsaLabelPrefix + "/name":      "hvsApp4",
-						helpers.LabelOwnerRefUID:       "hvsApp4UID",
+						hvsaLabelPrefix + "/namespace": hvsApp.GetNamespace(),
+						hvsaLabelPrefix + "/name":      hvsApp.GetName(),
+						helpers.LabelOwnerRefUID:       string(hvsApp.GetUID()),
+					},
+				},
+			},
+			isShadowSecretDeletionExpected: false,
+		},
+		"non-deleted-secret": {
+			o: hvsApp.DeepCopy(),
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: common.OperatorNamespace,
+					Name:      "nonShadowSecret",
+					Labels: map[string]string{
+						hvsaLabelPrefix + "/namespace": hvsApp.GetNamespace(),
+						hvsaLabelPrefix + "/name":      hvsApp.GetName(),
+						helpers.LabelOwnerRefUID:       string(hvsApp.GetUID()),
+						"app.kubernetes.io/component":  "hvs-dynamic-secret-cache",
 					},
 				},
 			},
@@ -1372,13 +1370,11 @@ func Test_CleanupOrphanedShadowSecrets(t *testing.T) {
 				assert.True(t, apierrors.IsNotFound(err))
 			}
 
+			secret := &corev1.Secret{}
+			err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(tt.secret), secret)
 			if tt.isShadowSecretDeletionExpected {
-				deletedSecret := &corev1.Secret{}
-				err := r.Get(ctx, makeShadowObjKey(tt.secret), deletedSecret)
 				assert.True(t, apierrors.IsNotFound(err))
 			} else {
-				secret := &corev1.Secret{}
-				err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(tt.secret), secret)
 				assert.False(t, apierrors.IsNotFound(err))
 			}
 		})
