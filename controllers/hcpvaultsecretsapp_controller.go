@@ -362,7 +362,9 @@ func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.
 		}
 	}
 
-	logger.Error(errs, "Failed during cleanup of orphaned shadow secrets")
+	if errs != nil {
+		logger.Error(errs, "Failed during cleanup of orphaned shadow secrets")
+	}
 }
 
 func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) error {
