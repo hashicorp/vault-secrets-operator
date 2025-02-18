@@ -20,7 +20,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -435,6 +437,35 @@ func main() {
 	}
 	ctx := ctrl.SetupSignalHandler()
 
+	var requirements []labels.Requirement
+	for _, k := range []string{helpers.ManagedByLabel, helpers.AppNameLabel} {
+		val, ok := helpers.OwnerLabels[k]
+		if !ok || val == "" {
+			setupLog.Error(errors.New("invalid option"),
+				fmt.Sprintf("Expected Owner label %q is not present, this is a bug", k))
+			os.Exit(1)
+		}
+
+		if r, err := labels.NewRequirement(
+			k, selection.Equals, []string{
+				val,
+			}); err != nil {
+			setupLog.Error(err, "Failed to create label requirement")
+			os.Exit(1)
+		} else {
+			requirements = append(requirements, *r)
+		}
+	}
+
+	// secretsClient is used to interact with secrets that match the selector. This
+	// client is useful to avoid caching all secrets in a cluster. The client will
+	// cache only secrets that match the selector.
+	secretsClient, err := helpers.NewSecretsClientForManager(ctx, mgr, labels.NewSelector().Add(requirements...))
+	if err != nil {
+		setupLog.Error(err, "Failed to create a Secrets client")
+		os.Exit(1)
+	}
+
 	var clientFactory vclient.CachingClientFactory
 	{
 		switch clientCachePersistenceModel {
@@ -467,6 +498,7 @@ func main() {
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("VaultStaticSecret"),
 		SecretDataBuilder:           secretDataBuilder,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		ClientFactory:               clientFactory,
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
@@ -479,6 +511,7 @@ func main() {
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
 		ClientFactory:               clientFactory,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		SyncRegistry:                controllers.NewSyncRegistry(),
 		Recorder:                    mgr.GetEventRecorderFor("VaultPKISecret"),
@@ -524,6 +557,7 @@ func main() {
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("VaultDynamicSecret"),
 		ClientFactory:               clientFactory,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		SyncRegistry:                controllers.NewSyncRegistry(),
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
@@ -551,6 +585,7 @@ func main() {
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
 		SecretDataBuilder:           secretDataBuilder,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		MinRefreshAfter:             minRefreshAfterHVSA,
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),

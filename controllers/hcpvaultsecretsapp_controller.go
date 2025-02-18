@@ -88,6 +88,7 @@ type HCPVaultSecretsAppReconciler struct {
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	BackOffRegistry             *BackOffRegistry
+	SecretsClient               client.Client
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpvaultsecretsapps,verbs=get;list;watch;create;update;patch;delete
@@ -239,7 +240,7 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	doSync := true
 	// doRolloutRestart only if this is not the first time this secret has been synced
 	doRolloutRestart := o.Status.SecretMAC != ""
-	macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
+	macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, data)
 	if err != nil {
 		return ctrl.Result{
 			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
@@ -431,7 +432,7 @@ func (r *HCPVaultSecretsAppReconciler) getShadowSecretData(ctx context.Context, 
 		return nil, fmt.Errorf("failed to marshal shadow secret data %s/%s: %w",
 			o.Namespace, o.Name, err)
 	}
-	valid, _, err := r.HMACValidator.Validate(ctx, r.Client, dataBytes, lastHMAC)
+	valid, _, err := r.HMACValidator.Validate(ctx, r.SecretsClient, dataBytes, lastHMAC)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate HMAC of HVS shadow secret data for %s/%s: %w",
 			o.Namespace, o.Name, err)
@@ -504,7 +505,7 @@ func (r *HCPVaultSecretsAppReconciler) storeShadowSecretData(ctx context.Context
 		return fmt.Errorf("failed to marshal shadow secret data %s/%s: %w",
 			o.Namespace, o.Name, err)
 	}
-	h, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+	h, err := r.HMACValidator.HMAC(ctx, r.SecretsClient, b)
 	if err != nil {
 		return fmt.Errorf("failed to HMAC shadow secret data %s/%s: %w",
 			o.Namespace, o.Name, err)
