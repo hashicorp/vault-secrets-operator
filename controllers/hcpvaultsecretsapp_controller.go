@@ -379,14 +379,14 @@ func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secr
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options, cleanupOrphanedShadowSecretInterval time.Duration) error {
+func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options, cleanupShadowSecretInterval time.Duration) error {
 	r.referenceCache = newResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
 
 	mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
-		err := r.startOrphanedShadowSecretCleanup(ctx, cleanupOrphanedShadowSecretInterval)
+		err := r.startOrphanedShadowSecretCleanup(ctx, cleanupShadowSecretInterval)
 		return err
 	}))
 

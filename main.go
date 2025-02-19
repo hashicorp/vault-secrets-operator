@@ -145,7 +145,7 @@ func main() {
 	var backoffRandomizationFactor float64
 	var backoffMultiplier float64
 	var backoffMaxElapsedTime time.Duration
-	var cleanupOrphanedShadowSecretInterval time.Duration
+	var cleanupShadowSecretIntervalHVSA time.Duration
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -215,7 +215,7 @@ func main() {
 			"All errors are tried using an exponential backoff strategy. "+
 			"The value must be greater than zero. "+
 			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
-	flag.DurationVar(&cleanupOrphanedShadowSecretInterval, "cleanup-shadow-secret-interval-hvsa", 1*time.Hour,
+	flag.DurationVar(&cleanupShadowSecretIntervalHVSA, "cleanup-shadow-secret-interval-hvsa", 1*time.Hour,
 		"The time interval between each execution of the cleanup process for cached shadow secrets"+
 			"associated with a deleted HCPVaultSecretsApp. "+
 			"Also set from environment variable VSO_CLEANUP_SHADOW_SECRET_INTERVAL_HVSA.")
@@ -267,8 +267,8 @@ func main() {
 	if vsoEnvOptions.BackoffMultiplier != 0 {
 		backoffMultiplier = vsoEnvOptions.BackoffMultiplier
 	}
-	if vsoEnvOptions.HVSACleanupOrphanedShadowSecretInterval != 0 {
-		cleanupOrphanedShadowSecretInterval = vsoEnvOptions.HVSACleanupOrphanedShadowSecretInterval
+	if vsoEnvOptions.CleanupShadowSecretIntervalHVSA != 0 {
+		cleanupShadowSecretIntervalHVSA = vsoEnvOptions.CleanupShadowSecretIntervalHVSA
 	}
 	if len(vsoEnvOptions.GlobalVaultAuthOptions) > 0 {
 		globalVaultAuthOptsSet = vsoEnvOptions.GlobalVaultAuthOptions
@@ -563,7 +563,7 @@ func main() {
 		MinRefreshAfter:             minRefreshAfterHVSA,
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOptions: globalTransOptions,
-	}).SetupWithManager(mgr, controllerOptions, cleanupOrphanedShadowSecretInterval); err != nil {
+	}).SetupWithManager(mgr, controllerOptions, cleanupShadowSecretIntervalHVSA); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
 		os.Exit(1)
 	}
