@@ -48,6 +48,7 @@ type VaultStaticSecretReconciler struct {
 	Recorder                    record.EventRecorder
 	ClientFactory               vault.ClientFactory
 	SecretDataBuilder           *helpers.SecretDataBuilder
+	SecretsClient               client.Client
 	HMACValidator               helpers.HMACValidator
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
@@ -160,7 +161,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// doRolloutRestart only if this is not the first time this secret has been synced
 		doRolloutRestart = o.Status.SecretMAC != ""
 
-		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
+		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, data)
 		if err != nil {
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}

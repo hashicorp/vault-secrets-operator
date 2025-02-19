@@ -72,6 +72,7 @@ type VaultDynamicSecretReconciler struct {
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
 	runtimePodUID types.UID
+	SecretsClient client.Client
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -423,7 +424,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 			delete(dataToMAC, k)
 		}
 
-		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, dataToMAC)
+		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC)
 		if err != nil {
 			return nil, false, err
 		}
