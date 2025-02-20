@@ -52,7 +52,7 @@ func TestParse(t *testing.T) {
 				GlobalVaultAuthOptions:      []string{"vOpt1", "vOpt2"},
 				ClientCacheNumLocks:         ptr.To(10),
 				KubeClientQPS:               100,
-				KubeClientBurst:             ptr.To(1000),
+				KubeClientBurst:             ptr.To(uint(1000)),
 			},
 		},
 	}
