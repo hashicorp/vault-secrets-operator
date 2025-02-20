@@ -1292,3 +1292,61 @@ load _helpers
   [ "$(echo "${job}" | \
   yq '(.spec.template.spec.containers[0].imagePullPolicy == "IfNotPresent")')" = "true" ]
 }
+
+
+#--------------------------------------------------------------------
+# kubeClient
+
+@test "controller/Deployment: kubeClient qps not set by default" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq 'contains(["--kube-client-qps"])' | tee /dev/stderr)
+  [ "${actual}" = "false" ]
+}
+
+@test "controller/Deployment: kubeClient qps can be set" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  --set 'controller.manager.kubeClient.qps=200' \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq 'contains(["--kube-client-qps=200"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: kubeClient burst not set by default" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq 'contains(["--kube-client-burst"])' | tee /dev/stderr)
+  [ "${actual}" = "false" ]
+}
+
+@test "controller/Deployment: kubeClient burst can be set" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  --set 'controller.manager.kubeClient.burst=2000' \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq 'contains(["--kube-client-burst=2000"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
