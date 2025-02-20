@@ -52,7 +52,7 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 	for k, v := range OwnerLabels {
 		ownerLabels[k] = v
 	}
-	ownerLabels[labelOwnerRefUID] = string(owner.GetUID())
+	ownerLabels[LabelOwnerRefUID] = string(owner.GetUID())
 
 	notOwner := &secretsv1beta1.VaultDynamicSecret{
 		TypeMeta: metav1.TypeMeta{
@@ -489,7 +489,7 @@ func TestSyncSecret(t *testing.T) {
 			}
 
 			if tt.obj.GetUID() != "" {
-				ownerLabels[labelOwnerRefUID] = string(tt.obj.GetUID())
+				ownerLabels[LabelOwnerRefUID] = string(tt.obj.GetUID())
 			}
 
 			var orphans []ctrlclient.ObjectKey
