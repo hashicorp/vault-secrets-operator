@@ -148,7 +148,7 @@ func main() {
 	var backoffMultiplier float64
 	var backoffMaxElapsedTime time.Duration
 	var kubeClientQPS float64
-	var kubeClientBurst uint
+	var kubeClientBurst int
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -219,12 +219,12 @@ func main() {
 			"The value must be greater than zero. "+
 			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
 	flag.Float64Var(&kubeClientQPS, "kube-client-qps", 0,
-		"QPS indicates the maximum QPS to the kubernetes API. "+
-			"When the value is 0, the kubernetes client's default is used."+
+		"Maximum queries per second to limit requests sent to the API server and prevent overload. "+
+			"When the value is 0, the kubernetes client's default is used. "+
 			"Also set from environment variable VSO_KUBE_CLIENT_QPS.")
 	flag.IntVar(&kubeClientBurst, "kube-client-burst", 0,
-		"Maximum burst for throttling requests to the kubernetes API."+
-			"When the value is 0, the kubernetes client's default is used."+
+		"Maximum burst for throttling requests to the Kubernetes API. "+
+			"When the value is 0, the kubernetes client's default is used. "+
 			"Also set from environment variable VSO_KUBE_CLIENT_BURST.")
 
 	opts := zap.Options{
