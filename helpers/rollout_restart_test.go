@@ -164,10 +164,13 @@ func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlc
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
 		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
+		assertFieldManagerSet(t, obj, FieldManagerName)
 	case *appsv1.StatefulSet:
 		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
+		assertFieldManagerSet(t, obj, FieldManagerName)
 	case *appsv1.DaemonSet:
 		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
+		assertFieldManagerSet(t, obj, FieldManagerName)
 	case *argorolloutsv1alpha1.Rollout:
 		attr = "argo.rollout.spec.restartAt"
 		restartAtTime = o.Spec.RestartAt.Time
@@ -184,4 +187,15 @@ func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlc
 	assert.True(t, restartAtTime.After(beforeRolloutRestart),
 		"restartAt should be after beforeRolloutRestart",
 		attr, restartAtTime, "beforeRolloutRestart", beforeRolloutRestart)
+}
+
+func assertFieldManagerSet(t *testing.T, obj ctrlclient.Object, manager string) {
+	found := false
+	for _, mf := range obj.GetManagedFields() {
+		if mf.Manager == manager {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "fieldManager '%s' should be set", manager)
 }

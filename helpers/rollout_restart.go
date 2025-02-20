@@ -22,7 +22,10 @@ import (
 )
 
 // AnnotationRestartedAt is updated to trigger a rollout-restart
-const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
+const (
+	AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
+	FieldManagerName      = "vault-secrets-operator"
+)
 
 // HandleRolloutRestarts for all v1beta1.RolloutRestartTarget(s) configured for obj.
 // Supported objs are: v1beta1.VaultDynamicSecret, v1beta1.VaultStaticSecret, v1beta1.VaultPKISecret
@@ -120,37 +123,40 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		return fmt.Errorf("failed to Get object for objKey %s, err=%w", objKey, err)
 	}
 
+	var patch ctrlclient.Patch
+	var patchOptions []ctrlclient.PatchOption
 	switch t := obj.(type) {
 	case *appsv1.Deployment:
 		if t.Spec.Paused {
 			return fmt.Errorf("deployment %s is paused, cannot restart it", obj)
 		}
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch = ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-		return client.Patch(ctx, t, patch)
+		patchOptions = append(patchOptions, ctrlclient.FieldOwner(FieldManagerName))
 	case *appsv1.StatefulSet:
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch = ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-		return client.Patch(ctx, t, patch)
+		patchOptions = append(patchOptions, ctrlclient.FieldOwner(FieldManagerName))
 	case *appsv1.DaemonSet:
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch = ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-		return client.Patch(ctx, t, patch)
+		patchOptions = append(patchOptions, ctrlclient.FieldOwner(FieldManagerName))
 	case *argorolloutsv1alpha1.Rollout:
-		// use MergeFrom() since it supports CRDs whereas StrategicMergeFrom() does not.
-		patch := ctrlclient.MergeFrom(t.DeepCopy())
+		patch = ctrlclient.MergeFrom(t.DeepCopy())
 		t.Spec.RestartAt = &metav1.Time{Time: time.Now()}
-		return client.Patch(ctx, t, patch)
+		// we arent setting the field owner here because we probably dont want to own the RestartAt field of the ArgoRollout spec
 	default:
 		return fmt.Errorf("unsupported type %T for rollout-restart patching", t)
 	}
+
+	return client.Patch(ctx, obj, patch, patchOptions...)
 }
