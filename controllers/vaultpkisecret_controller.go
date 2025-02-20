@@ -49,6 +49,7 @@ type VaultPKISecretReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
+	SecretsClient               client.Client
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -134,7 +135,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		syncReason = consts.ReasonInexistentDestination
 	case destinationExists:
 		if schemaEpoch > 0 {
-			if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
+			if matched, err := helpers.HMACDestinationSecret(ctx, r.SecretsClient,
 				r.HMACValidator, o); err == nil && !matched {
 				syncReason = consts.ReasonSecretDataDrift
 			} else if err != nil {
@@ -252,7 +253,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if b, err := json.Marshal(data); err == nil {
-		newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+		newMAC, err := r.HMACValidator.HMAC(ctx, r.SecretsClient, b)
 		if err != nil {
 			logger.Error(err, "HMAC data")
 			o.Status.Error = consts.ReasonHMACDataError
