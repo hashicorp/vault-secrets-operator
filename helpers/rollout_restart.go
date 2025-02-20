@@ -120,37 +120,35 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		return fmt.Errorf("failed to Get object for objKey %s, err=%w", objKey, err)
 	}
 
+	var patch ctrlclient.Patch
 	switch t := obj.(type) {
 	case *appsv1.Deployment:
 		if t.Spec.Paused {
 			return fmt.Errorf("deployment %s is paused, cannot restart it", obj)
 		}
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch = ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-		return client.Patch(ctx, t, patch)
 	case *appsv1.StatefulSet:
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch = ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-		return client.Patch(ctx, t, patch)
 	case *appsv1.DaemonSet:
-		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
+		patch = ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
 		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-		return client.Patch(ctx, t, patch)
 	case *argorolloutsv1alpha1.Rollout:
-		// use MergeFrom() since it supports CRDs whereas StrategicMergeFrom() does not.
-		patch := ctrlclient.MergeFrom(t.DeepCopy())
+		patch = ctrlclient.MergeFrom(t.DeepCopy())
 		t.Spec.RestartAt = &metav1.Time{Time: time.Now()}
-		return client.Patch(ctx, t, patch)
 	default:
 		return fmt.Errorf("unsupported type %T for rollout-restart patching", t)
 	}
+
+	return client.Patch(ctx, obj, patch, ctrlclient.FieldOwner("vault-secrets-operator"))
 }
