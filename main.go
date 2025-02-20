@@ -146,7 +146,7 @@ func main() {
 	var backoffMultiplier float64
 	var backoffMaxElapsedTime time.Duration
 	var kubeClientQPS float64
-	var kubeClientBurst int
+	var kubeClientBurst uint
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")

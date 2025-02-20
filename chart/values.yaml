@@ -156,7 +156,6 @@ controller:
 
   # Settings related to the vault-secrets-operator container.
   manager:
-
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       pullPolicy: IfNotPresent
@@ -477,7 +476,7 @@ controller:
       # When the value is 0, the kubernetes client's default is used.
       # May also set via the `VSO_KUBE_CLIENT_BURST` environment variable.
       # Default: 0
-      # @type: int
+      # @type: uint
       burst:
 
     # Defines additional environment variables to be added to the
@@ -567,10 +566,10 @@ metricsService:
   # https://kubernetes.io/docs/concepts/services-networking/service/
   # @type: map
   ports:
-  - name: https
-    port: 8443
-    protocol: TCP
-    targetPort: https
+    - name: https
+      port: 8443
+      protocol: TCP
+      targetPort: https
   type: ClusterIP
 
 # Configures the default VaultConnection CR which will be used by resources
@@ -607,7 +606,6 @@ defaultVaultConnection:
   #   X-vault-something: "foo"
   # @type: map
   headers: {}
-
 
 # Configures and deploys the default VaultAuthMethod CR which will be used by resources
 # if they do not specify a VaultAuthMethod reference. The name is 'default' and will
@@ -806,7 +804,6 @@ defaultAuthMethod:
       # @type: string
       params: none
 
-
 # Configures a Prometheus ServiceMonitor
 telemetry:
   serviceMonitor:
@@ -874,7 +871,7 @@ hooks:
 
     # Limit the number of retries for the CRD upgrade.
     # @type: integer
-    backoffLimit:  5
+    backoffLimit: 5
 
     # Set the timeout for the CRD upgrade. The operation should typically take less than 5s
     # to complete.
