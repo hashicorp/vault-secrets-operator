@@ -15,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
@@ -24,17 +25,17 @@ func TestRolloutRestart(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	builder := testutils.NewFakeClientBuilder()
 	// use one second ago timestamp to compare against rollout restartAt
 	// since argo.Rollout's Spec.RestartAt rounds down to the nearest second
 	// and often equals to time.Now()
 	beforeRolloutRestart := time.Now().Add(-1 * time.Second)
 
 	tests := []struct {
-		name    string
-		obj     ctrlclient.Object
-		target  v1beta1.RolloutRestartTarget
-		wantErr assert.ErrorAssertionFunc
+		name                  string
+		obj                   ctrlclient.Object
+		target                v1beta1.RolloutRestartTarget
+		clientInterceptorFunc *interceptor.Funcs
+		wantErr               assert.ErrorAssertionFunc
 	}{
 		{
 			name: "invalid Kind",
@@ -65,7 +66,8 @@ func TestRolloutRestart(t *testing.T) {
 				Kind: "DaemonSet",
 				Name: "qux",
 			},
-			wantErr: assert.NoError,
+			clientInterceptorFunc: assertClientInterceptorFieldManager(t, FieldManagerName),
+			wantErr:               assert.NoError,
 		},
 		{
 			name: "Deployment",
@@ -79,7 +81,8 @@ func TestRolloutRestart(t *testing.T) {
 				Kind: "Deployment",
 				Name: "foo",
 			},
-			wantErr: assert.NoError,
+			clientInterceptorFunc: assertClientInterceptorFieldManager(t, FieldManagerName),
+			wantErr:               assert.NoError,
 		},
 		{
 			name: "Deployment-in-pause",
@@ -113,7 +116,8 @@ func TestRolloutRestart(t *testing.T) {
 				Kind: "StatefulSet",
 				Name: "bar",
 			},
-			wantErr: assert.NoError,
+			clientInterceptorFunc: assertClientInterceptorFieldManager(t, FieldManagerName),
+			wantErr:               assert.NoError,
 		},
 		{
 			name: "argo.Rollout",
@@ -127,13 +131,20 @@ func TestRolloutRestart(t *testing.T) {
 				Kind: "argo.Rollout",
 				Name: "fred",
 			},
-			wantErr: assert.NoError,
+			// we want the FieldManager for ArgoRollout to be empty as we dont want to own the RestartAt field on the spec
+			clientInterceptorFunc: assertClientInterceptorFieldManager(t, ""),
+			wantErr:               assert.NoError,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt := tt
 			t.Parallel()
+
+			builder := testutils.NewFakeClientBuilder()
+			if tt.clientInterceptorFunc != nil {
+				builder.WithInterceptorFuncs(*tt.clientInterceptorFunc)
+			}
 
 			c := builder.Build()
 			if tt.obj != nil {
@@ -164,13 +175,10 @@ func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlc
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
 		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
-		assertFieldManagerSet(t, obj, FieldManagerName)
 	case *appsv1.StatefulSet:
 		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
-		assertFieldManagerSet(t, obj, FieldManagerName)
 	case *appsv1.DaemonSet:
 		restartAt = o.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt]
-		assertFieldManagerSet(t, obj, FieldManagerName)
 	case *argorolloutsv1alpha1.Rollout:
 		attr = "argo.rollout.spec.restartAt"
 		restartAtTime = o.Spec.RestartAt.Time
@@ -189,13 +197,19 @@ func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlc
 		attr, restartAtTime, "beforeRolloutRestart", beforeRolloutRestart)
 }
 
-func assertFieldManagerSet(t *testing.T, obj ctrlclient.Object, manager string) {
-	found := false
-	for _, mf := range obj.GetManagedFields() {
-		if mf.Manager == manager {
-			found = true
-			break
-		}
+func assertClientInterceptorFieldManager(t *testing.T, fieldManager string) *interceptor.Funcs {
+	return &interceptor.Funcs{
+		Patch: func(ctx context.Context, client ctrlclient.WithWatch, obj ctrlclient.Object, patch ctrlclient.Patch, opts ...ctrlclient.PatchOption) error {
+			t.Helper()
+
+			out := &ctrlclient.PatchOptions{}
+			for _, f := range opts {
+				f.ApplyToPatch(out)
+			}
+			if got := out.FieldManager; fieldManager != got {
+				t.Fatalf("wrong field manager: expected=%q; got=%q", fieldManager, got)
+			}
+			return client.Patch(ctx, obj, patch, opts...)
+		},
 	}
-	assert.True(t, found, "fieldManager '%s' should be set", manager)
 }

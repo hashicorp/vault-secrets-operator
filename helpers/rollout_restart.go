@@ -157,6 +157,9 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 	default:
 		return fmt.Errorf("unsupported type %T for rollout-restart patching", t)
 	}
+	if patch == nil {
+		return fmt.Errorf("internal error: patch was unexpectedly nil for type %T during rollout-restart", obj)
+	}
 
 	return client.Patch(ctx, obj, patch, patchOptions...)
 }
