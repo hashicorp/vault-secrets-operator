@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	httptransport "github.com/go-openapi/runtime/client"
@@ -24,6 +26,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/hashicorp/vault-secrets-operator/credentials"
 	"github.com/hashicorp/vault-secrets-operator/credentials/hcp"
@@ -88,6 +92,7 @@ type HCPVaultSecretsAppReconciler struct {
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	BackOffRegistry             *BackOffRegistry
+	once                        sync.Once
 	SecretsClient               client.Client
 }
 
@@ -289,6 +294,80 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}, nil
 }
 
+func (r *HCPVaultSecretsAppReconciler) startOrphanedShadowSecretCleanup(ctx context.Context, cleanupOrphanedShadowSecretInterval time.Duration) error {
+	var err error
+
+	r.once.Do(func() {
+		for {
+			select {
+			case <-ctx.Done():
+				if ctx.Err() != nil {
+					err = ctx.Err()
+				}
+				return
+			// runs the cleanup process once every hour or as specified by the user
+			case <-time.After(cleanupOrphanedShadowSecretInterval):
+				r.cleanupOrphanedShadowSecrets(ctx)
+			}
+		}
+	})
+
+	return err
+}
+
+func (r *HCPVaultSecretsAppReconciler) cleanupOrphanedShadowSecrets(ctx context.Context) {
+	logger := log.FromContext(ctx).WithName("cleanupOrphanedShadowSecrets")
+	var errs error
+
+	namespaceLabelKey := hvsaLabelPrefix + "/namespace"
+	nameLabelKey := hvsaLabelPrefix + "/name"
+
+	// filtering only for dynamic secrets, also checking if namespace and name labels are present
+	secrets := corev1.SecretList{}
+	if err := r.List(ctx, &secrets, client.InNamespace(common.OperatorNamespace),
+		client.MatchingLabels{"app.kubernetes.io/component": "hvs-dynamic-secret-cache"},
+		client.HasLabels{namespaceLabelKey, nameLabelKey}); err != nil {
+		errs = errors.Join(errs, fmt.Errorf("failed to list shadow secrets: %w", err))
+	}
+
+	for _, secret := range secrets.Items {
+		namespace := secret.Labels[namespaceLabelKey]
+		name := secret.Labels[nameLabelKey]
+		objKey := types.NamespacedName{Namespace: namespace, Name: name}
+
+		o := &secretsv1beta1.HCPVaultSecretsApp{}
+
+		// get the HCPVaultSecretsApp instance that the shadow secret belongs to (if applicable)
+		// no errors are returned in the loop because this could block the deletion of other
+		// orphaned shadow secrets that are further along in the list
+		err := r.Get(ctx, objKey, o)
+		if err != nil && !apierrors.IsNotFound(err) {
+			errs = errors.Join(errs, fmt.Errorf("failed to get HCPVaultSecretsApp: %w", err))
+			continue
+		}
+
+		// if the HCPVaultSecretsApp has been deleted, and the shadow secret belongs to it, delete both
+		if o.GetDeletionTimestamp() != nil && o.GetUID() == types.UID(secret.Labels[helpers.LabelOwnerRefUID]) {
+			if err := r.handleDeletion(ctx, o); err != nil {
+				errs = errors.Join(errs, fmt.Errorf("failed to handle deletion of HCPVaultSecretsApp %s: %w", o.Spec.AppName, err))
+			}
+
+			logger.Info("Deleted orphaned resources associated with HCPVaultSecretsApp", "app", o.Name)
+		} else if apierrors.IsNotFound(err) || secret.GetDeletionTimestamp() != nil {
+			// otherwise, delete the single shadow secret if it has a deletion timestamp
+			if err := r.Delete(ctx, &secret); err != nil {
+				errs = errors.Join(errs, fmt.Errorf("failed to delete shadow secret %s: %w", secret.Name, err))
+			}
+
+			logger.Info("Deleted orphaned shadow secret", "secret", secret.Name)
+		}
+	}
+
+	if errs != nil {
+		logger.Error(errs, "Failed during cleanup of orphaned shadow secrets")
+	}
+}
+
 func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) error {
 	o.Status.LastGeneration = o.GetGeneration()
 	if err := r.Status().Update(ctx, o); err != nil {
@@ -301,11 +380,16 @@ func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secr
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
+func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options, cleanupShadowSecretInterval time.Duration) error {
 	r.referenceCache = newResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
+
+	mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		err := r.startOrphanedShadowSecretCleanup(ctx, cleanupShadowSecretInterval)
+		return err
+	}))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).
@@ -372,14 +456,18 @@ func (r *HCPVaultSecretsAppReconciler) hvsClient(ctx context.Context, o *secrets
 	return hvsclient.New(cl, nil), nil
 }
 
-func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o client.Object) error {
+func (r *HCPVaultSecretsAppReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.HCPVaultSecretsApp) error {
 	logger := log.FromContext(ctx)
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	r.BackOffRegistry.Delete(objKey)
-	shadowObjKey := makeShadowObjKey(o)
-	if err := helpers.DeleteSecret(ctx, r.Client, shadowObjKey); err != nil {
-		logger.Error(err, "Failed to delete shadow secret", "shadow secret", shadowObjKey)
+	// delete all of the shadow secrets for this HCPVaultSecretsApp
+	err := r.DeleteAllOf(ctx, &corev1.Secret{},
+		client.InNamespace(common.OperatorNamespace),
+		client.MatchingLabels{helpers.LabelOwnerRefUID: string(o.GetUID())},
+		client.MatchingLabels{"app.kubernetes.io/component": "hvs-dynamic-secret-cache"})
+	if err != nil {
+		return err
 	}
 	if controllerutil.ContainsFinalizer(o, hcpVaultSecretsAppFinalizer) {
 		logger.Info("Removing finalizer")
