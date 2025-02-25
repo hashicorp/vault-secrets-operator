@@ -35,6 +35,8 @@ func TestParse(t *testing.T) {
 				"VSO_GLOBAL_TRANSFORMATION_OPTIONS":  "gOpt1,gOpt2",
 				"VSO_GLOBAL_VAULT_AUTH_OPTIONS":      "vOpt1,vOpt2",
 				"VSO_CLIENT_CACHE_NUM_LOCKS":         "10",
+				"VSO_KUBE_CLIENT_QPS":                "100",
+				"VSO_KUBE_CLIENT_BURST":              "1000",
 			},
 			wantOptions: VSOEnvOptions{
 				OutputFormat:                "json",
@@ -49,6 +51,8 @@ func TestParse(t *testing.T) {
 				GlobalTransformationOptions: []string{"gOpt1", "gOpt2"},
 				GlobalVaultAuthOptions:      []string{"vOpt1", "vOpt2"},
 				ClientCacheNumLocks:         ptr.To(10),
+				KubeClientQPS:               100,
+				KubeClientBurst:             ptr.To(uint(1000)),
 			},
 		},
 	}

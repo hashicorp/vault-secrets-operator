@@ -98,6 +98,12 @@ spec:
         {{- with .Values.controller.manager.extraArgs }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- if .Values.controller.manager.kubeClient.qps }}
+        - --kube-client-qps={{ .Values.controller.manager.kubeClient.qps }}
+        {{- end }}
+        {{- if .Values.controller.manager.kubeClient.burst }}
+        - --kube-client-burst={{ .Values.controller.manager.kubeClient.burst }}
+        {{- end }}
         command:
         - /vault-secrets-operator
         env:
