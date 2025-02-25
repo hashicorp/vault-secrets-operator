@@ -566,10 +566,10 @@ metricsService:
   # https://kubernetes.io/docs/concepts/services-networking/service/
   # @type: map
   ports:
-    - name: https
-      port: 8443
-      protocol: TCP
-      targetPort: https
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
   type: ClusterIP
 
 # Configures the default VaultConnection CR which will be used by resources
