@@ -160,7 +160,7 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.9.1
+      tag: 0.10.0
 
     # logging
     logging:
