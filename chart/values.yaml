@@ -870,3 +870,17 @@ hooks:
 tests:
   # @type: boolean
   enabled: true
+
+## Sets additional ClusterRoleBindings
+## Default for kind is ServiceAccount
+## additionalClusterRoleBindings:
+##   - name: default
+##     namespace: grafana
+##   - kind: ServiceAccount
+##     name: default
+##     namespace: prometheus
+##   - kind: ServiceAccount
+##     name: default
+##     namespace: prometheus-agent
+## @type: map
+additionalClusterRoleBindings: {}
