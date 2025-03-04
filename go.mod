@@ -2,7 +2,7 @@ module github.com/hashicorp/vault-secrets-operator
 
 go 1.23.0
 
-toolchain go1.23.4
+toolchain go1.23.6
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
@@ -28,7 +28,7 @@ require (
 	github.com/prometheus/client_golang v1.21.0
 	github.com/prometheus/client_model v0.6.1
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/crypto v0.34.0
+	golang.org/x/crypto v0.35.0
 	google.golang.org/api v0.222.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.32.2
@@ -198,7 +198,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/oauth2 v0.26.0 // indirect
+	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/term v0.29.0 // indirect
