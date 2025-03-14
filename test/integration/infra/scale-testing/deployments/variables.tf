@@ -159,7 +159,7 @@ variable "vault_enterprise" {
 }
 
 variable "vault_chart_version" {
-  default = "0.28.1"
+  default = "0.29.1"
 }
 
 variable "install_kube_prometheus" {
@@ -171,4 +171,3 @@ variable "metrics_server_enabled" {
   type    = bool
   default = true
 }
-
