@@ -123,6 +123,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
 
+	forceSyncUpdate := false
+	if o.Annotations["vault-secrets-operator/force-sync"] == "true" {
+		logger.Info("Force sync annotation found, removing it")
+		forceSyncUpdate = true
+	}
+
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
@@ -176,6 +182,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// happen when the client has re-authenticated to Vault since the last sync.
 	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
 		syncReason = consts.ReasonVaultTokenRotated
+	case forceSyncUpdate:
+		syncReason = consts.ReasonManualTrigger
 	}
 
 	doSync := syncReason != ""
@@ -272,6 +280,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
+	logger.Info("syncing the dynamic secret")
 	// sync the secret
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
@@ -290,6 +299,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	} else {
 		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
+
+	// remove the force-sync annotation so that the next force sync can be triggered
+	delete(o.Annotations, "vault-secrets-operator/force-sync")
 
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
 	o.Status.SecretLease = *secretLease
@@ -407,6 +419,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 	var data map[string][]byte
 	secretLease := r.getVaultSecretLease(resp.Secret())
+	logger.Info("Vault response for secret lease", "renewableLease", r.isRenewableLease(secretLease, o, true), "AllowStaticCreds", o.Spec.AllowStaticCreds)
 	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
 		staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
 		if err != nil {
@@ -440,6 +453,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
 	} else {
 		data, err = resp.SecretK8sData(opt)
+		logger.Info("secretk8sData", "data", data)
 		if err != nil {
 			return nil, false, err
 		}
