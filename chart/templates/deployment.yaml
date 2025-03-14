@@ -141,6 +141,9 @@ spec:
         volumeMounts:
         - mountPath: /var/run/podinfo
           name: podinfo
+      {{- if .Values.controller.priorityClassName }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
       serviceAccountName: {{ include "vso.chart.fullname" . }}-controller-manager
@@ -160,6 +163,10 @@ spec:
       {{- if .Values.controller.affinity }}
       affinity:
       {{- toYaml .Values.controller.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controller.topologySpreadConstraints }}
+      topologySpreadConstraints:
+      {{- include "vso.topologySpreadConstraints" . | nindent 8 }}
       {{- end }}
       volumes:
       - downwardAPI:
@@ -220,6 +227,9 @@ spec:
         securityContext:
         {{- toYaml .| nindent 10 }}
         {{- end}}
+      {{- if .Values.controller.priorityClassName }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      {{- end }}
       restartPolicy: Never
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:
