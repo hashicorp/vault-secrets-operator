@@ -106,6 +106,9 @@ spec:
         securityContext:
         {{- toYaml .| nindent 10 }}
         {{- end}}
+      {{- if .Values.controller.priorityClassName }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      {{- end }}
       restartPolicy: Never
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:
