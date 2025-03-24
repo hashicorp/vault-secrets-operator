@@ -4,10 +4,7 @@ on:
   push:
     branches-ignore:
       - 'docs/**'
-  pull_request_target:
-    types:
-      - opened
-      - reopened
+
   workflow_dispatch:
     inputs:
       version:
