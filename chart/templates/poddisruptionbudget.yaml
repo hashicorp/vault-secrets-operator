@@ -1,0 +1,26 @@
+{{/*
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+*/}}
+
+{{- if and (gt (int .Values.controller.replicas) 1) .Values.controller.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "vso.chart.fullname" . }}
+  labels:
+    app.kubernetes.io/component: controller-manager
+    control-plane: controller-manager
+    {{- include "vso.chart.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  {{- if (gt (int .Values.controller.podDisruptionBudget.maxUnavailable) 0) }}
+  maxUnavailable: {{ .Values.controller.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  {{- if (gt (int .Values.controller.podDisruptionBudget.minAvailable) 0) }}
+  minAvailable: {{ .Values.controller.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "vso.chart.selectorLabels" . | nindent 6 }}
+{{- end }}
