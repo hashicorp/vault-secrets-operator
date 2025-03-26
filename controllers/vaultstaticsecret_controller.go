@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"net/url"
+	"github.com/iancoleman/strcase"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -214,7 +215,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Check if recursive secret discovery is enabled
-	if vss.Spec.VaultRootPath != "" && vss.Spec.CombineSecrets {
+	if vss.Spec.VaultRootPath != "" {
 		// Perform LIST request to Vault API
 		vaultClient, err := r.getVaultClient(vss)
 		if err != nil {
@@ -234,53 +235,94 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, fmt.Errorf("unexpected response format from Vault")
 		}
 
-		// Collect all secret data
-		combinedData := make(map[string]string)
-		for _, key := range keys {
-			secretPath := fmt.Sprintf("%s/%s", vss.Spec.VaultRootPath, key)
-			secretResp, err := vaultClient.Logical().Read(secretPath)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to read secret from Vault: %w", err)
-			}
-
-			for k, v := range secretResp.Data {
-				// Normalize environment variable names if enabled
-				normalizedKey := k
-				if vss.Spec.NormalizeEnvVars {
-					normalizedKey = strings.ToUpper(k)
-					normalizedKey = strings.ReplaceAll(normalizedKey, "-", "_")
+		if vss.Spec.CombineSecrets {
+			// Combine secrets into a single Kubernetes Secret
+			combinedData := make(map[string]string)
+			for _, key := range keys {
+				secretPath := fmt.Sprintf("%s/%s", vss.Spec.VaultRootPath, key)
+				secretResp, err := vaultClient.Logical().Read(secretPath)
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to read secret from Vault: %w", err)
 				}
-				combinedData[normalizedKey] = v.(string)
+
+				for k, v := range secretResp.Data {
+					normalizedKey := k
+					if vss.Spec.NormalizeToScreamingCase {
+						normalizedKey = strcase.ToScreamingSnake(k)
+					}
+					combinedData[normalizedKey] = v.(string)
+				}
 			}
-		}
 
-		// Create a single Kubernetes Secret
-		k8sSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      vss.Name,
-				Namespace: vss.Namespace,
-			},
-			Data: make(map[string][]byte),
-		}
-
-		for k, v := range combinedData {
-			k8sSecret.Data[k] = []byte(v)
-		}
-
-		// Create or update the Kubernetes Secret
-		existingSecret := &corev1.Secret{}
-		err = r.Get(ctx, types.NamespacedName{Name: vss.Name, Namespace: vss.Namespace}, existingSecret)
-		if err != nil && errors.IsNotFound(err) {
-			if err := r.Create(ctx, k8sSecret); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to create Kubernetes Secret: %w", err)
+			// Create a single Kubernetes Secret
+			k8sSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      vss.Name,
+					Namespace: vss.Namespace,
+				},
+				Data: make(map[string][]byte),
 			}
-		} else if err == nil {
-			existingSecret.Data = k8sSecret.Data
-			if err := r.Update(ctx, existingSecret); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update Kubernetes Secret: %w", err)
+
+			for k, v := range combinedData {
+				k8sSecret.Data[k] = []byte(v)
+			}
+
+			// Create or update the Kubernetes Secret
+			existingSecret := &corev1.Secret{}
+			err = r.Get(ctx, types.NamespacedName{Name: vss.Name, Namespace: vss.Namespace}, existingSecret)
+			if err != nil && errors.IsNotFound(err) {
+				if err := r.Create(ctx, k8sSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to create Kubernetes Secret: %w", err)
+				}
+			} else if err == nil {
+				existingSecret.Data = k8sSecret.Data
+				if err := r.Update(ctx, existingSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update Kubernetes Secret: %w", err)
+				}
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to check Kubernetes Secret: %w", err)
 			}
 		} else {
-			return ctrl.Result{}, fmt.Errorf("failed to check Kubernetes Secret: %w", err)
+			// Create individual Kubernetes Secrets for each secret in the hierarchy
+			for _, key := range keys {
+				secretPath := fmt.Sprintf("%s/%s", vss.Spec.VaultRootPath, key)
+				secretResp, err := vaultClient.Logical().Read(secretPath)
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to read secret from Vault: %w", err)
+				}
+
+				individualSecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("%s-%s", vss.Name, key),
+						Namespace: vss.Namespace,
+					},
+					Data: make(map[string][]byte),
+				}
+
+				for k, v := range secretResp.Data {
+					normalizedKey := k
+					if vss.Spec.NormalizeToScreamingCase {
+						normalizedKey = strcase.ToScreamingSnake(k)
+					}
+					individualSecret.Data[normalizedKey] = []byte(v.(string))
+				}
+
+				// Create or update the individual Kubernetes Secret
+				existingSecret := &corev1.Secret{}
+				err = r.Get(ctx, types.NamespacedName{Name: individualSecret.Name, Namespace: vss.Namespace}, existingSecret)
+				if err != nil && errors.IsNotFound(err) {
+					if err := r.Create(ctx, individualSecret); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to create Kubernetes Secret: %w", err)
+					}
+				} else if err == nil {
+					existingSecret.Data = individualSecret.Data
+					if err := r.Update(ctx, existingSecret); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to update Kubernetes Secret: %w", err)
+					}
+				} else {
+					return ctrl.Result{}, fmt.Errorf("failed to check Kubernetes Secret: %w", err)
+				}
+			}
 		}
 	}
 
