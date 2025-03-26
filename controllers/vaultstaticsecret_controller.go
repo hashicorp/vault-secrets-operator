@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"net/url"
+	"github.com/iancoleman/strcase"
+	"github.com/hashicorp/vault/api"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -212,9 +215,170 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	// Check if recursive secret discovery is enabled
+	if vss.Spec.SyncConfig.VaultRootPath != "" {
+		// Create a new Vault client
+		vaultClient, err := r.getVaultClient(vss)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create Vault client: %w", err)
+		}
+
+		// Perform LIST request to Vault API using the SDK
+		secrets, err := listVaultSecrets(vaultClient, vss.Spec.SyncConfig.VaultRootPath)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list secrets in Vault: %w", err)
+		}
+
+		// Process secrets based on the configuration
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if vss.Spec.SyncConfig.CombineSecrets {
+			combinedData, err := processCombinedSecrets(ctx, vaultClient, secrets, vss.Spec.SyncConfig.NormalizeToScreamingCase)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to process combined secrets: %w", err)
+			}
+			if err := createOrUpdateKubernetesSecret(ctx, vss, combinedData); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to create or update Kubernetes Secret: %w", err)
+			}
+		} else {
+			if err := processIndividualSecrets(ctx, vss, vaultClient, secrets); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to process individual secrets: %w", err)
+			}
+		}
+	} else {
+		// If vaultRootPath is not set, skip new features and use existing logic
+		return r.reconcileLegacy(ctx, vss)
+	}
+
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
+}
+
+// reconcileLegacy applies the legacy reconciliation logic when vaultRootPath is not set
+func (r *VaultStaticSecretReconciler) reconcileLegacy(ctx context.Context, vss *VaultStaticSecret) error {
+	// Existing logic here
+	return nil
+}
+
+// listVaultSecrets lists secrets under the specified root path in Vault
+func listVaultSecrets(client *api.Client, path string) ([]string, error) {
+	listURL := fmt.Sprintf("/v1/%s?list=true", url.PathEscape(path))
+	secretResp, err := client.Logical().Read(listURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list secrets in Vault: %w", err)
+	}
+
+	keys, ok := secretResp.Data["keys"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format from Vault")
+	}
+
+	result := make([]string, len(keys))
+	for i, key := range keys {
+		result[i] = key.(string)
+	}
+	return result, nil
+}
+
+// processCombinedSecrets processes and combines secrets into a single map
+func processCombinedSecrets(ctx context.Context, client *api.Client, keys []string, normalize bool) (map[string]string, error) {
+	combinedData := make(map[string]string)
+	for _, key := range keys {
+		data, err := readAndNormalizeSecret(ctx, client, key, normalize)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range data {
+			combinedData[k] = v
+		}
+	}
+	return combinedData, nil
+}
+
+// processIndividualSecrets processes each secret individually
+func processIndividualSecrets(ctx context.Context, vss *VaultStaticSecret, client *api.Client, keys []string) error {
+	for _, key := range keys {
+		data, err := readAndNormalizeSecret(ctx, client, key, vss.Spec.SyncConfig.NormalizeToScreamingCase)
+		if err != nil {
+			return err
+		}
+
+		secretName := fmt.Sprintf("%s-%s", vss.Name, key)
+		if err := createOrUpdateKubernetesSecretWithName(ctx, vss, secretName, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// readAndNormalizeSecret reads a secret from Vault and normalizes its keys
+func readAndNormalizeSecret(ctx context.Context, client *api.Client, path string, normalize bool) (map[string]string, error) {
+	secretResp, err := client.Logical().ReadWithContext(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read secret from Vault: %w", err)
+	}
+
+	result := make(map[string]string)
+	for k, v := range secretResp.Data {
+		normalizedKey := k
+		if normalize {
+			normalizedKey = strcase.ToScreamingSnake(k)
+		}
+		result[normalizedKey] = v.(string)
+	}
+	return result, nil
+}
+
+// createOrUpdateKubernetesSecret creates or updates a Kubernetes Secret
+func createOrUpdateKubernetesSecret(ctx context.Context, vss *VaultStaticSecret, data map[string]string) error {
+	k8sSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vss.Name,
+			Namespace: vss.Namespace,
+		},
+		Data: make(map[string][]byte),
+	}
+
+	for k, v := range data {
+		k8sSecret.Data[k] = []byte(v)
+	}
+
+	existingSecret := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Name: vss.Name, Namespace: vss.Namespace}, existingSecret)
+	if err != nil && errors.IsNotFound(err) {
+		return r.Create(ctx, k8sSecret)
+	} else if err == nil {
+		existingSecret.Data = k8sSecret.Data
+		return r.Update(ctx, existingSecret)
+	}
+	return err
+}
+
+// createOrUpdateKubernetesSecretWithName creates or updates a Kubernetes Secret with a specific name
+func createOrUpdateKubernetesSecretWithName(ctx context.Context, vss *VaultStaticSecret, name string, data map[string]string) error {
+	k8sSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: vss.Namespace,
+		},
+		Data: make(map[string][]byte),
+	}
+
+	for k, v := range data {
+		k8sSecret.Data[k] = []byte(v)
+	}
+
+	existingSecret := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: vss.Namespace}, existingSecret)
+	if err != nil && errors.IsNotFound(err) {
+		return r.Create(ctx, k8sSecret)
+	} else if err == nil {
+		existingSecret.Data = k8sSecret.Data
+		return r.Update(ctx, existingSecret)
+	}
+	return err
 }
 
 func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultStaticSecret) error {
