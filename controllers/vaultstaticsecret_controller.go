@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"net/url"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -210,6 +211,43 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// Check if vaultRootPath is set
+	if vss.Spec.VaultRootPath != "" {
+		// Perform LIST request to Vault API
+		vaultClient, err := r.getVaultClient(vss)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create Vault client: %w", err)
+		}
+
+		// Construct the URL for LIST request
+		listURL := fmt.Sprintf("/v1/%s?list=true", url.PathEscape(vss.Spec.VaultRootPath))
+		secretResp, err := vaultClient.Logical().Read(listURL)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list secrets in Vault: %w", err)
+		}
+
+		// Extract keys from the response
+		keys, ok := secretResp.Data["keys"].([]interface{})
+		if !ok {
+			return ctrl.Result{}, fmt.Errorf("unexpected response format from Vault")
+		}
+
+		// Create VaultStaticSecret resources for each key
+		for _, key := range keys {
+			secretPath := fmt.Sprintf("%s/%s", vss.Spec.VaultRootPath, key)
+			newVSS := &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s-%s", vss.Name, key),
+					Namespace: vss.Namespace,
+				},
+				Spec: secretsv1beta1.VaultStaticSecretSpec{Path: secretPath},
+			}
+			if err := r.Create(ctx, newVSS); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to create VaultStaticSecret: %w", err)
+			}
+		}
 	}
 
 	return ctrl.Result{
