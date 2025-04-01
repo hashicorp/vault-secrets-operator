@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -61,6 +62,7 @@ func GetOwnerRefFromObj(owner ctrlclient.Object, scheme *runtime.Scheme) (metav1
 	apiVersion, kind := gvk.ToAPIVersionAndKind()
 	ownerRef.APIVersion = apiVersion
 	ownerRef.Kind = kind
+	ownerRef.Controller = ptr.To(true)
 	return ownerRef, nil
 }
 
