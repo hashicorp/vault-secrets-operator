@@ -39,4 +39,5 @@ const (
 	ReasonVaultClientConfigChanged   = "VaultClientConfigChanged"
 	ReasonEventWatcherError          = "EventWatcherError"
 	ReasonEventWatcherStarted        = "EventWatcherStarted"
+	ReasonManualTrigger              = "ManualTrigger"
 )
