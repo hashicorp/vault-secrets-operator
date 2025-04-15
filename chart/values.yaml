@@ -188,12 +188,11 @@ controller:
 
   # Settings related to the vault-secrets-operator container.
   manager:
-
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.9.1
+      tag: 0.10.0
 
     # logging
     logging:
@@ -226,7 +225,7 @@ controller:
 
     # Global Vault auth options. In addition to the boolean options
     # below, these options may be set via the
-    # `VSO_GLOBAL_VAULT_OPTION_OPTIONS` environment variable as a
+    # `VSO_GLOBAL_VAULT_AUTH_OPTIONS` environment variable as a
     # comma-separated list. Valid values are: `allow-default-globals`
     globalVaultAuthOptions:
       # allowDefaultGlobals directs the operator search for a "default"
@@ -497,6 +496,21 @@ controller:
     # @type: integer
     maxConcurrentReconciles:
 
+    kubeClient:
+      # QPS indicates the maximum QPS to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_QPS` environment variable.
+      # Default: 0
+      # @type: float
+      qps:
+
+      # Maximum burst for throttling requests to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_BURST` environment variable.
+      # Default: 0
+      # @type: uint
+      burst:
+
     # Defines additional environment variables to be added to the
     # vault-secrets-operator manager container.
     # Example:
@@ -624,7 +638,6 @@ defaultVaultConnection:
   #   X-vault-something: "foo"
   # @type: map
   headers: {}
-
 
 # Configures and deploys the default VaultAuthMethod CR which will be used by resources
 # if they do not specify a VaultAuthMethod reference. The name is 'default' and will
@@ -823,7 +836,6 @@ defaultAuthMethod:
       # @type: string
       params: none
 
-
 # Configures a Prometheus ServiceMonitor
 telemetry:
   serviceMonitor:
@@ -891,7 +903,7 @@ hooks:
 
     # Limit the number of retries for the CRD upgrade.
     # @type: integer
-    backoffLimit:  5
+    backoffLimit: 5
 
     # Set the timeout for the CRD upgrade. The operation should typically take less than 5s
     # to complete.

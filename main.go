@@ -147,6 +147,8 @@ func main() {
 	var backoffRandomizationFactor float64
 	var backoffMultiplier float64
 	var backoffMaxElapsedTime time.Duration
+	var kubeClientQPS float64
+	var kubeClientBurst uint
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -216,6 +218,14 @@ func main() {
 			"All errors are tried using an exponential backoff strategy. "+
 			"The value must be greater than zero. "+
 			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
+	flag.Float64Var(&kubeClientQPS, "kube-client-qps", 0,
+		"Maximum queries per second to limit requests sent to the API server and prevent overload. "+
+			"When the value is 0, the kubernetes client's default is used. "+
+			"Also set from environment variable VSO_KUBE_CLIENT_QPS.")
+	flag.UintVar(&kubeClientBurst, "kube-client-burst", 0,
+		"Maximum burst for throttling requests to the Kubernetes API. "+
+			"When the value is 0, the kubernetes client's default is used. "+
+			"Also set from environment variable VSO_KUBE_CLIENT_BURST.")
 
 	opts := zap.Options{
 		Development: os.Getenv("VSO_LOGGER_DEVELOPMENT_MODE") != "",
@@ -268,6 +278,12 @@ func main() {
 		globalVaultAuthOptsSet = vsoEnvOptions.GlobalVaultAuthOptions
 	} else if globalVaultAuthOpts != "" {
 		globalVaultAuthOptsSet = strings.Split(globalVaultAuthOpts, ",")
+	}
+	if vsoEnvOptions.KubeClientQPS != 0 {
+		kubeClientQPS = vsoEnvOptions.KubeClientQPS
+	}
+	if vsoEnvOptions.KubeClientBurst != nil {
+		kubeClientBurst = *vsoEnvOptions.KubeClientBurst
 	}
 
 	// versionInfo is used when setting up the buildInfo metric below
@@ -342,6 +358,13 @@ func main() {
 	cfc.GlobalVaultAuthOptions = globalVaultAuthOptions
 
 	config := ctrl.GetConfigOrDie()
+	// set the Kube Client QPS and Burst config if they are set
+	if kubeClientQPS != 0 {
+		config.QPS = float32(kubeClientQPS)
+	}
+	if kubeClientBurst != 0 {
+		config.Burst = int(kubeClientBurst)
+	}
 
 	defaultClient, err := client.NewWithWatch(config, client.Options{
 		Scheme: scheme,
