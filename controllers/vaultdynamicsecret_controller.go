@@ -408,6 +408,9 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 			}
 			o.Status.SecretLease = *secretLease
 			return secretLease, false, nil
+		} else {
+			// Handle static creds
+			return &o.Status.SecretLease, false, nil
 		}
 	}
 
