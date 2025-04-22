@@ -409,35 +409,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 			o.Status.SecretLease = *secretLease
 			return secretLease, false, nil
 		} else {
-			staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, nil)
-			if err != nil {
-				return nil, false, err
-			}
-
-			data, err := rotatedResponse.SecretK8sData(opt)
-			if err != nil {
-				return nil, false, err
-			}
-
-			dataToMAC := maps.Clone(data)
-			for _, k := range []string{"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", "_raw"} {
-				delete(dataToMAC, k)
-			}
-
-			macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC)
-			if err != nil {
-				return nil, false, err
-			}
-
-			logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
-
-			o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
-			if macsEqual {
-				return r.getVaultSecretLease(rotatedResponse.Secret()), false, nil
-			}
-
-			o.Status.StaticCredsMetaData = *staticCredsMeta
-			logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
+			return &o.Status.SecretLease, false, nil
 		}
 	}
 
@@ -450,9 +422,44 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		return nil, false, errors.New("nil response")
 	}
 
-	data, err := resp.SecretK8sData(opt)
-	if err != nil {
-		return nil, false, err
+	var data map[string][]byte
+	secretLease := r.getVaultSecretLease(resp.Secret())
+	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
+		staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+		if err != nil {
+			return nil, false, err
+		}
+
+		resp = rotatedResponse
+		data, err = resp.SecretK8sData(opt)
+		if err != nil {
+			return nil, false, err
+		}
+
+		dataToMAC := maps.Clone(data)
+		for _, k := range []string{"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", "_raw"} {
+			delete(dataToMAC, k)
+		}
+
+		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC)
+		if err != nil {
+			return nil, false, err
+		}
+
+		logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
+
+		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+		if macsEqual {
+			return secretLease, false, nil
+		}
+
+		o.Status.StaticCredsMetaData = *staticCredsMeta
+		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
+	} else {
+		data, err = resp.SecretK8sData(opt)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
@@ -460,7 +467,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 		return nil, false, err
 	}
 
-	return r.getVaultSecretLease(resp.Secret()), true, nil
+	return secretLease, true, nil
 }
 
 // awaitVaultSecretRotation waits for the Vault secret to be rotated. This is
