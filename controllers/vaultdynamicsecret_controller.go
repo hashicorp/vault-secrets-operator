@@ -396,6 +396,21 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	logger := log.FromContext(ctx).WithName("syncSecret")
 
+	// check if lease already exists
+	if o.Status.SecretLease.ID != "" {
+		logger.V(consts.LogLevelDebug).Info("Lease already exists", "leaseID", o.Status.SecretLease.ID)
+		// if the lease is renewable, renew it
+		if o.Status.SecretLease.Renewable {
+			secretLease, err := r.renewLease(ctx, c, o)
+			if err != nil {
+				logger.Error(err, "Failed to renew lease")
+				return nil, false, err
+			}
+			o.Status.SecretLease = *secretLease
+			return secretLease, false, nil
+		}
+	}
+
 	resp, err := r.doVault(ctx, c, o)
 	if err != nil {
 		return nil, false, err
