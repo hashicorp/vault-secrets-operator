@@ -273,7 +273,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// check if lease already exists
-	if o.Status.SecretLease.ID != "" && o.Status.LastGeneration > 0 {
+	if o.Status.SecretLease.ID != "" && o.Status.LastGeneration > 0 && !r.SyncRegistry.Has(req.NamespacedName) {
 		logger.V(consts.LogLevelDebug).Info("Skipping sync, lease already exists")
 		return ctrl.Result{}, nil
 	}
