@@ -150,7 +150,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
 	o.Status.VaultClientMeta.ID = vClient.ID()
 
-	if o.Status.LastGeneration != o.GetGeneration() && o.Status.SecretLease.ID == "" {
+	if !o.Spec.AllowStaticCreds && o.Status.LastGeneration != o.GetGeneration() && o.Status.SecretLease.ID == "" {
 		logger.Info("short circuting sync, initial generation with empty lease")
 		o.Status.LastGeneration = o.GetGeneration()
 		if err := r.updateStatus(ctx, o); err != nil {
