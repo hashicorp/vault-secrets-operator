@@ -272,6 +272,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
+	// check if lease already exists
+	if o.Status.SecretLease.ID != "" && o.Status.LastGeneration > 0 {
+		logger.V(consts.LogLevelDebug).Info("Skipping sync, lease already exists")
+		return ctrl.Result{}, nil
+	}
+
 	// sync the secret
 	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
@@ -397,21 +403,21 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	logger := log.FromContext(ctx).WithName("syncSecret")
 
 	// check if lease already exists
-	if o.Status.SecretLease.ID != "" {
-		logger.V(consts.LogLevelDebug).Info("Lease already exists", "leaseID", o.Status.SecretLease.ID)
-		// if the lease is renewable, renew it
-		if o.Status.SecretLease.Renewable {
-			secretLease, err := r.renewLease(ctx, c, o)
-			if err != nil {
-				logger.Error(err, "Failed to renew lease")
-				return nil, false, err
-			}
-			o.Status.SecretLease = *secretLease
-			return secretLease, false, nil
-		} else {
-			return &o.Status.SecretLease, false, nil
-		}
-	}
+	//if o.Status.SecretLease.ID != "" {
+	//	logger.V(consts.LogLevelDebug).Info("Lease already exists", "leaseID", o.Status.SecretLease.ID)
+	//	// if the lease is renewable, renew it
+	//	if o.Status.SecretLease.Renewable {
+	//		secretLease, err := r.renewLease(ctx, c, o)
+	//		if err != nil {
+	//			logger.Error(err, "Failed to renew lease")
+	//			return nil, false, err
+	//		}
+	//		o.Status.SecretLease = *secretLease
+	//		return secretLease, false, nil
+	//	} else {
+	//		return &o.Status.SecretLease, false, nil
+	//	}
+	//}
 
 	resp, err := r.doVault(ctx, c, o)
 	if err != nil {
