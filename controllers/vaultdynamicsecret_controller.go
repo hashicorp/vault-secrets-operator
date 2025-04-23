@@ -275,8 +275,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// check if lease already exists
 	if o.Status.SecretLease.ID != "" && o.Status.LastGeneration > 0 && o.Status.LastRenewalTime > 0 &&
 		!r.SyncRegistry.Has(req.NamespacedName) && r.isRenewableLease(&o.Status.SecretLease, o, true) {
-		logger.V(consts.LogLevelDebug).Info("Skipping sync, lease already exists")
-		return ctrl.Result{}, nil
+		horizon, inWindow := computeRelativeHorizonWithJitter(o, staticCredsJitterHorizon)
+		if !inWindow {
+			logger.V(consts.LogLevelDebug).Info("Skipping sync, lease already exists")
+			return ctrl.Result{RequeueAfter: horizon}, nil
+		}
 	}
 
 	// sync the secret
