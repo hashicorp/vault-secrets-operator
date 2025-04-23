@@ -272,8 +272,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
-	// check if lease already exists
-	if o.Status.SecretLease.ID != "" && o.Status.LastGeneration > 0 && o.Status.LastRenewalTime > 0 &&
+	if !doSync && o.Status.SecretLease.ID != "" && o.Status.LastGeneration > 0 && o.Status.LastRenewalTime > 0 &&
 		!r.SyncRegistry.Has(req.NamespacedName) && r.isRenewableLease(&o.Status.SecretLease, o, true) {
 		horizon, inWindow := computeRelativeHorizonWithJitter(o, staticCredsJitterHorizon)
 		if !inWindow {
