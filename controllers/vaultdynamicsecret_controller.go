@@ -150,6 +150,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
 	o.Status.VaultClientMeta.ID = vClient.ID()
 
+	if o.Status.LastGeneration != o.GetGeneration() && o.Status.SecretLease.ID == "" {
+		logger.Info("short circuting sync, initial generation with empty lease")
+		o.Status.LastGeneration = o.GetGeneration()
+		if err := r.updateStatus(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
 	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,
 	switch {
@@ -179,6 +188,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	doSync := syncReason != ""
+	logger.Info("Reconciling",
+		"generation", o.GetGeneration(),
+		"lastGeneration", o.Status.LastGeneration,
+		"leaseID", o.Status.SecretLease.ID,
+		"doSync", doSync,
+	)
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -270,15 +285,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
-	}
-
-	if !doSync && o.Status.SecretLease.ID != "" && o.Status.LastGeneration > 0 && o.Status.LastRenewalTime > 0 &&
-		!r.SyncRegistry.Has(req.NamespacedName) && r.isRenewableLease(&o.Status.SecretLease, o, true) {
-		horizon, inWindow := computeRelativeHorizonWithJitter(o, staticCredsJitterHorizon)
-		if !inWindow {
-			logger.V(consts.LogLevelDebug).Info("Skipping sync, lease already exists")
-			return ctrl.Result{RequeueAfter: horizon}, nil
-		}
 	}
 
 	// sync the secret
@@ -404,23 +410,6 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	logger := log.FromContext(ctx).WithName("syncSecret")
-
-	// check if lease already exists
-	//if o.Status.SecretLease.ID != "" {
-	//	logger.V(consts.LogLevelDebug).Info("Lease already exists", "leaseID", o.Status.SecretLease.ID)
-	//	// if the lease is renewable, renew it
-	//	if o.Status.SecretLease.Renewable {
-	//		secretLease, err := r.renewLease(ctx, c, o)
-	//		if err != nil {
-	//			logger.Error(err, "Failed to renew lease")
-	//			return nil, false, err
-	//		}
-	//		o.Status.SecretLease = *secretLease
-	//		return secretLease, false, nil
-	//	} else {
-	//		return &o.Status.SecretLease, false, nil
-	//	}
-	//}
 
 	resp, err := r.doVault(ctx, c, o)
 	if err != nil {
@@ -574,6 +563,12 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
+	logger := log.FromContext(ctx).WithName("updateStatus")
+	logger.Info("Updating status",
+		"settingLastGeneration", o.GetGeneration(),
+		"existingLastGeneration", o.Status.LastGeneration,
+	)
+
 	if r.runtimePodUID != "" {
 		o.Status.LastRuntimePodUID = r.runtimePodUID
 	}
