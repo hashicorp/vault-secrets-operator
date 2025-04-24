@@ -97,6 +97,9 @@ type VaultDynamicSecretStatus struct {
 	// VaultClientMeta contains the status of the Vault client and is used during
 	// resource reconciliation.
 	VaultClientMeta VaultClientMeta `json:"vaultClientMeta,omitempty"`
+	// Conditions hold information that be used by other apps to determine the health
+	// the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type VaultSecretLease struct {

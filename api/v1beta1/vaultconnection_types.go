@@ -31,6 +31,9 @@ type VaultConnectionSpec struct {
 type VaultConnectionStatus struct {
 	// Valid auth mechanism.
 	Valid *bool `json:"valid"`
+	// Conditions hold information that be used by other apps to determine the health
+	// the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
