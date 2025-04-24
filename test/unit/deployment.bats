@@ -1350,3 +1350,50 @@ load _helpers
   actual=$(echo "$object" | yq 'contains(["--kube-client-burst=2000"])' | tee /dev/stderr)
   [ "${actual}" = "true" ]
 }
+
+#--------------------------------------------------------------------
+# podDisruptionBudget
+
+@test "controller/PodDisruptionBudget: not created by default" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "PodDisruptionBudget")' | tee /dev/stderr)
+  [ "${actual}" = "" ]
+}
+
+@test "controller/PodDisruptionBudget: created when replicas > 1 and enabled" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "PodDisruptionBudget")' | tee /dev/stderr)
+  [ "${actual}" != "" ]
+}
+
+@test "controller/PodDisruptionBudget: maxUnavailable can be set" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.maxUnavailable=2' \
+    . | tee /dev/stderr |
+    yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+}
+
+@test "controller/PodDisruptionBudget: minAvailable can be set" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.minAvailable=2' \
+    . | tee /dev/stderr |
+    yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+}
