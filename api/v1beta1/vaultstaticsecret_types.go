@@ -10,6 +10,15 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// Condition types for VaultStaticSecret status
+const (
+	// VaultStaticSecretConditionTypeSecretSynced indicates whether the secret has been successfully synced from Vault
+	VaultStaticSecretConditionTypeSecretSynced = "SecretSynced"
+
+	// VaultStaticSecretConditionTypeVaultConnected indicates whether a connection to Vault has been established
+	VaultStaticSecretConditionTypeVaultConnected = "VaultConnected"
+)
+
 // VaultStaticSecretSpec defines the desired state of VaultStaticSecret
 type VaultStaticSecretSpec struct {
 	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
@@ -76,6 +85,17 @@ type VaultStaticSecretStatus struct {
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.
 	SecretMAC string `json:"secretMAC,omitempty"`
+
+	// Valid indicates whether the VaultStaticSecret is in a valid state and can be used
+	Valid *bool `json:"valid,omitempty"`
+
+	// Error provides a description of any validation error that occurred during reconciliation
+	Error string `json:"error,omitempty"`
+
+	// Conditions represent the latest available observations of the VaultStaticSecret state
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

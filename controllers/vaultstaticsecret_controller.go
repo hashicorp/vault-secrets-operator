@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	"nhooyr.io/websocket"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -32,6 +34,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
@@ -73,6 +76,7 @@ type VaultStaticSecretReconciler struct {
 // +kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
 //
 
+// Reconcile reconciles a VaultStaticSecret object
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -91,20 +95,57 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
 
+	// Assume status is invalid until proven otherwise
+	o.Status.Valid = ptr.To(false)
+	var errs error
+	var conditions []metav1.Condition
+
 	c, err := r.ClientFactory.Get(ctx, r.Client, o)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
+		errs = errors.Join(errs, err)
+		r.recordEvent(o, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault auth login: %s", err)
+		conditions = append(conditions, metav1.Condition{
+			Type:    secretsv1beta1.VaultStaticSecretConditionTypeVaultConnected,
+			Status:  metav1.ConditionFalse,
+			Reason:  consts.ReasonVaultClientConfigError,
+			Message: fmt.Sprintf("Failed to get Vault client: %s", err),
+		})
+		o.Status.Error = err.Error()
+		o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+		if err := r.Status().Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to update status conditions")
+		}
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
+
+	// Successfully connected to Vault
+	conditions = append(conditions, metav1.Condition{
+		Type:    secretsv1beta1.VaultStaticSecretConditionTypeVaultConnected,
+		Status:  metav1.ConditionTrue,
+		Reason:  consts.ReasonVaultClientConfigured,
+		Message: "Successfully connected to Vault",
+	})
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
 		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
 		if err != nil {
+			errs = errors.Join(errs, err)
 			logger.Error(err, "Field validation failed")
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
+			r.recordEvent(o, consts.ReasonVaultStaticSecret,
 				"Field validation failed, err=%s", err)
+			conditions = append(conditions, metav1.Condition{
+				Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+				Status:  metav1.ConditionFalse,
+				Reason:  consts.ReasonInvalidConfiguration,
+				Message: fmt.Sprintf("RefreshAfter validation failed: %s", err),
+			})
+			o.Status.Error = err.Error()
+			o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+			if err := r.Status().Update(ctx, o); err != nil {
+				logger.Error(err, "Failed to update status conditions")
+			}
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 		requeueAfter = computeHorizonWithJitter(d)
@@ -116,26 +157,62 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
+		errs = errors.Join(errs, err)
+		r.recordEvent(o, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
+		conditions = append(conditions, metav1.Condition{
+			Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+			Status:  metav1.ConditionFalse,
+			Reason:  consts.ReasonTransformationError,
+			Message: fmt.Sprintf("Failed to setup transformation: %s", err),
+		})
+		o.Status.Error = err.Error()
+		o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+		if err := r.Status().Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to update status conditions")
+		}
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	kvReq, err := newKVRequest(o.Spec)
 	if err != nil {
-		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
+		errs = errors.Join(errs, err)
+		r.recordEvent(o, consts.ReasonVaultStaticSecret, err.Error())
+		conditions = append(conditions, metav1.Condition{
+			Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+			Status:  metav1.ConditionFalse,
+			Reason:  consts.ReasonVaultStaticSecret,
+			Message: err.Error(),
+		})
+		o.Status.Error = err.Error()
+		o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+		if err := r.Status().Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to update status conditions")
+		}
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
 	resp, err := c.Read(ctx, kvReq)
 	if err != nil {
+		errs = errors.Join(errs, err)
 		if vault.IsForbiddenError(err) {
 			c.Taint()
 		}
 
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
+		r.recordEvent(o, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
+		conditions = append(conditions, metav1.Condition{
+			Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+			Status:  metav1.ConditionFalse,
+			Reason:  consts.ReasonVaultClientError,
+			Message: fmt.Sprintf("Failed to read Vault secret: %s", err),
+		})
+		o.Status.Error = err.Error()
+		o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+		if err := r.Status().Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to update status conditions")
+		}
 		return ctrl.Result{RequeueAfter: entry.NextBackOff()}, nil
 	} else {
 		r.BackOffRegistry.Delete(req.NamespacedName)
@@ -143,8 +220,20 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, transOption)
 	if err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
+		errs = errors.Join(errs, err)
+		r.recordEvent(o, consts.ReasonSecretDataBuilderError,
 			"Failed to build K8s secret data: %s", err)
+		conditions = append(conditions, metav1.Condition{
+			Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+			Status:  metav1.ConditionFalse,
+			Reason:  consts.ReasonSecretDataBuilderError,
+			Message: fmt.Sprintf("Failed to build K8s secret data: %s", err),
+		})
+		o.Status.Error = err.Error()
+		o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+		if err := r.Status().Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to update status conditions")
+		}
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 	}
 
@@ -163,6 +252,18 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, data)
 		if err != nil {
+			errs = errors.Join(errs, err)
+			conditions = append(conditions, metav1.Condition{
+				Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+				Status:  metav1.ConditionFalse,
+				Reason:  consts.ReasonHMACDataError,
+				Message: fmt.Sprintf("Failed to validate HMAC: %s", err),
+			})
+			o.Status.Error = err.Error()
+			o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+			if err := r.Status().Update(ctx, o); err != nil {
+				logger.Error(err, "Failed to update status conditions")
+			}
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 
@@ -181,8 +282,20 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if doSync {
 		if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
+			errs = errors.Join(errs, err)
+			r.recordEvent(o, consts.ReasonSecretSyncError,
 				"Failed to update k8s secret: %s", err)
+			conditions = append(conditions, metav1.Condition{
+				Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+				Status:  metav1.ConditionFalse,
+				Reason:  consts.ReasonSecretSyncError,
+				Message: fmt.Sprintf("Failed to update k8s secret: %s", err),
+			})
+			o.Status.Error = err.Error()
+			o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+			if err := r.Status().Update(ctx, o); err != nil {
+				logger.Error(err, "Failed to update status conditions")
+			}
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 		reason := consts.ReasonSecretSynced
@@ -192,24 +305,63 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			// all error reporting is handled by helpers.HandleRolloutRestarts
 			_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
 		}
-		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
+		r.recordEvent(o, reason, "Secret synced")
+		conditions = append(conditions, metav1.Condition{
+			Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+			Status:  metav1.ConditionTrue,
+			Reason:  reason,
+			Message: "Secret successfully synced to Kubernetes",
+		})
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
+		// Still update the condition to show it's in good state
+		conditions = append(conditions, metav1.Condition{
+			Type:    secretsv1beta1.VaultStaticSecretConditionTypeSecretSynced,
+			Status:  metav1.ConditionTrue,
+			Reason:  "SecretUpToDate",
+			Message: "Secret is already up to date",
+		})
 	}
 
 	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
 		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
 		// ensure event watcher is running
 		if err := r.ensureEventWatcher(ctx, o, c); err != nil {
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
+			errs = errors.Join(errs, err)
+			r.recordEvent(o, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
+			conditions = append(conditions, metav1.Condition{
+				Type:    secretsv1beta1.VaultStaticSecretConditionTypeVaultConnected,
+				Status:  metav1.ConditionFalse,
+				Reason:  consts.ReasonEventWatcherError,
+				Message: fmt.Sprintf("Failed to watch events: %s", err),
+			})
 		}
 	} else {
 		// ensure event watcher is not running
 		r.unWatchEvents(o)
 	}
 
+	if errs != nil {
+		o.Status.Valid = ptr.To(false)
+		o.Status.Error = errs.Error()
+		requeueAfter = computeHorizonWithJitter(requeueDurationOnError)
+	} else {
+		o.Status.Valid = ptr.To(true)
+		o.Status.Error = ""
+	}
+
+	// Update all conditions at once
+	o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
 	if err := r.updateStatus(ctx, o); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if errs == nil {
+		r.recordEvent(o, consts.ReasonAccepted, "Successfully handled VaultStaticSecret resource request")
+	} else {
+		logger.Error(errs, "Failed to handle VaultStaticSecret resource request", "requeueAfter", requeueAfter)
+		r.recordEvent(o, consts.ReasonAccepted,
+			fmt.Sprintf("Failed to handle VaultStaticSecret resource request: err=%s", errs))
 	}
 
 	return ctrl.Result{
@@ -217,13 +369,24 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
+func (r *VaultStaticSecretReconciler) recordEvent(o *secretsv1beta1.VaultStaticSecret, reason, msg string, i ...interface{}) {
+	eventType := corev1.EventTypeNormal
+	if !ptr.Deref(o.Status.Valid, false) {
+		eventType = corev1.EventTypeWarning
+	}
+
+	r.Recorder.Eventf(o, eventType, reason, msg, i...)
+}
+
 func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultStaticSecret) error {
 	logger := log.FromContext(ctx)
 	logger.V(consts.LogLevelDebug).Info("Updating status")
 	o.Status.LastGeneration = o.GetGeneration()
+	metrics.SetResourceStatus("vaultstaticsecret", o, ptr.Deref(o.Status.Valid, false))
 	if err := r.Status().Update(ctx, o); err != nil {
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
+		r.recordEvent(o, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)
+		return err
 	}
 
 	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultStaticSecretFinalizer)

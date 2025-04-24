@@ -23,6 +23,7 @@ const (
 	ReasonVaultClientConfigError     = "VaultClientConfigError"
 	ReasonHVSClientConfigError       = "HVSClientConfigError"
 	ReasonVaultClientError           = "VaultClientError"
+	ReasonVaultClientConfigured      = "VaultClientConfigured"
 	ReasonVaultStaticSecret          = "VaultStaticSecretError"
 	ReasonHVSSecret                  = "HVSSecretError"
 	ReasonSecretDataDrift            = "SecretDataDrift"
