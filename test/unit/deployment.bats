@@ -1397,3 +1397,15 @@ load _helpers
     yq '.spec.minAvailable' | tee /dev/stderr)
   [ "${actual}" = "2" ]
 }
+
+@test "controller/PodDisruptionBudget: maxUnavailable and minAvailable cannot be set together" {
+  cd `chart_dir`
+  run helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.maxUnavailable=2' \
+    --set 'controller.podDisruptionBudget.minAvailable=2' \
+    .
+  [ "$status" -eq 1 ]
+}

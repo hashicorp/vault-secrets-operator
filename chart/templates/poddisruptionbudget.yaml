@@ -4,6 +4,9 @@
 */}}
 
 {{- if and (gt (int .Values.controller.replicas) 1) .Values.controller.podDisruptionBudget.enabled }}
+{{- if and (gt (int .Values.controller.podDisruptionBudget.maxUnavailable) 0) (gt (int .Values.controller.podDisruptionBudget.minAvailable) 0) (not (eq (int .Values.controller.podDisruptionBudget.minAvailable) 1)) }}
+{{- fail "maxUnavailable and minAvailable cannot be set together in PodDisruptionBudget" }}
+{{- end }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
