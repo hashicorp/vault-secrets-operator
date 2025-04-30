@@ -12,8 +12,8 @@ resource "helm_release" "postgres" {
   repository = "oci://registry-1.docker.io/bitnamicharts"
   chart      = "postgresql"
   version    = "16.2.2"
-  
-   set {
+
+  set {
     name  = "primary.persistence.enabled"
     value = var.postgres_enable_persistence ? "true" : "false"
   }
