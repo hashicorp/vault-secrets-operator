@@ -13,11 +13,12 @@ import (
 // VaultStaticSecretSpec defines the desired state of VaultStaticSecret
 type VaultStaticSecretSpec struct {
 	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
-	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
+	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the
 	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
 	// default to the `default` VaultAuth, configured in the operator's namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
-	// Namespace to get the secret from in Vault
+	// Namespace of the secrets engine mount in Vault. If not set, the namespace that's
+	// part of VaultAuth resource will be inferred.
 	Namespace string `json:"namespace,omitempty"`
 	// Mount for the secret in Vault
 	Mount string `json:"mount"`
@@ -34,7 +35,7 @@ type VaultStaticSecretSpec struct {
 	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// HMACSecretData determines whether the Operator computes the
 	// HMAC of the Secret's data. The MAC value will be stored in
@@ -47,7 +48,7 @@ type VaultStaticSecretSpec struct {
 	// not support dynamically reloading a rotated secret.
 	// In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will
 	// trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.
-	// All configured targets wil be ignored if HMACSecretData is set to false.
+	// All configured targets will be ignored if HMACSecretData is set to false.
 	// See RolloutRestartTarget for more details.
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
@@ -77,8 +78,8 @@ type VaultStaticSecretStatus struct {
 	SecretMAC string `json:"secretMAC,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // VaultStaticSecret is the Schema for the vaultstaticsecrets API
 type VaultStaticSecret struct {
@@ -89,7 +90,7 @@ type VaultStaticSecret struct {
 	Status VaultStaticSecretStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // VaultStaticSecretList contains a list of VaultStaticSecret
 type VaultStaticSecretList struct {

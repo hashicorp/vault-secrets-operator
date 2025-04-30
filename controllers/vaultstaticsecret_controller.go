@@ -48,6 +48,7 @@ type VaultStaticSecretReconciler struct {
 	Recorder                    record.EventRecorder
 	ClientFactory               vault.ClientFactory
 	SecretDataBuilder           *helpers.SecretDataBuilder
+	SecretsClient               client.Client
 	HMACValidator               helpers.HMACValidator
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
@@ -160,7 +161,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// doRolloutRestart only if this is not the first time this secret has been synced
 		doRolloutRestart = o.Status.SecretMAC != ""
 
-		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.Client, r.HMACValidator, o, data)
+		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, data)
 		if err != nil {
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
@@ -514,7 +515,12 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.referenceCache, nil),
 		).
-		Watches(
+		// In order to reduce the operator's memory usage, we only watch for the
+		// Secret's metadata. That is sufficient for us to know when a Secret is
+		// deleted. If we ever need to access to the Secret's data, we can always fetch
+		// it from the API server in a RequestHandler, selectively based on the Secret's
+		// labels.
+		WatchesMetadata(
 			&corev1.Secret{},
 			&enqueueOnDeletionRequestHandler{
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultStaticSecret.String()),

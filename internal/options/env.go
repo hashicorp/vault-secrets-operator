@@ -46,6 +46,15 @@ type VSOEnvOptions struct {
 
 	// GlobalVaultAuthOptions is VSO_GLOBAL_VAULT_AUTH_OPTIONS environment variable option
 	GlobalVaultAuthOptions []string `split_words:"true"`
+
+	// ClientCacheNumLocks is VSO_CLIENT_CACHE_NUM_LOCKS environment variable option
+	ClientCacheNumLocks *int `split_words:"true"`
+
+	// KubeClientQPS is the VSO_KUBE_CLIENT_QPS environment variable option
+	KubeClientQPS float64 `split_words:"true"`
+
+	// KubeClientBurst is the VSO_KUBE_CLIENT_BURST environment variable option
+	KubeClientBurst *uint `split_words:"true"`
 }
 
 // Parse environment variable options, prefixed with "VSO_"

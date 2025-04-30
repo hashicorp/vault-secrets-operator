@@ -75,6 +75,9 @@ spec:
         {{- if .Values.controller.manager.clientCache.cacheSize }}
         - --client-cache-size={{ .Values.controller.manager.clientCache.cacheSize }}
         {{- end }}
+        {{- with include "vso.clientCacheNumLocks" . }}
+        - {{ . }}
+        {{- end }}
         {{- if .Values.controller.manager.maxConcurrentReconciles }}
         - --max-concurrent-reconciles={{ .Values.controller.manager.maxConcurrentReconciles }}
         {{- end }}
@@ -94,6 +97,12 @@ spec:
         {{- end }}
         {{- with .Values.controller.manager.extraArgs }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.controller.manager.kubeClient.qps }}
+        - --kube-client-qps={{ .Values.controller.manager.kubeClient.qps }}
+        {{- end }}
+        {{- if .Values.controller.manager.kubeClient.burst }}
+        - --kube-client-burst={{ .Values.controller.manager.kubeClient.burst }}
         {{- end }}
         command:
         - /vault-secrets-operator

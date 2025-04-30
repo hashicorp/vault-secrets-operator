@@ -44,7 +44,7 @@ variable "vault_enterprise" {
 }
 
 variable "vault_chart_version" {
-  default = "0.28.1"
+  default = "0.29.1"
 }
 
 variable "region" {
@@ -52,6 +52,3 @@ variable "region" {
   type        = string
   default     = "us-east-2"
 }
-
-
-

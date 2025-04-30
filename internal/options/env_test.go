@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/ptr"
 )
 
 func TestParse(t *testing.T) {
@@ -33,12 +34,15 @@ func TestParse(t *testing.T) {
 				"VSO_BACKOFF_MULTIPLIER":             "2.5",
 				"VSO_GLOBAL_TRANSFORMATION_OPTIONS":  "gOpt1,gOpt2",
 				"VSO_GLOBAL_VAULT_AUTH_OPTIONS":      "vOpt1,vOpt2",
+				"VSO_CLIENT_CACHE_NUM_LOCKS":         "10",
+				"VSO_KUBE_CLIENT_QPS":                "100",
+				"VSO_KUBE_CLIENT_BURST":              "1000",
 			},
 			wantOptions: VSOEnvOptions{
 				OutputFormat:                "json",
-				ClientCacheSize:             makeInt(t, 100),
+				ClientCacheSize:             ptr.To(100),
 				ClientCachePersistenceModel: "memory",
-				MaxConcurrentReconciles:     makeInt(t, 10),
+				MaxConcurrentReconciles:     ptr.To(10),
 				BackoffInitialInterval:      time.Second * 1,
 				BackoffMaxInterval:          time.Second * 60,
 				BackoffMaxElapsedTime:       time.Hour * 24,
@@ -46,6 +50,9 @@ func TestParse(t *testing.T) {
 				BackoffMultiplier:           2.5,
 				GlobalTransformationOptions: []string{"gOpt1", "gOpt2"},
 				GlobalVaultAuthOptions:      []string{"vOpt1", "vOpt2"},
+				ClientCacheNumLocks:         ptr.To(10),
+				KubeClientQPS:               100,
+				KubeClientBurst:             ptr.To(uint(1000)),
 			},
 		},
 	}
@@ -60,9 +67,4 @@ func TestParse(t *testing.T) {
 			assert.Equal(t, tt.wantOptions, gotOptions)
 		})
 	}
-}
-
-func makeInt(t *testing.T, i int) *int {
-	t.Helper()
-	return &i
 }

@@ -1,3 +1,84 @@
+## 0.10.0 (March 4th, 2025)
+
+Enhancements:
+* Add Kubernetes Client QPS and Burst Configuration: [GH-1013](https://github.com/hashicorp/vault-secrets-operator/pull/1013)
+
+Fix:
+* Add new Client for caching VSO owned Secrets: [GH-1010](https://github.com/hashicorp/vault-secrets-operator/pull/1010)
+* VPS: support day duration notation for TTL: [GH-990](https://github.com/hashicorp/vault-secrets-operator/pull/990)
+
+Build:
+* Build with Go 1.23.6: [GH-1024](https://github.com/hashicorp/vault-secrets-operator/pull/1024)
+* SEC-090: Automated trusted workflow pinning (2024-12-23): [GH-993](https://github.com/hashicorp/vault-secrets-operator/pull/993)
+* SEC-090: Automated trusted workflow pinning (2024-12-30): [GH-995](https://github.com/hashicorp/vault-secrets-operator/pull/995)
+* SEC-090: Automated trusted workflow pinning (2025-01-07): [GH-997](https://github.com/hashicorp/vault-secrets-operator/pull/997)
+* SEC-090: Automated trusted workflow pinning (2025-01-20): [GH-1005](https://github.com/hashicorp/vault-secrets-operator/pull/1005)
+* SEC-090: Automated trusted workflow pinning (2025-02-03): [GH-1009](https://github.com/hashicorp/vault-secrets-operator/pull/1009)
+* SEC-090: Automated trusted workflow pinning (2025-02-10): [GH-1012](https://github.com/hashicorp/vault-secrets-operator/pull/1012)
+* SEC-090: Automated trusted workflow pinning (2025-02-17): [GH-1015](https://github.com/hashicorp/vault-secrets-operator/pull/1015)
+
+Dependency Updates:
+* Bump github.com/go-jose/go-jose/v4 from 4.0.1 to 4.0.5: [GH-1020](https://github.com/hashicorp/vault-secrets-operator/pull/1020)
+* Bump the gomod-backward-compatible group across 1 directory with 3 updates: [GH-994](https://github.com/hashicorp/vault-secrets-operator/pull/994)
+* Bump the gomod-backward-compatible group across 1 directory with 8 updates: [GH-1014](https://github.com/hashicorp/vault-secrets-operator/pull/1014)
+* Bump the gomod-backward-compatible group across 1 directory with 9 updates: [GH-988](https://github.com/hashicorp/vault-secrets-operator/pull/988)
+* Bump the gomod-backward-compatible group with 2 updates: [GH-1007](https://github.com/hashicorp/vault-secrets-operator/pull/1007)
+* Bump the gomod-backward-compatible group with 3 updates: [GH-1001](https://github.com/hashicorp/vault-secrets-operator/pull/1001)
+* Bump the gomod-backward-compatible group with 3 updates: [GH-1018](https://github.com/hashicorp/vault-secrets-operator/pull/1018)
+* Bump the gomod-backward-compatible group with 6 updates: [GH-989](https://github.com/hashicorp/vault-secrets-operator/pull/989)
+* Bump the gomod-backward-compatible group with 7 updates: [GH-1004](https://github.com/hashicorp/vault-secrets-operator/pull/1004)
+* Bump golang.org/x/crypto from v0.34.0 to v0.35.0 [GH-1024](https://github.com/hashicorp/vault-secrets-operator/pull/1024)
+
+
+## 0.9.1 (December 11th, 2024)
+
+Fix:
+* Memory: Prevent OOM due to large K8s Secrets cache: [GH-982](https://github.com/hashicorp/vault-secrets-operator/pull/982) [GH-984](https://github.com/hashicorp/vault-secrets-operator/pull/984)
+
+Improvements:
+* add events for HVS client failures: [GH-960](https://github.com/hashicorp/vault-secrets-operator/pull/960)
+* Memory: Use the mutex pool provided by K8s keymutex: [GH-975](https://github.com/hashicorp/vault-secrets-operator/pull/975)
+
+Build:
+* SEC-090: Automated trusted workflow pinning (2024-10-28): [GH-957](https://github.com/hashicorp/vault-secrets-operator/pull/957)
+* Bump K8s version: [GH-968](https://github.com/hashicorp/vault-secrets-operator/pull/968)
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group with 2 updates: [GH-950](https://github.com/hashicorp/vault-secrets-operator/pull/950)
+* Bump the gomod-backward-compatible group across 1 directory with 9 updates: [GH-958](https://github.com/hashicorp/vault-secrets-operator/pull/958)
+* Bump ubi9/ubi-micro from 9.4-15 to 9.5: [GH-970](https://github.com/hashicorp/vault-secrets-operator/pull/970)
+* Bump ubi9/ubi-minimal from 9.4-1227.1726694542 to 9.5: [GH-971](https://github.com/hashicorp/vault-secrets-operator/pull/971)
+* Bump golang.org/x/crypto from 0.28.0 to 0.31.0: [GH-987](https://github.com/hashicorp/vault-secrets-operator/pull/987)
+
+
+## 0.9.0 (October 8th, 2024)
+
+Features:
+* Add support for syncing [HVS rotating secrets](https://developer.hashicorp.com/hcp/docs/vault-secrets/auto-rotation): [GH-893](https://github.com/hashicorp/vault-secrets-operator/pull/893) [GH-889](https://github.com/hashicorp/vault-secrets-operator/pull/889)
+* Add support for syncing [HVS dynamic secrets](https://developer.hashicorp.com/hcp/docs/vault-secrets/dynamic-secrets): [GH-917](https://github.com/hashicorp/vault-secrets-operator/pull/917) [GH-939](https://github.com/hashicorp/vault-secrets-operator/pull/939) [GH-934](https://github.com/hashicorp/vault-secrets-operator/pull/934) [GH-941](https://github.com/hashicorp/vault-secrets-operator/pull/941)
+
+Fix:
+* VC: update `spec.timeout` to be a string: [GH-906](https://github.com/hashicorp/vault-secrets-operator/pull/906)
+
+Improvements:
+* VSS(instant-updates): more stable event watcher: [GH-898](https://github.com/hashicorp/vault-secrets-operator/pull/898)
+* Bump kube-rbac-proxy to 0.18.1: [GH-909](https://github.com/hashicorp/vault-secrets-operator/pull/909)
+
+Build:
+* Upgrade controller-gen to 0.16.3: [GH-944](https://github.com/hashicorp/vault-secrets-operator/pull/944)
+* SEC-090: Automated trusted workflow pinning (2024-08-13): [GH-888](https://github.com/hashicorp/vault-secrets-operator/pull/888)
+* SEC-090: Automated trusted workflow pinning (2024-08-19): [GH-897](https://github.com/hashicorp/vault-secrets-operator/pull/897)
+* SEC-090: Automated trusted workflow pinning (2024-09-30): [GH-937](https://github.com/hashicorp/vault-secrets-operator/pull/937)
+* Use dependabot groups for Go deps: [GH-924](https://github.com/hashicorp/vault-secrets-operator/pull/924)
+* Conform to IPS-002: [GH-947](https://github.com/hashicorp/vault-secrets-operator/pull/947)
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 14 updates: [GH-943](https://github.com/hashicorp/vault-secrets-operator/pull/943)
+* Bump golang.org/x/crypto from 0.27.0 to 0.28.0 in the gomod-backward-compatible group: [GH-945](https://github.com/hashicorp/vault-secrets-operator/pull/945)
+* Bump ubi9/ubi-micro from 9.4-13 to 9.4-15: [GH-904](https://github.com/hashicorp/vault-secrets-operator/pull/904)
+* Bump ubi9/ubi-minimal from 9.4-1227.1725849298 to 9.4-1227.1726694542: [GH-930](https://github.com/hashicorp/vault-secrets-operator/pull/930)
+
+
 ## 0.8.1 (July 29th, 2024)
 
 Improvements:

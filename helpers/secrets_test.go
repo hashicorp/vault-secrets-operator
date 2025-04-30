@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/go-openapi/strfmt"
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
@@ -1327,12 +1328,41 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 					},
 					Type: HVSSecretTypeRotating,
 				},
+				{
+					CreatedAt:     strfmt.NewDateTime(),
+					CreatedByID:   "vso-3 uuid",
+					LatestVersion: 1,
+					Name:          "dyn",
+					Provider:      "providerfoo",
+					SyncStatus:    nil,
+					DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+						TTL:       "1h",
+						CreatedAt: strfmt.DateTime{},
+						ExpiresAt: strfmt.DateTime{},
+						Values: map[string]string{
+							"val_one": "123456",
+							"val_two": "654321",
+						},
+					},
+					Type: HVSSecretTypeDynamic,
+				},
 			},
 		},
 	}
 
 	rawValid, err := respValid.GetPayload().MarshalBinary()
 	require.NoError(t, err)
+
+	rotatingValueRaw, err := marshalJSON(map[string]string{
+		"api_key_one": "123456",
+		"api_key_two": "654321",
+	})
+	require.NoError(t, err)
+
+	dynValueRaw, err := marshalJSON(map[string]string{
+		"val_one": "123456",
+		"val_two": "654321",
+	})
 
 	respValidUnsupportedType := &hvsclient.OpenAppSecretsOK{
 		Payload: &models.Secrets20231128OpenAppSecretsResponse{
@@ -1393,6 +1423,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1416,6 +1450,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1432,6 +1470,13 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 							Text: `{{- .Metadata | mustToPrettyJson -}}`,
 						},
 					},
+					{
+						Key: "dyn_ttl",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `{{- get (get (get .Metadata "dyn") "dynamic_config") "ttl" -}}`,
+						},
+					},
 				},
 			},
 			want: map[string][]byte{
@@ -1445,6 +1490,16 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
       "version": 1
     },
     "type": "kv"
+  },
+  "dyn": {
+    "created_at": "1970-01-01T00:00:00.000Z",
+    "dynamic_config": {
+      "ttl": "1h"
+    },
+    "latest_version": 1,
+    "name": "dyn",
+    "provider": "providerfoo",
+    "type": "dynamic"
   },
   "foo": {
     "created_at": "1970-01-01T00:00:00.000Z",
@@ -1479,6 +1534,11 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
+				"dyn_ttl":                 []byte("1h"),
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1495,12 +1555,31 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 							Text: `{{- get .Secrets "bar" | upper -}}`,
 						},
 					},
+					{
+						Key: "dyn_template_val_one",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `{{- get (get .Secrets "dyn") "val_one" -}}`,
+						},
+					},
+					{
+						Key: "dyn_template_val_two",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl3",
+							Text: `{{- dig "dyn" "val_two" "<missing>" .Secrets -}}`,
+						},
+					},
 				},
 				Excludes: []string{"foo"},
 			},
 			want: map[string][]byte{
-				"bar":            []byte("FOO"),
-				SecretDataKeyRaw: rawValid,
+				"bar":                  []byte("FOO"),
+				"dyn":                  dynValueRaw,
+				"dyn_val_one":          []byte("123456"),
+				"dyn_val_two":          []byte("654321"),
+				"dyn_template_val_one": []byte("123456"),
+				"dyn_template_val_two": []byte("654321"),
+				SecretDataKeyRaw:       rawValid,
 			},
 			wantErr: assert.NoError,
 		},
@@ -1514,6 +1593,7 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
 				SecretDataKeyRaw:          rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1526,6 +1606,9 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 			},
 			want: map[string][]byte{
 				"bar":            []byte("foo"),
+				"dyn":            dynValueRaw,
+				"dyn_val_one":    []byte("123456"),
+				"dyn_val_two":    []byte("654321"),
 				SecretDataKeyRaw: rawValid,
 			},
 			wantErr: assert.NoError,
@@ -1569,6 +1652,10 @@ func TestSecretDataBuilder_WithHVSAppSecrets(t *testing.T) {
 				"foo":                     []byte("qux"),
 				"rotatingfoo_api_key_one": []byte("123456"),
 				"rotatingfoo_api_key_two": []byte("654321"),
+				"rotatingfoo":             rotatingValueRaw,
+				"dyn":                     dynValueRaw,
+				"dyn_val_one":             []byte("123456"),
+				"dyn_val_two":             []byte("654321"),
 			},
 			wantErr: assert.NoError,
 		},
@@ -1632,4 +1719,70 @@ func TestHasOwnerLabels(t *testing.T) {
 			assert.Equalf(t, tt.want, HasOwnerLabels(tt.o), "HasOwnerLabels(%v)", tt.o)
 		})
 	}
+}
+
+func TestHVSShadowSecretData(t *testing.T) {
+	now := time.Now()
+	secrets := []*models.Secrets20231128OpenSecret{
+		{
+			CreatedAt:     strfmt.DateTime(now),
+			CreatedByID:   "some uuid",
+			LatestVersion: 1,
+			Name:          "bar",
+			Provider:      "providerfoo",
+			SyncStatus:    nil,
+			Type:          HVSSecretTypeDynamic,
+			DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now),
+				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+				TTL:       "3600s",
+				Values: map[string]string{
+					"api_key_one": "123456",
+					"api_key_two": "654321",
+				},
+			},
+		},
+	}
+
+	k8sShadowData, err := MakeHVSShadowSecretData(secrets)
+	require.NoError(t, err)
+
+	roundTripSecrets, err := FromHVSShadowSecret(k8sShadowData["bar"])
+	require.NoError(t, err)
+
+	checkDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets)
+
+	// Store the shadow data again in a secret
+	k8sShadowData2, err := MakeHVSShadowSecretData([]*models.Secrets20231128OpenSecret{
+		roundTripSecrets,
+	})
+	require.NoError(t, err)
+
+	// Ensure the shadow data is the same
+	assert.Equal(t, k8sShadowData, k8sShadowData2)
+
+	// Ensure the data conversion still comes back equal to the original
+	roundTripSecrets2, err := FromHVSShadowSecret(k8sShadowData2["bar"])
+	require.NoError(t, err)
+
+	checkDynamicOpenSecretEqual(t, secrets[0], roundTripSecrets2)
+}
+
+func checkDynamicOpenSecretEqual(t *testing.T, want, got *models.Secrets20231128OpenSecret) {
+	t.Helper()
+
+	assert.Equal(t, want.CreatedAt.String(), got.CreatedAt.String())
+	assert.Equal(t, want.CreatedByID, got.CreatedByID)
+	assert.Equal(t, want.LatestVersion, got.LatestVersion)
+	assert.Equal(t, want.Name, got.Name)
+	assert.Equal(t, want.Provider, got.Provider)
+	assert.Equal(t, want.SyncStatus, got.SyncStatus)
+	assert.Equal(t, want.Type, got.Type)
+
+	assert.Equal(t, want.DynamicInstance.CreatedAt.String(),
+		got.DynamicInstance.CreatedAt.String())
+	assert.Equal(t, want.DynamicInstance.ExpiresAt.String(),
+		got.DynamicInstance.ExpiresAt.String())
+	assert.Equal(t, want.DynamicInstance.TTL, got.DynamicInstance.TTL)
+	assert.Equal(t, want.DynamicInstance.Values, got.DynamicInstance.Values)
 }

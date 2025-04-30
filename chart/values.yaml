@@ -74,7 +74,7 @@ controller:
       # All values are case-insensitive.
       # Specifying '*' as the first element will include all roles in the aggregation.
       #
-      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-viewer.
+      # The ClusterRole name takes the form of `<chart-fullname>`-aggregate-role-viewer.
       #
       # Example usages:
       # all roles:
@@ -90,7 +90,7 @@ controller:
       # All values are case-insensitive.
       # Specifying '*' as the first element will include all roles in the aggregation.
       #
-      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-editor.
+      # The ClusterRole name takes the form of `<chart-fullname>`-aggregate-role-editor.
       #
       # Example usages:
       # all roles:
@@ -156,12 +156,11 @@ controller:
 
   # Settings related to the vault-secrets-operator container.
   manager:
-
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.8.1
+      tag: 0.10.0
 
     # logging
     logging:
@@ -194,7 +193,7 @@ controller:
 
     # Global Vault auth options. In addition to the boolean options
     # below, these options may be set via the
-    # `VSO_GLOBAL_VAULT_OPTION_OPTIONS` environment variable as a
+    # `VSO_GLOBAL_VAULT_AUTH_OPTIONS` environment variable as a
     # comma-separated list. Valid values are: `allow-default-globals`
     globalVaultAuthOptions:
       # allowDefaultGlobals directs the operator search for a "default"
@@ -266,6 +265,18 @@ controller:
       # default: 10000
       # @type: integer
       cacheSize:
+
+      # Defines the number of locks to use for the Vault client cache controller.
+      # May also be set via the `VSO_CLIENT_CACHE_NUM_LOCKS` environment variable.
+      #
+      # Setting this value less than 1 will cause the manager to set the number of locks equal
+      # to the number of logical CPUs of the run host.
+      #
+      # See the VSO help output for more information.
+      #
+      # default: 100
+      # @type: integer
+      numLocks:
 
       # StorageEncryption provides the necessary configuration to encrypt the client storage
       # cache within Kubernetes objects using (required) Vault Transit Engine.
@@ -453,6 +464,21 @@ controller:
     # @type: integer
     maxConcurrentReconciles:
 
+    kubeClient:
+      # QPS indicates the maximum QPS to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_QPS` environment variable.
+      # Default: 0
+      # @type: float
+      qps:
+
+      # Maximum burst for throttling requests to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_BURST` environment variable.
+      # Default: 0
+      # @type: uint
+      burst:
+
     # Defines additional environment variables to be added to the
     # vault-secrets-operator manager container.
     # Example:
@@ -580,7 +606,6 @@ defaultVaultConnection:
   #   X-vault-something: "foo"
   # @type: map
   headers: {}
-
 
 # Configures and deploys the default VaultAuthMethod CR which will be used by resources
 # if they do not specify a VaultAuthMethod reference. The name is 'default' and will
@@ -779,7 +804,6 @@ defaultAuthMethod:
       # @type: string
       params: none
 
-
 # Configures a Prometheus ServiceMonitor
 telemetry:
   serviceMonitor:
@@ -847,7 +871,7 @@ hooks:
 
     # Limit the number of retries for the CRD upgrade.
     # @type: integer
-    backoffLimit:  5
+    backoffLimit: 5
 
     # Set the timeout for the CRD upgrade. The operation should typically take less than 5s
     # to complete.

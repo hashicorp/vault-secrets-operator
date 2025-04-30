@@ -12,10 +12,11 @@ import (
 type VaultDynamicSecretSpec struct {
 	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to
-	// namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will
-	// default to the `default` VaultAuth, configured in the operator's namespace.
+	// the namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator
+	// will default to the `default` VaultAuth, configured in the operator's namespace.
 	VaultAuthRef string `json:"vaultAuthRef,omitempty"`
-	// Namespace where the secrets engine is mounted in Vault.
+	// Namespace of the secrets engine mount in Vault. If not set, the namespace that's
+	// part of VaultAuth resource will be inferred.
 	Namespace string `json:"namespace,omitempty"`
 	// Mount path of the secret's engine in Vault.
 	Mount string `json:"mount"`
@@ -67,7 +68,7 @@ type VaultDynamicSecretSpec struct {
 	// max_ttl. The source secret's lease duration takes precedence over this
 	// configuration when it is greater than 0.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 }
 
@@ -137,7 +138,7 @@ type VaultDynamicSecret struct {
 	Status VaultDynamicSecretStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // VaultDynamicSecretList contains a list of VaultDynamicSecret
 type VaultDynamicSecretList struct {

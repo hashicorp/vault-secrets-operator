@@ -49,6 +49,7 @@ type VaultPKISecretReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
+	SecretsClient               client.Client
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -134,7 +135,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		syncReason = consts.ReasonInexistentDestination
 	case destinationExists:
 		if schemaEpoch > 0 {
-			if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
+			if matched, err := helpers.HMACDestinationSecret(ctx, r.SecretsClient,
 				r.HMACValidator, o); err == nil && !matched {
 				syncReason = consts.ReasonSecretDataDrift
 			} else if err != nil {
@@ -252,7 +253,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if b, err := json.Marshal(data); err == nil {
-		newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+		newMAC, err := r.HMACValidator.HMAC(ctx, r.SecretsClient, b)
 		if err != nil {
 			logger.Error(err, "HMAC data")
 			o.Status.Error = consts.ReasonHMACDataError
@@ -358,7 +359,12 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts contr
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.referenceCache, r.SyncRegistry),
 		).
-		Watches(
+		// In order to reduce the operator's memory usage, we only watch for the
+		// Secret's metadata. That is sufficient for us to know when a Secret is
+		// deleted. If we ever need to access to the Secret's data, we can always fetch
+		// it from the API server in a RequestHandler, selectively based on the Secret's
+		// labels.
+		WatchesMetadata(
 			&corev1.Secret{},
 			&enqueueOnDeletionRequestHandler{
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultPKISecret.String()),

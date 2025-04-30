@@ -23,7 +23,7 @@ type VaultConnectionSpec struct {
 	// Timeout applied to all Vault requests for this connection. If not set, the
 	// default timeout from the Vault API client config is used.
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	Timeout string `json:"timeout,omitempty"`
 }
 

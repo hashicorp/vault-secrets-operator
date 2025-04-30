@@ -19,7 +19,7 @@ type HCPVaultSecretsAppSpec struct {
 	HCPAuthRef string `json:"hcpAuthRef,omitempty"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(s|m|h))$"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	// +kubebuilder:default="600s"
 	RefreshAfter string `json:"refreshAfter,omitempty"`
 	// RolloutRestartTargets should be configured whenever the application(s)
@@ -45,10 +45,10 @@ type HVSSyncConfig struct {
 // HVSDynamicSyncConfig configures sync behavior for HVS dynamic secrets.
 type HVSDynamicSyncConfig struct {
 	// RenewalPercent is the percent out of 100 of a dynamic secret's TTL when
-	// new secrets are generated. Defaults to 67 percent minus jitter.
+	// new secrets are generated. Defaults to 67 percent plus up to 10% jitter.
 	// +kubebuilder:default=67
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Maximum=90
 	RenewalPercent int `json:"renewalPercent,omitempty"`
 }
 
@@ -83,8 +83,8 @@ type HCPVaultSecretsAppStatus struct {
 	DynamicSecrets []HVSDynamicStatus `json:"dynamicSecrets,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
 type HCPVaultSecretsApp struct {
@@ -95,7 +95,7 @@ type HCPVaultSecretsApp struct {
 	Status HCPVaultSecretsAppStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
 type HCPVaultSecretsAppList struct {

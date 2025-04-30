@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/keymutex"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -133,11 +134,8 @@ type cachingClientFactory struct {
 	mu                     sync.RWMutex
 	onceDoWatcher          sync.Once
 	callbackHandlerCancel  context.CancelFunc
-	// clientLocksLock is a lock for the clientLocks map.
-	clientLocksLock sync.RWMutex
-	// clientLocks is a map of cache keys to locks that allow for concurrent access
-	// to the client factory's cache.
-	clientLocks map[ClientCacheKey]*sync.RWMutex
+	// clientMutex is a mutex that is used to lock the client factory's cache by ClientCacheKey.
+	clientMutex keymutex.KeyMutex
 	// encClientLock is a lock for the encryption client. It is used to ensure that
 	// only one encryption client is created. This is necessary because the
 	// encryption client is not stored in the cache.
@@ -266,8 +264,6 @@ func (m *cachingClientFactory) onClientEvict(ctx context.Context, client ctrlcli
 			logger.Info("Pruned storage", "count", count)
 		}
 	}
-
-	m.removeClientLock(cacheKey)
 }
 
 // Restore will attempt to restore a Client from storage. If storage is not enabled then no restoration will take place.
@@ -331,23 +327,6 @@ func (m *cachingClientFactory) isDisabled() bool {
 	return m.shutDown
 }
 
-func (m *cachingClientFactory) clientLock(cacheKey ClientCacheKey) (*sync.RWMutex, bool) {
-	m.clientLocksLock.Lock()
-	defer m.clientLocksLock.Unlock()
-	lock, ok := m.clientLocks[cacheKey]
-	if !ok {
-		lock = &sync.RWMutex{}
-		m.clientLocks[cacheKey] = lock
-	}
-	return lock, ok
-}
-
-func (m *cachingClientFactory) removeClientLock(cacheKey ClientCacheKey) {
-	m.clientLocksLock.Lock()
-	defer m.clientLocksLock.Unlock()
-	delete(m.clientLocks, cacheKey)
-}
-
 // Get is meant to be called for all resources that require access to Vault.
 // It will attempt to fetch a Client from the in-memory cache for the provided Object.
 // On a cache miss, an attempt at restoration from storage will be made, if a restoration attempt fails,
@@ -361,7 +340,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	}
 
 	logger := log.FromContext(ctx).WithName("cachingClientFactory")
-	logger.V(consts.LogLevelDebug).Info("Cache info", "length", m.cache.Len())
+	logger.V(consts.LogLevelTrace).Info("Cache info", "length", m.cache.Len())
 	startTS := time.Now()
 	var err error
 	var cacheKey ClientCacheKey
@@ -384,18 +363,16 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	lock, cachedLock := m.clientLock(cacheKey)
-	lock.Lock()
-	defer lock.Unlock()
+	cacheKeyForLock := cacheKey.String()
+	m.clientMutex.LockKey(cacheKeyForLock)
+	defer func() {
+		if err := m.clientMutex.UnlockKey(cacheKeyForLock); err != nil {
+			logger.Error(err, "Failed to unlock client mutex")
+		}
+	}()
 
 	logger = logger.WithValues("cacheKey", cacheKey)
-	logger.V(consts.LogLevelDebug).Info("Got lock",
-		"numLocks", len(m.clientLocks),
-		"cachedLock", cachedLock,
-	)
-
-	logger.V(consts.LogLevelDebug).Info("Get Client")
+	logger.V(consts.LogLevelTrace).Info("Got lock")
 	ns, err := common.GetVaultNamespace(obj)
 	if err != nil {
 		return nil, err
@@ -903,7 +880,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		callbackHandlerCh:         make(chan *ClientCallbackHandlerRequest),
 		encryptionRequired:        config.StorageConfig.EnforceEncryption,
 		encClientSetupTimeout:     config.SetupEncryptionClientTimeout,
-		clientLocks:               make(map[ClientCacheKey]*sync.RWMutex, config.ClientCacheSize),
+		clientMutex:               keymutex.NewHashed(config.ClientCacheNumLocks),
 		GlobalVaultAuthOptions:    config.GlobalVaultAuthOptions,
 		credentialProviderFactory: config.CredentialProviderFactory,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
@@ -972,6 +949,10 @@ type CachingClientFactoryConfig struct {
 	GlobalVaultAuthOptions       *common.GlobalVaultAuthOptions
 	CredentialProviderFactory    credentials.CredentialProviderFactory
 	SetupEncryptionClientTimeout time.Duration
+	// ClientCacheNumLocks is the number of locks to allocate for Client Get() and Remove()
+	// operations. A higher number of locks will reduce contention but increase
+	// memory usage.
+	ClientCacheNumLocks int
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
@@ -984,6 +965,7 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 		PruneStorageOnEvict:          true,
 		CredentialProviderFactory:    credentials.NewCredentialProviderFactory(),
 		SetupEncryptionClientTimeout: defaultSetupEncryptionClientTimeout,
+		ClientCacheNumLocks:          100,
 	}
 }
 

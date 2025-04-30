@@ -23,8 +23,8 @@ CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-KIND_K8S_VERSION ?= v1.30.0
-VAULT_HELM_VERSION ?= 0.25.0
+KIND_K8S_VERSION ?= v1.32.3
+VAULT_HELM_VERSION ?= 0.29.1
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
 
@@ -346,6 +346,14 @@ integration-test-chart:
 	INTEGRATION_TESTS=true \
 	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
 
+.PHONY: integration-test-oom
+integration-test-oom:
+	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
+	VERSION=$(VERSION) \
+	INTEGRATION_TESTS=true \
+	KIND_K8S_VERSION=$(KIND_K8S_VERSION) \
+	go test github.com/hashicorp/vault-secrets-operator/test/oom/... $(TESTARGS) -timeout=10m
+
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
@@ -500,7 +508,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.14.0
+CONTROLLER_TOOLS_VERSION ?= v0.16.3
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize

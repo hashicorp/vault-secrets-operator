@@ -8,13 +8,15 @@ resource "helm_release" "postgres" {
   wait             = true
   wait_for_jobs    = true
 
-  set {
+  # ref: https://github.com/bitnami/charts/issues/30582#issuecomment-2494545610
+  repository = "oci://registry-1.docker.io/bitnamicharts"
+  chart      = "postgresql"
+  version    = "16.2.2"
+  
+   set {
     name  = "primary.persistence.enabled"
     value = var.postgres_enable_persistence ? "true" : "false"
   }
-
-  repository = "https://charts.bitnami.com/bitnami"
-  chart      = "postgresql"
 }
 
 resource "kubernetes_namespace" "postgres" {

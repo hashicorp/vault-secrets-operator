@@ -840,7 +840,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 			},
 			minHorizon:     1 * time.Second,
 			wantMinHorizon: time.Duration(.8 * float64(time.Second)),
-			wantMaxHorizon: time.Duration(1 * time.Second),
+			wantMaxHorizon: 1 * time.Second,
 			wantInWindow:   true,
 		},
 	}
@@ -1157,7 +1157,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			cs := source.Channel(r.SourceCh, handler)
 
 			q := &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			}
 
 			go func() {
