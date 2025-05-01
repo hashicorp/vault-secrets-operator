@@ -46,7 +46,7 @@ cleanup-port-forward: ## Kill orphan port-forward processes
 		echo "Port-forward processes terminated successfully." || \
 		echo "No port-forward processes found or an error occurred."
 
-.PHONY: set image scale-tests
+.PHONY: set image scale-tests ## Run integration tests on the EKS cluster
 scale-tests: cleanup-port-forward set-image update-kubeconfig import-aws-vars
 	$(MAKE) port-forward &
 	SCALE_TESTS=true VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE) \
