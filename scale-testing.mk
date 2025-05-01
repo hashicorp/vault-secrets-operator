@@ -7,7 +7,7 @@ EKS_K8S_VERSION ?= 1.30
 
 # testing dev instances is currently not supported
 # TODO: create the docker registry (e.g. ECR) to enable dev builds
-VERSION ?= 0.8.1
+VERSION ?= 0.10.0
 INTEGRATION_TESTS_PARALLEL ?= true
 
 # directories for cloud hosted k8s infrastructure for running tests
