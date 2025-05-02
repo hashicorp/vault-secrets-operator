@@ -81,6 +81,7 @@ metadata:
       {{- toYaml .Values.controller.annotations | nindent 4 }}
     {{- end }}
 spec:
+  ttlSecondsAfterFinished : {{ .Values.hooks.jobTtlSeconds }}
   backoffLimit: {{ .Values.hooks.upgradeCRDs.backoffLimit | default 5 }}
   template:
     metadata:

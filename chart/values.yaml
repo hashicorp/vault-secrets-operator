@@ -8,6 +8,9 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Seconds time-to-live to clean up old the job that has finished execution
+  jobTtlSeconds: 120 
+
   # Configure update strategy for multi-replica deployments.
   # Kubernetes supports types Recreate, and RollingUpdate
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
@@ -861,6 +864,10 @@ hooks:
     requests:
       cpu: 10m
       memory: 64Mi
+
+  # Seconds time-to-live to clean up old the job that has finished execution
+  jobTtlSeconds: 120 
+  
   # Configure the Helm pre-upgrade hook that handles custom resource definition (CRD) upgrades.
   upgradeCRDs:
     # Set to true to automatically upgrade the CRDs.

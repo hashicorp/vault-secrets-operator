@@ -192,6 +192,7 @@ metadata:
       {{- toYaml .Values.controller.annotations | nindent 4 }}
     {{- end }}
 spec:
+  ttlSecondsAfterFinished : {{ .Values.controller.jobTtlSeconds }}
   backoffLimit: 5
   template:
     metadata:
