@@ -254,10 +254,10 @@ func (r *VaultTokenSecretReconciler) updateStatus(ctx context.Context, o *secret
 	return err
 }
 
-func (r *VaultTokenSecretReconciler) handleDeletion(ctx context.Context, o client.Object) error {
+func (r *VaultTokenSecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultTokenSecret) error {
 	logger := log.FromContext(ctx)
 	logger.Info("deleting")
-
+	r.revokeToken(ctx, o, "")
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	r.BackOffRegistry.Delete(objKey)
@@ -303,4 +303,30 @@ func newTokenRequest(s secretsv1beta1.VaultTokenSecretSpec) (vault.WriteRequest,
 	Req = vault.NewWriteRequest(Path, params)
 
 	return Req, nil
+}
+
+func (r *VaultTokenSecretReconciler) revokeToken(ctx context.Context, o *secretsv1beta1.VaultTokenSecret, id string) {
+	logger := log.FromContext(ctx)
+	TokenAccessor := id
+	if TokenAccessor == "" {
+		TokenAccessor = o.Status.TokenAccessor
+	}
+
+	logger.Info("Revoking token ", "accessor", TokenAccessor)
+	c, err := r.ClientFactory.Get(ctx, r.Client, o)
+	if err != nil {
+		logger.Error(err, "Failed to get client when revoking token for ", "accessor", TokenAccessor)
+		return
+	}
+	if _, err = c.Write(ctx, vault.NewWriteRequest("auth/token/revoke-accessor", map[string]any{
+		"accessor": TokenAccessor,
+	})); err != nil {
+		msg := "Failed to revoke token"
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoke, msg+": %s", err)
+		logger.Error(err, "Failed to revoke token ", "id", TokenAccessor)
+	} else {
+		msg := "Token revoked"
+		r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRevoke, msg+": %s", TokenAccessor)
+		logger.Info("Token revoked ", "id", TokenAccessor)
+	}
 }
