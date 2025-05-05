@@ -123,6 +123,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
 
+	if addedFinalizer, err := maybeAddFinalizer(ctx, r.Client, o, vaultDynamicSecretFinalizer); err != nil {
+		return ctrl.Result{}, err
+	} else if addedFinalizer {
+		// the finalizer was added, requeue the request.
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
@@ -149,15 +156,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// update the VaultClientMeta in the resource's status.
 	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
 	o.Status.VaultClientMeta.ID = vClient.ID()
-
-	if !o.Spec.AllowStaticCreds && o.Status.LastGeneration != o.GetGeneration() && o.Status.SecretLease.ID == "" {
-		logger.Info("short circuting sync, initial generation with empty lease")
-		o.Status.LastGeneration = o.GetGeneration()
-		if err := r.updateStatus(ctx, o); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
-	}
 
 	var syncReason string
 	// doSync indicates that the controller should perform the secret sync,
@@ -188,12 +186,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	doSync := syncReason != ""
-	logger.Info("Reconciling",
-		"generation", o.GetGeneration(),
-		"lastGeneration", o.Status.LastGeneration,
-		"leaseID", o.Status.SecretLease.ID,
-		"doSync", doSync,
-	)
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
@@ -563,12 +555,6 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 }
 
 func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
-	logger := log.FromContext(ctx).WithName("updateStatus")
-	logger.Info("Updating status",
-		"settingLastGeneration", o.GetGeneration(),
-		"existingLastGeneration", o.Status.LastGeneration,
-	)
-
 	if r.runtimePodUID != "" {
 		o.Status.LastRuntimePodUID = r.runtimePodUID
 	}
@@ -579,8 +565,7 @@ func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secr
 			"Failed to update the resource's status, err=%s", err)
 	}
 
-	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultDynamicSecretFinalizer)
-	return err
+	return nil
 }
 
 func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *secretsv1beta1.VaultSecretLease {
