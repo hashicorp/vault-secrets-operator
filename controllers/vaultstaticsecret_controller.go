@@ -50,6 +50,9 @@ type VaultStaticSecretReconciler struct {
 	SecretDataBuilder           *helpers.SecretDataBuilder
 	SecretsClient               client.Client
 	HMACValidator               helpers.HMACValidator
+	HMACHorizon                 time.Duration
+	MinRefreshAfter             time.Duration
+	DefaultRefreshAfter         time.Duration
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	BackOffRegistry             *BackOffRegistry
@@ -100,7 +103,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
-		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", 0)
+		d, err := parseDurationString(o.Spec.RefreshAfter, ".spec.refreshAfter", r.MinRefreshAfter)
 		if err != nil {
 			logger.Error(err, "Field validation failed")
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret,
@@ -108,6 +111,8 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
 		}
 		requeueAfter = computeHorizonWithJitter(d)
+	} else if r.DefaultRefreshAfter > 0 {
+		requeueAfter = computeHorizonWithJitter(r.DefaultRefreshAfter)
 	}
 
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
@@ -154,8 +159,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// we want to ensure that requeueAfter is set so that we can perform the proper drift detection during each reconciliation.
 		// setting up a watcher on the Secret is also possibility, but polling seems to be the simplest approach for now.
 		if requeueAfter == 0 {
-			// hardcoding a default horizon here, perhaps we will want to make this value public?
-			requeueAfter = computeHorizonWithJitter(time.Second * 60)
+			requeueAfter = computeHorizonWithJitter(r.HMACHorizon)
 		}
 
 		// doRolloutRestart only if this is not the first time this secret has been synced
