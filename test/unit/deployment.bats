@@ -1409,3 +1409,41 @@ load _helpers
     .
   [ "$status" -eq 1 ]
 }
+
+#--------------------------------------------------------------------
+# priorityClassName
+
+@test "controller/Deployment: priorityClassName not set by default" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.priorityClassName' | tee /dev/stderr)
+
+  [ "${object}" = "null" ]
+}
+
+@test "controller/Deployment: priorityClassName can be set" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  --set 'controller.priorityClassName=high-priority' \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.priorityClassName' | tee /dev/stderr)
+
+  [ "${object}" = "high-priority" ]
+}
+
+@test "controller/Deployment: priorityClassName is set on pre-delete Job" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  --set 'controller.priorityClassName=high-priority' \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Job") | .spec.template.spec.priorityClassName' | tee /dev/stderr)
+
+  [ "${object}" = "high-priority" ]
+}
