@@ -93,7 +93,7 @@ controller:
     # @type: integer
     maxUnavailable: 0
 
-    # Sets the numer of pods that must be available during the eviction.
+    # Sets the number of pods that must be available during the eviction.
     # This field cannot be set if maxUnavailable is set.
     # @type: integer
     minAvailable: 1
