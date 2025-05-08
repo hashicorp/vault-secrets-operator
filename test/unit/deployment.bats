@@ -1436,14 +1436,52 @@ load _helpers
   [ "${object}" = "high-priority" ]
 }
 
-@test "controller/Deployment: priorityClassName is set on pre-delete Job" {
+@test "controller/Deployment: priorityClassName applied to all Jobs" {
   cd `chart_dir`
-  local object
-  object=$(helm template \
+  local objects
+  objects=$(helm template \
   -s templates/deployment.yaml  \
   --set 'controller.priorityClassName=high-priority' \
   . | tee /dev/stderr |
   yq 'select(.kind == "Job") | .spec.template.spec.priorityClassName' | tee /dev/stderr)
 
-  [ "${object}" = "high-priority" ]
+  for object in $objects; do
+    [ "${object}" = "high-priority" ]
+  done
+}
+
+#--------------------------------------------------------------------
+# topologySpreadConstraints
+
+@test "controller/Deployment: topologySpreadConstraints not set by default" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    . | tee /dev/stderr |
+    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: single topologySpreadConstraint can be set" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
+    --set "controller.topologySpreadConstraints[0].topologyKey=zone" \
+    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
+    . | tee /dev/stderr |
+    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].maxSkew' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].topologyKey' | tee /dev/stderr)
+  [ "${actual}" = "zone" ]
+  actual=$(echo "$object" | yq '.[0].whenUnsatisfiable' | tee /dev/stderr)
+  [ "${actual}" = "DoNotSchedule" ]
 }
