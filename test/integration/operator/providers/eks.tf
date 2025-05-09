@@ -1,26 +1,15 @@
-terraform {
-  required_providers {
-    helm = {
-      source  = "hashicorp/helm"
-      version = "2.16.1"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.30.0"
-    }
-    aws = {
-      source  = "hashicorp/aws"
-      version = "5.49.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.region
-}
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
 
 data "aws_eks_cluster" "cluster" {
   name = var.cluster_name
+}
+
+// copied to kind.tf
+provider "vault" {
+  # Configuration options
+  address = var.vault_address
+  token   = var.vault_token
 }
 
 provider "kubernetes" {
