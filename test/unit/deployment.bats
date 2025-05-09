@@ -1374,7 +1374,7 @@ load _helpers
   [ "${actual}" != "" ]
 }
 
-@test "controller/PodDisruptionBudget: maxUnavailable can be set" {
+@test "controller/PodDisruptionBudget: maxUnavailable can be set to an integer" {
   cd `chart_dir`
   local actual=$(helm template \
     -s templates/poddisruptionbudget.yaml \
@@ -1386,7 +1386,19 @@ load _helpers
   [ "${actual}" = "2" ]
 }
 
-@test "controller/PodDisruptionBudget: minAvailable can be set" {
+@test "controller/PodDisruptionBudget: maxUnavailable can be set as percentage" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.maxUnavailable=50%' \
+    . | tee /dev/stderr |
+    yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "50%" ]
+}
+
+@test "controller/PodDisruptionBudget: minAvailable can be set to an integer" {
   cd `chart_dir`
   local actual=$(helm template \
     -s templates/poddisruptionbudget.yaml \
@@ -1396,6 +1408,18 @@ load _helpers
     . | tee /dev/stderr |
     yq '.spec.minAvailable' | tee /dev/stderr)
   [ "${actual}" = "2" ]
+}
+
+@test "controller/PodDisruptionBudget: minAvailable can be set as a percentage" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.minAvailable=50%' \
+    . | tee /dev/stderr |
+    yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "50%" ]
 }
 
 @test "controller/PodDisruptionBudget: maxUnavailable and minAvailable cannot be set together" {

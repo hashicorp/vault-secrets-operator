@@ -1,12 +1,8 @@
 {{/*
-# Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 */}}
 
 {{- if and (gt (int .Values.controller.replicas) 1) .Values.controller.podDisruptionBudget.enabled }}
-{{- if and (gt (int .Values.controller.podDisruptionBudget.maxUnavailable) 0) (gt (int .Values.controller.podDisruptionBudget.minAvailable) 0) (not (eq (int .Values.controller.podDisruptionBudget.minAvailable) 1)) }}
-{{- fail "maxUnavailable and minAvailable cannot be set together in PodDisruptionBudget" }}
-{{- end }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -17,12 +13,33 @@ metadata:
     {{- include "vso.chart.labels" . | nindent 4 }}
   namespace: {{ .Release.Namespace }}
 spec:
-  {{- if (gt (int .Values.controller.podDisruptionBudget.maxUnavailable) 0) }}
-  maxUnavailable: {{ .Values.controller.podDisruptionBudget.maxUnavailable }}
+  {{/* Throw an error if both maxUnavailable and minAvailable are set and non-zero */}}
+  {{- $maxUnavailable := toString .Values.controller.podDisruptionBudget.maxUnavailable | trim }}
+  {{- $minAvailable := toString .Values.controller.podDisruptionBudget.minAvailable | trim }}
+  {{- if and (not (empty $maxUnavailable)) (not (empty $minAvailable)) (ne $maxUnavailable "0") (ne $minAvailable "0") }}
+  {{- fail "You cannot set both maxUnavailable and minAvailable in the PodDisruptionBudget" }}
   {{- end }}
-  {{- if (gt (int .Values.controller.podDisruptionBudget.minAvailable) 0) }}
-  minAvailable: {{ .Values.controller.podDisruptionBudget.minAvailable }}
+
+  {{/* If maxUnavailable is set, use it */}}
+  {{- if not (empty $maxUnavailable) }}
+  maxUnavailable: 
+    {{- if contains "%" $maxUnavailable }}
+    "{{ $maxUnavailable }}"
+    {{- else }}
+    {{ $maxUnavailable }}
+    {{- end }}
   {{- end }}
+
+  {{/* If minAvailable is set, use it */}}
+  {{- if not (empty $minAvailable) }}
+  minAvailable: 
+    {{- if contains "%" $minAvailable }}
+    "{{ $minAvailable }}"
+    {{- else }}
+    {{ $minAvailable }}
+    {{- end }}
+  {{- end }}
+
   selector:
     matchLabels:
       {{- include "vso.chart.selectorLabels" . | nindent 6 }}

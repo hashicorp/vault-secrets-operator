@@ -90,13 +90,15 @@ controller:
 
     # Sets the maximum number of pods that can be unavailable during the eviction.
     # This field cannot be set if minAvailable is set.
-    # @type: integer
-    maxUnavailable: 0
+    # Can be set as an integer (e.g. "2") or a percentage (e.g. "50%").
+    # @type: string
+    maxUnavailable: "0"
 
     # Sets the number of pods that must be available during the eviction.
     # This field cannot be set if maxUnavailable is set.
-    # @type: integer
-    minAvailable: 1
+    # Can be set as an integer (e.g. "2") or a percentage (e.g. "50%").
+    # @type: string
+    minAvailable: "1"
 
   rbac:
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
