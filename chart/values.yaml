@@ -98,7 +98,7 @@ controller:
     # This field cannot be set if maxUnavailable is set.
     # Can be set as an integer (e.g. "2") or a percentage (e.g. "50%").
     # @type: string
-    minAvailable: "1"
+    minAvailable: "0"
 
   rbac:
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
