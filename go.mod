@@ -1,6 +1,6 @@
 module github.com/hashicorp/vault-secrets-operator
 
-go 1.24.0
+go 1.24.3
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
