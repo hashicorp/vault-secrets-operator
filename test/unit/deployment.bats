@@ -1350,3 +1350,162 @@ load _helpers
   actual=$(echo "$object" | yq 'contains(["--kube-client-burst=2000"])' | tee /dev/stderr)
   [ "${actual}" = "true" ]
 }
+
+#--------------------------------------------------------------------
+# podDisruptionBudget
+
+@test "controller/PodDisruptionBudget: not created by default" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "PodDisruptionBudget")' | tee /dev/stderr)
+  [ "${actual}" = "" ]
+}
+
+@test "controller/PodDisruptionBudget: created when replicas > 1 and enabled" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "PodDisruptionBudget")' | tee /dev/stderr)
+  [ "${actual}" != "" ]
+}
+
+@test "controller/PodDisruptionBudget: maxUnavailable can be set to an integer" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.maxUnavailable=2' \
+    . | tee /dev/stderr |
+    yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+}
+
+@test "controller/PodDisruptionBudget: maxUnavailable can be set as percentage" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.maxUnavailable=50%' \
+    . | tee /dev/stderr |
+    yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "50%" ]
+}
+
+@test "controller/PodDisruptionBudget: minAvailable can be set to an integer" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.minAvailable=2' \
+    . | tee /dev/stderr |
+    yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+}
+
+@test "controller/PodDisruptionBudget: minAvailable can be set as a percentage" {
+  cd `chart_dir`
+  local actual=$(helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.minAvailable=50%' \
+    . | tee /dev/stderr |
+    yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "50%" ]
+}
+
+@test "controller/PodDisruptionBudget: maxUnavailable and minAvailable cannot be set together" {
+  cd `chart_dir`
+  run helm template \
+    -s templates/poddisruptionbudget.yaml \
+    --set 'controller.replicas=3' \
+    --set 'controller.podDisruptionBudget.enabled=true' \
+    --set 'controller.podDisruptionBudget.maxUnavailable=2' \
+    --set 'controller.podDisruptionBudget.minAvailable=2' \
+    .
+  [ "$status" -eq 1 ]
+}
+
+#--------------------------------------------------------------------
+# priorityClassName
+
+@test "controller/Deployment: priorityClassName not set by default" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.priorityClassName' | tee /dev/stderr)
+
+  [ "${object}" = "null" ]
+}
+
+@test "controller/Deployment: priorityClassName can be set" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+  -s templates/deployment.yaml  \
+  --set 'controller.priorityClassName=high-priority' \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.priorityClassName' | tee /dev/stderr)
+
+  [ "${object}" = "high-priority" ]
+}
+
+@test "controller/Deployment: priorityClassName applied to all Jobs" {
+  cd `chart_dir`
+  local objects
+  objects=$(helm template \
+  -s templates/deployment.yaml  \
+  --set 'controller.priorityClassName=high-priority' \
+  . | tee /dev/stderr |
+  yq 'select(.kind == "Job") | .spec.template.spec.priorityClassName' | tee /dev/stderr)
+
+  for object in $objects; do
+    [ "${object}" = "high-priority" ]
+  done
+}
+
+#--------------------------------------------------------------------
+# topologySpreadConstraints
+
+@test "controller/Deployment: topologySpreadConstraints not set by default" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    . | tee /dev/stderr |
+    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+
+  [ "${object}" = null ]
+}
+
+@test "controller/Deployment: single topologySpreadConstraint can be set" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
+    --set "controller.topologySpreadConstraints[0].topologyKey=zone" \
+    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
+    . | tee /dev/stderr |
+    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].maxSkew' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].topologyKey' | tee /dev/stderr)
+  [ "${actual}" = "zone" ]
+  actual=$(echo "$object" | yq '.[0].whenUnsatisfiable' | tee /dev/stderr)
+  [ "${actual}" = "DoNotSchedule" ]
+}
