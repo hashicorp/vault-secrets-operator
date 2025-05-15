@@ -181,6 +181,7 @@ type Client interface {
 	Tainted() bool
 	Untaint() bool
 	WebsocketClient(string) (*WebsocketClient, error)
+	Renewable() bool
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -204,6 +205,16 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
+}
+
+// Renewable returns true if the Vault auth token is renewable.
+func (c *defaultClient) Renewable() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.authSecret != nil && c.authSecret.Auth != nil {
+		return c.authSecret.Auth.Renewable
+	}
+	return false
 }
 
 // Untaint the client, marking it as untainted. This should be done after the

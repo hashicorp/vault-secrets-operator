@@ -1224,3 +1224,42 @@ func TestNewClientConfigFromConnObj(t *testing.T) {
 		})
 	}
 }
+
+func Test_defaultClient_Renewable(t *testing.T) {
+	tests := []struct {
+		name       string
+		authSecret *api.Secret
+		want       bool
+	}{
+		{
+			name: "auth-secret-unset",
+			want: false,
+		},
+		{
+			name: "renewable",
+			want: true,
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					Renewable: true,
+				},
+			},
+		},
+		{
+			name: "non-renewable",
+			want: false,
+			authSecret: &api.Secret{
+				Auth: &api.SecretAuth{
+					Renewable: false,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &defaultClient{
+				authSecret: tt.authSecret,
+			}
+			assert.Equalf(t, tt.want, c.Renewable(), "Renewable()")
+		})
+	}
+}
