@@ -52,6 +52,9 @@ spec:
         - --upstream=http://127.0.0.1:8080/
         - --logtostderr=true
         - --v=0
+        {{- with .Values.controller.kubeRbacProxy.extraArgs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ .Values.controller.kubernetesClusterDomain }}
