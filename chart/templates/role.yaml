@@ -86,6 +86,7 @@ rules:
     - vaultdynamicsecrets
     - vaultpkisecrets
     - vaultstaticsecrets
+    - vaulttokensecrets
   verbs:
     - create
     - delete
@@ -106,6 +107,7 @@ rules:
     - vaultdynamicsecrets/finalizers
     - vaultpkisecrets/finalizers
     - vaultstaticsecrets/finalizers
+    - vaulttokensecrets/finalizers
   verbs:
     - update
 - apiGroups:
@@ -120,6 +122,7 @@ rules:
     - vaultdynamicsecrets/status
     - vaultpkisecrets/status
     - vaultstaticsecrets/status
+    - vaulttokensecrets/status
   verbs:
     - get
     - patch
