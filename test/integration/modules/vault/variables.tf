@@ -59,3 +59,66 @@ variable "metrics_server_enabled" {
   type    = bool
   default = true
 }
+
+variable "server_telemetry" {
+  type = object({
+    service_monitor = object({
+      enabled       = bool
+      selectors     = map(string)
+      interval      = string
+      scrapeTimeout = string
+
+      # The tlsConfig stanza actually contains more fields than declared here
+      # For scale testing purpose, we use `ca` stanza
+      # https://github.com/hashicorp/vault-helm/blob/3ab634e6ea3ec344688fac5cb5a93dad157bd537/values.yaml#L1297-L1305
+      tlsConfig = object({
+        ca = object({
+          secret = object({
+            name = string
+            key  = string
+          })
+        })
+      })
+    })
+  })
+
+  default = {
+    service_monitor = {
+      enabled         = true
+      selectors       = {}
+      interval        = "30s"
+      scrapeTimeout   = "10s"
+      tlsConfig       = {}
+    }
+  }
+}
+
+variable "server_standalone" {
+  type = object({
+    config = string
+  })
+
+  default = {
+      config =<<EOF
+ui = true
+
+listener "tcp" {
+  tls_disable = 1
+  address = "[::]:8200"
+  cluster_address = "[::]:8201"
+  # Enable unauthenticated metrics access (necessary for Prometheus Operator)
+  telemetry {
+    unauthenticated_metrics_access = "true"
+  }
+}
+storage "file" {
+  path = "/vault/data"
+}
+
+telemetry {
+  prometheus_retention_time = "30s"
+  disable_hostname = true
+}
+EOF
+  }
+}

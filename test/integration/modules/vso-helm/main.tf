@@ -157,4 +157,56 @@ resource "helm_release" "vault-secrets-operator" {
       value = var.memory_requests
     }
   }
+
+  # metrics service configuration
+  set {
+    name = "metricsService.ports[0].name"
+    value = var.metrics_service.ports[0].name
+  }
+  set {
+    name = "metricsService.ports[0].port"
+    value = var.metrics_service.ports[0].port
+  }
+  set {
+    name = "metricsService.ports[0].protocol"
+    value = var.metrics_service.ports[0].protocol
+  }
+  set {
+    name = "metricsService.ports[0].targetPort"
+    value = var.metrics_service.ports[0].targetPort
+  }
+  set {
+    name = "metricsService.type"
+    value = var.metrics_service.type
+  }
+
+  # service monitor configuration
+  set {
+    name  = "telemetry.serviceMonitor.enabled"
+    value = var.telemetry.service_monitor.enabled
+  }
+  set {
+    name  = "telemetry.serviceMonitor.selectors"
+    value = var.telemetry.service_monitor.enabled
+  }
+  set {
+    name  = "telemetry.serviceMonitor.scheme"
+    value = var.telemetry.service_monitor.scheme
+  }
+  set {
+    name  = "telemetry.serviceMonitor.port"
+    value = var.telemetry.service_monitor.port
+  }
+  set {
+    name  = "telemetry.serviceMonitor.bearerTokenFile"
+    value = var.telemetry.service_monitor.bearerTokenFile
+  }
+  set {
+    name  = "telemetry.serviceMonitor.interval"
+    value = var.telemetry.service_monitor.interval
+  }
+  set {
+    name  = "telemetry.serviceMonitor.scrapeTimeout"
+    value = var.telemetry.service_monitor.scrapeTimeout
+  }
 }

@@ -1,0 +1,17 @@
+prometheus:
+  serviceAccount:
+    create: true
+    name: ${amsp_ingest_sa}
+    annotations:
+      eks.amazonaws.com/role-arn: ${iam_proxy_prometheus_role_arn}
+  prometheusSpec:
+    remoteWrite:
+      - url: https://aps-workspaces.${region}.amazonaws.com/workspaces/${workspace_id}/api/v1/remote_write
+        sigv4:
+          region: ${region}
+        queue_config:
+          max_samples_per_send: 1000
+          max_shards: 200
+          capacity: 2500
+alertmanager:
+  enabled: false

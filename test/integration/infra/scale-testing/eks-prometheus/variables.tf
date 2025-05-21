@@ -12,14 +12,23 @@ variable "cluster_name" {
   type = string
 }
 
-variable "prometheus_namespace" {
+variable "prometheus_k8s_namespace" {
   description = "K8s namespace to deploy prometheus server"
   type = string
 }
 
-variable ""
-variable "with_eks" {
-  type    = bool
-  default = false
+variable "amsp_ingest_sa" {
+  description = ""
+  type = string
 }
 
+variable "iam_proxy_prometheus_role_arn" {
+  description = ""
+  type = string
+}
+
+#variable "with_eks" {
+#  type    = bool
+#  default = false
+#}
+#

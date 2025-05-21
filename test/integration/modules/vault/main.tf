@@ -61,6 +61,34 @@ resource "helm_release" "vault" {
       value = kubernetes_secret.vault_license[0].metadata[0].name
     }
   }
+
+  # standalone configuration
+  set {
+    name = "server.standalone.config"
+    value = var.server_standalone.config
+  }
+
+  # service monitor configuration
+  set {
+    name  = "serverTelemetry.serviceMonitor.enabled"
+    value = var.server_telemetry.service_monitor.enabled
+  }
+  set {
+    name  = "telemetry.serviceMonitor.selectors"
+    value = var.server_telemetry.service_monitor.enabled
+  }
+  set {
+    name  = "telemetry.serviceMonitor.interval"
+    value = var.server_telemetry.service_monitor.interval
+  }
+  set {
+    name  = "telemetry.serviceMonitor.scrapeTimeout"
+    value = var.server_telemetry.service_monitor.scrapeTimeout
+  }
+  set {
+    name  = "telemetry.serviceMonitor.tlsConfig"
+    value = var.server_telemetry.service_monitor.tlsConfig
+  }
 }
 
 resource "kubernetes_cluster_role_binding" "oidc-reviewer" {

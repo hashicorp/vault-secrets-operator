@@ -16,11 +16,10 @@ SKIP_HCPVSAPPS_TESTS ?= true
 # root directory for all integration tests
 TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/eks-cluster
 TF_EKS_STATE_DIR ?= $(TF_EKS_SRC_DIR)/state
-TF_EKS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/eks-cluster
-TF_EKS_STATE_DIR ?= $(TF_EKS_SRC_DIR)/state
+TF_EKS_PROMETHEUS_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/eks-prometheus
+TF_EKS_PROMETHEUS_STATE_DIR ?= $(TF_EKS_PROMETHEUS_SRC_DIR)/state
 TF_DEPLOY_SRC_DIR ?= $(INTEGRATION_TEST_ROOT)/infra/scale-testing/deployments
 TF_DEPLOY_STATE_DIR ?= $(TF_DEPLOY_SRC_DIR)/state
-
 SCALE_TESTS=1
 
 include ./Makefile
@@ -37,6 +36,25 @@ create-eks: ## Create a new EKS cluster
 	rm -f $(TF_EKS_STATE_DIR)/*.tfvars
 
 .PHONY: create-eks-prometheus
+create-eks-prometheus: ##
+	@mkdir -p $(TF_EKS_PROMETHEUS_STATE_DIR)
+	rm -f $(TF_EKS_PROMETHEUS_STATE_DIR)/*.tf
+	cp -v $(TF_EKS_PROMETHEUS_SRC_DIR)/*.tf $(TF_EKS_PROMETHEUS_STATE_DIR)/.
+	$(TERRAFORM) -chdir=$(TF_EKS_PROMETHEUS_STATE_DIR) init -upgrade
+	$(TERRAFORM) -chdir=$(TF_EKS_PROMETHEUS_STATE_DIR) apply -auto-approve \
+		-var region=$(AWS_REGION) \
+		-var prometheus_k8s_namespace=$(PROMETHEUS_K8S_NAMESPACE) \
+		-var amsp_ingest_sa=$(AMSP_INGEST_SA) \
+		-var iam_proxy_prometheus_role_arn=$(IAM_PROXY_PROMETHEUS_ROLE_ARN) || exit 1
+	rm -f $(TF_EKS_STATE_DIR)/*.tfvars
+
+.PHONY: destroy-eks-prometheus
+destroy-eks-prometheus: ## Destroy the EKS cluster
+	$(TERRAFORM) -chdir=$(TF_EKS_PROMETHEUS_STATE_DIR) destroy -auto-approve \
+		-var region=$(AWS_REGION) \
+		-var prometheus_k8s_namespace=$(PROMETHEUS_K8S_NAMESPACE) \
+		-var amsp_ingest_sa=$(AMSP_INGEST_SA) \
+		-var iam_proxy_prometheus_role_arn=$(IAM_PROXY_PROMETHEUS_ROLE_ARN) || exit 1
 
 .PHONY: deploy-workload
 deploy-workload: set-vault-license ## Deploy the workload to the EKS cluster

@@ -111,3 +111,54 @@ variable "manager_extra_args" {
     "-zap-log-level=5"
   ]
 }
+
+variable "metrics_service" {
+  type = object({
+    ports = list(object({
+      name       = string
+      port       = string
+      protocol   = string
+      targetPort = string
+      })
+    )
+    type = string
+  })
+
+  default = {
+    ports = [
+      {
+        name       = "https"
+        port       = "8443"
+        protocol   = "TCP"
+        targetPort = "https"
+      }
+    ]
+    type = "ClusterIP"
+  }
+}
+
+variable "telemetry" {
+  type = object({
+    service_monitor = object({
+      enabled         = bool
+      selectors       = string
+      scheme          = string
+      port            = string
+      bearerTokenFile = string
+      interval        = string
+      scrapeTimeout   = string
+    })
+  })
+
+  default = {
+    service_monitor = {
+      enabled         = true
+      selectors       = ""
+      scheme          = "https"
+      port            = "https"
+      bearerTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      interval        = "30s"
+      scrapeTimeout   = "10s"
+    }
+  }
+}

@@ -43,3 +43,9 @@ output "amsp_ingest_sa" {
   description = "K8s service account for Amazon Managed Service for Prometheus ingest"
   value = local.amsp_ingest_sa
 }
+
+output "iam_proxy_prometheus_role_arn" {
+  description = "IAM role arn for proxy prometheus"
+  value = module.amazon_managed_service_prometheus_irsa_role.iam_role_arn
+}
+

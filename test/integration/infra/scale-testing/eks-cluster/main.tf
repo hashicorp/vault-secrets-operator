@@ -65,7 +65,7 @@ module "ebs_csi_irsa_role" {
 locals {
   # K8s service account
   amsp_ingest_sa = "amsp-ingest"
-  prometheus_k8s_namespace = "prometheus"
+  prometheus_k8s_namespace = "kube-prometheus"
 }
 
 module "amazon_managed_service_prometheus_irsa_role" {
@@ -164,5 +164,8 @@ EKS_OIDC_URL=${module.eks.cluster_oidc_issuer_url}
 EKS_CLUSTER_NAME=${module.eks.cluster_name}
 AWS_REGION=${var.region}
 K8S_CLUSTER_CONTEXT=${module.eks.cluster_arn}
+AMSP_INGEST_SA=${local.amsp_ingest_sa}
+PROMETHEUS_K8S_NAMESPACE=${local.prometheus_k8s_namespace}
+IAM_PROXY_PROMETHEUS_ROLE_ARN=${module.amazon_managed_service_prometheus_irsa_role.iam_role_arn}
 EOT
 }
