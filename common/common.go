@@ -172,10 +172,6 @@ func isAllowedNamespace(obj ctrlclient.Object, targetNamespace string, allowed .
 	if targetNamespace == obj.GetNamespace() {
 		return true
 	}
-	// Default Auth Method
-	if obj.GetName() == consts.NameDefault && obj.GetNamespace() == OperatorNamespace {
-		return true
-	}
 
 	lenAllowed := len(allowed)
 	// Disallow by default
