@@ -12,6 +12,17 @@ to have access to the *destination* secret in order to make use of the secret da
 
 See the developer docs for more info [here](https://developer.hashicorp.com/vault/docs/platform/k8s/vso)
 
+## Supported Architectures
+
+The Vault Secrets Operator supports the following CPU architectures:
+
+- **amd64** (x86_64) - Intel/AMD 64-bit processors
+- **arm64** (aarch64) - ARM 64-bit processors (Apple Silicon, Graviton, etc.)
+- **ppc64le** - IBM Power Systems (POWER9/POWER10)
+- **s390x** - IBM Z mainframes and LinuxONE systems
+
+Both container images and standalone binaries are available for all supported architectures. Multi-architecture container images are automatically selected based on your Kubernetes cluster's node architecture.
+
 ### Features
 
 The following features are supported by the Vault Secrets Operator:

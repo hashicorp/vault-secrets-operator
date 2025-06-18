@@ -40,7 +40,7 @@ controller:
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
   # Example:
   # nodeSelector:
-  #   beta.kubernetes.io/arch: amd64
+  #   beta.kubernetes.io/arch: amd64  # Supported: amd64, arm64, ppc64le, s390x
   nodeSelector: {}
   # Toleration Settings for vault-secrets-operator pod.
   # The value is an array of PodSpec Toleration maps.
