@@ -1,22 +1,16 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-container {
-	dependencies = true
-	alpine_secdb = true
-	secrets {
-		all = true
-	}
-}
-
 binary {
+	go_stdlib  = true // Scan the Go standard library used to build the binary.
+	go_modules = true // Scan the Go modules included in the binary.
+	osv        = true // Use the OSV vulnerability database.
+	oss_index  = true // And use OSS Index vulnerability database.
+
 	secrets {
 		all = true
 	}
-	go_modules   = true
-	osv          = true
-	oss_index    = false
-	nvd          = false
+
 	triage {
 		suppress {
 			vulnerabilities = [
@@ -27,5 +21,14 @@ binary {
 				"GO-2022-0635"
 			]
 		}
+	}
+}
+
+container {
+	dependencies = true // Scan any installed packages for vulnerabilities.
+	osv          = true // Use the OSV vulnerability database.
+
+	secrets {
+		all = true
 	}
 }
