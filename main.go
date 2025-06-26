@@ -632,6 +632,18 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "VaultAuthGlobal")
 		os.Exit(1)
 	}
+	if err = (&controllers.VaultTokenSecretReconciler{
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("VaultTokenSecret"),
+		ClientFactory:               clientFactory,
+		SecretsClient:               secretsClient,
+		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
+		GlobalTransformationOptions: globalTransOptions,
+	}).SetupWithManager(mgr, controllerOptions); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VaultTokenSecret")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
