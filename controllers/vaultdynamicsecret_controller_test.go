@@ -745,6 +745,21 @@ func Test_computeRotationTime(t *testing.T) {
 			},
 			want: then.Add(time.Minute),
 		},
+		{
+			name: "invalid-offsetAfter-value",
+			vds: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						TTL: then.Unix(),
+					},
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					OffsetAfter:      "x",
+					AllowStaticCreds: true,
+				},
+			},
+			want: then,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
