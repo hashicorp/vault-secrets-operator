@@ -70,6 +70,12 @@ type VaultDynamicSecretSpec struct {
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	RefreshAfter string `json:"refreshAfter,omitempty"`
+	// OffsetAfter specifies a duration to wait after the completion of a Vault
+	// rotation schedule before syncing the source secret data, in duration notation
+	// e.g. 30s, 1m, 24h. This value is only used when AllowStaticCreds is true.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
+	OffsetAfter string `json:"offsetAfter,omitempty"`
 }
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret
