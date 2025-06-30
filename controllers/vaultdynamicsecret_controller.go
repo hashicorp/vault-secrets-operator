@@ -757,6 +757,10 @@ func getRotationDuration(o *secretsv1beta1.VaultDynamicSecret) time.Duration {
 	var d time.Duration
 	if o.Spec.AllowStaticCreds {
 		d = time.Duration(o.Status.StaticCredsMetaData.TTL) * time.Second
+		if o.Spec.OffsetAfter != "" {
+			offset, _ := parseDurationString(o.Spec.OffsetAfter, ".spec.offsetAfter", 0)
+			d += offset
+		}
 	} else {
 		d = time.Duration(o.Status.SecretLease.LeaseDuration) * time.Second
 		if d <= 0 && o.Spec.RefreshAfter != "" {
