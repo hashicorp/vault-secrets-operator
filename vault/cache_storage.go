@@ -59,6 +59,8 @@ var commonMatchingLabels = ctrlclient.MatchingLabels{
 	"app.kubernetes.io/component":  "client-cache-storage",
 }
 
+// IsStorageEntryNotFoundErr returns true if the requested storage entry was not
+// found.
 func IsStorageEntryNotFoundErr(err error) bool {
 	return apierrors.IsNotFound(err)
 }
