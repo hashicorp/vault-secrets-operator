@@ -101,6 +101,7 @@ runs:
         HCP_PROJECT_ID: ${{ inputs.hcp-project-id }}
         HCP_CLIENT_ID: ${{ inputs.hcp-client-id }}
         HCP_CLIENT_SECRET: ${{ inputs.hcp-client-secret }}
+        SKIP_HCPVSAPPS_TESTS: "true"
         GITHUB_TOKEN: ${{ inputs.github-token }}
         # used by scripts that fetch build tools from GH
         GH_GET_RETRIES: 5
