@@ -110,4 +110,13 @@ resources:
   kind: VaultAuthGlobal
   path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
   version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: hashicorp.com
+  group: secrets
+  kind: VaultTokenSecret
+  path: github.com/hashicorp/vault-secrets-operator/api/v1beta1
+  version: v1beta1
 version: "3"
