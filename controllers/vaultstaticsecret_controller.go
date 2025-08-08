@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/cenkalti/backoff/v4"
@@ -501,9 +502,17 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	ctrlmetrics.Registry.MustRegister(
+		newResourceReferenceCacheCollector(r.referenceCache, "vaultstaticsecret"),
+	)
+
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
+	ctrlmetrics.Registry.MustRegister(
+		newBackoffRegistryCacheCollector(r.BackOffRegistry, "vaultstaticsecret"),
+	)
+
 	r.SourceCh = make(chan event.GenericEvent)
 	r.eventWatcherRegistry = newEventWatcherRegistry()
 

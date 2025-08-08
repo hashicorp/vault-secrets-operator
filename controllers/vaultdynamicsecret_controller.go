@@ -22,9 +22,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -597,9 +598,15 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	ctrlmetrics.Registry.MustRegister(
+		newResourceReferenceCacheCollector(r.referenceCache, "vaultdynamicsecret"),
+	)
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
+	ctrlmetrics.Registry.MustRegister(
+		newBackoffRegistryCacheCollector(r.BackOffRegistry, "vaultdynamicsecret"),
+	)
 
 	r.ClientFactory.RegisterClientCallbackHandler(
 		vault.ClientCallbackHandler{
