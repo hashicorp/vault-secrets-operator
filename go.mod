@@ -9,6 +9,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/go-logr/logr v1.4.3
 	github.com/go-openapi/runtime v0.28.0
+	github.com/iancoleman/strcase v0.3.0
 	github.com/go-openapi/strfmt v0.23.0
 	github.com/google/uuid v1.6.0
 	github.com/gruntwork-io/terratest v0.50.0
