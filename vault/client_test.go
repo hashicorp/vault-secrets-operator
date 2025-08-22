@@ -444,7 +444,7 @@ func Test_defaultClient_Validate(t *testing.T) {
 			watcher:        &api.LifetimeWatcher{},
 			lastWatcherErr: nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "client token expired", i...)
+				return assert.ErrorContains(t, err, "client token expired", i...)
 			},
 		},
 		{
@@ -662,7 +662,7 @@ func Test_defaultClient_Read(t *testing.T) {
 	}{
 		{
 			name:    "default-request",
-			request: NewReadRequest("foo/bar", nil),
+			request: NewReadRequest("foo/bar", nil, nil),
 			handler: &testHandler{
 				handlerFunc: handlerFunc,
 			},
@@ -679,7 +679,7 @@ func Test_defaultClient_Read(t *testing.T) {
 		},
 		{
 			name:    "fail-default-nil-response",
-			request: NewReadRequest("foo/bar", nil),
+			request: NewReadRequest("foo/bar", nil, nil),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					w.WriteHeader(http.StatusOK)
@@ -695,7 +695,7 @@ func Test_defaultClient_Read(t *testing.T) {
 		},
 		{
 			name:    "kv-v1-request",
-			request: NewKVReadRequestV1("kv-v1", "secrets"),
+			request: NewKVReadRequestV1("kv-v1", "secrets", nil),
 			handler: &testHandler{
 				handlerFunc: handlerFunc,
 			},
@@ -712,7 +712,7 @@ func Test_defaultClient_Read(t *testing.T) {
 		},
 		{
 			name:    "kv-v2-request",
-			request: NewKVReadRequestV2("kv-v2", "secrets", 0),
+			request: NewKVReadRequestV2("kv-v2", "secrets", 0, nil),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					m, err := json.Marshal(
@@ -748,7 +748,7 @@ func Test_defaultClient_Read(t *testing.T) {
 		},
 		{
 			name:    "kv-v2-request-with-version",
-			request: NewKVReadRequestV2("kv-v2", "secrets", 1),
+			request: NewKVReadRequestV2("kv-v2", "secrets", 1, nil),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					m, err := json.Marshal(
@@ -789,7 +789,7 @@ func Test_defaultClient_Read(t *testing.T) {
 		},
 		{
 			name:    "fail-kv-v1-nil-response",
-			request: NewKVReadRequestV1("kv-v1", "secrets"),
+			request: NewKVReadRequestV1("kv-v1", "secrets", nil),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					w.WriteHeader(http.StatusOK)
@@ -805,7 +805,7 @@ func Test_defaultClient_Read(t *testing.T) {
 		},
 		{
 			name:    "fail-kv-v2-nil-response",
-			request: NewKVReadRequestV2("kv-v2", "secrets", 0),
+			request: NewKVReadRequestV2("kv-v2", "secrets", 0, nil),
 			handler: &testHandler{
 				handlerFunc: func(t *testHandler, w http.ResponseWriter, req *http.Request) {
 					w.WriteHeader(http.StatusOK)

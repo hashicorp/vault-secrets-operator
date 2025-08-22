@@ -98,6 +98,7 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 
 	config.CloneToken = true
 	config.CloneHeaders = true
+	config.CloneTLSConfig = true
 
 	c, err := api.NewClient(config)
 	if err != nil {

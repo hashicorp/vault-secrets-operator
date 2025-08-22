@@ -50,7 +50,7 @@ var ResourceStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	"namespace",
 })
 
-func init() {
+func MustRegisterResourceStatus() {
 	metrics.Registry.MustRegister(
 		ResourceStatus,
 	)

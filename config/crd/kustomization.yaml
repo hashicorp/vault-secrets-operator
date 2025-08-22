@@ -14,6 +14,7 @@ resources:
 - bases/secrets.hashicorp.com_hcpauths.yaml
 - bases/secrets.hashicorp.com_secrettransformations.yaml
 - bases/secrets.hashicorp.com_vaultauthglobals.yaml
+- bases/secrets.hashicorp.com_csisecrets.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

@@ -5,8 +5,21 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+- role: worker
   extraPortMappings:
   - containerPort: 8200
     hostPort: 38302
+    listenAddress: "127.0.0.1"
+    protocol: TCP
+- role: worker
+  extraPortMappings:
+  - containerPort: 8200
+    hostPort: 38303
+    listenAddress: "127.0.0.1"
+    protocol: TCP
+- role: worker
+  extraPortMappings:
+  - containerPort: 8200
+    hostPort: 38304
     listenAddress: "127.0.0.1"
     protocol: TCP

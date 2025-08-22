@@ -240,7 +240,7 @@ func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1b
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultAuth{}).
 		Watches(

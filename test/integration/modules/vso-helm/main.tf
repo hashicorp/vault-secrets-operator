@@ -14,7 +14,7 @@ resource "random_string" "suffix" {
 resource "helm_release" "vault-secrets-operator" {
   name             = local.name
   namespace        = var.operator_namespace
-  create_namespace = true
+  create_namespace = var.create_namespace
   wait             = true
   chart            = var.operator_helm_chart_path
 
@@ -156,5 +156,13 @@ resource "helm_release" "vault-secrets-operator" {
       name  = "controller.manager.resources.requests.memory"
       value = var.memory_requests
     }
+  }
+  set {
+    name  = "csi.enabled"
+    value = var.csi_enabled
+  }
+  set {
+    name  = "csi.driver.logging.level"
+    value = var.csi_logging_level
   }
 }

@@ -123,12 +123,23 @@ type GlobalTransformationOptions struct {
 }
 
 func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, globalOpt *GlobalTransformationOptions) (*SecretTransformationOption, error) {
-	meta, err := common.NewSyncableSecretMetaData(obj)
+	meta, err := common.NewSyncableSecretMetaDataI(obj)
 	if err != nil {
 		return nil, err
 	}
 
-	keyedTemplates, ff, err := gatherTemplates(ctx, client, meta)
+	transformation := meta.GetTransformation()
+	if transformation == nil {
+		return nil, nil
+	}
+
+	return NewSecretTransformationOptionWithTransformation(ctx, client, obj, transformation, globalOpt)
+}
+
+func NewSecretTransformationOptionWithTransformation(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, transformation *secretsv1beta1.Transformation,
+	globalOpt *GlobalTransformationOptions,
+) (*SecretTransformationOption, error) {
+	keyedTemplates, ff, err := gatherTemplates(ctx, client, obj, transformation)
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +156,8 @@ func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client
 		opt.ExcludeRaw = globalOpt.ExcludeRaw
 	}
 
-	if meta.Destination.Transformation.ExcludeRaw {
-		opt.ExcludeRaw = meta.Destination.Transformation.ExcludeRaw
+	if transformation.ExcludeRaw {
+		opt.ExcludeRaw = transformation.ExcludeRaw
 	}
 
 	return opt, nil
@@ -154,9 +165,13 @@ func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client
 
 // gatherTemplates attempts to collect all v1beta1.Template(s) for the
 // syncable secret object.
-func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common.SyncableSecretMetaData) ([]*KeyedTemplate, *fieldFilters, error) {
+func gatherTemplates(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, transformation *secretsv1beta1.Transformation) ([]*KeyedTemplate, *fieldFilters, error) {
 	var errs error
 	var keyedTemplates []*KeyedTemplate
+
+	if transformation == nil {
+		return nil, nil, fmt.Errorf("transformation is nil")
+	}
 
 	// used to deduplicate templates by name
 	seenTemplates := make(map[string]secretsv1beta1.Template)
@@ -180,15 +195,19 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 	}
 
 	ff := newFieldFilters()
-	ff.addExcludes(meta.Destination.Transformation.Excludes...)
-	ff.addIncludes(meta.Destination.Transformation.Includes...)
+	ff.addExcludes(transformation.Excludes...)
+	ff.addIncludes(transformation.Includes...)
 
-	transformation := meta.Destination.Transformation
+	objKey := ctrlclient.ObjectKeyFromObject(obj)
+	if err := common.ValidateObjectKey(objKey); err != nil {
+		return nil, nil, err
+	}
+
 	// get the in-line template templates
 	for key, tmpl := range transformation.Templates {
 		name := tmpl.Name
 		if name == "" {
-			tmpl.Name = fmt.Sprintf("%s/%s/%s", meta.Namespace, meta.Name, key)
+			tmpl.Name = fmt.Sprintf("%s/%s", objKey, key)
 		}
 		addTemplate(tmpl, key)
 	}
@@ -196,7 +215,7 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, meta *common
 	seenRefs := make(map[ctrlclient.ObjectKey]bool)
 	// get the remote ref template templates
 	for _, ref := range transformation.TransformationRefs {
-		ns := meta.Namespace
+		ns := obj.GetNamespace()
 		if ref.Namespace != "" {
 			ns = ref.Namespace
 		}
@@ -435,6 +454,8 @@ func filterData[V any](opt *SecretTransformationOption, data map[string]V) (map[
 type SecretInput struct {
 	// Secrets contains the secret data that is considered confidential.
 	Secrets map[string]any `json:"secrets"`
+	// WrapData contains any wrapping key material and its corresponding metadata.
+	WrapData map[string]any `json:"wrapData,omitempty"`
 	// Metadata contains the secret metadata that is not considered confidential.
 	Metadata map[string]any `json:"metadata"`
 	// Annotations associated with syncable secret K8s resource
@@ -446,9 +467,7 @@ type SecretInput struct {
 // NewSecretInput sets up a SecretInput instance from the provided secret data
 // secret metadata, and annotations and labels which are typically of the type
 // map[string]string.
-func NewSecretInput[A, L any](secrets, metadata map[string]any,
-	annotations map[string]A, labels map[string]L,
-) *SecretInput {
+func NewSecretInput[A, L any](secrets, wrapData, metadata map[string]any, annotations map[string]A, labels map[string]L) *SecretInput {
 	var a map[string]any
 	if annotations != nil {
 		a = make(map[string]any)
@@ -470,6 +489,7 @@ func NewSecretInput[A, L any](secrets, metadata map[string]any,
 	return &SecretInput{
 		Secrets:     secrets,
 		Metadata:    metadata,
+		WrapData:    wrapData,
 		Annotations: a,
 		Labels:      l,
 	}

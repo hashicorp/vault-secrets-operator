@@ -4,6 +4,7 @@
 package vault
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,16 +17,25 @@ import (
 var (
 	_ Response = (*defaultResponse)(nil)
 	_ Response = (*kvV2Response)(nil)
+	_ Response = (*kvV1Response)(nil)
 )
 
 type Response interface {
 	Secret() *api.Secret
 	Data() map[string]any
+	WrapInfo() *api.SecretWrapInfo
 	SecretK8sData(*helpers.SecretTransformationOption) (map[string][]byte, error)
 }
 
 type defaultResponse struct {
 	secret *api.Secret
+}
+
+func (r *defaultResponse) WrapInfo() *api.SecretWrapInfo {
+	if r.secret != nil {
+		return r.secret.WrapInfo
+	}
+	return nil
 }
 
 func (r *defaultResponse) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
@@ -34,7 +44,18 @@ func (r *defaultResponse) SecretK8sData(opt *helpers.SecretTransformationOption)
 		rawData = r.secret.Data
 	}
 
-	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, opt)
+	var wrapData map[string]any
+	if wrapInfo := r.WrapInfo(); wrapInfo != nil {
+		b, err := json.Marshal(wrapInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal wrap info: %w", err)
+		}
+		if err := json.Unmarshal(b, &wrapData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal wrap info: %w", err)
+		}
+	}
+
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, wrapData, opt)
 }
 
 func (r *defaultResponse) Secret() *api.Secret {
@@ -53,6 +74,10 @@ type kvV1Response struct {
 	secret *api.Secret
 }
 
+func (r *kvV1Response) WrapInfo() *api.SecretWrapInfo {
+	return nil
+}
+
 func (r *kvV1Response) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
@@ -63,7 +88,7 @@ func (r *kvV1Response) SecretK8sData(opt *helpers.SecretTransformationOption) (m
 		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
 	}
 
-	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, opt)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, nil, opt)
 }
 
 func (r *kvV1Response) Secret() *api.Secret {
@@ -82,6 +107,10 @@ type kvV2Response struct {
 	secret *api.Secret
 }
 
+func (r *kvV2Response) WrapInfo() *api.SecretWrapInfo {
+	return nil
+}
+
 func (r *kvV2Response) SecretK8sData(opt *helpers.SecretTransformationOption) (map[string][]byte, error) {
 	var rawData map[string]interface{}
 	if r.secret != nil {
@@ -92,7 +121,7 @@ func (r *kvV2Response) SecretK8sData(opt *helpers.SecretTransformationOption) (m
 		return nil, fmt.Errorf("raw portion of vault KV secret was nil")
 	}
 
-	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, opt)
+	return helpers.NewSecretsDataBuilder().WithVaultData(r.Data(), rawData, nil, opt)
 }
 
 func (r *kvV2Response) Secret() *api.Secret {
