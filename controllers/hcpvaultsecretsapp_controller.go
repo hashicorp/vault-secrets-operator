@@ -302,7 +302,7 @@ func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secr
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}

@@ -17,18 +17,14 @@ resource "vault_kubernetes_auth_backend_config" "default" {
 
 # kubernetes auth roles
 resource "vault_kubernetes_auth_backend_role" "default" {
-  namespace                   = vault_auth_backend.default.namespace
-  backend                     = vault_kubernetes_auth_backend_config.default.backend
-  role_name                   = local.auth_role
-  bound_service_account_names = ["default"]
-  bound_service_account_namespaces = [
-    local.k8s_namespace,
-  ]
-  token_period = 120
-  token_policies = [
-    vault_policy.db.name,
-  ]
-  audience = "vault"
+  namespace                        = vault_auth_backend.default.namespace
+  backend                          = vault_kubernetes_auth_backend_config.default.backend
+  role_name                        = local.auth_role
+  bound_service_account_names      = ["default"]
+  bound_service_account_namespaces = local.bound_service_account_namespaces
+  token_period                     = 120
+  token_policies                   = local.default_token_policies
+  audience                         = "vault"
 }
 # operator role used for transit encrypt/decrypt of VSO's Vault client cache
 resource "vault_kubernetes_auth_backend_role" "operator" {

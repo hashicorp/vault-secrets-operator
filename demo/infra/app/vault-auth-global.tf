@@ -24,4 +24,6 @@ resource "kubernetes_manifest" "vault-auth-global" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }

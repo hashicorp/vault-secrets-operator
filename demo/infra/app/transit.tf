@@ -44,6 +44,7 @@ EOT
 }
 
 resource "kubernetes_manifest" "vault-auth-operator" {
+  count = var.deploy_operator_via_helm ? 0 : 1
   manifest = {
     apiVersion = "secrets.hashicorp.com/v1beta1"
     kind       = "VaultAuth"
@@ -70,4 +71,6 @@ resource "kubernetes_manifest" "vault-auth-operator" {
       }
     }
   }
+
+  depends_on = [module.vso-helm]
 }

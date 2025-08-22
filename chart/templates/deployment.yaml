@@ -11,7 +11,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
-{{ include "vso.imagePullSecrets" . }}
+{{ include "vso.imagePullSecrets" .Values.controller.imagePullSecrets }}
 ---
 apiVersion: apps/v1
 kind: Deployment
