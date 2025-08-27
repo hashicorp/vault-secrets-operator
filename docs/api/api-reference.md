@@ -476,10 +476,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included<br />in the rendered K8s Secret with the specified key. |  |  |
-| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered K8s Secret, they can be<br />used to provide common template definitions, etc. |  |  |
-| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data<br />fields for inclusion in the final K8s Secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied last. |  |  |
-| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data<br />fields for exclusion from the final K8s Secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied before any inclusion patterns. To exclude all source secret data<br />fields, you can configure the single pattern ".*". |  |  |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included<br />in the rendered secret with the specified key. |  |  |
+| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered secret, they can be<br />used to provide common template definitions, etc. |  |  |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data<br />fields for inclusion in the final secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied last. |  |  |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data<br />fields for exclusion from the final secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied before any inclusion patterns. To exclude all source secret data<br />fields, you can configure the single pattern ".*". |  |  |
 
 
 
