@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -18,12 +19,15 @@ import (
 	"golang.org/x/crypto/blake2b"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/common"
 	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/credentials"
 	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/credentials/vault"
 	vaultcredsconsts "github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
@@ -1188,7 +1192,7 @@ func TestNewClientConfigFromConnObj(t *testing.T) {
 			connObj: connObjBase,
 			want: &ClientConfig{
 				Address:         "https://vault.example.com",
-				Headers:         map[string]string{"foo": "bar"},
+				Headers:         http.Header{"Foo": []string{"bar"}},
 				TLSServerName:   "baz.biff",
 				CACertSecretRef: "ca.crt",
 				SkipTLSVerify:   true,
@@ -1201,7 +1205,7 @@ func TestNewClientConfigFromConnObj(t *testing.T) {
 			connObj: connObjEmptyTimeout,
 			want: &ClientConfig{
 				Address:         "https://vault.example.com",
-				Headers:         map[string]string{"foo": "bar"},
+				Headers:         http.Header{"Foo": []string{"bar"}},
 				TLSServerName:   "baz.biff",
 				CACertSecretRef: "ca.crt",
 				SkipTLSVerify:   true,
@@ -1260,6 +1264,117 @@ func Test_defaultClient_Renewable(t *testing.T) {
 				authSecret: tt.authSecret,
 			}
 			assert.Equalf(t, tt.want, c.Renewable(), "Renewable()")
+		})
+	}
+}
+
+func TestClient_UserAgentHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		userAgent         string
+		expectedUserAgent string
+	}{
+		{
+			name:              "default-user-agent",
+			userAgent:         "",
+			expectedUserAgent: common.DefaultVSOUserAgent,
+		},
+		{
+			name:              "custom-user-agent",
+			userAgent:         "custom-client/1.0.0",
+			expectedUserAgent: "custom-client/1.0.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create a mock client that captures headers
+			var capturedHeaders http.Header
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedHeaders = r.Header.Clone()
+				// Return a successful auth response
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				resp := map[string]interface{}{
+					"auth": map[string]interface{}{
+						"client_token":   "test-token",
+						"accessor":       "test-accessor",
+						"renewable":      false,
+						"lease_duration": 3600,
+					},
+				}
+				json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			// Create test objects
+			vaultConnection := &secretsv1beta1.VaultConnection{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-connection",
+					Namespace: "test-ns",
+				},
+				Spec: secretsv1beta1.VaultConnectionSpec{
+					Address: server.URL,
+				},
+			}
+
+			vaultAuth := &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-auth",
+					Namespace: "test-ns",
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "kubernetes",
+					Mount:  "kubernetes",
+					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+						Role:           "test-role",
+						ServiceAccount: "test-sa",
+					},
+				},
+			}
+
+			serviceAccount := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-sa",
+					Namespace: "test-ns",
+				},
+			}
+
+			scheme := runtime.NewScheme()
+			require.NoError(t, secretsv1beta1.AddToScheme(scheme))
+			require.NoError(t, corev1.AddToScheme(scheme))
+
+			k8sClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(vaultConnection, vaultAuth, serviceAccount).
+				Build()
+
+			var opts *ClientOptions
+			if tt.userAgent != "" {
+				opts = &ClientOptions{
+					UserAgent:                 tt.userAgent,
+					CredentialProviderFactory: credentials.NewCredentialProviderFactory(),
+				}
+			}
+
+			// Create and initialize the client
+			client := &defaultClient{}
+			err := client.Init(context.Background(), k8sClient, vaultAuth, vaultConnection, "test-ns", opts)
+			require.NoError(t, err)
+
+			// Perform a login to trigger HTTP request with headers
+			err = client.Login(context.Background(), k8sClient)
+			require.NoError(t, err)
+
+			// Verify that the User-Agent header was set correctly
+			require.NotNil(t, capturedHeaders)
+			userAgentHeaders := capturedHeaders.Values(consts.HeaderUserAgent)
+			require.Len(t, userAgentHeaders, 1, "Expected exactly one User-Agent header")
+			assert.Equal(t, tt.expectedUserAgent, userAgentHeaders[0])
 		})
 	}
 }

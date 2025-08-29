@@ -33,6 +33,7 @@ type ClientOptions struct {
 	WatcherDoneCh             chan<- *ClientCallbackHandlerRequest
 	GlobalVaultAuthOptions    *common.GlobalVaultAuthOptions
 	CredentialProviderFactory credentials.CredentialProviderFactory
+	UserAgent                 string
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -801,6 +802,17 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	if err != nil {
 		return err
 	}
+
+	// set the User-Agent header
+	if cfg.Headers == nil {
+		cfg.Headers = make(http.Header)
+	}
+	if opts.UserAgent != "" {
+		cfg.Headers.Add(consts.HeaderUserAgent, opts.UserAgent)
+	} else {
+		cfg.Headers.Add(consts.HeaderUserAgent, common.DefaultVSOUserAgent)
+	}
+
 	vc, err := MakeVaultClient(ctx, cfg, client)
 	if err != nil {
 		return err
@@ -921,13 +933,20 @@ func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS
 		return nil, errors.New("invalid nil VaultConnection")
 	}
 
+	headers := make(http.Header)
+	if connObj.Spec.Headers != nil {
+		for k, v := range connObj.Spec.Headers {
+			headers.Add(k, v)
+		}
+	}
+
 	cfg := &ClientConfig{
 		Address:         connObj.Spec.Address,
 		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
 		TLSServerName:   connObj.Spec.TLSServerName,
 		K8sNamespace:    connObj.Namespace,
 		CACertSecretRef: connObj.Spec.CACertSecretRef,
-		Headers:         connObj.Spec.Headers,
+		Headers:         headers,
 		VaultNamespace:  vaultNS,
 	}
 
