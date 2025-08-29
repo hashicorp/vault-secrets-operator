@@ -40,12 +40,10 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/common"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/version"
 )
 
 const (
 	headerHVSRequester = "X-HVS-Requester"
-	headerUserAgent    = "User-Agent"
 
 	hcpVaultSecretsAppFinalizer = "hcpvaultsecretsapp.secrets.hashicorp.com/finalizer"
 
@@ -67,7 +65,6 @@ const (
 )
 
 var (
-	userAgent = fmt.Sprintf("vso/%s", version.Version().String())
 	// hvsErrorRe is a regexp to parse the error message from the HVS API
 	// The error message is expected to be in the format:
 	// [METHOD PATH_PATTERN][STATUS_CODE]
@@ -402,8 +399,8 @@ type transport struct {
 // RoundTrip is a wrapper implementation of the http.RoundTrip interface to
 // inject a header for identifying the requester type
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Add(headerUserAgent, userAgent)
-	req.Header.Add(headerHVSRequester, userAgent)
+	req.Header.Add(consts.HeaderUserAgent, common.DefaultVSOUserAgent)
+	req.Header.Add(headerHVSRequester, common.DefaultVSOUserAgent)
 	return t.child.RoundTrip(req)
 }
 

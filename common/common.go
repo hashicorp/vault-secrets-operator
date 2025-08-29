@@ -21,6 +21,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	vaultcredsconsts "github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	"github.com/hashicorp/vault-secrets-operator/utils"
 )
 
@@ -30,6 +31,7 @@ var (
 	InvalidObjectKeyError                      = fmt.Errorf("invalid objectKey")
 	InvalidObjectKeyErrorEmptyName             = fmt.Errorf("%w, empty name", InvalidObjectKeyError)
 	InvalidObjectKeyErrorEmptyNamespace        = fmt.Errorf("%w, empty namespace", InvalidObjectKeyError)
+	DefaultVSOUserAgent                        = fmt.Sprintf("vso/%s", version.Version().String())
 	defaultMaxRetries                   uint64 = 60
 	defaultRetryDuration                       = time.Millisecond * 500
 )
