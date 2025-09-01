@@ -59,6 +59,8 @@ var commonMatchingLabels = ctrlclient.MatchingLabels{
 	"app.kubernetes.io/component":  "client-cache-storage",
 }
 
+// IsStorageEntryNotFoundErr returns true if the requested storage entry was not
+// found.
 func IsStorageEntryNotFoundErr(err error) bool {
 	return apierrors.IsNotFound(err)
 }
@@ -233,7 +235,7 @@ func (c *defaultClientCacheStorage) Store(ctx context.Context, client ctrlclient
 		// we always store Clients in an Immutable secret as an anti-tampering mitigation.
 		Immutable: ptr.To(true),
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            fmt.Sprintf(NamePrefixVCC + cacheKey.String()),
+			Name:            NamePrefixVCC + cacheKey.String(),
 			Namespace:       common.OperatorNamespace,
 			OwnerReferences: req.OwnerReferences,
 			Labels:          c.addCommonMatchingLabels(labels),

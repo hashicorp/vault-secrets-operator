@@ -1,0 +1,46 @@
+{{/*
+# SPDX-License-Identifier: BUSL-1.1
+*/}}
+
+{{- if and (gt (int .Values.controller.replicas) 1) .Values.controller.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "vso.chart.fullname" . }}
+  labels:
+    app.kubernetes.io/component: controller-manager
+    control-plane: controller-manager
+    {{- include "vso.chart.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  {{/* Throw an error if both maxUnavailable and minAvailable are set and non-zero */}}
+  {{- $maxUnavailable := toString .Values.controller.podDisruptionBudget.maxUnavailable | trim }}
+  {{- $minAvailable := toString .Values.controller.podDisruptionBudget.minAvailable | trim }}
+  {{- if and (not (empty $maxUnavailable)) (not (empty $minAvailable)) (ne $maxUnavailable "0") (ne $minAvailable "0") }}
+  {{- fail "You cannot set both maxUnavailable and minAvailable in the PodDisruptionBudget" }}
+  {{- end }}
+
+  {{/* If maxUnavailable is set, use it */}}
+  {{- if not (empty $maxUnavailable) }}
+  maxUnavailable: 
+    {{- if contains "%" $maxUnavailable }}
+    "{{ $maxUnavailable }}"
+    {{- else }}
+    {{ $maxUnavailable }}
+    {{- end }}
+  {{- end }}
+
+  {{/* If minAvailable is set, use it */}}
+  {{- if not (empty $minAvailable) }}
+  minAvailable: 
+    {{- if contains "%" $minAvailable }}
+    "{{ $minAvailable }}"
+    {{- else }}
+    {{ $minAvailable }}
+    {{- end }}
+  {{- end }}
+
+  selector:
+    matchLabels:
+      {{- include "vso.chart.selectorLabels" . | nindent 6 }}
+{{- end }}

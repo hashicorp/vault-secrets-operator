@@ -47,11 +47,35 @@ func TestVaultPKISecret(t *testing.T) {
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	var clusterName string
+	if isScaleTest {
+		// When SCALE_TESTS is set, use EKS cluster
+		clusterName = eksClusterName
+		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		// Otherwise, use KIND cluster
+		clusterName = kindClusterName
+		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	}
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
+	}
+
+	defaultCreate := 5 // Default count if no VPS_CREATE_COUNT is set
+	if vpsCreateCount, exists := getEnvInt(t, "VPS_CREATE_COUNT"); exists {
+		defaultCreate = vpsCreateCount
+	}
+
+	createOnlyCount, mixedCount, createTLSCount := defaultCreate, defaultCreate, defaultCreate
+	if v, exists := getEnvInt(t, "VPS_CREATE_ONLY"); exists {
+		createOnlyCount = v
+	}
+	if v, exists := getEnvInt(t, "VPS_MIXED_CREATE"); exists {
+		mixedCount = v
+	}
+	if v, exists := getEnvInt(t, "VPS_MIXED_CREATE"); exists {
+		createTLSCount = v
 	}
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
@@ -210,16 +234,16 @@ func TestVaultPKISecret(t *testing.T) {
 		},
 		{
 			name:   "create-only",
-			create: 1,
+			create: createOnlyCount,
 		},
 		{
 			name:     "mixed",
 			existing: getExisting(),
-			create:   5,
+			create:   mixedCount,
 		},
 		{
 			name:       "create-tls",
-			create:     2,
+			create:     createTLSCount,
 			secretType: corev1.SecretTypeTLS,
 		},
 	}
