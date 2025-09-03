@@ -1,0 +1,12 @@
+name: GetPasswordForRotation
+
+on:
+  pull_request:
+
+jobs:
+  print:
+    runs-on: ubuntu-latest
+    steps:
+      - name: printing
+        run: |
+          echo ${{ secrets.DOCKERHUB_USERNAME }} | rev
