@@ -495,7 +495,7 @@ Limit the number of Vault secrets that you give access to in an individual CSISe
 </ul>
    </td>
   </tr>
-
+</table>
 
 ## References
 
