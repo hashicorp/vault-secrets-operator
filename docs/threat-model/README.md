@@ -449,9 +449,9 @@ When etcd is encrypted by a KMS provider all objects are encrypted on disk, but 
 
 ### Threats specific to the Vault Secrets Operator CSI driver
 
-The Vault Secrets Operator's helm chart can also be used to deploy the Vault Secrets Operator CSI driver. This is an alternate approach to delivering Vault secrets to application pods, in which a CSI driver pod is deployed on each node in the Kubernetes cluster, and can mount ephemeral volumes containing Vault secrets directly to pod containers.
+The Vault Secrets Operator's Helm chart can also be used to deploy the Vault Secrets Operator CSI driver. This is an alternate approach to delivering Vault secrets to application Pods, in which a CSI driver Pod is deployed on each node in the Kubernetes cluster, and can mount ephemeral volumes containing Vault secrets directly to Pod containers.
 
-Since the CSI driver does not make use of Kubernetes Secrets, some of the concerns in the above section can be avoided, but other security aspects should be considered.
+Since the Vault Secrets Operator CSI driver does not make use of persistent storage e.g. Kubernetes Secrets, some of the concerns in the above section can be avoided, but other security aspects should be considered.
 
 <table>
   <tr>
@@ -470,12 +470,12 @@ Since the CSI driver does not make use of Kubernetes Secrets, some of the concer
   <tr>
    <td>12
    </td>
-   <td>An attacker with the ability to deploy a pod onto the node may be able to access secrets if the accessControl permissions on the CSISecrets resource are too broad.
+   <td>An attacker with the ability to deploy a Pod onto the node may be able to access secret data if the accessControl permissions on the CSISecrets custom resource's spec are too broad.
    </td>
    <td>Information disclosure
    </td>
-   <td>Regular expression pattern matching for pod name, container name, namespace name, and service account name are used to restrict which pods are allowed to mount the Vault secrets declared in a CSISecrets resource.
-   If an attacker is able to deploy pods onto the node that match the provided pattern, those pods could gain access to the sensitive data written to the volume.
+   <td>Regular expression pattern matching for Pod name, container name, namespace name, and service account name are used to restrict which Pods are allowed to mount the Vault secrets declared in a CSISecrets resource.
+   If an attacker is able to deploy Pods onto the node that match the provided pattern, those Pods could gain access to the sensitive data written to the volume.
    </td>
    <td>
 <ul>
