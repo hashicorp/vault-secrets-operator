@@ -8,6 +8,10 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Set the priority class for the operator.
+  # @type: string
+  priorityClassName: ""
+
   # Configure update strategy for multi-replica deployments.
   # Kubernetes supports types Recreate, and RollingUpdate
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
@@ -65,6 +69,36 @@ controller:
   #           - antarctica-east1
   #           - antarctica-west1
   affinity: {}
+
+  # TopologySpreadConstraints settings for vault-secrets-operator pod.
+  # The value is an array of PodSpec TopologySpreadConstraint maps.
+  # A labelSelector for the pods will be added automatically to the template in case it is not set.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/
+  # Example:
+  # topologySpreadConstraints:
+  # - maxSkew: 1
+  #   topologyKey: zone
+  #   whenUnsatisfiable: DoNotSchedule
+  topologySpreadConstraints: []
+
+  # Configure the PodDisruptionBudget for the controller deployment.
+  podDisruptionBudget:
+
+    # toggles the deployment of the PodDisruptionBudget for the controller.
+    # @type: boolean
+    enabled: false
+
+    # Sets the maximum number of pods that can be unavailable during the eviction.
+    # This field cannot be set if minAvailable is set.
+    # Can be set as an integer (e.g. "2") or a percentage (e.g. "50%").
+    # @type: string
+    maxUnavailable: "0"
+
+    # Sets the number of pods that must be available during the eviction.
+    # This field cannot be set if maxUnavailable is set.
+    # Can be set as an integer (e.g. "2") or a percentage (e.g. "50%").
+    # @type: string
+    minAvailable: "0"
 
   rbac:
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.

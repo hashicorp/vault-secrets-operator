@@ -453,7 +453,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	logger.V(consts.LogLevelTrace).Info("New client created",
 		"cacheKey", cacheKey, "clientID", c.ID())
 	// cache the parent Client for future requests.
-	cacheKey, err = m.cacheClient(ctx, c, m.storageEnabled())
+	cacheKey, err = m.cacheClient(ctx, c, m.storageEnabled() && c.Renewable())
 	if err != nil {
 		errs = errors.Join(err)
 		return nil, errs
@@ -596,7 +596,7 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 	if persist && cacheKey == m.clientCacheKeyEncrypt {
 		// added protection against persisting the Vault client used for storage
 		// data encryption.
-		logger.Info("Warning: refusing to store the encryption client")
+		logger.V(consts.LogLevelWarning).Info("Refusing to store the encryption client")
 		persist = false
 	}
 
@@ -608,7 +608,7 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 			}
 		}
 	} else if persist {
-		logger.Info("Warning: persistence requested but storage not enabled")
+		logger.V(consts.LogLevelWarning).Info("Client persistence requested but storage not enabled")
 	}
 
 	return cacheKey, nil
