@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,8 +92,8 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			newConditionNow(o, "VaultClient",
 				consts.ReasonVaultClientConfigError,
 				metav1.ConditionFalse,
-				"Failed to setup Vault client, address=%s, errs=%s",
-				o.Spec.Address, errs),
+				"Failed to setup Vault client, address=%s, err=%s",
+				o.Spec.Address, err),
 		)
 
 		errs = errors.Join(errs, err)
@@ -115,7 +116,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		} else {
 			o.Status.Valid = ptr.To(true)
 			o.Status.Conditions = append(o.Status.Conditions,
-				newConditionNow(o, "VaultPing", consts.ReasonInvalidConfiguration,
+				newConditionNow(o, "VaultPing", consts.ReasonAccepted,
 					metav1.ConditionTrue, "Vault ping, address=%s",
 					o.Spec.Address),
 			)
@@ -136,11 +137,16 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		errs = errors.Join(errs, err)
 	}
 
-	// TODO: cleanup error reporting
 	var horizon time.Duration
-	if errs != nil || !*o.Status.Valid {
+
+	isValid := ptr.Deref(o.Status.Valid, false)
+	if !isValid {
+		errs = errors.Join(errs, fmt.Errorf("invalid VaultConnection %s", client.ObjectKeyFromObject(o)))
+	}
+
+	if errs != nil {
 		logger.Error(errs, "Resource validation failed")
-		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonAccepted, "VaultConnection invalid")
+		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonInvalidConfiguration, "VaultConnection invalid")
 		horizon = computeHorizonWithJitter(requeueDurationOnError)
 		o.Status.Conditions = append(o.Status.Conditions,
 			newConditionNow(o, consts.TypeResourceValidation, consts.ReasonInvalidConfiguration,
@@ -152,8 +158,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
-		errs = errors.Join(errs, err)
-		return ctrl.Result{}, errs
+		return ctrl.Result{}, errors.Join(errs, err)
 	}
 
 	return ctrl.Result{
