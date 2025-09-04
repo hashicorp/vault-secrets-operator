@@ -388,7 +388,6 @@ func Test_waitForStoppedCh(t *testing.T) {
 }
 
 func TestVaultAuthReconciler_updateConditions(t *testing.T) {
-	t.Skip("This test is not working as expected. It is failing with the following error: expected 1 conditions, got 2")
 	t0 := nowFunc().Truncate(time.Second)
 	tests := []struct {
 		name      string
