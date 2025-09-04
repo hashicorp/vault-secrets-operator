@@ -300,7 +300,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 					consts.TypeLeaseRenewal,
 					consts.ReasonSecretLeaseRenewalError,
 					metav1.ConditionFalse,
-					err.Error()),
+					"Could not renew lease, err=%s",
+					err),
 			)
 		}
 	}
@@ -372,7 +373,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				newConditionNow(o,
 					consts.TypeRolloutRestart,
 					consts.ReasonRolloutRestartTriggeredFailed,
-					metav1.ConditionFalse, err.Error()),
+					metav1.ConditionFalse,
+					"Rollout restart trigger failed: %s",
+					err),
 			)
 		} else {
 			conditions = append(
@@ -380,7 +383,8 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				newConditionNow(o,
 					consts.TypeRolloutRestart,
 					consts.ReasonRolloutRestartTriggered,
-					metav1.ConditionTrue, "Rollout restart triggered"),
+					metav1.ConditionTrue,
+					"Rollout restart triggered"),
 			)
 		}
 	}

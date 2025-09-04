@@ -273,7 +273,9 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				newConditionNow(o,
 					consts.TypeRolloutRestart,
 					consts.ReasonRolloutRestartTriggeredFailed,
-					metav1.ConditionFalse, err.Error()),
+					metav1.ConditionFalse,
+					"Rollout restart trigger failed, err=%s",
+					err),
 			)
 		} else {
 			conditions = append(
