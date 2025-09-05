@@ -128,36 +128,31 @@ func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client
 		return nil, err
 	}
 
-	transformation := meta.GetTransformation()
-	if transformation == nil {
-		return nil, nil
-	}
-
-	return NewSecretTransformationOptionWithTransformation(ctx, client, obj, transformation, globalOpt)
+	return NewSecretTransformationOptionWithTransformation(ctx, client, obj, meta.GetTransformation(), globalOpt)
 }
 
 func NewSecretTransformationOptionWithTransformation(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, transformation *secretsv1beta1.Transformation,
 	globalOpt *GlobalTransformationOptions,
 ) (*SecretTransformationOption, error) {
-	keyedTemplates, ff, err := gatherTemplates(ctx, client, obj, transformation)
-	if err != nil {
-		return nil, err
-	}
+	opt := &SecretTransformationOption{}
+	if transformation != nil {
+		keyedTemplates, ff, err := gatherTemplates(ctx, client, obj, transformation)
+		if err != nil {
+			return nil, err
+		}
 
-	opt := &SecretTransformationOption{
-		Excludes:       ff.excludes(),
-		Includes:       ff.includes(),
-		KeyedTemplates: keyedTemplates,
-		Annotations:    obj.GetAnnotations(),
-		Labels:         obj.GetLabels(),
+		opt.Annotations = obj.GetAnnotations()
+		opt.Labels = obj.GetLabels()
+		opt.Excludes = ff.excludes()
+		opt.Includes = ff.includes()
+		opt.KeyedTemplates = keyedTemplates
+		opt.ExcludeRaw = transformation.ExcludeRaw
 	}
 
 	if globalOpt != nil {
-		opt.ExcludeRaw = globalOpt.ExcludeRaw
-	}
-
-	if transformation.ExcludeRaw {
-		opt.ExcludeRaw = transformation.ExcludeRaw
+		if globalOpt.ExcludeRaw {
+			opt.ExcludeRaw = globalOpt.ExcludeRaw
+		}
 	}
 
 	return opt, nil
