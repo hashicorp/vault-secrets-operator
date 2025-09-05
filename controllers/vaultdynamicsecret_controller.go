@@ -372,9 +372,9 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	logger = logger.WithValues("path", path, "method", method)
 	switch method {
 	case http.MethodPut, http.MethodPost:
-		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params))
+		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, nil))
 	case http.MethodGet:
-		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil))
+		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, nil))
 	default:
 		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
@@ -577,7 +577,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 	resp, err := c.Write(ctx, vault.NewWriteRequest("/sys/leases/renew", map[string]any{
 		"lease_id":  o.Status.SecretLease.ID,
 		"increment": o.Status.SecretLease.LeaseDuration,
-	}))
+	}, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +596,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
@@ -690,7 +690,7 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	}
 	if _, err = c.Write(ctx, vault.NewWriteRequest("/sys/leases/revoke", map[string]any{
 		"lease_id": leaseID,
-	})); err != nil {
+	}, nil)); err != nil {
 		msg := "Failed to revoke lease"
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoke, msg+": %s", err)
 		logger.Error(err, "Failed to revoke lease ", "id", leaseID)

@@ -195,7 +195,7 @@ func Test_defaultWriteRequest_Params(t *testing.T) {
 			r := &defaultWriteRequest{
 				params: tt.params,
 			}
-			assert.Equalf(t, tt.want, r.Params(), "Params()")
+			assert.Equalf(t, tt.want, r.Data(), "Data()")
 		})
 	}
 }

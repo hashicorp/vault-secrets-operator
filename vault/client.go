@@ -26,11 +26,14 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
+type NewClientFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error)
+
 type ClientOptions struct {
 	SkipRenewal               bool
 	WatcherDoneCh             chan<- *ClientCallbackHandlerRequest
 	GlobalVaultAuthOptions    *common.GlobalVaultAuthOptions
 	CredentialProviderFactory credentials.CredentialProviderFactory
+	UserAgent                 string
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -53,6 +56,7 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 		authObj = t
 		providerNamespace = authObj.Namespace
 		if providerNamespace != common.OperatorNamespace {
+			// TODO: update this to work in trusted orchestrator mode
 			return nil, fmt.Errorf("invalid object %T, only allowed in the %s namespace", authObj, common.OperatorNamespace)
 		}
 		if authObj.Spec.StorageEncryption == nil {
@@ -78,6 +82,12 @@ func NewClient(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Obj
 	if err != nil {
 		return nil, err
 	}
+
+	return NewClientFromObjs(ctx, client, authObj, connObj, providerNamespace, opts)
+}
+
+// NewClientFromObjs returns a Client from already resolved objects.
+func NewClientFromObjs(ctx context.Context, client ctrlclient.Client, authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection, providerNamespace string, opts *ClientOptions) (Client, error) {
 	c := &defaultClient{}
 	if err := c.Init(ctx, client, authObj, connObj, providerNamespace, opts); err != nil {
 		return nil, err
@@ -268,7 +278,9 @@ func (c *defaultClient) Validate(ctx context.Context) error {
 	}
 
 	if expired, err := c.checkExpiry(0); expired || err != nil {
-		return errors.New("client token expired")
+		ttl, _ := c.getTokenTTL()
+		now := time.Now()
+		return fmt.Errorf("client token expired, ttl=%s, last=%d, now=%d", ttl, c.lastRenewal, now.Unix())
 	}
 
 	if c.client == nil {
@@ -276,7 +288,7 @@ func (c *defaultClient) Validate(ctx context.Context) error {
 	}
 
 	if c.tainted {
-		if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil)); err != nil {
+		if _, err := c.Read(ctx, NewReadRequest("auth/token/lookup-self", nil, nil)); err != nil {
 			return fmt.Errorf("tainted client is invalid: %w", err)
 		}
 	}
@@ -506,7 +518,7 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func(ctx context.Context, c *defaultClient, watcher *api.LifetimeWatcher) {
-		logger := log.FromContext(nil).WithName("lifetimeWatcher").WithValues(
+		logger := log.FromContext(ctx).WithName("lifetimeWatcher").WithValues(
 			"id", watcherID, "entityID", c.authSecret.Auth.EntityID,
 			"clientID", c.id, "cacheKey", cacheKey)
 		logger.Info("Starting")
@@ -521,7 +533,8 @@ func (c *defaultClient) startLifetimeWatcher(ctx context.Context) error {
 		logger.V(consts.LogLevelDebug).Info("Started")
 		for {
 			select {
-			case <-ctx.Done():
+			case result := <-ctx.Done():
+				logger.V(consts.LogLevelTrace).Info("Context done", "result", result)
 				return
 			case err := <-watcher.DoneCh():
 				if err != nil {
@@ -690,7 +703,7 @@ func (c *defaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection 
 	return c.connObj
 }
 
-func (c *defaultClient) Read(ctx context.Context, request ReadRequest) (Response, error) {
+func (c *defaultClient) Read(ctx context.Context, req ReadRequest) (Response, error) {
 	var err error
 	startTS := time.Now()
 	defer func() {
@@ -699,7 +712,7 @@ func (c *defaultClient) Read(ctx context.Context, request ReadRequest) (Response
 	}()
 
 	var respFunc func(*api.Secret) Response
-	switch t := request.(type) {
+	switch t := req.(type) {
 	case *defaultReadRequest:
 		respFunc = NewDefaultResponse
 	case *kvReadRequestV1:
@@ -710,15 +723,14 @@ func (c *defaultClient) Read(ctx context.Context, request ReadRequest) (Response
 		return nil, fmt.Errorf("unsupported ReadRequest type %T", t)
 	}
 
-	path := request.Path()
 	var secret *api.Secret
-	secret, err = c.client.Logical().ReadWithDataWithContext(ctx, path, request.Values())
+	secret, err = c.client.Logical().ReadWithRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	if secret == nil {
-		return nil, fmt.Errorf("empty response from Vault, path=%q", path)
+		return nil, fmt.Errorf("empty response from Vault, path=%q", req.Path())
 	}
 
 	return respFunc(secret), nil
@@ -733,9 +745,12 @@ func (c *defaultClient) Write(ctx context.Context, req WriteRequest) (Response, 
 	}()
 
 	var secret *api.Secret
-	secret, err = c.client.Logical().WriteWithContext(ctx, req.Path(), req.Params())
+	secret, err = c.client.Logical().WriteWithRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
-	return &defaultResponse{secret: secret}, err
+	return &defaultResponse{secret: secret}, nil
 }
 
 func (c *defaultClient) renew(ctx context.Context) error {
@@ -759,7 +774,7 @@ func (c *defaultClient) renew(ctx context.Context) error {
 		return errs
 	}
 
-	resp, err := c.Write(ctx, NewWriteRequest("/auth/token/renew-self", nil))
+	resp, err := c.Write(ctx, NewWriteRequest("/auth/token/renew-self", nil, nil))
 	if err != nil {
 		c.authSecret = nil
 		c.lastRenewal = 0
@@ -787,6 +802,17 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	if err != nil {
 		return err
 	}
+
+	// set the User-Agent header
+	if cfg.Headers == nil {
+		cfg.Headers = make(http.Header)
+	}
+	if opts.UserAgent != "" {
+		cfg.Headers.Add(consts.HeaderUserAgent, opts.UserAgent)
+	} else {
+		cfg.Headers.Add(consts.HeaderUserAgent, common.DefaultVSOUserAgent)
+	}
+
 	vc, err := MakeVaultClient(ctx, cfg, client)
 	if err != nil {
 		return err
@@ -881,7 +907,7 @@ func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Res
 	m.Requests = append(m.Requests, &MockRequest{
 		Method: http.MethodPut,
 		Path:   s.Path(),
-		Params: s.Params(),
+		Params: s.Data(),
 	})
 
 	resps, ok := m.WriteResponses[s.Path()]
@@ -907,13 +933,20 @@ func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS
 		return nil, errors.New("invalid nil VaultConnection")
 	}
 
+	headers := make(http.Header)
+	if connObj.Spec.Headers != nil {
+		for k, v := range connObj.Spec.Headers {
+			headers.Add(k, v)
+		}
+	}
+
 	cfg := &ClientConfig{
 		Address:         connObj.Spec.Address,
 		SkipTLSVerify:   connObj.Spec.SkipTLSVerify,
 		TLSServerName:   connObj.Spec.TLSServerName,
 		K8sNamespace:    connObj.Namespace,
 		CACertSecretRef: connObj.Spec.CACertSecretRef,
-		Headers:         connObj.Spec.Headers,
+		Headers:         headers,
 		VaultNamespace:  vaultNS,
 	}
 
