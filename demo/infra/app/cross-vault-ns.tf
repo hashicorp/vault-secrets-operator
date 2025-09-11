@@ -166,6 +166,8 @@ resource "kubernetes_manifest" "tenant-vault-auth-global" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 # VaultAuth for service account UID K8s auth role
@@ -193,6 +195,8 @@ resource "kubernetes_manifest" "tenant-vault-auth-sa-uid" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 # VaultAuth for service account name K8s auth role
@@ -220,6 +224,8 @@ resource "kubernetes_manifest" "tenant-vault-auth-sa-name" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 resource "kubernetes_manifest" "tenant-vss-uid" {
@@ -251,6 +257,8 @@ resource "kubernetes_manifest" "tenant-vss-uid" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 resource "kubernetes_manifest" "tenant-vss-name" {
@@ -282,4 +290,6 @@ resource "kubernetes_manifest" "tenant-vss-name" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }

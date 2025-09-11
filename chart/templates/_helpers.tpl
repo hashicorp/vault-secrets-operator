@@ -150,7 +150,7 @@ imagePullSecrets generates pull secrets from either string or map values.
 A map value must be indexable by the key 'name'.
 */}}
 {{- define "vso.imagePullSecrets" -}}
-{{ with .Values.controller.imagePullSecrets -}}
+{{ with . -}}
 imagePullSecrets:
 {{- range . -}}
 {{- if typeIs "string" . }}
@@ -161,7 +161,6 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end }}
-
 
 {{/*
 globalTransformationOptions configures the manager's --global-transformation-options flag.
@@ -196,6 +195,32 @@ secret source error occurs.
 {{- define "vso.backoffOnSecretSourceError" -}}
 {{- $opts := list -}}
 {{- with .Values.controller.manager.backoffOnSecretSourceError -}}
+{{- with .initialInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxElapsedTime -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-elapsed-time=%s" .) -}}
+{{- end -}}
+{{- with .multiplier -}}
+{{- $opts = mustAppend $opts (printf "--backoff-multiplier=%.2f"  (. | float64)) -}}
+{{- end -}}
+{{- with .randomizationFactor -}}
+{{- $opts = mustAppend $opts (printf "--backoff-randomization-factor=%.2f" (. | float64)) -}}
+{{- end -}}
+{{- $opts | toYaml | nindent 8 -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+csiBackoffArgs provides the backoff options for the CSI driver when a
+secret source error occurs.
+*/}}
+{{- define "vso.csiBackoffArgs" -}}
+{{- $opts := list -}}
+{{- with .Values.csi.driver.backoffOnSecretSourceError -}}
 {{- with .initialInterval -}}
 {{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
 {{- end -}}
@@ -343,6 +368,102 @@ clientCache numLocks
 {{- if or .numLocks (eq .numLocks 0) -}}
 --client-cache-num-locks={{ .numLocks }}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+logging args
+*/}}
+{{- define "vso.csiControllerLoggingArgs" -}}
+{{- $extraArgs := dict -}}
+{{- with .Values.csi.driver.extraArgs -}}
+{{- range . -}}
+{{ $parts := splitList "=" . -}}
+{{ $arg := (($parts | first) | trimPrefix "-") }}
+{{- $_ := set $extraArgs ( $arg | trimPrefix "-")  . -}}
+{{- end -}}
+{{- end -}}
+{{- $ret := list -}}
+{{- with .Values.csi.driver.logging -}}
+{{- if $level := .level -}}
+{{ $arg := "zap-log-level" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- if eq $level "debug-extended" -}}
+{{- $level = "5" -}}
+{{- end -}}
+{{- if eq .level "trace" -}}
+{{- $level = "6" -}}
+{{- end -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg $level) -}}
+{{- end -}}
+{{- end -}}
+{{- if .timeEncoding -}}
+{{ $arg := "zap-time-encoding" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg .timeEncoding) -}}
+{{- end -}}
+{{- end -}}
+{{- if .stacktraceLevel -}}
+{{ $arg := "zap-stacktrace-level" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg .stacktraceLevel) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $ret -}}
+{{- $ret | toYaml | nindent 8 -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+nodeSelector generates labels for the CSI Driver
+*/}}
+{{- define "vso.csi.nodeSelector" -}}
+{{- $labels := dict -}}
+{{- with .Values.csi.nodeSelector -}}
+{{- range $k, $v := . -}}
+{{- $_ := set $labels $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $labels "kubernetes.io/os" "linux" -}}
+{{- $labels | toYaml -}}
+{{- end -}}
+
+{{/*
+annotations generates labels for the CSI Driver
+*/}}
+{{- define "vso.csi.annotations" -}}
+{{- $labels := dict -}}
+{{- with .Values.csi.annotations -}}
+{{- range $k, $v := . -}}
+{{- $_ := set $labels $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $labels "kubectl.kubernetes.io/default-container" "secrets-store" -}}
+{{- $labels | toYaml -}}
+{{- end -}}
+
+{{/*
+toleration generates toleration settings for the CSI Driver.
+*/}}
+{{- define "vso.csi.tolerations" -}}
+{{- $tolerations := list -}}
+{{- if .Values.csi.tolerations }}
+  {{- range .Values.csi.tolerations }}
+    {{- $tolerations = append $tolerations . }}
+  {{- end }}
+{{- end }}
+{{- $existsToleration := false -}}
+{{- range $t := $tolerations }}
+  {{- if and (hasKey $t "operator") (eq $t.operator "Exists") }}
+    {{- $existsToleration = true -}}
+  {{- end -}}
+{{- end -}}
+{{- if not $existsToleration }}
+  {{- $tolerations = append $tolerations (dict "operator" "Exists") }}
+{{- end -}}
+{{- if $tolerations -}}
+{{- $tolerations | toYaml -}}
 {{- end -}}
 {{- end -}}
 

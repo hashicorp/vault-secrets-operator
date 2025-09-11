@@ -240,9 +240,11 @@ func TestVaultStaticSecret(t *testing.T) {
 					// This Secret references an Auth Method in a different namespace.
 					// VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 					Namespace: outputs.AppVaultNamespace,
-					Mount:     outputs.KVMount,
-					Type:      consts.KVSecretTypeV1,
-					Path:      "secret",
+					VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+						Mount: outputs.KVMount,
+						Type:  consts.KVSecretTypeV1,
+						Path:  "secret",
+					},
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkv",
 						Create: false,
@@ -267,9 +269,11 @@ func TestVaultStaticSecret(t *testing.T) {
 					// This Secret references the default Auth Method.
 					VaultAuthRef: ctrlclient.ObjectKeyFromObject(defaultVaultAuth).String(),
 					Namespace:    outputs.AppK8sNamespace,
-					Mount:        outputs.KVV2Mount,
-					Type:         consts.KVSecretTypeV2,
-					Path:         "secret",
+					VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+						Mount: outputs.KVV2Mount,
+						Type:  consts.KVSecretTypeV2,
+						Path:  "secret",
+					},
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkvv2",
 						Create: false,
@@ -536,9 +540,11 @@ func TestVaultStaticSecret(t *testing.T) {
 							Spec: secretsv1beta1.VaultStaticSecretSpec{
 								VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 								Namespace:    outputs.AppVaultNamespace,
-								Mount:        mount,
-								Type:         kvType,
-								Path:         dest,
+								VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+									Mount: mount,
+									Type:  kvType,
+									Path:  dest,
+								},
 								Destination: secretsv1beta1.Destination{
 									Name:   dest,
 									Create: true,

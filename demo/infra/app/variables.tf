@@ -65,3 +65,34 @@ variable "hcp_hvs_app_name" {
   type    = string
   default = "vso"
 }
+
+variable "deploy_operator_via_helm" {
+  type    = bool
+  default = false
+}
+
+variable "operator_helm_chart_path" {
+  default = "../../../../chart"
+}
+
+variable "k8s_vault_connection_address" {
+  default = ""
+}
+
+variable "operator_image_repo" {
+  default = "hashicorp/vault-secrets-operator"
+}
+
+variable "operator_image_tag" {
+  default = "0.0.0-dev"
+}
+
+variable "csi_enabled" {
+  type    = bool
+  default = false
+}
+
+variable "create_namespace" {
+  type    = bool
+  default = true
+}

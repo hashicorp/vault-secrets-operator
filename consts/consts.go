@@ -23,4 +23,5 @@ const (
 	AWSSessionToken    = "session_token"
 
 	AnnotationResync = "vso.hashicorp.com/resync"
+	HeaderUserAgent  = "User-Agent"
 )

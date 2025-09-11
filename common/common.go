@@ -21,6 +21,7 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	vaultcredsconsts "github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/version"
 	"github.com/hashicorp/vault-secrets-operator/utils"
 )
 
@@ -30,6 +31,7 @@ var (
 	InvalidObjectKeyError                      = fmt.Errorf("invalid objectKey")
 	InvalidObjectKeyErrorEmptyName             = fmt.Errorf("%w, empty name", InvalidObjectKeyError)
 	InvalidObjectKeyErrorEmptyNamespace        = fmt.Errorf("%w, empty namespace", InvalidObjectKeyError)
+	DefaultVSOUserAgent                        = fmt.Sprintf("vso/%s", version.Version().String())
 	defaultMaxRetries                   uint64 = 60
 	defaultRetryDuration                       = time.Millisecond * 500
 )
@@ -101,12 +103,16 @@ func init() {
 }
 
 func getAuthRefNamespacedName(obj client.Object) (types.NamespacedName, error) {
-	m, err := NewSyncableSecretMetaData(obj)
+	m, err := NewSyncableSecretMetaDataI(obj)
 	if err != nil {
 		return types.NamespacedName{}, err
 	}
 
-	authRef, err := ParseResourceRef(m.AuthRef, obj.GetNamespace())
+	return getAuthRefNamespacedNameForMeta(m)
+}
+
+func getAuthRefNamespacedNameForMeta(m SyncableSecretMetaDataI) (types.NamespacedName, error) {
+	authRef, err := ParseResourceRef(m.GetAuthRef(), m.GetNamespace())
 	if err != nil {
 		return types.NamespacedName{}, err
 	}
@@ -201,15 +207,28 @@ func GetVaultAuthNamespaced(ctx context.Context, c ctrlclient.Client, obj ctrlcl
 		return nil, err
 	}
 
-	authObj, err := GetVaultAuthWithRetry(ctx, c, authRef, defaultRetryDuration, defaultMaxRetries)
+	return getVaultAuth(ctx, c, authRef, obj.GetNamespace(), globalOpts)
+}
+
+func GetVaultAuthNamespacedForMeta(ctx context.Context, c ctrlclient.Client, m SyncableSecretMetaDataI, globalOpts *GlobalVaultAuthOptions) (*secretsv1beta1.VaultAuth, error) {
+	authRef, err := getAuthRefNamespacedNameForMeta(m)
 	if err != nil {
 		return nil, err
 	}
 
-	if !isAllowedNamespace(authObj, obj.GetNamespace(), authObj.Spec.AllowedNamespaces...) {
+	return getVaultAuth(ctx, c, authRef, m.GetNamespace(), globalOpts)
+}
+
+func getVaultAuth(ctx context.Context, c ctrlclient.Client, key types.NamespacedName, targetNS string, globalOpts *GlobalVaultAuthOptions) (*secretsv1beta1.VaultAuth, error) {
+	authObj, err := GetVaultAuthWithRetry(ctx, c, key, defaultRetryDuration, defaultMaxRetries)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isAllowedNamespace(authObj, targetNS, authObj.Spec.AllowedNamespaces...) {
 		return nil, &NamespaceNotAllowedError{
-			TargetNS: obj.GetNamespace(),
-			ObjRef:   authRef,
+			TargetNS: targetNS,
+			ObjRef:   key,
 			RefKind:  "VaultAuth",
 		}
 	}
@@ -734,18 +753,12 @@ func FindVaultAuthForStorageEncryption(ctx context.Context, c client.Client) (*s
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func GetVaultNamespace(obj client.Object) (string, error) {
-	var ns string
-	switch o := obj.(type) {
-	case *secretsv1beta1.VaultPKISecret:
-		ns = o.Spec.Namespace
-	case *secretsv1beta1.VaultStaticSecret:
-		ns = o.Spec.Namespace
-	case *secretsv1beta1.VaultDynamicSecret:
-		ns = o.Spec.Namespace
-	default:
-		return "", fmt.Errorf("unsupported type %T", o)
+	meta, err := NewSyncableSecretMetaDataI(obj)
+	if err != nil {
+		return "", err
 	}
-	return ns, nil
+
+	return meta.GetVaultNamespace(), nil
 }
 
 func ValidateObjectKey(key ctrlclient.ObjectKey) error {
@@ -757,6 +770,51 @@ func ValidateObjectKey(key ctrlclient.ObjectKey) error {
 	}
 	return nil
 }
+
+type SyncableSecretMetaDataI interface {
+	GetAPIVersion() string
+	GetKind() string
+	GetName() string
+	GetNamespace() string
+	GetVaultNamespace() string
+	GetDestination() *secretsv1beta1.Destination
+	GetTransformation() *secretsv1beta1.Transformation
+	GetAuthRef() string
+	GetProviderNamespace() string
+}
+
+func (s *SyncableSecretMetaData) GetAPIVersion() string {
+	return s.APIVersion
+}
+
+func (s *SyncableSecretMetaData) GetKind() string {
+	return s.Kind
+}
+
+func (s *SyncableSecretMetaData) GetName() string {
+	return s.Name
+}
+
+func (s *SyncableSecretMetaData) GetNamespace() string {
+	return s.Namespace
+}
+
+func (s *SyncableSecretMetaData) GetDestination() *secretsv1beta1.Destination {
+	return s.Destination
+}
+
+func (s *SyncableSecretMetaData) GetTransformation() *secretsv1beta1.Transformation {
+	if s.Destination == nil {
+		return nil
+	}
+	return &s.Destination.Transformation
+}
+
+func (s *SyncableSecretMetaData) GetAuthRef() string {
+	return s.AuthRef
+}
+
+var _ SyncableSecretMetaDataI = &SyncableSecretMetaData{}
 
 // SyncableSecretMetaData provides common data structure that extracts the bits pertinent
 // when handling any of the sync-able secret custom resource types.
@@ -771,9 +829,52 @@ type SyncableSecretMetaData struct {
 	Name string
 	// Namespace
 	Namespace string
+	// VaultNamespace
+	VaultNamespace string
 	// Destination of the syncable-secret object. Maps to obj.Spec.Destination.
 	Destination *secretsv1beta1.Destination
 	AuthRef     string
+}
+
+func (s *SyncableSecretMetaData) GetProviderNamespace() string {
+	return s.GetNamespace()
+}
+
+func (s *SyncableSecretMetaData) GetVaultNamespace() string {
+	return s.VaultNamespace
+}
+
+var _ SyncableSecretMetaDataI = &csiSecretsMetaData{}
+
+type csiSecretsMetaData struct {
+	SyncableSecretMetaData
+	transformation *secretsv1beta1.Transformation
+	authRef        *secretsv1beta1.VaultAuthRef
+}
+
+func (s *csiSecretsMetaData) GetAuthRef() string {
+	if s.authRef == nil {
+		return ""
+	}
+
+	if s.authRef.Namespace != "" {
+		return fmt.Sprintf("%s/%s", s.authRef.Namespace, s.authRef.Name)
+	}
+
+	return s.authRef.Name
+}
+
+func (s *csiSecretsMetaData) GetProviderNamespace() string {
+	if s.authRef != nil {
+		if s.authRef.TrustNamespace && s.authRef.Namespace != "" {
+			return s.authRef.Namespace
+		}
+	}
+	return s.GetNamespace()
+}
+
+func (s *csiSecretsMetaData) GetTransformation() *secretsv1beta1.Transformation {
+	return s.transformation
 }
 
 // NewSyncableSecretMetaData returns SyncableSecretMetaData if obj is a supported type.
@@ -807,6 +908,55 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 		meta.APIVersion = t.APIVersion
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.HCPAuthRef
+	default:
+		return nil, fmt.Errorf("unsupported type %T", t)
+	}
+
+	return meta, nil
+}
+
+// NewSyncableSecretMetaDataI returns SyncableSecretMetaData if obj is a supported type.
+// An error will be returned of obj is not a supported type.
+//
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
+func NewSyncableSecretMetaDataI(obj ctrlclient.Object) (SyncableSecretMetaDataI, error) {
+	meta := &SyncableSecretMetaData{
+		Name:      obj.GetName(),
+		Namespace: obj.GetNamespace(),
+	}
+
+	switch t := obj.(type) {
+	case *secretsv1beta1.VaultDynamicSecret:
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
+		meta.VaultNamespace = t.Spec.Namespace
+	case *secretsv1beta1.VaultStaticSecret:
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
+		meta.VaultNamespace = t.Spec.Namespace
+	case *secretsv1beta1.VaultPKISecret:
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
+		meta.VaultNamespace = t.Spec.Namespace
+	case *secretsv1beta1.HCPVaultSecretsApp:
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.HCPAuthRef
+	case *secretsv1beta1.CSISecrets:
+		meta.Kind = t.Kind
+		meta.APIVersion = t.APIVersion
+		meta.VaultNamespace = t.Spec.Namespace
+		return &csiSecretsMetaData{
+			SyncableSecretMetaData: *meta,
+			authRef:                t.Spec.VaultAuthRef,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}

@@ -29,7 +29,7 @@ func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, map[string]any{
 		"name":      key,
 		"plaintext": base64.StdEncoding.EncodeToString(data),
-	}),
+	}, nil),
 	)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 		"ciphertext": v.Ciphertext,
 	}
 
-	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params))
+	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))
 	if err != nil {
 		return nil, err
 	}
