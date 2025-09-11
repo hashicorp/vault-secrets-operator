@@ -17,12 +17,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func Test_defaultClientCacheStorage_Purge(t *testing.T) {
 	ctx := context.Background()
 
-	builder := fake.NewClientBuilder()
 	tests := []struct {
 		name    string
 		config  *ClientCacheStorageConfig
@@ -34,14 +34,14 @@ func Test_defaultClientCacheStorage_Purge(t *testing.T) {
 			name:    "zero",
 			config:  DefaultClientCacheStorageConfig(),
 			create:  0,
-			client:  builder.Build(),
+			client:  testutils.NewFakeClient(),
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "five",
 			config:  DefaultClientCacheStorageConfig(),
 			create:  5,
-			client:  builder.Build(),
+			client:  testutils.NewFakeClient(),
 			wantErr: assert.NoError,
 		},
 		{
@@ -50,7 +50,7 @@ func Test_defaultClientCacheStorage_Purge(t *testing.T) {
 			config: &ClientCacheStorageConfig{
 				skipHMACSecret: true,
 			},
-			client: builder.WithScheme(&runtime.Scheme{}).Build(),
+			client: fake.NewClientBuilder().WithScheme(&runtime.Scheme{}).Build(),
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
 					`no kind is registered for the type v1.Secret in scheme ""`, i...)

@@ -318,8 +318,6 @@ func Test_isAllowedNamespace(t *testing.T) {
 func TestGetHCPAuthForObj(t *testing.T) {
 	t.Parallel()
 
-	clientBuilder := testutils.NewFakeClientBuilder()
-
 	ctx := context.Background()
 	tests := []struct {
 		name     string
@@ -331,7 +329,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 	}{
 		{
 			name:   "relative-namespace",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -361,7 +359,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		},
 		{
 			name:   "external-namespace-allowed",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -397,7 +395,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		},
 		{
 			name:   "external-namespace-allowed-wildcard",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -433,7 +431,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		},
 		{
 			name:   "external-namespace-disallowed-unset",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -460,7 +458,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		},
 		{
 			name:   "external-namespace-disallowed-other",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -490,7 +488,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		},
 		{
 			name:   "external-namespace-disallowed-invalid",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -520,7 +518,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		},
 		{
 			name:   "relative-not-found",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -538,7 +536,7 @@ func TestGetHCPAuthForObj(t *testing.T) {
 		},
 		{
 			name:   "external-not-found",
-			client: clientBuilder.Build(),
+			client: testutils.NewFakeClient(),
 			obj: &secretsv1beta1.HCPVaultSecretsApp{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -690,7 +688,6 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	builder := testutils.NewFakeClientBuilder()
 
 	gObj := &secretsv1beta1.VaultAuthGlobal{
 		ObjectMeta: metav1.ObjectMeta{
@@ -878,7 +875,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 	}{
 		{
 			name: "set-kubernetes",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -898,7 +895,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "override-kubernetes",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -963,7 +960,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "set-jwt",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1013,7 +1010,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "set-appRole",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1063,7 +1060,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "set-aws",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1109,7 +1106,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "set-gcp",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1160,7 +1157,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "global-ref-not-set",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1180,7 +1177,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "invalid-method",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1205,7 +1202,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "invalid-global-ref",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1226,7 +1223,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "invalid-nil-auth-config",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			gObj: &secretsv1beta1.VaultAuthGlobal{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "baz",
@@ -1250,7 +1247,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "invalid-not-allowed-namespace",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			gObj: gObj.DeepCopy(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1276,7 +1273,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-replace-headers",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1301,7 +1298,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-replace-global-headers",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1323,7 +1320,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-replace-global-default-headers",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1345,7 +1342,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-union-headers",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1370,7 +1367,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-union-headers-override",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1396,7 +1393,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-replace-params",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1421,7 +1418,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-replace-global-params",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1443,7 +1440,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-replace-global-default-params",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1465,7 +1462,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-union-params-headers",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1494,7 +1491,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-union-params-override",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1519,7 +1516,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-union-params-override-default-ref-ns",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1548,7 +1545,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-union-params-override-default-ref-no-ns",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1576,7 +1573,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "merge-strategy-union-params-override-default-operator-ns",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1604,7 +1601,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "invalid-global-opts-defaults-not-allowed",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1635,7 +1632,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "invalid-global-opts-no-default-found-with-ref-ns",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -1665,7 +1662,7 @@ func Test_MergeInVaultAuthGlobal(t *testing.T) {
 		},
 		{
 			name: "invalid-global-opts-no-default-found-without-ref-ns",
-			c:    builder.Build(),
+			c:    testutils.NewFakeClient(),
 			o: &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
