@@ -16,7 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func TestGetCurrentNamespace(t *testing.T) {
@@ -168,7 +169,6 @@ metadata:
 
 	root := t.TempDir()
 	ctx := context.Background()
-	builder := fake.NewClientBuilder().WithScheme(scheme)
 	tests := []struct {
 		name           string
 		c              client.Client
@@ -183,7 +183,7 @@ metadata:
 	}{
 		{
 			name:           "create",
-			c:              builder.Build(),
+			c:              testutils.NewFakeClientWithScheme(scheme),
 			createDir:      true,
 			subDirs:        2,
 			canaries:       2,
@@ -196,7 +196,7 @@ metadata:
 		},
 		{
 			name:           "upgrade",
-			c:              builder.Build(),
+			c:              testutils.NewFakeClientWithScheme(scheme),
 			createDir:      true,
 			subDirs:        2,
 			canaries:       2,
@@ -212,7 +212,7 @@ metadata:
 		},
 		{
 			name:      "invalid-scheme-not-registered",
-			c:         fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build(),
+			c:         testutils.NewFakeClientWithScheme(runtime.NewScheme()),
 			createDir: true,
 			manifests: manifests,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
@@ -290,7 +290,10 @@ metadata:
 			for _, w := range tt.want {
 				var crd apiextensionsv1.CustomResourceDefinition
 				require.NoError(t, tt.c.Get(ctx, client.ObjectKey{Name: w.Name}, &crd))
-				assert.Equal(t, w.TypeMeta, crd.TypeMeta)
+				// the TypeMeta and ObjectMeta are checked via the Get above, so no need to
+				// check again here
+				// we only check the spec as other fields may differ (e.g.
+				// ResourceVersion)
 				assert.Equal(t, w.Spec, crd.Spec)
 			}
 		})
