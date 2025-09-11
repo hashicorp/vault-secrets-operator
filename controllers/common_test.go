@@ -213,7 +213,6 @@ func Test_maybeAddFinalizer(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	clientBuilder := testutils.NewFakeClientBuilder()
 	deletionTimestamp := metav1.NewTime(time.Now())
 
 	tests := []struct {
@@ -339,7 +338,7 @@ func Test_maybeAddFinalizer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := clientBuilder.Build()
+			c := testutils.NewFakeClient()
 			var origResourceVersion string
 			if tt.create {
 				require.NoError(t, c.Create(ctx, tt.o))

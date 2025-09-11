@@ -321,7 +321,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	builder := testutils.NewFakeClientBuilder()
+
 	vcObj := &secretsv1beta1.VaultConnection{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      consts.NameDefault,
@@ -426,7 +426,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		},
 		{
 			name:         "concurrency",
-			client:       builder.Build(),
+			client:       testutils.NewFakeClient(),
 			connObj:      vcObj.DeepCopy(),
 			saObj:        saObj.DeepCopy(),
 			authObj:      vaObj.DeepCopy(),
@@ -441,7 +441,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		},
 		{
 			name:         "concurrency-blocking",
-			client:       builder.Build(),
+			client:       testutils.NewFakeClient(),
 			connObj:      vcObj.DeepCopy(),
 			saObj:        saObj.DeepCopy(),
 			authObj:      vaObj.DeepCopy(),
@@ -456,7 +456,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		},
 		{
 			name:         "concurrency-invalid-client",
-			client:       builder.Build(),
+			client:       testutils.NewFakeClient(),
 			connObj:      vcObj.DeepCopy(),
 			saObj:        saObj.DeepCopy(),
 			authObj:      vaObj.DeepCopy(),
@@ -471,7 +471,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		},
 		{
 			name:         "full-lifecycle",
-			client:       builder.Build(),
+			client:       testutils.NewFakeClient(),
 			connObj:      vcObj.DeepCopy(),
 			saObj:        saObj.DeepCopy(),
 			authObj:      vaObj.DeepCopy(),
@@ -485,7 +485,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		},
 		{
 			name:        "vault-client-request-timeout",
-			client:      builder.Build(),
+			client:      testutils.NewFakeClient(),
 			connObj:     vcObjTimeout5s.DeepCopy(),
 			saObj:       saObj.DeepCopy(),
 			authObj:     vaObj.DeepCopy(),
@@ -503,7 +503,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 		},
 		{
 			name:        "vault-client-setup-timeout",
-			client:      builder.Build(),
+			client:      testutils.NewFakeClient(),
 			connObj:     vcObj.DeepCopy(),
 			saObj:       saObj.DeepCopy(),
 			authObj:     vaObj.DeepCopy(),

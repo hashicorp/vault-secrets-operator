@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func TestOnShutDown(t *testing.T) {
@@ -24,8 +25,7 @@ func TestOnShutDown(t *testing.T) {
 		logger: log.FromContext(ctx),
 	}
 
-	builder := fake.NewClientBuilder()
-	client := builder.Build()
+	client := testutils.NewFakeClient()
 
 	tests := []struct {
 		cm       *corev1.ConfigMap

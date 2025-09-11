@@ -1023,7 +1023,6 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 	key1 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa724")
 	key2 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa725")
 
-	builder := testutils.NewFakeClientBuilder()
 	// instances in the same namespace that should be included by the callback.
 	instances := []*secretsv1beta1.VaultDynamicSecret{
 		{
@@ -1136,7 +1135,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			syncRegistry := NewSyncRegistry()
 			r := &VaultDynamicSecretReconciler{
-				Client:       builder.Build(),
+				Client:       testutils.NewFakeClient(),
 				SyncRegistry: syncRegistry,
 				SourceCh:     make(chan event.GenericEvent),
 			}

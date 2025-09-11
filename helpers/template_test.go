@@ -598,7 +598,6 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientBuilder := testutils.NewFakeClientBuilder()
 
 	defaultKeyedTemplates := []*KeyedTemplate{
 		{
@@ -1273,7 +1272,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt := tt
-			client := clientBuilder.Build()
+			client := testutils.NewFakeClient()
 
 			t.Parallel()
 
