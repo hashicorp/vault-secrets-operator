@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
@@ -348,8 +349,15 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	ctrlmetrics.Registry.MustRegister(
+		newResourceReferenceCacheCollector(r.referenceCache, "vaultpkisecret"),
+	)
+
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
+		ctrlmetrics.Registry.MustRegister(
+			newBackoffRegistryCacheCollector(r.BackOffRegistry, "vaultpkisecret"),
+		)
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultPKISecret{}).
