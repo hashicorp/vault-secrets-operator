@@ -27,6 +27,8 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 - [VaultPKISecretList](#vaultpkisecretlist)
 - [VaultStaticSecret](#vaultstaticsecret)
 - [VaultStaticSecretList](#vaultstaticsecretlist)
+- [VaultTokenSecret](#vaulttokensecret)
+- [VaultTokenSecretList](#vaulttokensecretlist)
 
 
 
@@ -44,6 +46,7 @@ _Appears in:_
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
+- [VaultTokenSecretSpec](#vaulttokensecretspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -283,6 +286,7 @@ _Appears in:_
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
+- [VaultTokenSecretSpec](#vaulttokensecretspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -873,6 +877,7 @@ sync the secret. This status is used during resource reconciliation.
 
 _Appears in:_
 - [VaultDynamicSecretStatus](#vaultdynamicsecretstatus)
+- [VaultTokenSecretStatus](#vaulttokensecretstatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -1180,6 +1185,74 @@ _Appears in:_
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets will be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
 | `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
+
+
+
+
+#### VaultTokenSecret
+
+
+
+VaultTokenSecret is the Schema for the vaulttokensecrets API.
+
+
+
+_Appears in:_
+- [VaultTokenSecretList](#vaulttokensecretlist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
+| `kind` _string_ | `VaultTokenSecret` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[VaultTokenSecretSpec](#vaulttokensecretspec)_ |  |  |  |
+
+
+#### VaultTokenSecretList
+
+
+
+VaultTokenSecretList contains a list of VaultTokenSecret.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
+| `kind` _string_ | `VaultTokenSecretList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[VaultTokenSecret](#vaulttokensecret) array_ |  |  |  |
+
+
+#### VaultTokenSecretSpec
+
+
+
+VaultTokenSecretSpec defines the desired state of VaultTokenSecret.
+
+
+
+_Appears in:_
+- [VaultTokenSecret](#vaulttokensecret)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the<br />namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will<br />default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
+| `namespace` _string_ | Namespace of the secrets engine mount in Vault. If not set, the namespace that's<br />part of VaultAuth resource will be inferred. |  |  |
+| `refreshAfter` _string_ | Mount for the secret in Vault<br />RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h |  | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
+| `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets will be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
+| `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
+| `tokenRole` _string_ | TokenRole is the name of the token role to use when creating the token. |  |  |
+| `ttl` _string_ |  |  |  |
+| `policies` _string array_ |  |  |  |
+| `noDefaultPolicy` _boolean_ |  |  |  |
+| `displayName` _string_ |  |  |  |
+| `entityAlias` _string_ |  |  |  |
+| `meta` _object (keys:string, values:string)_ |  |  |  |
+| `renewalPercent` _integer_ | RenewalPercent is the percent out of 100 of the lease duration when the<br />lease is renewed. Defaults to 67 percent plus jitter. | 67 | Maximum: 90 <br />Minimum: 0 <br /> |
+| `revoke` _boolean_ | Revoke the existing lease on VDS resource deletion. |  |  |
 
 
 

@@ -742,6 +742,8 @@ func GetVaultNamespace(obj client.Object) (string, error) {
 		ns = o.Spec.Namespace
 	case *secretsv1beta1.VaultDynamicSecret:
 		ns = o.Spec.Namespace
+	case *secretsv1beta1.VaultTokenSecret:
+		ns = o.Spec.Namespace
 	default:
 		return "", fmt.Errorf("unsupported type %T", o)
 	}
@@ -792,6 +794,12 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 		meta.APIVersion = t.APIVersion
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.VaultAuthRef
+	case *secretsv1beta1.VaultTokenSecret:
+		meta.Destination = t.Spec.Destination.DeepCopy()
+		meta.APIVersion = t.APIVersion
+		meta.Kind = t.Kind
+		meta.AuthRef = t.Spec.VaultAuthRef
+
 	case *secretsv1beta1.VaultStaticSecret:
 		meta.Destination = t.Spec.Destination.DeepCopy()
 		meta.APIVersion = t.APIVersion
