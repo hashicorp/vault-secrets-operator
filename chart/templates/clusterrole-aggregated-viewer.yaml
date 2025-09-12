@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 */ -}}
 
-{{- if .Values.controller.rbac.clusterRoleAggregation.viewerRoles -}}
+{{- if and .Values.controller.rbac.create .Values.controller.rbac.clusterRoleAggregation.viewerRoles -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
