@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/hashicorp/vault-secrets-operator/credentials"
 	"github.com/hashicorp/vault-secrets-operator/credentials/hcp"
@@ -303,9 +304,16 @@ func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secr
 // SetupWithManager sets up the controller with the Manager.
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = newResourceReferenceCache()
+	ctrlmetrics.Registry.MustRegister(
+		newResourceReferenceCacheCollector(r.referenceCache, "hcpvaultsecretsapp"),
+	)
+
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
+	ctrlmetrics.Registry.MustRegister(
+		newBackoffRegistryCacheCollector(r.BackOffRegistry, "hcpvaultsecretsapp"),
+	)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPVaultSecretsApp{}).

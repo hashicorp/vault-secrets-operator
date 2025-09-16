@@ -8,7 +8,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 type ResourceKind int
@@ -49,6 +52,7 @@ type ResourceReferenceCache interface {
 	Get(ResourceKind, client.ObjectKey) []client.ObjectKey
 	Remove(ResourceKind, client.ObjectKey) bool
 	Prune(ResourceKind, client.ObjectKey) int
+	Len() int
 }
 
 var _ ResourceReferenceCache = (*resourceReferenceCache)(nil)
@@ -78,6 +82,20 @@ type refCacheMap map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empt
 type resourceReferenceCache struct {
 	m  refCacheMap
 	mu sync.RWMutex
+}
+
+func (c *resourceReferenceCache) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var l int
+	for _, scope := range c.m {
+		for _, refs := range scope {
+			l += len(refs)
+		}
+	}
+
+	return l
 }
 
 // Set references of kind for referrer.
@@ -274,6 +292,13 @@ func (r *BackOffRegistry) Get(objKey client.ObjectKey) (*BackOff, bool) {
 	return entry, !ok
 }
 
+func (r *BackOffRegistry) Len() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return len(r.m)
+}
+
 // BackOff is a wrapper around backoff.BackOff that does not implement
 // BackOff.Reset, since elements in BackOffRegistry are meant to be ephemeral.
 type BackOff struct {
@@ -302,5 +327,59 @@ func NewBackOffRegistry(opts ...backoff.ExponentialBackOffOpts) *BackOffRegistry
 	return &BackOffRegistry{
 		m:    map[client.ObjectKey]*BackOff{},
 		opts: opts,
+	}
+}
+
+// registryCacheCollector provides a prometheus.Collector for ClientCache metrics.
+type registryCacheCollector struct {
+	cache   ResourceReferenceCache
+	size    float64
+	lenDesc *prometheus.Desc
+}
+
+func (c registryCacheCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.lenDesc
+}
+
+func (c registryCacheCollector) Collect(ch chan<- prometheus.Metric) {
+	ch <- prometheus.MustNewConstMetric(c.lenDesc, prometheus.GaugeValue, float64(c.cache.Len()))
+}
+
+func newResourceReferenceCacheCollector(cache ResourceReferenceCache, name string) prometheus.Collector {
+	metricsFQNClientCacheLength := prometheus.BuildFQName(
+		metrics.Namespace, "rsc_ref_cache", metrics.NameLength)
+	return &registryCacheCollector{
+		cache: cache,
+		lenDesc: prometheus.NewDesc(
+			metricsFQNClientCacheLength,
+			"Number of object references in the cache.",
+			nil, map[string]string{"name": name}),
+	}
+}
+
+// backoffRegistryCacheCollector
+type backoffRegistryCacheCollector struct {
+	cache   *BackOffRegistry
+	size    float64
+	lenDesc *prometheus.Desc
+}
+
+func (c backoffRegistryCacheCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.lenDesc
+}
+
+func (c backoffRegistryCacheCollector) Collect(ch chan<- prometheus.Metric) {
+	ch <- prometheus.MustNewConstMetric(c.lenDesc, prometheus.GaugeValue, float64(c.cache.Len()))
+}
+
+func newBackoffRegistryCacheCollector(cache *BackOffRegistry, name string) prometheus.Collector {
+	metricsFQNClientCacheLength := prometheus.BuildFQName(
+		metrics.Namespace, "backoff_registry_cache", metrics.NameLength)
+	return &backoffRegistryCacheCollector{
+		cache: cache,
+		lenDesc: prometheus.NewDesc(
+			metricsFQNClientCacheLength,
+			"Number of backoff objects in the cache.",
+			nil, map[string]string{"name": name}),
 	}
 }

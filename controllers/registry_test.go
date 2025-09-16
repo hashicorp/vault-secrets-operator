@@ -60,7 +60,7 @@ func Test_resourceReferenceCache(t *testing.T) {
 				{
 					action:     0,
 					referrer:   referrer1,
-					references: []client.ObjectKey{reference1},
+					references: []client.ObjectKey{reference1, reference1, reference1},
 				},
 			},
 			m: refCacheMap{
