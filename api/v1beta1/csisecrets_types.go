@@ -101,8 +101,9 @@ type AccessControl struct {
 
 // CSISecretsStatus defines the observed state of CSISecrets
 type CSISecretsStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
