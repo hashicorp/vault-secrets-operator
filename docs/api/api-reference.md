@@ -107,7 +107,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's<br />(VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID,<br />and clientSecret.<br />The secret data must have the following structure {<br />  "clientID": "clientID",<br />  "clientSecret": "clientSecret",<br />} |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's<br />(VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID,<br />and clientSecret.<br />The secret data must have the following structure \{<br />  "clientID": "clientID",<br />  "clientSecret": "clientSecret",<br />\} |  |  |
 
 
 #### HCPAuthSpec
@@ -125,7 +125,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `organizationID` _string_ | OrganizationID of the HCP organization. |  |  |
 | `projectID` _string_ | ProjectID of the HCP project. |  |  |
-| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which HCPAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]{"*"} - wildcard, all namespaces.<br />[]{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the HCPAuthMethod's namespace, this<br />is the default behavior. |  |  |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which HCPAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]\{"*"\} - wildcard, all namespaces.<br />[]\{"a", "b"\} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the HCPAuthMethod's namespace, this<br />is the default behavior. |  |  |
 | `method` _string_ | Method to use when authenticating to Vault. | servicePrincipal | Enum: [servicePrincipal] <br /> |
 | `servicePrincipal` _[HCPAuthServicePrincipal](#hcpauthserviceprincipal)_ | ServicePrincipal provides the necessary configuration for authenticating to<br />HCP using a service principal. For security reasons, only project-level<br />service principals should ever be used. |  |  |
 
@@ -184,7 +184,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `appName` _string_ | AppName of the Vault Secrets Application that is to be synced. |  |  |
 | `hcpAuthRef` _string_ | HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg:<br />`namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default<br />to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the<br />Operator will default to the `default` HCPAuth, configured in the operator's<br />namespace. |  |  |
-| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h | 600s | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
+| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h | 600s | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s)<br />consuming the HCP Vault Secrets App does not support dynamically reloading a<br />rotated secret. In that case one, or more RolloutRestartTarget(s) can be<br />configured here. The Operator will trigger a "rollout-restart" for each target<br />whenever the Vault secret changes between reconciliation events. See<br />RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the HCP Vault<br />Application secrets to Kubernetes. |  |  |
 | `syncConfig` _[HVSSyncConfig](#hvssyncconfig)_ | SyncConfig configures sync behavior from HVS to VSO |  |  |
@@ -259,8 +259,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `headers` _string_ | Headers configures the merge strategy for HTTP headers that are included in<br />all Vault requests. Choices are `union`, `replace`, or `none`.<br /><br />If `union` is set, the headers from the VaultAuthGlobal and VaultAuth<br />resources are merged. The headers from the VaultAuth always take precedence.<br /><br />If `replace` is set, the first set of non-empty headers taken in order from:<br />VaultAuth, VaultAuthGlobal auth method, VaultGlobal default headers.<br /><br />If `none` is set, the headers from the<br />VaultAuthGlobal resource are ignored and only the headers from the VaultAuth<br />resource are used. The default is `none`. |  | Enum: [union replace none] <br /> |
-| `params` _string_ | Params configures the merge strategy for HTTP parameters that are included in<br />all Vault requests. Choices are `union`, `replace`, or `none`.<br /><br />If `union` is set, the parameters from the VaultAuthGlobal and VaultAuth<br />resources are merged. The parameters from the VaultAuth always take<br />precedence.<br /><br />If `replace` is set, the first set of non-empty parameters taken in order from:<br />VaultAuth, VaultAuthGlobal auth method, VaultGlobal default parameters.<br /><br />If `none` is set, the parameters from the VaultAuthGlobal resource are ignored<br />and only the parameters from the VaultAuth resource are used. The default is<br />`none`. |  | Enum: [union replace none] <br /> |
+| `headers` _string_ | Headers configures the merge strategy for HTTP headers that are included in<br />all Vault requests. Choices are `union`, `replace`, or `none`.<br />If `union` is set, the headers from the VaultAuthGlobal and VaultAuth<br />resources are merged. The headers from the VaultAuth always take precedence.<br />If `replace` is set, the first set of non-empty headers taken in order from:<br />VaultAuth, VaultAuthGlobal auth method, VaultGlobal default headers.<br />If `none` is set, the headers from the<br />VaultAuthGlobal resource are ignored and only the headers from the VaultAuth<br />resource are used. The default is `none`. |  | Enum: [union replace none] <br /> |
+| `params` _string_ | Params configures the merge strategy for HTTP parameters that are included in<br />all Vault requests. Choices are `union`, `replace`, or `none`.<br />If `union` is set, the parameters from the VaultAuthGlobal and VaultAuth<br />resources are merged. The parameters from the VaultAuth always take<br />precedence.<br />If `replace` is set, the first set of non-empty parameters taken in order from:<br />VaultAuth, VaultAuthGlobal auth method, VaultGlobal default parameters.<br />If `none` is set, the parameters from the VaultAuthGlobal resource are ignored<br />and only the parameters from the VaultAuth resource are used. The default is<br />`none`. |  | Enum: [union replace none] <br /> |
 
 
 #### RolloutRestartTarget
@@ -273,7 +273,6 @@ The rollout-restart is triggered by patching the target resource's
 'spec.template.metadata.annotations' to include 'vso.secrets.hashicorp.com/restartedAt'
 with a timestamp value of when the trigger was executed.
 E.g. vso.secrets.hashicorp.com/restartedAt: "2023-03-23T13:39:31Z"
-
 
 Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 
@@ -779,10 +778,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `name` _string_ | Name of the VaultAuthGlobal resource. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
-| `namespace` _string_ | Namespace of the VaultAuthGlobal resource. If not provided, the namespace of<br />the referring VaultAuth resource is used. |  | Pattern: `^([a-z0-9.-]{1,253})$` <br /> |
+| `name` _string_ | Name of the VaultAuthGlobal resource. |  | Pattern: `^([a-z0-9.-]\{1,253\})$` <br /> |
+| `namespace` _string_ | Namespace of the VaultAuthGlobal resource. If not provided, the namespace of<br />the referring VaultAuth resource is used. |  | Pattern: `^([a-z0-9.-]\{1,253\})$` <br /> |
 | `mergeStrategy` _[MergeStrategy](#mergestrategy)_ | MergeStrategy configures the merge strategy for HTTP headers and parameters<br />that are included in all Vault authentication requests. |  |  |
-| `allowDefault` _boolean_ | AllowDefault when set to true will use the default VaultAuthGlobal resource<br />as the default if Name is not set. The 'allow-default-globals' option must be<br />set on the operator's '-global-vault-auth-options' flag<br /><br />The default VaultAuthGlobal search is conditional.<br />When a ref Namespace is set, the search for the default<br />VaultAuthGlobal resource is constrained to that namespace.<br />Otherwise, the search order is:<br />1. The default VaultAuthGlobal resource in the referring VaultAuth resource's<br />namespace.<br />2. The default VaultAuthGlobal resource in the Operator's namespace. |  |  |
+| `allowDefault` _boolean_ | AllowDefault when set to true will use the default VaultAuthGlobal resource<br />as the default if Name is not set. The 'allow-default-globals' option must be<br />set on the operator's '-global-vault-auth-options' flag<br />The default VaultAuthGlobal search is conditional.<br />When a ref Namespace is set, the search for the default<br />VaultAuthGlobal resource is constrained to that namespace.<br />Otherwise, the search order is:<br />1. The default VaultAuthGlobal resource in the referring VaultAuth resource's<br />namespace.<br />2. The default VaultAuthGlobal resource in the Operator's namespace. |  |  |
 
 
 #### VaultAuthGlobalSpec
@@ -798,7 +797,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with<br />this VaultAuthGlobal. This field allows administrators to customize which<br />Kubernetes namespaces are authorized to reference this resource. While Vault<br />will still enforce its own rules, this has the added configurability of<br />restricting which VaultAuthMethods can be used by which namespaces. Accepted<br />values: []{"*"} - wildcard, all namespaces. []{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's and the referring<br />VaultAuthMethod's namespace, this is the default behavior. |  |  |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with<br />this VaultAuthGlobal. This field allows administrators to customize which<br />Kubernetes namespaces are authorized to reference this resource. While Vault<br />will still enforce its own rules, this has the added configurability of<br />restricting which VaultAuthMethods can be used by which namespaces. Accepted<br />values: []\{"*"\} - wildcard, all namespaces. []\{"a", "b"\} - list of namespaces.<br />unset - disallow all namespaces except the Operator's and the referring<br />VaultAuthMethod's namespace, this is the default behavior. |  |  |
 | `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />the namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
 | `defaultVaultNamespace` _string_ | DefaultVaultNamespace to auth to in Vault, if not specified the namespace of the auth<br />method will be used. This can be used as a default Vault namespace for all<br />auth methods. |  |  |
 | `defaultAuthMethod` _string_ | DefaultAuthMethod to use when authenticating to Vault. |  | Enum: [kubernetes jwt appRole aws gcp] <br /> |
@@ -848,7 +847,7 @@ _Appears in:_
 | `vaultConnectionRef` _string_ | VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to<br />the namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the<br />Operator will default to the `default` VaultConnection, configured in the operator's namespace. |  |  |
 | `vaultAuthGlobalRef` _[VaultAuthGlobalRef](#vaultauthglobalref)_ | VaultAuthGlobalRef. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
-| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which VaultAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]{"*"} - wildcard, all namespaces.<br />[]{"a", "b"} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this<br />is the default behavior. |  |  |
+| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which VaultAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]\{"*"\} - wildcard, all namespaces.<br />[]\{"a", "b"\} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the VaultAuthMethod's namespace, this<br />is the default behavior. |  |  |
 | `method` _string_ | Method to use when authenticating to Vault. |  | Enum: [kubernetes jwt appRole aws gcp] <br /> |
 | `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
 | `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
@@ -936,7 +935,7 @@ _Appears in:_
 | `tlsServerName` _string_ | TLSServerName to use as the SNI host for TLS connections. |  |  |
 | `caCertSecretRef` _string_ | CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`. |  |  |
 | `skipTLSVerify` _boolean_ | SkipTLSVerify for TLS connections. | false |  |
-| `timeout` _string_ | Timeout applied to all Vault requests for this connection. If not set, the<br />default timeout from the Vault API client config is used. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
+| `timeout` _string_ | Timeout applied to all Vault requests for this connection. If not set, the<br />default timeout from the Vault API client config is used. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 
 
 
@@ -1002,7 +1001,7 @@ _Appears in:_
 | `allowStaticCreds` _boolean_ | AllowStaticCreds should be set when syncing credentials that are periodically<br />rotated by the Vault server, rather than created upon request. These secrets<br />are sometimes referred to as "static roles", or "static credentials", with a<br />request path that contains "static-creds". |  |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
-| `refreshAfter` _string_ | RefreshAfter a period of time for VSO to sync the source secret data, in<br />duration notation e.g. 30s, 1m, 24h. This value only needs to be set when<br />syncing from a secret's engine that does not provide a lease TTL in its<br />response. The value should be within the secret engine's configured ttl or<br />max_ttl. The source secret's lease duration takes precedence over this<br />configuration when it is greater than 0. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
+| `refreshAfter` _string_ | RefreshAfter a period of time for VSO to sync the source secret data, in<br />duration notation e.g. 30s, 1m, 24h. This value only needs to be set when<br />syncing from a secret's engine that does not provide a lease TTL in its<br />response. The value should be within the secret engine's configured ttl or<br />max_ttl. The source secret's lease duration takes precedence over this<br />configuration when it is greater than 0. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 
 
 
@@ -1063,7 +1062,7 @@ _Appears in:_
 | `role` _string_ | Role in Vault to use when issuing TLS certificates. |  |  |
 | `revoke` _boolean_ | Revoke the certificate when the resource is deleted. |  |  |
 | `clear` _boolean_ | Clear the Kubernetes secret when the resource is deleted. |  |  |
-| `expiryOffset` _string_ | ExpiryOffset to use for computing when the certificate should be renewed.<br />The rotation time will be difference between the expiration and the offset.<br />Should be in duration notation e.g. 30s, 120s, etc. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
+| `expiryOffset` _string_ | ExpiryOffset to use for computing when the certificate should be renewed.<br />The rotation time will be difference between the expiration and the offset.<br />Should be in duration notation e.g. 30s, 120s, etc. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 | `issuerRef` _string_ | IssuerRef reference to an existing PKI issuer, either by Vault-generated<br />identifier, the literal string default to refer to the currently<br />configured default issuer, or the name assigned to an issuer.<br />This parameter is part of the request URL. |  |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret<br />to Kubernetes. If the type is set to "kubernetes.io/tls", "tls.key" will<br />be set to the "private_key" response from Vault, and "tls.crt" will be<br />set to "certificate" + "ca_chain" from the Vault response ("issuing_ca"<br />is used when "ca_chain" is empty). The "remove_roots_from_chain=true"<br />option is used with Vault to exclude the root CA from the Vault response. |  |  |
@@ -1073,7 +1072,7 @@ _Appears in:_
 | `uriSans` _string array_ | The requested URI SANs. |  |  |
 | `otherSans` _string array_ | Requested other SANs, in an array with the format<br />oid;type:value for each entry. |  |  |
 | `userIDs` _string array_ | User ID (OID 0.9.2342.19200300.100.1.1) Subject values to be placed on the<br />signed certificate. |  |  |
-| `ttl` _string_ | TTL for the certificate; sets the expiration date.<br />If not specified the Vault role's default,<br />backend default, or system default TTL is used, in that order.<br />Cannot be larger than the mount's max TTL.<br />Note: this only has an effect when generating a CA cert or signing a CA cert,<br />not when generating a CSR for an intermediate CA.<br />Should be in duration notation e.g. 120s, 2h, etc. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h|d))$` <br />Type: string <br /> |
+| `ttl` _string_ | TTL for the certificate; sets the expiration date.<br />If not specified the Vault role's default,<br />backend default, or system default TTL is used, in that order.<br />Cannot be larger than the mount's max TTL.<br />Note: this only has an effect when generating a CA cert or signing a CA cert,<br />not when generating a CSR for an intermediate CA.<br />Should be in duration notation e.g. 120s, 2h, etc. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h\|d))$` <br />Type: string <br /> |
 | `format` _string_ | Format for the certificate. Choices: "pem", "der", "pem_bundle".<br />If "pem_bundle",<br />any private key and issuing cert will be appended to the certificate pem.<br />If "der", the value will be base64 encoded.<br />Default: pem |  |  |
 | `privateKeyFormat` _string_ | PrivateKeyFormat, generally the default will be controlled by the Format<br />parameter as either base64-encoded DER or PEM-encoded DER.<br />However, this can be set to "pkcs8" to have the returned<br />private key contain base64-encoded pkcs8 or PEM-encoded<br />pkcs8 instead.<br />Default: der |  |  |
 | `notAfter` _string_ | NotAfter field of the certificate with specified date value.<br />The value format should be given in UTC format YYYY-MM-ddTHH:MM:SSZ |  |  |
@@ -1176,7 +1175,7 @@ _Appears in:_
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for,<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
-| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h |  | Pattern: `^([0-9]+(\.[0-9]+)?(s|m|h))$` <br />Type: string <br /> |
+| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 | `hmacSecretData` _boolean_ | HMACSecretData determines whether the Operator computes the<br />HMAC of the Secret's data. The MAC value will be stored in<br />the resource's Status.SecretMac field, and will be used for drift detection<br />and during incoming Vault secret comparison.<br />Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault. | true |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets will be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |

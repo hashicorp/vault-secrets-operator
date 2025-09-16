@@ -33,7 +33,7 @@ GOFUMPT_VERSION ?= v0.4.0
 COPYWRITE_VERSION ?= 0.18.0
 OPERATOR_SDK_VERSION ?= v1.33.0
 YQ_VERSION ?= v4.43.1
-CRD_REF_DOCS_VERSION ?= v0.12.0
+CRD_REF_DOCS_VERSION ?= v0.2.0
 
 TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
@@ -507,7 +507,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.16.3
+CONTROLLER_TOOLS_VERSION ?= v0.19.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -623,7 +623,7 @@ operator-sdk: ## Download operator-sdk locally if necessary.
 .PHONY: crd-ref-docs
 CRD_REF_DOCS = $(LOCALBIN)/crd-ref-docs
 crd-ref-docs: ## Install crd-ref-docs locally if necessary.
-	@./hack/install_crd-ref-docs.sh CRD_REF_DOCS_VERSION=$(CRD_REF_DOCS_VERSION)
+	 @CRD_REF_DOCS_VERSION=$(CRD_REF_DOCS_VERSION) ./hack/install_crd-ref-docs.sh
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
