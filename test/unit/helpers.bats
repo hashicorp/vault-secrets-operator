@@ -54,12 +54,22 @@ load _helpers
 # clusterrolebindings.
 #
 # If this test fails, you're likely missing setting the namespace.
-
 @test "helper/namespace: used everywhere" {
-  cd `chart_dir`
-  # Grep for files that don't have 'namespace: ' in them
-  local actual=$(grep -L 'namespace: ' templates/*.yaml | grep -E -v 'crd|rbac|editor_role|viewer_role|role.yaml|clusterrole' | tee /dev/stderr )
-  [ "${actual}" = '' ]
+  cd "$(chart_dir)"
+
+  # Render all templates and check for the presence of the 'namespace' field in relevant resources
+  local actual=$(helm template . |
+    yq 'select(.kind != "CustomResourceDefinition" and
+               .kind != "ClusterRole" and
+               .kind != "ClusterRoleBinding" and
+               .kind != "Role" and
+               .metadata.name != "editor_role" and
+               .metadata.name != "viewer_role") |
+        select(.metadata.namespace == null) |
+        {"name": .metadata.name, "kind": .kind, "doc": document_index}' |
+    tee /dev/stderr | grep -c '^') # count the number of documents missing 'namespace'
+
+  [ "${actual}" = "0" ]
 }
 
 #--------------------------------------------------------------------

@@ -187,7 +187,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
+	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData(), nil))
 	if err != nil {
 		if vault.IsForbiddenError(err) {
 			c.Taint()
@@ -402,7 +402,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 }
 
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
@@ -459,7 +459,7 @@ func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr
 
 	if _, err := c.Write(ctx, vault.NewWriteRequest(fmt.Sprintf("%s/revoke", s.Spec.Mount), map[string]any{
 		"serial_number": s.Status.SerialNumber,
-	})); err != nil {
+	}, nil)); err != nil {
 		l.Error(err, "Failed to revoke certificate", "serial_number", s.Status.SerialNumber)
 		return err
 	}

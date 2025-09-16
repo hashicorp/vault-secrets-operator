@@ -24,7 +24,7 @@ func TestRolloutRestart(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	builder := testutils.NewFakeClientBuilder()
+
 	// use one second ago timestamp to compare against rollout restartAt
 	// since argo.Rollout's Spec.RestartAt rounds down to the nearest second
 	// and often equals to time.Now()
@@ -135,7 +135,7 @@ func TestRolloutRestart(t *testing.T) {
 			tt := tt
 			t.Parallel()
 
-			c := builder.Build()
+			c := testutils.NewFakeClient()
 			if tt.obj != nil {
 				require.NoError(t, c.Create(ctx, tt.obj))
 			}

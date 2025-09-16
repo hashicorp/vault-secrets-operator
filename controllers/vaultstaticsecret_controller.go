@@ -185,7 +185,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
-	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, transOption)
+	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, nil, transOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
 			"Failed to build K8s secret data: %s", err)
@@ -598,7 +598,7 @@ func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Conte
 }
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
@@ -639,9 +639,9 @@ func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.ReadRequest, er
 	var kvReq vault.ReadRequest
 	switch s.Type {
 	case consts.KVSecretTypeV1:
-		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path)
+		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path, nil)
 	case consts.KVSecretTypeV2:
-		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version)
+		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version, nil)
 	default:
 		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
 	}

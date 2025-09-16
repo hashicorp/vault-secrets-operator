@@ -77,6 +77,7 @@ rules:
 - apiGroups:
     - secrets.hashicorp.com
   resources:
+    - csisecrets
     - hcpauths
     - hcpvaultsecretsapps
     - secrettransformations
@@ -97,6 +98,7 @@ rules:
 - apiGroups:
     - secrets.hashicorp.com
   resources:
+    - csisecrets/finalizers
     - hcpauths/finalizers
     - hcpvaultsecretsapps/finalizers
     - secrettransformations/finalizers
@@ -111,6 +113,7 @@ rules:
 - apiGroups:
     - secrets.hashicorp.com
   resources:
+    - csisecrets/status
     - hcpauths/status
     - hcpvaultsecretsapps/status
     - secrettransformations/status

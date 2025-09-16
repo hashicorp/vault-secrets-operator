@@ -323,7 +323,7 @@ type VaultAuthGlobalRef struct {
 	Name string `json:"name,omitempty"`
 	// Namespace of the VaultAuthGlobal resource. If not provided, the namespace of
 	// the referring VaultAuth resource is used.
-	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9-]{1,63})$`
 	Namespace string `json:"namespace,omitempty"`
 	// MergeStrategy configures the merge strategy for HTTP headers and parameters
 	// that are included in all Vault authentication requests.
@@ -454,6 +454,18 @@ type StorageEncryption struct {
 	Mount string `json:"mount"`
 	// KeyName to use for encrypt/decrypt operations via Vault Transit.
 	KeyName string `json:"keyName"`
+}
+
+type VaultAuthRef struct {
+	// Name of the VaultAuth resource.
+	Name string `json:"name"`
+	// Namespace of the VaultAuth resource.
+	Namespace string `json:"namespace,omitempty"`
+	// TrustNamespace of the referring VaultAuth resource. This means that any Vault
+	// credentials will be provided by resources in the same namespace as the
+	// VaultAuth resource. Otherwise, the credentials will be provided by the secret
+	// resource's namespace.
+	TrustNamespace bool `json:"trustNamespace,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -13,6 +13,40 @@ import (
 
 type ResourceKind int
 
+/*
+{
+  "level": "info",
+  "ts": "2024-10-27T19:47:38Z",
+  "msg": "Set ref cache",
+  "nodeName": "vso-demo-worker3",
+  "controller": "pod",
+  "controllerGroup": "",
+  "controllerKind": "Pod",
+  "Pod": {
+    "name": "vso-csi-app-bdb9bc6bb-pqxk4",
+    "namespace": "demo-ns-vso-csi"
+  },
+  "namespace": "demo-ns-vso-csi",
+  "name": "vso-csi-app-bdb9bc6bb-pqxk4",
+  "reconcileID": "a4bceb93-14d2-491e-a13b-836fd454119f",
+  "req": {
+    "name": "vso-csi-app-bdb9bc6bb-pqxk4",
+    "namespace": "demo-ns-vso-csi"
+  },
+  "cacheLen": 1,
+  "cacheKeys": [
+    7
+  ],
+  "cacheValues": [
+    {
+      "Namespace": "demo-ns-vso-csi",
+      "Name": "vso-csi-app-bdb9bc6bb-pqxk4"
+    }
+  ]
+}
+
+*/
+
 const (
 	SecretTransformation ResourceKind = iota
 	VaultDynamicSecret
@@ -21,6 +55,8 @@ const (
 	HCPVaultSecretsApp
 	VaultAuth
 	VaultAuthGlobal
+	CSISecrets
+	Pod
 )
 
 func (k ResourceKind) String() string {
@@ -39,6 +75,10 @@ func (k ResourceKind) String() string {
 		return "VaultAuth"
 	case VaultAuthGlobal:
 		return "VaultAuthGlobal"
+	case CSISecrets:
+		return "CSISecrets"
+	case Pod:
+		return "Pod"
 	default:
 		return "unknown"
 	}
@@ -49,13 +89,16 @@ type ResourceReferenceCache interface {
 	Get(ResourceKind, client.ObjectKey) []client.ObjectKey
 	Remove(ResourceKind, client.ObjectKey) bool
 	Prune(ResourceKind, client.ObjectKey) int
+	Len() int
+	Keys() []ResourceKind
+	Values(ResourceKind) []client.ObjectKey
 }
 
 var _ ResourceReferenceCache = (*resourceReferenceCache)(nil)
 
-// newResourceReferenceCache returns the default ReferenceCache that be used to
+// NewResourceReferenceCache returns the default ReferenceCache that be used to
 // store object references for quick access by secret controllers.
-func newResourceReferenceCache() ResourceReferenceCache {
+func NewResourceReferenceCache() ResourceReferenceCache {
 	return &resourceReferenceCache{
 		m: refCacheMap{},
 	}
@@ -78,6 +121,45 @@ type refCacheMap map[ResourceKind]map[client.ObjectKey]map[client.ObjectKey]empt
 type resourceReferenceCache struct {
 	m  refCacheMap
 	mu sync.RWMutex
+}
+
+func (c *resourceReferenceCache) Keys() []ResourceKind {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.m == nil {
+		return nil
+	}
+
+	var keys []ResourceKind
+	for k := range c.m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (c *resourceReferenceCache) Values(kind ResourceKind) []client.ObjectKey {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.m == nil {
+		return nil
+	}
+
+	scope, ok := c.scoped(kind, false)
+	if !ok {
+		return nil
+	}
+
+	var keys []client.ObjectKey
+	for k := range scope {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (c *resourceReferenceCache) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.m)
 }
 
 // Set references of kind for referrer.

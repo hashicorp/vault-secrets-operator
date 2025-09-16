@@ -1,0 +1,210 @@
+@startuml
+!theme C4_sandstone from https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/themes
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+autonumber
+title VSO CSI Driver Node Volume Publishing
+alt publish
+    CSI -> NodeServer : Request node volume publishing
+    NodeServer -> NodePublishVolumeRequest: Receives node volume publish request
+    NodePublishVolumeRequest -> NodeServer: Fetches the configured CSISecret for the request and validates the request
+    NodeServer -> NodeServer: Authorizes the request for volume publishing
+    NodeServer -> Vault: Authenticates to Vault
+    Vault -> NodeServer: Returns a token
+    NodeServer -> Vault: Requests secret data for the CSISecret
+    Vault -> NodeServer: Returns the secret data
+    NodeServer -> NodeServer: Transforms the secret data into a volume payload
+    NodeServer -> TargetDirectory: Writes payload to the ephemeral volume holding the secret
+    TargetDirectory -> NodeServer: Successful write
+    NodeServer -> NodeServer: Stores the SyncStatus to the target directory for later reconciliation
+    NodeServer -> CSI: Returns a successful NodeVolumePublishResponse
+else error
+    NodeServer -> CSI: Returns an error NodeVolumePublishResponse on unauthorized request or failed volume publishing
+end
+@enduml
+
+@startuml
+!theme C4_sandstone from https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/themes
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+autonumber
+title VSO CSI Driver Request authorization (policy empty)
+alt unauthorized
+    CSI -> NodeServer: Request node volume publishing
+    CSISecretAccessControl -> NodeServer: No policy configured
+    NodeServer -> CSI: Returns an error NodeVolumePublishResponse on unauthorized request if any of the checks fail
+end
+@enduml
+
+@startuml
+!theme C4_sandstone from https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/themes
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+autonumber
+title VSO CSI Driver Request authorization (policy all)
+alt publish
+    CSI -> NodeServer : Request node volume publishing
+    NodeServer -> CSISecret: Fetches the configured CSISecret for the request and reads the AccessControl
+alt publish
+    CSI -> NodeServer : Request node volume publishing
+    NodeServer -> CSISecret: Fetches the configured CSISecret for the request and reads the AccessControl
+else check
+    NodeServer -> CSISecretAccessControl: Checks matching K8s Namespace patterns
+else error
+    NodeServer -> CSI: return unauthorized
+else check
+    NodeServer -> CSISecretAccessControl: Checks matching K8s Pod name patterns
+else error
+    NodeServer -> CSI: return unauthorized
+else check
+    NodeServer -> CSISecretAccessControl: Checks matching K8s Pod labels
+else error
+    NodeServer -> CSI: return unauthorized
+else check
+    NodeServer -> CSISecretAccessControl: Checks K8s ServiceAccount name patterns
+else error
+    NodeServer -> CSI: return unauthorized
+else
+    NodeServer -> CSI: Returns an successful NodeVolumePublishResponse
+end
+@enduml
+
+
+@startuml
+!theme C4_sandstone from https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/themes
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+autonumber
+title VSO CSI Driver Request authorization (policy any)
+alt publish
+    CSI -> NodeServer : Request node volume publishing
+    NodeServer -> CSISecret: Fetches the configured CSISecret for the request and reads the AccessControl
+alt publish
+    CSI -> NodeServer : Request node volume publishing
+    NodeServer -> CSISecret: Fetches the configured CSISecret for the request and reads the AccessControl
+else check
+    NodeServer -> CSISecretAccessControl: Checks matching K8s Namespace patterns
+else error
+    CSISecretAccessControl -> NodeServer: continue to next check
+else check
+    NodeServer -> CSISecretAccessControl: Checks matching K8s Pod name patterns
+else error
+    CSISecretAccessControl -> NodeServer: continue to next check
+else check
+    NodeServer -> CSISecretAccessControl: Checks matching K8s Pod labels
+else error
+    CSISecretAccessControl -> NodeServer: continue to next check
+else check
+    NodeServer -> CSISecretAccessControl: Checks K8s ServiceAccount name patterns
+else error
+    CSISecretAccessControl -> NodeServer: error
+    NodeServer -> CSI: return unauthorized
+else
+    NodeServer -> CSI: Returns an successful NodeVolumePublishResponse
+end
+@enduml
+
+@startuml
+!theme C4_sandstone from https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/themes
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+autonumber
+title VSO CSI Driver Request authorization (policy all)
+alt publish
+    CSI -> NodeServer : Request node volume publishing
+    NodeServer -> CSISecret: Fetches the configured CSISecret for the request and reads the AccessControl
+else check
+    CSISecretAccessControl -> NodeServer: Checks matching K8s Namespace patterns OR unauthorized
+else error
+    NodeServer -> CSI: return unauthorized
+else check
+    CSISecretAccessControl -> NodeServer: Checks matching K8s Pod name patterns or unauthorized
+else error
+    NodeServer -> CSI: return unauthorized
+else check
+    CSISecretAccessControl -> NodeServer: Checks matching K8s Pod labels OR unauthorized
+else check
+    CSISecretAccessControl -> NodeServer: Checks K8s ServiceAccount name patterns OR unauthorized
+else error
+    NodeServer -> CSI: return unauthorized
+else
+    NodeServer -> CSI: Returns an successful NodeVolumePublishResponse
+end
+@enduml
+
+@startuml
+!theme C4_sandstone from https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/themes
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+autonumber
+title VSO CSI Driver PodReconciler
+ControllerRuntime -> PodReconciler: Reconcile Pods for CSI volume publishing
+alt reconcile
+    PodReconciler -> K8sAPI: Get K8s Pod
+    PodReconciler -> Pod: Check if Volume requires republishing based on CSISecret configuration
+    PodReconciler -> NodeServer: Request node volume publishing
+else error
+    PodReconciler -> ControllerRuntime: Requeue Pod on reconciliation error (repeat)
+else republish
+    PodReconciler -> NodeServer: Request node volume publishing
+else error
+    PodReconciler -> ControllerRuntime: Requeue Pod on reconciliation error (repeat)
+else republish
+    NodeServer -> NodeServer: Publishes the volume
+else error
+    PodReconciler -> ControllerRuntime: Requeue Pod on reconciliation error (repeat)
+else republish
+    PodReconciler -> ControllerRuntime: Reconciliation complete
+end
+@enduml
+
+
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+!include sprites/secret-128-scaled.puml
+!include sprites/pod-128-scaled.puml
+!include sprites/vol-128-scaled.puml
+!include sprites/HashiCorp_Logomark_White_RGB-scaled.puml
+
+UpdateElementStyle("container", $shadowing="true")
+UpdateElementStyle("person", $shadowing="true")
+AddRelTag("deployer_sp", $lineColor="red", $lineStyle=BoldLine(), $lineThickness=3)
+AddRelTag("deployer_app", $lineColor="#118bda", $lineStyle=BoldLine(), $lineThickness=3)
+AddRelTag("vso", $lineColor="#d33716", $lineStyle=BoldLine(), $lineThickness=3)
+AddElementTag("vso", $bgColor="#444444")
+AddElementTag("hvs", $bgColor="#444444")
+
+LAYOUT_TOP_DOWN()
+HIDE_STEREOTYPE()
+UpdateBoundaryStyle($elementName="container", $type="k8s")
+
+Person(user, Deployer/Agent, $sprite="person")
+
+System_Boundary(c1, "Vault") {
+    Container(app, "Vault Secret", "", "Token", $sprite="HashiCorp_Logomark_White_RGB")
+}
+
+System_Boundary(c2, "Kubernetes Cluster", "") {
+    Container_Boundary(vso_ns, "nodes") {
+        Container_Boundary(vso_ns, "vso-namespace") {
+            Container(csi, "Vault CSI Driver", "Pod", "Provisions ephemeral Volume mounts to Pods", $sprite="HashiCorp_Logomark_White_RGB", $tags="csi")
+        }
+        Container_Boundary(vso_ns, "vso-namespace") {
+            Container(vso, "Vault Secrets Operator", "Pod", "Secrets Lifecycle Agent, provides Vault auth support", $sprite="HashiCorp_Logomark_White_RGB", $tags="ns+vso")
+        }
+        Container_Boundary(app_ns, "App Namespace", $tags="namespace") {
+            Container_Boundary(c6, "App Deployment", $tags="namespace") {
+                Container(pod1, "app1", "Pod", "", $sprite="pod")
+            }
+            Container(app_secret, "ephemeral volume holding the secret", "Vault token", "", $sprite="vol")
+        }
+    }
+}
+
+Rel_R(user, app, "Configure auth engine", "HTTPS v1/auth/kubernetes", $tags="deployer_app", $index=Index())
+Rel_R(user, app_ns, "Apply CSISecret, and VaultToken YAML manifest", "HTTPS k8s/api", $tags="deployer_app", $index=LastIndex()-1)
+Rel_U(csi, app, "Authenticate to Vault and request token", "HTTPS auth/token/create", $tags="vso", $index=Index())
+Rel_D(csi, app_secret, "Provision Vault secret data", "HTTPS k8s/api", $tags="deployer_sp", $index=LastIndex()-1)
+Rel_L(pod1, app_secret, "Read secret Data from mounted volume", $tags="deployer_sp", $index=LastIndex()-2)
+Rel_L(csi, vso, "Provides CRDs", $tags="csi", $index=Index()-1)
+@enduml

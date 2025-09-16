@@ -14,6 +14,7 @@ The Operator occupies a privileged position in a Kubernetes cluster, with unencr
 * Encrypt the Kubernetes etcd database at rest using a KMS provider. Kubernetes Secrets stored in etcd are [not encrypted at rest by default](https://kubernetes.io/docs/concepts/security/secrets-good-practices/).
 * Use TLS negotiated by a well-secured certificate authority for all networked communication, especially for Vault and the Kubernetes API.
 * Update the Operator, Vault, and other systems regularly to guard against known vulnerabilities.
+* If using the Vault Secrets Operator CSI Driver, see the dedicated section below for details.
 
 ## Terminology
 
@@ -341,6 +342,7 @@ While none of this should be considered secret information, it can be sensitive 
   </tr>
 </table>
 
+
 ### Threats specific to Kubernetes and Kubernetes Secrets
 
 These threats are included because using Kubernetes Secrets is a fundamental requirement to using the Operator, but their applicability is not affected by whether or not the Secrets are maintained by the Operator. All usages of Kubernetes Secrets should consider the following in their threat model.
@@ -444,6 +446,56 @@ When etcd is encrypted by a KMS provider all objects are encrypted on disk, but 
    </td>
   </tr>
   </table>
+
+### Threats specific to the Vault Secrets Operator CSI driver
+
+The Vault Secrets Operator's Helm chart can also be used to deploy the Vault Secrets Operator CSI driver. This is an alternate approach to delivering Vault secrets to application Pods, in which a CSI driver Pod is deployed on each node in the Kubernetes cluster, and can mount ephemeral volumes containing Vault secrets directly to Pod containers.
+
+Since the Vault Secrets Operator CSI driver does not make use of persistent storage e.g. Kubernetes Secrets, some of the concerns in the above section can be avoided, but other security aspects should be considered.
+
+<table>
+  <tr>
+   <td>
+<strong>ID</strong>
+   </td>
+   <td><strong>Threat</strong>
+   </td>
+   <td><strong>Categories</strong>
+   </td>
+   <td><strong>Description</strong>
+   </td>
+   <td><strong>Mitigation</strong>
+   </td>
+  </tr>
+  <tr>
+   <td>12
+   </td>
+   <td>An attacker with the ability to deploy a Pod onto the node may be able to access secret data if the accessControl permissions on the CSISecrets custom resource's spec are too broad.
+   </td>
+   <td>Information disclosure
+   </td>
+   <td>Regular expression pattern matching for Pod name, container name, namespace name, and service account name are used to restrict which Pods are allowed to mount the Vault secrets declared in a CSISecrets resource.
+   If an attacker is able to deploy Pods onto the node that match the provided pattern, those Pods could gain access to the sensitive data written to the volume.
+   </td>
+   <td>
+<ul>
+
+<li>
+Write regular expressions carefully and granularly to avoid giving permissions too broadly. 
+</li>
+<li>
+Lock down permissions around the Kubernetes cluster in such a way that unauthorized users cannot deploy to it.
+</li>
+<li>
+Prefer a matchPolicy of "all" over "any", and include a granular service account pattern, rather than pod name being the only requirement to match on.
+</li>
+<li>
+Limit the number of Vault secrets that you give access to in an individual CSISecrets resource.
+</li>
+</ul>
+   </td>
+  </tr>
+</table>
 
 ## References
 

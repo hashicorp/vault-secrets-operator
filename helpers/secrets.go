@@ -490,7 +490,7 @@ func DeleteSecret(ctx context.Context, client ctrlclient.Client, objKey client.O
 type SecretDataBuilder struct{}
 
 // WithVaultData returns the K8s Secret data from a Vault Secret data.
-func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *SecretTransformationOption) (map[string][]byte, error) {
+func (s *SecretDataBuilder) WithVaultData(d, secretData, wrapData map[string]any, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
 		opt = &SecretTransformationOption{}
 	}
@@ -507,7 +507,7 @@ func (s *SecretDataBuilder) WithVaultData(d, secretData map[string]any, opt *Sec
 			metadata = make(map[string]any)
 		}
 
-		input := NewSecretInput(d, metadata, opt.Annotations, opt.Labels)
+		input := NewSecretInput(d, wrapData, metadata, opt.Annotations, opt.Labels)
 		data, err = renderTemplates(opt, input)
 		if err != nil {
 			return nil, err
@@ -608,7 +608,7 @@ func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, 
 	}
 
 	if hasTemplates {
-		data, err = renderTemplates(opt, NewSecretInput(secrets, metadata, opt.Annotations, opt.Labels))
+		data, err = renderTemplates(opt, NewSecretInput(secrets, nil, metadata, opt.Annotations, opt.Labels))
 		if err != nil {
 			return nil, err
 		}

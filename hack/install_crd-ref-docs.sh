@@ -7,7 +7,7 @@
 # matches CRD_REF_DOCS_VERSION.
 set -e -o pipefail
 
-CRD_REF_DOCS_VERSION="${CRD_REF_DOCS_VERSION-v0.0.12}"
+CRD_REF_DOCS_VERSION="${CRD_REF_DOCS_VERSION:-v0.2.0}"
 
 pushd "$(git rev-parse --show-toplevel || echo .)" > /dev/null
 dest_filename="crd-ref-docs-${CRD_REF_DOCS_VERSION}"
