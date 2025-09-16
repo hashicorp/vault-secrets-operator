@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,13 @@ type testResponseData struct {
 	respFunc func(tt testResponseData) Response
 	secret   *api.Secret
 	want     map[string]interface{}
+}
+
+type testResponseWrapInfo struct {
+	name     string
+	respFunc func(tt testResponseWrapInfo) Response
+	secret   *api.Secret
+	want     *api.SecretWrapInfo
 }
 
 type testResponseSecretK8sData struct {
@@ -228,6 +236,55 @@ func Test_defaultResponse_SecretK8sData(t *testing.T) {
 			t.Parallel()
 
 			assertResponseSecretK8sData(t, tt)
+		})
+	}
+}
+
+func Test_defaultResponse_WrapInfo(t *testing.T) {
+	t.Parallel()
+
+	respFunc := func(tt testResponseWrapInfo) Response {
+		return &defaultResponse{
+			secret: tt.secret,
+		}
+	}
+
+	ts := time.Now().UTC()
+	tests := []testResponseWrapInfo{
+		{
+			name: "basic",
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"data": map[string]interface{}{
+						"bar": "baz",
+					},
+				},
+				WrapInfo: &api.SecretWrapInfo{
+					Token:           "1234546",
+					Accessor:        "some-accessor",
+					TTL:             0,
+					CreationTime:    ts,
+					CreationPath:    "foo/bar",
+					WrappedAccessor: "some-wrapped-accessor",
+				},
+			},
+			respFunc: respFunc,
+			want: &api.SecretWrapInfo{
+				Token:           "1234546",
+				Accessor:        "some-accessor",
+				TTL:             0,
+				CreationTime:    ts,
+				CreationPath:    "foo/bar",
+				WrappedAccessor: "some-wrapped-accessor",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertResponseWrapInfo(t, tt)
 		})
 	}
 }
@@ -455,6 +512,48 @@ func Test_kvV1Response_SecretK8sData(t *testing.T) {
 	}
 }
 
+func Test_kv1Response_WrapInfo(t *testing.T) {
+	t.Parallel()
+
+	respFunc := func(tt testResponseWrapInfo) Response {
+		return &kvV1Response{
+			secret: tt.secret,
+		}
+	}
+
+	ts := time.Now().UTC()
+	tests := []testResponseWrapInfo{
+		{
+			name: "basic",
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"data": map[string]interface{}{
+						"bar": "baz",
+					},
+				},
+				WrapInfo: &api.SecretWrapInfo{
+					Token:           "1234546",
+					Accessor:        "some-accessor",
+					TTL:             0,
+					CreationTime:    ts,
+					CreationPath:    "foo/bar",
+					WrappedAccessor: "some-wrapped-accessor",
+				},
+			},
+			respFunc: respFunc,
+			want:     nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertResponseWrapInfo(t, tt)
+		})
+	}
+}
+
 func Test_kvV2Response_Data(t *testing.T) {
 	t.Parallel()
 
@@ -678,6 +777,48 @@ func Test_kvV2Response_SecretK8sData(t *testing.T) {
 	}
 }
 
+func Test_kv2Response_WrapInfo(t *testing.T) {
+	t.Parallel()
+
+	respFunc := func(tt testResponseWrapInfo) Response {
+		return &kvV2Response{
+			secret: tt.secret,
+		}
+	}
+
+	ts := time.Now().UTC()
+	tests := []testResponseWrapInfo{
+		{
+			name: "basic",
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"data": map[string]interface{}{
+						"bar": "baz",
+					},
+				},
+				WrapInfo: &api.SecretWrapInfo{
+					Token:           "1234546",
+					Accessor:        "some-accessor",
+					TTL:             0,
+					CreationTime:    ts,
+					CreationPath:    "foo/bar",
+					WrappedAccessor: "some-wrapped-accessor",
+				},
+			},
+			respFunc: respFunc,
+			want:     nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
+			assertResponseWrapInfo(t, tt)
+		})
+	}
+}
+
 func TestIsLeaseNotFoundError(t *testing.T) {
 	t.Parallel()
 
@@ -771,6 +912,12 @@ func assertResponseData(t *testing.T, tt testResponseData) {
 	t.Helper()
 	resp := tt.respFunc(tt)
 	assert.Equalf(t, tt.want, resp.Data(), "Data()")
+}
+
+func assertResponseWrapInfo(t *testing.T, tt testResponseWrapInfo) {
+	t.Helper()
+	resp := tt.respFunc(tt)
+	assert.Equalf(t, tt.want, resp.WrapInfo(), "WrapInfo()")
 }
 
 func assertResponseSecret(t *testing.T, tt testResponseSecret) {

@@ -9,6 +9,8 @@
 Package v1beta1 contains API Schema definitions for the secrets v1beta1 API group
 
 ### Resource Types
+- [CSISecrets](#csisecrets)
+- [CSISecretsList](#csisecretslist)
 - [HCPAuth](#hcpauth)
 - [HCPAuthList](#hcpauthlist)
 - [HCPVaultSecretsApp](#hcpvaultsecretsapp)
@@ -28,6 +30,121 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 - [VaultStaticSecret](#vaultstaticsecret)
 - [VaultStaticSecretList](#vaultstaticsecretlist)
 
+
+
+#### AccessControl
+
+
+
+AccessControl provides configuration for controlling access to the secret.
+It allows specifying the namespaces, service account, pod names, and pod
+labels that should be allowed to access the secret.
+
+
+
+_Appears in:_
+- [CSISecretsSpec](#csisecretsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `serviceAccountPattern` _string_ | ServiceAccountPattern is the name of the service account that should be used to<br />access the secret. It can be specified as a regex pattern.<br />A valid service account is always required. |  |  |
+| `namespacePatterns` _string array_ | NamespacePatterns is a list of namespace name regex patterns that are allowed access. |  |  |
+| `podNamePatterns` _string array_ | PodNamePatterns is a list of pod name regex patterns that should be allowed access. |  |  |
+| `podLabels` _object (keys:string, values:string)_ | PodLabels is a map of pod label key-value pairs that should be allowed access. |  |  |
+| `matchPolicy` _string_ | MatchPolicy is the policy to use when matching the access control rules. If<br />set to "any", only one of the rules should match. If set to "all", all the<br />rules should match. | all | Enum: [any all] <br /> |
+
+
+#### CSISecrets
+
+
+
+CSISecrets is the Schema for the csisecrets API
+
+
+
+_Appears in:_
+- [CSISecretsList](#csisecretslist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
+| `kind` _string_ | `CSISecrets` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[CSISecretsSpec](#csisecretsspec)_ |  |  |  |
+
+
+#### CSISecretsList
+
+
+
+CSISecretsList contains a list of CSISecrets
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
+| `kind` _string_ | `CSISecretsList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[CSISecrets](#csisecrets) array_ |  |  |  |
+
+
+#### CSISecretsSpec
+
+
+
+CSISecretsSpec defines the desired state of CSISecrets. It contains the
+configuration for the CSI driver to populate the secret data.
+
+
+
+_Appears in:_
+- [CSISecrets](#csisecrets)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `namespace` _string_ | Namespace is the Vault namespace where the secret is located. |  |  |
+| `accessControl` _[AccessControl](#accesscontrol)_ | AccessControl provides configuration for controlling access to the secret. |  |  |
+| `secrets` _[SecretCollection](#secretcollection)_ | Secrets that will be synced with the CSI driver. |  |  |
+| `syncConfig` _[CSISyncConfig](#csisyncconfig)_ | SyncConfig provides configuration for syncing the secret data with the CSI driver. |  |  |
+| `vaultAuthRef` _[VaultAuthRef](#vaultauthref)_ | VaultAuthRef is the reference to the VaultAuth resource. |  |  |
+
+
+
+
+#### CSISyncConfig
+
+
+
+
+
+
+
+_Appears in:_
+- [CSISecretsSpec](#csisecretsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `containerState` _[ContainerState](#containerstate)_ | ContainerState is the state of the container that the CSI driver always sync<br />on. This configuration is useful to sync when the last state of the container<br />is in the terminated state and the restart count is greater than 0. |  |  |
+
+
+#### ContainerState
+
+
+
+
+
+
+
+_Appears in:_
+- [CSISyncConfig](#csisyncconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `namePattern` _string_ | NamePattern of the container. Can be expressed as a regular expression. |  |  |
+| `imagePattern` _string_ | ImagePattern of the container. Can be expressed as a regular expression. |  |  |
 
 
 #### Destination
@@ -290,6 +407,24 @@ _Appears in:_
 | `name` _string_ | Name of the resource |  |  |
 
 
+#### SecretCollection
+
+
+
+
+
+
+
+_Appears in:_
+- [CSISecretsSpec](#csisecretsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before<br />it is stored in the CSI volume. |  |  |
+| `vaultAppRoleSecretIDs` _[VaultAppRoleSecretID](#vaultapprolesecretid) array_ | VaultAppRoleSecretIDs is a list of AppRole secret IDs to be used to populate the secret. |  |  |
+| `vaultStaticSecrets` _[VaultStaticSecretCollectable](#vaultstaticsecretcollectable) array_ | VaultStaticSecrets is a list of static secrets to be synced by the CSI driver. |  |  |
+
+
 #### SecretTransformation
 
 
@@ -340,10 +475,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included<br />in the rendered K8s Secret with the specified key. |  |  |
-| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered K8s Secret, they can be<br />used to provide common template definitions, etc. |  |  |
-| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data<br />fields for inclusion in the final K8s Secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied last. |  |  |
-| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data<br />fields for exclusion from the final K8s Secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied before any inclusion patterns. To exclude all source secret data<br />fields, you can configure the single pattern ".*". |  |  |
+| `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included<br />in the rendered secret with the specified key. |  |  |
+| `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered secret, they can be<br />used to provide common template definitions, etc. |  |  |
+| `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data<br />fields for inclusion in the final secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied last. |  |  |
+| `excludes` _string array_ | Excludes contains regex patterns used to filter top-level source secret data<br />fields for exclusion from the final secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied before any inclusion patterns. To exclude all source secret data<br />fields, you can configure the single pattern ".*". |  |  |
 
 
 
@@ -445,6 +580,9 @@ _Appears in:_
 
 _Appears in:_
 - [Destination](#destination)
+- [SecretCollection](#secretcollection)
+- [VaultAppRoleSecretID](#vaultapprolesecretid)
+- [VaultStaticSecretCollectable](#vaultstaticsecretcollectable)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -475,6 +613,31 @@ _Appears in:_
 | `templateRefs` _[TemplateRef](#templateref) array_ | TemplateRefs map to a Template found in this TransformationRef. If empty, then<br />all templates from the SecretTransformation will be rendered to the K8s Secret. |  |  |
 | `ignoreIncludes` _boolean_ | IgnoreIncludes controls whether to use the SecretTransformation's Includes<br />data key filters. |  |  |
 | `ignoreExcludes` _boolean_ | IgnoreExcludes controls whether to use the SecretTransformation's Excludes<br />data key filters. |  |  |
+
+
+#### VaultAppRoleSecretID
+
+
+
+VaultAppRoleSecretID defines the AppRole secret ID to be used to populate the secret.
+
+
+
+_Appears in:_
+- [SecretCollection](#secretcollection)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mount` _string_ | Mount path to the AppRole auth engine. |  |  |
+| `role` _string_ | Role is the name of the AppRole. |  |  |
+| `metadata` _object (keys:string, values:string)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `cidrList` _string array_ | CIDRList is the list of CIDR blocks that access the secret ID. |  |  |
+| `tokenBoundCIDRs` _string array_ | TokenBoundCIDRs is the list of CIDR blocks that can be used to authenticate<br />using tokens generated by this secret ID. |  |  |
+| `ttl` _string_ | TTL is the TTL for the secret ID, after which it becomes invalid. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br /> |
+| `numUses` _integer_ | NumUses is the number of times the secret ID can be used. |  |  |
+| `wrapTTL` _string_ | WrapTTL is the TTL for the wrapped secret ID. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br /> |
+| `syncRoleID` _boolean_ | SyncRoleID is the flag to fetch the role ID from the AppRole auth engine.<br />Requires that the provisioning VaultAuth has the necessary permissions to fetch the role ID. |  |  |
+| `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before<br />it is stored in the CSI volume. |  |  |
 
 
 #### VaultAuth
@@ -779,7 +942,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `name` _string_ | Name of the VaultAuthGlobal resource. |  | Pattern: `^([a-z0-9.-]\{1,253\})$` <br /> |
-| `namespace` _string_ | Namespace of the VaultAuthGlobal resource. If not provided, the namespace of<br />the referring VaultAuth resource is used. |  | Pattern: `^([a-z0-9.-]\{1,253\})$` <br /> |
+| `namespace` _string_ | Namespace of the VaultAuthGlobal resource. If not provided, the namespace of<br />the referring VaultAuth resource is used. |  | Pattern: `^([a-z0-9-]\{1,63\})$` <br /> |
 | `mergeStrategy` _[MergeStrategy](#mergestrategy)_ | MergeStrategy configures the merge strategy for HTTP headers and parameters<br />that are included in all Vault authentication requests. |  |  |
 | `allowDefault` _boolean_ | AllowDefault when set to true will use the default VaultAuthGlobal resource<br />as the default if Name is not set. The 'allow-default-globals' option must be<br />set on the operator's '-global-vault-auth-options' flag<br />The default VaultAuthGlobal search is conditional.<br />When a ref Namespace is set, the search for the default<br />VaultAuthGlobal resource is constrained to that namespace.<br />Otherwise, the search order is:<br />1. The default VaultAuthGlobal resource in the referring VaultAuth resource's<br />namespace.<br />2. The default VaultAuthGlobal resource in the Operator's namespace. |  |  |
 
@@ -829,6 +992,24 @@ VaultAuthList contains a list of VaultAuth
 | `kind` _string_ | `VaultAuthList` | | |
 | `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[VaultAuth](#vaultauth) array_ |  |  |  |
+
+
+#### VaultAuthRef
+
+
+
+
+
+
+
+_Appears in:_
+- [CSISecretsSpec](#csisecretsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name of the VaultAuth resource. |  |  |
+| `namespace` _string_ | Namespace of the VaultAuth resource. |  |  |
+| `trustNamespace` _boolean_ | TrustNamespace of the referring VaultAuth resource. This means that any Vault<br />credentials will be provided by resources in the same namespace as the<br />VaultAuth resource. Otherwise, the credentials will be provided by the secret<br />resource's namespace. |  |  |
 
 
 #### VaultAuthSpec
@@ -1138,6 +1319,46 @@ _Appears in:_
 | `spec` _[VaultStaticSecretSpec](#vaultstaticsecretspec)_ |  |  |  |
 
 
+#### VaultStaticSecretCollectable
+
+
+
+
+
+
+
+_Appears in:_
+- [SecretCollection](#secretcollection)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mount` _string_ | Mount for the secret in Vault |  |  |
+| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
+| `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before<br />it is stored in the CSI volume. |  |  |
+
+
+#### VaultStaticSecretCommon
+
+
+
+
+
+
+
+_Appears in:_
+- [VaultStaticSecretCollectable](#vaultstaticsecretcollectable)
+- [VaultStaticSecretSpec](#vaultstaticsecretspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mount` _string_ | Mount for the secret in Vault |  |  |
+| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
+
+
 #### VaultStaticSecretList
 
 
@@ -1171,15 +1392,15 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `vaultAuthRef` _string_ | VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,<br />eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the<br />namespace of the VaultAuth CR. If no value is specified for VaultAuthRef the Operator will<br />default to the `default` VaultAuth, configured in the operator's namespace. |  |  |
 | `namespace` _string_ | Namespace of the secrets engine mount in Vault. If not set, the namespace that's<br />part of VaultAuth resource will be inferred. |  |  |
-| `mount` _string_ | Mount for the secret in Vault |  |  |
-| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for,<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
-| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
-| `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 | `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 | `hmacSecretData` _boolean_ | HMACSecretData determines whether the Operator computes the<br />HMAC of the Secret's data. The MAC value will be stored in<br />the resource's Status.SecretMac field, and will be used for drift detection<br />and during incoming Vault secret comparison.<br />Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault. | true |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets will be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
 | `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
+| `mount` _string_ | Mount for the secret in Vault |  |  |
+| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
 
 

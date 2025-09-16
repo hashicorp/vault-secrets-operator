@@ -21,4 +21,10 @@ locals {
   # db locals
   postgres_host = "${data.kubernetes_service.postgres.metadata[0].name}.${helm_release.postgres.namespace}.svc.cluster.local:${data.kubernetes_service.postgres.spec[0].port[0].port}"
   db_creds_path = "creds/${var.db_role}"
+
+  operator_service_account_name    = "vault-secrets-operator-transit"
+  csi_enabled                      = var.vault_enterprise ? true : var.csi_enabled
+  bound_service_account_namespaces = concat([local.k8s_namespace], local.csi_enabled ? [kubernetes_namespace.demo-ns-vso-csi[0].metadata[0].name] : [])
+  default_token_policies           = concat([vault_policy.db.name], local.csi_enabled ? [vault_policy.csi-secrets[0].name] : [])
+  k8s_vault_connection_address     = var.k8s_vault_connection_address != "" ? var.k8s_vault_connection_address : "http://vault.vault.svc.cluster.local:8200"
 }

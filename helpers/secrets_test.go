@@ -568,12 +568,13 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		data    map[string]interface{}
-		opt     *SecretTransformationOption
-		raw     map[string]interface{}
-		want    map[string][]byte
-		wantErr assert.ErrorAssertionFunc
+		name     string
+		data     map[string]interface{}
+		wrapData map[string]interface{}
+		opt      *SecretTransformationOption
+		raw      map[string]interface{}
+		want     map[string][]byte
+		wantErr  assert.ErrorAssertionFunc
 	}{
 		{
 			name: "equal-raw-data",
@@ -888,6 +889,57 @@ META_QUX=biff
 				"buz": []byte("baz=qux\nbuz=1\nfoo=biff\n"),
 				"foo": []byte("biff"),
 				"baz": []byte("qux"),
+				SecretDataKeyRaw: marshalRaw(t, map[string]any{
+					"baz": "qux",
+					"foo": "biff",
+					"buz": 1,
+				}),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "tmpl-mixed-with-wrapData",
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []*KeyedTemplate{
+					{
+						Key: "buz",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{- range $key, $value := .Secrets }}
+{{- printf "%s=%v\n" $key $value -}}
+{{- end }}`,
+						},
+					},
+					{
+						Key: "wrapData",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl2",
+							Text: `{{- range $key, $value := .WrapData }}
+{{- printf "%s=%v\n" $key $value -}}
+{{- end }}`,
+						},
+					},
+				},
+			},
+			data: map[string]interface{}{
+				"baz": "qux",
+				"foo": "biff",
+				"buz": 1,
+			},
+			wrapData: map[string]any{
+				"token":    "1234567890abcdef",
+				"accessor": "some-accessor",
+			},
+			raw: map[string]interface{}{
+				"baz": "qux",
+				"foo": "biff",
+				"buz": 1,
+			},
+			want: map[string][]byte{
+				"buz":      []byte("baz=qux\nbuz=1\nfoo=biff\n"),
+				"foo":      []byte("biff"),
+				"baz":      []byte("qux"),
+				"wrapData": []byte("accessor=some-accessor\ntoken=1234567890abcdef\n"),
 				SecretDataKeyRaw: marshalRaw(t, map[string]any{
 					"baz": "qux",
 					"foo": "biff",
@@ -1260,7 +1312,7 @@ META_QUX=biff
 			tt := tt
 			t.Parallel()
 			s := &SecretDataBuilder{}
-			got, err := s.WithVaultData(tt.data, tt.raw, tt.opt)
+			got, err := s.WithVaultData(tt.data, tt.raw, tt.wrapData, tt.opt)
 			if !tt.wantErr(t, err, fmt.Sprintf("WithVaultData(%v, %v)", tt.data, tt.raw)) {
 				return
 			}

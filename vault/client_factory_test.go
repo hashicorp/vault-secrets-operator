@@ -557,6 +557,7 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 				credentialProviderFactory: credentials.NewFakeCredentialProviderFactory(tt.factoryFunc),
 				cache:                     clientCache,
 				encClientSetupTimeout:     tt.setupTimeout,
+				newClientFunc:             NewClientWithLogin,
 			}
 
 			got0, err := m.storageEncryptionClient(ctx, tt.client)

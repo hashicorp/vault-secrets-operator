@@ -24,6 +24,8 @@ resource "kubernetes_manifest" "hcp-vsa-auth-default" {
     # force field manager conflicts to be overridden
     force_conflicts = true
   }
+
+  depends_on = [module.vso-helm]
 }
 
 resource "kubernetes_secret" "hcp-vsa-sp" {

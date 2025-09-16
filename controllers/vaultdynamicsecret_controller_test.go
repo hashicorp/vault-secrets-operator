@@ -1246,6 +1246,11 @@ type vaultResponse struct {
 	data map[string]any
 }
 
+func (s *vaultResponse) WrapInfo() *api.SecretWrapInfo {
+	// TODO implement me
+	panic("implement me")
+}
+
 func (s *vaultResponse) Secret() *api.Secret {
 	return nil
 }
