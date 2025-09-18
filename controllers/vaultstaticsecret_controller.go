@@ -154,10 +154,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
-			return ctrl.Result{}, err
-		}
-
 		return ctrl.Result{
 			RequeueAfter: horizon,
 		}, nil

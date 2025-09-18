@@ -335,43 +335,6 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}, nil
 }
 
-func (r *VaultPKISecretReconciler) syncSecret(ctx context.Context, o *secretsv1beta1.VaultPKISecret) (*vault.PKICertResponse, error) {
-	logger := log.FromContext(ctx).WithName("syncSecret")
-	logger.V(consts.LogLevelTrace).Info("Syncing secret")
-
-	path := r.getPath(o.Spec)
-	c, err := r.ClientFactory.Get(ctx, r.Client, o)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData(), nil))
-	if err != nil {
-		return nil, err
-	}
-
-	certResp, err := vault.UnmarshalPKIIssueResponse(resp.Secret())
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := resp.SecretK8sData(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Fix ca_chain formatting since it's a slice
-	if len(data["ca_chain"]) > 0 {
-		data["ca_chain"] = []byte(strings.Join(certResp.CAChain, "\n"))
-	}
-
-	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
-		return nil, err
-	}
-
-	return certResp, nil
-}
-
 func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
 	objKey := client.ObjectKeyFromObject(o)
 	r.SyncRegistry.Delete(objKey)
