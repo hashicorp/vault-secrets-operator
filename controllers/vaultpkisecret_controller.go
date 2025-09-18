@@ -321,7 +321,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
 	o.Status.LastRotation = time.Now().Unix()
-	if err := r.updateStatus(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o, conditions...); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return ctrl.Result{}, err
 	}
@@ -345,7 +345,7 @@ func (r *VaultPKISecretReconciler) syncSecret(ctx context.Context, o *secretsv1b
 		return nil, err
 	}
 
-	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
+	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData(), nil))
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +445,7 @@ func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logge
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, _ logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
 	return helpers.SyncSecret(ctx, r.Client, s, nil)
 }
 

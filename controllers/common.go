@@ -285,13 +285,6 @@ func updateConditions(current []metav1.Condition, updates ...metav1.Condition) [
 	var ret []metav1.Condition
 
 	for _, newCond := range updates {
-		// we key conditions on their type and reason
-		// e.g: type=VaultAuthGlobal reason=Available, ...
-		// if newCond.Reason == "" {
-		// newCond.Reason = "Unknown"
-		// }
-		// TODO: handle invalid conditions, return error in this case
-		// key := fmt.Sprintf("%s/%s", newCond.Type, newCond.Reason)
 		key := newCond.Type
 		if seen[key] {
 			// drop duplicate conditions
