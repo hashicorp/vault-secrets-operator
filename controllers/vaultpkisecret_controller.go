@@ -401,14 +401,14 @@ func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logge
 	}
 
 	if !s.Spec.Destination.Create && s.Spec.Clear {
-		if err := r.clearSecretData(ctx, l, s); err != nil {
+		if err := r.clearSecretData(ctx, s); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, _ logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
 	return helpers.SyncSecret(ctx, r.Client, s, nil)
 }
 
