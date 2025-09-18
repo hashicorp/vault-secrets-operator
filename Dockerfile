@@ -30,6 +30,7 @@ COPY internal/ internal/
 COPY template/ template/
 COPY utils/ utils/
 COPY vault/ vault/
+COPY options/ options/
 
 # These flags gets redynamically computed on each `docker build` invocation, keep this under `go mod download` and friends
 # so it doesn't unnecessarily bust the Docker cache.

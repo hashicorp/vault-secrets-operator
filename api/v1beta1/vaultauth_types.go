@@ -432,10 +432,14 @@ type VaultAuthSpec struct {
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid      *bool              `json:"valid,omitempty"`
-	Error      string             `json:"error,omitempty"`
+	Valid *bool `json:"valid,omitempty"`
+	// Error is a human-readable error message indicating why the VaultAuth is invalid.
+	Error string `json:"error,omitempty"`
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	SpecHash   string             `json:"specHash,omitempty"`
+	// SpecHash is a SHA256 hash of the spec, used to determine if the spec has changed.
+	SpecHash string `json:"specHash,omitempty"`
 }
 
 // +kubebuilder:object:root=true
