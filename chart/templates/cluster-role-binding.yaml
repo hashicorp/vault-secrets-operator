@@ -19,3 +19,9 @@ subjects:
   - kind: ServiceAccount
     name: '{{ include "vso.chart.fullname" . }}-controller-manager'
     namespace: {{ .Release.Namespace }}
+  {{- range .Values.additionalClusterRoleBindings }}
+  - kind: {{ .kind | default "ServiceAccount" }}
+    name: {{ .name }}
+    namespace: {{ .namespace }}
+  {{- end }}
+
