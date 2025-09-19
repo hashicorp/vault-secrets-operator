@@ -18,7 +18,7 @@ The Vault Secrets Operator supports the following CPU architectures:
 
 - **amd64** (x86_64) - Intel/AMD 64-bit processors
 - **arm64** (aarch64) - ARM 64-bit processors (Apple Silicon, Graviton, etc.)
-- **ppc64le** - IBM Power Systems (POWER9/POWER10)
+- **ppc64le** - IBM Power Systems (Power9, Power10, Power11)
 - **s390x** - IBM Z mainframes and LinuxONE systems
 
 Both container images and standalone binaries are available for all supported architectures. Multi-architecture container images are automatically selected based on your Kubernetes cluster's node architecture.
