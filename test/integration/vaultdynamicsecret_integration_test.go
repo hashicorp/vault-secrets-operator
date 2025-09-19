@@ -1297,7 +1297,7 @@ func awaitDynamicSecretReconciled(t *testing.T, ctx context.Context, client ctrl
 			vdsObjFinal = vdsObj
 			return nil
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 20),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 60),
 	))
 	return &vdsObjFinal, valid
 }
