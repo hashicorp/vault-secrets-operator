@@ -24,6 +24,7 @@ type ClientCache interface {
 	Prune(filterFunc ClientCachePruneFilterFunc) []Client
 	Contains(key ClientCacheKey) bool
 	Purge() []ClientCacheKey
+	Keys() []ClientCacheKey
 }
 
 var _ ClientCache = (*clientCache)(nil)
@@ -38,6 +39,10 @@ type clientCache struct {
 	evictionCloneGauge prometheus.Gauge
 	hitCloneCounter    prometheus.Counter
 	missCloneCounter   prometheus.Counter
+}
+
+func (c *clientCache) Keys() []ClientCacheKey {
+	return c.cache.Keys()
 }
 
 // Purge all Clients from the cache. Useful when shutting down a

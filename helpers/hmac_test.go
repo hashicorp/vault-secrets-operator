@@ -23,7 +23,6 @@ import (
 )
 
 var (
-	clientBuilder     = testutils.NewFakeClientBuilder()
 	defaultHMACKey    []byte
 	defaultHMACObjKey = client.ObjectKey{
 		Namespace: "vso",
@@ -123,7 +122,7 @@ func TestCreateHMACKeySecret(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := clientBuilder.Build()
+			c := testutils.NewFakeClient()
 			got, err := CreateHMACKeySecret(ctx, c, tt.objKey)
 			if !tt.wantErr(t, err, fmt.Sprintf("CreateHMACKeySecret(%v, %v, %v)", ctx, c, tt.objKey)) {
 				return
@@ -224,6 +223,8 @@ func getHMACObjsMap(t *testing.T, tt hmacSecretTestCase) map[string]client.Objec
 }
 
 func TestHMACDestinationSecret(t *testing.T) {
+	t.Parallel()
+
 	defaultData := map[string][]byte{
 		"foo": []byte(`baz`),
 	}
@@ -359,12 +360,15 @@ func TestHMACDestinationSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertSecretHMAC(t, tt, clientBuilder.Build())
+			t.Parallel()
+			assertSecretHMAC(t, tt, testutils.NewFakeClient())
 		})
 	}
 }
 
 func TestHandleDestinationSecret(t *testing.T) {
+	t.Parallel()
+
 	defaultData := map[string][]byte{
 		"foo": []byte(`baz`),
 	}
@@ -536,7 +540,8 @@ func TestHandleDestinationSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertSecretHMAC(t, tt, clientBuilder.Build())
+			t.Parallel()
+			assertSecretHMAC(t, tt, testutils.NewFakeClient())
 		})
 	}
 }

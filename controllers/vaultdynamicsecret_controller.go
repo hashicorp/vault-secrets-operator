@@ -178,12 +178,21 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		syncReason = consts.ReasonVaultTokenRotated
 	}
 
+	var conditions []metav1.Condition
+
 	doSync := syncReason != ""
 	leaseID := o.Status.SecretLease.ID
 	if !doSync && r.runtimePodUID != "" && r.runtimePodUID != o.Status.LastRuntimePodUID {
 		// don't take part in the thundering herd on start up,
 		// and the lease is still within the renewal window.
 		horizon, inWindow := computeRelativeHorizonWithJitter(o, time.Second*1)
+		if len(o.Status.Conditions) == 0 {
+			// add a sync condition to the status if it does not exist.
+			conditions = append(conditions,
+				newSyncCondition(o, metav1.ConditionTrue,
+					"Updated after transitioning to a new leader/pod"),
+			)
+		}
 		logger.Info("Restart check",
 			"inWindow", inWindow,
 			"horizon", horizon,
@@ -194,7 +203,14 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 					"Not in renewal window after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 					leaseID, horizon)
-				if err := r.updateStatus(ctx, o); err != nil {
+				conditions = append(conditions,
+					newConditionNow(o,
+						consts.TypeLeaseRenewal,
+						consts.ReasonSecretLeaseRenewal,
+						metav1.ConditionFalse,
+						"Not in rotation period after transitioning to a new leader/pod, horizon=%s", horizon),
+				)
+				if err := r.updateStatus(ctx, o, conditions...); err != nil {
 					return ctrl.Result{}, err
 				}
 				return ctrl.Result{RequeueAfter: horizon}, nil
@@ -205,7 +221,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretLeaseRenewal,
 				"In rotation period after transitioning to a new leader/pod, lease_id=%s, horizon=%s",
 				leaseID, horizon)
-			if err := r.updateStatus(ctx, o); err != nil {
+
+			conditions = append(conditions,
+				newConditionNow(o,
+					consts.TypeLeaseRenewal,
+					consts.ReasonSecretLeaseRenewal,
+					metav1.ConditionTrue,
+					"In rotation period after transitioning to a new leader/pod, horizon=%s", horizon),
+			)
+			if err := r.updateStatus(ctx, o, conditions...); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{RequeueAfter: horizon}, nil
@@ -213,6 +237,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if !doSync && r.isRenewableLease(&o.Status.SecretLease, o, true) && !o.Spec.AllowStaticCreds && leaseID != "" {
+		if len(o.Status.Conditions) == 0 {
+			// add a sync condition to the status if it does not exist.
+			conditions = append(conditions,
+				newSyncCondition(o, metav1.ConditionTrue,
+					"Updated for lease renewal"),
+			)
+		}
 		// Renew the lease and return from Reconcile if the lease is successfully renewed.
 		if secretLease, err := r.renewLease(ctx, vClient, o); err == nil {
 			if !r.isRenewableLease(secretLease, o, false) {
@@ -225,11 +256,18 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal, err.Error())
 				return ctrl.Result{}, err
 			}
+			conditions = append(conditions,
+				newConditionNow(o,
+					consts.TypeLeaseRenewal,
+					consts.ReasonSecretLeaseRenewal,
+					metav1.ConditionTrue,
+					"Successfully renewed lease"),
+			)
 
 			o.Status.StaticCredsMetaData = secretsv1beta1.VaultStaticCredsMetaData{}
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = nowFunc().Unix()
-			if err := r.updateStatus(ctx, o); err != nil {
+			if err := r.updateStatus(ctx, o, conditions...); err != nil {
 				return ctrl.Result{}, err
 			}
 
@@ -257,6 +295,14 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				vClient.Taint()
 			}
 			syncReason = consts.ReasonSecretLeaseRenewalError
+			conditions = append(conditions,
+				newConditionNow(o,
+					consts.TypeLeaseRenewal,
+					consts.ReasonSecretLeaseRenewalError,
+					metav1.ConditionFalse,
+					"Could not renew lease, err=%s",
+					err),
+			)
 		}
 	}
 
@@ -284,6 +330,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		horizon := entry.NextBackOff()
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretSyncError,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)
+
+		conditions = append(conditions,
+			newSyncCondition(o, metav1.ConditionFalse,
+				"Failed to sync the secret, horizon=%s, err=%s", horizon, err,
+			))
+
+		if err := r.updateStatus(ctx, o, conditions...); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		return ctrl.Result{
 			RequeueAfter: horizon,
 		}, nil
@@ -292,26 +348,54 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
+
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = nowFunc().Unix()
-	if err := r.updateStatus(ctx, o); err != nil {
-		return ctrl.Result{}, err
-	}
+	o.Status.LastGeneration = o.GetGeneration()
 
 	horizon := r.computePostSyncHorizon(ctx, o)
 	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
 		"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
 		secretLease.ID, horizon, syncReason)
 
+	conditions = append(
+		conditions,
+		newSyncCondition(o, metav1.ConditionTrue,
+			"Secret synced"),
+	)
+
 	if doRolloutRestart {
 		// rollout-restart errors are not retryable
 		// all error reporting is handled by helpers.HandleRolloutRestarts
-		_ = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder)
+		if err = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder); err != nil {
+			conditions = append(
+				conditions,
+				newConditionNow(o,
+					consts.TypeRolloutRestart,
+					consts.ReasonRolloutRestartTriggeredFailed,
+					metav1.ConditionFalse,
+					"Rollout restart trigger failed: %s",
+					err),
+			)
+		} else {
+			conditions = append(
+				conditions,
+				newConditionNow(o,
+					consts.TypeRolloutRestart,
+					consts.ReasonRolloutRestartTriggered,
+					metav1.ConditionTrue,
+					"Rollout restart triggered"),
+			)
+		}
 	}
 
 	if ok := r.SyncRegistry.Delete(req.NamespacedName); ok {
 		logger.V(consts.LogLevelDebug).Info("Deleted object from SyncRegistry",
 			"obj", req.NamespacedName)
+	}
+
+	if err := r.updateStatus(ctx, o, conditions...); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if horizon.Seconds() == 0 {
@@ -372,9 +456,9 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	logger = logger.WithValues("path", path, "method", method)
 	switch method {
 	case http.MethodPut, http.MethodPost:
-		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params))
+		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, nil))
 	case http.MethodGet:
-		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil))
+		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, nil))
 	default:
 		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
@@ -547,12 +631,18 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	return staticCredsMeta, resp, nil
 }
 
-func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
+func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, conditions ...metav1.Condition) error {
+	logger := log.FromContext(ctx).WithName("updateStatus")
+
 	if r.runtimePodUID != "" {
 		o.Status.LastRuntimePodUID = r.runtimePodUID
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
+
+	n := updateConditions(o.Status.Conditions, conditions...)
+	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
+	o.Status.Conditions = n
 	if err := r.Status().Update(ctx, o); err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonStatusUpdateError,
 			"Failed to update the resource's status, err=%s", err)
@@ -577,7 +667,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 	resp, err := c.Write(ctx, vault.NewWriteRequest("/sys/leases/renew", map[string]any{
 		"lease_id":  o.Status.SecretLease.ID,
 		"increment": o.Status.SecretLease.LeaseDuration,
-	}))
+	}, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +686,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
@@ -690,7 +780,7 @@ func (r *VaultDynamicSecretReconciler) revokeLease(ctx context.Context, o *secre
 	}
 	if _, err = c.Write(ctx, vault.NewWriteRequest("/sys/leases/revoke", map[string]any{
 		"lease_id": leaseID,
-	})); err != nil {
+	}, nil)); err != nil {
 		msg := "Failed to revoke lease"
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRevoke, msg+": %s", err)
 		logger.Error(err, "Failed to revoke lease ", "id", leaseID)

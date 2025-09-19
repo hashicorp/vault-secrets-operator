@@ -44,3 +44,5 @@ bin/*
 *.png
 build
 .DS_Store
+
+.tmp*

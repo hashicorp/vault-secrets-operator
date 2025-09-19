@@ -42,6 +42,13 @@ resource "kubernetes_namespace" "dev" {
   }
 }
 
+resource "kubernetes_namespace" "vso" {
+  count = var.create_namespace ? 1 : 0
+  metadata {
+    name = var.operator_namespace
+  }
+}
+
 resource "vault_namespace" "test" {
   count = var.vault_enterprise ? 1 : 0
   path  = "${local.name_prefix}-ns"

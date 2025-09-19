@@ -81,6 +81,9 @@ type HCPVaultSecretsAppStatus struct {
 	// DynamicSecrets lists the last observed state of any dynamic secrets
 	// within the HCP Vault Secrets App
 	DynamicSecrets []HVSDynamicStatus `json:"dynamicSecrets,omitempty"`
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

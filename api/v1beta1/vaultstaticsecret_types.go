@@ -20,19 +20,6 @@ type VaultStaticSecretSpec struct {
 	// Namespace of the secrets engine mount in Vault. If not set, the namespace that's
 	// part of VaultAuth resource will be inferred.
 	Namespace string `json:"namespace,omitempty"`
-	// Mount for the secret in Vault
-	Mount string `json:"mount"`
-	// Path of the secret in Vault, corresponds to the `path` parameter for,
-	// kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
-	// kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version
-	Path string `json:"path"`
-	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
-	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
-	// +kubebuilder:validation:Minimum=0
-	Version int `json:"version,omitempty"`
-	// Type of the Vault static secret
-	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
-	Type string `json:"type"`
 	// RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
@@ -55,6 +42,31 @@ type VaultStaticSecretSpec struct {
 	Destination Destination `json:"destination"`
 	// SyncConfig configures sync behavior from Vault to VSO
 	SyncConfig *SyncConfig `json:"syncConfig,omitempty"`
+
+	VaultStaticSecretCommon `json:",inline"`
+}
+
+type VaultStaticSecretCommon struct {
+	// Mount for the secret in Vault
+	Mount string `json:"mount"`
+	// Path of the secret in Vault, corresponds to the `path` parameter for:
+	// kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+	// kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version
+	Path string `json:"path"`
+	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
+	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
+	// +kubebuilder:validation:Minimum=0
+	Version int `json:"version,omitempty"`
+	// Type of the Vault static secret
+	// +kubebuilder:validation:Enum={kv-v1,kv-v2}
+	Type string `json:"type"`
+}
+
+type VaultStaticSecretCollectable struct {
+	VaultStaticSecretCommon `json:",inline"`
+	// Transformation provides configuration for transforming the secret data before
+	// it is stored in the CSI volume.
+	Transformation *Transformation `json:"transformation,omitempty"`
 }
 
 // SyncConfig configures sync behavior from Vault to VSO
@@ -76,6 +88,9 @@ type VaultStaticSecretStatus struct {
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.
 	SecretMAC string `json:"secretMAC,omitempty"`
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -323,7 +323,7 @@ type VaultAuthGlobalRef struct {
 	Name string `json:"name,omitempty"`
 	// Namespace of the VaultAuthGlobal resource. If not provided, the namespace of
 	// the referring VaultAuth resource is used.
-	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9-]{1,63})$`
 	Namespace string `json:"namespace,omitempty"`
 	// MergeStrategy configures the merge strategy for HTTP headers and parameters
 	// that are included in all Vault authentication requests.
@@ -392,6 +392,9 @@ type VaultAuthSpec struct {
 	// This field allows administrators to customize which Kubernetes namespaces are authorized to
 	// use with this AuthMethod. While Vault will still enforce its own rules, this has the added
 	// configurability of restricting which VaultAuthMethods can be used by which namespaces.
+	// You only need to set allowedNamespaces when you want to control access from a resource in
+	// a different namespace than the VaultAuth it references. Secret resources in
+	// the same namespace as the VaultAuth bypass this check.
 	// Accepted values:
 	// []{"*"} - wildcard, all namespaces.
 	// []{"a", "b"} - list of namespaces.
@@ -429,10 +432,14 @@ type VaultAuthSpec struct {
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid      *bool              `json:"valid,omitempty"`
-	Error      string             `json:"error,omitempty"`
+	Valid *bool `json:"valid,omitempty"`
+	// Error is a human-readable error message indicating why the VaultAuth is invalid.
+	Error string `json:"error,omitempty"`
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	SpecHash   string             `json:"specHash,omitempty"`
+	// SpecHash is a SHA256 hash of the spec, used to determine if the spec has changed.
+	SpecHash string `json:"specHash,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -454,6 +461,18 @@ type StorageEncryption struct {
 	Mount string `json:"mount"`
 	// KeyName to use for encrypt/decrypt operations via Vault Transit.
 	KeyName string `json:"keyName"`
+}
+
+type VaultAuthRef struct {
+	// Name of the VaultAuth resource.
+	Name string `json:"name"`
+	// Namespace of the VaultAuth resource.
+	Namespace string `json:"namespace,omitempty"`
+	// TrustNamespace of the referring VaultAuth resource. This means that any Vault
+	// credentials will be provided by resources in the same namespace as the
+	// VaultAuth resource. Otherwise, the credentials will be provided by the secret
+	// resource's namespace.
+	TrustNamespace bool `json:"trustNamespace,omitempty"`
 }
 
 // +kubebuilder:object:root=true

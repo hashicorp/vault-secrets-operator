@@ -104,7 +104,40 @@ func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client,
 	return computeClientCacheKey(authObj, connObj, provider.GetUID())
 }
 
-// computeClientCacheKey for use in a ClientCache. It is derived by combining instances of
+// ComputeClientCacheKeyFromMeta for use in a ClientCache. It is derived from the configuration of obj.
+// If the obj is not of a supported type or is not properly configured, an error will be returned.
+// This operation calls out to the Kubernetes API multiple times.
+//
+// See ComputeClientCacheKey for more details on how the client cache is derived.
+func ComputeClientCacheKeyFromMeta(ctx context.Context, client ctrlclient.Client, m common.SyncableSecretMetaDataI, opts *ClientOptions) (ClientCacheKey, error) {
+	if opts.CredentialProviderFactory == nil {
+		return "", errors.New("CredentialProviderFactory is nil")
+	}
+
+	authObj, err := common.GetVaultAuthNamespacedForMeta(ctx, client, m, opts.GlobalVaultAuthOptions)
+	if err != nil {
+		return "", err
+	}
+
+	connName, err := common.GetConnectionNamespacedName(authObj)
+	if err != nil {
+		return "", err
+	}
+
+	connObj, err := common.GetVaultConnection(ctx, client, connName)
+	if err != nil {
+		return "", err
+	}
+
+	provider, err := opts.CredentialProviderFactory.New(ctx, client, authObj, m.GetProviderNamespace())
+	if err != nil {
+		return "", err
+	}
+
+	return computeClientCacheKey(authObj, connObj, provider.GetUID())
+}
+
+// ComputeClientCacheKey for use in a ClientCache. It is derived by combining instances of
 // VaultAuth, VaultConnection, and a CredentialProvider UID.
 // All of these elements are summed together into a SHA256 checksum,
 // and prefixed with the VaultAuth method. The chances of a collision are extremely remote,

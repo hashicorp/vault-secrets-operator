@@ -30,6 +30,7 @@ COPY internal/ internal/
 COPY template/ template/
 COPY utils/ utils/
 COPY vault/ vault/
+COPY options/ options/
 
 # These flags gets redynamically computed on each `docker build` invocation, keep this under `go mod download` and friends
 # so it doesn't unnecessarily bust the Docker cache.
@@ -94,12 +95,12 @@ ENTRYPOINT ["/vault-secrets-operator"]
 
 # ubi build image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5 AS build-ubi
+FROM registry.access.redhat.com/ubi10/ubi-minimal:10.0 AS build-ubi
 RUN microdnf --refresh --assumeyes upgrade ca-certificates
 
 # ubi release image
 # -----------------------------------
-FROM registry.access.redhat.com/ubi9/ubi-micro:9.6 AS release-ubi
+FROM registry.access.redhat.com/ubi10/ubi-micro:10.0 AS release-ubi
 
 ENV BIN_NAME=vault-secrets-operator
 ARG PRODUCT_VERSION

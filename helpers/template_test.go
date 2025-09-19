@@ -34,6 +34,11 @@ func Test_renderTemplates(t *testing.T) {
 			"super": "duper",
 		},
 	}
+	wrapData := map[string]any{
+		"token":    "c29tZS10b2tlbg==", // base64 encoded value of `some-token`
+		"ttl":      "1h",
+		"accessor": "some-accessor",
+	}
 	tests := []struct {
 		name    string
 		input   *SecretInput
@@ -43,7 +48,7 @@ func Test_renderTemplates(t *testing.T) {
 	}{
 		{
 			name:  "multi-with-helper",
-			input: NewSecretInput[any, any](secrets, nil, nil, nil),
+			input: NewSecretInput[any, any](secrets, nil, nil, nil, nil),
 			opt: &SecretTransformationOption{
 				KeyedTemplates: []*KeyedTemplate{
 					{
@@ -84,7 +89,7 @@ func Test_renderTemplates(t *testing.T) {
 		},
 		{
 			name:  "multi-with-multi-helpers",
-			input: NewSecretInput[string, string](secrets, nil, nil, nil),
+			input: NewSecretInput[string, string](secrets, nil, nil, nil, nil),
 			opt: &SecretTransformationOption{
 				KeyedTemplates: []*KeyedTemplate{
 					{
@@ -131,17 +136,14 @@ func Test_renderTemplates(t *testing.T) {
 		},
 		{
 			name: "multi-with-real-world-helper",
-			input: NewSecretInput(
-				map[string]any{
-					"username": "alice",
-					"password": "secret",
-				}, nil,
-				map[string]string{
-					"myapp.config/postgres-host": "postgres-postgresql.postgres.svc.cluster.local:5432",
-				},
-				map[string]string{
-					"myapp/name": "db",
-				}),
+			input: NewSecretInput(map[string]any{
+				"username": "alice",
+				"password": "secret",
+			}, nil, nil, map[string]string{
+				"myapp.config/postgres-host": "postgres-postgresql.postgres.svc.cluster.local:5432",
+			}, map[string]string{
+				"myapp/name": "db",
+			}),
 			opt: &SecretTransformationOption{
 				KeyedTemplates: []*KeyedTemplate{
 					{
@@ -224,7 +226,7 @@ db.username=alice
 		},
 		{
 			name:  "single-with-metadata-only",
-			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
+			input: NewSecretInput[string, string](secrets, nil, metadata, nil, nil),
 			opt: &SecretTransformationOption{
 				KeyedTemplates: []*KeyedTemplate{
 					{
@@ -244,7 +246,7 @@ db.username=alice
 		},
 		{
 			name:  "single-with-secret-and-metadata",
-			input: NewSecretInput[string, string](secrets, metadata, nil, nil),
+			input: NewSecretInput[string, string](secrets, nil, metadata, nil, nil),
 			opt: &SecretTransformationOption{
 				KeyedTemplates: []*KeyedTemplate{
 					{
@@ -264,13 +266,33 @@ db.username=alice
 			wantErr: assert.NoError,
 		},
 		{
+			name:  "single-with-secret-wrapData-and-metadata",
+			input: NewSecretInput[string, string](secrets, wrapData, metadata, nil, nil),
+			opt: &SecretTransformationOption{
+				KeyedTemplates: []*KeyedTemplate{
+					{
+						Key: "tmpl",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl",
+							Text: `{{- $custom := get .Metadata "custom" -}}
+			{{- printf "%s_%s_%s_%s" (get $custom "super") (get .Secrets "bar" | b64dec) (get .WrapData "accessor") (get .WrapData "token" | b64dec) -}}
+			`,
+						},
+					},
+				},
+			},
+			want: map[string][]byte{
+				"tmpl": []byte(`duper_buz_some-accessor_some-token`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name: "single-with-secret-metadata-annotations-and-labels",
-			input: NewSecretInput[string, string](secrets, metadata,
-				map[string]string{
-					"anno1": "foo",
-				}, map[string]string{
-					"label1": "baz",
-				}),
+			input: NewSecretInput[string, string](secrets, nil, metadata, map[string]string{
+				"anno1": "foo",
+			}, map[string]string{
+				"label1": "baz",
+			}),
 			opt: &SecretTransformationOption{
 				KeyedTemplates: []*KeyedTemplate{
 					{
@@ -291,7 +313,7 @@ db.username=alice
 		},
 		{
 			name:  "no-specs-error",
-			input: NewSecretInput[string, string](nil, nil, nil, nil),
+			input: NewSecretInput[string, string](nil, nil, nil, nil, nil),
 			opt:   &SecretTransformationOption{},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err,
@@ -576,7 +598,6 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientBuilder := testutils.NewFakeClientBuilder()
 
 	defaultKeyedTemplates := []*KeyedTemplate{
 		{
@@ -1251,7 +1272,7 @@ func TestNewSecretTransformationOption(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt := tt
-			client := clientBuilder.Build()
+			client := testutils.NewFakeClient()
 
 			t.Parallel()
 
@@ -1272,6 +1293,8 @@ func TestNewSecretTransformationOption(t *testing.T) {
 }
 
 func TestNewSecretInput(t *testing.T) {
+	t.Parallel()
+
 	secrets := map[string]any{
 		"foo":  "baz",
 		"biff": 1,
@@ -1281,9 +1304,14 @@ func TestNewSecretInput(t *testing.T) {
 			"buz": "qux",
 		},
 	}
+
+	wrapData := map[string]any{
+		"token": "1234567890abcdef",
+	}
 	tests := []struct {
 		name        string
 		secrets     map[string]any
+		wrapData    map[string]any
 		metadata    map[string]any
 		annotations map[string]string
 		labels      map[string]string
@@ -1306,19 +1334,30 @@ func TestNewSecretInput(t *testing.T) {
 			},
 		},
 		{
-			name:     "both",
+			name:     "wrapData-only",
+			wrapData: wrapData,
+			want: &SecretInput{
+				Secrets:  nil,
+				Metadata: nil,
+				WrapData: wrapData,
+			},
+		},
+		{
+			name:     "all",
 			secrets:  secrets,
 			metadata: metadata,
+			wrapData: wrapData,
 			want: &SecretInput{
 				Secrets:  secrets,
 				Metadata: metadata,
+				WrapData: wrapData,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, NewSecretInput(tt.secrets, tt.metadata, tt.annotations, tt.labels),
-				"NewSecretInput(%v, %v)", tt.secrets, tt.metadata)
+			assert.Equalf(t, tt.want, NewSecretInput(tt.secrets, tt.wrapData, tt.metadata, tt.annotations, tt.labels),
+				"NewSecretInput(%v, %v, %v)", tt.secrets, tt.wrapData, tt.metadata)
 		})
 	}
 }

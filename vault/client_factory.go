@@ -108,9 +108,13 @@ type CachingClientFactory interface {
 	Restore(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
 	Prune(context.Context, ctrlclient.Client, ctrlclient.Object, CachingClientFactoryPruneRequest) (int, error)
 	Start(context.Context)
+	Keys() []ClientCacheKey
+	Remove(ClientCacheKey) bool
 	Stop()
 	ShutDown(CachingClientFactoryShutDownRequest)
 }
+
+type ClientGetValidator func(context.Context, Client) error
 
 var _ CachingClientFactory = (*cachingClientFactory)(nil)
 
@@ -148,6 +152,28 @@ type cachingClientFactory struct {
 	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
 	// credentialProviderFactory is a function that returns a CredentialProvider.
 	credentialProviderFactory credentials.CredentialProviderFactory
+	// clientGetValidator function provide custom post client login validation on
+	// Get requests.
+	clientGetValidator ClientGetValidator
+	// newClientFunc is a function that returns a new Client.
+	newClientFunc NewClientFunc
+}
+
+// Remove removes a Client from the cache. Returns true if the Client was removed.
+func (m *cachingClientFactory) Remove(key ClientCacheKey) bool {
+	cacheKeyForLock := key.String()
+	m.clientMutex.LockKey(cacheKeyForLock)
+	defer func() {
+		if err := m.clientMutex.UnlockKey(cacheKeyForLock); err != nil {
+			m.logger.Error(err, "Failed to unlock client mutex")
+		}
+	}()
+	return m.cache.Remove(key)
+}
+
+// Keys returns all the keys in the cache.
+func (m *cachingClientFactory) Keys() []ClientCacheKey {
+	return m.cache.Keys()
 }
 
 // Start method for cachingClientFactory starts the lifetime watcher handler.
@@ -284,7 +310,12 @@ func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Cl
 		)
 	}()
 
-	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj, m.clientOptions())
+	metaObj, err := common.NewSyncableSecretMetaDataI(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheKey, err = ComputeClientCacheKeyFromMeta(ctx, client, metaObj, m.clientOptions())
 	if err != nil {
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 			"Failed to get cacheKey from obj, err=%s", err)
@@ -352,7 +383,12 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		)
 	}()
 
-	cacheKey, err = ComputeClientCacheKeyFromObj(ctx, client, obj, m.clientOptions())
+	metaObj, err := common.NewSyncableSecretMetaDataI(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheKey, err = ComputeClientCacheKeyFromMeta(ctx, client, metaObj, m.clientOptions())
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
@@ -442,18 +478,25 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	}
 
 	// if we couldn't produce a valid Client, create a new one, log it in, and cache it
-	c, err = NewClientWithLogin(ctx, client, obj, m.clientOptions())
+	c, err = m.newClientFunc(ctx, client, obj, m.clientOptions())
 	if err != nil {
 		logger.Error(err, "Failed to get NewClientWithLogin")
 		errs = errors.Join(err)
 		return nil, errs
+	}
 
+	if m.clientGetValidator != nil {
+		if err := m.clientGetValidator(ctx, c); err != nil {
+			logger.Error(err, "Validator failed",
+				"cacheKey", cacheKey, "clientID", c.ID())
+			return nil, err
+		}
 	}
 
 	logger.V(consts.LogLevelTrace).Info("New client created",
 		"cacheKey", cacheKey, "clientID", c.ID())
 	// cache the parent Client for future requests.
-	cacheKey, err = m.cacheClient(ctx, c, m.storageEnabled())
+	cacheKey, err = m.cacheClient(ctx, c, m.storageEnabled() && c.Renewable())
 	if err != nil {
 		errs = errors.Join(err)
 		return nil, errs
@@ -596,7 +639,7 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 	if persist && cacheKey == m.clientCacheKeyEncrypt {
 		// added protection against persisting the Vault client used for storage
 		// data encryption.
-		logger.Info("Warning: refusing to store the encryption client")
+		logger.V(consts.LogLevelWarning).Info("Refusing to store the encryption client")
 		persist = false
 	}
 
@@ -608,7 +651,7 @@ func (m *cachingClientFactory) cacheClient(ctx context.Context, c Client, persis
 			}
 		}
 	} else if persist {
-		logger.Info("Warning: persistence requested but storage not enabled")
+		logger.V(consts.LogLevelWarning).Info("Client persistence requested but storage not enabled")
 	}
 
 	return cacheKey, nil
@@ -707,7 +750,7 @@ func (m *cachingClientFactory) setEncryptionClient(ctx context.Context, client c
 			return
 		}
 
-		c, err = NewClientWithLogin(ctx, client, encryptionVaultAuth, &ClientOptions{
+		c, err = m.newClientFunc(ctx, client, encryptionVaultAuth, &ClientOptions{
 			CredentialProviderFactory: m.credentialProviderFactory,
 		})
 		if err != nil {
@@ -883,6 +926,8 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		clientMutex:               keymutex.NewHashed(config.ClientCacheNumLocks),
 		GlobalVaultAuthOptions:    config.GlobalVaultAuthOptions,
 		credentialProviderFactory: config.CredentialProviderFactory,
+		clientGetValidator:        config.ClientGetValidator,
+		newClientFunc:             config.NewClientFunc,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -953,6 +998,9 @@ type CachingClientFactoryConfig struct {
 	// operations. A higher number of locks will reduce contention but increase
 	// memory usage.
 	ClientCacheNumLocks int
+	ClientGetValidator  ClientGetValidator
+	// NewClientFunc is a function that returns a new Client.
+	NewClientFunc NewClientFunc
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
@@ -966,6 +1014,7 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 		CredentialProviderFactory:    credentials.NewCredentialProviderFactory(),
 		SetupEncryptionClientTimeout: defaultSetupEncryptionClientTimeout,
 		ClientCacheNumLocks:          100,
+		NewClientFunc:                NewClientWithLogin,
 	}
 }
 
