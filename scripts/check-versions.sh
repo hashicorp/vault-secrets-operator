@@ -68,4 +68,9 @@ checkVersion "${CHART_ROOT}/values.yaml" "${KUBE_RBAC_PROXY_VERSION}" .controlle
 checkVersion "${KUSTOMIZE_ROOT}/default/manager_auth_proxy_patch.yaml" \
   "${KUBE_RBAC_PROXY_VERSION}"  ".spec.template.spec.containers.[] | select(.name == \"kube-rbac-proxy\") | .image"
 
+# check VSO-CSI related image versions
+checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_DRIVER_VERSION}" .csi.driver.image.tag
+checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION}" .csi.nodeDriverRegistrar.image.tag
+checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_LIVENESS_PROBE_VERSION}" .csi.livenessProbe.image.tag
+
 exit $_result
