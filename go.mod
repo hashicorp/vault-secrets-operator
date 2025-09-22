@@ -20,7 +20,7 @@ replace (
 )
 
 require (
-	cloud.google.com/go/compute/metadata v0.8.0
+	cloud.google.com/go/compute/metadata v0.8.4
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/argoproj/argo-rollouts v1.8.3
 	github.com/cenkalti/backoff/v4 v4.3.0
