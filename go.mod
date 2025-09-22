@@ -3,7 +3,7 @@ module github.com/hashicorp/vault-secrets-operator
 go 1.24.3
 
 require (
-	cloud.google.com/go/compute/metadata v0.8.0
+	cloud.google.com/go/compute/metadata v0.8.4
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/argoproj/argo-rollouts v1.6.6
 	github.com/cenkalti/backoff/v4 v4.3.0
