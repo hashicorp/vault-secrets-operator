@@ -1014,7 +1014,7 @@ csi:
       # The Docker repository of the CSI driver image.
       repository: hashicorp/vault-secrets-operator-csi
       # The version of the CSI driver image to download.
-      tag: 0.0.0-dev
+      tag: 1.0.0
 
     # Additional environment variables for the
     # CSI driver container.
@@ -1096,7 +1096,7 @@ csi:
       # The Docker repository of the liveness probe image.
       repository: registry.k8s.io/sig-storage/livenessprobe
       # The version of the liveness probe image to download.
-      tag: v2.10.0
+      tag: v2.16.0
 
     # Additional arguments to pass to the liveness probe container.
     # @type: array
@@ -1112,7 +1112,7 @@ csi:
       # The Docker repository of the node driver registrar image.
       repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
       # The version of the node driver registrar image to download.
-      tag: v2.8.0
+      tag: v2.14.0
 
     # Additional arguments to pass to the node driver registrar container.
     # @type: array
