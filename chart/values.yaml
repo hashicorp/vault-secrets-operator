@@ -1028,25 +1028,25 @@ csi:
     # Configures logging output settings for the CSI driver.
     logging:
       # Sets the log level for the CSI driver.
-      # Must be one of: `info`, `error`, `debug`, `debug-extended`, `trace`.
+      # Must be one of: info, error, debug, debug-extended, trace.
       # Default: info
       # @type: string
       level: info
 
       # Sets the time encoding for the CSI driver.
       # Must be one of: 
-      # - `epoch` - Unix timestamp in seconds (e.g. 1695382800)
-      # - `millis` - Unix timestamp in milliseconds (e.g. 1695382800000)
-      # - `nano` - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
-      # - `iso8601` - ISO 8601 format (e.g. 2023-09-22T10:00:00Z)
-      # - `rfc3339` - RFC 3339 format (e.g. 2023-09-22T10:00:00Z)
-      # - `rfc3339nano` - RFC 3339 format with nanosecond precision (e.g. 2023-09-22T10:00:00.123456789Z)
+      # - epoch - Unix timestamp in seconds (e.g. 1695382800)
+      # - millis - Unix timestamp in milliseconds (e.g. 1695382800000)
+      # - nano - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
+      # - iso8601 - ISO 8601 format (e.g. 2023-09-22T10:00:00Z)
+      # - rfc3339 - RFC 3339 format (e.g. 2023-09-22T10:00:00Z)
+      # - rfc3339nano - RFC 3339 format with nanosecond precision (e.g. 2023-09-22T10:00:00.123456789Z)
       # Default: rfc3339
       # @type: string
       timeEncoding: rfc3339
 
       # Sets the stacktrace level for the CSI driver.
-      # Must be one of: `info`, `error`, `panic`.
+      # Must be one of: info, error, panic.
       # Default: panic
       # @type: string
       stacktraceLevel: panic
@@ -1078,11 +1078,11 @@ csi:
       # Custom factor used to randomize the backoff interval between retries
       # to spread out the retries and avoid a thundering herd.
       # We strongly recommend using a randomization factor, but you can set
-      # `randomizationFactor` to `0` to disable randomization.
+      # `randomizationFactor` to 0 to disable randomization.
       # @type: float
       randomizationFactor: 0.5
       # Sets a multiplier used to increase the backoff interval between retries.
-      # You cannot set `multiplier` to a value less than or equal to `0`.
+      # You cannot set `multiplier` to a value less than or equal to 0.
       # @type: float
       multiplier: 1.5
 
@@ -1119,7 +1119,7 @@ csi:
     extraArgs: []
 
   # Configures the update strategy for the CSI driver DaemonSet.
-  # Must be one of: `Recreate`, `RollingUpdate`.
+  # Must be one of: Recreate, RollingUpdate.
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   # Example:
   #
