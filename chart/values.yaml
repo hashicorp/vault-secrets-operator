@@ -988,7 +988,7 @@ csi:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator-csi
-      tag: 0.0.0-dev
+      tag: 1.0.0
 
     # Defines additional environment variables to be added to the
     # CSI driver container.
@@ -1060,7 +1060,7 @@ csi:
     image:
       pullPolicy: IfNotPresent
       repository: registry.k8s.io/sig-storage/livenessprobe
-      tag: v2.10.0
+      tag: v2.16.0
 
     # Extra arguments to pass to the liveness probe container.
     # @type: array
@@ -1071,7 +1071,7 @@ csi:
     image:
       pullPolicy: IfNotPresent
       repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
-      tag: v2.8.0
+      tag: v2.14.0
 
     # Extra arguments to pass to the node driver registrar container.
     # @type: array
