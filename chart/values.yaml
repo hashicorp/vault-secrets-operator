@@ -70,33 +70,36 @@ controller:
   #           - antarctica-west1
   affinity: {}
 
-  # TopologySpreadConstraints settings for vault-secrets-operator pod.
-  # The value is an array of PodSpec TopologySpreadConstraint maps.
-  # A labelSelector for the pods will be added automatically to the template in case it is not set.
+  # Topology spread constraint settings for the `vault-secrets-operator` pod
+  # as an array of PodSpec `topologySpreadConstraints` maps.
+  # VSO automatically adds a `labelSelector` entry to the templates if you do not provide a value.
   # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/
   # Example:
+  #
+  # ```yaml
   # topologySpreadConstraints:
   # - maxSkew: 1
   #   topologyKey: zone
   #   whenUnsatisfiable: DoNotSchedule
+  # ```
   topologySpreadConstraints: []
 
-  # Configure the PodDisruptionBudget for the controller deployment.
+  # Configures the PodDisruptionBudget for the controller deployment.
   podDisruptionBudget:
 
-    # toggles the deployment of the PodDisruptionBudget for the controller.
+    # Toggles the deployment of the PodDisruptionBudget for the controller.
     # @type: boolean
     enabled: false
 
-    # Sets the maximum number of pods that can be unavailable during the eviction.
-    # This field cannot be set if minAvailable is set.
-    # Can be set as an integer (e.g. "2") or a percentage (e.g. "50%").
+    # Sets the maximum number of unavailable pods during eviction.
+    # You cannot set both `maxUnavailable` and `minAvailable`.
+    # You can specify `maxUnavailable` as an integer ("2") or a percentage ("50%").
     # @type: string
     maxUnavailable: "0"
 
-    # Sets the number of pods that must be available during the eviction.
-    # This field cannot be set if maxUnavailable is set.
-    # Can be set as an integer (e.g. "2") or a percentage (e.g. "50%").
+    # Sets the minimum number of available pods allowed during eviction.
+    # You cannot set both `minAvailable` and `maxUnavailable`.
+    # You can specify `minAvailable` as an integer ("2") or a percentage ("50%").
     # @type: string
     minAvailable: "0"
 
@@ -205,7 +208,13 @@ controller:
       level: info
 
       # Sets the time encoding for the operator.
-      # Options are: epoch, millis, nano, iso8601, rfc3339, rfc3339nano
+      # Options are: 
+      # - `epoch` - Unix timestamp in seconds (e.g. 1695382800)
+      # - `millis` - Unix timestamp in milliseconds (e.g. 1695382800000)
+      # - `nano` - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
+      # - `iso8601` - ISO 8601 format (e.g. 2023-09-22T10:00:00Z)
+      # - `rfc3339` - RFC 3339 format (e.g. 2023-09-22T10:00:00Z)
+      # - `rfc3339nano` - RFC 3339 format with nanosecond precision (e.g. 2023-09-22T10:00:00.123456789Z)
       # Default: rfc3339
       # @type: string
       timeEncoding: rfc3339
@@ -913,16 +922,19 @@ hooks:
     executionTimeout: 30s
 
 csi:
+  # <EnterpriseAlert inline="true" />
   # Only supports Vault Enterprise servers.
-  # Toggles the deployment of the Vault Secrets Operator CSI driver. This will deploy the driver and the necessary
-  # resources to the cluster.
+  # Toggles the deployment of the Vault Secrets Operator CSI driver. Setting `enabled` to `true`
+  # deploys the driver and the necessary resources to the cluster.
   # @type: boolean
   enabled: false
 
-  # Host Aliases settings for the vault-secrets-operator-csi pods.
-  # The value is an array of PodSpec HostAlias maps.
+  # Host Aliases settings for the `vault-secrets-operator-csi` pods as
+  # an array of PodSpec HostAlias maps.
   # ref: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
   # Example:
+  #
+  # ```yaml
   # hostAliases:
   #   - ip: 192.168.1.100
   #     hostnames:
@@ -930,29 +942,38 @@ csi:
   # @type: array<map>
   hostAliases: []
 
-  # nodeSelector labels for vault-secrets-operator-csi pod assignment.
+  # Node selector labels for `vault-secrets-operator-csi` pod assignment.
   # @type: map
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
   # Example:
+  # 
+  # ```yaml
   # nodeSelector:
   #   beta.kubernetes.io/arch: amd64
+  # ```
   nodeSelector: {}
-  # Toleration Settings for vault-secrets-operator-csi pods.
-  # The value is an array of PodSpec Toleration maps.
+
+  # Toleration settings for `vault-secrets-operator-csi` pods
+  # as an array of PodSpec Toleration maps.
   # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
   # @type: array<map>
   # Example:
+  # 
+  # ```yaml
   # tolerations:
   #  - key: "key1"
   #    operator: "Equal"
   #    value: "value1"
   #    effect: "NoSchedule"
+  # ```
   tolerations: []
 
-  # Affinity settings for vault-secrets-operator-csi pods.
-  # The value is a map of PodSpec Affinity maps.
+  # Affinity settings for `vault-secrets-operator-csi` pods
+  # as a map of PodSpec Affinity maps.
   # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
   # Example:
+  #
+  # ```yaml
   # affinity:
   #   nodeAffinity:
   #     requiredDuringSchedulingIgnoredDuringExecution:
@@ -963,72 +984,85 @@ csi:
   #           values:
   #           - antarctica-east1
   #           - antarctica-west1
+  # ```
   affinity: {}
 
-  # Image pull secret to use for private container registry authentication which will be applied to the controllers
-  # service account. Alternatively, the value may be specified as an array of strings.
+  # Image pull secrets as an array of maps or strings for private container registry authentication for the controller
+  # service account.
+  # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
   # Example:
+  #
   # ```yaml
   # imagePullSecrets:
   #   - name: pull-secret-name-1
   #   - name: pull-secret-name-2
   # ```
-  # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
   # @type: array<map>
   imagePullSecrets: []
 
-  # Extra labels to attach to the deployment. This should be formatted as a YAML object (map)
+  # Additional deployment labels as a YAML object (map).
   extraLabels: {}
 
-  # This value defines additional annotations for the deployment. This should be formatted as a YAML object (map)
+  # Additional deployment annotations as a YAML object (map).
   annotations: {}
 
   driver:
-    # Image sets the repo and tag of the vault-secrets-operator-csi image to use for the driver.
+    # Image information for the CSI driver.
+    # ref: https://kubernetes.io/docs/concepts/containers/images/
     image:
+      # Determines when the kubelet attempts to download the specified image.
       pullPolicy: IfNotPresent
+      # The Docker repository of the CSI driver image.
       repository: hashicorp/vault-secrets-operator-csi
+      # The version of the CSI driver image to download.
       tag: 0.0.0-dev
 
-    # Defines additional environment variables to be added to the
+    # Additional environment variables for the
     # CSI driver container.
     # @type: array<map>
     extraEnv: []
 
-    # Extra arguments to pass to the driver.
+    # Additional arguments to pass to the CSI driver.
     # @type: array
     extraArgs: []
 
-    # logging
+    # Configures logging output settings for the CSI driver.
     logging:
-      # Sets the log level for the driver.
-      # Builtin levels are: info, error, debug, debug-extended, trace
+      # Sets the log level for the CSI driver.
+      # Must be one of: `info`, `error`, `debug`, `debug-extended`, `trace`.
       # Default: info
       # @type: string
       level: info
 
-      # Sets the time encoding for the driver.
-      # Options are: epoch, millis, nano, iso8601, rfc3339, rfc3339nano
+      # Sets the time encoding for the CSI driver.
+      # Must be one of: 
+      # - `epoch` - Unix timestamp in seconds (e.g. 1695382800)
+      # - `millis` - Unix timestamp in milliseconds (e.g. 1695382800000)
+      # - `nano` - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
+      # - `iso8601` - ISO 8601 format (e.g. 2023-09-22T10:00:00Z)
+      # - `rfc3339` - RFC 3339 format (e.g. 2023-09-22T10:00:00Z)
+      # - `rfc3339nano` - RFC 3339 format with nanosecond precision (e.g. 2023-09-22T10:00:00.123456789Z)
       # Default: rfc3339
       # @type: string
       timeEncoding: rfc3339
 
-      # Sets the stacktrace level for the driver.
-      # Options are: info, error, panic
+      # Sets the stacktrace level for the CSI driver.
+      # Must be one of: `info`, `error`, `panic`.
       # Default: panic
       # @type: string
       stacktraceLevel: panic
 
-    # Backoff settings for the CSI driver. These settings control the backoff behavior
-    # when the driver encounters an error while fetching secrets from the SecretSource.
-    # For example given the following settings:
+    # Describes backoff behavior for the CSI driver when the driver encounters
+    # an error fetching secrets from `SecretSource`.
+    # For example, the following configuration creates a backoff retry sequence like
+    # 5.5s, 7.5s, 11.25s, 16.87s, 25.3125s, 37.96s, 56.95, 60.95s, etc.:
+    # 
+    # ```yaml
     #   initialInterval: 5s
     #   maxInterval: 60s
     #   randomizationFactor: 0.5
     #   multiplier: 1.5
-    #
-    # The backoff retry sequence might be something like:
-    #  5.5s, 7.5s, 11.25s, 16.87s, 25.3125s, 37.96s, 56.95, 60.95s...
+    # ```
     # @type: object
     backoffOnSecretSourceError:
       # Initial interval between retries.
@@ -1037,55 +1071,66 @@ csi:
       # Maximum interval between retries.
       # @type: duration
       maxInterval: "60s"
-      # Maximum elapsed time without a successful sync from the secret's source.
-      # It's important to note that setting this option to anything other than
-      # its default will result in the secret sync no longer being retried after
-      # reaching the max elapsed time.
+      # Maximum elapsed time without a successful sync from the secret source.
+      # Setting an explicit `maxElapsedTime` tells VSO not to
+      # retry the secret sync once it reaches the max elapsed time.
       # @type: duration
       maxElapsedTime: "0s"
-      # Randomization factor randomizes the backoff interval between retries.
-      # This helps to spread out the retries to avoid a thundering herd.
-      # If the value is 0, then the backoff interval will not be randomized.
-      # It is recommended to set this to a value that is greater than 0.
+      # Custom factor used to randomize the backoff interval between retries
+      # to spread out the retries and avoid a thundering herd.
+      # We strongly recommend using a randomization factor, but you can set
+      # `randomizationFactor` to `0` to disable randomization.
       # @type: float
       randomizationFactor: 0.5
-      # Sets the multiplier that is used to increase the backoff interval between retries.
-      # This value should always be set to a value greater than 0.
-      # The value must be greater than zero.
+      # Sets a multiplier used to increase the backoff interval between retries.
+      # You cannot set `multiplier` to a value less than or equal to `0`.
       # @type: float
       multiplier: 1.5
 
+  # The liveness probe checks the health of the CSI driver container.
   livenessProbe:
-    # Image sets the repo and tag of the image to use for the liveness probe.
+    # Image information for the CSI driver liveness probe.
+    # ref: https://kubernetes.io/docs/concepts/containers/images/
     image:
+      # Determines when the kubelet attempts to download the specified image.
       pullPolicy: IfNotPresent
+      # The Docker repository of the liveness probe image.
       repository: registry.k8s.io/sig-storage/livenessprobe
+      # The version of the liveness probe image to download.
       tag: v2.10.0
 
-    # Extra arguments to pass to the liveness probe container.
+    # Additional arguments to pass to the liveness probe container.
     # @type: array
     extraArgs: []
 
+  # The node driver registrar sidecar container handles registration with the kubelet.
   nodeDriverRegistrar:
-    # Image sets the repo and tag of the image to use for the node driver registrar.
+    # Image information for the CSI driver node driver registrar.
+    # ref: https://kubernetes.io/docs/concepts/containers/images/
     image:
+      # Determines when the kubelet attempts to download the specified image.
       pullPolicy: IfNotPresent
+      # The Docker repository of the node driver registrar image.
       repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+      # The version of the node driver registrar image to download.
       tag: v2.8.0
 
-    # Extra arguments to pass to the node driver registrar container.
+    # Additional arguments to pass to the node driver registrar container.
     # @type: array
     extraArgs: []
 
-  # Configure update strategy for the DaemonSet
-  # Kubernetes supports types Recreate, and RollingUpdate
+  # Configures the update strategy for the CSI driver DaemonSet.
+  # Must be one of: `Recreate`, `RollingUpdate`.
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   # Example:
+  #
+  # ```yaml
   # strategy: {}
   #   rollingUpdate:
   #     maxSurge: 1
   #     maxUnavailable: 0
   #   type: RollingUpdate
+  # ```
   # @type: object
   updateStrategy: {}
 
