@@ -484,7 +484,7 @@ load _helpers
     yq 'select(.kind == "DaemonSet" and .metadata.labels."app" == "vault-secrets-operator-csi") | .spec.template.spec.containers[] | select(.name == "liveness-probe")' | tee /dev/stderr)
 
   local liveness_probe_image=$(echo "$object" | yq '.image')
-  [ "$liveness_probe_image" = "registry.k8s.io/sig-storage/livenessprobe:v2.14.0" ]
+  [ "$liveness_probe_image" = "registry.k8s.io/sig-storage/livenessprobe:v2.16.0" ]
 
   local liveness_probe_args=$(echo "$object" | yq '.args')
   local actual_length=$(echo "$liveness_probe_args" | yq '. | length')
