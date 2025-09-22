@@ -922,7 +922,6 @@ hooks:
     executionTimeout: 30s
 
 csi:
-  # <EnterpriseAlert inline="true" />
   # Only supports Vault Enterprise servers.
   # Toggles the deployment of the Vault Secrets Operator CSI driver. Setting `enabled` to `true`
   # deploys the driver and the necessary resources to the cluster.
