@@ -162,7 +162,7 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		)
 	}
 
-	if err := r.updateStatus(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o, conditions...); err != nil {
 		return ctrl.Result{}, errors.Join(errs, err)
 	}
 
