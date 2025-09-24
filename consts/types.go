@@ -8,4 +8,5 @@ var (
 	TypeRolloutRestart     = "RolloutRestart"
 	TypeSecretSynced       = "SecretSynced"
 	TypeLeaseRenewal       = "LeaseRenewal"
+	TypeHealthy            = "Healthy"
 )

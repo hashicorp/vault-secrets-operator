@@ -103,7 +103,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Info(msg)
 		o.Status.Error = consts.ReasonK8sClientError
 		r.recordEvent(o, o.Status.Error, msg)
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse,
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, consts.ReasonK8sClientError)); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -198,7 +198,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		horizon := entry.NextBackOff()
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse,
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -217,7 +217,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Failed to unmarshal PKI response"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o, conditions...); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -230,7 +230,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Invalid Vault secret data, serial_number cannot be empty"
 		logger.Error(nil, msg)
 		r.recordEvent(o, o.Status.Error, msg)
-		if err := r.updateStatus(ctx, o, conditions...); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -244,7 +244,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Failed to marshal Vault secret data"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o, conditions...); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -266,7 +266,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err != nil {
 			logger.Error(err, "HMAC data")
 			o.Status.Error = consts.ReasonHMACDataError
-			if err := r.updateStatus(ctx, o, conditions...); err != nil {
+			if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{
@@ -283,7 +283,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		conditions = append(conditions,
 			newSyncCondition(o, metav1.ConditionFalse,
 				"Secret sync error, horizon=%s", requeueAfter))
-		if err := r.updateStatus(ctx, o, conditions...); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -321,7 +321,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
 	o.Status.LastRotation = time.Now().Unix()
-	if err := r.updateStatus(ctx, o, conditions...); err != nil {
+	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return ctrl.Result{}, err
 	}
@@ -451,11 +451,10 @@ func (r *VaultPKISecretReconciler) recordEvent(o *secretsv1beta1.VaultPKISecret,
 	r.Recorder.Eventf(o, eventType, reason, msg, i...)
 }
 
-func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret, conditions ...metav1.Condition) error {
+func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret, healthy bool, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx).WithName("updateStatus")
 	logger.V(consts.LogLevelDebug).Info("Updating status")
-
-	n := updateConditions(o.Status.Conditions, conditions...)
+	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultPKISecret"))...)
 	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
 	o.Status.Conditions = n
 

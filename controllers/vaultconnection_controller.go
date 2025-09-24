@@ -144,17 +144,22 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		errs = errors.Join(errs, fmt.Errorf("invalid VaultConnection %s", client.ObjectKeyFromObject(o)))
 	}
 
+	var conditions []metav1.Condition
 	if errs != nil {
 		logger.Error(errs, "Resource validation failed")
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonInvalidConfiguration, "VaultConnection invalid")
 		horizon = computeHorizonWithJitter(requeueDurationOnError)
-		o.Status.Conditions = append(o.Status.Conditions,
+		conditions = append(conditions,
 			newConditionNow(o, consts.TypeResourceValidation, consts.ReasonInvalidConfiguration,
 				metav1.ConditionFalse, "Failed to validate resource, address=%s, errs=%s",
 				o.Spec.Address, errs),
 		)
 	} else {
 		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonAccepted, "VaultConnection accepted")
+		conditions = append(conditions, newConditionNow(o, consts.TypeResourceValidation, consts.ReasonAccepted,
+			metav1.ConditionTrue, "Successfully validated resource, address=%s",
+			o.Spec.Address),
+		)
 	}
 
 	if err := r.updateStatus(ctx, o); err != nil {
@@ -166,9 +171,11 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}, nil
 }
 
-func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultConnection) error {
+func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultConnection, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultconnection", o, ptr.Deref(o.Status.Valid, false))
+	valid := ptr.Deref(o.Status.Valid, false)
+	metrics.SetResourceStatus("vaultconnection", o, valid)
+	o.Status.Conditions = updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, valid, "VaultConnection"))...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

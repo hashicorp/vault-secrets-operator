@@ -97,7 +97,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"Failed to get Vault auth login: %s", err)
 
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse,
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -116,7 +116,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Field validation failed, err=%s", err)
 
 			horizon := computeHorizonWithJitter(requeueDurationOnError)
-			if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse,
+			if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
 				"Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -137,7 +137,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"Failed setting up SecretTransformationOption: %s", err)
 
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -150,7 +150,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -170,7 +170,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"Failed to read Vault secret: %s", err)
 
 		horizon := entry.NextBackOff()
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -187,7 +187,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"Failed to build K8s secret data: %s", err)
 
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
-		if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -212,7 +212,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, data)
 		if err != nil {
 			horizon := computeHorizonWithJitter(requeueDurationOnError)
-			if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
+			if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 				return ctrl.Result{}, err
 			}
 
@@ -242,7 +242,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Failed to update k8s secret: %s", err)
 
 			horizon := computeHorizonWithJitter(requeueDurationOnError)
-			if err := r.updateStatus(ctx, o, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
+			if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 				return ctrl.Result{}, err
 			}
 
@@ -298,7 +298,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
-	if err := r.updateStatus(ctx, o, conditions...); err != nil {
+	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -307,11 +307,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}, nil
 }
 
-func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, conditions ...metav1.Condition) error {
+func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, healthy bool, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx).WithName("updateStatus")
 	logger.V(consts.LogLevelDebug).Info("Updating status")
 	o.Status.LastGeneration = o.GetGeneration()
-	n := updateConditions(o.Status.Conditions, conditions...)
+	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultStaticSecret"))...)
 	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
 	o.Status.Conditions = n
 

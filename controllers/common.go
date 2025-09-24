@@ -352,3 +352,16 @@ func newCondition(o client.Object, typ, reason string, status metav1.ConditionSt
 func newSyncCondition(o client.Object, status metav1.ConditionStatus, msgFmt string, msgArgs ...any) metav1.Condition {
 	return newConditionNow(o, consts.TypeSecretSynced, "Synced", status, msgFmt, msgArgs...)
 }
+
+func newHealthyCondition(o client.Object, healthy bool, objType string) metav1.Condition {
+	var reason string
+	var conditionStatus metav1.ConditionStatus
+	if healthy {
+		conditionStatus = metav1.ConditionTrue
+		reason = consts.ReasonHealthy
+	} else {
+		conditionStatus = metav1.ConditionFalse
+		reason = consts.ReasonUnhealthy
+	}
+	return newConditionNow(o, consts.TypeHealthy, reason, conditionStatus, "%s%s", objType, reason)
+}
