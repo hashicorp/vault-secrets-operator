@@ -129,7 +129,7 @@ spec:
         - name: {{ .name }}
           value: {{ .value }}
         {{- end }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: {{ .Values.csi.driver.image.pullPolicy }}
         securityContext:
           privileged: true
         livenessProbe:
