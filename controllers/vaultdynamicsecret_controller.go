@@ -210,7 +210,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 						metav1.ConditionFalse,
 						"Not in rotation period after transitioning to a new leader/pod, horizon=%s", horizon),
 				)
-				if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
+				if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 					return ctrl.Result{}, err
 				}
 				return ctrl.Result{RequeueAfter: horizon}, nil
