@@ -1,3 +1,49 @@
+## 1.0.0 (September 24th, 2025)
+Features:
+* Add support for the VSO CSI Driver (Vault Enterprise only): [GH-1098](https://github.com/hashicorp/vault-secrets-operator/pull/1098)
+
+Enhancements:
+* Helm: update values comment: [GH-1046](https://github.com/hashicorp/vault-secrets-operator/pull/1046)
+* Helm: Support setting priorityClassName, topologySpreadConstraints and podDisruptionBudget: [GH-1050](https://github.com/hashicorp/vault-secrets-operator/pull/1050)
+* API: Include conditions on supported types: [GH-1058](https://github.com/hashicorp/vault-secrets-operator/pull/1058)
+* API: Clarify VaultAuth allowedNamespaces docs: [GH-1113](https://github.com/hashicorp/vault-secrets-operator/pull/1113)
+
+Fix:
+* No longer store non-renewable Vault clients: [GH-1066](https://github.com/hashicorp/vault-secrets-operator/pull/1066)
+
+Build:
+* CI: Add scale tests: [GH-916](https://github.com/hashicorp/vault-secrets-operator/pull/916)
+* CI: update k8s and vault versions: [GH-1033](https://github.com/hashicorp/vault-secrets-operator/pull/1033)
+* SEC-090: Automated trusted workflow pinning (2025-03-24): [GH-1038](https://github.com/hashicorp/vault-secrets-operator/pull/1038)
+* CI: Add v0.9.1 and v0.10.0 to chart upgrade tests: [GH-1039](https://github.com/hashicorp/vault-secrets-operator/pull/1039)
+* SEC-090: Automated trusted workflow pinning (2025-03-31): [GH-1042](https://github.com/hashicorp/vault-secrets-operator/pull/1042)
+* CI: disable HVS integration tests.: [GH-1090](https://github.com/hashicorp/vault-secrets-operator/pull/1090)
+* CI: Update k8s and vault versions: [GH-1105](https://github.com/hashicorp/vault-secrets-operator/pull/1105)
+* [Compliance] - PR Template Changes Required: [GH-1086](https://github.com/hashicorp/vault-secrets-operator/pull/1086)
+* CI: Give the VDS reconciliation check a bit more time.: [GH-1114](https://github.com/hashicorp/vault-secrets-operator/pull/1114)
+* CI: Standardize security-scanner config and update Go version: [GH-1080](https://github.com/hashicorp/vault-secrets-operator/pull/1080)
+* Add CSI containers to check-versions script: [GH-1116](https://github.com/hashicorp/vault-secrets-operator/pull/1116)
+
+Dependency Updates:
+* Bump golang.org/x/net from 0.35.0 to 0.36.0: [GH-1031](https://github.com/hashicorp/vault-secrets-operator/pull/1031)
+* Bump the gomod-backward-compatible group across 1 directory with 10 updates: [GH-1037](https://github.com/hashicorp/vault-secrets-operator/pull/1037)
+* Bump the gomod-backward-compatible group across 1 directory with 4 updates: [GH-1048](https://github.com/hashicorp/vault-secrets-operator/pull/1048)
+* Bump golang.org/x/net from 0.37.0 to 0.38.0: [GH-1052](https://github.com/hashicorp/vault-secrets-operator/pull/1052)
+* Bump the gomod-backward-compatible group across 1 directory with 9 updates: [GH-1065](https://github.com/hashicorp/vault-secrets-operator/pull/1065)
+* Bump ubi9/ubi-micro from 9.5 to 9.6: [GH-1067](https://github.com/hashicorp/vault-secrets-operator/pull/1067)
+* Bump ubi9/ubi-minimal from 9.5 to 9.6: [GH-1068](https://github.com/hashicorp/vault-secrets-operator/pull/1068)
+* Bump the gomod-backward-compatible group across 1 directory with 11 updates: [GH-1083](https://github.com/hashicorp/vault-secrets-operator/pull/1083)
+* Bump the gomod-backward-compatible group across 1 directory with 8 updates: [GH-1089](https://github.com/hashicorp/vault-secrets-operator/pull/1089)
+* Bump the gomod-backward-compatible group across 1 directory with 8 updates: [GH-1095](https://github.com/hashicorp/vault-secrets-operator/pull/1095)
+* Bump github.com/ulikunitz/xz from 0.5.10 to 0.5.14: [GH-1102](https://github.com/hashicorp/vault-secrets-operator/pull/1102)
+* Bump go version to 1.24.7: [GH-1108](https://github.com/hashicorp/vault-secrets-operator/pull/1108)
+* Bump the gomod-backward-compatible group across 1 directory with 9 updates: [GH-1110](https://github.com/hashicorp/vault-secrets-operator/pull/1110)
+* Upgrade to ubi10: [GH-1111](https://github.com/hashicorp/vault-secrets-operator/pull/1111)
+* Bump the gomod-backward-compatible group with 7 updates: [GH-1112](https://github.com/hashicorp/vault-secrets-operator/pull/1112)
+* Bump cloud.google.com/go/compute/metadata from 0.8.0 to 0.8.4: [GH-1117](https://github.com/hashicorp/vault-secrets-operator/pull/1117)
+* Bump argorollouts to v1.8.3: [GH-1119](https://github.com/hashicorp/vault-secrets-operator/pull/1119)
+
+
 ## 0.10.0 (March 4th, 2025)
 
 Enhancements:
