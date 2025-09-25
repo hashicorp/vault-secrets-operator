@@ -197,7 +197,7 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.10.0
+      tag: 1.0.0
 
     # logging
     logging:
@@ -208,7 +208,7 @@ controller:
       level: info
 
       # Sets the time encoding for the operator.
-      # Options are: 
+      # Options are:
       # - `epoch` - Unix timestamp in seconds (e.g. 1695382800)
       # - `millis` - Unix timestamp in milliseconds (e.g. 1695382800000)
       # - `nano` - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
@@ -945,7 +945,7 @@ csi:
   # @type: map
   # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
   # Example:
-  # 
+  #
   # ```yaml
   # nodeSelector:
   #   beta.kubernetes.io/arch: amd64
@@ -957,7 +957,7 @@ csi:
   # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
   # @type: array<map>
   # Example:
-  # 
+  #
   # ```yaml
   # tolerations:
   #  - key: "key1"
@@ -1034,7 +1034,7 @@ csi:
       level: info
 
       # Sets the time encoding for the CSI driver.
-      # Must be one of: 
+      # Must be one of:
       # - epoch - Unix timestamp in seconds (e.g. 1695382800)
       # - millis - Unix timestamp in milliseconds (e.g. 1695382800000)
       # - nano - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
@@ -1055,7 +1055,7 @@ csi:
     # an error fetching secrets from `SecretSource`.
     # For example, the following configuration creates a backoff retry sequence like
     # 5.5s, 7.5s, 11.25s, 16.87s, 25.3125s, 37.96s, 56.95, 60.95s, etc.:
-    # 
+    #
     # ```yaml
     #   initialInterval: 5s
     #   maxInterval: 60s

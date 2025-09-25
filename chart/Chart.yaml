@@ -3,8 +3,8 @@
 
 apiVersion: v2
 name: vault-secrets-operator
-version: 0.10.0
-appVersion: "0.10.0"
+version: 1.0.0
+appVersion: "1.0.0"
 kubeVersion: ">=1.21.0-0"
 description: Official Vault Secrets Operator Chart
 type: application
