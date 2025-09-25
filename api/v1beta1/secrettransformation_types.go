@@ -11,6 +11,10 @@ import (
 type SecretTransformationStatus struct {
 	Valid *bool  `json:"valid"`
 	Error string `json:"error"`
+
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

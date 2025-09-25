@@ -210,7 +210,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 						metav1.ConditionFalse,
 						"Not in rotation period after transitioning to a new leader/pod, horizon=%s", horizon),
 				)
-				if err := r.updateStatus(ctx, o, conditions...); err != nil {
+				if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 					return ctrl.Result{}, err
 				}
 				return ctrl.Result{RequeueAfter: horizon}, nil
@@ -229,7 +229,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 					metav1.ConditionTrue,
 					"In rotation period after transitioning to a new leader/pod, horizon=%s", horizon),
 			)
-			if err := r.updateStatus(ctx, o, conditions...); err != nil {
+			if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{RequeueAfter: horizon}, nil
@@ -267,7 +267,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			o.Status.StaticCredsMetaData = secretsv1beta1.VaultStaticCredsMetaData{}
 			o.Status.SecretLease = *secretLease
 			o.Status.LastRenewalTime = nowFunc().Unix()
-			if err := r.updateStatus(ctx, o, conditions...); err != nil {
+			if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 				return ctrl.Result{}, err
 			}
 
@@ -336,7 +336,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 				"Failed to sync the secret, horizon=%s, err=%s", horizon, err,
 			))
 
-		if err := r.updateStatus(ctx, o, conditions...); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -394,7 +394,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"obj", req.NamespacedName)
 	}
 
-	if err := r.updateStatus(ctx, o, conditions...); err != nil {
+	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -631,7 +631,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	return staticCredsMeta, resp, nil
 }
 
-func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, conditions ...metav1.Condition) error {
+func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, healthy bool, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx).WithName("updateStatus")
 
 	if r.runtimePodUID != "" {
@@ -640,7 +640,7 @@ func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secr
 
 	o.Status.LastGeneration = o.GetGeneration()
 
-	n := updateConditions(o.Status.Conditions, conditions...)
+	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultDynamicSecret"))...)
 	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
 	o.Status.Conditions = n
 	if err := r.Status().Update(ctx, o); err != nil {
