@@ -256,31 +256,29 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Secret synced, horizon=%s", requeueAfter),
 		)
 		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
-
-	}
-
-	if doRolloutRestart {
-		reason = consts.ReasonSecretRotated
-		// rollout-restart errors are not retryable
-		// all error reporting is handled by helpers.HandleRolloutRestarts
-		if err = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder); err != nil {
-			conditions = append(
-				conditions,
-				newConditionNow(o,
-					consts.TypeRolloutRestart,
-					consts.ReasonRolloutRestartTriggeredFailed,
-					metav1.ConditionFalse,
-					"Rollout restart trigger failed, err=%s",
-					err),
-			)
-		} else {
-			conditions = append(
-				conditions,
-				newConditionNow(o,
-					consts.TypeRolloutRestart,
-					consts.ReasonRolloutRestartTriggered,
-					metav1.ConditionTrue, "Rollout restart triggered"),
-			)
+		if doRolloutRestart {
+			reason = consts.ReasonSecretRotated
+			// rollout-restart errors are not retryable
+			// all error reporting is handled by helpers.HandleRolloutRestarts
+			if err = helpers.HandleRolloutRestarts(ctx, r.Client, o, r.Recorder); err != nil {
+				conditions = append(
+					conditions,
+					newConditionNow(o,
+						consts.TypeRolloutRestart,
+						consts.ReasonRolloutRestartTriggeredFailed,
+						metav1.ConditionFalse,
+						"Rollout restart trigger failed, err=%s",
+						err),
+				)
+			} else {
+				conditions = append(
+					conditions,
+					newConditionNow(o,
+						consts.TypeRolloutRestart,
+						consts.ReasonRolloutRestartTriggered,
+						metav1.ConditionTrue, "Rollout restart triggered"),
+				)
+			}
 		}
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
