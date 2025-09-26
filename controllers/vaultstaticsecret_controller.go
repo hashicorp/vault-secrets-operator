@@ -256,7 +256,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				"Secret synced, horizon=%s", requeueAfter),
 		)
 		r.Recorder.Event(o, corev1.EventTypeNormal, reason, "Secret synced")
-		if doRolloutRestart {
+		if doRolloutRestart && len(o.Spec.RolloutRestartTargets) > 0 {
 			reason = consts.ReasonSecretRotated
 			// rollout-restart errors are not retryable
 			// all error reporting is handled by helpers.HandleRolloutRestarts
