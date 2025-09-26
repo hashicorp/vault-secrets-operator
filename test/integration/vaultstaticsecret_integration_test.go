@@ -456,9 +456,17 @@ func TestVaultStaticSecret(t *testing.T) {
 				}
 			}
 
-			if !expectInitial && len(obj.Spec.RolloutRestartTargets) > 0 {
-				awaitRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
+			if !expectInitial {
+				if len(obj.Spec.RolloutRestartTargets) > 0 {
+					awaitRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
+				} else {
+					// ensure that no rollout restarts are triggered when there are no targets
+					awaitNoRolloutRestartsVSS(t, ctx, crdClient, ctrlclient.ObjectKeyFromObject(obj))
+				}
 			}
+		}
+		if t.Failed() {
+			return
 		}
 
 		if expectInitial && obj.Spec.SyncConfig != nil && obj.Spec.SyncConfig.InstantUpdates {
@@ -784,4 +792,32 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, client ct
 	}
 
 	assert.Equal(t, vssObj.Status.SecretMAC, updated.Status.SecretMAC)
+}
+
+func awaitNoRolloutRestartsVSS(t *testing.T, ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) {
+	t.Helper()
+	require.NoError(t, backoff.Retry(
+		func() error {
+			var obj secretsv1beta1.VaultStaticSecret
+			if err := client.Get(ctx, objKey, &obj); err != nil {
+				return backoff.Permanent(err)
+			}
+
+			var synced bool
+			for _, cond := range obj.Status.Conditions {
+				switch cond.Type {
+				case consts.TypeSecretSynced:
+					synced = true
+				}
+				if synced && cond.Type == consts.TypeRolloutRestart {
+					return backoff.Permanent(fmt.Errorf("unexpected rollout restart condition on %s", objKey))
+				}
+			}
+			if !synced {
+				return fmt.Errorf("expected synced condition on %s", objKey)
+			}
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+	))
 }
