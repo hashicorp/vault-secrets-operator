@@ -1,3 +1,9 @@
+## 1.0.1 (September 26th, 2025)
+
+Fix:
+* VSS: rollout restarts were being executed erroneously [GH-1126](https://github.com/hashicorp/vault-secrets-operator/pull/1126)
+
+
 ## 1.0.0 (September 24th, 2025)
 Features:
 * Add support for the VSO CSI Driver (Vault Enterprise only): [GH-1098](https://github.com/hashicorp/vault-secrets-operator/pull/1098)
