@@ -1,0 +1,228 @@
+{{/*
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+*/}}
+
+{{- if .Values.csi.enabled -}}
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: csi.vso.hashicorp.com
+  labels:
+    app.kubernetes.io/component: csi-driver
+    app: vault-secrets-operator-csi
+  {{- include "vso.chart.labels" . | nindent 4 }}
+{{ include "vso.imagePullSecrets" .Values.csi.imagePullSecrets }}
+spec:
+  podInfoOnMount: true
+  attachRequired: false
+  # republishing is handled by the csi driver's internal Pod controller,
+  # so it should always remain disabled.
+  requiresRepublish: false
+  volumeLifecycleModes:
+    - Ephemeral
+  tokenRequests:
+    - audience: csi.vso.hashicorp.com
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "vso.chart.fullname" . }}-csi
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: csi-driver
+  {{- include "vso.chart.labels" . | nindent 4 }}
+{{ include "vso.imagePullSecrets" .Values.csi.imagePullSecrets }}
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: {{ include "vso.chart.fullname" . }}-csi-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: csi-driver
+    app: vault-secrets-operator-csi
+  {{- include "vso.chart.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: vault-secrets-operator-csi
+    {{- include "vso.chart.selectorLabels" . | nindent 6 }}
+  {{- with .Values.csi.updateStrategy }}
+  updateStrategy: {{ toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: csi-driver
+        app: vault-secrets-operator-csi
+      {{- include "vso.chart.labels" . | nindent 8 }}
+      annotations:
+      {{- include "vso.csi.annotations" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "vso.chart.fullname" . }}-csi
+      {{- with .Values.csi.hostAliases }}
+      hostAliases:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.csi.affinity }}
+      affinity:
+      {{- toYaml .Values.csi.affinity | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: node-driver-registrar
+        image: {{ .Values.csi.nodeDriverRegistrar.image.repository }}:{{ .Values.csi.nodeDriverRegistrar.image.tag }}
+        imagePullPolicy: {{ .Values.csi.livenessProbe.image.pullPolicy }}
+        args:
+        - --v=5
+        - --csi-address=/csi/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/vso-csi/csi.sock
+        {{- with .Values.csi.nodeDriverRegistrar.extraArgs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        livenessProbe:
+          exec:
+            command:
+            - /csi-node-driver-registrar
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/vso-csi/csi.sock
+            - --mode=kubelet-registration-probe
+          initialDelaySeconds: 30
+          timeoutSeconds: 15
+        volumeMounts:
+          - name: plugin-dir
+            mountPath: /csi
+          - name: registration-dir
+            mountPath: /registration
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+      - name: driver
+        image: {{ .Values.csi.driver.image.repository }}:{{ .Values.csi.driver.image.tag }}
+        command:
+        - /vault-secrets-operator-csi
+        args:
+        - "--endpoint=$(CSI_ENDPOINT)"
+        - "--nodeid=$(KUBE_NODE_NAME)"
+        {{- with include "vso.csiControllerLoggingArgs" . }}
+        {{- . }}
+        {{- end }}
+        {{- with include "vso.csiBackoffArgs" . }}
+        {{- . -}}
+        {{- end }}
+        {{- with .Values.csi.driver.extraArgs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        {{- range .Values.csi.driver.extraEnv }}
+        - name: {{ .name }}
+          value: {{ .value }}
+        {{- end }}
+        imagePullPolicy: {{ .Values.csi.driver.image.pullPolicy }}
+        securityContext:
+          privileged: true
+        livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+            periodSeconds: 15
+        readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+            periodSeconds: 15
+        volumeMounts:
+          # TODO drop unnecessary mounts and volumes
+          - name: plugin-dir
+            mountPath: /csi
+          - name: mountpoint-dir
+            mountPath: /var/lib/kubelet/pods
+            #  /var/run/vso-csi/csi-ccf6c4a4e77db8ef85a8ca4b67ba8f82213aad2f27cbdb5c66373a271b1c6135
+            mountPropagation: Bidirectional
+          - name: providers-dir
+            mountPath: /var/run/vso-csi
+          - mountPath: /var/run/podinfo
+            name: podinfo
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 50m
+            memory: 100Mi
+      - name: liveness-probe
+        image: {{ .Values.csi.livenessProbe.image.repository }}:{{ .Values.csi.livenessProbe.image.tag }}
+        imagePullPolicy: {{ .Values.csi.livenessProbe.image.pullPolicy }}
+        args:
+        - --csi-address=/csi/csi.sock
+        - --probe-timeout=3s
+        - --http-endpoint=0.0.0.0:9808
+        - -v=2
+        {{- with .Values.csi.livenessProbe.extraArgs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        volumeMounts:
+          - name: plugin-dir
+            mountPath: /csi
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+      volumes:
+        - name: mountpoint-dir
+          hostPath:
+            path: /var/lib/kubelet/pods
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/vso-csi/
+            type: DirectoryOrCreate
+        - name: providers-dir
+          hostPath:
+            path: /var/run/vso-csi-providers
+            type: DirectoryOrCreate
+        - name: providers-dir-0
+          hostPath:
+            path: "/etc/kubernetes/vso-csi-providers"
+            type: DirectoryOrCreate
+        - name: podinfo
+          downwardAPI:
+            items:
+              - fieldRef:
+                  fieldPath: metadata.namespace
+                path: namespace
+              - fieldRef:
+                  fieldPath: metadata.name
+                path: name
+              - fieldRef:
+                  fieldPath: metadata.uid
+                path: uid
+      nodeSelector:
+      {{- include "vso.csi.nodeSelector" . | nindent 8 }}
+      tolerations:
+      {{- include "vso.csi.tolerations" . | nindent 8 }}
+{{- end -}}

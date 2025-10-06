@@ -208,8 +208,9 @@ func (r *VaultAuthReconciler) recordEvent(o *secretsv1beta1.VaultAuth, reason, m
 
 func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultAuth, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultauth", o, ptr.Deref(o.Status.Valid, false))
-	o.Status.Conditions = updateConditions(o.Status.Conditions, conditions...)
+	valid := ptr.Deref(o.Status.Valid, false)
+	metrics.SetResourceStatus("vaultauth", o, valid)
+	o.Status.Conditions = updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, valid, "VaultAuth"))...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err
@@ -240,7 +241,7 @@ func (r *VaultAuthReconciler) handleFinalizer(ctx context.Context, o *secretsv1b
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultAuth{}).
 		Watches(

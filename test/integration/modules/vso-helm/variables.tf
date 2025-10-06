@@ -111,3 +111,18 @@ variable "manager_extra_args" {
     "-zap-log-level=5"
   ]
 }
+
+variable "csi_enabled" {
+  type    = bool
+  default = false
+}
+
+variable "csi_logging_level" {
+  type    = string
+  default = "info"
+}
+
+variable "create_namespace" {
+  type    = bool
+  default = true
+}

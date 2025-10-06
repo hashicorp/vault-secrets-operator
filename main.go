@@ -46,8 +46,8 @@ import (
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-	"github.com/hashicorp/vault-secrets-operator/internal/options"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
+	"github.com/hashicorp/vault-secrets-operator/options"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -204,7 +204,7 @@ func main() {
 		"Maximum elapsed time without a successful sync from the secret's source. "+
 			"It's important to note that setting this option to anything other than "+
 			"its default value of 0 will result in the secret sync no longer being retried after "+
-			"reaching the max elapsed time without a successful sync. This could "+
+			"reaching the max elapsed time without a successful sync. This could result in stale secrets."+
 			"All errors are tried using an exponential backoff strategy. "+
 			"Also set from environment variable VSO_BACKOFF_MAX_ELAPSED_TIME.")
 	flag.Float64Var(&backoffRandomizationFactor, "backoff-randomization-factor",
@@ -267,6 +267,9 @@ func main() {
 	}
 	if vsoEnvOptions.BackoffMaxInterval != 0 {
 		backoffMaxInterval = vsoEnvOptions.BackoffMaxInterval
+	}
+	if vsoEnvOptions.BackoffMaxElapsedTime != 0 {
+		backoffMaxElapsedTime = vsoEnvOptions.BackoffMaxElapsedTime
 	}
 	if vsoEnvOptions.BackoffRandomizationFactor != 0 {
 		backoffRandomizationFactor = vsoEnvOptions.BackoffRandomizationFactor
@@ -399,6 +402,7 @@ func main() {
 			metrics.NewBuildInfoGauge(versionInfo),
 		)
 		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
+		metrics.MustRegisterResourceStatus()
 
 		metric := prometheus.NewGauge(
 			prometheus.GaugeOpts{

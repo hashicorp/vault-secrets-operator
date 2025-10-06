@@ -6,6 +6,10 @@ package controllers
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -76,10 +80,21 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	var errs error
+	o.Status.Conditions = []metav1.Condition{}
 	vaultClient, err := vault.MakeVaultClient(ctx, vaultConfig, r.Client)
 	if err != nil {
 		logger.Error(err, "Failed to construct Vault client")
-		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError, "Failed to construct Vault client: %s", err)
+		r.Recorder.Eventf(o, corev1.EventTypeWarning,
+			consts.ReasonVaultClientError,
+			"Failed to construct Vault client: %s", err)
+
+		o.Status.Conditions = append(o.Status.Conditions,
+			newConditionNow(o, "VaultClient",
+				consts.ReasonVaultClientConfigError,
+				metav1.ConditionFalse,
+				"Failed to setup Vault client, address=%s, err=%s",
+				o.Spec.Address, err),
+		)
 
 		errs = errors.Join(errs, err)
 	}
@@ -87,10 +102,24 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if vaultClient != nil {
 		if _, err := vaultClient.Sys().SealStatusWithContext(ctx); err != nil {
 			logger.Error(err, "Failed to check Vault seal status, requeuing")
-			r.Recorder.Eventf(o, corev1.EventTypeWarning, "VaultClientError", "Failed to check Vault seal status: %s", err)
+			r.Recorder.Eventf(o, corev1.EventTypeWarning,
+				"VaultClientError",
+				"Failed to check Vault seal status: %s", err)
 			errs = errors.Join(errs, err)
+
+			o.Status.Conditions = append(o.Status.Conditions,
+				newConditionNow(o, "VaultPing",
+					consts.ReasonInvalidConfiguration,
+					metav1.ConditionFalse, "Vault ping failed, address=%s, errs=%s",
+					o.Spec.Address, err),
+			)
 		} else {
 			o.Status.Valid = ptr.To(true)
+			o.Status.Conditions = append(o.Status.Conditions,
+				newConditionNow(o, "VaultPing", consts.ReasonAccepted,
+					metav1.ConditionTrue, "Vault ping, address=%s",
+					o.Spec.Address),
+			)
 		}
 	}
 
@@ -108,21 +137,45 @@ func (r *VaultConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		errs = errors.Join(errs, err)
 	}
 
-	if err := r.updateStatus(ctx, o); err != nil {
-		errs = errors.Join(errs, err)
+	var horizon time.Duration
+
+	isValid := ptr.Deref(o.Status.Valid, false)
+	if !isValid {
+		errs = errors.Join(errs, fmt.Errorf("invalid VaultConnection %s", client.ObjectKeyFromObject(o)))
 	}
 
+	var conditions []metav1.Condition
 	if errs != nil {
-		return ctrl.Result{}, errs
+		logger.Error(errs, "Resource validation failed")
+		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonInvalidConfiguration, "VaultConnection invalid")
+		horizon = computeHorizonWithJitter(requeueDurationOnError)
+		conditions = append(conditions,
+			newConditionNow(o, consts.TypeResourceValidation, consts.ReasonInvalidConfiguration,
+				metav1.ConditionFalse, "Failed to validate resource, address=%s, errs=%s",
+				o.Spec.Address, errs),
+		)
+	} else {
+		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonAccepted, "VaultConnection accepted")
+		conditions = append(conditions, newConditionNow(o, consts.TypeResourceValidation, consts.ReasonAccepted,
+			metav1.ConditionTrue, "Successfully validated resource, address=%s",
+			o.Spec.Address),
+		)
 	}
 
-	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonAccepted, "VaultConnection accepted")
-	return ctrl.Result{}, nil
+	if err := r.updateStatus(ctx, o, conditions...); err != nil {
+		return ctrl.Result{}, errors.Join(errs, err)
+	}
+
+	return ctrl.Result{
+		RequeueAfter: horizon,
+	}, nil
 }
 
-func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultConnection) error {
+func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultConnection, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("vaultconnection", o, ptr.Deref(o.Status.Valid, false))
+	valid := ptr.Deref(o.Status.Valid, false)
+	metrics.SetResourceStatus("vaultconnection", o, valid)
+	o.Status.Conditions = updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, valid, "VaultConnection"))...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

@@ -42,9 +42,9 @@ function checkVersion {
  local doc="$(cat ${filename})"
  local actual
  local maybe_tag
- echo "* Checking version ${version} in ${filename}"
  for query in "${@:3}"
  do
+   echo "  * Expect version ${version} in ${filename} query='${query}'"
    actual="$(echo "${doc}" | yq "${query}")"
    # sometimes the value might be for an image+tag
    # e.g: gcr.io/kubebuilder/kube-rbac-proxy:v0.14.4,
@@ -58,6 +58,7 @@ function checkVersion {
  done
 }
 
+echo "* Checking VSO images versions"
 checkVersion "${CHART_ROOT}/Chart.yaml" "${VERSION}" .version .appVersion
 checkVersion "${CHART_ROOT}/values.yaml" "${VERSION}" .controller.manager.image.tag
 checkVersion "${KUSTOMIZE_ROOT}/manager/kustomization.yaml" "${VERSION}" \
@@ -67,5 +68,11 @@ checkVersion "${KUSTOMIZE_ROOT}/manager/kustomization.yaml" "${VERSION}" \
 checkVersion "${CHART_ROOT}/values.yaml" "${KUBE_RBAC_PROXY_VERSION}" .controller.kubeRbacProxy.image.tag
 checkVersion "${KUSTOMIZE_ROOT}/default/manager_auth_proxy_patch.yaml" \
   "${KUBE_RBAC_PROXY_VERSION}"  ".spec.template.spec.containers.[] | select(.name == \"kube-rbac-proxy\") | .image"
+
+# check VSO-CSI related image versions
+echo "* Checking VSO-CSI related image versions"
+checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_DRIVER_VERSION}" .csi.driver.image.tag
+checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION}" .csi.nodeDriverRegistrar.image.tag
+checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_LIVENESS_PROBE_VERSION}" .csi.livenessProbe.image.tag
 
 exit $_result

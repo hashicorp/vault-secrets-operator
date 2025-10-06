@@ -89,9 +89,9 @@ func TestMakeVaultClient(t *testing.T) {
 		},
 		"headers": {
 			vaultConfig: &ClientConfig{
-				Headers: map[string]string{
-					"X-Proxy-Setting": "yes",
-					"Y-Proxy-Setting": "no",
+				Headers: http.Header{
+					"X-Proxy-Setting": []string{"yes"},
+					"Y-Proxy-Setting": []string{"no"},
 				},
 				VaultNamespace: "vault-test-namespace",
 			},
@@ -100,10 +100,10 @@ func TestMakeVaultClient(t *testing.T) {
 		},
 		"headers can't override namespace": {
 			vaultConfig: &ClientConfig{
-				Headers: map[string]string{
-					"X-Proxy-Setting":           "yes",
-					"Y-Proxy-Setting":           "no",
-					vconsts.NamespaceHeaderName: "nope",
+				Headers: http.Header{
+					"X-Proxy-Setting":           []string{"yes"},
+					"Y-Proxy-Setting":           []string{"no"},
+					vconsts.NamespaceHeaderName: []string{"nope"},
 				},
 				VaultNamespace: "vault-test-namespace",
 			},
@@ -175,12 +175,14 @@ func TestMakeVaultClient(t *testing.T) {
 	}
 }
 
-func makeVaultHttpHeaders(t *testing.T, namespace string, headers map[string]string) http.Header {
+func makeVaultHttpHeaders(t *testing.T, namespace string, headers http.Header) http.Header {
 	t.Helper()
 
 	h := make(http.Header)
-	for k, v := range headers {
-		h.Set(k, v)
+	for k, values := range headers {
+		for _, v := range values {
+			h.Add(k, v)
+		}
 	}
 	h.Set("X-Vault-Request", "true")
 	if namespace != "" {

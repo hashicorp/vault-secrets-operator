@@ -436,7 +436,7 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *s
 		}
 		for _, field := range []string{"certificate", "private_key"} {
 			if len(destSecret.Data[field]) == 0 {
-				return "", errors.New(field + " is empty")
+				return "", fmt.Errorf("%s is empty", field)
 			}
 		}
 		tlsFieldsCheck, err := checkTLSFields(destSecret)

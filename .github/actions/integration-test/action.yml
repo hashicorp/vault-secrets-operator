@@ -67,7 +67,7 @@ runs:
         cluster_name: ${{ inputs.kind-cluster-name }}
         config: test/integration/kind/config.yaml
         node_image: kindest/node:v${{ inputs.k8s-version }}
-        version: "v0.27.0"
+        version: "v0.30.0"
     - name: Create kind export log root
       id: create_kind_export_log_root
       shell: bash
@@ -101,6 +101,7 @@ runs:
         HCP_PROJECT_ID: ${{ inputs.hcp-project-id }}
         HCP_CLIENT_ID: ${{ inputs.hcp-client-id }}
         HCP_CLIENT_SECRET: ${{ inputs.hcp-client-secret }}
+        SKIP_HCPVSAPPS_TESTS: "true"
         GITHUB_TOKEN: ${{ inputs.github-token }}
         # used by scripts that fetch build tools from GH
         GH_GET_RETRIES: 5

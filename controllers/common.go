@@ -277,12 +277,15 @@ func waitForStoppedCh(ctx context.Context, stoppedCh chan struct{}) error {
 // changed. It will also append new conditions to the existing conditions. All
 // updates are deduplicated based on their type and reason.
 func updateConditions(current []metav1.Condition, updates ...metav1.Condition) []metav1.Condition {
+	if len(updates) == 0 {
+		return current
+	}
+
 	seen := make(map[string]bool)
 	var ret []metav1.Condition
+
 	for _, newCond := range updates {
-		// we key conditions on their type and reason
-		// e.g: type=VaultAuthGlobal reason=Available, ...
-		key := fmt.Sprintf("%s/%s", newCond.Type, newCond.Reason)
+		key := newCond.Type
 		if seen[key] {
 			// drop duplicate conditions
 			continue
@@ -307,6 +310,7 @@ func updateConditions(current []metav1.Condition, updates ...metav1.Condition) [
 				break
 			}
 		}
+
 		if !updated {
 			if newCond.LastTransitionTime.IsZero() {
 				newCond.LastTransitionTime = metav1.NewTime(nowFunc())
@@ -314,5 +318,50 @@ func updateConditions(current []metav1.Condition, updates ...metav1.Condition) [
 			ret = append(ret, newCond)
 		}
 	}
-	return ret
+
+	var orig []metav1.Condition
+	for _, cond := range current {
+		if _, ok := seen[cond.Type]; ok {
+			continue
+		}
+		orig = append(orig, cond)
+	}
+
+	return append(orig, ret...)
+}
+
+func newConditionNow(o client.Object, typ, reason string, status metav1.ConditionStatus,
+	msgFmt string, msgArgs ...any,
+) metav1.Condition {
+	return newCondition(o, typ, reason, status, time.Now(), msgFmt, msgArgs...)
+}
+
+func newCondition(o client.Object, typ, reason string, status metav1.ConditionStatus,
+	t time.Time, msgFmt string, msgArgs ...any,
+) metav1.Condition {
+	return metav1.Condition{
+		ObservedGeneration: o.GetGeneration(),
+		LastTransitionTime: metav1.NewTime(t),
+		Type:               typ,
+		Reason:             reason,
+		Status:             status,
+		Message:            fmt.Sprintf(msgFmt, msgArgs...),
+	}
+}
+
+func newSyncCondition(o client.Object, status metav1.ConditionStatus, msgFmt string, msgArgs ...any) metav1.Condition {
+	return newConditionNow(o, consts.TypeSecretSynced, "Synced", status, msgFmt, msgArgs...)
+}
+
+func newHealthyCondition(o client.Object, healthy bool, objType string) metav1.Condition {
+	var reason string
+	var conditionStatus metav1.ConditionStatus
+	if healthy {
+		conditionStatus = metav1.ConditionTrue
+		reason = consts.ReasonHealthy
+	} else {
+		conditionStatus = metav1.ConditionFalse
+		reason = consts.ReasonUnhealthy
+	}
+	return newConditionNow(o, consts.TypeHealthy, reason, conditionStatus, "%s%s", objType, reason)
 }

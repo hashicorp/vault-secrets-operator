@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/vault/api"
@@ -38,7 +39,7 @@ type ClientConfig struct {
 	// VaultNamespace is the namespace in Vault to auth to
 	VaultNamespace string
 	// Headers are http headers to set on the Vault client
-	Headers map[string]string
+	Headers http.Header
 	// Timeout applied to all Vault requests. If not set, the default timeout from
 	// the Vault API client config is used.
 	Timeout *time.Duration
@@ -98,6 +99,7 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 
 	config.CloneToken = true
 	config.CloneHeaders = true
+	config.CloneTLSConfig = true
 
 	c, err := api.NewClient(config)
 	if err != nil {
@@ -107,8 +109,10 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 	if _, exists := cfg.Headers[vconsts.NamespaceHeaderName]; exists {
 		return nil, fmt.Errorf("setting header %q on VaultConnection is not permitted", vconsts.NamespaceHeaderName)
 	}
-	for k, v := range cfg.Headers {
-		c.AddHeader(k, v)
+	for k, values := range cfg.Headers {
+		for _, v := range values {
+			c.AddHeader(k, v)
+		}
 	}
 	if cfg.VaultNamespace != "" {
 		c.SetNamespace(cfg.VaultNamespace)
