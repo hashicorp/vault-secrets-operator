@@ -1015,7 +1015,13 @@ csi:
       repository: hashicorp/vault-secrets-operator-csi
       # The version of the CSI driver image to download.
       tag: 1.0.0
-
+    resources:
+      limits:
+        cpu: 200m
+        memory: 200Mi
+      requests:
+        cpu: 50m
+        memory: 100Mi
     # Additional environment variables for the
     # CSI driver container.
     # @type: array<map>
@@ -1097,6 +1103,13 @@ csi:
       repository: registry.k8s.io/sig-storage/livenessprobe
       # The version of the liveness probe image to download.
       tag: v2.16.0
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
 
     # Additional arguments to pass to the liveness probe container.
     # @type: array
@@ -1113,7 +1126,13 @@ csi:
       repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
       # The version of the node driver registrar image to download.
       tag: v2.14.0
-
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
     # Additional arguments to pass to the node driver registrar container.
     # @type: array
     extraArgs: []
