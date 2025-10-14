@@ -94,13 +94,10 @@ spec:
             mountPath: /csi
           - name: registration-dir
             mountPath: /registration
+        {{- with .Values.csi.nodeDriverRegistrar.resources }}
         resources:
-          limits:
-            cpu: 100m
-            memory: 100Mi
-          requests:
-            cpu: 10m
-            memory: 20Mi
+        {{- toYaml . | indent 10 }}
+        {{- end }}
       - name: driver
         image: {{ .Values.csi.driver.image.repository }}:{{ .Values.csi.driver.image.tag }}
         command:
@@ -160,13 +157,10 @@ spec:
             mountPath: /var/run/vso-csi
           - mountPath: /var/run/podinfo
             name: podinfo
+        {{- with .Values.csi.driver.resources }}
         resources:
-          limits:
-            cpu: 200m
-            memory: 200Mi
-          requests:
-            cpu: 50m
-            memory: 100Mi
+        {{- toYaml . | indent 10 }}
+        {{- end }}
       - name: liveness-probe
         image: {{ .Values.csi.livenessProbe.image.repository }}:{{ .Values.csi.livenessProbe.image.tag }}
         imagePullPolicy: {{ .Values.csi.livenessProbe.image.pullPolicy }}
@@ -181,13 +175,10 @@ spec:
         volumeMounts:
           - name: plugin-dir
             mountPath: /csi
+        {{- with .Values.csi.livenessProbe.resources }}
         resources:
-          limits:
-            cpu: 100m
-            memory: 100Mi
-          requests:
-            cpu: 10m
-            memory: 20Mi
+        {{- toYaml . | indent 12 }}
+        {{- end }}
       volumes:
         - name: mountpoint-dir
           hostPath:
