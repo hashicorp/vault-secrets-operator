@@ -96,7 +96,7 @@ spec:
             mountPath: /registration
         {{- with .Values.csi.nodeDriverRegistrar.resources }}
         resources:
-        {{- toYaml . | indent 10 }}
+          {{- toYaml . | nindent 10 }}
         {{- end }}
       - name: driver
         image: {{ .Values.csi.driver.image.repository }}:{{ .Values.csi.driver.image.tag }}
@@ -159,7 +159,7 @@ spec:
             name: podinfo
         {{- with .Values.csi.driver.resources }}
         resources:
-        {{- toYaml . | indent 10 }}
+          {{- toYaml . | nindent 10 }}
         {{- end }}
       - name: liveness-probe
         image: {{ .Values.csi.livenessProbe.image.repository }}:{{ .Values.csi.livenessProbe.image.tag }}
@@ -177,7 +177,7 @@ spec:
             mountPath: /csi
         {{- with .Values.csi.livenessProbe.resources }}
         resources:
-        {{- toYaml . | indent 12 }}
+          {{- toYaml . | nindent 10 }}
         {{- end }}
       volumes:
         - name: mountpoint-dir
