@@ -345,7 +345,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			connObj:               defaultConnObj,
 			client:                nil,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				return assert.EqualError(t, err, "ctrl-runtime Client was nil")
+				return assert.EqualError(t, err, "ctrl-runtime Client was nil and CCACertSecretRef was provided")
 			},
 		},
 	}
