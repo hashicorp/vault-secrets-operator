@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -45,6 +46,12 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
+	// If SecretID is provided directly in the spec, use a new UUID for this provider instance
+	if authObj.Spec.AppRole.SecretID != "" {
+		l.uid = uuid.NewUUID()
+		return nil
+	}
+
 	// We use the UID of the secret which holds the AppRole Role's secret_id for the provider UID
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
@@ -61,6 +68,15 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 
 func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
+
+	// If SecretID is provided directly in the spec, return the spec's role_id and secret_id
+	if l.authObj.Spec.AppRole.SecretID != "" {
+		return map[string]interface{}{
+			"role_id":   l.authObj.Spec.AppRole.RoleID,
+			"secret_id": l.authObj.Spec.AppRole.SecretID,
+		}, nil
+	}
+
 	// Fetch the AppRole Role's SecretID from the Kubernetes Secret each time there is a call to
 	// GetCreds in case the SecretID has changed since the last time the client token was
 	// generated. In the case of AppRole this is assumed to be common.

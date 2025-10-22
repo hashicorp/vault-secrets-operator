@@ -52,12 +52,12 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		return nil, fmt.Errorf("ClientConfig was nil")
 	}
 
-	if client == nil {
-		return nil, fmt.Errorf("ctrl-runtime Client was nil")
-	}
-
 	var b []byte
 	if cfg.CACertSecretRef != "" {
+		if client == nil {
+			return nil, fmt.Errorf("ctrl-runtime Client was nil and CCACertSecretRef was provided")
+		}
+
 		objKey := ctrlclient.ObjectKey{
 			Namespace: cfg.K8sNamespace,
 			Name:      cfg.CACertSecretRef,
