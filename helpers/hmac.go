@@ -46,7 +46,7 @@ func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 
 	// HMAC the Vault secret data so that it can be compared to the what's in the
 	// destination Secret.
-	message, err := json.Marshal(data)
+	message, err := marshalSecretDataForHMAC(data)
 	if err != nil {
 		return false, nil, err
 	}
@@ -109,7 +109,8 @@ func HMACDestinationSecret(ctx context.Context, client ctrlclient.Client,
 	// out-of-band change made to the Secret's data in this case the controller
 	// should do the sync.
 	if cur, ok, err := GetSyncableSecret(ctx, client, obj); ok {
-		curMessage, err := json.Marshal(cur.Data)
+
+		curMessage, err := marshalSecretDataForHMAC(cur.Data)
 		if err != nil {
 			return false, err
 		}
@@ -343,6 +344,17 @@ func MACMessage(key, data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return mac.Sum(nil), nil
+}
+
+// marshalSecretDataForHMAC normalizes marshalling ensuring that for HMAC
+// comparison an empty Kubernetes secret (nil) produces the same JSON representation
+// as a Vault empty secret (map[string][]byte{}{}).
+func marshalSecretDataForHMAC(data map[string][]byte) ([]byte, error) {
+	// Normalize nil to empty map to ensure consistent JSON marshaling
+	if data == nil {
+		data = make(map[string][]byte)
+	}
+	return json.Marshal(data)
 }
 
 // generateHMACKey for computing HMACs. The key size is 128 bit.
