@@ -472,11 +472,16 @@ topologySpreadConstraints appends the "vso.chart.selectorLabels" to .Values.cont
 */}}
 {{- define "vso.topologySpreadConstraints" -}}
 {{- $defaultLabelSelector := dict "labelSelector" (dict "matchLabels" (include "vso.chart.selectorLabels" . | fromYaml)) -}}
-{{- range $topologySpreadConstraint := .Values.controller.topologySpreadConstraints -}}
-{{- if hasKey $topologySpreadConstraint "labelSelector" -}}
-{{- $topologySpreadConstraint | list | toYaml -}}
-{{- else -}}
-{{- merge $topologySpreadConstraint $defaultLabelSelector | list | toYaml -}}
+{{- $topologySpreadConstraints := list -}}
+{{- range $t := .Values.controller.topologySpreadConstraints }}
+  {{- if hasKey $t "labelSelector" }}
+    {{- $topologySpreadConstraints = append $topologySpreadConstraints $t }}
+  {{- else }}
+    {{- $merged := merge $t $defaultLabelSelector }}
+    {{- $topologySpreadConstraints = append $topologySpreadConstraints $merged }}
+  {{- end -}}
 {{- end -}}
+{{- if $topologySpreadConstraints -}}
+{{- $topologySpreadConstraints | toYaml -}}
 {{- end -}}
 {{- end -}}
