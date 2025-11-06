@@ -1509,3 +1509,100 @@ load _helpers
   actual=$(echo "$object" | yq '.[0].whenUnsatisfiable' | tee /dev/stderr)
   [ "${actual}" = "DoNotSchedule" ]
 }
+
+@test "controller/Deployment: topologySpreadConstraint without labelSelector gets default selector labels" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
+    --set "controller.topologySpreadConstraints[0].topologyKey=zone" \
+    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
+    . | tee /dev/stderr |
+    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+
+  # Check that default labelSelector was added
+  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
+  [ "${actual}" = "vault-secrets-operator" ]
+  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/instance"' | tee /dev/stderr)
+  [ "${actual}" = "release-name" ]
+
+  # Check other fields are preserved
+  actual=$(echo "$object" | yq '.[0].maxSkew' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].topologyKey' | tee /dev/stderr)
+  [ "${actual}" = "zone" ]
+  actual=$(echo "$object" | yq '.[0].whenUnsatisfiable' | tee /dev/stderr)
+  [ "${actual}" = "DoNotSchedule" ]
+}
+
+@test "controller/Deployment: topologySpreadConstraint with existing labelSelector preserves custom selector" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    --set "controller.topologySpreadConstraints[0].maxSkew=2" \
+    --set "controller.topologySpreadConstraints[0].topologyKey=hostname" \
+    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=ScheduleAnyway" \
+    --set "controller.topologySpreadConstraints[0].labelSelector.matchLabels.custom-label=custom-value" \
+    . | tee /dev/stderr |
+    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+
+  # Check that custom labelSelector was preserved
+  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."custom-label"' | tee /dev/stderr)
+  [ "${actual}" = "custom-value" ]
+
+  # Check that default labels were NOT added
+  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/instance"' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+
+  # Check other fields are preserved
+  actual=$(echo "$object" | yq '.[0].maxSkew' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  actual=$(echo "$object" | yq '.[0].topologyKey' | tee /dev/stderr)
+  [ "${actual}" = "hostname" ]
+  actual=$(echo "$object" | yq '.[0].whenUnsatisfiable' | tee /dev/stderr)
+  [ "${actual}" = "ScheduleAnyway" ]
+}
+
+@test "controller/Deployment: multiple topologySpreadConstraints with mixed labelSelector behavior" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
+    --set "controller.topologySpreadConstraints[0].topologyKey=zone" \
+    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
+    --set "controller.topologySpreadConstraints[1].maxSkew=2" \
+    --set "controller.topologySpreadConstraints[1].topologyKey=hostname" \
+    --set "controller.topologySpreadConstraints[1].whenUnsatisfiable=ScheduleAnyway" \
+    --set "controller.topologySpreadConstraints[1].labelSelector.matchLabels.custom=value" \
+    . | tee /dev/stderr |
+    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+
+  # First constraint should have default labelSelector
+  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
+  [ "${actual}" = "vault-secrets-operator" ]
+  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/instance"' | tee /dev/stderr)
+  [ "${actual}" = "release-name" ]
+
+  # Second constraint should have custom labelSelector
+  actual=$(echo "$object" | yq '.[1].labelSelector.matchLabels.custom' | tee /dev/stderr)
+  [ "${actual}" = "value" ]
+  actual=$(echo "$object" | yq '.[1].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+}
