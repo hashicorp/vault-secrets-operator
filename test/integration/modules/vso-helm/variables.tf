@@ -126,3 +126,8 @@ variable "create_namespace" {
   type    = bool
   default = true
 }
+
+variable "image_pull_secrets" {
+  type    = list(string)
+  default = ["regcred"]
+}

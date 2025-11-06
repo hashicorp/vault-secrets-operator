@@ -61,6 +61,10 @@ spec:
       annotations:
       {{- include "vso.csi.annotations" . | nindent 8 }}
     spec:
+      {{- with.Values.csi.securityContext }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+
       serviceAccountName: {{ include "vso.chart.fullname" . }}-csi
       {{- with .Values.csi.hostAliases }}
       hostAliases:
@@ -102,6 +106,9 @@ spec:
             cpu: 10m
             memory: 20Mi
       - name: driver
+        {{- with .Values.csi.driver.securityContext }}
+        securityContext: {{ toYaml . | nindent 8 }}
+        {{- end }}
         image: {{ .Values.csi.driver.image.repository }}:{{ .Values.csi.driver.image.tag }}
         command:
         - /vault-secrets-operator-csi
@@ -130,8 +137,6 @@ spec:
           value: {{ .value }}
         {{- end }}
         imagePullPolicy: {{ .Values.csi.driver.image.pullPolicy }}
-        securityContext:
-          privileged: true
         livenessProbe:
             failureThreshold: 5
             httpGet:

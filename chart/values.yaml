@@ -928,6 +928,10 @@ csi:
   # @type: boolean
   enabled: false
 
+  # Configures the DaemonSet Security Context
+  # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+  securityContext: {}
+
   # Host Aliases settings for the `vault-secrets-operator-csi` pods as
   # an array of PodSpec HostAlias maps.
   # ref: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
@@ -984,8 +988,6 @@ csi:
   #           - antarctica-east1
   #           - antarctica-west1
   # ```
-  affinity: {}
-
   # Image pull secrets as an array of maps or strings for private container registry authentication for the controller
   # service account.
   # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
@@ -1006,6 +1008,12 @@ csi:
   annotations: {}
 
   driver:
+    # Configures the Container Security Context
+    # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+    securityContext:
+      # needed for openshift policy restrictions
+      privileged: true
+
     # Image information for the CSI driver.
     # ref: https://kubernetes.io/docs/concepts/containers/images/
     image:

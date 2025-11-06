@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "s390x"]
       fail-fast: true
     steps:
       - name: Checkout
@@ -175,6 +175,7 @@ jobs:
         run: |
           make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
+        # action only supports building for the linux OS
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
@@ -252,8 +253,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Building only amd64 for the RedHat registry for now
-        arch: ["amd64"]
+        # Building only amd64 and s390x for the RedHat registry for now
+        # GOOS is always linux
+        arch: ["amd64", "s390x"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
