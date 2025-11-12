@@ -400,6 +400,9 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
 			logger.Error(err, "Failed to watch events")
 		}
+	} else {
+		// ensure event watcher is not running
+		r.unWatchEvents(o)
 	}
 
 	if ok := r.SyncRegistry.Delete(req.NamespacedName); ok {
@@ -831,7 +834,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 
 // unWatchEvents - If the VSS is in the registry, cancel its event watcher
 // context to close the goroutine, and remove the VSS from the registry
-func (r *VaultDynamicSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStaticSecret) {
+func (r *VaultDynamicSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultDynamicSecret) {
 	name := client.ObjectKeyFromObject(o)
 	meta, ok := r.eventWatcherRegistry.Get(name)
 	if ok {
@@ -852,8 +855,6 @@ func (r *VaultDynamicSecretReconciler) getEvents(ctx context.Context, o secretsv
 		close(stoppedCh)
 	}()
 
-	logger.Info("Starting getEvents")
-
 	// Use the same backoff options used for Vault reads in Reconcile()
 	retryBackoff := backoff.NewExponentialBackOff(r.BackOffRegistry.opts...)
 
@@ -865,7 +866,7 @@ eventLoop:
 	for {
 		select {
 		case <-ctx.Done():
-			logger.V(consts.LogLevelDebug).Info("Context done, stopping getEvents",
+			logger.Info("Context done, stopping getEvents",
 				"namespace", o.Namespace, "name", o.Name)
 			return
 		default:
@@ -910,7 +911,7 @@ eventLoop:
 					logger.Error(err, "Failed to retrieve Vault client")
 					break eventLoop
 				} else {
-					wsClient, err = newVaultClient.WebsocketClient(kvEventPath)
+					wsClient, err = newVaultClient.WebsocketClient(dbEventPath)
 					if err != nil {
 						logger.Error(err, "Failed to create new websocket client")
 						break eventLoop
