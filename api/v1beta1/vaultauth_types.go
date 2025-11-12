@@ -127,6 +127,10 @@ type VaultAuthConfigAppRole struct {
 	// RoleID of the AppRole Role to use for authenticating to Vault.
 	RoleID string `json:"roleId,omitempty"`
 
+	// SecretID of the AppRole Role to use for authenticating to Vault.
+	// If both SecretID and SecretRef are specified, SecretID takes precedence.
+	SecretID string `json:"secretID,omitempty"`
+
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
 	// AppRole Role's secretID.
@@ -159,8 +163,8 @@ func (a *VaultAuthConfigAppRole) Validate() error {
 		errs = errors.Join(fmt.Errorf("empty roleID"))
 	}
 
-	if a.SecretRef == "" {
-		errs = errors.Join(fmt.Errorf("empty secretRef"))
+	if a.SecretRef == "" && a.SecretID == "" {
+		errs = errors.Join(fmt.Errorf("empty secretRef and seecretID"))
 	}
 
 	return errs
