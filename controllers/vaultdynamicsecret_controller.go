@@ -787,8 +787,8 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 	if ok {
 		// The watcher is running, and if the VSS object has not been updated,
 		// and the client ID is the same, just return
-		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
-			logger.V(consts.LogLevelDebug).Info("Event watcher already running",
+		if meta.LastClientID == c.ID() {
+			logger.Info("Event watcher already running",
 				"namespace", o.Namespace, "name", o.Name)
 			return nil
 		}
@@ -879,14 +879,13 @@ eventLoop:
 				time.Sleep(retryBackoff.NextBackOff())
 			}
 			err := r.streamDynamicSecretEvents(ctx, &o, wsClient)
-			logger.Info("Finished getEvents", "error", err)
 			if err != nil {
 				if strings.Contains(err.Error(), "use of closed network connection") ||
 					strings.Contains(err.Error(), "context canceled") {
 					// The connection and/or context was closed, so we should
 					// exit the goroutine (and the defer will remove this from
 					// the registry)
-					logger.V(consts.LogLevelDebug).Info(
+					logger.Info(
 						"Websocket client closed, stopping GetEvents for",
 						"namespace", o.Namespace, "name", o.Name)
 					return
@@ -923,7 +922,7 @@ eventLoop:
 				meta, ok := r.eventWatcherRegistry.Get(key)
 				if !ok {
 					logger.Error(
-						fmt.Errorf("failed to get event watcher metadata for VaultStaticSecret"),
+						fmt.Errorf("failed to get event watcher metadata for VaultDynamicSecret"),
 						"key", key.String())
 					break eventLoop
 				}
@@ -949,9 +948,14 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 	logger := log.FromContext(ctx).WithName("streamDynamicSecretEvents")
 	conn, err := wsClient.Connect(ctx)
 	if err != nil {
+		logger.Error(err, "🔴 Failed to connect")
 		return fmt.Errorf("failed to connect to vault websocket: %w", err)
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "closing event watcher")
+
+	logger.Info("🟢 WebSocket connected, entering read loop",
+		"namespace", o.Namespace,
+		"name", o.Name)
 
 	// We made it past the initial websocket connection, so emit a "good" event
 	// status
@@ -960,12 +964,16 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 	for {
 		select {
 		case <-ctx.Done():
-			logger.V(consts.LogLevelDebug).Info("Context done, closing websocket",
-				"namespace", o.Namespace, "name", o.Name)
+			logger.Info("🔴 Context done in streamDynamicSecretEvents",
+				"namespace", o.Namespace,
+				"name", o.Name,
+				"contextError", ctx.Err())
 			return nil
 		default:
+			logger.Info("⏳ Waiting for WebSocket message...")
 			msgType, message, err := conn.Read(ctx)
 			if err != nil {
+				logger.Error(err, "🔴 Failed to read from WebSocket")
 				return fmt.Errorf("failed to read from websocket: %w, message: %q",
 					err, string(message))
 			}
