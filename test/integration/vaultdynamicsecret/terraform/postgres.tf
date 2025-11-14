@@ -6,34 +6,7 @@ resource "helm_release" "postgres" {
   name             = "postgres"
   create_namespace = false
   wait             = true
-  wait_for_jobs    = true
-
-  # ref: https://github.com/bitnami/charts/issues/30582#issuecomment-2494545610
-  repository = "oci://registry-1.docker.io/bitnamicharts"
-  chart      = "postgresql"
-  version    = "16.7.27"
-
-  # the chart's default images are no longer supported, so we need to override them to come from the bitnami secure repo.
-  # ref: https://artifacthub.io/packages/helm/bitnami/postgresql#-important-notice-upcoming-changes-to-the-bitnami-catalog
-  set {
-    name  = "image.repository"
-    value = "bitnamisecure/postgresql"
-  }
-  set {
-    name = "image.tag"
-    # use latest to to be compatible with the linux/arm64/v8 platform.
-    value = "latest"
-  }
-  set {
-    # ironically, this is required to use the bitnami secure images with the bitnami Helm chart.
-    # ref: https://github.com/bitnami/charts/issues/35256#issuecomment-3109344715
-    name  = "global.security.allowInsecureImages"
-    value = "true"
-  }
-  set {
-    name  = "primary.persistence.enabled"
-    value = var.postgres_enable_persistence ? "true" : "false"
-  }
+  chart            = var.chart_postgres
 }
 
 resource "kubernetes_namespace" "postgres" {
@@ -53,7 +26,7 @@ data "kubernetes_secret" "postgres" {
 data "kubernetes_service" "postgres" {
   metadata {
     namespace = helm_release.postgres.namespace
-    name      = "${helm_release.postgres.name}-${helm_release.postgres.chart}"
+    name      = "${helm_release.postgres.name}-postgresql"
   }
 }
 

@@ -85,7 +85,8 @@ var (
 	// extended in TestMain
 	scheme = ctrlruntime.NewScheme()
 	// set in TestMain
-	restConfig = rest.Config{}
+	restConfig           = rest.Config{}
+	argoRolloutSupported = true
 )
 
 func init() {
@@ -170,8 +171,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
+	k8sConfigContext, ok := os.LookupEnv("K8S_CLUSTER_CONTEXT")
+	if !ok {
 		k8sConfigContext = "kind-" + clusterName
 	}
 
@@ -229,6 +230,19 @@ func TestMain(m *testing.M) {
 	// empty test case to be used with test helper functions
 	t := &testing.T{}
 
+	// get nodes architecture
+	nodes, err := k8s.GetNodesE(t, k8sOpts)
+	require.NoError(t, err)
+	for _, n := range nodes {
+		arch := n.Status.NodeInfo.Architecture
+		if arch == "amd64" || arch == "arm64" {
+			continue
+		}
+		log.Printf("Unsupported node architecture '%s', skipping ArgoRollout setup", arch)
+		argoRolloutSupported = false
+		break
+	}
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	tfOptions := setCommonTFOptions(t, &terraform.Options{
@@ -240,8 +254,9 @@ func TestMain(m *testing.M) {
 			"k8s_config_context":           k8sConfigContext,
 			"k8s_vault_namespace":          k8sVaultNamespace,
 			// the service account is created in test/integration/infra/main.tf
-			"vault_address": os.Getenv("VAULT_ADDRESS"),
-			"vault_token":   os.Getenv("VAULT_TOKEN"),
+			"vault_address":         os.Getenv("VAULT_ADDR"),
+			"vault_token":           os.Getenv("VAULT_TOKEN"),
+			"install_argo_rollouts": argoRolloutSupported,
 		},
 	})
 
@@ -936,6 +951,17 @@ func copyChartDir(tfDir string) (string, error) {
 		path.Join(testRoot, "..", "..", "chart"),
 		path.Join(tfDir, "..", "..", "chart"),
 	)
+}
+
+func copyTestChartsDir(t *testing.T, tfDir string) string {
+	t.Helper()
+
+	dir, err := copyDir(
+		path.Join(testRoot, "charts"),
+		path.Join(tfDir, "..", "charts"),
+	)
+	require.NoError(t, err)
+	return dir
 }
 
 func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client,

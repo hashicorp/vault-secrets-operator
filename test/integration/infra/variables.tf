@@ -57,5 +57,5 @@ variable "install_kube_prometheus" {
 
 variable "metrics_server_enabled" {
   type    = bool
-  default = true
+  default = false
 }

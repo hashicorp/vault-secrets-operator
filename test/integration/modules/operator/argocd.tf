@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 resource "helm_release" "argo_rollouts" {
+  count            = var.install_argo_rollouts ? 1 : 0
   namespace        = "argo"
   create_namespace = true
   name             = "argo-rollouts"

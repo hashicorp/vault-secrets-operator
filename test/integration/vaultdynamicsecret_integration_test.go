@@ -124,6 +124,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
 	copyModulesDirT(t, tfDir)
+	chartsDir := copyTestChartsDir(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
@@ -139,14 +140,14 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"k8s_config_context":  k8sConfigContext,
 			"k8s_vault_namespace": k8sVaultNamespace,
 			// the service account is created in test/integration/infra/main.tf
-			"k8s_vault_service_account":   "vault",
-			"name_prefix":                 "vds",
-			"vault_address":               os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                 os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":          120,
-			"vault_db_default_lease_ttl":  15,
-			"with_static_role_scheduled":  withStaticRoleScheduled,
-			"postgres_enable_persistence": postgresEnablePersistence,
+			"k8s_vault_service_account":  "vault",
+			"name_prefix":                "vds",
+			"vault_address":              os.Getenv("VAULT_ADDRESS"),
+			"vault_token":                os.Getenv("VAULT_TOKEN"),
+			"vault_token_period":         120,
+			"vault_db_default_lease_ttl": 15,
+			"with_static_role_scheduled": withStaticRoleScheduled,
+			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
 		},
 	}
 	if entTests {
@@ -254,9 +255,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:            "create-only",
-			create:          createOnlyCount,
-			withArgoRollout: true,
+			name:   "create-only",
+			create: createOnlyCount,
+			// skip ArgoRollout tests on unsupported K8s cluster; those running an unsupported architecture.
+			withArgoRollout: argoRolloutSupported,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -692,6 +694,8 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
 	copyModulesDirT(t, tfDir)
 
+	chartsDir := copyTestChartsDir(t, tfDir)
+
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
@@ -716,8 +720,8 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			"vault_db_default_lease_ttl": 600,
 			"with_static_role_scheduled": withStaticRoleScheduled,
 			// disabling until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released
-			"with_xns":                    false,
-			"postgres_enable_persistence": postgresEnablePersistence,
+			"with_xns":       false,
+			"chart_postgres": filepath.Join(chartsDir, "postgresql"),
 		},
 	}
 	if entTests {
@@ -888,9 +892,9 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.xns {
-				t.Skipf("skipping xns test %s, until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released", tt.name)
-			}
+			// if tt.xns {
+			//	t.Skipf("skipping xns test %s, until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released", tt.name)
+			// }
 
 			if tt.xns && !outputs.WithXns {
 				t.Skipf("skipping xns test %s, test infrastructure not supported", tt.name)

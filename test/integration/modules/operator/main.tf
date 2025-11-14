@@ -47,6 +47,7 @@ resource "kubernetes_manifest" "vault-connection-default" {
 module "vso-helm" {
   count                        = var.deploy_operator_via_helm ? 1 : 0
   source                       = "../vso-helm"
+  create_namespace             = var.create_namespace
   operator_namespace           = var.operator_namespace
   operator_image_repo          = var.operator_image_repo
   operator_image_tag           = var.operator_image_tag

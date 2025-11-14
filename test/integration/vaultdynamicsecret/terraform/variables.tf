@@ -92,9 +92,6 @@ variable "with_xns" {
   default = false
 }
 
-# postgres_enable_persistence is a boolean that determines if the test should run with persistence enabled
-# if scale tests are run, this should be set to false
-variable "postgres_enable_persistence" {
-  type    = bool
-  default = true
+variable "chart_postgres" {
+  type = string
 }
