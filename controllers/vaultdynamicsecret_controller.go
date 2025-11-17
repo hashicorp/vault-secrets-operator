@@ -16,6 +16,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"nhooyr.io/websocket"
+
+	"github.com/hashicorp/go-secure-stdlib/parseutil"
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -23,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	"nhooyr.io/websocket"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -398,7 +400,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// ensure event watcher is running
 		if err := r.ensureEventWatcher(ctx, o, vClient); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
-			logger.Error(err, "Failed to watch events")
 		}
 	} else {
 		// ensure event watcher is not running
@@ -706,8 +707,6 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
-	r.SourceCh = make(chan event.GenericEvent)
-	r.eventWatcherRegistry = newEventWatcherRegistry()
 
 	r.ClientFactory.RegisterClientCallbackHandler(
 		vault.ClientCallbackHandler{
@@ -718,6 +717,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 
 	// TODO: close this channel when the controller is stopped.
 	r.SourceCh = make(chan event.GenericEvent)
+	r.eventWatcherRegistry = newEventWatcherRegistry()
 	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
@@ -779,6 +779,19 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	return nil
 }
 
+// unWatchEvents - If the VDS is in the registry, cancel its event watcher
+// context to close the goroutine, and remove the VDS from the registry
+func (r *VaultDynamicSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultDynamicSecret) {
+	name := client.ObjectKeyFromObject(o)
+	meta, ok := r.eventWatcherRegistry.Get(name)
+	if ok {
+		if meta.Cancel != nil {
+			meta.Cancel()
+		}
+		r.eventWatcherRegistry.Delete(name)
+	}
+}
+
 func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, c vault.Client) error {
 	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
 	name := client.ObjectKeyFromObject(o)
@@ -787,7 +800,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 	if ok {
 		// The watcher is running, and if the VSS object has not been updated,
 		// and the client ID is the same, just return
-		if meta.LastClientID == c.ID() {
+		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
 			logger.Info("Event watcher already running",
 				"namespace", o.Namespace, "name", o.Name)
 			return nil
@@ -802,7 +815,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 			waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
 			if err := waitForStoppedCh(waitCtx, meta.StoppedCh); err != nil {
-				logger.Error(err, "Failed to stop event watcher for VDS", "name", name)
+				logger.Error(err, "Failed to stop event watcher for VSS", "name", name)
 			}
 		} else {
 			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "VSS", name, "meta", meta)
@@ -824,32 +837,16 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 	// launch the goroutine to watch events
 	logger.Info("Starting event watcher", "meta", updatedMeta)
 	r.eventWatcherRegistry.Register(name, updatedMeta)
-	// Pass a dereferenced VSS object here because it seems to avoid an issue
-	// where the EventWatcherStarted event is occasionally emitted without a
-	// name or namespace attached.
-	go r.getEvents(watchCtx, *o, wsClient, stoppedCh)
+	go r.getEvents(watchCtx, o, wsClient, stoppedCh)
 
 	return nil
 }
 
-// unWatchEvents - If the VSS is in the registry, cancel its event watcher
-// context to close the goroutine, and remove the VSS from the registry
-func (r *VaultDynamicSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultDynamicSecret) {
-	name := client.ObjectKeyFromObject(o)
-	meta, ok := r.eventWatcherRegistry.Get(name)
-	if ok {
-		if meta.Cancel != nil {
-			meta.Cancel()
-		}
-		r.eventWatcherRegistry.Delete(name)
-	}
-}
-
-// getEvents calls streamDynamicSecretEvents in a loop, collecting and responding
+// getEvents calls streamStaticSecretEvents in a loop, collecting and responding
 // to any errors returned.
-func (r *VaultDynamicSecretReconciler) getEvents(ctx context.Context, o secretsv1beta1.VaultDynamicSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
+func (r *VaultDynamicSecretReconciler) getEvents(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
-	name := client.ObjectKeyFromObject(&o)
+	name := client.ObjectKeyFromObject(o)
 	defer func() {
 		r.eventWatcherRegistry.Delete(name)
 		close(stoppedCh)
@@ -878,8 +875,10 @@ eventLoop:
 				}
 				time.Sleep(retryBackoff.NextBackOff())
 			}
-			err := r.streamDynamicSecretEvents(ctx, &o, wsClient)
+			err := r.streamStaticSecretEvents(ctx, o, wsClient)
 			if err != nil {
+				logger.Error(err, "Error in streamStaticSecretEvents",
+					"namespace", o.Namespace, "name", o.Name, "error_type", fmt.Sprintf("%T", err))
 				if strings.Contains(err.Error(), "use of closed network connection") ||
 					strings.Contains(err.Error(), "context canceled") {
 					// The connection and/or context was closed, so we should
@@ -887,7 +886,7 @@ eventLoop:
 					// the registry)
 					logger.Info(
 						"Websocket client closed, stopping GetEvents for",
-						"namespace", o.Namespace, "name", o.Name)
+						"namespace", o.Namespace, "name", o.Name, "reason", err.Error())
 					return
 				}
 
@@ -897,7 +896,7 @@ eventLoop:
 				// For any other errors, we emit the error as an event on the
 				// VaultStaticSecret, reload the client and try connecting
 				// again.
-				r.Recorder.Eventf(&o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
 					"Error while watching events: %s", err)
 
 				if errorCount >= errorThreshold {
@@ -905,7 +904,7 @@ eventLoop:
 					break eventLoop
 				}
 
-				newVaultClient, err := r.ClientFactory.Get(ctx, r.Client, &o)
+				newVaultClient, err := r.ClientFactory.Get(ctx, r.Client, o)
 				if err != nil {
 					logger.Error(err, "Failed to retrieve Vault client")
 					break eventLoop
@@ -918,11 +917,11 @@ eventLoop:
 				}
 
 				// Update the LastClientID in the event registry
-				key := client.ObjectKeyFromObject(&o)
+				key := client.ObjectKeyFromObject(o)
 				meta, ok := r.eventWatcherRegistry.Get(key)
 				if !ok {
 					logger.Error(
-						fmt.Errorf("failed to get event watcher metadata for VaultDynamicSecret"),
+						fmt.Errorf("failed to get event watcher metadata for VaultStaticSecret"),
 						"key", key.String())
 					break eventLoop
 				}
@@ -944,36 +943,29 @@ eventLoop:
 	}
 }
 
-func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, wsClient *vault.WebsocketClient) error {
-	logger := log.FromContext(ctx).WithName("streamDynamicSecretEvents")
+func (r *VaultDynamicSecretReconciler) streamStaticSecretEvents(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, wsClient *vault.WebsocketClient) error {
+	logger := log.FromContext(ctx).WithName("streamStaticSecretEvents")
 	conn, err := wsClient.Connect(ctx)
 	if err != nil {
-		logger.Error(err, "🔴 Failed to connect")
 		return fmt.Errorf("failed to connect to vault websocket: %w", err)
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "closing event watcher")
 
-	logger.Info("🟢 WebSocket connected, entering read loop",
-		"namespace", o.Namespace,
-		"name", o.Name)
-
 	// We made it past the initial websocket connection, so emit a "good" event
 	// status
-	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
+	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("🔴 Context done in streamDynamicSecretEvents",
-				"namespace", o.Namespace,
-				"name", o.Name,
-				"contextError", ctx.Err())
+			logger.Info("Context done, closing websocket",
+				"namespace", o.Namespace, "name", o.Name, "ctx_err", ctx.Err())
 			return nil
 		default:
-			logger.Info("⏳ Waiting for WebSocket message...")
 			msgType, message, err := conn.Read(ctx)
 			if err != nil {
-				logger.Error(err, "🔴 Failed to read from WebSocket")
+				logger.Error(err, "Failed to read from websocket",
+					"namespace", o.Namespace, "name", o.Name, "error_type", fmt.Sprintf("%T", err))
 				return fmt.Errorf("failed to read from websocket: %w, message: %q",
 					err, string(message))
 			}
@@ -984,6 +976,42 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 			}
 			logger.Info("Received message",
 				"message type", msgType, "message", messageMap)
+
+			modified, err := parseutil.ParseBool(messageMap.Data.Event.Metadata.Modified)
+			if err != nil {
+				return fmt.Errorf("failed to parse modified field: %w", err)
+			}
+
+			if modified {
+				namespace := strings.Trim(messageMap.Data.Namespace, "/")
+				path := messageMap.Data.Event.Metadata.Path
+				specPath := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+
+				// if o.Spec.Type == consts.KVSecretTypeV2 {
+				// 	specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+				// }
+				logger.Info("modified Event received from Vault",
+					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace,
+					"spec path", specPath)
+				// if namespace == o.Spec.Namespace && path == specPath {
+				// 	logger.Info("Event matches, sending requeue",
+				// 		"namespace", namespace, "path", path)
+				// 	r.SourceCh <- event.GenericEvent{
+				// 		Object: &secretsv1beta1.VaultStaticSecret{
+				// 			ObjectMeta: metav1.ObjectMeta{
+				// 				Namespace: o.Namespace,
+				// 				Name:      o.Name,
+				// 			},
+				// 		},
+				// 	}
+				// }
+			} else {
+				// This is an event we're not interested in, ignore it and
+				// carry on.
+				logger.Info("Non-modified event received from Vault, ignoring",
+					"message", messageMap)
+				continue
+			}
 		}
 	}
 }
