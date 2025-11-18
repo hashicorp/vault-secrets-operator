@@ -170,11 +170,13 @@ func (a *VaultAuthConfigAppRole) Validate() error {
 		errs = errors.Join(fmt.Errorf("empty secretRef and secretIDPath"))
 	}
 
-	safePath, err := validatePath(a.SecretIDPath)
-	if err != nil {
-		return fmt.Errorf("invalid SecretIDPath: %w", err)
+	if a.SecretIDPath != "" {
+		safePath, err := validatePath(a.SecretIDPath)
+		if err != nil {
+			return fmt.Errorf("invalid SecretIDPath: %w", err)
+		}
+		a.SecretIDPath = safePath
 	}
-	a.SecretIDPath = safePath
 
 	return errs
 }
