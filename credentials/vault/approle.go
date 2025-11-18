@@ -76,15 +76,15 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 
 		secretID, err := os.ReadFile(secretIDPath)
 		if err != nil {
-			logger.Error(err, "Failed to read SecretID from file", "path", secretIDPath)
-			return nil, fmt.Errorf("failed to read SecretID from file %s: %w", secretIDPath, err)
+			logger.Error(err, "Failed to read Secret ID from file", "path", secretIDPath)
+			return nil, fmt.Errorf("failed to read Secret ID from file %s: %w", secretIDPath, err)
 		}
 
-		// Trim whitespace from the secret (common with file-based secrets)
+		// Trim whitespace from the secret
 		trimmedSecretID := strings.TrimSpace(string(secretID))
 		if len(trimmedSecretID) == 0 {
 			err := fmt.Errorf("file contains no data or only whitespace")
-			logger.Error(err, "Failed to get SecretID from file", "path", secretIDPath)
+			logger.Error(err, "Failed to get Secret ID from file", "path", secretIDPath)
 			return nil, err
 		}
 
