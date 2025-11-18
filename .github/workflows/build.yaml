@@ -190,13 +190,18 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          version_output=$(docker run hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
-          echo $version_output
-          git_version=$(echo $version_output | jq -r .gitVersion)
+          if [ "$(uname -m") != "${{matrix.arch}}" ]; then
+            exit 0
+          else
+            platform="linux/${{matrix.arch}}"
+            version_output=$(docker run --platform "${platform}" hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
+            echo $version_output
+            git_version=$(echo $version_output | jq -r .gitVersion)
 
-          if [ "$git_version" != "${{ env.version }}" ]; then
-            echo "$gitVersion expected to be ${{ env.version }}"
-            exit 1
+            if [ "$git_version" != "${{ env.version }}" ]; then
+              echo "$gitVersion expected to be ${{ env.version }}"
+              exit 1
+            fi
           fi
 
   build-docker-ubi:
@@ -208,7 +213,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "s390x"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
@@ -235,13 +240,19 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
-          echo $version_output
-          git_version=$(echo $version_output | jq -r .gitVersion)
+          if [ "$(uname -m") != "${{matrix.arch}}" ]; then
+            echo "Can't check incompatible arch"
+            exit 0
+          else
+            platform="linux/${{matrix.arch}}"
+            version_output=$(docker run --platform "${platform}" hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
+            echo $version_output
+            git_version=$(echo $version_output | jq -r .gitVersion)
 
-          if [ "$git_version" != "${{ env.version }}" ]; then
-            echo "$gitVersion expected to be ${{ env.version }}"
-            exit 1
+            if [ "$git_version" != "${{ env.version }}" ]; then
+              echo "$gitVersion expected to be ${{ env.version }}"
+              exit 1
+            fi
           fi
 
   build-docker-ubi-redhat:
@@ -281,13 +292,17 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          version_output=$(docker run quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
-          echo $version_output
-          git_version=$(echo $version_output | jq -r .gitVersion)
+          if [ "$(uname -m") != "${{matrix.arch}}" ]; then
+            exit 0
+          else
+            version_output=$(docker run --platform "${platform}" quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
+            echo $version_output
+            git_version=$(echo $version_output | jq -r .gitVersion)
 
-          if [ "$git_version" != "${{ env.version }}" ]; then
-            echo "$gitVersion expected to be ${{ env.version }}"
-            exit 1
+            if [ "$git_version" != "${{ env.version }}" ]; then
+              echo "$gitVersion expected to be ${{ env.version }}"
+              exit 1
+            fi
           fi
 
   chart-upgrade-tests:
