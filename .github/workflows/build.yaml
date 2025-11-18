@@ -190,7 +190,10 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          if [ "$(uname -m") != "${{matrix.arch}}" ]; then
+          uname -m
+          host_arch="$(uname -m)"
+          normalized_arch="$(echo ${{matrix.arch}} | sed -e 's/^amd64$/x86_64/g')"
+          if [ "${host_arch}" != "${normalized_arch}" ]; then
             exit 0
           else
             platform="linux/${{matrix.arch}}"
@@ -240,8 +243,10 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          if [ "$(uname -m") != "${{matrix.arch}}" ]; then
-            echo "Can't check incompatible arch"
+          uname -m
+          host_arch="$(uname -m)"
+          normalized_arch="$(echo ${{matrix.arch}} | sed -e 's/^amd64$/x86_64/g')"
+          if [ "${host_arch}" != "${normalized_arch}" ]; then
             exit 0
           else
             platform="linux/${{matrix.arch}}"
@@ -292,7 +297,10 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          if [ "$(uname -m") != "${{matrix.arch}}" ]; then
+          uname -m
+          host_arch="$(uname -m)"
+          normalized_arch="$(echo ${{matrix.arch}} | sed -e 's/^amd64$/x86_64/g')"
+          if [ "${host_arch}" != "${normalized_arch}" ]; then
             exit 0
           else
             version_output=$(docker run --platform "${platform}" quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
