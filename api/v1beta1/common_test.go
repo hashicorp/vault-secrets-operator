@@ -71,6 +71,12 @@ func Test_validatePath(t *testing.T) {
 			wantError: true,
 			errorMsg:  "file too large",
 		},
+		{
+			name:      "invalid-path-is-directory",
+			path:      tmpDir,
+			wantError: true,
+			errorMsg:  "must be a regular file",
+		},
 	}
 
 	for _, tt := range tests {
