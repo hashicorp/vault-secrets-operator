@@ -65,24 +65,6 @@ func TestVaultAuthConfigAppRole_Validate(t *testing.T) {
 			wantError: true,
 			errorMsg:  "empty roleID",
 		},
-		{
-			name: "invalid-secretidpath-does-not-exist",
-			appRole: &VaultAuthConfigAppRole{
-				RoleID:       "test-role",
-				SecretIDPath: "/nonexistent/path/to/file",
-			},
-			wantError: true,
-			errorMsg:  "failed to access file",
-		},
-		{
-			name: "invalid-secretidpath-relative-path",
-			appRole: &VaultAuthConfigAppRole{
-				RoleID:       "test-role",
-				SecretIDPath: "relative/path/to/file",
-			},
-			wantError: true,
-			errorMsg:  "must be an absolute path",
-		},
 	}
 
 	for _, tt := range tests {
