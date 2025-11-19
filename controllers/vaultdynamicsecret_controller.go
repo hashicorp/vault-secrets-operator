@@ -45,7 +45,7 @@ import (
 
 const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
-	dbEventPath                 = "/v1/sys/events/subscribe/database*"
+	dynamicSecretEventPath      = "/v1/sys/events/subscribe/*"
 )
 
 // staticCredsJitterHorizon should be used when computing the jitter
@@ -676,7 +676,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "VSS", name, "meta", meta)
 		}
 	}
-	wsClient, err := c.WebsocketClient(dbEventPath)
+	wsClient, err := c.WebsocketClient(dynamicSecretEventPath)
 	if err != nil {
 		return fmt.Errorf("failed to create websocket client: %w", err)
 	}
@@ -778,7 +778,7 @@ eventLoop:
 					logger.Error(err, "Failed to retrieve Vault client")
 					break eventLoop
 				} else {
-					wsClient, err = newVaultClient.WebsocketClient(dbEventPath)
+					wsClient, err = newVaultClient.WebsocketClient(dynamicSecretEventPath)
 					if err != nil {
 						logger.Error(err, "Failed to create new websocket client")
 						break eventLoop
@@ -852,25 +852,9 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 			if modified {
 				namespace := strings.Trim(messageMap.Data.Namespace, "/")
 				path := messageMap.Data.Event.Metadata.Path
-				// specPath := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
 
-				// if o.Spec.Type == consts.KVSecretTypeV2 {
-				// 	specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
-				// }
 				logger.Info("modified Event received from Vault",
 					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace)
-				// if namespace == o.Spec.Namespace && path == specPath {
-				// 	logger.Info("Event matches, sending requeue",
-				// 		"namespace", namespace, "path", path)
-				// 	r.SourceCh <- event.GenericEvent{
-				// 		Object: &secretsv1beta1.VaultStaticSecret{
-				// 			ObjectMeta: metav1.ObjectMeta{
-				// 				Namespace: o.Namespace,
-				// 				Name:      o.Name,
-				// 			},
-				// 		},
-				// 	}
-				// }
 			} else {
 				// This is an event we're not interested in, ignore it and
 				// carry on.
