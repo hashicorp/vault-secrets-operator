@@ -325,7 +325,6 @@ integration-test: set-image setup-vault ## Run integration tests for Vault Commu
 	SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
 	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
 	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
-	#gotestsum github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
 
 .PHONY: integration-test-helm
 integration-test-helm: setup-integration-test ## Run integration tests for Vault Community

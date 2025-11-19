@@ -988,6 +988,8 @@ csi:
   #           - antarctica-east1
   #           - antarctica-west1
   # ```
+  affinity: {}
+
   # Image pull secrets as an array of maps or strings for private container registry authentication for the controller
   # service account.
   # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.

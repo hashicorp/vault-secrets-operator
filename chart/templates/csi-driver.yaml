@@ -78,6 +78,9 @@ spec:
       - name: node-driver-registrar
         image: {{ .Values.csi.nodeDriverRegistrar.image.repository }}:{{ .Values.csi.nodeDriverRegistrar.image.tag }}
         imagePullPolicy: {{ .Values.csi.livenessProbe.image.pullPolicy }}
+        {{- with .Values.csi.driver.securityContext }}
+        securityContext: {{ toYaml . | nindent 8 }}
+        {{- end }}
         args:
         - --v=5
         - --csi-address=/csi/csi.sock
@@ -106,9 +109,6 @@ spec:
             cpu: 10m
             memory: 20Mi
       - name: driver
-        {{- with .Values.csi.driver.securityContext }}
-        securityContext: {{ toYaml . | nindent 8 }}
-        {{- end }}
         image: {{ .Values.csi.driver.image.repository }}:{{ .Values.csi.driver.image.tag }}
         command:
         - /vault-secrets-operator-csi
