@@ -703,7 +703,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretID` _string_ | SecretID of the AppRole Role to use for authenticating to Vault.<br />If both SecretID and SecretRef are specified, SecretID takes precedence. |  |  |
+| `secretIDPath` _string_ | SecretIDPath is a path on the system to a file containing the plaintext Secret ID for the AppRole Role to use for authenticating to Vault.<br />If both SecretIDPath and SecretRef are specified, SecretIDPath takes precedence. |  |  |
 | `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
 
 
@@ -830,7 +830,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretID` _string_ | SecretID of the AppRole Role to use for authenticating to Vault.<br />If both SecretID and SecretRef are specified, SecretID takes precedence. |  |  |
+| `secretIDPath` _string_ | SecretIDPath is a path on the system to a file containing the plaintext Secret ID for the AppRole Role to use for authenticating to Vault.<br />If both SecretIDPath and SecretRef are specified, SecretIDPath takes precedence. |  |  |
 | `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
 | `mount` _string_ | Mount to use when authenticating to auth method. |  |  |

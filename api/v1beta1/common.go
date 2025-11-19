@@ -134,7 +134,6 @@ type VaultClientMeta struct {
 // attempts, ensures the path is absolute, and validates the file exists and is
 // not too large. Returns the cleaned path if valid.
 func validatePath(path string) (string, error) {
-	// Security: Clean the path and validate it
 	cleanPath := filepath.Clean(path)
 
 	// Prevent path traversal attacks
