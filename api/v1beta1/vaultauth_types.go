@@ -127,13 +127,15 @@ type VaultAuthConfigAppRole struct {
 	// RoleID of the AppRole Role to use for authenticating to Vault.
 	RoleID string `json:"roleId,omitempty"`
 
-	// SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the AppRole Role to use for authenticating to Vault.
-	// If both SecretIDPath and SecretRef are specified, SecretIDPath takes precedence.
+	// SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the
+	// AppRole Role to use for authenticating to Vault.
+	// SecretIDPath and SecretRef are mutually exclusive, and only one should be specified.
 	SecretIDPath string `json:"secretIDPath,omitempty"`
 
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
 	// AppRole Role's secretID.
+	// SecretIDPath and SecretRef are mutually exclusive, and only one should be specified.
 	SecretRef string `json:"secretRef,omitempty"`
 }
 
@@ -167,7 +169,11 @@ func (a *VaultAuthConfigAppRole) Validate() error {
 	}
 
 	if a.SecretRef == "" && a.SecretIDPath == "" {
-		errs = errors.Join(fmt.Errorf("empty secretRef and secretIDPath"))
+		errs = errors.Join(errs, fmt.Errorf("either secretRef or secretIDPath must be specified"))
+	}
+
+	if a.SecretRef != "" && a.SecretIDPath != "" {
+		errs = errors.Join(errs, fmt.Errorf("secretRef and secretIDPath are mutually exclusive, only one should be specified"))
 	}
 
 	if a.SecretIDPath != "" {

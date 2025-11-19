@@ -308,6 +308,25 @@ func TestVaultAuthMethods(t *testing.T) {
 			},
 		},
 		{
+			shouldRun: alwaysRun,
+			canRun:    noRequirements,
+			vaultAuth: &secretsv1beta1.VaultAuth{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "vaultauth-test-approle-secretidpath",
+					Namespace: testK8sNamespace,
+				},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Namespace: testVaultNamespace,
+					Method:    "appRole",
+					Mount:     appRoleMountPath,
+					AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+						RoleID:       outputs.AppRoleRoleID,
+						SecretIDPath: outputs.AppRoleSecretIDPath,
+					},
+				},
+			},
+		},
+		{
 			shouldRun: runAWS,
 			canRun:    noRequirements,
 			vaultAuth: &secretsv1beta1.VaultAuth{
