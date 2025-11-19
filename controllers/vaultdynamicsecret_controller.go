@@ -734,7 +734,7 @@ eventLoop:
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("Context done, stopping getEvents",
+			logger.V(consts.LogLevelDebug).Info("Context done, stopping getEvents",
 				"namespace", o.Namespace, "name", o.Name)
 			return
 		default:
@@ -753,7 +753,7 @@ eventLoop:
 					// The connection and/or context was closed, so we should
 					// exit the goroutine (and the defer will remove this from
 					// the registry)
-					logger.Info(
+					logger.V(consts.LogLevelDebug).Info(
 						"Websocket client closed, stopping GetEvents for",
 						"namespace", o.Namespace, "name", o.Name, "err", err)
 					return
@@ -827,7 +827,7 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("Context done, closing websocket",
+			logger.V(consts.LogLevelDebug).Info("Context done, closing websocket",
 				"namespace", o.Namespace, "name", o.Name)
 			return nil
 		default:
@@ -841,7 +841,7 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 			if err != nil {
 				return fmt.Errorf("failed to unmarshal event message: %w", err)
 			}
-			logger.Info("Received message",
+			logger.V(consts.LogLevelDebug).Info("Received message",
 				"message type", msgType, "message", messageMap)
 
 			modified, err := parseutil.ParseBool(messageMap.Data.Event.Metadata.Modified)
@@ -853,12 +853,24 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 				namespace := strings.Trim(messageMap.Data.Namespace, "/")
 				path := messageMap.Data.Event.Metadata.Path
 
-				logger.Info("modified Event received from Vault",
+				// Filter out KV v1/v2 events since these should be handled by VaultStaticSecretController
+				if isKVSecretPath(path) {
+					logger.V(consts.LogLevelDebug).Info("KV secret event received, ignoring (should be handled by VaultStaticSecretController)",
+						"namespace", namespace, "path", path)
+					continue
+				}
+
+				logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
 					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace)
+
+				// Process the dynamic secret event
+				r.SourceCh <- event.GenericEvent{
+					Object: o,
+				}
 			} else {
 				// This is an event we're not interested in, ignore it and
 				// carry on.
-				logger.Info("Non-modified event received from Vault, ignoring",
+				logger.V(consts.LogLevelTrace).Info("Non-modified event received from Vault, ignoring",
 					"message", messageMap)
 				continue
 			}
@@ -1157,6 +1169,31 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 				"Skipping, cacheKey error", "error", err)
 		}
 	}
+}
+
+// isKVSecretPath determines if an event path is from a KV v1 or KV v2 secret engine
+func isKVSecretPath(path string) bool {
+	// KV v2 paths contain /data/ or /metadata/
+	if strings.Contains(path, "/data/") || strings.Contains(path, "/metadata/") {
+		return true
+	}
+
+	// Common KV mount patterns
+	kvMountPatterns := []string{
+		"kv/",
+		"kvv1/",
+		"kvv2/",
+		"secret/",  // default KV mount
+		"secrets/", // common KV mount name
+	}
+
+	for _, pattern := range kvMountPatterns {
+		if strings.HasPrefix(path, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
