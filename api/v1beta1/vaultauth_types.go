@@ -127,7 +127,7 @@ type VaultAuthConfigAppRole struct {
 	// RoleID of the AppRole Role to use for authenticating to Vault.
 	RoleID string `json:"roleId,omitempty"`
 
-	// SecretIDPath is a path on the system to a file containing the plaintext Secret ID for the AppRole Role to use for authenticating to Vault.
+	// SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the AppRole Role to use for authenticating to Vault.
 	// If both SecretIDPath and SecretRef are specified, SecretIDPath takes precedence.
 	SecretIDPath string `json:"secretIDPath,omitempty"`
 
