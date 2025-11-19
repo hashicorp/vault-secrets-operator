@@ -83,7 +83,7 @@ func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlcli
 		// Trim whitespace from the secret
 		trimmedSecretID := strings.TrimSpace(string(secretID))
 		if len(trimmedSecretID) == 0 {
-			err := fmt.Errorf("file contains no data or only whitespace")
+			err := fmt.Errorf("approle secret-id file contains no data")
 			logger.Error(err, "Failed to get Secret ID from file", "path", secretIDPath)
 			return nil, err
 		}
