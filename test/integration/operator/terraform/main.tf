@@ -28,5 +28,5 @@ module "operator" {
   operator_helm_chart_path     = var.operator_helm_chart_path
   k8s_vault_connection_address = var.k8s_vault_connection_address
   install_argo_rollouts        = var.install_argo_rollouts
-  create_namespace             = false
+  create_namespace             = var.create_namespace
 }

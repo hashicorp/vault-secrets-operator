@@ -78,3 +78,8 @@ variable "install_argo_rollouts" {
   type    = bool
   default = true
 }
+
+variable "create_namespace" {
+  type    = bool
+  default = true
+}
