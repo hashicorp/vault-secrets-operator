@@ -865,7 +865,12 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 
 				// Process the dynamic secret event
 				r.SourceCh <- event.GenericEvent{
-					Object: o,
+					Object: &secretsv1beta1.VaultDynamicSecret{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: o.Namespace,
+							Name:      o.Name,
+						},
+					},
 				}
 			} else {
 				// This is an event we're not interested in, ignore it and
