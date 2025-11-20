@@ -175,7 +175,6 @@ jobs:
         run: |
           make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
-        # action only supports building for the linux OS
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
@@ -190,21 +189,13 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          uname -m
-          host_arch="$(uname -m)"
-          normalized_arch="$(echo ${{matrix.arch}} | sed -e 's/^amd64$/x86_64/g')"
-          if [ "${host_arch}" != "${normalized_arch}" ]; then
-            exit 0
-          else
-            platform="linux/${{matrix.arch}}"
-            version_output=$(docker run --platform "${platform}" hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
-            echo $version_output
-            git_version=$(echo $version_output | jq -r .gitVersion)
+          version_output=$(docker run hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
+          echo $version_output
+          git_version=$(echo $version_output | jq -r .gitVersion)
 
-            if [ "$git_version" != "${{ env.version }}" ]; then
-              echo "$gitVersion expected to be ${{ env.version }}"
-              exit 1
-            fi
+          if [ "$git_version" != "${{ env.version }}" ]; then
+            echo "$gitVersion expected to be ${{ env.version }}"
+            exit 1
           fi
 
   build-docker-ubi:
@@ -243,21 +234,13 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          uname -m
-          host_arch="$(uname -m)"
-          normalized_arch="$(echo ${{matrix.arch}} | sed -e 's/^amd64$/x86_64/g')"
-          if [ "${host_arch}" != "${normalized_arch}" ]; then
-            exit 0
-          else
-            platform="linux/${{matrix.arch}}"
-            version_output=$(docker run --platform "${platform}" hashicorp/${{env.repo}}:${{env.version}} --version --output=json)
-            echo $version_output
-            git_version=$(echo $version_output | jq -r .gitVersion)
+          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
+          echo $version_output
+          git_version=$(echo $version_output | jq -r .gitVersion)
 
-            if [ "$git_version" != "${{ env.version }}" ]; then
-              echo "$gitVersion expected to be ${{ env.version }}"
-              exit 1
-            fi
+          if [ "$git_version" != "${{ env.version }}" ]; then
+            echo "$gitVersion expected to be ${{ env.version }}"
+            exit 1
           fi
 
   build-docker-ubi-redhat:
@@ -269,9 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Building only amd64 and s390x for the RedHat registry for now
-        # GOOS is always linux
-        arch: ["amd64", "s390x"]
+        arch: ["amd64", "arm64", "s390x"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
@@ -297,20 +278,13 @@ jobs:
       - name: Check binary version in container
         shell: bash
         run: |
-          uname -m
-          host_arch="$(uname -m)"
-          normalized_arch="$(echo ${{matrix.arch}} | sed -e 's/^amd64$/x86_64/g')"
-          if [ "${host_arch}" != "${normalized_arch}" ]; then
-            exit 0
-          else
-            version_output=$(docker run --platform "${platform}" quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
-            echo $version_output
-            git_version=$(echo $version_output | jq -r .gitVersion)
+          version_output=$(docker run quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
+          echo $version_output
+          git_version=$(echo $version_output | jq -r .gitVersion)
 
-            if [ "$git_version" != "${{ env.version }}" ]; then
-              echo "$gitVersion expected to be ${{ env.version }}"
-              exit 1
-            fi
+          if [ "$git_version" != "${{ env.version }}" ]; then
+            echo "$gitVersion expected to be ${{ env.version }}"
+            exit 1
           fi
 
   chart-upgrade-tests:
