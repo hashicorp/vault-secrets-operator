@@ -62,13 +62,13 @@ spec:
       {{- include "vso.csi.annotations" . | nindent 8 }}
     spec:
       {{- with.Values.csi.securityContext }}
-      {{ toYaml . | nindent 6 }}
+      securityContext:
+      {{- toYaml . | nindent 8 }}
       {{- end }}
-
       serviceAccountName: {{ include "vso.chart.fullname" . }}-csi
       {{- with .Values.csi.hostAliases }}
       hostAliases:
-      {{- toYaml . | nindent 8 }}
+      {{ toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.csi.affinity }}
       affinity:
@@ -78,9 +78,6 @@ spec:
       - name: node-driver-registrar
         image: {{ .Values.csi.nodeDriverRegistrar.image.repository }}:{{ .Values.csi.nodeDriverRegistrar.image.tag }}
         imagePullPolicy: {{ .Values.csi.livenessProbe.image.pullPolicy }}
-        {{- with .Values.csi.driver.securityContext }}
-        securityContext: {{ toYaml . | nindent 8 }}
-        {{- end }}
         args:
         - --v=5
         - --csi-address=/csi/csi.sock
@@ -137,6 +134,10 @@ spec:
           value: {{ .value }}
         {{- end }}
         imagePullPolicy: {{ .Values.csi.driver.image.pullPolicy }}
+        {{- with .Values.csi.driver.securityContext }}
+        securityContext:
+        {{- toYaml . | nindent 10 }}
+        {{- end }}
         livenessProbe:
             failureThreshold: 5
             httpGet:

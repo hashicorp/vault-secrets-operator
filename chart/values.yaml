@@ -928,8 +928,10 @@ csi:
   # @type: boolean
   enabled: false
 
-  # Configures the DaemonSet Security Context
+  # Configures the Pod level security context
   # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+  #
+  # Note: the driver container security context can be configured below.
   securityContext: {}
 
   # Host Aliases settings for the `vault-secrets-operator-csi` pods as
@@ -1010,11 +1012,15 @@ csi:
   annotations: {}
 
   driver:
-    # Configures the Container Security Context
+    # Configures the driver container's security context
     # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
-    securityContext:
-      # needed for openshift policy restrictions
-      privileged: true
+    #
+    # Note: the Pod level security can also be configured above.
+    #
+    # Note: when deploying to an OpenShift cluster you should set:
+    #   privileged: true
+    #
+    securityContext: {}
 
     # Image information for the CSI driver.
     # ref: https://kubernetes.io/docs/concepts/containers/images/
