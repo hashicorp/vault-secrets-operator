@@ -480,3 +480,40 @@ topologySpreadConstraints appends the "vso.chart.selectorLabels" to .Values.cont
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+controller.volumes generates the volume list for the controller pod.
+This helper ensures that the required podinfo volume is always present
+and user-defined volumes do not conflict with it.
+*/}}
+{{- define "vso.controller.volumes" -}}
+{{- $volumes := list -}}
+{{- $podinfoVolume := dict "name" "podinfo" "downwardAPI" (dict "items" (list (dict "fieldRef" (dict "fieldPath" "metadata.name") "path" "name") (dict "fieldRef" (dict "fieldPath" "metadata.uid") "path" "uid"))) -}}
+{{- $volumes = append $volumes $podinfoVolume -}}
+{{- range .Values.controller.manager.volumes -}}
+{{- if ne .name "podinfo" -}}
+{{- $volumes = append $volumes . -}}
+{{- end -}}
+{{- end -}}
+{{- $volumes | toYaml -}}
+{{- end -}}
+
+{{/*
+controller.volumeMounts generates the volumeMount list for the manager container.
+This helper ensures the podinfo volume mount is always present.
+*/}}
+{{- define "vso.controller.volumeMounts" -}}
+{{- $mounts := list -}}
+{{- $podinfoMount := dict "mountPath" "/var/run/podinfo" "name" "podinfo" -}}
+{{- $mounts = append $mounts $podinfoMount -}}
+{{- range .Values.controller.manager.volumes -}}
+{{- if and (ne .name "podinfo") (ne .mountPath "/var/run/podinfo") .mountPath -}}
+{{- $mount := dict "name" .name "mountPath" .mountPath -}}
+{{- if .readOnly -}}
+{{- $_ := set $mount "readOnly" .readOnly -}}
+{{- end -}}
+{{- $mounts = append $mounts $mount -}}
+{{- end -}}
+{{- end -}}
+{{- $mounts | toYaml -}}
+{{- end -}}
