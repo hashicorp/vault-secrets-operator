@@ -6,6 +6,8 @@ package vault
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -13,9 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/helpers"
-
 	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
 var _ CredentialProvider = (*AppRoleCredentialProvider)(nil)
@@ -46,8 +47,8 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
-	// If SecretID is provided directly in the spec, use a new UUID for this provider instance
-	if authObj.Spec.AppRole.SecretID != "" {
+	// If SecretIDPath is provided, use a new UUID for this provider instance
+	if authObj.Spec.AppRole.SecretIDPath != "" {
 		l.uid = uuid.NewUUID()
 		return nil
 	}
@@ -69,11 +70,27 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
 
-	// If SecretID is provided directly in the spec, return the spec's role_id and secret_id
-	if l.authObj.Spec.AppRole.SecretID != "" {
+	// If SecretIDPath is provided, read the secret_id from the file
+	if l.authObj.Spec.AppRole.SecretIDPath != "" {
+		secretIDPath := l.authObj.Spec.AppRole.SecretIDPath
+
+		secretID, err := os.ReadFile(secretIDPath)
+		if err != nil {
+			logger.Error(err, "Failed to read Secret ID from file", "path", secretIDPath)
+			return nil, fmt.Errorf("failed to read Secret ID from file %s: %w", secretIDPath, err)
+		}
+
+		// Trim whitespace from the secret
+		trimmedSecretID := strings.TrimSpace(string(secretID))
+		if len(trimmedSecretID) == 0 {
+			err := fmt.Errorf("approle secret-id file contains no data")
+			logger.Error(err, "Failed to get Secret ID from file", "path", secretIDPath)
+			return nil, err
+		}
+
 		return map[string]interface{}{
 			"role_id":   l.authObj.Spec.AppRole.RoleID,
-			"secret_id": l.authObj.Spec.AppRole.SecretID,
+			"secret_id": trimmedSecretID,
 		}, nil
 	}
 

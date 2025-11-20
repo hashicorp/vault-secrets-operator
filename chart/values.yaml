@@ -548,6 +548,25 @@ controller:
     # @type: array
     extraArgs: []
 
+    # Defines additional volumes to be added to the vault-secrets-operator manager pod.
+    # This can be used to mount secrets, configmaps, or other volume types.
+    # Note: The operator pod already has a downwardAPI volume named 'podinfo' at
+    # /var/run/podinfo. User-defined volumes cannot override this.
+    # Example:
+    #
+    # ```yaml
+    # volumes:
+    #   - name: approle-secret
+    #     secret:
+    #       secretName: my-approle-secret
+    #       defaultMode: 0400
+    #   - name: tls-certs
+    #     configMap:
+    #       name: vault-tls
+    # ```
+    # @type: array<map>
+    volumes: []
+
     # Configures the default resources for the vault-secrets-operator container.
     # For more information on configuring resources, see the K8s documentation:
     # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
