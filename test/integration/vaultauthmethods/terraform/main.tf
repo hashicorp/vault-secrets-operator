@@ -156,13 +156,6 @@ resource "kubernetes_secret" "secretid" {
   }
 }
 
-# Write the secret ID to a file on the operator pod filesystem for SecretIDPath testing
-resource "local_file" "secretid_file" {
-  content         = vault_approle_auth_backend_role_secret_id.id.secret_id
-  filename        = "/tmp/approle-secretid"
-  file_permission = "0600"
-}
-
 resource "vault_policy" "approle" {
   name      = "approle"
   namespace = local.namespace

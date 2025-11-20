@@ -10,11 +10,6 @@ output "role_id" {
   value       = vault_approle_auth_backend_role.role.role_id
 }
 
-output "approle_secretid_path" {
-  description = "Path to the file containing the AppRole secret ID"
-  value       = local_file.secretid_file.filename
-}
-
 output "vault_policy" {
   description = "vault policy default"
   value       = vault_policy.default.name
