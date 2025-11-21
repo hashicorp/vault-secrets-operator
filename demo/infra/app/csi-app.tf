@@ -1,3 +1,6 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 # Deploys the CSI app to the Kubernetes cluster. It will pull Vault secrets using the VSO CSI driver.
 resource "kubernetes_namespace" "demo-ns-vso-csi" {
   count = local.csi_enabled ? 1 : 0
