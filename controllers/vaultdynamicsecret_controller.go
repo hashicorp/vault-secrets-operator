@@ -653,7 +653,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 
 	meta, ok := r.eventWatcherRegistry.Get(name)
 	if ok {
-		// The watcher is running, and if the VSS object has not been updated,
+		// The watcher is running, and if the VDS object has not been updated,
 		// and the client ID is the same, just return
 		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
 			logger.Info("Event watcher already running",
@@ -670,10 +670,10 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 			waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
 			if err := waitForStoppedCh(waitCtx, meta.StoppedCh); err != nil {
-				logger.Error(err, "Failed to stop event watcher for VSS", "name", name)
+				logger.Error(err, "Failed to stop event watcher for VDS", "name", name)
 			}
 		} else {
-			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "VSS", name, "meta", meta)
+			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "VDS", name, "meta", meta)
 		}
 	}
 	wsClient, err := c.WebsocketClient(dynamicSecretEventPath)
@@ -692,7 +692,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 	// launch the goroutine to watch events
 	logger.Info("Starting event watcher", "meta", updatedMeta)
 	r.eventWatcherRegistry.Register(name, updatedMeta)
-	// Pass a dereferenced VSS object here because it seems to avoid an issue
+	// Pass a dereferenced VDS object here because it seems to avoid an issue
 	// where the EventWatcherStarted event is occasionally emitted without a
 	// name or namespace attached.
 	go r.getEvents(watchCtx, *o, wsClient, stoppedCh)
@@ -700,8 +700,8 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 	return nil
 }
 
-// unWatchEvents - If the VSS is in the registry, cancel its event watcher
-// context to close the goroutine, and remove the VSS from the registry
+// unWatchEvents - If the VDS is in the registry, cancel its event watcher
+// context to close the goroutine, and remove the VDS from the registry
 func (r *VaultDynamicSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultDynamicSecret) {
 	name := client.ObjectKeyFromObject(o)
 	meta, ok := r.eventWatcherRegistry.Get(name)
@@ -713,7 +713,7 @@ func (r *VaultDynamicSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultDyna
 	}
 }
 
-// getEvents calls streamStaticSecretEvents in a loop, collecting and responding
+// getEvents calls streamDynamicSecretEvents in a loop, collecting and responding
 // to any errors returned.
 func (r *VaultDynamicSecretReconciler) getEvents(ctx context.Context, o secretsv1beta1.VaultDynamicSecret, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
