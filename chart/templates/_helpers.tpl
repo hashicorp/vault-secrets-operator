@@ -471,12 +471,14 @@ toleration generates toleration settings for the CSI Driver.
 topologySpreadConstraints appends the "vso.chart.selectorLabels" to .Values.controller.topologySpreadConstraints if no labelSelector was specified
 */}}
 {{- define "vso.topologySpreadConstraints" -}}
-{{- $defaultLabelSelector := dict "labelSelector" (dict "matchLabels" (include "vso.chart.selectorLabels" . | fromYaml)) -}}
-{{- range $topologySpreadConstraint := .Values.controller.topologySpreadConstraints -}}
-{{- if hasKey $topologySpreadConstraint "labelSelector" -}}
-{{- $topologySpreadConstraint | list | toYaml -}}
-{{- else -}}
-{{- merge $topologySpreadConstraint $defaultLabelSelector | list | toYaml -}}
+{{- $default := dict "labelSelector" (dict "matchLabels" (include "vso.chart.selectorLabels" . | fromYaml)) -}}
+{{- $out := list -}}
+{{- range $c := .Values.controller.topologySpreadConstraints -}}
+  {{- if hasKey $c "labelSelector" -}}
+    {{- $out = append $out $c -}}
+  {{- else -}}
+    {{- $out = append $out (merge $c $default) -}}
+  {{- end -}}
 {{- end -}}
-{{- end -}}
+{{- toYaml $out -}}
 {{- end -}}
