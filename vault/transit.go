@@ -21,16 +21,26 @@ type (
 	decryptResponse struct {
 		Plaintext string `json:"plaintext"`
 	}
+
+	// TransitOption modifies parameters for a Transit Encrypt/Decrypt request.
+	// Individual options may only apply to certain operations.
+	TransitOption func(m map[string]any)
 )
 
 // EncryptWithTransit encrypts data using Vault Transit.
-func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte) ([]byte, error) {
+func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte, opts ...TransitOption) ([]byte, error) {
 	path := fmt.Sprintf("%s/encrypt/%s", mount, key)
-	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, map[string]any{
+
+	params := map[string]any{
 		"name":      key,
 		"plaintext": base64.StdEncoding.EncodeToString(data),
-	}, nil),
-	)
+	}
+
+	for _, opt := range opts {
+		opt(params)
+	}
+
+	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +52,7 @@ func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 }
 
 // DecryptWithTransit decrypts data using Vault Transit.
-func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte) ([]byte, error) {
+func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte, opts ...TransitOption) ([]byte, error) {
 	var v encryptResponse
 	err := json.Unmarshal(data, &v)
 	if err != nil {
@@ -53,6 +63,10 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 	params := map[string]interface{}{
 		"name":       key,
 		"ciphertext": v.Ciphertext,
+	}
+
+	for _, opt := range opts {
+		opt(params)
 	}
 
 	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))
@@ -75,4 +89,10 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 	}
 
 	return base64.StdEncoding.DecodeString(d.Plaintext)
+}
+
+// WithKeyVersion sets the key version for EncryptWithTransit.
+// It is ignored when passed to DecryptWithTransit.
+func WithKeyVersion(v int) TransitOption {
+	return func(m map[string]any) { m["key_version"] = v }
 }
