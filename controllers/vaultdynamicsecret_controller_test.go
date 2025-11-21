@@ -33,6 +33,249 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
+// func TestVaultDynamicSecretReconciler_streamDynamicSecretEvents(t *testing.T) {
+// 	tests := []struct {
+// 		name          string
+// 		setupMocks    func(*MockWebsocketClient, *MockConnection, *MockEventRecorder)
+// 		ctxTimeout    time.Duration
+// 		expectedError string
+// 		verifyFunc    func(t *testing.T, sourceCh <-chan event.GenericEvent, recorder *MockEventRecorder)
+// 	}{
+// 		{
+// 			name: "successful_websocket_connection_and_event_processing",
+// 			setupMocks: func(wsClient *MockWebsocketClient, conn *MockConnection, recorder *MockEventRecorder) {
+// 				wsClient.EXPECT().Connect(gomock.Any()).Return(conn, nil)
+
+// 				// Mock successful event message
+// 				eventMsg := `{
+//                     "data": {
+//                         "namespace": "/test-namespace/",
+//                         "event": {
+//                             "metadata": {
+//                                 "modified": "true",
+//                                 "path": "auth/approle/role/test-role"
+//                             }
+//                         }
+//                     }
+//                 }`
+
+// 				conn.EXPECT().Read(gomock.Any()).Return(
+// 					websocket.MessageText,
+// 					[]byte(eventMsg),
+// 					nil,
+// 				).Times(1)
+
+// 				// After first read, return context cancelled to exit loop
+// 				conn.EXPECT().Read(gomock.Any()).Return(
+// 					websocket.MessageText,
+// 					nil,
+// 					context.Canceled,
+// 				).Times(1)
+
+// 				conn.EXPECT().Close(websocket.StatusNormalClosure, "closing event watcher")
+
+// 				recorder.EXPECT().Event(
+// 					gomock.Any(),
+// 					corev1.EventTypeNormal,
+// 					consts.ReasonEventWatcherStarted,
+// 					"Started watching events",
+// 				)
+// 			},
+// 			ctxTimeout: 5 * time.Second,
+// 			verifyFunc: func(t *testing.T, sourceCh <-chan event.GenericEvent, recorder *MockEventRecorder) {
+// 				// Verify that an event was sent to the channel
+// 				select {
+// 				case evt := <-sourceCh:
+// 					assert.Equal(t, "test-name", evt.Object.GetName())
+// 					assert.Equal(t, "test-namespace", evt.Object.GetNamespace())
+// 				case <-time.After(1 * time.Second):
+// 					t.Error("Expected event to be sent to SourceCh")
+// 				}
+// 			},
+// 		},
+// 		{
+// 			name: "websocket_connection_failure",
+// 			setupMocks: func(wsClient *MockWebsocketClient, conn *MockConnection, recorder *MockEventRecorder) {
+// 				wsClient.EXPECT().Connect(gomock.Any()).Return(nil, errors.New("connection failed"))
+// 			},
+// 			expectedError: "failed to connect to vault websocket: connection failed",
+// 		},
+// 		{
+// 			name: "json_unmarshal_error",
+// 			setupMocks: func(wsClient *MockWebsocketClient, conn *MockConnection, recorder *MockEventRecorder) {
+// 				wsClient.EXPECT().Connect(gomock.Any()).Return(conn, nil)
+
+// 				conn.EXPECT().Read(gomock.Any()).Return(
+// 					websocket.MessageText,
+// 					[]byte("invalid json"),
+// 					nil,
+// 				)
+
+// 				conn.EXPECT().Close(websocket.StatusNormalClosure, "closing event watcher")
+
+// 				recorder.EXPECT().Event(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+// 			},
+// 			expectedError: "failed to unmarshal event message:",
+// 		},
+// 		{
+// 			name: "kv_secret_path_filtered_out",
+// 			setupMocks: func(wsClient *MockWebsocketClient, conn *MockConnection, recorder *MockEventRecorder) {
+// 				wsClient.EXPECT().Connect(gomock.Any()).Return(conn, nil)
+
+// 				// Mock KV secret path that should be filtered
+// 				eventMsg := `{
+//                     "data": {
+//                         "namespace": "/test-namespace/",
+//                         "event": {
+//                             "metadata": {
+//                                 "modified": "true",
+//                                 "path": "secret/data/myapp/config"
+//                             }
+//                         }
+//                     }
+//                 }`
+
+// 				conn.EXPECT().Read(gomock.Any()).Return(
+// 					websocket.MessageText,
+// 					[]byte(eventMsg),
+// 					nil,
+// 				).Times(1)
+
+// 				// After first read, cancel context
+// 				conn.EXPECT().Read(gomock.Any()).Return(
+// 					websocket.MessageText,
+// 					nil,
+// 					context.Canceled,
+// 				).Times(1)
+
+// 				conn.EXPECT().Close(websocket.StatusNormalClosure, "closing event watcher")
+// 				recorder.EXPECT().Event(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+// 			},
+// 			ctxTimeout: 5 * time.Second,
+// 			verifyFunc: func(t *testing.T, sourceCh <-chan event.GenericEvent, recorder *MockEventRecorder) {
+// 				// Verify that NO event was sent to the channel (filtered out)
+// 				select {
+// 				case <-sourceCh:
+// 					t.Error("Expected no event to be sent to SourceCh for KV secret")
+// 				case <-time.After(100 * time.Millisecond):
+// 					// Expected - no event should be sent
+// 				}
+// 			},
+// 		},
+// 		{
+// 			name: "non_modified_event_ignored",
+// 			setupMocks: func(wsClient *MockWebsocketClient, conn *MockConnection, recorder *MockEventRecorder) {
+// 				wsClient.EXPECT().Connect(gomock.Any()).Return(conn, nil)
+
+// 				eventMsg := `{
+//                     "data": {
+//                         "namespace": "/test-namespace/",
+//                         "event": {
+//                             "metadata": {
+//                                 "modified": "false",
+//                                 "path": "auth/approle/role/test-role"
+//                             }
+//                         }
+//                     }
+//                 }`
+
+// 				conn.EXPECT().Read(gomock.Any()).Return(
+// 					websocket.MessageText,
+// 					[]byte(eventMsg),
+// 					nil,
+// 				).Times(1)
+
+// 				conn.EXPECT().Read(gomock.Any()).Return(
+// 					websocket.MessageText,
+// 					nil,
+// 					context.Canceled,
+// 				).Times(1)
+
+// 				conn.EXPECT().Close(websocket.StatusNormalClosure, "closing event watcher")
+// 				recorder.EXPECT().Event(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+// 			},
+// 			ctxTimeout: 5 * time.Second,
+// 			verifyFunc: func(t *testing.T, sourceCh <-chan event.GenericEvent, recorder *MockEventRecorder) {
+// 				// Verify that NO event was sent to the channel
+// 				select {
+// 				case <-sourceCh:
+// 					t.Error("Expected no event to be sent to SourceCh for non-modified event")
+// 				case <-time.After(100 * time.Millisecond):
+// 					// Expected - no event should be sent
+// 				}
+// 			},
+// 		},
+// 		{
+// 			name: "context_cancellation",
+// 			setupMocks: func(wsClient *MockWebsocketClient, conn *MockConnection, recorder *MockEventRecorder) {
+// 				wsClient.EXPECT().Connect(gomock.Any()).Return(conn, nil)
+// 				conn.EXPECT().Close(websocket.StatusNormalClosure, "closing event watcher")
+// 				recorder.EXPECT().Event(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+// 			},
+// 			ctxTimeout: 100 * time.Millisecond, // Short timeout to trigger context cancellation
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			// Setup
+// 			ctrl := gomock.NewController(t)
+// 			defer ctrl.Finish()
+
+// 			mockWsClient := NewMockWebsocketClient(ctrl)
+// 			mockConn := NewMockConnection(ctrl)
+// 			mockRecorder := NewMockEventRecorder(ctrl)
+
+// 			// Create test VaultDynamicSecret
+// 			vds := &secretsv1beta1.VaultDynamicSecret{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Name:      "test-name",
+// 					Namespace: "test-namespace",
+// 				},
+// 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+// 					Namespace: "test-spec-namespace",
+// 				},
+// 			}
+
+// 			// Create reconciler with mock dependencies
+// 			sourceCh := make(chan event.GenericEvent, 10)
+// 			r := &VaultDynamicSecretReconciler{
+// 				SourceCh: sourceCh,
+// 				Recorder: mockRecorder,
+// 			}
+
+// 			// Setup mocks
+// 			if tt.setupMocks != nil {
+// 				tt.setupMocks(mockWsClient, mockConn, mockRecorder)
+// 			}
+
+// 			// Create context with timeout
+// 			ctx := context.Background()
+// 			if tt.ctxTimeout > 0 {
+// 				var cancel context.CancelFunc
+// 				ctx, cancel = context.WithTimeout(ctx, tt.ctxTimeout)
+// 				defer cancel()
+// 			}
+
+// 			// Execute
+// 			err := r.streamDynamicSecretEvents(ctx, vds, mockWsClient)
+
+// 			// Verify error
+// 			if tt.expectedError != "" {
+// 				assert.Error(t, err)
+// 				assert.Contains(t, err.Error(), tt.expectedError)
+// 			} else {
+// 				assert.NoError(t, err)
+// 			}
+
+// 			// Additional verification
+// 			if tt.verifyFunc != nil {
+// 				tt.verifyFunc(t, sourceCh, mockRecorder)
+// 			}
+// 		})
+// 	}
+// }
+
 func Test_computeRelativeHorizon(t *testing.T) {
 	tests := map[string]struct {
 		vds              *secretsv1beta1.VaultDynamicSecret
