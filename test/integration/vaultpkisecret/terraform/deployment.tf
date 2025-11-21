@@ -41,9 +41,10 @@ resource "kubernetes_deployment" "vso" {
           }
         }
         container {
-          image             = "nginx:latest"
+          image             = "busybox"
           name              = "example"
           image_pull_policy = "IfNotPresent"
+          command           = ["/bin/sh", "-c", "while :; do echo hello; sleep 10; done"]
 
           volume_mount {
             name       = "secrets"

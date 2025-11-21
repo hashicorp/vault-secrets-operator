@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "s390x"]
       fail-fast: true
     steps:
       - name: Checkout
@@ -207,7 +207,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "s390x"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
@@ -227,6 +227,7 @@ jobs:
           version: ${{env.version}}
           target: release-ubi
           arch: ${{matrix.arch}}
+          redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
@@ -235,51 +236,6 @@ jobs:
         shell: bash
         run: |
           version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
-          echo $version_output
-          git_version=$(echo $version_output | jq -r .gitVersion)
-
-          if [ "$git_version" != "${{ env.version }}" ]; then
-            echo "$gitVersion expected to be ${{ env.version }}"
-            exit 1
-          fi
-
-  build-docker-ubi-redhat:
-    name: UBI ${{ matrix.arch }} RedHat build
-    needs:
-      - get-product-version
-      - build-pre-checks
-      - build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # Building only amd64 for the RedHat registry for now
-        arch: ["amd64"]
-    env:
-      repo: ${{github.event.repository.name}}
-      version: ${{needs.get-product-version.outputs.product-version}}
-      image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Setup scripts directory
-        shell: bash
-        run: |
-          make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
-      - name: Docker Build (Action)
-        uses: hashicorp/actions-docker-build@v2
-        env:
-          VERSION: ${{ needs.get-product-version.outputs.product-version }}
-          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
-        with:
-          version: ${{env.version}}
-          target: release-ubi-redhat
-          arch: ${{matrix.arch}}
-          # The quay id here corresponds to the project id on RedHat's portal
-          redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
-
-      - name: Check binary version in container
-        shell: bash
-        run: |
-          version_output=$(docker run quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
           echo $version_output
           git_version=$(echo $version_output | jq -r .gitVersion)
 
@@ -312,6 +268,7 @@ jobs:
         - "0.9.1"
         - "0.10.0"
         - "1.0.0"
+        - "1.0.1"
     steps:
       - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
@@ -475,7 +432,6 @@ jobs:
       - build
       - build-docker
       - build-docker-ubi
-      - build-docker-ubi-redhat
       - chart-upgrade-tests
       - unit-tests
       - latest-vault
