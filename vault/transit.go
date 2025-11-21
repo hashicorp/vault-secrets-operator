@@ -22,6 +22,8 @@ type (
 		Plaintext string `json:"plaintext"`
 	}
 
+	// TransitOption modifies parameters for a Transit Encrypt/Decrypt request.
+	// Individual options may only apply to certain operations.
 	TransitOption func(m map[string]any)
 )
 
@@ -63,6 +65,10 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 		"ciphertext": v.Ciphertext,
 	}
 
+	for _, opt := range opts {
+		opt(params)
+	}
+
 	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))
 	if err != nil {
 		return nil, err
@@ -85,6 +91,8 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 	return base64.StdEncoding.DecodeString(d.Plaintext)
 }
 
+// WithKeyVersion sets the key version for EncryptWithTransit.
+// It is ignored when passed to DecryptWithTransit.
 func WithKeyVersion(v int) TransitOption {
 	return func(m map[string]any) { m["key_version"] = v }
 }
