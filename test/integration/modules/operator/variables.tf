@@ -60,3 +60,13 @@ variable "operator_image_repo" {
 variable "operator_image_tag" {
   default = "0.0.0-dev"
 }
+
+variable "install_argo_rollouts" {
+  type    = bool
+  default = true
+}
+
+variable "create_namespace" {
+  type    = bool
+  default = true
+}
