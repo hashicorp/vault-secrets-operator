@@ -539,6 +539,10 @@ sdk-generate: copywrite operator-sdk
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	$(COPYWRITE) headers -d $(CONFIG_SRC_DIR)
 
+.PHONE: copywrite-headers
+copywrite-headers: copywrite
+	@$(COPYWRITE) headers
+
 .PHONY: bundle
 bundle: manifests kustomize set-image-ubi yq ## Generate bundle manifests and metadata, then validate generated files.
 	@rm -rf $(BUNDLE_DIR)
