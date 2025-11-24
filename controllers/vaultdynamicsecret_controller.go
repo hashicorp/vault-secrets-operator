@@ -45,7 +45,7 @@ import (
 
 const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
-	dynamicSecretEventPath      = "/v1/sys/events/subscribe/*"
+	dynamicSecretEventPath      = "/v1/sys/events/subscribe/database/creds-create"
 )
 
 // staticCredsJitterHorizon should be used when computing the jitter
@@ -854,7 +854,7 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 				path := messageMap.Data.Event.Metadata.Path
 
 				// Log out the event details that occurred
-				logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
+				logger.Info("modified Event received from Vault",
 					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace)
 
 			} else {
