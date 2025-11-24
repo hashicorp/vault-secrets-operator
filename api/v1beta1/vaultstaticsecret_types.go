@@ -72,7 +72,7 @@ type VaultStaticSecretCollectable struct {
 // StaticSecretSyncConfig configures sync behavior from Vault to VSO
 type StaticSecretSyncConfig struct {
 	// InstantUpdates is a flag to indicate that event-driven updates are
-	// enabled for a VaultStaticSecret
+	// enabled for VaultStaticSecret
 	InstantUpdates bool `json:"instantUpdates,omitempty"`
 }
 

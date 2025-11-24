@@ -395,7 +395,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
-		logger.Info("Event watcher enabled")
+		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
 		// ensure event watcher is running
 		if err := r.ensureEventWatcher(ctx, o, vClient); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
@@ -690,7 +690,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(ctx context.Context, o
 		StoppedCh:      stoppedCh,
 	}
 	// launch the goroutine to watch events
-	logger.Info("Starting event watcher", "meta", updatedMeta)
+	logger.V(consts.LogLevelDebug).Info("Starting event watcher", "meta", updatedMeta)
 	r.eventWatcherRegistry.Register(name, updatedMeta)
 	// Pass a dereferenced VDS object here because it seems to avoid an issue
 	// where the EventWatcherStarted event is occasionally emitted without a
