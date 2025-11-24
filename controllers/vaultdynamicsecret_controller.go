@@ -45,7 +45,7 @@ import (
 
 const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
-	dynamicSecretEventPath      = "/v1/sys/events/subscribe/database/creds-create"
+	dynamicSecretEventPath      = "/v1/sys/events/subscribe/database/*"
 )
 
 // staticCredsJitterHorizon should be used when computing the jitter
@@ -848,22 +848,56 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 			if err != nil {
 				return fmt.Errorf("failed to parse modified field: %w", err)
 			}
+			operation, err := parseutil.ParseString(messageMap.Data.Event.Metadata.Operation)
+			if err != nil {
+				return fmt.Errorf("failed to parse operation field: %w", err)
+			}
 
-			if modified {
-				namespace := strings.Trim(messageMap.Data.Namespace, "/")
-				path := messageMap.Data.Event.Metadata.Path
-
-				// Log out the event details that occurred
-				logger.Info("modified Event received from Vault",
-					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace)
-
-			} else {
-				// This is an event we're not interested in, ignore it and
-				// carry on.
+			// Skip non-modified events early
+			if !modified {
 				logger.V(consts.LogLevelTrace).Info("Non-modified event received from Vault, ignoring",
 					"message", messageMap)
 				continue
 			}
+
+			path := messageMap.Data.Event.Metadata.Path
+			vdsPath := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
+
+			logger.Info("Modified event received from Vault",
+				"path", path, "operation", operation, "vdsPath", vdsPath)
+
+			// Handle credential creation/update events
+			if r.isCredentialEvent(operation) && path == vdsPath {
+				logger.Info("Credential event matches our VDS path, triggering reconciliation",
+					"operation", operation, "path", path)
+
+				r.triggerVDSReconciliation(o)
+				continue
+			}
+
+			// Handle role deletion events
+			if r.isRoleDeletionEvent(operation) {
+				expectedRolePath := r.getRolePathForCredentialPath(vdsPath)
+				if path == expectedRolePath {
+					logger.Info("Role deletion event affects our VDS, triggering deletion",
+						"operation", operation, "path", path, "expectedRolePath", expectedRolePath)
+
+					// Handle role deletion by removing finalizers and deleting the object
+					if err := r.handleRoleDeletion(ctx, o); err != nil {
+						logger.Error(err, "Failed to handle VDS deletion after role deletion", "path", path)
+						r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+							"Failed to handle VDS deletion for role path %s: %s", path, err)
+					} else {
+						r.Recorder.Eventf(o, corev1.EventTypeNormal, "RoleDeleted",
+							"VaultDynamicSecret deleted due to corresponding role deletion in Vault")
+					}
+					return nil // Exit the event loop as we're deleting the VDS
+				}
+			}
+
+			// Log events that don't match our criteria
+			logger.V(consts.LogLevelTrace).Info("Event does not match our VDS criteria, ignoring",
+				"operation", operation, "path", path, "vdsPath", vdsPath)
 		}
 	}
 }
@@ -1263,4 +1297,102 @@ func vaultStaticCredsMetaDataFromData(data map[string]any) (*secretsv1beta1.Vaul
 	}
 
 	return &ret, nil
+}
+
+// getRolePathForCredentialPath converts a credential path to its corresponding role path
+// For example: "database/creds/my-role" -> "database/roles/my-role"
+//
+//	"ldap/creds/my-role" -> "ldap/roles/my-role"
+func (r *VaultDynamicSecretReconciler) getRolePathForCredentialPath(credPath string) string {
+	// Split the path into parts
+	parts := strings.Split(credPath, "/")
+	if len(parts) < 3 {
+		// Not a valid credential path format, return as-is
+		return credPath
+	}
+
+	// Replace "creds" with "roles" in the path
+	for i, part := range parts {
+		if part == "creds" {
+			parts[i] = "roles"
+			break
+		}
+	}
+
+	return strings.Join(parts, "/")
+}
+
+// handleRoleDeletion handles the deletion of a VaultDynamicSecret when its corresponding role is deleted in Vault
+// This is different from handleDeletion because we need to explicitly delete the object, not just remove finalizers
+func (r *VaultDynamicSecretReconciler) handleRoleDeletion(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
+	logger := log.FromContext(ctx).WithName("handleRoleDeletion")
+
+	// Refresh the object to get the latest version before deletion
+	objKey := client.ObjectKeyFromObject(o)
+	freshVDS := &secretsv1beta1.VaultDynamicSecret{}
+	if err := r.Get(ctx, objKey, freshVDS); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Object already deleted, nothing to do
+			logger.V(consts.LogLevelDebug).Info("VaultDynamicSecret already deleted")
+			return nil
+		}
+		logger.Error(err, "Failed to get fresh VaultDynamicSecret object for deletion")
+		return fmt.Errorf("failed to refresh VaultDynamicSecret: %w", err)
+	}
+
+	// Use the fresh object for all subsequent operations
+	o = freshVDS
+
+	// First, clean up resources like a normal deletion
+	r.revokeLease(ctx, o, "")
+
+	r.SyncRegistry.Delete(objKey)
+	r.BackOffRegistry.Delete(objKey)
+	r.referenceCache.Remove(SecretTransformation, objKey)
+
+	// Remove finalizer if present
+	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
+		logger.Info("Removing finalizer before deletion")
+		controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer)
+		if err := r.Update(ctx, o); err != nil {
+			logger.Error(err, "Failed to remove finalizer before deletion")
+			return fmt.Errorf("failed to remove finalizer: %w", err)
+		}
+	}
+
+	// Now explicitly delete the object
+	logger.Info("Deleting VaultDynamicSecret due to role deletion")
+	if err := r.Delete(ctx, o); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(consts.LogLevelDebug).Info("VaultDynamicSecret already deleted")
+			return nil
+		}
+		logger.Error(err, "Failed to delete VaultDynamicSecret")
+		return fmt.Errorf("failed to delete VaultDynamicSecret: %w", err)
+	}
+
+	logger.Info("Successfully deleted VaultDynamicSecret due to role deletion")
+	return nil
+}
+
+// isCredentialEvent checks if the operation is a credential creation/update event
+func (r *VaultDynamicSecretReconciler) isCredentialEvent(operation string) bool {
+	return operation == "creds-create" || operation == "static-roles-create" || operation == "static-roles-update"
+}
+
+// isRoleDeletionEvent checks if the operation is a role deletion event
+func (r *VaultDynamicSecretReconciler) isRoleDeletionEvent(operation string) bool {
+	return operation == "role-delete" || operation == "static-role-delete"
+}
+
+// triggerVDSReconciliation sends a VaultDynamicSecret object to the source channel to trigger reconciliation
+func (r *VaultDynamicSecretReconciler) triggerVDSReconciliation(o *secretsv1beta1.VaultDynamicSecret) {
+	r.SourceCh <- event.GenericEvent{
+		Object: &secretsv1beta1.VaultDynamicSecret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: o.Namespace,
+				Name:      o.Name,
+			},
+		},
+	}
 }
