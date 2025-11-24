@@ -62,7 +62,7 @@ type VaultDynamicSecretSpec struct {
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
 	Destination Destination `json:"destination"`
 	// SyncConfig configures sync behavior from Vault to VSO
-	SyncConfig *DyanmicSecretSyncConfig `json:"syncConfig,omitempty"`
+	SyncConfig *VaultDynamicSecretSyncConfig `json:"syncConfig,omitempty"`
 	// RefreshAfter a period of time for VSO to sync the source secret data, in
 	// duration notation e.g. 30s, 1m, 24h. This value only needs to be set when
 	// syncing from a secret's engine that does not provide a lease TTL in its
@@ -131,10 +131,10 @@ type VaultStaticCredsMetaData struct {
 	TTL int64 `json:"ttl"`
 }
 
-// DyanmicSecretSyncConfig configures sync behavior from Vault to VSO for dynamic secrets
-type DyanmicSecretSyncConfig struct {
+// VaultDynamicSecretSyncConfig configures sync behavior from Vault to VSO for dynamic secrets
+type VaultDynamicSecretSyncConfig struct {
 	// InstantUpdates is a flag to indicate that event-driven updates are
-	// enabled for a VaultDynamicSecret
+	// enabled for this VaultDynamicSecret
 	InstantUpdates bool `json:"instantUpdates,omitempty"`
 }
 

@@ -518,23 +518,6 @@ _Appears in:_
 | `keyName` _string_ | KeyName to use for encrypt/decrypt operations via Vault Transit. |  |  |
 
 
-#### SyncConfig
-
-
-
-SyncConfig configures sync behavior from Vault to VSO
-
-
-
-_Appears in:_
-- [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
-- [VaultStaticSecretSpec](#vaultstaticsecretspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for VaultStaticSecret/VaultDynamicSecret |  |  |
-
-
 #### Template
 
 
@@ -1183,10 +1166,26 @@ _Appears in:_
 | `allowStaticCreds` _boolean_ | AllowStaticCreds should be set when syncing credentials that are periodically<br />rotated by the Vault server, rather than created upon request. These secrets<br />are sometimes referred to as "static roles", or "static credentials", with a<br />request path that contains "static-creds". |  |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
-| `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
+| `syncConfig` _[VaultDynamicSecretSyncConfig](#vaultdynamicsecretsyncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
 | `refreshAfter` _string_ | RefreshAfter a period of time for VSO to sync the source secret data, in<br />duration notation e.g. 30s, 1m, 24h. This value only needs to be set when<br />syncing from a secret's engine that does not provide a lease TTL in its<br />response. The value should be within the secret engine's configured ttl or<br />max_ttl. The source secret's lease duration takes precedence over this<br />configuration when it is greater than 0. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 
 
+
+
+#### VaultDynamicSecretSyncConfig
+
+
+
+VaultDynamicSecretSyncConfig configures sync behavior from Vault to VSO for dynamic secrets
+
+
+
+_Appears in:_
+- [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this VaultDynamicSecret |  |  |
 
 
 #### VaultPKISecret
@@ -1398,12 +1397,28 @@ _Appears in:_
 | `hmacSecretData` _boolean_ | HMACSecretData determines whether the Operator computes the<br />HMAC of the Secret's data. The MAC value will be stored in<br />the resource's Status.SecretMac field, and will be used for drift detection<br />and during incoming Vault secret comparison.<br />Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault. | true |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets will be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
-| `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
+| `syncConfig` _[VaultStaticSecretSyncConfig](#vaultstaticsecretsyncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
 
+
+
+#### VaultStaticSecretSyncConfig
+
+
+
+VaultStaticSecretSyncConfig configures sync behavior from Vault to VSO
+
+
+
+_Appears in:_
+- [VaultStaticSecretSpec](#vaultstaticsecretspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this VaultStaticSecret |  |  |
 
 

@@ -41,7 +41,7 @@ type VaultStaticSecretSpec struct {
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
 	Destination Destination `json:"destination"`
 	// SyncConfig configures sync behavior from Vault to VSO
-	SyncConfig *StaticSecretSyncConfig `json:"syncConfig,omitempty"`
+	SyncConfig *VaultStaticSecretSyncConfig `json:"syncConfig,omitempty"`
 
 	VaultStaticSecretCommon `json:",inline"`
 }
@@ -69,10 +69,10 @@ type VaultStaticSecretCollectable struct {
 	Transformation *Transformation `json:"transformation,omitempty"`
 }
 
-// StaticSecretSyncConfig configures sync behavior from Vault to VSO
-type StaticSecretSyncConfig struct {
+// VaultStaticSecretSyncConfig configures sync behavior from Vault to VSO
+type VaultStaticSecretSyncConfig struct {
 	// InstantUpdates is a flag to indicate that event-driven updates are
-	// enabled for a VaultStaticSecret
+	// enabled for this VaultStaticSecret
 	InstantUpdates bool `json:"instantUpdates,omitempty"`
 }
 

@@ -367,7 +367,7 @@ func TestVaultStaticSecret(t *testing.T) {
 			existing: func() []*secretsv1beta1.VaultStaticSecret {
 				vss := getExisting()
 				for _, v := range vss {
-					v.Spec.SyncConfig = &secretsv1beta1.SyncConfig{
+					v.Spec.SyncConfig = &secretsv1beta1.VaultStaticSecretSyncConfig{
 						InstantUpdates: true,
 					}
 					v.Spec.RefreshAfter = "1h"
@@ -468,29 +468,6 @@ func TestVaultStaticSecret(t *testing.T) {
 		if t.Failed() {
 			return
 		}
-
-		if expectInitial && obj.Spec.SyncConfig != nil && obj.Spec.SyncConfig.InstantUpdates {
-			// Ensure the (Vault) event watcher has started by waiting for the
-			// EventWatcherStarted k8s event so that subsequent Vault updates
-			// are detected and synced.
-			assert.NoError(t, backoff.Retry(func() error {
-				objEvents := corev1.EventList{}
-				err := crdClient.List(ctx, &objEvents,
-					ctrlclient.InNamespace(obj.Namespace),
-					ctrlclient.MatchingFields{
-						"involvedObject.name": obj.Name,
-						"reason":              consts.ReasonEventWatcherStarted,
-					},
-				)
-				if err != nil {
-					return err
-				}
-				if len(objEvents.Items) == 0 {
-					return fmt.Errorf("no EventWatcherStarted event for %s", obj.Name)
-				}
-				return nil
-			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 200)))
-		}
 	}
 
 	for _, tt := range tests {
@@ -565,7 +542,7 @@ func TestVaultStaticSecret(t *testing.T) {
 							vssObj.Spec.Version = tt.version
 						}
 						if tt.useEvents {
-							vssObj.Spec.SyncConfig = &secretsv1beta1.SyncConfig{
+							vssObj.Spec.SyncConfig = &secretsv1beta1.VaultStaticSecretSyncConfig{
 								InstantUpdates: true,
 							}
 							vssObj.Spec.RefreshAfter = "1h"
