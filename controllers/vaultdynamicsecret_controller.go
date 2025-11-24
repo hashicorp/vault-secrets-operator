@@ -867,8 +867,8 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 				"path", path, "operation", operation, "vdsPath", vdsPath)
 
 			// Handle credential creation/update events
-			if r.isCredentialEvent(operation) && path == vdsPath {
-				logger.Info("Credential event matches our VDS path, triggering reconciliation",
+			if r.isCreateOrUpdateEvent(operation) && path == vdsPath {
+				logger.Info("Create/update event received on VaultDynamicSecret, triggering reconciliation",
 					"operation", operation, "path", path)
 
 				r.triggerVDSReconciliation(o)
@@ -1375,8 +1375,8 @@ func (r *VaultDynamicSecretReconciler) handleRoleDeletion(ctx context.Context, o
 	return nil
 }
 
-// isCredentialEvent checks if the operation is a credential creation/update event
-func (r *VaultDynamicSecretReconciler) isCredentialEvent(operation string) bool {
+// isCreateOrUpdateEvent checks if the operation is a credential creation/update event
+func (r *VaultDynamicSecretReconciler) isCreateOrUpdateEvent(operation string) bool {
 	return operation == "creds-create" || operation == "static-roles-create" || operation == "static-roles-update"
 }
 
