@@ -853,25 +853,10 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 				namespace := strings.Trim(messageMap.Data.Namespace, "/")
 				path := messageMap.Data.Event.Metadata.Path
 
-				// Filter out KV v1/v2 events since these should be handled by VaultStaticSecretController
-				if isKVSecretPath(path) {
-					logger.V(consts.LogLevelDebug).Info("KV secret event received, ignoring (should be handled by VaultStaticSecretController)",
-						"namespace", namespace, "path", path)
-					continue
-				}
-
+				// Log out the event details that occurred
 				logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
 					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace)
 
-				// Process the dynamic secret event
-				r.SourceCh <- event.GenericEvent{
-					Object: &secretsv1beta1.VaultDynamicSecret{
-						ObjectMeta: metav1.ObjectMeta{
-							Namespace: o.Namespace,
-							Name:      o.Name,
-						},
-					},
-				}
 			} else {
 				// This is an event we're not interested in, ignore it and
 				// carry on.
@@ -1174,31 +1159,6 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 				"Skipping, cacheKey error", "error", err)
 		}
 	}
-}
-
-// isKVSecretPath determines if an event path is from a KV v1 or KV v2 secret engine
-func isKVSecretPath(path string) bool {
-	// KV v2 paths contain /data/ or /metadata/
-	if strings.Contains(path, "/data/") || strings.Contains(path, "/metadata/") {
-		return true
-	}
-
-	// Common KV mount patterns
-	kvMountPatterns := []string{
-		"kv/",
-		"kvv1/",
-		"kvv2/",
-		"secret/",  // default KV mount
-		"secrets/", // common KV mount name
-	}
-
-	for _, pattern := range kvMountPatterns {
-		if strings.HasPrefix(path, pattern) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
