@@ -45,7 +45,7 @@ import (
 
 const (
 	vaultDynamicSecretFinalizer = "vaultdynamicsecret.secrets.hashicorp.com/finalizer"
-	dynamicSecretEventPath      = "/v1/sys/events/subscribe/database/creds-create"
+	dynamicSecretEventPath      = "/v1/sys/events/subscribe/database/*"
 )
 
 // staticCredsJitterHorizon should be used when computing the jitter
