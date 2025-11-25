@@ -14,6 +14,7 @@ func TestWithKeyVersion(t *testing.T) {
 	}{
 		{"key version 1", 1},
 		{"key version 42", 42},
+		{"key version 10000", 10000},
 	}
 
 	for _, tt := range tests {
