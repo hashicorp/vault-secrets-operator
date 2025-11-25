@@ -12,9 +12,18 @@ func TestWithKeyVersion(t *testing.T) {
 		name string
 		v    uint
 	}{
-		{"key version 1", 1},
-		{"key version 42", 42},
-		{"key version 10000", 10000},
+		{
+			name: "key version 1",
+			v:    1,
+		},
+		{
+			name: "key version 42",
+			v:    42,
+		},
+		{
+			name: "key version 10000",
+			v:    10000,
+		},
 	}
 
 	for _, tt := range tests {
