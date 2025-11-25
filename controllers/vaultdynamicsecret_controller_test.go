@@ -1480,3 +1480,401 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		})
 	}
 }
+
+func Test_VaultDynamicSecretEventHelpers(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{}
+
+	t.Run("isCredentialEvent", func(t *testing.T) {
+		tests := map[string]struct {
+			operation string
+			expected  bool
+		}{
+			"creds-create is credential event": {
+				operation: "creds-create",
+				expected:  true,
+			},
+			"static-roles-create is credential event": {
+				operation: "static-roles-create",
+				expected:  true,
+			},
+			"static-roles-update is credential event": {
+				operation: "static-roles-update",
+				expected:  true,
+			},
+			"role-delete is not credential event": {
+				operation: "role-delete",
+				expected:  false,
+			},
+			"random operation is not credential event": {
+				operation: "random-operation",
+				expected:  false,
+			},
+		}
+
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				result := r.isCredentialEvent(tt.operation)
+				assert.Equal(t, tt.expected, result,
+					"isCredentialEvent(%s) should return %v", tt.operation, tt.expected)
+			})
+		}
+	})
+
+	t.Run("isRoleDeletionEvent", func(t *testing.T) {
+		tests := map[string]struct {
+			operation string
+			expected  bool
+		}{
+			"role-delete is role deletion event": {
+				operation: "role-delete",
+				expected:  true,
+			},
+			"static-role-delete is role deletion event": {
+				operation: "static-role-delete",
+				expected:  true,
+			},
+			"creds-create is not role deletion event": {
+				operation: "creds-create",
+				expected:  false,
+			},
+			"random operation is not role deletion event": {
+				operation: "random-operation",
+				expected:  false,
+			},
+		}
+
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				result := r.isRoleDeletionEvent(tt.operation)
+				assert.Equal(t, tt.expected, result,
+					"isRoleDeletionEvent(%s) should return %v", tt.operation, tt.expected)
+			})
+		}
+	})
+}
+
+func Test_getRolePathForCredentialPath(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{}
+
+	tests := map[string]struct {
+		credPath     string
+		expectedRole string
+	}{
+		"database credential path": {
+			credPath:     "database/creds/my-role",
+			expectedRole: "database/roles/my-role",
+		},
+		"ldap credential path": {
+			credPath:     "ldap/creds/my-role",
+			expectedRole: "ldap/roles/my-role",
+		},
+		"nested path": {
+			credPath:     "my-mount/database/creds/complex-role-name",
+			expectedRole: "my-mount/database/roles/complex-role-name",
+		},
+		"invalid path": {
+			credPath:     "invalid/path",
+			expectedRole: "invalid/path", // Should return as-is
+		},
+		"empty path": {
+			credPath:     "",
+			expectedRole: "",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			result := r.getRolePathForCredentialPath(tt.credPath)
+			assert.Equal(t, tt.expectedRole, result)
+		})
+	}
+}
+
+// Test the event message processing logic by testing the individual components
+func Test_streamDynamicSecretEvents_EventProcessing(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{}
+
+	vds := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-vds",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+		},
+	}
+
+	vdsPath := vault.JoinPath(vds.Spec.Mount, vds.Spec.Path)    // "database/creds/my-role"
+	expectedRolePath := r.getRolePathForCredentialPath(vdsPath) // "database/roles/my-role"
+
+	tests := map[string]struct {
+		eventPath   string
+		operation   string
+		modified    bool
+		expectMatch bool
+		eventType   string // "credential" or "role_deletion"
+	}{
+		"credential create event matches VDS path": {
+			eventPath:   "database/creds/my-role",
+			operation:   "creds-create",
+			modified:    true,
+			expectMatch: true,
+			eventType:   "credential",
+		},
+		"static role create event matches VDS path": {
+			eventPath:   "database/creds/my-role",
+			operation:   "static-roles-create",
+			modified:    true,
+			expectMatch: true,
+			eventType:   "credential",
+		},
+		"role delete event matches role path": {
+			eventPath:   "database/roles/my-role",
+			operation:   "role-delete",
+			modified:    true,
+			expectMatch: true,
+			eventType:   "role_deletion",
+		},
+		"static role delete event matches role path": {
+			eventPath:   "database/roles/my-role",
+			operation:   "static-role-delete",
+			modified:    true,
+			expectMatch: true,
+			eventType:   "role_deletion",
+		},
+		"non-modified event should not match": {
+			eventPath:   "database/creds/my-role",
+			operation:   "creds-create",
+			modified:    false,
+			expectMatch: false,
+			eventType:   "",
+		},
+		"different credential path should not match": {
+			eventPath:   "database/creds/other-role",
+			operation:   "creds-create",
+			modified:    true,
+			expectMatch: false,
+			eventType:   "",
+		},
+		"different role path should not match": {
+			eventPath:   "database/roles/other-role",
+			operation:   "role-delete",
+			modified:    true,
+			expectMatch: false,
+			eventType:   "",
+		},
+		"random operation should not match": {
+			eventPath:   "database/creds/my-role",
+			operation:   "random-operation",
+			modified:    true,
+			expectMatch: false,
+			eventType:   "",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Test the logic that determines if we should take action
+			shouldTriggerCredentialReconcile := tt.modified &&
+				r.isCredentialEvent(tt.operation) &&
+				tt.eventPath == vdsPath
+
+			shouldTriggerRoleDeletion := tt.modified &&
+				r.isRoleDeletionEvent(tt.operation) &&
+				tt.eventPath == expectedRolePath
+
+			expectedCredentialReconcile := tt.expectMatch && tt.eventType == "credential"
+			expectedRoleDeletion := tt.expectMatch && tt.eventType == "role_deletion"
+
+			assert.Equal(t, expectedCredentialReconcile, shouldTriggerCredentialReconcile,
+				"Credential reconciliation decision for %s", name)
+			assert.Equal(t, expectedRoleDeletion, shouldTriggerRoleDeletion,
+				"Role deletion decision for %s", name)
+
+			// Verify that exactly one or neither action is triggered, never both
+			if tt.expectMatch {
+				assert.True(t, shouldTriggerCredentialReconcile != shouldTriggerRoleDeletion,
+					"Exactly one action should be triggered for %s", name)
+			} else {
+				assert.False(t, shouldTriggerCredentialReconcile || shouldTriggerRoleDeletion,
+					"No action should be triggered for %s", name)
+			}
+		})
+	}
+}
+
+// Test_streamDynamicSecretEvents_EventIsolation tests that events only affect the correct VaultDynamicSecret
+// and not other VaultDynamicSecret objects that might be listening for similar paths
+func Test_streamDynamicSecretEvents_EventIsolation(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{}
+
+	// Define multiple VaultDynamicSecret objects with different paths
+	vdsMyRole := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "vds-my-role",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+		},
+	}
+
+	vdsOtherRole := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "vds-other-role",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/other-role",
+		},
+	}
+
+	vdsDifferentMount := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "vds-ldap",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "ldap",
+			Path:  "creds/my-role",
+		},
+	}
+
+	tests := map[string]struct {
+		eventPath   string
+		operation   string
+		modified    bool
+		targetVDS   *secretsv1beta1.VaultDynamicSecret
+		shouldMatch bool
+		description string
+	}{
+		"my-role credential event matches only vds-my-role": {
+			eventPath:   "database/creds/my-role",
+			operation:   "creds-create",
+			modified:    true,
+			targetVDS:   vdsMyRole,
+			shouldMatch: true,
+			description: "Event for my-role should only affect vds-my-role",
+		},
+		"my-role credential event does not match vds-other-role": {
+			eventPath:   "database/creds/my-role",
+			operation:   "creds-create",
+			modified:    true,
+			targetVDS:   vdsOtherRole,
+			shouldMatch: false,
+			description: "Event for my-role should not affect vds-other-role",
+		},
+		"my-role credential event does not match vds-ldap (different mount)": {
+			eventPath:   "database/creds/my-role",
+			operation:   "creds-create",
+			modified:    true,
+			targetVDS:   vdsDifferentMount,
+			shouldMatch: false,
+			description: "Event for database/creds/my-role should not affect ldap/creds/my-role",
+		},
+		"other-role credential event matches only vds-other-role": {
+			eventPath:   "database/creds/other-role",
+			operation:   "creds-create",
+			modified:    true,
+			targetVDS:   vdsOtherRole,
+			shouldMatch: true,
+			description: "Event for other-role should only affect vds-other-role",
+		},
+		"other-role credential event does not match vds-my-role": {
+			eventPath:   "database/creds/other-role",
+			operation:   "creds-create",
+			modified:    true,
+			targetVDS:   vdsMyRole,
+			shouldMatch: false,
+			description: "Event for other-role should not affect vds-my-role",
+		},
+		"ldap credential event matches only vds-ldap": {
+			eventPath:   "ldap/creds/my-role",
+			operation:   "creds-create",
+			modified:    true,
+			targetVDS:   vdsDifferentMount,
+			shouldMatch: true,
+			description: "Event for ldap/creds/my-role should only affect vds-ldap",
+		},
+		"ldap credential event does not match database vds": {
+			eventPath:   "ldap/creds/my-role",
+			operation:   "creds-create",
+			modified:    true,
+			targetVDS:   vdsMyRole,
+			shouldMatch: false,
+			description: "Event for ldap/creds/my-role should not affect database vds",
+		},
+		"my-role role deletion matches only vds-my-role": {
+			eventPath:   "database/roles/my-role",
+			operation:   "role-delete",
+			modified:    true,
+			targetVDS:   vdsMyRole,
+			shouldMatch: true,
+			description: "Role deletion for my-role should only affect vds-my-role",
+		},
+		"my-role role deletion does not match vds-other-role": {
+			eventPath:   "database/roles/my-role",
+			operation:   "role-delete",
+			modified:    true,
+			targetVDS:   vdsOtherRole,
+			shouldMatch: false,
+			description: "Role deletion for my-role should not affect vds-other-role",
+		},
+		"other-role role deletion matches only vds-other-role": {
+			eventPath:   "database/roles/other-role",
+			operation:   "role-delete",
+			modified:    true,
+			targetVDS:   vdsOtherRole,
+			shouldMatch: true,
+			description: "Role deletion for other-role should only affect vds-other-role",
+		},
+		"other-role role deletion does not match vds-my-role": {
+			eventPath:   "database/roles/other-role",
+			operation:   "role-delete",
+			modified:    true,
+			targetVDS:   vdsMyRole,
+			shouldMatch: false,
+			description: "Role deletion for other-role should not affect vds-my-role",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Get the paths for the target VDS
+			targetVDSPath := vault.JoinPath(tt.targetVDS.Spec.Mount, tt.targetVDS.Spec.Path)
+			targetRolePath := r.getRolePathForCredentialPath(targetVDSPath)
+
+			// Test credential event logic
+			shouldTriggerCredentialReconcile := tt.modified &&
+				r.isCredentialEvent(tt.operation) &&
+				tt.eventPath == targetVDSPath
+
+			// Test role deletion event logic
+			shouldTriggerRoleDeletion := tt.modified &&
+				r.isRoleDeletionEvent(tt.operation) &&
+				tt.eventPath == targetRolePath
+
+			// Determine if any action should be triggered
+			shouldTriggerAnyAction := shouldTriggerCredentialReconcile || shouldTriggerRoleDeletion
+
+			assert.Equal(t, tt.shouldMatch, shouldTriggerAnyAction,
+				"Event isolation failed for %s - %s", name, tt.description)
+
+			// Additional verification: ensure the logic is consistent
+			if tt.shouldMatch {
+				// If it should match, exactly one action should be triggered
+				assert.True(t, shouldTriggerCredentialReconcile != shouldTriggerRoleDeletion,
+					"Exactly one action should be triggered for matching event: %s", name)
+			} else {
+				// If it shouldn't match, no actions should be triggered
+				assert.False(t, shouldTriggerCredentialReconcile,
+					"Credential reconciliation should not be triggered for non-matching event: %s", name)
+				assert.False(t, shouldTriggerRoleDeletion,
+					"Role deletion should not be triggered for non-matching event: %s", name)
+			}
+		})
+	}
+}

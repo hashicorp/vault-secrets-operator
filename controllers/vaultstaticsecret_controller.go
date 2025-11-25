@@ -512,8 +512,9 @@ type eventMsg struct {
 	Data struct {
 		Event struct {
 			Metadata struct {
-				Path     string `json:"path"`
-				Modified string `json:"modified"`
+				Path      string `json:"path"`
+				Modified  string `json:"modified"`
+				Operation string `json:"operation"`
 			} `json:"metadata"`
 		} `json:"event"`
 		Namespace string `json:"namespace"`
