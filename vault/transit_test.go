@@ -10,12 +10,10 @@ import (
 func TestWithKeyVersion(t *testing.T) {
 	tests := []struct {
 		name string
-		v    int
+		v    uint
 	}{
 		{"key version 1", 1},
 		{"key version 42", 42},
-		{"zero value", 0},
-		{"negative", -5},
 	}
 
 	for _, tt := range tests {

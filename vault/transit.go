@@ -52,7 +52,7 @@ func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 }
 
 // DecryptWithTransit decrypts data using Vault Transit.
-func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte, opts ...TransitOption) ([]byte, error) {
+func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte) ([]byte, error) {
 	var v encryptResponse
 	err := json.Unmarshal(data, &v)
 	if err != nil {
@@ -63,10 +63,6 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 	params := map[string]interface{}{
 		"name":       key,
 		"ciphertext": v.Ciphertext,
-	}
-
-	for _, opt := range opts {
-		opt(params)
 	}
 
 	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))
@@ -93,6 +89,6 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 
 // WithKeyVersion sets the key version for EncryptWithTransit.
 // It is ignored when passed to DecryptWithTransit.
-func WithKeyVersion(v int) TransitOption {
+func WithKeyVersion(v uint) TransitOption {
 	return func(m map[string]any) { m["key_version"] = v }
 }
