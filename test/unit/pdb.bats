@@ -17,6 +17,9 @@ pdb_yaml() {
     | tee /dev/stderr
 }
 
+#--------------------------------------------------------------------
+# defaults & single-key behavior
+
 @test "controller/PodDisruptionBudget: defaults to minAvailable 1 when no constraints are set" {
   cd `chart_dir`
 
@@ -70,6 +73,9 @@ pdb_yaml() {
   [ "${actual}" = "null" ]
 }
 
+#--------------------------------------------------------------------
+# zero-handling when both keys are present
+
 @test "controller/PodDisruptionBudget: when both set and minAvailable is zero, render only non-zero maxUnavailable" {
   cd `chart_dir`
 
@@ -106,6 +112,27 @@ pdb_yaml() {
   [ "${actual}" = "null" ]
 }
 
+@test "controller/PodDisruptionBudget: when both constraints explicitly zero, falls back to minAvailable 1" {
+  cd `chart_dir`
+
+  local output
+  output=$(pdb_yaml \
+    --set "controller.podDisruptionBudget.maxUnavailable=0" \
+    --set "controller.podDisruptionBudget.minAvailable=0")
+
+  local actual
+
+  # Both sides zero is treated as "no explicit constraints" -> safe default 1
+  actual=$(echo "$output" | yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+
+  actual=$(echo "$output" | yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+}
+
+#--------------------------------------------------------------------
+# failure behaviour
+
 @test "controller/PodDisruptionBudget: fails when both maxUnavailable and minAvailable are non-zero" {
   cd `chart_dir`
 
@@ -124,6 +151,9 @@ pdb_yaml() {
   echo "$output" | tee /dev/stderr | grep "maxUnavailable and minAvailable"
 }
 
+#--------------------------------------------------------------------
+# percentage handling
+
 @test "controller/PodDisruptionBudget: supports percentage values for minAvailable" {
   cd `chart_dir`
 
@@ -138,6 +168,60 @@ pdb_yaml() {
   [ "${actual}" = "34%" ]
 
   # And maxUnavailable should not be set in this case
+  actual=$(echo "$output" | yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+}
+
+@test "controller/PodDisruptionBudget: supports percentage values for maxUnavailable" {
+  cd `chart_dir`
+
+  local output
+  output=$(pdb_yaml \
+    --set "controller.podDisruptionBudget.maxUnavailable=34%")
+
+  local actual
+
+  # Template should preserve the percentage as a string value
+  actual=$(echo "$output" | yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "34%" ]
+
+  # And minAvailable should not be set in this case
+  actual=$(echo "$output" | yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+}
+
+@test "controller/PodDisruptionBudget: treats 0% minAvailable as zero when maxUnavailable is non-zero" {
+  cd `chart_dir`
+
+  local output
+  output=$(pdb_yaml \
+    --set "controller.podDisruptionBudget.maxUnavailable=3" \
+    --set "controller.podDisruptionBudget.minAvailable=0%")
+
+  local actual
+
+  # minAvailable=0% is treated as zero; only the non-zero maxUnavailable is emitted
+  actual=$(echo "$output" | yq '.spec.maxUnavailable' | tee /dev/stderr)
+  [ "${actual}" = "3" ]
+
+  actual=$(echo "$output" | yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+}
+
+@test "controller/PodDisruptionBudget: treats 0% maxUnavailable as zero when minAvailable is non-zero" {
+  cd `chart_dir`
+
+  local output
+  output=$(pdb_yaml \
+    --set "controller.podDisruptionBudget.maxUnavailable=0%" \
+    --set "controller.podDisruptionBudget.minAvailable=3")
+
+  local actual
+
+  # maxUnavailable=0% is treated as zero; only the non-zero minAvailable is emitted
+  actual=$(echo "$output" | yq '.spec.minAvailable' | tee /dev/stderr)
+  [ "${actual}" = "3" ]
+
   actual=$(echo "$output" | yq '.spec.maxUnavailable' | tee /dev/stderr)
   [ "${actual}" = "null" ]
 }
