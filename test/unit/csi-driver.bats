@@ -636,9 +636,12 @@ load _helpers
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 
-  actual=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext' \
-    | tee /dev/stderr)
-  [ "${actual}" = null ]
+  local driverObj
+  driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
+  actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
 }
 
 @test "CSIDriver/DaemonSet: securityContext privileged always enabled ignoring override" {
@@ -648,6 +651,7 @@ load _helpers
     -s templates/csi-driver.yaml \
     --set 'csi.enabled=true' \
     --set 'csi.securityContext.privileged=foo' \
+    --set 'csi.driver.securityContext.privileged=baz' \
     . | tee /dev/stderr |
     yq 'select(.kind == "DaemonSet")' | tee /dev/stderr)
 
@@ -658,9 +662,12 @@ load _helpers
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 
-  actual=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext' \
-    | tee /dev/stderr)
-  [ "${actual}" = null ]
+  local driverObj
+  driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
+  actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
 }
 
 @test "CSIDriver/DaemonSet: Pod level securityContext only" {
@@ -680,9 +687,13 @@ load _helpers
   [ "${actual}" = 'true' ]
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .allowPrivilegeEscalation' | tee /dev/stderr)
   [ "${actual}" = 'false' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext' \
-    | tee /dev/stderr)
-  [ "${actual}" = null ]
+
+  local driverObj
+  driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
+  actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
 }
 
 @test "CSIDriver/DaemonSet: securityContext set on driver container" {
