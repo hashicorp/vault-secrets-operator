@@ -483,14 +483,13 @@ topologySpreadConstraints appends the "vso.chart.selectorLabels" to .Values.cont
 {{- toYaml $out -}}
 {{- end -}}
 
-
 {{/*
-vso.csi.securityContext extends the default security context for the CSI driver daemonset.
-The result will always set privileged to true regardless of user configuration.
+vso.privileged.securityContext extends the given securithContext to always
+include privileged: true
 */}}
-{{- define "vso.csi.securityContext" -}}
+{{- define "vso.privileged.securityContext" -}}
 {{- $sc := dict -}}
-{{- with .Values.csi.securityContext -}}
+{{- with . -}}
 {{- range $k, $v := . -}}
 {{- $_ := set $sc $k $v -}}
 {{- end -}}
