@@ -106,7 +106,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	// Start Vault client event watcher if it wasn't started yet by a prior Reconcile call
 	if err := c.StartEventWatcher(ctx); err != nil {
-		logger := log.FromContext(ctx)
 		logger.Error(err, "Failed to start global Vault event watcher")
 	}
 	r.configureStaticSecretEventListener(ctx, o, c)
@@ -341,6 +340,7 @@ func (r *VaultStaticSecretReconciler) configureStaticSecretEventListener(ctx con
 	key := client.ObjectKeyFromObject(o)
 
 	meta, metaExists := r.eventWatcherRegistry.Get(key)
+	emitStartedEvent := !metaExists
 
 	if o.Spec.SyncConfig == nil || !o.Spec.SyncConfig.InstantUpdates {
 		if metaExists {
@@ -391,6 +391,10 @@ func (r *VaultStaticSecretReconciler) configureStaticSecretEventListener(ctx con
 	listener.ID = listenerID
 	c.RegisterEventListener(listener)
 	r.eventWatcherRegistry.Register(key, meta)
+
+	if emitStartedEvent {
+		r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
+	}
 }
 
 func (r *VaultStaticSecretReconciler) newStaticSecretEventListener(o *secretsv1beta1.VaultStaticSecret, meta *eventWatcherMeta) *vault.EventListener {
