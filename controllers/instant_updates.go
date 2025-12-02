@@ -22,8 +22,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
-const instantUpdateErrorThreshold = 5
-
 type websocketConnector interface {
 	Connect(context.Context) (websocketConn, error)
 }
@@ -182,6 +180,7 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 
 	shouldBackoff := false
 	errorCount := 0
+	errorThreshold := 5
 
 	for {
 		select {
@@ -228,7 +227,7 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 			cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
 				"Error while watching events: %s", err)
 
-			if errorCount >= instantUpdateErrorThreshold {
+			if errorCount >= errorThreshold {
 				logger.Error(err, "Too many errors while watching events, requeuing")
 				cfg.enqueueForReconcile(name)
 				return
