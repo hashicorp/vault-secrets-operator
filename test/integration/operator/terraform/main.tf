@@ -27,4 +27,6 @@ module "operator" {
   enable_default_connection    = var.enable_default_connection
   operator_helm_chart_path     = var.operator_helm_chart_path
   k8s_vault_connection_address = var.k8s_vault_connection_address
+  install_argo_rollouts        = var.install_argo_rollouts
+  create_namespace             = var.create_namespace
 }

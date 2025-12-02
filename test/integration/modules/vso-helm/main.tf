@@ -165,4 +165,8 @@ resource "helm_release" "vault-secrets-operator" {
     name  = "csi.driver.logging.level"
     value = var.csi_logging_level
   }
+  set_list {
+    name  = "controller.imagePullSecrets"
+    value = var.image_pull_secrets
+  }
 }
