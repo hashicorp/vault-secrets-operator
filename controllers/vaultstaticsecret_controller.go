@@ -286,7 +286,8 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
 		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
-		err := StartInstantUpdateWatcher(ctx, InstantUpdateConfig{
+
+		err := StartInstantUpdateWatcher(ctx, &InstantUpdateConfig{
 			Object:          o,
 			Client:          c,
 			WatchPath:       kvEventPath,
@@ -294,7 +295,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			BackOffRegistry: r.BackOffRegistry,
 			SourceCh:        r.SourceCh,
 			Recorder:        r.Recorder,
-			Logger:          logger,
 			EventObjectFactory: func(key k8stypes.NamespacedName) client.Object {
 				return &secretsv1beta1.VaultStaticSecret{
 					ObjectMeta: metav1.ObjectMeta{
@@ -303,7 +303,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 					},
 				}
 			},
-			Stream: func(watchCtx context.Context, obj client.Object, wsClient websocketConnector) error {
+			StreamSecretEvents: func(watchCtx context.Context, obj client.Object, wsClient websocketConnector) error {
 				vss, ok := obj.(*secretsv1beta1.VaultStaticSecret)
 				if !ok {
 					return fmt.Errorf("unexpected object type %T", obj)

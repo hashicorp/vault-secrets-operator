@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/go-logr/logr/testr"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/vault"
 	"github.com/stretchr/testify/assert"
@@ -37,7 +36,7 @@ func TestEnsureInstantUpdateWatcher_StartsAndStops(t *testing.T) {
 	client := newFakeVaultClient("client-id", &vault.WebsocketClient{})
 
 	streamCalled := make(chan struct{}, 1)
-	cfg := InstantUpdateConfig{
+	cfg := &InstantUpdateConfig{
 		Object:          obj,
 		Client:          client,
 		WatchPath:       "/events",
@@ -45,8 +44,7 @@ func TestEnsureInstantUpdateWatcher_StartsAndStops(t *testing.T) {
 		BackOffRegistry: backOff,
 		SourceCh:        sourceCh,
 		Recorder:        recorder,
-		Logger:          testr.New(t),
-		Stream: func(ctx context.Context, obj ctrlclient.Object, ws websocketConnector) error {
+		StreamSecretEvents: func(ctx context.Context, obj ctrlclient.Object, ws websocketConnector) error {
 			select {
 			case streamCalled <- struct{}{}:
 			default:
@@ -101,7 +99,7 @@ func TestEnsureInstantUpdateWatcher_RequeuesAfterErrors(t *testing.T) {
 	client := newFakeVaultClient("client-id", &vault.WebsocketClient{})
 
 	var streamCount int32
-	cfg := InstantUpdateConfig{
+	cfg := &InstantUpdateConfig{
 		Object:          obj,
 		Client:          client,
 		WatchPath:       "/events",
@@ -109,8 +107,7 @@ func TestEnsureInstantUpdateWatcher_RequeuesAfterErrors(t *testing.T) {
 		BackOffRegistry: backOff,
 		SourceCh:        sourceCh,
 		Recorder:        recorder,
-		Logger:          testr.New(t),
-		Stream: func(ctx context.Context, obj ctrlclient.Object, ws websocketConnector) error {
+		StreamSecretEvents: func(ctx context.Context, obj ctrlclient.Object, ws websocketConnector) error {
 			atomic.AddInt32(&streamCount, 1)
 			return fmt.Errorf("boom")
 		},
