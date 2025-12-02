@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"nhooyr.io/websocket"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
@@ -23,8 +24,41 @@ import (
 
 const instantUpdateErrorThreshold = 5
 
+type websocketConnector interface {
+	Connect(context.Context) (websocketConn, error)
+}
+
+type websocketConn interface {
+	Read(context.Context) (websocket.MessageType, []byte, error)
+	Close(websocket.StatusCode, string) error
+}
+
+type vaultWebsocketClientAdapter struct {
+	client *vault.WebsocketClient
+}
+
+func (v vaultWebsocketClientAdapter) Connect(ctx context.Context) (websocketConn, error) {
+	conn, err := v.client.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return vaultWebsocketConnAdapter{conn: conn}, nil
+}
+
+type vaultWebsocketConnAdapter struct {
+	conn *websocket.Conn
+}
+
+func (v vaultWebsocketConnAdapter) Read(ctx context.Context) (websocket.MessageType, []byte, error) {
+	return v.conn.Read(ctx)
+}
+
+func (v vaultWebsocketConnAdapter) Close(code websocket.StatusCode, reason string) error {
+	return v.conn.Close(code, reason)
+}
+
 // InstantStreamFunc streams Vault events for the provided object.
-type InstantStreamFunc func(context.Context, client.Object, *vault.WebsocketClient) error
+type InstantStreamFunc func(context.Context, client.Object, websocketConnector) error
 
 // InstantUpdateConfig configures the behavior of EnsureInstantUpdateWatcher.
 type InstantUpdateConfig struct {
@@ -54,33 +88,12 @@ type InstantUpdateConfig struct {
 	EventObjectFactory func(types.NamespacedName) client.Object
 }
 
-// EnsureInstantUpdateWatcher starts (or restarts) the instant update watcher
+// StartInstantUpdateWatcher starts (or restarts) the instant update watcher
 // for the provided object. The caller is responsible for ensuring that the
 // config fields are populated.
-func EnsureInstantUpdateWatcher(ctx context.Context, cfg InstantUpdateConfig) error {
-	if cfg.Object == nil {
-		return fmt.Errorf("instant update watcher requires a non-nil object")
-	}
-	if cfg.Client == nil {
-		return fmt.Errorf("instant update watcher requires a Vault client")
-	}
-	if cfg.Registry == nil || cfg.BackOffRegistry == nil {
-		return fmt.Errorf("instant update watcher requires registries")
-	}
-	if cfg.SourceCh == nil {
-		return fmt.Errorf("instant update watcher requires a source channel")
-	}
-	if cfg.Stream == nil {
-		return fmt.Errorf("instant update watcher requires a stream function")
-	}
-	if cfg.NewClientFunc == nil {
-		return fmt.Errorf("instant update watcher requires a client factory")
-	}
-	if cfg.WatchPath == "" {
-		return fmt.Errorf("instant update watcher requires a watch path")
-	}
-	if cfg.EventObjectFactory == nil {
-		cfg.EventObjectFactory = defaultEventObjectFactory(cfg.Object)
+func StartInstantUpdateWatcher(ctx context.Context, cfg InstantUpdateConfig) error {
+	if err := cfg.validate(); err != nil {
+		return err
 	}
 
 	logger := cfg.Logger
@@ -112,6 +125,7 @@ func EnsureInstantUpdateWatcher(ctx context.Context, cfg InstantUpdateConfig) er
 	if err != nil {
 		return fmt.Errorf("failed to create websocket client: %w", err)
 	}
+	wsAdapter := vaultWebsocketClientAdapter{client: wsClient}
 
 	objCopy := cfg.Object.DeepCopyObject()
 	obj, ok := objCopy.(client.Object)
@@ -128,7 +142,7 @@ func EnsureInstantUpdateWatcher(ctx context.Context, cfg InstantUpdateConfig) er
 		StoppedCh:      stoppedCh,
 	})
 
-	go cfg.runEventStream(watchCtx, key, obj, wsClient, stoppedCh)
+	go cfg.runEventStream(watchCtx, key, obj, wsAdapter, stoppedCh)
 	return nil
 }
 
@@ -147,7 +161,7 @@ func StopInstantUpdateWatcher(registry *eventWatcherRegistry, obj client.Object)
 	}
 }
 
-func (cfg InstantUpdateConfig) runEventStream(ctx context.Context, key types.NamespacedName, obj client.Object, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
+func (cfg InstantUpdateConfig) runEventStream(ctx context.Context, key types.NamespacedName, obj client.Object, wsClient websocketConnector, stoppedCh chan struct{}) {
 	logger := cfg.Logger.WithName("instantUpdateWatcher").WithValues("namespace", obj.GetNamespace(), "name", obj.GetName())
 	defer func() {
 		cfg.Registry.Delete(key)
@@ -209,12 +223,13 @@ func (cfg InstantUpdateConfig) runEventStream(ctx context.Context, key types.Nam
 				return
 			}
 
-			wsClient, clientErr = newClient.WebsocketClient(cfg.WatchPath)
+			newWSClient, clientErr := newClient.WebsocketClient(cfg.WatchPath)
 			if clientErr != nil {
 				logger.Error(clientErr, "Failed to create new websocket client")
 				cfg.enqueueForReconcile(key)
 				return
 			}
+			wsClient = vaultWebsocketClientAdapter{client: newWSClient}
 
 			meta, ok := cfg.Registry.Get(key)
 			if !ok {
@@ -250,4 +265,32 @@ func defaultEventObjectFactory(template client.Object) func(types.NamespacedName
 		obj.SetResourceVersion("")
 		return obj
 	}
+}
+
+func (cfg *InstantUpdateConfig) validate() error {
+	if cfg.Object == nil {
+		return fmt.Errorf("instant update watcher requires a non-nil object")
+	}
+	if cfg.Client == nil {
+		return fmt.Errorf("instant update watcher requires a Vault client")
+	}
+	if cfg.Registry == nil || cfg.BackOffRegistry == nil {
+		return fmt.Errorf("instant update watcher requires registries")
+	}
+	if cfg.SourceCh == nil {
+		return fmt.Errorf("instant update watcher requires a source channel")
+	}
+	if cfg.Stream == nil {
+		return fmt.Errorf("instant update watcher requires a stream function")
+	}
+	if cfg.NewClientFunc == nil {
+		return fmt.Errorf("instant update watcher requires a client factory")
+	}
+	if cfg.WatchPath == "" {
+		return fmt.Errorf("instant update watcher requires a watch path")
+	}
+	if cfg.EventObjectFactory == nil {
+		cfg.EventObjectFactory = defaultEventObjectFactory(cfg.Object)
+	}
+	return nil
 }
