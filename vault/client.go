@@ -13,8 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/blake2b"
-	"k8s.io/apimachinery/pkg/util/json"
-	"nhooyr.io/websocket"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -26,10 +24,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/credentials"
 	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-)
-
-const (
-	eventPath = "/v1/sys/events/subscribe/*"
 )
 
 type NewClientFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error)
@@ -198,9 +192,6 @@ type Client interface {
 	Untaint() bool
 	WebsocketClient(string) (*WebsocketClient, error)
 	Renewable() bool
-	StartEventWatcher(ctx context.Context) error
-	RegisterEventListener(listener *EventListener)
-	UnregisterEventListener(id string)
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -224,194 +215,6 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
-	eventWatcherCancel context.CancelFunc
-	eventWatcherActive bool
-	eventWatcherDoneCh chan struct{}
-	eventListeners     map[string]*EventListener
-	eventListenersMu   sync.RWMutex
-}
-
-// EventMessage is used to extract the relevant fields from an event message sent
-// from Vault.
-type EventMessage struct {
-	Data struct {
-		Event struct {
-			Metadata struct {
-				Path      string `json:"path"`
-				Modified  string `json:"modified"`
-				Operation string `json:"operation"`
-			} `json:"metadata"`
-		} `json:"event"`
-		Namespace string `json:"namespace"`
-	} `json:"data"`
-}
-
-// EventFilter returns true when the supplied event should be delivered to the listener.
-type EventFilter func(*EventMessage) bool
-
-// EventCallback is invoked when an event passes the associated filter.
-type EventCallback func(context.Context, *EventMessage) error
-
-// EventListener wires a filter and callback together with an identifier so that
-// controller code can react to Vault events routed through a Client.
-type EventListener struct {
-	ID       string
-	Filter   EventFilter
-	Callback EventCallback
-}
-
-// StartEventWatcher starts an global event watcher for all secrets to reflect their changes immediately after the event is received from Vault
-func (c *defaultClient) StartEventWatcher(ctx context.Context) error {
-	logger := log.FromContext(ctx).WithName("StartEventWatcher").WithValues("clientID", c.ID())
-
-	c.mu.RLock()
-	active := c.eventWatcherActive
-	c.mu.RUnlock()
-	if active {
-		logger.V(consts.LogLevelDebug).Info("Vault client event watcher already running")
-		return nil
-	}
-
-	wsClient, err := c.WebsocketClient(eventPath)
-	if err != nil {
-		logger.Info("Failed to create Vault websocket client", "error", err)
-		return err
-	}
-
-	watchCtx, cancel := context.WithCancel(context.Background())
-	watchCtx = log.IntoContext(watchCtx, logger)
-
-	c.mu.Lock()
-	if c.eventWatcherActive {
-		c.mu.Unlock()
-		cancel()
-		logger.V(consts.LogLevelDebug).Info("Vault client event watcher started in parallel, skipping")
-		return nil
-	}
-	c.eventWatcherCancel = cancel
-	c.eventWatcherDoneCh = make(chan struct{})
-	c.eventWatcherActive = true
-	c.mu.Unlock()
-
-	logger.Info("Starting Vault client event watcher")
-	go c.getEvents(watchCtx, wsClient)
-
-	return nil
-}
-
-func (c *defaultClient) RegisterEventListener(listener *EventListener) {
-	if listener == nil || listener.ID == "" || listener.Callback == nil {
-		return
-	}
-
-	c.eventListenersMu.Lock()
-	defer c.eventListenersMu.Unlock()
-
-	if c.eventListeners == nil {
-		c.eventListeners = make(map[string]*EventListener)
-	}
-
-	c.eventListeners[listener.ID] = listener
-}
-
-func (c *defaultClient) UnregisterEventListener(id string) {
-	if id == "" {
-		return
-	}
-
-	c.eventListenersMu.Lock()
-	defer c.eventListenersMu.Unlock()
-
-	if c.eventListeners == nil {
-		return
-	}
-
-	delete(c.eventListeners, id)
-}
-
-// getEvents streams all secret events from Vault
-func (c *defaultClient) getEvents(ctx context.Context, wsClient *WebsocketClient) {
-	logger := log.FromContext(ctx).WithName("getEvents").WithValues("clientID", c.ID())
-
-	defer func() {
-		c.mu.Lock()
-		if c.eventWatcherCancel != nil {
-			c.eventWatcherCancel = nil
-		}
-		if c.eventWatcherDoneCh != nil {
-			close(c.eventWatcherDoneCh)
-			c.eventWatcherDoneCh = nil
-		}
-		c.eventWatcherActive = false
-		c.mu.Unlock()
-	}()
-
-	conn, err := wsClient.Connect(ctx)
-	if err != nil {
-		logger.Error(err, "Failed to connect to Vault events websocket")
-		return
-	}
-	defer conn.Close(websocket.StatusNormalClosure, "closing global event watcher")
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.V(consts.LogLevelDebug).Info("Context done, stopping global event watcher")
-			return
-		default:
-			msgType, message, err := conn.Read(ctx)
-			if err != nil {
-				logger.Error(err, "Failed to read from Vault events websocket")
-				return
-			}
-
-			messageMap := EventMessage{}
-			if err := json.Unmarshal(message, &messageMap); err != nil {
-				logger.Error(err, "Failed to unmarshal Vault event message")
-				continue
-			}
-
-			logger.Info("Vault event received",
-				"messageType", msgType,
-				"path", messageMap.Data.Event.Metadata.Path,
-				"operation", messageMap.Data.Event.Metadata.Operation,
-				"modified", messageMap.Data.Event.Metadata.Modified,
-				"namespace", messageMap.Data.Namespace)
-
-			c.dispatchEvent(ctx, &messageMap)
-		}
-	}
-}
-
-func (c *defaultClient) dispatchEvent(ctx context.Context, msg *EventMessage) {
-	if msg == nil {
-		return
-	}
-
-	c.eventListenersMu.RLock()
-	if len(c.eventListeners) == 0 {
-		c.eventListenersMu.RUnlock()
-		return
-	}
-
-	listeners := make([]*EventListener, 0, len(c.eventListeners))
-	for _, listener := range c.eventListeners {
-		listeners = append(listeners, listener)
-	}
-	c.eventListenersMu.RUnlock()
-
-	for _, listener := range listeners {
-		if listener == nil || listener.Callback == nil {
-			continue
-		}
-		if listener.Filter != nil && !listener.Filter(msg) {
-			continue
-		}
-		if err := listener.Callback(ctx, msg); err != nil {
-			log.FromContext(ctx).WithName("dispatchEvent").Error(err,
-				"Event listener callback failed", "listenerID", listener.ID)
-		}
-	}
 }
 
 // Renewable returns true if the Vault auth token is renewable.
@@ -670,10 +473,6 @@ func (c *defaultClient) Close(revoke bool) {
 	logger.Info("Close() called")
 	if c.watcher != nil {
 		c.watcher.Stop()
-	}
-
-	if c.eventWatcherCancel != nil {
-		c.eventWatcherCancel()
 	}
 
 	if revoke && c.client != nil {
