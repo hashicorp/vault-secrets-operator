@@ -879,26 +879,6 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 				continue
 			}
 
-			// Handle role deletion events
-			if r.isRoleDeletionEvent(operation) {
-				expectedRolePath := r.getRolePathForCredentialPath(vdsPath)
-				if path == expectedRolePath {
-					logger.Info("Role deletion event affects our VDS, triggering deletion",
-						"operation", operation, "path", path, "expectedRolePath", expectedRolePath)
-
-					// Handle role deletion by removing finalizers and deleting the object
-					if err := r.handleRoleDeletion(ctx, o); err != nil {
-						logger.Error(err, "Failed to handle VDS deletion after role deletion", "path", path)
-						r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
-							"Failed to handle VDS deletion for role path %s: %s", path, err)
-					} else {
-						r.Recorder.Eventf(o, corev1.EventTypeNormal, "RoleDeleted",
-							"VaultDynamicSecret deleted due to corresponding role deletion in Vault")
-					}
-					return nil // Exit the event loop as we're deleting the VDS
-				}
-			}
-
 			// Log events that don't match our criteria
 			logger.V(consts.LogLevelTrace).Info("Event does not match our VDS criteria, ignoring",
 				"operation", operation, "path", path, "vdsPath", vdsPath)
@@ -922,27 +902,6 @@ func (r *VaultDynamicSecretReconciler) triggerVDSReconciliation(o *secretsv1beta
 			},
 		},
 	}
-}
-
-func (r *VaultDynamicSecretReconciler) getRolePathForCredentialPath(credentialPath string) string {
-	if strings.Contains(credentialPath, "/static-creds/") {
-		return strings.Replace(credentialPath, "/static-creds/", "/static-roles/", 1)
-	}
-	if strings.Contains(credentialPath, "/creds/") {
-		return strings.Replace(credentialPath, "/creds/", "/roles/", 1)
-	}
-	return credentialPath
-}
-
-func (r *VaultDynamicSecretReconciler) handleRoleDeletion(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret) error {
-	cur := &secretsv1beta1.VaultDynamicSecret{}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(o), cur); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	}
-	return client.IgnoreNotFound(r.Client.Delete(ctx, cur))
 }
 
 // revokeLease revokes the VDS secret's lease.
@@ -1109,11 +1068,6 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 // isCreateOrUpdateEvent checks if the operation is a credential creation/update event
 func (r *VaultDynamicSecretReconciler) isCreateOrUpdateEvent(operation string) bool {
 	return operation == "creds-create" || operation == "static-roles-create" || operation == "static-roles-update"
-}
-
-// isRoleDeletionEvent checks if the operation is a role deletion event
-func (r *VaultDynamicSecretReconciler) isRoleDeletionEvent(operation string) bool {
-	return operation == "role-delete" || operation == "static-role-delete"
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {

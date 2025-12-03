@@ -61,6 +61,8 @@ type VaultDynamicSecretSpec struct {
 	RolloutRestartTargets []RolloutRestartTarget `json:"rolloutRestartTargets,omitempty"`
 	// Destination provides configuration necessary for syncing the Vault secret to Kubernetes.
 	Destination Destination `json:"destination"`
+	// SyncConfig configures sync behavior from Vault to VSO.
+	SyncConfig *VaultDynamicSecretSyncConfig `json:"syncConfig,omitempty"`
 	// RefreshAfter a period of time for VSO to sync the source secret data, in
 	// duration notation e.g. 30s, 1m, 24h. This value only needs to be set when
 	// syncing from a secret's engine that does not provide a lease TTL in its
@@ -148,6 +150,12 @@ type VaultDynamicSecretList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []VaultDynamicSecret `json:"items"`
+}
+
+// VaultDynamicSecretSyncConfig configures sync behavior from Vault to VSO for dynamic secrets.
+type VaultDynamicSecretSyncConfig struct {
+	// InstantUpdates is a flag to indicate that event-driven updates are enabled for this VaultDynamicSecret.
+	InstantUpdates bool `json:"instantUpdates,omitempty"`
 }
 
 func init() {
