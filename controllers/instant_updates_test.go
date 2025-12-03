@@ -37,7 +37,7 @@ func TestEnsureInstantUpdateWatcher_StartsAndStops(t *testing.T) {
 
 	streamCalled := make(chan struct{}, 1)
 	cfg := &InstantUpdateConfig{
-		Object:          obj,
+		Secret:          obj,
 		Client:          client,
 		WatchPath:       "/events",
 		Registry:        registry,
@@ -57,7 +57,7 @@ func TestEnsureInstantUpdateWatcher_StartsAndStops(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, StartInstantUpdateWatcher(context.Background(), cfg))
+	require.NoError(t, EnsureEventWatcher(context.Background(), cfg))
 
 	select {
 	case <-streamCalled:
@@ -73,7 +73,7 @@ func TestEnsureInstantUpdateWatcher_StartsAndStops(t *testing.T) {
 	assert.Equal(t, client.ID(), meta.LastClientID)
 
 	t.Cleanup(func() {
-		StopInstantUpdateWatcher(registry, obj)
+		UnwatchEvents(registry, obj)
 		waitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		require.NoError(t, waitForStoppedCh(waitCtx, meta.StoppedCh))
@@ -100,7 +100,7 @@ func TestEnsureInstantUpdateWatcher_RequeuesAfterErrors(t *testing.T) {
 
 	var streamCount int32
 	cfg := &InstantUpdateConfig{
-		Object:          obj,
+		Secret:          obj,
 		Client:          client,
 		WatchPath:       "/events",
 		Registry:        registry,
@@ -116,7 +116,7 @@ func TestEnsureInstantUpdateWatcher_RequeuesAfterErrors(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, StartInstantUpdateWatcher(context.Background(), cfg))
+	require.NoError(t, EnsureEventWatcher(context.Background(), cfg))
 
 	select {
 	case evt := <-sourceCh:

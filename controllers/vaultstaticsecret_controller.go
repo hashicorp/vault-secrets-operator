@@ -287,8 +287,8 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
 		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
 
-		err := StartInstantUpdateWatcher(ctx, &InstantUpdateConfig{
-			Object:          o,
+		err := EnsureEventWatcher(ctx, &InstantUpdateConfig{
+			Secret:          o,
 			Client:          c,
 			WatchPath:       kvEventPath,
 			Registry:        r.eventWatcherRegistry,
@@ -322,7 +322,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
 		}
 	} else {
-		StopInstantUpdateWatcher(r.eventWatcherRegistry, o)
+		UnwatchEvents(r.eventWatcherRegistry, o)
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
@@ -357,7 +357,7 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	r.BackOffRegistry.Delete(objKey)
-	StopInstantUpdateWatcher(r.eventWatcherRegistry, o)
+	UnwatchEvents(r.eventWatcherRegistry, o)
 	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultStaticSecretFinalizer) {

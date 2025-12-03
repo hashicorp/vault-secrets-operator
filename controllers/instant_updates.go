@@ -65,7 +65,7 @@ type StreamSecretEventsFunc func(context.Context, client.Object, websocketConnec
 // InstantUpdateConfig configures the behavior of EnsureInstantUpdateWatcher.
 type InstantUpdateConfig struct {
 	// VaultStaticSecret or VaultDynamicSecret to watch for instant updates.
-	Object client.Object
+	Secret client.Object
 	// Client is the current Vault client tied to Object.
 	Client vault.Client
 	// WatchPath is passed to the Vault websocket client when starting a watch.
@@ -88,24 +88,24 @@ type InstantUpdateConfig struct {
 	EventObjectFactory func(types.NamespacedName) client.Object
 }
 
-// StartInstantUpdateWatcher starts (or restarts) the instant update watcher
+// EnsureEventWatcher starts (or restarts) the instant update watcher
 // for the provided object. The caller is responsible for ensuring that the
 // config fields are populated.
-func StartInstantUpdateWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
+func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 	if err := cfg.validate(); err != nil {
 		return err
 	}
 
-	logger := log.FromContext(ctx).WithName("StartInstantUpdateWatcher")
-	name := client.ObjectKeyFromObject(cfg.Object)
+	logger := log.FromContext(ctx).WithName("EnsureEventWatcher")
+	name := client.ObjectKeyFromObject(cfg.Secret)
 
 	meta, ok := cfg.Registry.Get(name)
 	if ok {
 		// The watcher is running, and if the VSS/VDS object has not been updated,
 		// and the client ID is the same, just return
-		if meta.LastGeneration == cfg.Object.GetGeneration() && meta.LastClientID == cfg.Client.ID() {
+		if meta.LastGeneration == cfg.Secret.GetGeneration() && meta.LastClientID == cfg.Client.ID() {
 			logger.V(consts.LogLevelDebug).Info("Event watcher already running",
-				"namespace", cfg.Object.GetNamespace(), "name", cfg.Object.GetName())
+				"namespace", cfg.Secret.GetNamespace(), "name", cfg.Secret.GetName())
 			return nil
 		}
 	}
@@ -137,14 +137,14 @@ func StartInstantUpdateWatcher(ctx context.Context, cfg *InstantUpdateConfig) er
 	cfg.Registry.Register(name, &eventWatcherMeta{
 		Cancel:         cancel,
 		LastClientID:   cfg.Client.ID(),
-		LastGeneration: cfg.Object.GetGeneration(),
+		LastGeneration: cfg.Secret.GetGeneration(),
 		StoppedCh:      stoppedCh,
 	})
 
-	// Pass a dereferenced VSS/VDS object here because it seems to avoid an issue
+	// Pass a deep copy of the VSS/VDS object here because it seems to avoid an issue
 	// where the EventWatcherStarted event is occasionally emitted without a
 	// name or namespace attached
-	objCopy := cfg.Object.DeepCopyObject()
+	objCopy := cfg.Secret.DeepCopyObject()
 	obj, ok := objCopy.(client.Object)
 	if !ok {
 		return fmt.Errorf("failed to convert object copy to client.Object: %T", objCopy)
@@ -156,8 +156,9 @@ func StartInstantUpdateWatcher(ctx context.Context, cfg *InstantUpdateConfig) er
 	return nil
 }
 
-// StopInstantUpdateWatcher cancels any running watcher for the provided object
-func StopInstantUpdateWatcher(registry *eventWatcherRegistry, obj client.Object) {
+// UnwatchEvents - If the VSS/VDS is in the registry, cancel its event watcher
+// context to close the goroutine, and remove the VSS/VDS from the registry
+func UnwatchEvents(registry *eventWatcherRegistry, obj client.Object) {
 	if registry == nil || obj == nil {
 		return
 	}
@@ -225,8 +226,7 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 			shouldBackoff = true
 
 			// For any other errors, we emit the error as an event on the
-			// VaultStaticSecret/VaultDynamicSecret, reload the client and try connecting
-			// again.
+			// VSS/VDS, reload the client and try connecting again.
 			cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
 				"Error while watching events: %s", err)
 
@@ -291,7 +291,7 @@ func defaultEventObjectFactory(template client.Object) func(types.NamespacedName
 }
 
 func (cfg *InstantUpdateConfig) validate() error {
-	if cfg.Object == nil {
+	if cfg.Secret == nil {
 		return fmt.Errorf("instant update watcher requires a non-nil object")
 	}
 	if cfg.Client == nil {
@@ -316,7 +316,7 @@ func (cfg *InstantUpdateConfig) validate() error {
 		return fmt.Errorf("instant update watcher requires a client factory")
 	}
 	if cfg.EventObjectFactory == nil {
-		cfg.EventObjectFactory = defaultEventObjectFactory(cfg.Object)
+		cfg.EventObjectFactory = defaultEventObjectFactory(cfg.Secret)
 	}
 	return nil
 }
