@@ -48,13 +48,13 @@ func TestVaultAuthMethods(t *testing.T) {
 	if k8sConfigContext == "" {
 		k8sConfigContext = "kind-" + clusterName
 	}
-	vault_oidc_discovery_url := os.Getenv("VAULT_OIDC_DISC_URL")
-	if vault_oidc_discovery_url == "" {
-		vault_oidc_discovery_url = "https://kubernetes.default.svc.cluster.local"
+	vaultOIDCDiscoveryURL := os.Getenv("VAULT_OIDC_DISC_URL")
+	if vaultOIDCDiscoveryURL == "" {
+		vaultOIDCDiscoveryURL = "https://kubernetes.default.svc.cluster.local"
 	}
-	vault_oidc_ca := os.Getenv("VAULT_OIDC_CA")
-	if vault_oidc_ca == "" {
-		vault_oidc_ca = "true"
+	vaultOIDCCa := os.Getenv("VAULT_OIDC_CA")
+	if vaultOIDCCa == "" {
+		vaultOIDCCa = "true"
 	}
 	appRoleMountPath := "approle"
 	runAWSTests := true
@@ -100,8 +100,8 @@ func TestVaultAuthMethods(t *testing.T) {
 			"vault_kvv2_mount_path":        testKvv2MountPath,
 			"operator_helm_chart_path":     chartDestDir,
 			"approle_mount_path":           appRoleMountPath,
-			"vault_oidc_discovery_url":     vault_oidc_discovery_url,
-			"vault_oidc_ca":                vault_oidc_ca,
+			"vault_oidc_discovery_url":     vaultOIDCDiscoveryURL,
+			"vault_oidc_ca":                vaultOIDCCa,
 			"run_aws_tests":                runAWSTests,
 			"run_aws_static_creds_test":    runAWSStaticTest,
 			"test_aws_access_key_id":       os.Getenv("TEST_AWS_ACCESS_KEY_ID"),
