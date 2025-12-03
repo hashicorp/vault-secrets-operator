@@ -371,20 +371,6 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 	return nil
 }
 
-// eventMsg is used to extract the relevant fields from an event message sent
-// from Vault
-type eventMsg struct {
-	Data struct {
-		Event struct {
-			Metadata struct {
-				Path     string `json:"path"`
-				Modified string `json:"modified"`
-			} `json:"metadata"`
-		} `json:"event"`
-		Namespace string `json:"namespace"`
-	} `json:"data"`
-}
-
 func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient websocketConnector) error {
 	logger := log.FromContext(ctx).WithName("streamStaticSecretEvents")
 	conn, err := wsClient.Connect(ctx)
