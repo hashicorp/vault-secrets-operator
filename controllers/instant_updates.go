@@ -275,6 +275,7 @@ func (cfg InstantUpdateConfig) enqueueForReconcile(key types.NamespacedName) {
 	}
 }
 
+// defaultEventObjectFactory creates a default event object factory for tests
 func defaultEventObjectFactory(template client.Object) func(types.NamespacedName) client.Object {
 	return func(key types.NamespacedName) client.Object {
 		objCopy := template.DeepCopyObject()
