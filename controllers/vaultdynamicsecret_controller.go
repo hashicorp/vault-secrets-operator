@@ -870,8 +870,8 @@ func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(ctx context.Con
 			logger.Info("Modified event received from Vault",
 				"path", path, "operation", operation, "vdsPath", vdsPath)
 
-			// Handle credential creation/update events
-			if r.isCreateOrUpdateEvent(operation) && path == vdsPath {
+			// handle update during a lease renewal
+			if operation == "creds-renew" && path == vdsPath {
 				logger.Info("Create/update event received on VaultDynamicSecret, triggering reconciliation",
 					"operation", operation, "path", path)
 
@@ -1063,11 +1063,6 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 				"Skipping, cacheKey error", "error", err)
 		}
 	}
-}
-
-// isCreateOrUpdateEvent checks if the operation is a credential creation/update event
-func (r *VaultDynamicSecretReconciler) isCreateOrUpdateEvent(operation string) bool {
-	return operation == "creds-create" || operation == "static-roles-create" || operation == "static-roles-update"
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {
