@@ -620,7 +620,7 @@ load _helpers
   [ "${actual}" = "--backoff-randomization-factor=3.74" ]
 }
 
-@test "CSIDriver/DaemonSet: securityContext not set by default" {
+@test "CSIDriver/DaemonSet: securityContext privileged always enabled default" {
   cd "$(chart_dir)"
   local object
   object=$(helm template \
@@ -631,12 +631,43 @@ load _helpers
 
   local actual
 
-  actual="$(echo "$object" | yq '.spec.template.securityContext')"
-  [ "${actual}" = null ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
 
-  actual=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext' \
-    | tee /dev/stderr)
-  [ "${actual}" = null ]
+  local driverObj
+  driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
+  actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
+}
+
+@test "CSIDriver/DaemonSet: securityContext privileged always enabled ignoring override" {
+  cd "$(chart_dir)"
+  local object
+  object=$(helm template \
+    -s templates/csi-driver.yaml \
+    --set 'csi.enabled=true' \
+    --set 'csi.securityContext.privileged=foo' \
+    --set 'csi.driver.securityContext.privileged=baz' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "DaemonSet")' | tee /dev/stderr)
+
+  local actual
+
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
+
+  local driverObj
+  driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
+  actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
 }
 
 @test "CSIDriver/DaemonSet: Pod level securityContext only" {
@@ -645,18 +676,24 @@ load _helpers
   object=$(helm template \
     -s templates/csi-driver.yaml \
     --set 'csi.enabled=true' \
-    --set 'csi.securityContext.privileged=true' \
+    --set 'csi.securityContext.allowPrivilegeEscalation=false' \
     . | tee /dev/stderr |
     yq 'select(.kind == "DaemonSet")' | tee /dev/stderr)
 
   local actual
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
-  [ "${actual}" = '1' ]
+  [ "${actual}" = '2' ]
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext' \
-    | tee /dev/stderr)
-  [ "${actual}" = null ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .allowPrivilegeEscalation' | tee /dev/stderr)
+  [ "${actual}" = 'false' ]
+
+  local driverObj
+  driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
+  actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
 }
 
 @test "CSIDriver/DaemonSet: securityContext set on driver container" {
@@ -668,14 +705,21 @@ load _helpers
     --set 'csi.driver.securityContext.privileged=true' \
     --set 'csi.driver.securityContext.allowPrivilegeEscalation=false' \
     . | tee /dev/stderr |
-    yq 'select(.kind == "DaemonSet") | .spec.template.spec.containers[] | select(.name == "driver") | .securityContext' \
+    yq 'select(.kind == "DaemonSet")' \
       | tee /dev/stderr)
 
   local actual
-  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = '2' ]
-  actual=$(echo "$object" | yq '.privileged' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
+  [ "${actual}" = '1' ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
-  actual=$(echo "$object" | yq '.allowPrivilegeEscalation' | tee /dev/stderr)
+
+  local driverObj
+  driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
+  actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = '2' ]
+  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  [ "${actual}" = 'true' ]
+  actual=$(echo "$driverObj" | yq '.allowPrivilegeEscalation' | tee /dev/stderr)
   [ "${actual}" = 'false' ]
 }

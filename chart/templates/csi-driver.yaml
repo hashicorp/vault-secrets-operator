@@ -61,10 +61,8 @@ spec:
       annotations:
       {{- include "vso.csi.annotations" . | nindent 8 }}
     spec:
-      {{- with.Values.csi.securityContext }}
       securityContext:
-      {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "vso.privileged.securityContext" .Values.csi.securityContext | nindent 8 }}
       serviceAccountName: {{ include "vso.chart.fullname" . }}-csi
       {{- with .Values.csi.hostAliases }}
       hostAliases:
@@ -134,10 +132,8 @@ spec:
           value: {{ .value }}
         {{- end }}
         imagePullPolicy: {{ .Values.csi.driver.image.pullPolicy }}
-        {{- with .Values.csi.driver.securityContext }}
         securityContext:
-        {{- toYaml . | nindent 10 }}
-        {{- end }}
+        {{- include "vso.privileged.securityContext" .Values.csi.driver.securityContext | nindent 10 }}
         livenessProbe:
             failureThreshold: 5
             httpGet:
