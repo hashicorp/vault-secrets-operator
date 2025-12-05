@@ -1022,7 +1022,12 @@ func Test_dynamicSecretEventPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, dynamicSecretEventPath)
+			vds := &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: tt.mount,
+				},
+			}
+			assert.Equal(t, tt.want, dynamicSecretEventPath(vds))
 		})
 	}
 }
