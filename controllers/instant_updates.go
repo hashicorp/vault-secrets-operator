@@ -59,6 +59,21 @@ func (v vaultWebsocketConnAdapter) Close(code websocket.StatusCode, reason strin
 	return v.conn.Close(code, reason)
 }
 
+// eventMsg is used to extract the relevant fields from an event message sent
+// from Vault
+type eventMsg struct {
+	Data struct {
+		Event struct {
+			Metadata struct {
+				Path      string `json:"path"`
+				Modified  string `json:"modified"`
+				Operation string `json:"operation"`
+			} `json:"metadata"`
+		} `json:"event"`
+		Namespace string `json:"namespace"`
+	} `json:"data"`
+}
+
 // StreamSecretEventsFunc streams Vault events for the provided object.
 type StreamSecretEventsFunc func(context.Context, client.Object, websocketConnector) error
 

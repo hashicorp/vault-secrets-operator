@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -993,6 +994,88 @@ func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
 			assert.LessOrEqualf(t, got, tt.wantMaxHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
 		})
 	}
+}
+
+func Test_dynamicSecretEventPath(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		mount string
+		want  string
+	}{
+		{
+			name:  "mount-without-slashes",
+			mount: "database",
+			want:  "/v1/sys/events/subscribe/database*",
+		},
+		{
+			name:  "mount-with-leading-slash",
+			mount: "/pki",
+			want:  "/v1/sys/events/subscribe/pki*",
+		},
+		{
+			name:  "empty-mount",
+			mount: "",
+			want:  "/v1/sys/events/subscribe/*",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vds := &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: tt.mount,
+				},
+			}
+			assert.Equal(t, tt.want, dynamicSecretEventPath(vds))
+		})
+	}
+}
+
+func TestVaultDynamicSecretReconciler_streamDynamicSecretEvents(t *testing.T) {
+	t.Parallel()
+
+	sourceCh := make(chan event.GenericEvent, 1)
+	r := &VaultDynamicSecretReconciler{
+		Recorder:     record.NewFakeRecorder(5),
+		SourceCh:     sourceCh,
+		SyncRegistry: NewSyncRegistry(),
+	}
+
+	vds := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/app",
+		},
+	}
+
+	eventJSON := []byte(`{"data":{"event":{"metadata":{"path":"database/creds/app","modified":"true","operation":"creds-create"}},"namespace":"/"}}`)
+	wsClient := &fakeWebsocketClient{
+		conn: newFakeWebsocketConn(eventJSON),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- r.streamDynamicSecretEvents(ctx, vds, wsClient)
+	}()
+
+	select {
+	case evt := <-sourceCh:
+		assert.Equal(t, vds.GetName(), evt.Object.GetName())
+		assert.Equal(t, vds.GetNamespace(), evt.Object.GetNamespace())
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected reconciliation event")
+	}
+
+	cancel()
+	require.Error(t, <-errCh)
 }
 
 type stubVaultClient struct {
