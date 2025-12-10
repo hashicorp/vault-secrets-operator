@@ -38,7 +38,6 @@ import (
 
 const (
 	vaultStaticSecretFinalizer = "vaultstaticsecret.secrets.hashicorp.com/finalizer"
-	kvEventPath                = "/v1/sys/events/subscribe/kv*"
 )
 
 // VaultStaticSecretReconciler reconciles a VaultStaticSecret object
@@ -290,7 +289,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		err := EnsureEventWatcher(ctx, &InstantUpdateConfig{
 			Secret:          o,
 			Client:          c,
-			WatchPath:       kvEventPath,
 			Registry:        r.eventWatcherRegistry,
 			BackOffRegistry: r.BackOffRegistry,
 			SourceCh:        r.SourceCh,
@@ -303,12 +301,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 					},
 				}
 			},
-			StreamSecretEvents: func(watchCtx context.Context, obj client.Object, wsClient websocketConnector) error {
+			StreamSecretEvents: func(watchCtx context.Context, obj client.Object, msgType websocket.MessageType, data []byte) error {
 				vss, ok := obj.(*secretsv1beta1.VaultStaticSecret)
 				if !ok {
 					return fmt.Errorf("unexpected object type %T", obj)
 				}
-				return r.streamStaticSecretEvents(watchCtx, vss, wsClient)
+				return r.streamStaticSecretEvents(watchCtx, vss, msgType, data)
 			},
 			NewClientFunc: func(watchCtx context.Context, obj client.Object) (vault.Client, error) {
 				vss, ok := obj.(*secretsv1beta1.VaultStaticSecret)
@@ -385,75 +383,51 @@ type eventMsg struct {
 	} `json:"data"`
 }
 
-func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, wsClient websocketConnector) error {
+func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret, msgType websocket.MessageType, message []byte) error {
 	logger := log.FromContext(ctx).WithName("streamStaticSecretEvents")
-	conn, err := wsClient.Connect(ctx)
+
+	messageMap := eventMsg{}
+	err := json.Unmarshal(message, &messageMap)
 	if err != nil {
-		return fmt.Errorf("failed to connect to vault websocket: %w", err)
+		return fmt.Errorf("failed to unmarshal event message: %w", err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "closing event watcher")
+	logger.V(consts.LogLevelTrace).Info("Received message",
+		"message type", msgType, "message", messageMap)
 
-	// We made it past the initial websocket connection, so emit a "good" event
-	// status
-	r.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
+	modified, err := parseutil.ParseBool(messageMap.Data.Event.Metadata.Modified)
+	if err != nil {
+		return fmt.Errorf("failed to parse modified field: %w", err)
+	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			logger.V(consts.LogLevelDebug).Info("Context done, closing websocket",
-				"namespace", o.Namespace, "name", o.Name)
-			return nil
-		default:
-			msgType, message, err := conn.Read(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to read from websocket: %w, message: %q",
-					err, string(message))
-			}
-			messageMap := eventMsg{}
-			err = json.Unmarshal(message, &messageMap)
-			if err != nil {
-				return fmt.Errorf("failed to unmarshal event message: %w", err)
-			}
-			logger.V(consts.LogLevelTrace).Info("Received message",
-				"message type", msgType, "message", messageMap)
+	if modified {
+		namespace := strings.Trim(messageMap.Data.Namespace, "/")
+		path := messageMap.Data.Event.Metadata.Path
+		specPath := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
 
-			modified, err := parseutil.ParseBool(messageMap.Data.Event.Metadata.Modified)
-			if err != nil {
-				return fmt.Errorf("failed to parse modified field: %w", err)
-			}
-
-			if modified {
-				namespace := strings.Trim(messageMap.Data.Namespace, "/")
-				path := messageMap.Data.Event.Metadata.Path
-				specPath := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
-
-				if o.Spec.Type == consts.KVSecretTypeV2 {
-					specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
-				}
-				logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
-					"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace,
-					"spec path", specPath)
-				if namespace == o.Spec.Namespace && path == specPath {
-					logger.V(consts.LogLevelDebug).Info("Event matches, sending requeue",
-						"namespace", namespace, "path", path)
-					r.SourceCh <- event.GenericEvent{
-						Object: &secretsv1beta1.VaultStaticSecret{
-							ObjectMeta: metav1.ObjectMeta{
-								Namespace: o.Namespace,
-								Name:      o.Name,
-							},
-						},
-					}
-				}
-			} else {
-				// This is an event we're not interested in, ignore it and
-				// carry on.
-				logger.V(consts.LogLevelTrace).Info("Non-modified event received from Vault, ignoring",
-					"message", messageMap)
-				continue
+		if o.Spec.Type == consts.KVSecretTypeV2 {
+			specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+		}
+		logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
+			"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace,
+			"spec path", specPath)
+		if namespace == o.Spec.Namespace && path == specPath {
+			logger.V(consts.LogLevelDebug).Info("Event matches, sending requeue",
+				"namespace", namespace, "path", path)
+			r.SourceCh <- event.GenericEvent{
+				Object: &secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: o.Namespace,
+						Name:      o.Name,
+					},
+				},
 			}
 		}
+	} else {
+		logger.V(consts.LogLevelTrace).Info("Non-modified event received from Vault, ignoring",
+			"message", messageMap)
 	}
+
+	return nil
 }
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
