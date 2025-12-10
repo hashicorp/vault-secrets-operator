@@ -18,12 +18,17 @@ import (
 	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/common"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 var _ runtime.ClientTransport = (*fakeHVSTransport)(nil)
@@ -1221,6 +1226,231 @@ func Test_makeShadowObjKey(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, tt.want, makeShadowObjKey(tt.o))
+		})
+	}
+}
+
+func Test_getShadowSecretData(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	openSecrets := []*models.Secrets20231128OpenSecret{
+		{
+			CreatedAt: strfmt.DateTime(now.Add(-1 * time.Hour)),
+			Name:      "secret1",
+			Type:      helpers.HVSSecretTypeDynamic,
+			DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now.Add(-1 * time.Hour)),
+				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+				TTL:       "7200s",
+			},
+			Provider: "provider",
+		},
+		{
+			CreatedAt: strfmt.DateTime(now),
+			Name:      "secret2",
+			Type:      helpers.HVSSecretTypeDynamic,
+			DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now),
+				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+				TTL:       "3600s",
+			},
+			Provider: "provider",
+		},
+	}
+	shadowOpenSecrets := map[string]*models.Secrets20231128OpenSecret{
+		"secret1": openSecrets[0],
+		"secret2": openSecrets[1],
+	}
+
+	hvsa := &secretsv1beta1.HCPVaultSecretsApp{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "name",
+			UID:       "uid",
+		},
+	}
+
+	tests := map[string]struct {
+		modifyFunc        func(client.Client)
+		expectedMap       map[string]*models.Secrets20231128OpenSecret
+		expectedErrString string
+	}{
+		"no changes": {
+			expectedMap:       shadowOpenSecrets,
+			expectedErrString: "",
+		},
+		"modify hmac of shadow secret": {
+			modifyFunc: func(c client.Client) {
+				ctx := context.Background()
+				shadowKey := makeShadowObjKey(hvsa)
+				shadowSecret, err := helpers.GetSecret(ctx, c, shadowKey)
+				require.NoError(t, err)
+				require.NotNil(t, shadowSecret)
+				shadowSecret.Data[fieldMACMessage] = []byte("bad hmac")
+				require.NoError(t, c.Update(ctx, shadowSecret))
+			},
+			expectedMap:       nil,
+			expectedErrString: "HVS shadow secret default/vso-hvs-7f4b0949bfbd9217dab106 for ns/name has been tampered with",
+		},
+		"modify labels of shadow secret": {
+			modifyFunc: func(c client.Client) {
+				ctx := context.Background()
+				shadowKey := makeShadowObjKey(hvsa)
+				shadowSecret, err := helpers.GetSecret(ctx, c, shadowKey)
+				require.NoError(t, err)
+				require.NotNil(t, shadowSecret)
+				shadowSecret.Labels["secrets.hashicorp.com/vso-ownerRefUID"] = "bad-uid"
+				require.NoError(t, c.Update(ctx, shadowSecret))
+			},
+			expectedMap:       nil,
+			expectedErrString: "did not match expected labels",
+		},
+		"shadow secret not found": {
+			modifyFunc: func(c client.Client) {
+				ctx := context.Background()
+				shadowKey := makeShadowObjKey(hvsa)
+				require.NoError(t, helpers.DeleteSecret(ctx, c, shadowKey))
+			},
+			expectedMap:       nil,
+			expectedErrString: "",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			b := fake.NewClientBuilder()
+			c := b.Build()
+			hmacKey := types.NamespacedName{Namespace: "ns", Name: "hmac"}
+			hmacValidator := helpers.NewHMACValidator(hmacKey)
+			_, err := helpers.CreateHMACKeySecret(ctx, c, hmacKey)
+			require.NoError(t, err)
+			r := &HCPVaultSecretsAppReconciler{
+				Client:        c,
+				HMACValidator: hmacValidator,
+			}
+			err = r.storeShadowSecretData(ctx, hvsa, openSecrets)
+			require.NoError(t, err)
+
+			if tt.modifyFunc != nil {
+				tt.modifyFunc(c)
+			}
+
+			shadowMap, err := r.getShadowSecretData(context.Background(), hvsa)
+			if tt.expectedErrString != "" {
+				assert.ErrorContains(t, err, tt.expectedErrString)
+			}
+			require.Len(t, shadowMap, len(tt.expectedMap))
+			for k, v := range shadowMap {
+				testutils.CheckDynamicOpenSecretEqual(t, tt.expectedMap[k], v)
+			}
+		})
+	}
+}
+
+func Test_storeShadowSecretData(t *testing.T) {
+	t.Parallel()
+	// Test_getShadowSecretData covers testing what we stored matches what we
+	// get back, so this will test some of the other details like no secrets to
+	// store, if the secret has been recreated instead of updated, etc.
+	now := time.Now()
+
+	openSecrets := []*models.Secrets20231128OpenSecret{
+		{
+			CreatedAt: strfmt.DateTime(now.Add(-1 * time.Hour)),
+			Name:      "secret1",
+			Type:      helpers.HVSSecretTypeDynamic,
+			DynamicInstance: &models.Secrets20231128OpenSecretDynamicInstance{
+				CreatedAt: strfmt.DateTime(now.Add(-1 * time.Hour)),
+				ExpiresAt: strfmt.DateTime(now.Add(1 * time.Hour)),
+				TTL:       "7200s",
+			},
+			Provider: "provider",
+		},
+	}
+
+	hvsa := &secretsv1beta1.HCPVaultSecretsApp{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "name",
+			UID:       "uid",
+		},
+	}
+
+	tests := map[string]struct {
+		inputSecrets         []*models.Secrets20231128OpenSecret
+		existingShadowSecret *corev1.Secret
+	}{
+		"no secrets to store": {
+			inputSecrets:         nil,
+			existingShadowSecret: nil,
+		},
+		"no secrets but existing shadow secret": {
+			inputSecrets: nil,
+			existingShadowSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: common.OperatorNamespace,
+					Name:      makeShadowObjKey(hvsa).Name,
+					UID:       "old-uid",
+				},
+			},
+		},
+		"secrets to store no existing shadow": {
+			inputSecrets:         openSecrets,
+			existingShadowSecret: nil,
+		},
+		"secrets to store existing shadow": {
+			inputSecrets: openSecrets,
+			existingShadowSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: common.OperatorNamespace,
+					Name:      makeShadowObjKey(hvsa).Name,
+					UID:       "old-uid",
+				},
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			b := fake.NewClientBuilder()
+			if tt.existingShadowSecret != nil {
+				b = b.WithObjects(tt.existingShadowSecret)
+			}
+			c := b.Build()
+			hmacKey := types.NamespacedName{Namespace: "ns", Name: "hmac"}
+			hmacValidator := helpers.NewHMACValidator(hmacKey)
+			_, err := helpers.CreateHMACKeySecret(ctx, c, hmacKey)
+			require.NoError(t, err)
+			r := &HCPVaultSecretsAppReconciler{
+				Client:        c,
+				HMACValidator: hmacValidator,
+			}
+			err = r.storeShadowSecretData(ctx, hvsa, tt.inputSecrets)
+			require.NoError(t, err)
+
+			shadowKey := makeShadowObjKey(hvsa)
+			if tt.inputSecrets == nil {
+				// No secrets to store, so we should have no shadow secret
+				_, err := helpers.GetSecret(ctx, c, shadowKey)
+				assert.True(t, apierrors.IsNotFound(err))
+			} else {
+				// Check that the shadow secret was recreated
+				shadowSecret, err := helpers.GetSecret(ctx, c, shadowKey)
+				require.NoError(t, err)
+				require.NotNil(t, shadowSecret)
+				if tt.existingShadowSecret != nil {
+					assert.NotEqual(t, tt.existingShadowSecret.GetUID(), shadowSecret.GetUID())
+				}
+				assert.True(t, *shadowSecret.Immutable)
+			}
+
+			shadowMap, err := r.getShadowSecretData(context.Background(), hvsa)
+			require.NoError(t, err)
+
+			require.Len(t, shadowMap, len(tt.inputSecrets))
+			for _, v := range tt.inputSecrets {
+				testutils.CheckDynamicOpenSecretEqual(t, v, shadowMap[v.Name])
+			}
 		})
 	}
 }
