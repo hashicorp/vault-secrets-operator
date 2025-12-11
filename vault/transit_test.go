@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,13 +29,56 @@ func TestWithKeyVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := WithKeyVersion(tt.v)
-			m := make(map[string]any)
+			opt := WithKeyVersion(tt.v)
 
-			opts(m)
+			req := &TransitRequestOptions{
+				Params:  make(map[string]any),
+				Headers: make(http.Header),
+			}
 
-			require.Contains(t, m, "key_version")
-			assert.Equal(t, tt.v, m["key_version"])
+			opt(req)
+
+			require.Contains(t, req.Params, "key_version")
+			assert.Equal(t, tt.v, req.Params["key_version"])
+		})
+	}
+}
+
+func TestWithNamespace(t *testing.T) {
+	tests := []struct {
+		name      string
+		namespace string
+		wantSet   bool
+	}{
+		{
+			name:      "sets namespace header",
+			namespace: "foo/namespace",
+			wantSet:   true,
+		},
+		{
+			name:      "empty namespace does nothing",
+			namespace: "",
+			wantSet:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opt := WithNamespace(tt.namespace)
+
+			req := &TransitRequestOptions{
+				Params:  make(map[string]any),
+				Headers: make(http.Header),
+			}
+
+			opt(req)
+
+			got := req.Headers.Get("X-Vault-Namespace")
+			if tt.wantSet {
+				require.Equal(t, tt.namespace, got)
+			} else {
+				require.Equal(t, "", got)
+			}
 		})
 	}
 }
