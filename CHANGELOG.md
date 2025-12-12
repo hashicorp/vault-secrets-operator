@@ -1,8 +1,6 @@
 ## 1.1.0 (December 12th, 2025)
 
-Features:
-* linux/s390x images to Red Hat catalog only.: ([#1180](https://github.com/hashicorp/vault-secrets-operator/pull/1180))
-* Ensure that the value for any securityContext member is a boolean: ([#1176](https://github.com/hashicorp/vault-secrets-operator/pull/1176))
+Enhancements:
 * Add support for linux/s390x and linux/arm64 (Red Hat): ([#1152](https://github.com/hashicorp/vault-secrets-operator/pull/1152))
 
 Fixes:
