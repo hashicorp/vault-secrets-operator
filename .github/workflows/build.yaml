@@ -247,7 +247,7 @@ jobs:
         if: ${{ matrix.arch != 's390x' }}
         shell: bash
         run: |
-          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
+          version_output=$(docker run --platform linux/${{matrix.arch}} hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
           echo $version_output
           git_version=$(echo $version_output | jq -r .gitVersion)
 
@@ -260,7 +260,7 @@ jobs:
         if: ${{ matrix.arch == 's390x' }}
         shell: bash
         run: |
-          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
+          version_output=$(docker run --platform linux/${{matrix.arch}} hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
           echo $version_output
           git_version=$(echo $version_output | jq -r .gitVersion)
 
