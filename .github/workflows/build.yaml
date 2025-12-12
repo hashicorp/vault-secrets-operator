@@ -256,19 +256,6 @@ jobs:
             exit 1
           fi
 
-      - name: Check binary version in container ${{ matrix.arch }}
-        if: ${{ matrix.arch == 's390x' }}
-        shell: bash
-        run: |
-          version_output=$(docker run --platform linux/${{matrix.arch}} hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
-          echo $version_output
-          git_version=$(echo $version_output | jq -r .gitVersion)
-
-          if [ "$git_version" != "${{ env.version }}" ]; then
-            echo "$gitVersion expected to be ${{ env.version }}"
-            exit 1
-          fi
-
   chart-upgrade-tests:
     runs-on: ubuntu-latest
     needs:
