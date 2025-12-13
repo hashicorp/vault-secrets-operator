@@ -633,14 +633,14 @@ load _helpers
 
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
   [ "${actual}" = '1' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
   actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
   [ "${actual}" = '1' ]
-  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  actual=$(echo "$driverObj" | yq '.privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 }
 
@@ -659,14 +659,14 @@ load _helpers
 
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
   [ "${actual}" = '1' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
   actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
   [ "${actual}" = '1' ]
-  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  actual=$(echo "$driverObj" | yq '.privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 }
 
@@ -683,16 +683,16 @@ load _helpers
   local actual
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
   [ "${actual}" = '2' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .allowPrivilegeEscalation' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .allowPrivilegeEscalation | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'false' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
   actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
   [ "${actual}" = '1' ]
-  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  actual=$(echo "$driverObj" | yq '.privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 }
 
@@ -711,15 +711,15 @@ load _helpers
   local actual
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
   [ "${actual}" = '1' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
   actual=$(echo "$driverObj" | yq '. | length' | tee /dev/stderr)
   [ "${actual}" = '2' ]
-  actual=$(echo "$driverObj" | yq '.privileged' | tee /dev/stderr)
+  actual=$(echo "$driverObj" | yq '.privileged | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
-  actual=$(echo "$driverObj" | yq '.allowPrivilegeEscalation' | tee /dev/stderr)
+  actual=$(echo "$driverObj" | yq '.allowPrivilegeEscalation | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'false' ]
 }

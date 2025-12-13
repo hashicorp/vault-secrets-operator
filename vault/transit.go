@@ -59,10 +59,15 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 		return nil, err
 	}
 
+	return DecryptCiphertextWithTransit(ctx, vaultClient, mount, key, v.Ciphertext)
+}
+
+// DecryptCiphertextWithTransit decrypts a ciphertext value using Vault Transit.
+func DecryptCiphertextWithTransit(ctx context.Context, vaultClient Client, mount, key, ciphertext string) ([]byte, error) {
 	path := fmt.Sprintf("%s/decrypt/%s", mount, key)
 	params := map[string]interface{}{
 		"name":       key,
-		"ciphertext": v.Ciphertext,
+		"ciphertext": ciphertext,
 	}
 
 	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))

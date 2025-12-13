@@ -494,6 +494,6 @@ include privileged: true
 {{- $_ := set $sc $k $v -}}
 {{- end -}}
 {{- end -}}
-{{- $_ := set $sc "privileged" "true" -}}
+{{- $_ := set $sc "privileged" true -}}
 {{- toYaml $sc -}}
 {{- end -}}
