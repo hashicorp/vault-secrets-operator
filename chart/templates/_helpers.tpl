@@ -487,14 +487,14 @@ topologySpreadConstraints appends the "vso.chart.selectorLabels" to .Values.cont
 vso.privileged.securityContext extends the given securithContext to always
 include privileged: true
 */}}
-{{- define "vso.privileged.securityContext" -}}
+{{- define "vso.privilegedContainer.securityContext" -}}
 {{- $sc := dict -}}
 {{- with . -}}
 {{- range $k, $v := . -}}
 {{- $_ := set $sc $k $v -}}
 {{- end -}}
 {{- end -}}
-{{- $_ := set $sc "privileged" (true | quote) -}}
+{{- $_ := set $sc "privileged" true -}}
 {{- toYaml $sc -}}
 {{- end -}}
 
