@@ -22,7 +22,7 @@ spec:
 
   {{/* If maxUnavailable is set, use it */}}
   {{- if not (empty $maxUnavailable) }}
-  maxUnavailable: 
+  maxUnavailable:
     {{- if contains "%" $maxUnavailable }}
     "{{ $maxUnavailable }}"
     {{- else }}
@@ -32,7 +32,7 @@ spec:
 
   {{/* If minAvailable is set, use it */}}
   {{- if not (empty $minAvailable) }}
-  minAvailable: 
+  minAvailable:
     {{- if contains "%" $minAvailable }}
     "{{ $minAvailable }}"
     {{- else }}
@@ -42,5 +42,6 @@ spec:
 
   selector:
     matchLabels:
+      control-plane: controller-manager
       {{- include "vso.chart.selectorLabels" . | nindent 6 }}
 {{- end }}
