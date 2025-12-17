@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 
 	"k8s.io/apimachinery/pkg/util/json"
 )
@@ -22,25 +23,32 @@ type (
 		Plaintext string `json:"plaintext"`
 	}
 
-	// TransitOption modifies parameters for a Transit Encrypt/Decrypt request.
-	// Individual options may only apply to certain operations.
-	TransitOption func(m map[string]any)
+	TransitRequestOptions struct {
+		Params  map[string]any
+		Headers http.Header
+	}
+
+	// TransitOption modifies parameters and/or headers for a Transit request.
+	TransitOption func(*TransitRequestOptions)
 )
 
 // EncryptWithTransit encrypts data using Vault Transit.
 func EncryptWithTransit(ctx context.Context, vaultClient Client, mount, key string, data []byte, opts ...TransitOption) ([]byte, error) {
 	path := fmt.Sprintf("%s/encrypt/%s", mount, key)
 
-	params := map[string]any{
-		"name":      key,
-		"plaintext": base64.StdEncoding.EncodeToString(data),
+	req := &TransitRequestOptions{
+		Params: map[string]any{
+			"name":      key,
+			"plaintext": base64.StdEncoding.EncodeToString(data),
+		},
+		Headers: make(http.Header),
 	}
 
 	for _, opt := range opts {
-		opt(params)
+		opt(req)
 	}
 
-	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))
+	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, req.Params, req.Headers))
 	if err != nil {
 		return nil, err
 	}
@@ -63,14 +71,21 @@ func DecryptWithTransit(ctx context.Context, vaultClient Client, mount, key stri
 }
 
 // DecryptCiphertextWithTransit decrypts a ciphertext value using Vault Transit.
-func DecryptCiphertextWithTransit(ctx context.Context, vaultClient Client, mount, key, ciphertext string) ([]byte, error) {
+func DecryptCiphertextWithTransit(ctx context.Context, vaultClient Client, mount, key, ciphertext string, opts ...TransitOption) ([]byte, error) {
 	path := fmt.Sprintf("%s/decrypt/%s", mount, key)
-	params := map[string]interface{}{
-		"name":       key,
-		"ciphertext": ciphertext,
+	req := &TransitRequestOptions{
+		Params: map[string]interface{}{
+			"name":       key,
+			"ciphertext": ciphertext,
+		},
+		Headers: make(http.Header),
 	}
 
-	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, params, nil))
+	for _, opt := range opts {
+		opt(req)
+	}
+
+	resp, err := vaultClient.Write(ctx, NewWriteRequest(path, req.Params, req.Headers))
 	if err != nil {
 		return nil, err
 	}
@@ -95,5 +110,16 @@ func DecryptCiphertextWithTransit(ctx context.Context, vaultClient Client, mount
 // WithKeyVersion sets the key version for EncryptWithTransit.
 // It is ignored when passed to DecryptWithTransit.
 func WithKeyVersion(v uint) TransitOption {
-	return func(m map[string]any) { m["key_version"] = v }
+	return func(opt *TransitRequestOptions) {
+		opt.Params["key_version"] = v
+	}
+}
+
+func WithNamespace(namespace string) TransitOption {
+	return func(opt *TransitRequestOptions) {
+		if namespace == "" {
+			return
+		}
+		opt.Headers.Set("X-Vault-Namespace", namespace)
+	}
 }
