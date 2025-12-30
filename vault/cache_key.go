@@ -194,6 +194,41 @@ func computeClientCacheKey(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1
 	return ClientCacheKey(key), nil
 }
 
+// computeClientCacheKeyStandalone computes a cache key for standalone usage where
+// VaultAuth and VaultConnection objects don't have K8s-assigned UIDs.
+// Instead of using resource UIDs from the k8s API, it hashes the contents of the passed-in objects' specs to create stable identifiers.
+func computeClientCacheKeyStandalone(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection, providerUID types.UID) (ClientCacheKey, error) {
+	var errs error
+	method := authObj.Spec.Method
+	if method == "" {
+		errs = errors.Join(errs, fmt.Errorf("auth method is empty"))
+	}
+
+	if len(providerUID) == 0 {
+		errs = errors.Join(errs, fmt.Errorf("providerUID cannot be empty"))
+	}
+
+	if errs != nil {
+		return "", errs
+	}
+
+	authSpecHash := helpers.HashString(fmt.Sprintf("%+v", authObj.Spec))
+	connSpecHash := helpers.HashString(fmt.Sprintf("%+v", connObj.Spec))
+
+	// Format: "authHash-1.connHash-1.providerUID"
+	// (generation is always 1 for standalone since we didn't fetch the auth and conn objects from a K8s resource)
+	input := fmt.Sprintf("%s-%d.%s-%d.%s",
+		authSpecHash, 1,
+		connSpecHash, 1, providerUID)
+
+	key := strings.ToLower(method + "-" + helpers.HashString(input))
+	if len(key) > 63 {
+		return "", errorKeyLengthExceeded
+	}
+
+	return ClientCacheKey(key), nil
+}
+
 // ClientCacheKeyClone returns a ClientCacheKey that contains the Vault namespace as its suffix.
 // The clone key is meant to differentiate a "parent" cache key from its clones.
 func ClientCacheKeyClone(key ClientCacheKey, namespace string) (ClientCacheKey, error) {

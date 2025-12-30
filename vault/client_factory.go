@@ -89,6 +89,9 @@ func (e *ClientFactoryDisabledError) Error() string {
 
 type ClientFactory interface {
 	Get(context.Context, ctrlclient.Client, ctrlclient.Object) (Client, error)
+	// GetStandalone obtains a client without requiring Kubernetes API access.
+	// Suitable for standalone usage where K8s resources are unavailable.
+	GetStandalone(context.Context, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection) (Client, error)
 	RegisterClientCallbackHandler(ClientCallbackHandler)
 }
 
@@ -506,6 +509,105 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 	c, err = namespacedClient(c)
 	if err != nil {
 		errs = errors.Join(err)
+	}
+
+	return c, errs
+}
+
+// GetStandalone obtains a client without requiring Kubernetes API access.
+// It accepts pre-constructed VaultAuth and VaultConnection objects and uses
+// content-based cache keys instead of K8s resource UIDs.
+// This is suitable for standalone usage where K8s resources are unavailable.
+func (m *cachingClientFactory) GetStandalone(ctx context.Context, authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection) (Client, error) {
+	if m.isDisabled() {
+		return nil, &ClientFactoryDisabledError{}
+	}
+
+	logger := log.FromContext(ctx).WithName("cachingClientFactory")
+	logger.V(consts.LogLevelTrace).Info("Obtaining standalone client")
+	
+	startTS := time.Now()
+	var err error
+	var cacheKey ClientCacheKey
+	var errs error
+	defer func() {
+		m.incrementRequestCounter(metrics.OperationGet, errs)
+		clientFactoryOperationTimes.WithLabelValues(subsystemClientFactory, metrics.OperationGet).Observe(
+			time.Since(startTS).Seconds(),
+		)
+	}()
+
+	opts := m.clientOptions()
+	if opts.CredentialProviderFactory == nil {
+		return nil, errors.New("CredentialProviderFactory is required for standalone mode")
+	}
+
+	provider, err := opts.CredentialProviderFactory.New(ctx, nil, authObj, "")
+	if err != nil {
+		logger.Error(err, "Failed to create credential provider")
+		errs = errors.Join(err)
+		return nil, errs
+	}
+
+	cacheKey, err = computeClientCacheKeyStandalone(authObj, connObj, provider.GetUID())
+	if err != nil {
+		logger.Error(err, "Failed to compute cache key")
+		errs = errors.Join(err)
+		return nil, errs
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cacheKeyForLock := cacheKey.String()
+	m.clientMutex.LockKey(cacheKeyForLock)
+	defer func() {
+		if err := m.clientMutex.UnlockKey(cacheKeyForLock); err != nil {
+			logger.Error(err, "Failed to unlock client mutex")
+		}
+	}()
+
+	logger = logger.WithValues("cacheKey", cacheKey)
+	logger.V(consts.LogLevelTrace).Info("Got lock")
+
+	// Try and fetch the client from the in-memory client cache
+	c, ok := m.cache.Get(cacheKey)
+	if !ok {
+		logger.V(consts.LogLevelTrace).Info("Cache miss")
+		
+		// Create new client directly using the provided objects
+		c, err = NewClientFromObjs(ctx, nil, authObj, connObj, "", opts)
+		if err != nil {
+			logger.Error(err, "Failed to create client from objects")
+			errs = errors.Join(err)
+			return nil, errs
+		}
+
+		// Login to Vault
+		if err := c.Login(ctx, nil); err != nil {
+			logger.Error(err, "Failed to login")
+			errs = errors.Join(err)
+			return nil, errs
+		}
+
+		if m.clientGetValidator != nil {
+			if err := m.clientGetValidator(ctx, c); err != nil {
+				logger.Error(err, "Validator failed",
+					"cacheKey", cacheKey, "clientID", c.ID())
+				return nil, err
+			}
+		}
+
+		logger.V(consts.LogLevelTrace).Info("New client created",
+			"cacheKey", cacheKey, "clientID", c.ID())
+		
+		// Cache the client
+		cacheKey, err = m.cacheClient(ctx, c, false) // Never persist to the cluster in standalone mode
+		if err != nil {
+			errs = errors.Join(err)
+			return nil, errs
+		}
+	} else {
+		logger.V(consts.LogLevelTrace).Info("Cache hit", "clientID", c.ID())
 	}
 
 	return c, errs
