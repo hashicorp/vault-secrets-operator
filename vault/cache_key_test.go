@@ -192,12 +192,12 @@ func Test_computeClientCacheKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := computeClientCacheKey(tt.authObj, tt.connObj, tt.providerUID)
-			if !tt.wantErr(t, err, fmt.Sprintf("computeClientCacheKey(%v, %v, %v)",
+			got, err := computeClientCacheKey(tt.authObj, tt.connObj, tt.providerUID, false)
+			if !tt.wantErr(t, err, fmt.Sprintf("computeClientCacheKey(%v, %v, %v, false)",
 				tt.authObj, tt.connObj, tt.providerUID)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "computeClientCacheKey(%v, %v, %v)", tt.authObj, tt.connObj, tt.providerUID)
+			assert.Equalf(t, tt.want, got, "computeClientCacheKey(%v, %v, %v, false)", tt.authObj, tt.connObj, tt.providerUID)
 		})
 	}
 }
