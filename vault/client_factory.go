@@ -718,6 +718,7 @@ func (m *cachingClientFactory) clientOptions() *ClientOptions {
 		WatcherDoneCh:             m.callbackHandlerCh,
 		GlobalVaultAuthOptions:    m.GlobalVaultAuthOptions,
 		CredentialProviderFactory: m.credentialProviderFactory,
+		IsStandalone:              m.isStandalone,
 	}
 }
 

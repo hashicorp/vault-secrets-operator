@@ -34,6 +34,7 @@ type ClientOptions struct {
 	GlobalVaultAuthOptions    *common.GlobalVaultAuthOptions
 	CredentialProviderFactory credentials.CredentialProviderFactory
 	UserAgent                 string
+	IsStandalone              bool
 }
 
 func defaultClientOptions() *ClientOptions {
@@ -199,6 +200,7 @@ var _ Client = (*defaultClient)(nil)
 type defaultClient struct {
 	client             *api.Client
 	isClone            bool
+	isStandalone       bool
 	authObj            *secretsv1beta1.VaultAuth
 	connObj            *secretsv1beta1.VaultConnection
 	authSecret         *api.Secret
@@ -356,7 +358,13 @@ func (c *defaultClient) GetCacheKey() (ClientCacheKey, error) {
 }
 
 func (c *defaultClient) getCacheKey() (ClientCacheKey, error) {
-	cacheKey, err := ComputeClientCacheKeyFromClient(c)
+	var cacheKey ClientCacheKey
+	var err error
+	if c.isStandalone {
+		cacheKey, err = computeClientCacheKey(c.authObj, c.connObj, c.credentialProvider.GetUID(), true)
+	} else {
+		cacheKey, err = ComputeClientCacheKeyFromClient(c)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -824,6 +832,7 @@ func (c *defaultClient) init(ctx context.Context, client ctrlclient.Client,
 	}
 
 	c.skipRenewal = opts.SkipRenewal
+	c.isStandalone = opts.IsStandalone
 	c.credentialProvider = credentialProvider
 	c.client = vc
 	c.authObj = authObj
