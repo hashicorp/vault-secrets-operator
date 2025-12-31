@@ -72,7 +72,7 @@ func (k ClientCacheKey) SameParent(other ClientCacheKey) (bool, error) {
 //
 // See computeClientCacheKey for more details on how the client cache is derived
 func ComputeClientCacheKeyFromClient(c Client) (ClientCacheKey, error) {
-	return computeClientCacheKey(c.GetVaultAuthObj(), c.GetVaultConnectionObj(), c.GetCredentialProvider().GetUID())
+	return computeClientCacheKey(c.GetVaultAuthObj(), c.GetVaultConnectionObj(), c.GetCredentialProvider().GetUID(), false)
 }
 
 // ComputeClientCacheKeyFromObj for use in a ClientCache. It is derived from the configuration of obj.
@@ -101,7 +101,7 @@ func ComputeClientCacheKeyFromObj(ctx context.Context, client ctrlclient.Client,
 		return "", err
 	}
 
-	return computeClientCacheKey(authObj, connObj, provider.GetUID())
+	return computeClientCacheKey(authObj, connObj, provider.GetUID(), false)
 }
 
 // ComputeClientCacheKeyFromMeta for use in a ClientCache. It is derived from the configuration of obj.
@@ -134,15 +134,21 @@ func ComputeClientCacheKeyFromMeta(ctx context.Context, client ctrlclient.Client
 		return "", err
 	}
 
-	return computeClientCacheKey(authObj, connObj, provider.GetUID())
+	return computeClientCacheKey(authObj, connObj, provider.GetUID(), false)
 }
 
 // ComputeClientCacheKey for use in a ClientCache. It is derived by combining instances of
 // VaultAuth, VaultConnection, and a CredentialProvider UID.
-// All of these elements are summed together into a SHA256 checksum,
-// and prefixed with the VaultAuth method. The chances of a collision are extremely remote,
-// since the inputs into the hash should always be unique. For example, we use the UUID
-// from three different sources as inputs.
+//
+// When isStandalone is false (normal VSO operation with K8s resources):
+// - Uses K8s resource UIDs and generations from authObj, connObj, and providerUID
+// - Validates that all UIDs are exactly 36 characters
+// - Checks for duplicate UIDs
+//
+// When isStandalone is true (standalone mode without K8s resources):
+// - Uses content-based hashes of authObj.Spec and connObj.Spec instead of UIDs
+// - Allows empty UIDs from objects not fetched from K8s API
+// - Generation is always 1 since objects aren't K8s resources
 //
 // The resulting key will resemble something like: kubernetes-2a8108711ae49ac0faa724, where the prefix
 // is the VaultAuth.Spec.Method, and the remainder is the concatenation of the
@@ -153,73 +159,59 @@ func ComputeClientCacheKeyFromMeta(ctx context.Context, client ctrlclient.Client
 // allowed for Kubernetes resources, which is 63 characters.
 //
 // If the computed cache-key exceeds 63 characters, the limit imposed for Kubernetes resource names,
-// or if any of the inputs do not coform in any way, and error will be returned.
-func computeClientCacheKey(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection, providerUID types.UID) (ClientCacheKey, error) {
+// or if any of the inputs do not conform in any way, an error will be returned.
+func computeClientCacheKey(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection, providerUID types.UID, isStandalone bool) (ClientCacheKey, error) {
 	var errs error
 	method := authObj.Spec.Method
 	if method == "" {
 		errs = errors.Join(errs, fmt.Errorf("auth method is empty"))
 	}
 
-	// only used for duplicate UID detection, all values are ignored
-	seen := make(map[types.UID]int)
-	requireUIDLen := 36
-	validateUID := func(name string, uid types.UID) {
-		if len(uid) != requireUIDLen {
-			errs = errors.Join(errs, fmt.Errorf("%w %d, must be %d", errorInvalidUIDLength, len(uid), requireUIDLen))
+	var input string
+	if isStandalone {
+		// Standalone mode: use content-based hashes instead of K8s UIDs
+		if len(providerUID) == 0 {
+			errs = errors.Join(errs, fmt.Errorf("providerUID cannot be empty"))
 		}
-		if _, ok := seen[uid]; ok {
-			errs = errors.Join(errs, fmt.Errorf("%w %s", errorDuplicateUID, uid))
+
+		if errs != nil {
+			return "", errs
 		}
-		seen[uid] = 1
+
+		authSpecHash := helpers.HashString(fmt.Sprintf("%+v", authObj.Spec))
+		connSpecHash := helpers.HashString(fmt.Sprintf("%+v", connObj.Spec))
+
+		// Format: "authHash-1.connHash-1.providerUID"
+		// (generation is always 1 for standalone since we didn't fetch the auth and conn objects from a K8s resource)
+		input = fmt.Sprintf("%s-%d.%s-%d.%s",
+			authSpecHash, 1,
+			connSpecHash, 1, providerUID)
+	} else {
+		// Normal VSO operation: use K8s resource UIDs with strict validation
+		seen := make(map[types.UID]int)
+		requireUIDLen := 36
+		validateUID := func(name string, uid types.UID) {
+			if len(uid) != requireUIDLen {
+				errs = errors.Join(errs, fmt.Errorf("%w %d, must be %d", errorInvalidUIDLength, len(uid), requireUIDLen))
+			}
+			if _, ok := seen[uid]; ok {
+				errs = errors.Join(errs, fmt.Errorf("%w %s", errorDuplicateUID, uid))
+			}
+			seen[uid] = 1
+		}
+
+		validateUID("authUID", authObj.GetUID())
+		validateUID("connUID", connObj.GetUID())
+		validateUID("providerUID", providerUID)
+
+		if errs != nil {
+			return "", errs
+		}
+
+		input = fmt.Sprintf("%s-%d.%s-%d.%s",
+			authObj.GetUID(), authObj.GetGeneration(),
+			connObj.GetUID(), connObj.GetGeneration(), providerUID)
 	}
-
-	validateUID("authUID", authObj.GetUID())
-	validateUID("connUID", connObj.GetUID())
-	validateUID("providerUID", providerUID)
-
-	if errs != nil {
-		return "", errs
-	}
-
-	input := fmt.Sprintf("%s-%d.%s-%d.%s",
-		authObj.GetUID(), authObj.GetGeneration(),
-		connObj.GetUID(), connObj.GetGeneration(), providerUID)
-
-	key := strings.ToLower(method + "-" + helpers.HashString(input))
-	if len(key) > 63 {
-		return "", errorKeyLengthExceeded
-	}
-
-	return ClientCacheKey(key), nil
-}
-
-// computeClientCacheKeyStandalone computes a cache key for standalone usage where
-// VaultAuth and VaultConnection objects don't have K8s-assigned UIDs.
-// Instead of using resource UIDs from the k8s API, it hashes the contents of the passed-in objects' specs to create stable identifiers.
-func computeClientCacheKeyStandalone(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection, providerUID types.UID) (ClientCacheKey, error) {
-	var errs error
-	method := authObj.Spec.Method
-	if method == "" {
-		errs = errors.Join(errs, fmt.Errorf("auth method is empty"))
-	}
-
-	if len(providerUID) == 0 {
-		errs = errors.Join(errs, fmt.Errorf("providerUID cannot be empty"))
-	}
-
-	if errs != nil {
-		return "", errs
-	}
-
-	authSpecHash := helpers.HashString(fmt.Sprintf("%+v", authObj.Spec))
-	connSpecHash := helpers.HashString(fmt.Sprintf("%+v", connObj.Spec))
-
-	// Format: "authHash-1.connHash-1.providerUID"
-	// (generation is always 1 for standalone since we didn't fetch the auth and conn objects from a K8s resource)
-	input := fmt.Sprintf("%s-%d.%s-%d.%s",
-		authSpecHash, 1,
-		connSpecHash, 1, providerUID)
 
 	key := strings.ToLower(method + "-" + helpers.HashString(input))
 	if len(key) > 63 {

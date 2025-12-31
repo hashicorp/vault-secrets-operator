@@ -151,6 +151,9 @@ type cachingClientFactory struct {
 	// This is used to prevent the factory from blocking indefinitely when setting
 	// up the encryption client. It defaults to 90 seconds.
 	encClientSetupTimeout time.Duration
+	// isStandalone indicates this factory will be used to create clients that cannot be validated against real K8s API resources.
+	// Useful for creating clients using VSO's caching client factory pattern in other use cases besides VSO.
+	isStandalone bool
 	// GlobalVaultAuthOptions is a struct that contains global VaultAuth options.
 	GlobalVaultAuthOptions *common.GlobalVaultAuthOptions
 	// credentialProviderFactory is a function that returns a CredentialProvider.
@@ -549,7 +552,7 @@ func (m *cachingClientFactory) GetStandalone(ctx context.Context, authObj *secre
 		return nil, errs
 	}
 
-	cacheKey, err = computeClientCacheKeyStandalone(authObj, connObj, provider.GetUID())
+	cacheKey, err = computeClientCacheKey(authObj, connObj, provider.GetUID(), m.isStandalone)
 	if err != nil {
 		logger.Error(err, "Failed to compute cache key")
 		errs = errors.Join(err)
@@ -1028,6 +1031,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		encryptionRequired:        config.StorageConfig.EnforceEncryption,
 		encClientSetupTimeout:     config.SetupEncryptionClientTimeout,
 		clientMutex:               keymutex.NewHashed(config.ClientCacheNumLocks),
+		isStandalone:              config.IsStandalone,
 		GlobalVaultAuthOptions:    config.GlobalVaultAuthOptions,
 		credentialProviderFactory: config.CredentialProviderFactory,
 		clientGetValidator:        config.ClientGetValidator,
@@ -1105,6 +1109,8 @@ type CachingClientFactoryConfig struct {
 	ClientGetValidator  ClientGetValidator
 	// NewClientFunc is a function that returns a new Client.
 	NewClientFunc NewClientFunc
+	// IsStandalone indicates this factory is used in standalone mode (without access to K8s API resources)
+	IsStandalone bool
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
