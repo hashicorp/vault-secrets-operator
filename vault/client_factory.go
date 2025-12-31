@@ -525,7 +525,7 @@ func (m *cachingClientFactory) GetStandalone(ctx context.Context, authObj *secre
 
 	logger := log.FromContext(ctx).WithName("cachingClientFactory")
 	logger.V(consts.LogLevelTrace).Info("Obtaining standalone client")
-	
+
 	startTS := time.Now()
 	var err error
 	var cacheKey ClientCacheKey
@@ -573,7 +573,7 @@ func (m *cachingClientFactory) GetStandalone(ctx context.Context, authObj *secre
 	c, ok := m.cache.Get(cacheKey)
 	if !ok {
 		logger.V(consts.LogLevelTrace).Info("Cache miss")
-		
+
 		// Create new client directly using the provided objects
 		c, err = NewClientFromObjs(ctx, nil, authObj, connObj, "", opts)
 		if err != nil {
@@ -599,13 +599,15 @@ func (m *cachingClientFactory) GetStandalone(ctx context.Context, authObj *secre
 
 		logger.V(consts.LogLevelTrace).Info("New client created",
 			"cacheKey", cacheKey, "clientID", c.ID())
-		
-		// Cache the client
-		cacheKey, err = m.cacheClient(ctx, c, false) // Never persist to the cluster in standalone mode
-		if err != nil {
+
+		// Cache the client directly using the pre-computed standalone cache key,
+		// avoiding validation of K8s resource UIDs that don't exist for standalone clients.
+		if _, err := m.cache.Add(c); err != nil {
+			logger.Error(err, "Failed to add client to the cache")
 			errs = errors.Join(err)
 			return nil, errs
 		}
+		logger.V(consts.LogLevelTrace).Info("Cached client")
 	} else {
 		logger.V(consts.LogLevelTrace).Info("Cache hit", "clientID", c.ID())
 	}
