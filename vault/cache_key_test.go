@@ -202,6 +202,203 @@ func Test_computeClientCacheKey(t *testing.T) {
 	}
 }
 
+func Test_computeClientCacheKey_standalone(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		authObj     *secretsv1beta1.VaultAuth
+		connObj     *secretsv1beta1.VaultConnection
+		providerUID types.UID
+		wantErr     assert.ErrorAssertionFunc
+		wantPrefix  string // expected method prefix in cache key
+	}{
+		{
+			name: "standalone-empty-provideruid-fails",
+			authObj: &secretsv1beta1.VaultAuth{
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: consts.ProviderMethodAppRole,
+				},
+			},
+			connObj:     &secretsv1beta1.VaultConnection{},
+			providerUID: "",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.Error(t, err, i...)
+			},
+		},
+		{
+			name: "standalone-different-auth-specs-different-keys",
+			authObj: &secretsv1beta1.VaultAuth{
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: consts.ProviderMethodAppRole,
+					AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+						RoleID: "role-1",
+					},
+				},
+			},
+			connObj: &secretsv1beta1.VaultConnection{
+				Spec: secretsv1beta1.VaultConnectionSpec{
+					Address: "http://vault:8200",
+				},
+			},
+			providerUID: providerUID,
+			wantErr:     assert.NoError,
+			wantPrefix:  "approle-",
+		},
+		{
+			name: "standalone-different-conn-specs-different-keys",
+			authObj: &secretsv1beta1.VaultAuth{
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: consts.ProviderMethodJWT,
+				},
+			},
+			connObj: &secretsv1beta1.VaultConnection{
+				Spec: secretsv1beta1.VaultConnectionSpec{
+					Address: "http://vault:9200",
+				},
+			},
+			providerUID: providerUID,
+			wantErr:     assert.NoError,
+			wantPrefix:  "jwt-",
+		},
+		{
+			name: "standalone-empty-method-fails",
+			authObj: &secretsv1beta1.VaultAuth{
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "",
+				},
+			},
+			connObj: &secretsv1beta1.VaultConnection{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			providerUID: providerUID,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.Error(t, err, i...)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := computeClientCacheKey(tt.authObj, tt.connObj, tt.providerUID, true)
+			if !tt.wantErr(t, err, fmt.Sprintf("computeClientCacheKey(%v, %v, %v, true)",
+				tt.authObj, tt.connObj, tt.providerUID)) {
+				return
+			}
+			if tt.wantPrefix != "" {
+				assert.True(t, strings.HasPrefix(got.String(), tt.wantPrefix),
+					"expected key to start with %q, got %q", tt.wantPrefix, got.String())
+			}
+		})
+	}
+}
+
+// Test that standalone mode produces deterministic, content-based cache keys
+func Test_computeClientCacheKey_standalone_deterministic(t *testing.T) {
+	t.Parallel()
+
+	authObj := &secretsv1beta1.VaultAuth{
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Method: consts.ProviderMethodAppRole,
+			AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+				RoleID: "test-role",
+			},
+		},
+	}
+	connObj := &secretsv1beta1.VaultConnection{
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: "http://vault:8200",
+		},
+	}
+
+	// Call twice with identical inputs
+	key1, err1 := computeClientCacheKey(authObj, connObj, providerUID, true)
+	require.NoError(t, err1)
+
+	key2, err2 := computeClientCacheKey(authObj, connObj, providerUID, true)
+	require.NoError(t, err2)
+
+	// Should produce identical cache keys
+	assert.Equal(t, key1, key2, "identical specs should produce identical cache keys")
+}
+
+// Test that standalone and normal mode produce different cache keys
+func Test_computeClientCacheKey_standalone_vs_normal(t *testing.T) {
+	t.Parallel()
+
+	authObjWithUID := &secretsv1beta1.VaultAuth{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:        authUID,
+			Generation: 1,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Method: consts.ProviderMethodAppRole,
+			AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+				RoleID: "test-role",
+			},
+		},
+	}
+	connObjWithUID := &secretsv1beta1.VaultConnection{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:        connUID,
+			Generation: 2,
+		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: "http://vault:8200",
+		},
+	}
+
+	authObjNoUID := &secretsv1beta1.VaultAuth{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:        "",
+			Generation: 0,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Method: consts.ProviderMethodAppRole,
+			AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+				RoleID: "test-role",
+			},
+		},
+	}
+	connObjNoUID := &secretsv1beta1.VaultConnection{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:        "",
+			Generation: 0,
+		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: "http://vault:8200",
+		},
+	}
+
+	// Normal mode with UIDs - should succeed
+	normalKey, err := computeClientCacheKey(authObjWithUID, connObjWithUID, providerUID, false)
+	require.NoError(t, err)
+
+	// Standalone mode without UIDs - should succeed
+	standaloneKey, err := computeClientCacheKey(authObjNoUID, connObjNoUID, providerUID, true)
+	require.NoError(t, err)
+
+	// Keys should be different because:
+	// - Normal mode uses UID + generation
+	// - Standalone mode uses spec hash + generation=1
+	assert.NotEqual(t, normalKey, standaloneKey,
+		"standalone and normal mode should produce different cache keys even with same specs")
+
+	assert.True(t, strings.HasPrefix(normalKey.String(), "approle-"))
+	assert.True(t, strings.HasPrefix(standaloneKey.String(), "approle-"))
+
+	// Normal mode with empty UIDs - should fail (requires UIDs)
+	_, err = computeClientCacheKey(authObjNoUID, connObjNoUID, providerUID, false)
+	require.Error(t, err, "normal mode should fail with empty UIDs")
+
+	// Standalone mode with UIDs - should succeed (UIDs allowed but not required)
+	standaloneKeyWithUIDs, err := computeClientCacheKey(authObjWithUID, connObjWithUID, providerUID, true)
+	require.NoError(t, err, "standalone mode should succeed even with UIDs present")
+
+	// Standalone mode with and without UIDs should produce different keys
+	assert.NotEqual(t, standaloneKey, standaloneKeyWithUIDs,
+		"standalone mode should produce different keys with vs without UIDs due to different spec hashes")
+}
+
 func TestComputeClientCacheKeyFromClient(t *testing.T) {
 	t.Parallel()
 	tests := []computeClientCacheKeyTest{
