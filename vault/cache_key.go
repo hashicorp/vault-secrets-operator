@@ -139,16 +139,10 @@ func ComputeClientCacheKeyFromMeta(ctx context.Context, client ctrlclient.Client
 
 // ComputeClientCacheKey for use in a ClientCache. It is derived by combining instances of
 // VaultAuth, VaultConnection, and a CredentialProvider UID.
-//
-// When isStandalone is false (normal VSO operation with K8s resources):
-// - Uses K8s resource UIDs and generations from authObj, connObj, and providerUID
-// - Validates that all UIDs are exactly 36 characters
-// - Checks for duplicate UIDs
-//
-// When isStandalone is true (standalone mode without K8s resources):
-// - Uses content-based hashes of authObj.Spec and connObj.Spec instead of UIDs
-// - Allows empty UIDs from objects not fetched from K8s API
-// - Generation is always 1 since objects aren't K8s resources
+// All of these elements are summed together into a SHA256 checksum,
+// and prefixed with the VaultAuth method. The chances of a collision are extremely remote,
+// since the inputs into the hash should always be unique. For example, we use the UUID
+// from three different sources as inputs.
 //
 // The resulting key will resemble something like: kubernetes-2a8108711ae49ac0faa724, where the prefix
 // is the VaultAuth.Spec.Method, and the remainder is the concatenation of the
@@ -160,6 +154,10 @@ func ComputeClientCacheKeyFromMeta(ctx context.Context, client ctrlclient.Client
 //
 // If the computed cache-key exceeds 63 characters, the limit imposed for Kubernetes resource names,
 // or if any of the inputs do not conform in any way, an error will be returned.
+//
+// Cache key generation is simpler when isStandalone is true (indicating a client without access to k8s resources):
+// - Uses content-based hashes of authObj.Spec and connObj.Spec instead of UIDs
+// - Generation is always 1 since objects aren't actual k8s resources
 func computeClientCacheKey(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection, providerUID types.UID, isStandalone bool) (ClientCacheKey, error) {
 	var errs error
 	method := authObj.Spec.Method
