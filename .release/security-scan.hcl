@@ -19,10 +19,6 @@ binary {
                 // The required functionality was inadvertently dropped from
                 // github.com/hashicorp/go-secure-stdlib/awsutil during the migration to aws-sdk-go-v2.
                 "GO-2022-0635",
-                // CVE-2025-6020 is for the UBI image.
-                // It has not yet been patched in registry.access.redhat.com/ubi10/ubi-micro:latest, 
-                // and is not applicable to this project.
-                "CVE-2025-6020",
             ]
         }
     }
@@ -31,6 +27,15 @@ binary {
 container {
     dependencies = true // Scan any installed packages for vulnerabilities.
     osv          = true // Use the OSV vulnerability database.
+
+    triage {
+        suppress {
+            vulnerabilities = [
+                // Addresses a false positive from scan (our security scanner)
+                "CVE-2025-6020",
+            ]
+        }
+    }
 
     secrets {
         all = true
