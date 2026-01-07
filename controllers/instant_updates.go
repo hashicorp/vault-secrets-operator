@@ -93,20 +93,24 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "object", name)
 		}
 	}
-
+	// create a shared websocket dispatcher if one is not already created
 	dispatcher, err := cfg.getOrCreateDispatcher(ctx)
 	if err != nil {
 		return err
 	}
+	// register this object to receive events from the dispatcher
+	msgCh := dispatcher.Register(name)
 
 	watchCtx, cancel := context.WithCancel(context.Background())
 	stoppedCh := make(chan struct{}, 1)
-	cfg.Registry.Register(name, &eventWatcherMeta{
+	updatedMeta := &eventWatcherMeta{
 		Cancel:         cancel,
 		LastClientID:   cfg.Client.ID(),
 		LastGeneration: cfg.Secret.GetGeneration(),
 		StoppedCh:      stoppedCh,
-	})
+	}
+	cfg.Registry.Register(name, updatedMeta)
+	logger.V(consts.LogLevelDebug).Info("Starting event watcher", "meta", updatedMeta)
 
 	// Pass a deep copy of the VSS/VDS object here because it seems to avoid an issue
 	// where the EventWatcherStarted event is occasionally emitted without a
@@ -118,7 +122,7 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 	}
 
 	// launch the goroutine to watch events
-	go cfg.getEvents(watchCtx, name, obj, dispatcher, stoppedCh)
+	go cfg.getEvents(watchCtx, obj, dispatcher, msgCh, stoppedCh)
 
 	return nil
 }
@@ -140,8 +144,9 @@ func UnwatchEvents(registry *eventWatcherRegistry, obj client.Object) {
 }
 
 // getEvents streams event notifications from Vault and handles errors and retries
-func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.NamespacedName, o client.Object, dispatcher *eventDispatcher, stoppedCh chan struct{}) {
+func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, dispatcher *eventDispatcher, msgCh chan eventMessage, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
+	name := client.ObjectKeyFromObject(o)
 	defer func() {
 		cfg.Registry.Delete(name)
 		close(stoppedCh)
@@ -152,11 +157,6 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 
 	shouldBackoff := false
 	errorCount := 0
-	currentDispatcher := dispatcher
-	msgCh := currentDispatcher.Register(name)
-	defer func() {
-		currentDispatcher.Unregister(name)
-	}()
 
 	cfg.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
@@ -164,13 +164,11 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 		select {
 		case <-ctx.Done():
 			logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
-			return
-		case msg, ok := <-msgCh:
-			if !ok {
-				cfg.enqueueForReconcile(name)
-				return
+			if dispatcher != nil {
+				dispatcher.Unregister(name)
 			}
-
+			return
+		default:
 			if shouldBackoff {
 				nextBackoff := retryBackoff.NextBackOff()
 				if nextBackoff == backoff.Stop {
@@ -181,95 +179,57 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 				time.Sleep(nextBackoff)
 			}
 
-			var err error
-			if msg.err != nil {
-				err = msg.err
-			} else {
-				err = cfg.StreamSecretEvents(ctx, o, msg.msgType, msg.data)
-			}
-			if err == nil {
-				shouldBackoff = false
-				errorCount = 0
-				retryBackoff.Reset()
-				continue
-			}
-
-			errorCount++
-			shouldBackoff = true
-
-			// For any other errors, we emit the error as an event on the
-			// VSS/VDS, reload the client and try connecting again.
-			cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
-				"Error while watching events: %s", err)
-
-			if errorCount >= instantUpdateErrorThreshold {
-				logger.Error(err, "Too many errors while watching events, requeuing")
-				cfg.enqueueForReconcile(name)
+			select {
+			case <-ctx.Done():
+				logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
+				if dispatcher != nil {
+					dispatcher.Unregister(name)
+				}
 				return
+			case msg, ok := <-msgCh:
+				if !ok {
+					err := fmt.Errorf("event dispatcher closed")
+					logger.Error(err, "Event dispatcher closed", "object", name)
+					cfg.enqueueForReconcile(name)
+					return
+				}
+
+				err := msg.err
+				if err == nil {
+					err = cfg.StreamSecretEvents(ctx, o, msg.msgType, msg.data)
+				}
+				if err == nil {
+					shouldBackoff = false
+					errorCount = 0
+					retryBackoff.Reset()
+					continue
+				}
+
+				errorCount++
+				shouldBackoff = true
+
+				// For any other errors, we emit the error as an event on the
+				// VSS/VDS and try again with backoff.
+				cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+					"Error while watching events: %s", err)
+
+				if errorCount >= instantUpdateErrorThreshold {
+					logger.Error(err, "Too many errors while watching events, requeuing")
+					cfg.enqueueForReconcile(name)
+					return
+				}
 			}
-
-			// If we're using the shared connector, rebuild it with a fresh Vault
-			// client before retrying.
-			newClient, clientErr := cfg.NewClientFunc(ctx, o)
-			if clientErr != nil {
-				logger.Error(clientErr, "Failed to retrieve Vault client")
-				cfg.enqueueForReconcile(name)
-				return
-			}
-
-			currentDispatcher.Unregister(name)
-
-			if err := resetDispatcher(ctx, newClient); err != nil {
-				logger.Error(err, "Failed to reset websocket dispatcher")
-				cfg.enqueueForReconcile(name)
-				return
-			}
-
-			meta, ok := cfg.Registry.Get(name)
-			if !ok {
-				logger.Error(fmt.Errorf("failed to get event watcher metadata"), "missing metadata", "object", name)
-				cfg.enqueueForReconcile(name)
-				return
-			}
-
-			meta.LastClientID = newClient.ID()
-			cfg.Registry.Register(name, meta)
-
-			newDispatcher, dispErr := cfg.getOrCreateDispatcher(ctx)
-			if dispErr != nil {
-				logger.Error(dispErr, "Failed to get websocket dispatcher")
-				cfg.enqueueForReconcile(name)
-				return
-			}
-
-			currentDispatcher = newDispatcher
-			msgCh = currentDispatcher.Register(name)
 		}
 	}
 }
 
 // enqueueForReconcile enqueues an object for reconciliation
-func (cfg InstantUpdateConfig) enqueueForReconcile(key types.NamespacedName) {
+func (cfg *InstantUpdateConfig) enqueueForReconcile(key types.NamespacedName) {
 	if cfg.SourceCh == nil || cfg.EventObjectFactory == nil {
 		return
 	}
 	cfg.SourceCh <- event.GenericEvent{
 		Object: cfg.EventObjectFactory(key),
-	}
-}
-
-// defaultEventObjectFactory creates a default event object factory for tests
-func defaultEventObjectFactory(template client.Object) func(types.NamespacedName) client.Object {
-	return func(key types.NamespacedName) client.Object {
-		objCopy := template.DeepCopyObject()
-		obj, ok := objCopy.(client.Object)
-		if !ok {
-			return template
-		}
-		obj.SetNamespace(key.Namespace)
-		obj.SetName(key.Name)
-		obj.SetResourceVersion("")
-		return obj
 	}
 }
 
@@ -299,6 +259,21 @@ func (cfg *InstantUpdateConfig) validate() error {
 		cfg.EventObjectFactory = defaultEventObjectFactory(cfg.Secret)
 	}
 	return nil
+}
+
+// defaultEventObjectFactory creates a default event object factory for tests
+func defaultEventObjectFactory(template client.Object) func(types.NamespacedName) client.Object {
+	return func(key types.NamespacedName) client.Object {
+		objCopy := template.DeepCopyObject()
+		obj, ok := objCopy.(client.Object)
+		if !ok {
+			return template
+		}
+		obj.SetNamespace(key.Namespace)
+		obj.SetName(key.Name)
+		obj.SetResourceVersion("")
+		return obj
+	}
 }
 
 type eventMessage struct {
@@ -356,16 +331,6 @@ func (cfg *InstantUpdateConfig) getOrCreateDispatcher(ctx context.Context) (*eve
 	go d.readLoop(readCtx)
 
 	return d, nil
-}
-
-func resetDispatcher(ctx context.Context, client vault.Client) error {
-	dispatcherMu.Lock()
-	globalDispatcher = nil
-	dispatcherMu.Unlock()
-
-	cfg := InstantUpdateConfig{Client: client}
-	_, err := cfg.getOrCreateDispatcher(ctx)
-	return err
 }
 
 func (d *eventDispatcher) Register(name types.NamespacedName) chan eventMessage {
