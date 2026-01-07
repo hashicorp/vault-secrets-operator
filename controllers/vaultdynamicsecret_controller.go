@@ -349,7 +349,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	var doRolloutRestart bool
 	switch {
-	case r.isStaticCreds(&o.Status.StaticCredsMetaData):
+	case r.isStaticCreds(&o.Status.StaticCredsMetaData) && o.Status.LastGeneration > 1:
 		// static credentials were updated relative to the last sync.
 		doRolloutRestart = staticCredsUpdated
 	case doSync && o.Status.LastGeneration > 1:
