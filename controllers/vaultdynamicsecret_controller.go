@@ -347,7 +347,14 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
-	doRolloutRestart := (doSync && o.Status.LastGeneration > 1) || staticCredsUpdated
+	var doRolloutRestart bool
+	switch {
+	case r.isStaticCreds(&o.Status.StaticCredsMetaData):
+		// static credentials were updated relative to the last sync.
+		doRolloutRestart = staticCredsUpdated
+	case doSync && o.Status.LastGeneration > 1:
+		doRolloutRestart = true
+	}
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = nowFunc().Unix()
