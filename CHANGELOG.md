@@ -1,9 +1,18 @@
+## 1.1.1 (December 16th, 2025)
+
+Fix:
+* Helm: properly set the PodSecurityContext: ([#1183](https://github.com/hashicorp/vault-secrets-operator/pull/1183))
+
+Enhancements:
+* Helm: bump CSI driver version to 1.0.1: ([#1184](https://github.com/hashicorp/vault-secrets-operator/pull/1184))
+
+
 ## 1.1.0 (December 12th, 2025)
 
 Enhancements:
 * Add support for linux/s390x and linux/arm64 (Red Hat): ([#1152](https://github.com/hashicorp/vault-secrets-operator/pull/1152))
 
-Fixes:
+Fix:
 * Topology spread constraints bugfix: ([#1148](https://github.com/hashicorp/vault-secrets-operator/pull/1148))
 * Update docs branch version: ([#1140](https://github.com/hashicorp/vault-secrets-operator/pull/1140))
 

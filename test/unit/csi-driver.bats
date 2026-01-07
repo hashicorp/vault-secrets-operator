@@ -330,7 +330,7 @@ load _helpers
     --set 'csi.enabled=true' \
     . | tee /dev/stderr |
     yq 'select(.kind == "DaemonSet") | .spec.template.spec.containers[1].image' | tee /dev/stderr)
-  [ "${actual}" = "hashicorp/vault-secrets-operator-csi:1.0.0" ]
+  [ "${actual}" = "hashicorp/vault-secrets-operator-csi:1.0.1" ]
 }
 
 @test "CSIDriver/DaemonSet: custom driver image can be set" {
@@ -630,11 +630,8 @@ load _helpers
     yq 'select(.kind == "DaemonSet")' | tee /dev/stderr)
 
   local actual
-
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
-  [ "${actual}" = '1' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
-  [ "${actual}" = 'true' ]
+  [ "${actual}" = '0' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
@@ -650,17 +647,16 @@ load _helpers
   object=$(helm template \
     -s templates/csi-driver.yaml \
     --set 'csi.enabled=true' \
-    --set 'csi.securityContext.privileged=foo' \
+    --set 'csi.securityContext.fsGroup=101' \
     --set 'csi.driver.securityContext.privileged=baz' \
     . | tee /dev/stderr |
     yq 'select(.kind == "DaemonSet")' | tee /dev/stderr)
 
   local actual
-
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
   [ "${actual}" = '1' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
-  [ "${actual}" = 'true' ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext.fsGroup' | tee /dev/stderr)
+  [ "${actual}" = '101' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
@@ -677,16 +673,17 @@ load _helpers
     -s templates/csi-driver.yaml \
     --set 'csi.enabled=true' \
     --set 'csi.securityContext.allowPrivilegeEscalation=false' \
+    --set 'csi.securityContext.fsGroup=101' \
     . | tee /dev/stderr |
     yq 'select(.kind == "DaemonSet")' | tee /dev/stderr)
 
   local actual
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
   [ "${actual}" = '2' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
-  [ "${actual}" = 'true' ]
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .allowPrivilegeEscalation | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'false' ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext.fsGroup' | tee /dev/stderr)
+  [ "${actual}" = '101' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
@@ -702,7 +699,8 @@ load _helpers
   object=$(helm template \
     -s templates/csi-driver.yaml \
     --set 'csi.enabled=true' \
-    --set 'csi.driver.securityContext.privileged=true' \
+    --set 'csi.securityContext.runAsNonRoot=true' \
+    --set 'csi.securityContext.fsGroup=101' \
     --set 'csi.driver.securityContext.allowPrivilegeEscalation=false' \
     . | tee /dev/stderr |
     yq 'select(.kind == "DaemonSet")' \
@@ -710,9 +708,11 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '.spec.template.spec.securityContext | length' | tee /dev/stderr)
-  [ "${actual}" = '1' ]
-  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .privileged | select(tag == "!!bool")' | tee /dev/stderr)
+  [ "${actual}" = '2' ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext | .runAsNonRoot | select(tag == "!!bool")' | tee /dev/stderr)
   [ "${actual}" = 'true' ]
+  actual=$(echo "$object" | yq '.spec.template.spec.securityContext.fsGroup' | tee /dev/stderr)
+  [ "${actual}" = '101' ]
 
   local driverObj
   driverObj=$(echo "$object" | yq '.spec.template.spec.containers[] | select(.name == "driver") | .securityContext')
