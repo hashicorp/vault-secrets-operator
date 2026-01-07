@@ -6,7 +6,6 @@ package controllers
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	"nhooyr.io/websocket"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -285,14 +283,13 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// starts listening to events that are relevant to the secret so that updates can be triggered
 		// on a near-instant basis
 		err := EnsureEventWatcher(ctx, &InstantUpdateConfig{
-			Secret:             o,
-			Client:             c,
-			Registry:           r.eventWatcherRegistry,
-			BackOffRegistry:    r.BackOffRegistry,
-			SourceCh:           r.SourceCh,
-			Recorder:           r.Recorder,
-			StreamSecretEvents: r.streamVSSAdapter,
-			NewClientFunc:      r.newVSSClient,
+			Secret:          o,
+			Client:          c,
+			Registry:        r.eventWatcherRegistry,
+			BackOffRegistry: r.BackOffRegistry,
+			SourceCh:        r.SourceCh,
+			Recorder:        r.Recorder,
+			NewClientFunc:   r.newVSSClient,
 		})
 		if err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
@@ -345,75 +342,6 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 		}
 	}
 	return nil
-}
-
-// eventMsg is used to extract the relevant fields from an event message sent
-// from Vault
-type eventMsg struct {
-	Data struct {
-		Event struct {
-			Metadata struct {
-				Path     string `json:"path"`
-				Modified string `json:"modified"`
-			} `json:"metadata"`
-		} `json:"event"`
-		Namespace string `json:"namespace"`
-	} `json:"data"`
-}
-
-func (r *VaultStaticSecretReconciler) streamStaticSecretEvents(ctx context.Context, o *secretsv1beta1.VaultStaticSecret) error {
-	logger := log.FromContext(ctx).WithName("streamStaticSecretEvents")
-
-	message := eventMsg{}
-	err := json.Unmarshal(message, &message)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal event message: %w", err)
-	}
-	// logger.V(consts.LogLevelTrace).Info("Received message",
-	// 	"message type", msgType, "message", messageMap)
-
-	// modified, err := parseutil.ParseBool(messageMap.Data.Event.Metadata.Modified)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to parse modified field: %w", err)
-	// }
-
-	// if modified {
-	// 	namespace := strings.Trim(messageMap.Data.Namespace, "/")
-	// 	path := messageMap.Data.Event.Metadata.Path
-	// 	specPath := strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
-
-	// 	if o.Spec.Type == consts.KVSecretTypeV2 {
-	// 		specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
-	// 	}
-	// 	logger.V(consts.LogLevelTrace).Info("modified Event received from Vault",
-	// 		"namespace", namespace, "path", path, "spec.namespace", o.Spec.Namespace,
-	// 		"spec path", specPath)
-	// 	if namespace == o.Spec.Namespace && path == specPath {
-	// 		logger.V(consts.LogLevelDebug).Info("Event matches, sending requeue",
-	// 			"namespace", namespace, "path", path)
-	// 		r.SourceCh <- event.GenericEvent{
-	// 			Object: &secretsv1beta1.VaultStaticSecret{
-	// 				ObjectMeta: metav1.ObjectMeta{
-	// 					Namespace: o.Namespace,
-	// 					Name:      o.Name,
-	// 				},
-	// 			},
-	// 		}
-	// 	}
-	// } else {
-	// 	logger.V(consts.LogLevelTrace).Info("Non-modified event received from Vault, ignoring",
-	// 		"message", messageMap)
-	// }
-
-	return nil
-}
-
-func (r *VaultStaticSecretReconciler) streamVSSAdapter(ctx context.Context, obj client.Object, msgType websocket.MessageType, data []byte) error {
-	vss, ok := obj.(*secretsv1beta1.VaultStaticSecret)
-	if !ok {
-		return fmt.Errorf("unexpected object type %T", obj)
-	}
-	return r.streamStaticSecretEvents(ctx, vss, msgType, data)
 }
 
 func (r *VaultStaticSecretReconciler) newVSSClient(ctx context.Context, obj client.Object) (vault.Client, error) {

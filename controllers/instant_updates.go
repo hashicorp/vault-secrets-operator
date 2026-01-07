@@ -5,7 +5,10 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
@@ -30,17 +34,12 @@ const (
 	instantUpdateErrorThreshold = 5
 )
 
-// StreamSecretEventsFunc handles a single Vault event message for the provided object.
-type StreamSecretEventsFunc func(context.Context, client.Object, websocket.MessageType, []byte) error
-
 // InstantUpdateConfig configures the behavior of EnsureInstantUpdateWatcher.
 type InstantUpdateConfig struct {
 	// VaultStaticSecret or VaultDynamicSecret to watch for instant updates.
 	Secret client.Object
 	// Client is the current Vault client tied to Object.
 	Client vault.Client
-	// StreamSecretEvents handles websocket events and is invoked inside the watcher loop.
-	StreamSecretEvents StreamSecretEventsFunc
 	// Registry tracks active event watchers.
 	Registry *eventWatcherRegistry
 	// BackOffRegistry provides retry intervals for reconnect attempts.
@@ -144,7 +143,7 @@ func UnwatchEvents(registry *eventWatcherRegistry, obj client.Object) {
 }
 
 // getEvents streams event notifications from Vault and handles errors and retries
-func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, dispatcher *eventDispatcher, msgCh chan eventMessage, stoppedCh chan struct{}) {
+func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, dispatcher *eventDispatcher, msgCh chan dispatcherMessage, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
 	name := client.ObjectKeyFromObject(o)
 	defer func() {
@@ -195,10 +194,14 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				}
 
 				err := msg.err
+				matched := false
 				if err == nil {
-					err = cfg.StreamSecretEvents(ctx, o, msg.msgType, msg.data)
+					matched, err = cfg.streamSecretEvents(ctx, o, msg.msgType, msg.data)
 				}
 				if err == nil {
+					if matched {
+						cfg.enqueueForReconcile(name)
+					}
 					shouldBackoff = false
 					errorCount = 0
 					retryBackoff.Reset()
@@ -223,6 +226,57 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 	}
 }
 
+func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj client.Object, _ websocket.MessageType, data []byte) (bool, error) {
+	logger := log.FromContext(ctx).WithName("streamSecretEvents")
+
+	message := vaultEventMessage{}
+	if err := json.Unmarshal(data, &message); err != nil {
+		return false, fmt.Errorf("failed to unmarshal event message: %w", err)
+	}
+
+	if message.Data.Event.Metadata.Modified == "" {
+		return false, nil
+	}
+
+	modified, err := strconv.ParseBool(message.Data.Event.Metadata.Modified)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse modified field: %w", err)
+	}
+	if !modified {
+		return false, nil
+	}
+
+	namespace := strings.Trim(message.Data.Namespace, "/")
+	path := message.Data.Event.Metadata.Path
+
+	var specNamespace string
+	var specPath string
+
+	switch o := obj.(type) {
+	case *secretsv1beta1.VaultStaticSecret:
+		specNamespace = strings.Trim(o.Spec.Namespace, "/")
+		specPath = strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+		if o.Spec.Type == consts.KVSecretTypeV2 {
+			specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+		}
+	case *secretsv1beta1.VaultDynamicSecret:
+		specNamespace = strings.Trim(o.Spec.Namespace, "/")
+		specPath = strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+	default:
+		return false, fmt.Errorf("unexpected object type %T", obj)
+	}
+
+	if namespace != specNamespace || path != specPath {
+		logger.V(consts.LogLevelTrace).Info("Event does not match",
+			"namespace", namespace, "path", path, "spec namespace", specNamespace, "spec path", specPath)
+		return false, nil
+	}
+
+	logger.V(consts.LogLevelDebug).Info("Event matches, requeueing",
+		"namespace", namespace, "path", path)
+	return true, nil
+}
+
 // enqueueForReconcile enqueues an object for reconciliation
 func (cfg *InstantUpdateConfig) enqueueForReconcile(key types.NamespacedName) {
 	if cfg.SourceCh == nil || cfg.EventObjectFactory == nil {
@@ -239,9 +293,6 @@ func (cfg *InstantUpdateConfig) validate() error {
 	}
 	if cfg.Client == nil {
 		return fmt.Errorf("instant update watcher requires a Vault client")
-	}
-	if cfg.StreamSecretEvents == nil {
-		return fmt.Errorf("instant update watcher requires a stream function")
 	}
 	if cfg.Registry == nil || cfg.BackOffRegistry == nil {
 		return fmt.Errorf("instant update watcher requires registries")
@@ -276,17 +327,30 @@ func defaultEventObjectFactory(template client.Object) func(types.NamespacedName
 	}
 }
 
-type eventMessage struct {
+type dispatcherMessage struct {
 	msgType websocket.MessageType
 	data    []byte
 	err     error
+}
+
+// vaultEventMessage is used to extract the relevant fields from an event message sent from Vault.
+type vaultEventMessage struct {
+	Data struct {
+		Event struct {
+			Metadata struct {
+				Path     string `json:"path"`
+				Modified string `json:"modified"`
+			} `json:"metadata"`
+		} `json:"event"`
+		Namespace string `json:"namespace"`
+	} `json:"data"`
 }
 
 type eventDispatcher struct {
 	mu        sync.Mutex
 	clientID  string
 	conn      *websocket.Conn
-	listeners map[types.NamespacedName]chan eventMessage
+	listeners map[types.NamespacedName]chan dispatcherMessage
 	cancel    context.CancelFunc
 	stopped   bool
 }
@@ -296,14 +360,17 @@ var (
 	globalDispatcher *eventDispatcher
 )
 
+// getOrCreateDispatcher returns the shared dispatcher for the current Vault client.
 func (cfg *InstantUpdateConfig) getOrCreateDispatcher(ctx context.Context) (*eventDispatcher, error) {
 	dispatcherMu.Lock()
 	defer dispatcherMu.Unlock()
 
+	// Reuse the dispatcher when it is still valid for this Vault client.
 	if globalDispatcher != nil && globalDispatcher.clientID == cfg.Client.ID() && !globalDispatcher.stopped {
 		return globalDispatcher, nil
 	}
 
+	// Replace a stale dispatcher (different client or stopped) with a fresh one.
 	if globalDispatcher != nil {
 		globalDispatcher.stop()
 		globalDispatcher = nil
@@ -324,7 +391,7 @@ func (cfg *InstantUpdateConfig) getOrCreateDispatcher(ctx context.Context) (*eve
 		clientID:  cfg.Client.ID(),
 		conn:      conn,
 		cancel:    cancel,
-		listeners: make(map[types.NamespacedName]chan eventMessage),
+		listeners: make(map[types.NamespacedName]chan dispatcherMessage),
 	}
 	globalDispatcher = d
 
@@ -333,15 +400,17 @@ func (cfg *InstantUpdateConfig) getOrCreateDispatcher(ctx context.Context) (*eve
 	return d, nil
 }
 
-func (d *eventDispatcher) Register(name types.NamespacedName) chan eventMessage {
+// Register adds a listener for the object and returns its message channel.
+func (d *eventDispatcher) Register(name types.NamespacedName) chan dispatcherMessage {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ch := make(chan eventMessage, 10)
+	ch := make(chan dispatcherMessage, 10)
 	d.listeners[name] = ch
 	return ch
 }
 
+// Unregister removes a listener and closes its channel.
 func (d *eventDispatcher) Unregister(name types.NamespacedName) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -352,6 +421,7 @@ func (d *eventDispatcher) Unregister(name types.NamespacedName) {
 	}
 }
 
+// readLoop reads from the shared websocket and fan-outs messages to listeners.
 func (d *eventDispatcher) readLoop(ctx context.Context) {
 	for {
 		msgType, data, err := d.conn.Read(ctx)
@@ -359,7 +429,7 @@ func (d *eventDispatcher) readLoop(ctx context.Context) {
 		d.mu.Lock()
 		for _, ch := range d.listeners {
 			select {
-			case ch <- eventMessage{msgType: msgType, data: data, err: err}:
+			case ch <- dispatcherMessage{msgType: msgType, data: data, err: err}:
 			default:
 			}
 		}
@@ -382,6 +452,7 @@ func (d *eventDispatcher) readLoop(ctx context.Context) {
 	}
 }
 
+// stop shuts down the dispatcher and closes all listener channels.
 func (d *eventDispatcher) stop() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
