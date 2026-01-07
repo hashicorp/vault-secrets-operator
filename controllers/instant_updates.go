@@ -267,10 +267,7 @@ func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj clie
 	switch o := obj.(type) {
 	case *secretsv1beta1.VaultStaticSecret:
 		specNamespace = strings.Trim(o.Spec.Namespace, "/")
-		specPath = strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
-		if o.Spec.Type == consts.KVSecretTypeV2 {
-			specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
-		}
+		specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
 	case *secretsv1beta1.VaultDynamicSecret:
 		specNamespace = strings.Trim(o.Spec.Namespace, "/")
 		specPath = strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
