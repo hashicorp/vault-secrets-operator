@@ -319,7 +319,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// sync the secret
-	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
+	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
@@ -343,18 +343,23 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{
 			RequeueAfter: horizon,
 		}, nil
-	} else {
-		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
+	r.BackOffRegistry.Delete(req.NamespacedName)
+
 	var doRolloutRestart bool
-	switch {
-	case r.isStaticCreds(&o.Status.StaticCredsMetaData) && o.Status.LastGeneration > 1:
-		// static credentials were updated relative to the last sync.
-		doRolloutRestart = staticCredsUpdated
-	case doSync && o.Status.LastGeneration > 1:
-		doRolloutRestart = true
+	if len(o.Spec.RolloutRestartTargets) > 0 {
+		switch {
+		case r.isStaticCreds(&o.Status.StaticCredsMetaData):
+			// static credentials were updated relative to the last sync.
+			doRolloutRestart = updated
+		case (doSync && o.Status.LastGeneration > 1) || updated:
+			doRolloutRestart = true
+		}
 	}
+
+	logger.V(consts.LogLevelDebug).Info("Rollout restart check", "doRolloutRestart", doRolloutRestart, "updated",
+		updated, "syncReason", syncReason, "isStaticCreds", r.isStaticCreds(&o.Status.StaticCredsMetaData))
 
 	o.Status.SecretLease = *secretLease
 	o.Status.LastRenewalTime = nowFunc().Unix()
