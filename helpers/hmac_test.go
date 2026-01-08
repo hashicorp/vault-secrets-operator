@@ -639,7 +639,7 @@ func assertSecretHMAC(t *testing.T, tt hmacSecretTestCase, c client.Client) {
 					got, gotMAC, err = HandleSecretHMACWithTransOpt(ctx, c, tt.validator, obj, tt.handleSecretHMAC.data, tt.transOpt)
 				} else {
 					args = []any{ctx, c, tt.validator, obj, tt.handleSecretHMAC.data, tt.transOpt}
-					msg = "HandleSecretHMACWithTrans(%v, %v, %v, %v)"
+					msg = "HandleSecretHMAC(%v, %v, %v, %v)"
 					got, gotMAC, err = HandleSecretHMAC(ctx, c, tt.validator, obj, tt.handleSecretHMAC.data)
 				}
 

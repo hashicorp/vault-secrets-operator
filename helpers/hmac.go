@@ -87,7 +87,7 @@ func handleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 
 	macsEqual := EqualMACS(lastMAC, newMAC)
 	if macsEqual {
-		macsEqual, err = HMACDestinationSecretWithTransOpt(ctx, client, validator, obj, transOpt)
+		macsEqual, err = hmacDestinationSecret(ctx, client, validator, obj, transOpt)
 		if err != nil {
 			return false, nil, err
 		}
@@ -139,12 +139,9 @@ func hmacDestinationSecret(ctx context.Context, client ctrlclient.Client, valida
 	// out-of-band change made to the Secret's data in this case the controller
 	// should do the sync.
 	if cur, ok, err := GetSyncableSecret(ctx, client, obj); ok {
-		data := cur.Data
-		if transOpt != nil {
-			data, err = FilterData(transOpt, data)
-			if err != nil {
-				return false, err
-			}
+		data, err := FilterData(transOpt, cur.Data)
+		if err != nil {
+			return false, err
 		}
 
 		curMessage, err := json.Marshal(data)
