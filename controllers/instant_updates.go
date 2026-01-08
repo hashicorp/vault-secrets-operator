@@ -267,7 +267,11 @@ func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj clie
 	switch o := obj.(type) {
 	case *secretsv1beta1.VaultStaticSecret:
 		specNamespace = strings.Trim(o.Spec.Namespace, "/")
-		specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+		if o.Spec.Type == consts.KVSecretTypeV1 {
+			specPath = strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+		} else {
+			specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+		}
 	case *secretsv1beta1.VaultDynamicSecret:
 		specNamespace = strings.Trim(o.Spec.Namespace, "/")
 		specPath = strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
@@ -276,7 +280,7 @@ func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj clie
 	}
 
 	if namespace != specNamespace || path != specPath {
-		logger.V(consts.LogLevelTrace).Info("Event does not match",
+		logger.V(consts.LogLevelDebug).Info("Event is not relevant for instant updates, skipping",
 			"namespace", namespace, "path", path, "spec namespace", specNamespace, "spec path", specPath)
 		return false, nil
 	}
