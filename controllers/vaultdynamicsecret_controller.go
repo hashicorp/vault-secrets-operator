@@ -123,6 +123,13 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
 
+	if addedFinalizer, err := maybeAddFinalizer(ctx, r.Client, o, vaultDynamicSecretFinalizer); err != nil {
+		return ctrl.Result{}, err
+	} else if addedFinalizer {
+		// the finalizer was added, requeue the request.
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
@@ -660,8 +667,7 @@ func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secr
 			"Failed to update the resource's status, err=%s", err)
 	}
 
-	_, err := maybeAddFinalizer(ctx, r.Client, o, vaultDynamicSecretFinalizer)
-	return err
+	return nil
 }
 
 func (r *VaultDynamicSecretReconciler) getVaultSecretLease(resp *api.Secret) *secretsv1beta1.VaultSecretLease {
