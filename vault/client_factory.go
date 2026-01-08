@@ -157,6 +157,9 @@ type cachingClientFactory struct {
 	clientGetValidator ClientGetValidator
 	// newClientFunc is a function that returns a new Client.
 	newClientFunc NewClientFunc
+	// newCacheKeyFunc is a function that computes a cache key from the
+	// provided VaultAuth and VaultConnection.
+	newCacheKeyFunc NewCacheKeyFunc
 }
 
 // Remove removes a Client from the cache. Returns true if the Client was removed.
@@ -315,7 +318,7 @@ func (m *cachingClientFactory) Restore(ctx context.Context, client ctrlclient.Cl
 		return nil, err
 	}
 
-	cacheKey, err = ComputeClientCacheKeyFromMeta(ctx, client, metaObj, m.clientOptions())
+	cacheKey, err = m.computeCacheKeyFromMeta(ctx, client, metaObj)
 	if err != nil {
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
 			"Failed to get cacheKey from obj, err=%s", err)
@@ -388,7 +391,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		return nil, err
 	}
 
-	cacheKey, err = ComputeClientCacheKeyFromMeta(ctx, client, metaObj, m.clientOptions())
+	cacheKey, err = m.computeCacheKeyFromMeta(ctx, client, metaObj)
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
@@ -612,6 +615,37 @@ func (m *cachingClientFactory) clientOptions() *ClientOptions {
 		GlobalVaultAuthOptions:    m.GlobalVaultAuthOptions,
 		CredentialProviderFactory: m.credentialProviderFactory,
 	}
+}
+
+// computeCacheKeyFromMeta computes a cache key for a given SyncableSecretMetaDataI.
+// It uses the factory's newCacheKeyFunc to allow customization of cache key computation.
+func (m *cachingClientFactory) computeCacheKeyFromMeta(ctx context.Context, client ctrlclient.Client, metaObj common.SyncableSecretMetaDataI) (ClientCacheKey, error) {
+	opts := m.clientOptions()
+	if opts.CredentialProviderFactory == nil {
+		return "", errors.New("CredentialProviderFactory is nil")
+	}
+
+	authObj, err := common.GetVaultAuthNamespacedForMeta(ctx, client, metaObj, opts.GlobalVaultAuthOptions)
+	if err != nil {
+		return "", err
+	}
+
+	connName, err := common.GetConnectionNamespacedName(authObj)
+	if err != nil {
+		return "", err
+	}
+
+	connObj, err := common.GetVaultConnection(ctx, client, connName)
+	if err != nil {
+		return "", err
+	}
+
+	provider, err := opts.CredentialProviderFactory.New(ctx, client, authObj, metaObj.GetProviderNamespace())
+	if err != nil {
+		return "", err
+	}
+
+	return m.newCacheKeyFunc(authObj, connObj, provider.GetUID())
 }
 
 // cacheClient to the global in-memory cache.
@@ -928,6 +962,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		credentialProviderFactory: config.CredentialProviderFactory,
 		clientGetValidator:        config.ClientGetValidator,
 		newClientFunc:             config.NewClientFunc,
+		newCacheKeyFunc:           config.NewCacheKeyFunc,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -1001,6 +1036,9 @@ type CachingClientFactoryConfig struct {
 	ClientGetValidator  ClientGetValidator
 	// NewClientFunc is a function that returns a new Client.
 	NewClientFunc NewClientFunc
+	// NewCacheKeyFunc is a function that computes a cache key from the
+	// provided VaultAuth and VaultConnection.
+	NewCacheKeyFunc NewCacheKeyFunc
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
@@ -1015,6 +1053,7 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 		SetupEncryptionClientTimeout: defaultSetupEncryptionClientTimeout,
 		ClientCacheNumLocks:          100,
 		NewClientFunc:                NewClientWithLogin,
+		NewCacheKeyFunc:              computeClientCacheKey,
 	}
 }
 
