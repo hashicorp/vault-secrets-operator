@@ -407,10 +407,10 @@ func filter[V any](d map[string]V, pats []string, f func(matched bool, k string)
 	return nil
 }
 
-// filterData filters data using SecretTransformationOption's exclude/include
+// FilterData filters data using SecretTransformationOption's exclude/include
 // regex patterns, with processing done in that order. If
 // SecretTransformationOption is nil, return all data, unfiltered.
-func filterData[V any](opt *SecretTransformationOption, data map[string]V) (map[string]V, error) {
+func FilterData[V any](opt *SecretTransformationOption, data map[string]V) (map[string]V, error) {
 	if opt == nil {
 		return data, nil
 	}

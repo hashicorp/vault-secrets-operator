@@ -152,6 +152,8 @@ type hmacSecretTestCase struct {
 	name               string
 	objMeta            metav1.ObjectMeta
 	validator          HMACValidator
+	withTransOpt       bool
+	transOpt           *SecretTransformationOption
 	want               bool
 	data               map[string][]byte
 	hmacKey            []byte
@@ -228,14 +230,17 @@ func TestHMACDestinationSecret(t *testing.T) {
 	defaultData := map[string][]byte{
 		"foo": []byte(`baz`),
 	}
-
-	b := marshalRaw(t, defaultData)
-	defaultHMAC, err := MACMessage(defaultHMACKey, b)
+	defaultHMAC, err := MACMessage(defaultHMACKey, marshalRaw(t, defaultData))
 	require.NoError(t, err)
 	defaultSecretMAC := base64.StdEncoding.EncodeToString(defaultHMAC)
-	otherHMAC, err := MACMessage(defaultHMACKey, []byte(`bbb`))
+
+	otherData := map[string][]byte{
+		"foo": []byte(`baz`),
+		"baz": []byte(`buz`),
+	}
+	otherHMAC, err := MACMessage(defaultHMACKey, marshalRaw(t, otherData))
 	require.NoError(t, err)
-	otherSecretMac := base64.StdEncoding.EncodeToString(otherHMAC)
+	otherSecretMAC := base64.StdEncoding.EncodeToString(otherHMAC)
 
 	objMeta := metav1.ObjectMeta{
 		Namespace: "foo",
@@ -253,6 +258,25 @@ func TestHMACDestinationSecret(t *testing.T) {
 				Labels:      nil,
 				Annotations: nil,
 				Type:        "",
+			},
+			data:    defaultData,
+			wantErr: assert.NoError,
+			want:    true,
+		},
+		{
+			name:      "matched-with-transopts",
+			secretMAC: defaultSecretMAC,
+			objMeta:   objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			withTransOpt: true,
+			transOpt: &SecretTransformationOption{
+				Excludes: []string{"^baz$"},
 			},
 			data:    defaultData,
 			wantErr: assert.NoError,
@@ -282,7 +306,7 @@ func TestHMACDestinationSecret(t *testing.T) {
 				Annotations: nil,
 				Type:        "",
 			},
-			secretMAC: otherSecretMac,
+			secretMAC: otherSecretMAC,
 			data:      defaultData,
 			want:      false,
 			wantErr:   assert.NoError,
@@ -377,8 +401,7 @@ func TestHandleDestinationSecret(t *testing.T) {
 		"buz": []byte(`qux`),
 	}
 
-	b := marshalRaw(t, defaultData)
-	defaultHMAC, err := MACMessage(defaultHMACKey, b)
+	defaultHMAC, err := MACMessage(defaultHMACKey, marshalRaw(t, defaultData))
 	require.NoError(t, err)
 	defaultSecretMAC := base64.StdEncoding.EncodeToString(defaultHMAC)
 
@@ -388,6 +411,11 @@ func TestHandleDestinationSecret(t *testing.T) {
 	objMeta := metav1.ObjectMeta{
 		Namespace: "foo",
 		Name:      "bar",
+	}
+
+	otherData := map[string][]byte{
+		"foo": []byte(`baz`),
+		"baz": []byte(`buz`),
 	}
 
 	tests := []hmacSecretTestCase{
@@ -406,6 +434,29 @@ func TestHandleDestinationSecret(t *testing.T) {
 			handleSecretHMAC: handleSecretHMACTest{
 				data:    defaultData,
 				wantMAC: defaultHMAC,
+			},
+			wantErr: assert.NoError,
+			want:    true,
+		},
+		{
+			name:      "matched-with-transopts",
+			secretMAC: defaultSecretMAC,
+			objMeta:   objMeta,
+			destination: secretsv1beta1.Destination{
+				Name:        "baz",
+				Create:      false,
+				Labels:      nil,
+				Annotations: nil,
+				Type:        "",
+			},
+			data: otherData,
+			handleSecretHMAC: handleSecretHMACTest{
+				data:    defaultData,
+				wantMAC: defaultHMAC,
+			},
+			withTransOpt: true,
+			transOpt: &SecretTransformationOption{
+				Excludes: []string{"^baz$"},
 			},
 			wantErr: assert.NoError,
 			want:    true,
@@ -574,19 +625,44 @@ func assertSecretHMAC(t *testing.T, tt hmacSecretTestCase, c client.Client) {
 					Data: tt.data,
 				}))
 			}
+			var (
+				msg    string
+				args   []any
+				got    bool
+				gotMAC []byte
+				err    error
+			)
 			if len(tt.handleSecretHMAC.data) > 0 || tt.handleSecretHMAC.wantMAC != nil {
-				got, gotMAC, err := HandleSecretHMAC(ctx, c, tt.validator, obj, tt.handleSecretHMAC.data)
-				if !tt.wantErr(t, err, fmt.Sprintf("HandleSecretHMAC(%v, %v, %v, %v)", ctx, c, tt.validator, obj)) {
+				if tt.withTransOpt {
+					args = []any{ctx, c, tt.validator, obj, tt.handleSecretHMAC.data, tt.transOpt}
+					msg = "HandleSecretHMACWithTransOpt(%v, %v, %v, %v, %v)"
+					got, gotMAC, err = HandleSecretHMACWithTransOpt(ctx, c, tt.validator, obj, tt.handleSecretHMAC.data, tt.transOpt)
+				} else {
+					args = []any{ctx, c, tt.validator, obj, tt.handleSecretHMAC.data, tt.transOpt}
+					msg = "HandleSecretHMACWithTrans(%v, %v, %v, %v)"
+					got, gotMAC, err = HandleSecretHMAC(ctx, c, tt.validator, obj, tt.handleSecretHMAC.data)
+				}
+
+				if !tt.wantErr(t, err, fmt.Sprintf(msg, args...)) {
 					return
 				}
-				assert.Equalf(t, tt.want, got, "HandleSecretHMAC(%v, %v, %v, %v)", ctx, c, tt.validator, obj)
-				assert.Equalf(t, tt.handleSecretHMAC.wantMAC, gotMAC, "HandleSecretHMAC(%v, %v, %v, %v)", ctx, c, tt.validator, obj)
+
+				assert.Equalf(t, tt.want, got, msg, args...)
+				assert.Equalf(t, tt.handleSecretHMAC.wantMAC, gotMAC, msg, args...)
 			} else {
-				got, err := HMACDestinationSecret(ctx, c, tt.validator, obj)
-				if !tt.wantErr(t, err, fmt.Sprintf("HMACDestinationSecret(%v, %v, %v, %v)", ctx, c, tt.validator, obj)) {
+				if tt.withTransOpt {
+					msg = "HMACDestinationSecretWithTransOpt(%v, %v, %v, %v, %v)"
+					args = []any{ctx, c, tt.validator, obj, tt.handleSecretHMAC.data, tt.transOpt}
+					got, err = HMACDestinationSecretWithTransOpt(ctx, c, tt.validator, obj, tt.transOpt)
+				} else {
+					msg = "HMACDestinationSecret(%v, %v, %v, %v)"
+					args = []any{ctx, c, tt.validator, obj, tt.handleSecretHMAC.data}
+					got, err = HMACDestinationSecret(ctx, c, tt.validator, obj)
+				}
+				if !tt.wantErr(t, err, fmt.Sprintf(msg, args...)) {
 					return
 				}
-				assert.Equalf(t, tt.want, got, "HMACDestinationSecret(%v, %v, %v, %v)", ctx, c, tt.validator, obj)
+				assert.Equalf(t, tt.want, got, msg, args...)
 			}
 		})
 	}
