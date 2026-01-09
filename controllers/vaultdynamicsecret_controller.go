@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -49,6 +49,13 @@ const (
 var (
 	staticCredsJitterHorizon = time.Second * 3
 	vdsJitterFactor          = 0.05
+	staticTransOpt           = &helpers.SecretTransformationOption{
+		Excludes: []string{
+			fmt.Sprintf("^%s$", strings.Join([]string{
+				"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", helpers.SecretDataKeyRaw,
+			}, "|")),
+		},
+	}
 )
 
 var _ reconcile.Reconciler = &VaultDynamicSecretReconciler{}
@@ -515,12 +522,12 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 			return nil, false, err
 		}
 
-		dataToMAC := maps.Clone(data)
-		for _, k := range []string{"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", "_raw"} {
-			delete(dataToMAC, k)
+		dataToMAC, err := helpers.FilterData(staticTransOpt, data)
+		if err != nil {
+			return nil, false, err
 		}
 
-		macsEqual, messageMAC, err := helpers.HandleSecretHMAC(ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC)
+		macsEqual, messageMAC, err := helpers.HandleSecretHMACWithTransOpt(ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC, staticTransOpt)
 		if err != nil {
 			return nil, false, err
 		}
