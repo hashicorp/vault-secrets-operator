@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/keymutex"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -675,62 +674,6 @@ func Test_cachingClientFactory_storageEncryptionClient(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Test_cachingClientFactory_customCacheKeyFunc tests that the factory can use a custom cache key function
-func Test_cachingClientFactory_customCacheKeyFunc(t *testing.T) {
-	ctx := context.Background()
-
-	// Create test objects
-	authObj := &secretsv1beta1.VaultAuth{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-auth",
-			Namespace: "default",
-			UID:       "11111111-1111-1111-1111-111111111111",
-		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Method: "kubernetes",
-		},
-	}
-
-	connObj := &secretsv1beta1.VaultConnection{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-conn",
-			Namespace: "default",
-			UID:       "22222222-2222-2222-2222-222222222222",
-		},
-	}
-
-	providerUID := types.UID("33333333-3333-3333-3333-333333333333")
-
-	customFuncCalled := false
-	// Define custom cache key function that doesn't require UID validation
-	customCacheKeyFunc := func(auth *secretsv1beta1.VaultAuth, conn *secretsv1beta1.VaultConnection, uid types.UID) (ClientCacheKey, error) {
-		customFuncCalled = true
-		key := fmt.Sprintf("%s-%s-%s", auth.Spec.Method, auth.Name, conn.Name)
-		return ClientCacheKey(key), nil
-	}
-
-	config := DefaultCachingClientFactoryConfig()
-	config.NewCacheKeyFunc = customCacheKeyFunc
-	config.Persist = false
-	config.CollectClientCacheMetrics = false
-
-	factory, err := NewCachingClientFactory(ctx, nil, nil, config)
-	require.NoError(t, err)
-	require.NotNil(t, factory)
-
-	// Verify the custom function is set
-	cachingFactory, ok := factory.(*cachingClientFactory)
-	require.True(t, ok)
-	require.NotNil(t, cachingFactory.newCacheKeyFunc)
-
-	cacheKey, err := cachingFactory.newCacheKeyFunc(authObj, connObj, providerUID)
-	require.NoError(t, err)
-	assert.True(t, customFuncCalled, "custom cache key function should have been called")
-	assert.Equal(t, ClientCacheKey("kubernetes-test-auth-test-conn"), cacheKey)
-
-	factory.Stop()
 }
 
 func assertStorageEncryptionClient(t *testing.T, tt storageEncryptionClientTest, got Client) {

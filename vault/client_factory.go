@@ -157,9 +157,6 @@ type cachingClientFactory struct {
 	clientGetValidator ClientGetValidator
 	// newClientFunc is a function that returns a new Client.
 	newClientFunc NewClientFunc
-	// newCacheKeyFunc is a function that computes a cache key from the
-	// provided VaultAuth and VaultConnection.
-	newCacheKeyFunc NewCacheKeyFunc
 }
 
 // Remove removes a Client from the cache. Returns true if the Client was removed.
@@ -645,7 +642,7 @@ func (m *cachingClientFactory) computeCacheKeyFromMeta(ctx context.Context, clie
 		return "", err
 	}
 
-	return m.newCacheKeyFunc(authObj, connObj, provider.GetUID())
+	return computeClientCacheKey(authObj, connObj, provider.GetUID())
 }
 
 // cacheClient to the global in-memory cache.
@@ -962,7 +959,6 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		credentialProviderFactory: config.CredentialProviderFactory,
 		clientGetValidator:        config.ClientGetValidator,
 		newClientFunc:             config.NewClientFunc,
-		newCacheKeyFunc:           config.NewCacheKeyFunc,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -1036,9 +1032,6 @@ type CachingClientFactoryConfig struct {
 	ClientGetValidator  ClientGetValidator
 	// NewClientFunc is a function that returns a new Client.
 	NewClientFunc NewClientFunc
-	// NewCacheKeyFunc is a function that computes a cache key from the
-	// provided VaultAuth and VaultConnection.
-	NewCacheKeyFunc NewCacheKeyFunc
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
@@ -1053,7 +1046,6 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 		SetupEncryptionClientTimeout: defaultSetupEncryptionClientTimeout,
 		ClientCacheNumLocks:          100,
 		NewClientFunc:                NewClientWithLogin,
-		NewCacheKeyFunc:              computeClientCacheKey,
 	}
 }
 

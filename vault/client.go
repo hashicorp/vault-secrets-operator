@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/blake2b"
-	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -28,11 +27,6 @@ import (
 )
 
 type NewClientFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error)
-
-// NewCacheKeyFunc is a function that computes a cache key for a given VaultAuth and VaultConnection.
-// This allows customization of cache key computation, for use by
-// other tools that use the VSO client as a library. (e.g., for building k8s components where the API server is not available).
-type NewCacheKeyFunc func(authObj *secretsv1beta1.VaultAuth, connObj *secretsv1beta1.VaultConnection, providerUID types.UID) (ClientCacheKey, error)
 
 type ClientOptions struct {
 	SkipRenewal               bool
