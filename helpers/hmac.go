@@ -39,6 +39,24 @@ var hmacSecretLabels = map[string]string{
 func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 	validator HMACValidator, obj ctrlclient.Object, data map[string][]byte,
 ) (bool, []byte, error) {
+	return handleSecretHMAC(ctx, client, validator, obj, data, nil)
+}
+
+// HandleSecretHMACWithTransOpt compares the HMAC of data to its previously computed value
+// stored in o.Status.SecretHMAC, returning true if they are equal. The computed
+// new-MAC will be returned so that o.Status.SecretHMAC can be updated.
+//
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret,
+// VaultPKISecret, HCPVaultSecretsApp
+func HandleSecretHMACWithTransOpt(ctx context.Context, client ctrlclient.Client,
+	validator HMACValidator, obj ctrlclient.Object, data map[string][]byte, transOpt *SecretTransformationOption,
+) (bool, []byte, error) {
+	return handleSecretHMAC(ctx, client, validator, obj, data, transOpt)
+}
+
+func handleSecretHMAC(ctx context.Context, client ctrlclient.Client,
+	validator HMACValidator, obj ctrlclient.Object, data map[string][]byte, transOpt *SecretTransformationOption,
+) (bool, []byte, error) {
 	cur, err := getSecretMac(obj)
 	if err != nil {
 		return false, nil, err
@@ -69,7 +87,7 @@ func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 
 	macsEqual := EqualMACS(lastMAC, newMAC)
 	if macsEqual {
-		macsEqual, err = HMACDestinationSecret(ctx, client, validator, obj)
+		macsEqual, err = hmacDestinationSecret(ctx, client, validator, obj, transOpt)
 		if err != nil {
 			return false, nil, err
 		}
@@ -85,6 +103,18 @@ func HandleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 func HMACDestinationSecret(ctx context.Context, client ctrlclient.Client,
 	validator HMACValidator, obj ctrlclient.Object,
 ) (bool, error) {
+	return hmacDestinationSecret(ctx, client, validator, obj, nil)
+}
+
+// HMACDestinationSecretWithTransOpt compares the HMAC value stored in o.Status.SecretHMAC to
+// the HMAC of the destination K8s Secret data after applying any transformation filters.
+// Supported types for obj are:
+// VaultDynamicSecret, VaultStaticSecret, VaultPKISecret, HCPVaultSecretsApp
+func HMACDestinationSecretWithTransOpt(ctx context.Context, client ctrlclient.Client, validator HMACValidator, obj ctrlclient.Object, transOpt *SecretTransformationOption) (bool, error) {
+	return hmacDestinationSecret(ctx, client, validator, obj, transOpt)
+}
+
+func hmacDestinationSecret(ctx context.Context, client ctrlclient.Client, validator HMACValidator, obj ctrlclient.Object, transOpt *SecretTransformationOption) (bool, error) {
 	cur, err := getSecretMac(obj)
 	if err != nil {
 		return false, err
@@ -109,7 +139,12 @@ func HMACDestinationSecret(ctx context.Context, client ctrlclient.Client,
 	// out-of-band change made to the Secret's data in this case the controller
 	// should do the sync.
 	if cur, ok, err := GetSyncableSecret(ctx, client, obj); ok {
-		curMessage, err := json.Marshal(cur.Data)
+		data, err := FilterData(transOpt, cur.Data)
+		if err != nil {
+			return false, err
+		}
+
+		curMessage, err := json.Marshal(data)
 		if err != nil {
 			return false, err
 		}

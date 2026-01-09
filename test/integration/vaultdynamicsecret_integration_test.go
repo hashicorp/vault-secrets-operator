@@ -446,6 +446,18 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			for idx := 0; idx < tt.createStatic; idx++ {
 				dest := fmt.Sprintf("%s-create-static-creds-%d", tt.name, idx)
+
+				depObj := createDeployment(t, ctx, crdClient, ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      rolloutRestartObjName(dest, "deployment"),
+				})
+				rolloutRestartTargets := []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
+					},
+				}
+				otherObjsCreated = append(otherObjsCreated, depObj)
 				vdsObj := &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
@@ -461,6 +473,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 							Name:   dest,
 							Create: true,
 						},
+						RolloutRestartTargets: rolloutRestartTargets,
 					},
 				}
 
