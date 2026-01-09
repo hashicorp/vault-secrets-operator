@@ -1,11 +1,18 @@
-## 1.1.1 (December 16th, 2025)
+## 1.2.0 (January 8th, 2026)
 
 Fix:
 * Helm: properly set the PodSecurityContext: ([#1183](https://github.com/hashicorp/vault-secrets-operator/pull/1183))
+* VDS: only trigger rollout restarts on static cred changes.: ([#1191](https://github.com/hashicorp/vault-secrets-operator/pull/1191))
 
 Enhancements:
 * Helm: bump CSI driver version to 1.0.1: ([#1184](https://github.com/hashicorp/vault-secrets-operator/pull/1184))
 
+Build:
+* Suppress CVE-2025-6020 on the container only: ([#1190](https://github.com/hashicorp/vault-secrets-operator/pull/1190))
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 5 updates: ([#1188](https://github.com/hashicorp/vault-secrets-operator/pull/1188))
+* Bump google.golang.org/api from 0.258.0 to 0.259.0 in the gomod-backward-compatible group: ([#1192](https://github.com/hashicorp/vault-secrets-operator/pull/1192))
 
 ## 1.1.0 (December 12th, 2025)
 
