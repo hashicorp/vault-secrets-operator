@@ -1,3 +1,9 @@
+## Unreleased
+
+Enhancements:
+* Tested with Kubernetes versions 1.35-1.31
+* Test with Kind v0.31.0
+
 ## 1.1.1 (December 16th, 2025)
 
 Fix:
