@@ -139,8 +139,7 @@ spec:
         securityContext:
           {{- toYaml .Values.controller.securityContext | nindent 10 }}
         volumeMounts:
-        - mountPath: /var/run/podinfo
-          name: podinfo
+        {{- include "vso.controller.volumeMounts" . | nindent 8 }}
       {{- if .Values.controller.priorityClassName }}
       priorityClassName: {{ .Values.controller.priorityClassName }}
       {{- end }}
@@ -169,15 +168,7 @@ spec:
       {{- include "vso.topologySpreadConstraints" . | nindent 8 }}
       {{- end }}
       volumes:
-      - downwardAPI:
-          items:
-          - fieldRef:
-              fieldPath: metadata.name
-            path: name
-          - fieldRef:
-              fieldPath: metadata.uid
-            path: uid
-        name: podinfo
+      {{- include "vso.controller.volumes" . | nindent 6 }}
 ---
 apiVersion: batch/v1
 kind: Job
