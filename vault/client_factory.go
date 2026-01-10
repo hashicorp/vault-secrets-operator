@@ -157,6 +157,8 @@ type cachingClientFactory struct {
 	clientGetValidator ClientGetValidator
 	// newClientFunc is a function that returns a new Client.
 	newClientFunc NewClientFunc
+	// newCacheKeyFunc is a function that returns a ClientCacheKey.
+	newCacheKeyFunc NewCacheKeyFunc
 }
 
 // Remove removes a Client from the cache. Returns true if the Client was removed.
@@ -383,12 +385,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		)
 	}()
 
-	metaObj, err := common.NewSyncableSecretMetaDataI(obj)
-	if err != nil {
-		return nil, err
-	}
-
-	cacheKey, err = ComputeClientCacheKeyFromMeta(ctx, client, metaObj, m.clientOptions())
+	cacheKey, err = m.newCacheKeyFunc(ctx, client, obj, m.clientOptions())
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
@@ -911,10 +908,27 @@ func (m *cachingClientFactory) callClientCallbacks(ctx context.Context, c Client
 	}
 }
 
+// defaultCacheKeyFunc is the default function for computing a client cache key.
+// It calls NewSyncableSecretMetaDataI to convert the object to metadata, then
+// computes the cache key using ComputeClientCacheKeyFromMeta.
+func defaultCacheKeyFunc(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error) {
+	metaObj, err := common.NewSyncableSecretMetaDataI(obj)
+	if err != nil {
+		return "", err
+	}
+	return ComputeClientCacheKeyFromMeta(ctx, client, metaObj, opts)
+}
+
 // NewCachingClientFactory returns a CachingClientFactory with ClientCache initialized.
 // The ClientCache's onEvictCallback is registered with the factory's onClientEvict(),
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
+	// Set default cache key func if not provided
+	newCacheKeyFunc := config.CacheKeyFunc
+	if newCacheKeyFunc == nil {
+		newCacheKeyFunc = defaultCacheKeyFunc
+	}
+
 	factory := &cachingClientFactory{
 		storage:                   cacheStorage,
 		recorder:                  config.Recorder,
@@ -928,6 +942,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		credentialProviderFactory: config.CredentialProviderFactory,
 		clientGetValidator:        config.ClientGetValidator,
 		newClientFunc:             config.NewClientFunc,
+		newCacheKeyFunc:           newCacheKeyFunc,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -1001,6 +1016,8 @@ type CachingClientFactoryConfig struct {
 	ClientGetValidator  ClientGetValidator
 	// NewClientFunc is a function that returns a new Client.
 	NewClientFunc NewClientFunc
+	// CacheKeyFunc is a function that returns a ClientCacheKey.
+	CacheKeyFunc NewCacheKeyFunc
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.
@@ -1015,6 +1032,7 @@ func DefaultCachingClientFactoryConfig() *CachingClientFactoryConfig {
 		SetupEncryptionClientTimeout: defaultSetupEncryptionClientTimeout,
 		ClientCacheNumLocks:          100,
 		NewClientFunc:                NewClientWithLogin,
+		CacheKeyFunc:                 defaultCacheKeyFunc,
 	}
 }
 
