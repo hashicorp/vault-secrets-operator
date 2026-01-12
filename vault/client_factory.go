@@ -923,10 +923,9 @@ func defaultCacheKeyFunc(ctx context.Context, client ctrlclient.Client, obj ctrl
 // The ClientCache's onEvictCallback is registered with the factory's onClientEvict(),
 // to ensure any evictions are handled by the factory (this is very important).
 func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cacheStorage ClientCacheStorage, config *CachingClientFactoryConfig) (CachingClientFactory, error) {
-	// Set default cache key func if not provided
-	newCacheKeyFunc := config.CacheKeyFunc
-	if newCacheKeyFunc == nil {
-		newCacheKeyFunc = defaultCacheKeyFunc
+	cacheKeyFunc := config.CacheKeyFunc
+	if cacheKeyFunc == nil {
+		cacheKeyFunc = defaultCacheKeyFunc
 	}
 
 	factory := &cachingClientFactory{
@@ -942,7 +941,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		credentialProviderFactory: config.CredentialProviderFactory,
 		clientGetValidator:        config.ClientGetValidator,
 		newClientFunc:             config.NewClientFunc,
-		cacheKeyFunc:              newCacheKeyFunc,
+		cacheKeyFunc:              cacheKeyFunc,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
