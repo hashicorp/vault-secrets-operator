@@ -489,7 +489,8 @@ func DeleteSecret(ctx context.Context, client ctrlclient.Client, objKey client.O
 // SecretDataBuilder constructs K8s Secret data from various sources.
 type SecretDataBuilder struct{}
 
-// WithVaultData returns the K8s Secret data from a Vault Secret data.
+// WithVaultData returns the K8s Secret data from a Vault Secret data. This
+// method must always return a non-nil data map to avoid HMAC calculation issues.
 func (s *SecretDataBuilder) WithVaultData(d, secretData, wrapData map[string]any, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
 		opt = &SecretTransformationOption{}
@@ -532,7 +533,8 @@ func marshalJSON(value any) ([]byte, error) {
 	return b, nil
 }
 
-// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App.
+// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App. This
+// method must always return a non-nil data map to avoid HMAC calculation issues.
 func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
 		opt = &SecretTransformationOption{}
@@ -663,6 +665,8 @@ func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20231128OpenSecret)
 // response. Any extraData will always be included in the result data. Returns a
 // SecretDataErrorContainsRaw error if either secretData or extraData contain
 // SecretDataKeyRaw .
+//
+// This method must always return a non-nil data map to avoid HMAC calculation issues.
 func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
 	raw []byte, opt *SecretTransformationOption,
 ) (map[string][]byte, error) {
