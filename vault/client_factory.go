@@ -157,8 +157,8 @@ type cachingClientFactory struct {
 	clientGetValidator ClientGetValidator
 	// newClientFunc is a function that returns a new Client.
 	newClientFunc NewClientFunc
-	// newCacheKeyFunc is a function that returns a ClientCacheKey.
-	newCacheKeyFunc NewCacheKeyFunc
+	// cacheKeyFunc is a function that returns a ClientCacheKey.
+	cacheKeyFunc CacheKeyFunc
 }
 
 // Remove removes a Client from the cache. Returns true if the Client was removed.
@@ -385,7 +385,7 @@ func (m *cachingClientFactory) Get(ctx context.Context, client ctrlclient.Client
 		)
 	}()
 
-	cacheKey, err = m.newCacheKeyFunc(ctx, client, obj, m.clientOptions())
+	cacheKey, err = m.cacheKeyFunc(ctx, client, obj, m.clientOptions())
 	if err != nil {
 		logger.Error(err, "Failed to get cacheKey from obj")
 		m.recorder.Eventf(obj, v1.EventTypeWarning, consts.ReasonUnrecoverable,
@@ -942,7 +942,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 		credentialProviderFactory: config.CredentialProviderFactory,
 		clientGetValidator:        config.ClientGetValidator,
 		newClientFunc:             config.NewClientFunc,
-		newCacheKeyFunc:           newCacheKeyFunc,
+		cacheKeyFunc:              newCacheKeyFunc,
 		logger: zap.New().WithName("clientCacheFactory").WithValues(
 			"persist", config.Persist,
 			"enforceEncryption", config.StorageConfig.EnforceEncryption,
@@ -1017,7 +1017,7 @@ type CachingClientFactoryConfig struct {
 	// NewClientFunc is a function that returns a new Client.
 	NewClientFunc NewClientFunc
 	// CacheKeyFunc is a function that returns a ClientCacheKey.
-	CacheKeyFunc NewCacheKeyFunc
+	CacheKeyFunc CacheKeyFunc
 }
 
 // DefaultCachingClientFactoryConfig provides the default configuration for a CachingClientFactory instance.

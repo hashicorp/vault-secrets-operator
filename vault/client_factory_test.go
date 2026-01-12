@@ -697,7 +697,7 @@ func Test_cachingClientFactory_CacheKeyFunc(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		provideCacheKeyFunc NewCacheKeyFunc
+		provideCacheKeyFunc CacheKeyFunc
 	}{
 		{
 			name:                "uses-default-when-not-provided",
@@ -716,13 +716,13 @@ func Test_cachingClientFactory_CacheKeyFunc(t *testing.T) {
 			config := DefaultCachingClientFactoryConfig()
 			config.CacheKeyFunc = tt.provideCacheKeyFunc
 
-			newCacheKeyFunc := config.CacheKeyFunc
-			if newCacheKeyFunc == nil {
-				newCacheKeyFunc = defaultCacheKeyFunc
+			cacheKeyFunc := config.CacheKeyFunc
+			if cacheKeyFunc == nil {
+				cacheKeyFunc = defaultCacheKeyFunc
 			}
 
 			factory := &cachingClientFactory{
-				newCacheKeyFunc:           newCacheKeyFunc,
+				cacheKeyFunc:              cacheKeyFunc,
 				credentialProviderFactory: credentials.NewCredentialProviderFactory(),
 			}
 
@@ -739,11 +739,11 @@ func Test_cachingClientFactory_CacheKeyFunc(t *testing.T) {
 					CredentialProviderFactory: factory.credentialProviderFactory,
 				}
 
-				cacheKey, err := factory.newCacheKeyFunc(ctx, client, testObj, opts)
+				cacheKey, err := factory.cacheKeyFunc(ctx, client, testObj, opts)
 				require.NoError(t, err)
 				assert.Equal(t, ClientCacheKey("custom-cache-key"), cacheKey)
 			} else {
-				assert.NotNil(t, factory.newCacheKeyFunc)
+				assert.NotNil(t, factory.cacheKeyFunc)
 			}
 		})
 	}

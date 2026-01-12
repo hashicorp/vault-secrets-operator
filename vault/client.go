@@ -28,8 +28,8 @@ import (
 
 type NewClientFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error)
 
-// NewCacheKeyFunc is a function type that allows custom cache key computation logic.
-type NewCacheKeyFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error)
+// CacheKeyFunc is a function type that allows custom cache key computation logic.
+type CacheKeyFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error)
 
 type ClientOptions struct {
 	SkipRenewal               bool
