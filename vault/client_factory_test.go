@@ -691,3 +691,60 @@ func invalidateClient(t *testing.T, client Client) {
 	require.NotNil(t, secret)
 	secret.Auth.LeaseDuration = 0
 }
+
+func Test_cachingClientFactory_CacheKeyFunc(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		provideCacheKeyFunc NewCacheKeyFunc
+	}{
+		{
+			name:                "uses-default-when-not-provided",
+			provideCacheKeyFunc: nil,
+		},
+		{
+			name: "uses-custom-when-provided",
+			provideCacheKeyFunc: func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error) {
+				return ClientCacheKey("custom-cache-key"), nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := DefaultCachingClientFactoryConfig()
+			config.CacheKeyFunc = tt.provideCacheKeyFunc
+
+			newCacheKeyFunc := config.CacheKeyFunc
+			if newCacheKeyFunc == nil {
+				newCacheKeyFunc = defaultCacheKeyFunc
+			}
+
+			factory := &cachingClientFactory{
+				newCacheKeyFunc:           newCacheKeyFunc,
+				credentialProviderFactory: credentials.NewCredentialProviderFactory(),
+			}
+
+			if tt.provideCacheKeyFunc != nil {
+				ctx := context.Background()
+				client := testutils.NewFakeClient()
+				testObj := &secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-secret",
+						Namespace: "default",
+					},
+				}
+				opts := &ClientOptions{
+					CredentialProviderFactory: factory.credentialProviderFactory,
+				}
+
+				cacheKey, err := factory.newCacheKeyFunc(ctx, client, testObj, opts)
+				require.NoError(t, err)
+				assert.Equal(t, ClientCacheKey("custom-cache-key"), cacheKey)
+			} else {
+				assert.NotNil(t, factory.newCacheKeyFunc)
+			}
+		})
+	}
+}
