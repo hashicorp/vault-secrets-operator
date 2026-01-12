@@ -587,6 +587,23 @@ func TestHandleDestinationSecret(t *testing.T) {
 				return assert.EqualError(t, err, `invalid key length 2`, i...)
 			},
 		},
+		{
+			name:      "nil-data-error",
+			secretMAC: defaultSecretMAC,
+			objMeta:   objMeta,
+			destination: secretsv1beta1.Destination{
+				Name: "baz",
+			},
+			data: nil,
+			handleSecretHMAC: handleSecretHMACTest{
+				data:    nil,
+				wantMAC: []byte{},
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, "data for HMAC computation is nil", i...)
+			},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -644,6 +661,10 @@ func assertSecretHMAC(t *testing.T, tt hmacSecretTestCase, c client.Client) {
 				}
 
 				if !tt.wantErr(t, err, fmt.Sprintf(msg, args...)) {
+					return
+				}
+
+				if err != nil {
 					return
 				}
 

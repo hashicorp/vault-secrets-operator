@@ -62,6 +62,10 @@ func handleSecretHMAC(ctx context.Context, client ctrlclient.Client,
 		return false, nil, err
 	}
 
+	if data == nil {
+		return false, nil, fmt.Errorf("data for HMAC computation is nil")
+	}
+
 	// HMAC the Vault secret data so that it can be compared to the what's in the
 	// destination Secret.
 	message, err := json.Marshal(data)
@@ -142,6 +146,12 @@ func hmacDestinationSecret(ctx context.Context, client ctrlclient.Client, valida
 		data, err := FilterData(transOpt, cur.Data)
 		if err != nil {
 			return false, err
+		}
+
+		if data == nil {
+			// makeK8sData() ensures that data is never nil, whereas the K8s Secret.Data
+			// can be nil. In that case the HMAC computation will always differ.
+			data = make(map[string][]byte)
 		}
 
 		curMessage, err := json.Marshal(data)

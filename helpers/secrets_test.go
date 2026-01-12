@@ -655,6 +655,14 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name:    "result-is-never-nil",
+			want:    map[string][]byte{},
+			wantErr: assert.NoError,
+			opt: &SecretTransformationOption{
+				ExcludeRaw: true,
+			},
+		},
+		{
 			name: "invalid-raw-data-unmarshalable",
 			data: nil,
 			raw: map[string]interface{}{
