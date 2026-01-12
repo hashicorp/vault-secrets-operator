@@ -336,7 +336,7 @@ db.username=alice
 	}
 }
 
-func TestSecretDataBuilder_filterData_with_bytes(t *testing.T) {
+func TestSecretDataBuilder_FilterData_with_bytes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -444,18 +444,18 @@ func TestSecretDataBuilder_filterData_with_bytes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt := tt
 			t.Parallel()
-			got, err := filterData[[]byte](tt.opt, tt.d)
+			got, err := FilterData[[]byte](tt.opt, tt.d)
 			if !tt.wantErr(t, err, fmt.Sprintf(
-				"filterData(%v, %v)", tt.opt, tt.d)) {
+				"FilterData(%v, %v)", tt.opt, tt.d)) {
 				return
 			}
 			assert.Equalf(t, tt.want, got,
-				"filterData(%v, %v)", tt.opt, tt.d)
+				"FilterData(%v, %v)", tt.opt, tt.d)
 		})
 	}
 }
 
-func TestSecretDataBuilder_filterData_with_any(t *testing.T) {
+func TestSecretDataBuilder_FilterData_with_any(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -538,13 +538,13 @@ func TestSecretDataBuilder_filterData_with_any(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt := tt
 			t.Parallel()
-			got, err := filterData[any](tt.opt, tt.d)
+			got, err := FilterData[any](tt.opt, tt.d)
 			if !tt.wantErr(t, err, fmt.Sprintf(
-				"filterData(%v, %v)", tt.opt, tt.d)) {
+				"FilterData(%v, %v)", tt.opt, tt.d)) {
 				return
 			}
 			assert.Equalf(t, tt.want, got,
-				"filterData(%v, %v)", tt.opt, tt.d)
+				"FilterData(%v, %v)", tt.opt, tt.d)
 		})
 	}
 }
