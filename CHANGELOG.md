@@ -1,17 +1,22 @@
-## Unreleased
-
-Enhancements:
-* Tested with Kubernetes versions 1.35-1.31
-* Test with Kind v0.31.0
-
-## 1.1.1 (December 16th, 2025)
+## 1.2.0 (January 12th, 2026)
 
 Fix:
 * Helm: properly set the PodSecurityContext: ([#1183](https://github.com/hashicorp/vault-secrets-operator/pull/1183))
+* VDS: only trigger rollout restarts on static cred changes.: ([#1191](https://github.com/hashicorp/vault-secrets-operator/pull/1191))
+* VDS: invalid secret HMAC validation on static creds: ([#1194](https://github.com/hashicorp/vault-secrets-operator/pull/1194))
+* HMAC: only support non-nil data: ([#1200](https://github.com/hashicorp/vault-secrets-operator/pull/1200))
 
 Enhancements:
 * Helm: bump CSI driver version to 1.0.1: ([#1184](https://github.com/hashicorp/vault-secrets-operator/pull/1184))
 
+Build:
+* Suppress CVE-2025-6020 on the container only: ([#1190](https://github.com/hashicorp/vault-secrets-operator/pull/1190))
+* CI: test against k8s 1.35 + update changelog: ([#1197](https://github.com/hashicorp/vault-secrets-operator/pull/1197))
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 5 updates: ([#1188](https://github.com/hashicorp/vault-secrets-operator/pull/1188))
+* Bump google.golang.org/api from 0.258.0 to 0.259.0 in the gomod-backward-compatible group: ([#1192](https://github.com/hashicorp/vault-secrets-operator/pull/1192))
+* Bump github.com/onsi/gomega from 1.38.3 to 1.39.0 in the gomod-backward-compatible group: ([#1196](https://github.com/hashicorp/vault-secrets-operator/pull/1196))
 
 ## 1.1.0 (December 12th, 2025)
 
