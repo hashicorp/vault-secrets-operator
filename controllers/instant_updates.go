@@ -104,13 +104,15 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "object", name)
 		}
 	}
-	// create a shared websocket dispatcher if one is not already created
-	dispatcher, err := cfg.getOrCreateDispatcher(ctx)
+	wsClient, err := cfg.Client.WebsocketClient(instantUpdateEventPath)
+	if err != nil {
+		return fmt.Errorf("failed to create websocket client: %w", err)
+	}
+
+	conn, err := wsClient.Connect(ctx)
 	if err != nil {
 		return err
 	}
-	// register this object to receive events from the dispatcher
-	msgCh := dispatcher.Register(name)
 
 	watchCtx, cancel := context.WithCancel(context.Background())
 	stoppedCh := make(chan struct{}, 1)
@@ -133,7 +135,7 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 	}
 
 	// launch the goroutine to watch events
-	go cfg.getEvents(watchCtx, obj, dispatcher, msgCh, stoppedCh)
+	go cfg.getEvents(watchCtx, obj, conn, stoppedCh)
 
 	return nil
 }
@@ -155,11 +157,14 @@ func UnwatchEvents(registry *eventWatcherRegistry, obj client.Object) {
 }
 
 // getEvents streams event notifications from Vault and handles errors and retries
-func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, dispatcher *eventDispatcher, msgCh chan dispatcherMessage, stoppedCh chan struct{}) {
+func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, conn *websocket.Conn, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
 	name := client.ObjectKeyFromObject(o)
 	defer func() {
 		cfg.Registry.Delete(name)
+		if conn != nil {
+			conn.Close(websocket.StatusNormalClosure, "closing websocket watcher")
+		}
 		close(stoppedCh)
 	}()
 
@@ -175,9 +180,6 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 		select {
 		case <-ctx.Done():
 			logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
-			if dispatcher != nil {
-				dispatcher.Unregister(name)
-			}
 			return
 		default:
 			if shouldBackoff {
@@ -193,23 +195,23 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 			select {
 			case <-ctx.Done():
 				logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
-				if dispatcher != nil {
-					dispatcher.Unregister(name)
-				}
 				return
-			case msg, ok := <-msgCh:
-				if !ok {
-					err := fmt.Errorf("event dispatcher closed")
-					logger.Error(err, "Event dispatcher closed", "object", name)
+			default:
+				msgType, data, err := conn.Read(ctx)
+				if err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+
+					logger.Error(err, "Websocket watcher read failed", "object", name)
+					cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+						"Error while watching events: %s", err)
 					cfg.enqueueForReconcile(name)
 					return
 				}
 
-				err := msg.err
 				matched := false
-				if err == nil {
-					matched, err = cfg.streamSecretEvents(ctx, o, msg.msgType, msg.data)
-				}
+				matched, err = cfg.streamSecretEvents(ctx, o, msgType, data)
 				if err == nil {
 					if matched {
 						cfg.enqueueForReconcile(name)
