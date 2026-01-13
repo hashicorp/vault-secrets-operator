@@ -29,6 +29,31 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
+// mockClientCacheStorage is a minimal mock implementation of ClientCacheStorage for testing
+var _ ClientCacheStorage = (*mockClientCacheStorage)(nil)
+
+type mockClientCacheStorage struct{}
+
+func (m *mockClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageStoreRequest) (*corev1.Secret, error) {
+	return nil, nil
+}
+
+func (m *mockClientCacheStorage) Restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error) {
+	return nil, nil
+}
+
+func (m *mockClientCacheStorage) Prune(ctx context.Context, client ctrlclient.Client, req ClientCacheStoragePruneRequest) (int, error) {
+	return 0, nil
+}
+
+func (m *mockClientCacheStorage) Purge(ctx context.Context, client ctrlclient.Client) error {
+	return nil
+}
+
+func (m *mockClientCacheStorage) Len(ctx context.Context, client ctrlclient.Client) (int, error) {
+	return 0, nil
+}
+
 func Test_cachingClientFactory_RegisterClientCallbackHandler(t *testing.T) {
 	cb1 := func(_ context.Context, _ Client) {
 		// do nothing
@@ -695,55 +720,82 @@ func invalidateClient(t *testing.T, client Client) {
 func Test_cachingClientFactory_CacheKeyFunc(t *testing.T) {
 	t.Parallel()
 
+	customCacheKeyFunc := func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error) {
+		return ClientCacheKey("custom-cache-key"), nil
+	}
+
 	tests := []struct {
 		name                string
-		provideCacheKeyFunc CacheKeyFunc
+		config              *CachingClientFactoryConfig
+		wantErr             assert.ErrorAssertionFunc
+		testCustomCacheFunc bool
 	}{
 		{
-			name:                "uses-default-when-not-provided",
-			provideCacheKeyFunc: nil,
+			name: "uses-default-when-using-default-config",
+			config: func() *CachingClientFactoryConfig {
+				config := DefaultCachingClientFactoryConfig()
+				config.CollectClientCacheMetrics = false
+				config.MetricsRegistry = nil
+				return config
+			}(),
+			wantErr: assert.NoError,
 		},
 		{
-			name: "uses-custom-when-provided",
-			provideCacheKeyFunc: func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error) {
-				return ClientCacheKey("custom-cache-key"), nil
-			},
+			name: "error-when-cache-key-func-nil",
+			config: func() *CachingClientFactoryConfig {
+				config := DefaultCachingClientFactoryConfig()
+				config.CacheKeyFunc = nil
+				config.CollectClientCacheMetrics = false
+				config.MetricsRegistry = nil
+				return config
+			}(),
+			wantErr: assert.Error,
+		},
+		{
+			name: "uses-custom-func-when-provided",
+			config: func() *CachingClientFactoryConfig {
+				config := DefaultCachingClientFactoryConfig()
+				config.CacheKeyFunc = customCacheKeyFunc
+				config.CollectClientCacheMetrics = false
+				config.MetricsRegistry = nil
+				return config
+			}(),
+			wantErr:             assert.NoError,
+			testCustomCacheFunc: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := DefaultCachingClientFactoryConfig()
-			config.CacheKeyFunc = tt.provideCacheKeyFunc
+			ctx := context.Background()
+			client := testutils.NewFakeClient()
+			cacheStorage := &mockClientCacheStorage{}
 
-			cacheKeyFunc := config.CacheKeyFunc
-			if cacheKeyFunc == nil {
-				cacheKeyFunc = defaultCacheKeyFunc
+			factory, err := NewCachingClientFactory(ctx, client, cacheStorage, tt.config)
+			if !tt.wantErr(t, err) {
+				return
 			}
 
-			factory := &cachingClientFactory{
-				cacheKeyFunc:              cacheKeyFunc,
-				credentialProviderFactory: credentials.NewCredentialProviderFactory(),
-			}
+			if err == nil {
+				require.NotNil(t, factory)
+				defer factory.Stop()
 
-			if tt.provideCacheKeyFunc != nil {
-				ctx := context.Background()
-				client := testutils.NewFakeClient()
-				testObj := &secretsv1beta1.VaultStaticSecret{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-secret",
-						Namespace: "default",
-					},
-				}
-				opts := &ClientOptions{
-					CredentialProviderFactory: factory.credentialProviderFactory,
-				}
+				// For the custom test case, verify it actually uses the custom function
+				if tt.testCustomCacheFunc {
+					testObj := &secretsv1beta1.VaultStaticSecret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-secret",
+							Namespace: "default",
+						},
+					}
+					opts := &ClientOptions{
+						CredentialProviderFactory: factory.(*cachingClientFactory).credentialProviderFactory,
+					}
 
-				cacheKey, err := factory.cacheKeyFunc(ctx, client, testObj, opts)
-				require.NoError(t, err)
-				assert.Equal(t, ClientCacheKey("custom-cache-key"), cacheKey)
-			} else {
-				assert.NotNil(t, factory.cacheKeyFunc)
+					cacheKey, err := factory.(*cachingClientFactory).cacheKeyFunc(ctx, client, testObj, opts)
+					require.NoError(t, err)
+					assert.Equal(t, ClientCacheKey("custom-cache-key"), cacheKey)
+				}
 			}
 		})
 	}
