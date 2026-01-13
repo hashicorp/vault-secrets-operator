@@ -28,6 +28,9 @@ import (
 
 type NewClientFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error)
 
+// CacheKeyFunc is a function type that allows custom cache key computation logic.
+type CacheKeyFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error)
+
 type ClientOptions struct {
 	SkipRenewal               bool
 	WatcherDoneCh             chan<- *ClientCallbackHandlerRequest
