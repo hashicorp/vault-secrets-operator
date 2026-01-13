@@ -29,31 +29,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
-// mockClientCacheStorage is a minimal mock implementation of ClientCacheStorage for testing
-var _ ClientCacheStorage = (*mockClientCacheStorage)(nil)
-
-type mockClientCacheStorage struct{}
-
-func (m *mockClientCacheStorage) Store(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageStoreRequest) (*corev1.Secret, error) {
-	return nil, nil
-}
-
-func (m *mockClientCacheStorage) Restore(ctx context.Context, client ctrlclient.Client, req ClientCacheStorageRestoreRequest) (*clientCacheStorageEntry, error) {
-	return nil, nil
-}
-
-func (m *mockClientCacheStorage) Prune(ctx context.Context, client ctrlclient.Client, req ClientCacheStoragePruneRequest) (int, error) {
-	return 0, nil
-}
-
-func (m *mockClientCacheStorage) Purge(ctx context.Context, client ctrlclient.Client) error {
-	return nil
-}
-
-func (m *mockClientCacheStorage) Len(ctx context.Context, client ctrlclient.Client) (int, error) {
-	return 0, nil
-}
-
 func Test_cachingClientFactory_RegisterClientCallbackHandler(t *testing.T) {
 	cb1 := func(_ context.Context, _ Client) {
 		// do nothing
@@ -769,9 +744,8 @@ func Test_cachingClientFactory_CacheKeyFunc(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			client := testutils.NewFakeClient()
-			cacheStorage := &mockClientCacheStorage{}
 
-			factory, err := NewCachingClientFactory(ctx, client, cacheStorage, tt.config)
+			factory, err := NewCachingClientFactory(ctx, client, nil, tt.config)
 			if !tt.wantErr(t, err) {
 				return
 			}
