@@ -446,6 +446,7 @@ type VaultAuthStatus struct {
 // +kubebuilder:subresource:status
 
 // VaultAuth is the Schema for the vaultauths API
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
 type VaultAuth struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

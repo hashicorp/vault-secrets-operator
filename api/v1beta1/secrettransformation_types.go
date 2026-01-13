@@ -21,6 +21,7 @@ type SecretTransformationStatus struct {
 // +kubebuilder:subresource:status
 
 // SecretTransformation is the Schema for the secrettransformations API
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
 type SecretTransformation struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

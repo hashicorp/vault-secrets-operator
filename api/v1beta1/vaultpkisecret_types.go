@@ -147,6 +147,8 @@ type VaultPKISecretStatus struct {
 // +kubebuilder:subresource:status
 
 // VaultPKISecret is the Schema for the vaultpkisecrets API
+// +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=`.status.conditions[?(@.type == "SecretSynced")].status`,description="secret sync status"
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
 type VaultPKISecret struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
