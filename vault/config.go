@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/hashicorp/vault/api"
@@ -26,6 +27,10 @@ type ClientConfig struct {
 	// "ca.crt" that holds a CA cert that can be used to validate the
 	// certificate presented by the Vault server
 	CACertSecretRef string
+	// CACertPath is the path to a CA certificate file on the filesystem that
+	// can be used to validate the certificate presented by the Vault server.
+	// Mutually exclusive with CACertSecretRef.
+	CACertPath string
 	// K8sNamespace the namespace of the CACertSecretRef secret
 	K8sNamespace string
 	// Address is the URL of the Vault server
@@ -52,8 +57,13 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		return nil, fmt.Errorf("ClientConfig was nil")
 	}
 
+	if err := validateCACertConfig(cfg); err != nil {
+		return nil, fmt.Errorf("invalid CA cert config: %w", err)
+	}
+
 	var b []byte
 	if cfg.CACertSecretRef != "" {
+		// Load CA certificate from k8s Secret
 		if client == nil {
 			return nil, fmt.Errorf("ctrl-runtime Client was nil and CCACertSecretRef was provided")
 		}
@@ -74,10 +84,23 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 		}
 
 		if !cfg.SkipTLSVerify {
-			// only validate CA cert chain when SkipTLSVerify is false.
-			certPool := x509.NewCertPool()
-			if ok := certPool.AppendCertsFromPEM(b); !ok {
-				return nil, fmt.Errorf("no valid certificates found for key %q in CA secret %q", key, objKey)
+			err := validateCACertChain(b)
+			if err != nil {
+				return nil, fmt.Errorf("invalid CA cert in secret %q: %w", objKey, err)
+			}
+		}
+	} else if cfg.CACertPath != "" {
+		// Load CA certificate from filesystem
+		var err error
+		b, err = os.ReadFile(cfg.CACertPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA cert file %q: %w", cfg.CACertPath, err)
+		}
+
+		if !cfg.SkipTLSVerify {
+			err := validateCACertChain(b)
+			if err != nil {
+				return nil, fmt.Errorf("no valid certificates found in CA cert file %q", cfg.CACertPath)
 			}
 		}
 	}
@@ -119,4 +142,22 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 	}
 
 	return c, nil
+}
+
+// validateCACertConfig ensures CACertSecretRef and CACertPath are mutually exclusive.
+func validateCACertConfig(cfg *ClientConfig) error {
+	if cfg.CACertSecretRef != "" && cfg.CACertPath != "" {
+		return fmt.Errorf("CACertSecretRef and CACertPath are mutually exclusive, only one can be set")
+	}
+	return nil
+}
+
+// validateCACertChain checks that the provided CA cert PEM contains at least one valid certificate.
+// We only need to perform this validation when SkipTLSVerify is false.
+func validateCACertChain(caCertPEM []byte) error {
+	certPool := x509.NewCertPool()
+	if ok := certPool.AppendCertsFromPEM(caCertPEM); !ok {
+		return fmt.Errorf("no valid certificates found in CA cert data")
+	}
+	return nil
 }
