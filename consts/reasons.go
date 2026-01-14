@@ -42,4 +42,5 @@ const (
 	ReasonEventWatcherStarted           = "EventWatcherStarted"
 	ReasonHealthy                       = "Healthy"
 	ReasonUnhealthy                     = "Unhealthy"
+	ReasonReady                         = "Ready"
 )
