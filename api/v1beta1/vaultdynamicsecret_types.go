@@ -133,6 +133,9 @@ type VaultStaticCredsMetaData struct {
 // +kubebuilder:subresource:status
 
 // VaultDynamicSecret is the Schema for the vaultdynamicsecrets API
+// +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=`.status.conditions[?(@.type == "SecretSynced")].status`,description="secret sync status"
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`,description="resource age"
 type VaultDynamicSecret struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
