@@ -309,7 +309,7 @@ func (r *VaultStaticSecretReconciler) updateStatus(ctx context.Context, o *secre
 	logger := log.FromContext(ctx).WithName("updateStatus")
 	logger.V(consts.LogLevelDebug).Info("Updating status")
 	o.Status.LastGeneration = o.GetGeneration()
-	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultStaticSecret"))...)
+	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultStaticSecret"), newReadyCondition(o, healthy, "VaultStaticSecret"))...)
 	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
 	o.Status.Conditions = n
 

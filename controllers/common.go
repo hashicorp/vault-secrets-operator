@@ -365,3 +365,12 @@ func newHealthyCondition(o client.Object, healthy bool, objType string) metav1.C
 	}
 	return newConditionNow(o, consts.TypeHealthy, reason, conditionStatus, "%s%s", objType, reason)
 }
+
+func newReadyCondition(o client.Object, ready bool, objType string) metav1.Condition {
+	reason := consts.ReasonReady
+	conditionStatus := metav1.ConditionTrue
+	if !ready {
+		conditionStatus = metav1.ConditionFalse
+	}
+	return newConditionNow(o, consts.TypeReady, reason, conditionStatus, "%s%s", objType, reason)
+}

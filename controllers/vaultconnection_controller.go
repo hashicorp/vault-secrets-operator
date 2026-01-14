@@ -175,7 +175,7 @@ func (r *VaultConnectionReconciler) updateStatus(ctx context.Context, o *secrets
 	logger := log.FromContext(ctx)
 	valid := ptr.Deref(o.Status.Valid, false)
 	metrics.SetResourceStatus("vaultconnection", o, valid)
-	o.Status.Conditions = updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, valid, "VaultConnection"))...)
+	o.Status.Conditions = updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, valid, "VaultConnection"), newReadyCondition(o, valid, "VaultConnection"))...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

@@ -82,7 +82,7 @@ func (r *SecretTransformationReconciler) updateStatus(ctx context.Context, o *se
 	logger := log.FromContext(ctx)
 	valid := ptr.Deref(o.Status.Valid, false)
 	metrics.SetResourceStatus("secrettransformation", o, valid)
-	o.Status.Conditions = updateConditions(o.Status.Conditions, newHealthyCondition(o, valid, "SecretsTransformation"))
+	o.Status.Conditions = updateConditions(o.Status.Conditions, newHealthyCondition(o, valid, "SecretsTransformation"), newReadyCondition(o, valid, "SecretsTransformation"))
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

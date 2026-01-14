@@ -659,7 +659,7 @@ func (r *VaultDynamicSecretReconciler) updateStatus(ctx context.Context, o *secr
 
 	o.Status.LastGeneration = o.GetGeneration()
 
-	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultDynamicSecret"))...)
+	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultDynamicSecret"), newReadyCondition(o, healthy, "VaultDynamicSecret"))...)
 	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
 	o.Status.Conditions = n
 	if err := r.Status().Update(ctx, o); err != nil {

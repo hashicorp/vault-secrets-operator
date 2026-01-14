@@ -9,4 +9,5 @@ var (
 	TypeSecretSynced       = "SecretSynced"
 	TypeLeaseRenewal       = "LeaseRenewal"
 	TypeHealthy            = "Healthy"
+	TypeReady              = "Ready"
 )
