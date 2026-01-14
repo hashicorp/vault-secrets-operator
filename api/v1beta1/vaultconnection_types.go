@@ -16,7 +16,12 @@ type VaultConnectionSpec struct {
 	// TLSServerName to use as the SNI host for TLS connections.
 	TLSServerName string `json:"tlsServerName,omitempty"`
 	// CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`.
+	// CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified.
 	CACertSecretRef string `json:"caCertSecretRef,omitempty"`
+	// CACertPath is the path to a CA certificate file on the filesystem that can be used to validate
+	// the certificate presented by the Vault server.
+	// CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified.
+	CACertPath string `json:"caCertPath,omitempty"`
 	// SkipTLSVerify for TLS connections.
 	// +kubebuilder:default=false
 	SkipTLSVerify bool `json:"skipTLSVerify"`
