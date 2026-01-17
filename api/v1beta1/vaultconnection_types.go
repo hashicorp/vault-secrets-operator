@@ -21,6 +21,7 @@ type VaultConnectionSpec struct {
 	// CACertPath is the path to a CA certificate file on the filesystem that can be used to validate
 	// the certificate presented by the Vault server.
 	// CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified.
+	// +kubebuilder:validation:Pattern=`^/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*$`
 	CACertPath string `json:"caCertPath,omitempty"`
 	// SkipTLSVerify for TLS connections.
 	// +kubebuilder:default=false

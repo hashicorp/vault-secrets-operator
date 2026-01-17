@@ -1117,7 +1117,7 @@ _Appears in:_
 | `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |  |  |
 | `tlsServerName` _string_ | TLSServerName to use as the SNI host for TLS connections. |  |  |
 | `caCertSecretRef` _string_ | CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`.<br />CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified. |  |  |
-| `caCertPath` _string_ | CACertPath is the path to a CA certificate file on the filesystem that can be used to validate<br />the certificate presented by the Vault server.<br />CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `caCertPath` _string_ | CACertPath is the path to a CA certificate file on the filesystem that can be used to validate<br />the certificate presented by the Vault server.<br />CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified. |  | Pattern: `^/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*$` <br /> |
 | `skipTLSVerify` _boolean_ | SkipTLSVerify for TLS connections. | false |  |
 | `timeout` _string_ | Timeout applied to all Vault requests for this connection. If not set, the<br />default timeout from the Vault API client config is used. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 
