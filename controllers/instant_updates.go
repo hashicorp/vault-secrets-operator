@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	// instantUpdateEventPath is the path to subscribe to Vault events
-	instantUpdateEventPath = "/v1/sys/events/subscribe/*"
+	// InstantUpdateEventPath is the path to subscribe to Vault events
+	InstantUpdateEventPath = "/v1/sys/events/subscribe/*"
 
-	// instantUpdateErrorThreshold is the number of consecutive errors before the watcher is restarted
-	instantUpdateErrorThreshold = 5
+	// InstantUpdateErrorThreshold is the number of consecutive errors before the watcher is restarted
+	InstantUpdateErrorThreshold = 5
 )
 
 // InstantUpdateConfig configures the behavior of EnsureInstantUpdateWatcher.
@@ -80,14 +80,13 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 	name := client.ObjectKeyFromObject(cfg.Secret)
 
 	meta, ok := cfg.Registry.Get(name)
-	if ok {
-		// The watcher is running, and if the VSS/VDS object has not been updated,
-		// and the client ID is the same, just return
-		if meta.LastGeneration == cfg.Secret.GetGeneration() && meta.LastClientID == cfg.Client.ID() {
-			logger.V(consts.LogLevelDebug).Info("Event watcher already running",
-				"namespace", cfg.Secret.GetNamespace(), "name", cfg.Secret.GetName())
-			return nil
-		}
+
+	// The watcher is running, and if the VSS/VDS object has not been updated,
+	// and the client ID is the same, just return
+	if ok && meta.LastGeneration == cfg.Secret.GetGeneration() && meta.LastClientID == cfg.Client.ID() {
+		logger.V(consts.LogLevelDebug).Info("Event watcher already running",
+			"namespace", cfg.Secret.GetNamespace(), "name", cfg.Secret.GetName())
+		return nil
 	}
 
 	if meta != nil {
@@ -104,7 +103,9 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 			logger.Error(fmt.Errorf("nil cancel function"), "event watcher has nil cancel function", "object", name)
 		}
 	}
-	wsClient, err := cfg.Client.WebsocketClient(instantUpdateEventPath)
+
+	// create the websocket that will be used to receive instant update events
+	wsClient, err := cfg.Client.WebsocketClient(InstantUpdateEventPath)
 	if err != nil {
 		return fmt.Errorf("failed to create websocket client: %w", err)
 	}
@@ -230,7 +231,7 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
 					"Error while watching events: %s", err)
 
-				if errorCount >= instantUpdateErrorThreshold {
+				if errorCount >= InstantUpdateErrorThreshold {
 					logger.Error(err, "Too many errors while watching events, requeuing")
 					cfg.enqueueForReconcile(name)
 					return
