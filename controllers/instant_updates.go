@@ -5,7 +5,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,49 +20,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 const (
-	instantUpdateErrorThreshold = 5
+	// InstantUpdateEventPath is the path to subscribe to Vault events
+	InstantUpdateEventPath = "/v1/sys/events/subscribe/*"
+
+	// InstantUpdateErrorThreshold is the number of consecutive errors before the watcher is restarted
+	InstantUpdateErrorThreshold = 5
 )
-
-type websocketConnector interface {
-	Connect(context.Context) (websocketConn, error)
-}
-
-type websocketConn interface {
-	Read(context.Context) (websocket.MessageType, []byte, error)
-	Close(websocket.StatusCode, string) error
-}
-
-type vaultWebsocketClientAdapter struct {
-	client *vault.WebsocketClient
-}
-
-func (v vaultWebsocketClientAdapter) Connect(ctx context.Context) (websocketConn, error) {
-	conn, err := v.client.Connect(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return vaultWebsocketConnAdapter{conn: conn}, nil
-}
-
-type vaultWebsocketConnAdapter struct {
-	conn *websocket.Conn
-}
-
-func (v vaultWebsocketConnAdapter) Read(ctx context.Context) (websocket.MessageType, []byte, error) {
-	return v.conn.Read(ctx)
-}
-
-func (v vaultWebsocketConnAdapter) Close(code websocket.StatusCode, reason string) error {
-	return v.conn.Close(code, reason)
-}
-
-// StreamSecretEventsFunc streams Vault events for the provided object.
-type StreamSecretEventsFunc func(context.Context, client.Object, websocketConnector) error
 
 // InstantUpdateConfig configures the behavior of EnsureInstantUpdateWatcher.
 type InstantUpdateConfig struct {
@@ -68,10 +39,6 @@ type InstantUpdateConfig struct {
 	Secret client.Object
 	// Client is the current Vault client tied to Object.
 	Client vault.Client
-	// WatchPath is passed to the Vault websocket client when starting a watch.
-	WatchPath string
-	// StreamSecretEvents handles websocket events and is invoked inside the watcher loop.
-	StreamSecretEvents StreamSecretEventsFunc
 	// Registry tracks active event watchers.
 	Registry *eventWatcherRegistry
 	// BackOffRegistry provides retry intervals for reconnect attempts.
@@ -88,6 +55,19 @@ type InstantUpdateConfig struct {
 	EventObjectFactory func(types.NamespacedName) client.Object
 }
 
+// vaultEventMessage is used to extract the relevant fields from an event message sent from Vault.
+type vaultEventMessage struct {
+	Data struct {
+		Event struct {
+			Metadata struct {
+				Path     string `json:"path"`
+				Modified string `json:"modified"`
+			} `json:"metadata"`
+		} `json:"event"`
+		Namespace string `json:"namespace"`
+	} `json:"data"`
+}
+
 // EnsureEventWatcher starts (or restarts) the instant update watcher
 // for the provided object. The caller is responsible for ensuring that the
 // config fields are populated.
@@ -100,14 +80,13 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 	name := client.ObjectKeyFromObject(cfg.Secret)
 
 	meta, ok := cfg.Registry.Get(name)
-	if ok {
-		// The watcher is running, and if the VSS/VDS object has not been updated,
-		// and the client ID is the same, just return
-		if meta.LastGeneration == cfg.Secret.GetGeneration() && meta.LastClientID == cfg.Client.ID() {
-			logger.V(consts.LogLevelDebug).Info("Event watcher already running",
-				"namespace", cfg.Secret.GetNamespace(), "name", cfg.Secret.GetName())
-			return nil
-		}
+
+	// The watcher is running, and if the VSS/VDS object has not been updated,
+	// and the client ID is the same, just return
+	if ok && meta.LastGeneration == cfg.Secret.GetGeneration() && meta.LastClientID == cfg.Client.ID() {
+		logger.V(consts.LogLevelDebug).Info("Event watcher already running",
+			"namespace", cfg.Secret.GetNamespace(), "name", cfg.Secret.GetName())
+		return nil
 	}
 
 	if meta != nil {
@@ -125,21 +104,27 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 		}
 	}
 
-	// connect to the Vault websocket server
-	wsClient, err := cfg.Client.WebsocketClient(cfg.WatchPath)
+	// create the websocket that will be used to receive instant update events
+	wsClient, err := cfg.Client.WebsocketClient(InstantUpdateEventPath)
 	if err != nil {
 		return fmt.Errorf("failed to create websocket client: %w", err)
 	}
-	wsAdapter := vaultWebsocketClientAdapter{client: wsClient}
+
+	conn, err := wsClient.Connect(ctx)
+	if err != nil {
+		return err
+	}
 
 	watchCtx, cancel := context.WithCancel(context.Background())
 	stoppedCh := make(chan struct{}, 1)
-	cfg.Registry.Register(name, &eventWatcherMeta{
+	updatedMeta := &eventWatcherMeta{
 		Cancel:         cancel,
 		LastClientID:   cfg.Client.ID(),
 		LastGeneration: cfg.Secret.GetGeneration(),
 		StoppedCh:      stoppedCh,
-	})
+	}
+	cfg.Registry.Register(name, updatedMeta)
+	logger.V(consts.LogLevelDebug).Info("Starting event watcher", "meta", updatedMeta)
 
 	// Pass a deep copy of the VSS/VDS object here because it seems to avoid an issue
 	// where the EventWatcherStarted event is occasionally emitted without a
@@ -151,7 +136,7 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 	}
 
 	// launch the goroutine to watch events
-	go cfg.getEvents(watchCtx, name, obj, wsAdapter, stoppedCh)
+	go cfg.getEvents(watchCtx, obj, conn, stoppedCh)
 
 	return nil
 }
@@ -173,10 +158,14 @@ func UnwatchEvents(registry *eventWatcherRegistry, obj client.Object) {
 }
 
 // getEvents streams event notifications from Vault and handles errors and retries
-func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.NamespacedName, o client.Object, wsClient websocketConnector, stoppedCh chan struct{}) {
+func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, conn *websocket.Conn, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
+	name := client.ObjectKeyFromObject(o)
 	defer func() {
 		cfg.Registry.Delete(name)
+		if conn != nil {
+			conn.Close(websocket.StatusNormalClosure, "closing websocket watcher")
+		}
 		close(stoppedCh)
 	}()
 
@@ -185,6 +174,8 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 
 	shouldBackoff := false
 	errorCount := 0
+
+	cfg.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
 		select {
@@ -202,91 +193,110 @@ func (cfg InstantUpdateConfig) getEvents(ctx context.Context, name types.Namespa
 				time.Sleep(nextBackoff)
 			}
 
-			// handle secret updates based on events
-			err := cfg.StreamSecretEvents(ctx, o, wsClient)
-			if err == nil {
-				shouldBackoff = false
-				errorCount = 0
-				retryBackoff.Reset()
-				continue
-			}
-
-			if strings.Contains(err.Error(), "use of closed network connection") ||
-				strings.Contains(err.Error(), "context canceled") {
-				// The connection and/or context was closed, so we should
-				// exit the goroutine (and the defer will remove this from
-				// the registry)
-				logger.V(consts.LogLevelDebug).Info(
-					"Websocket client closed, stopping GetEvents for",
-					"namespace", o.GetNamespace(), "name", o.GetName())
+			select {
+			case <-ctx.Done():
+				logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
 				return
+			default:
+				msgType, data, err := conn.Read(ctx)
+				if err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+
+					logger.Error(err, "Websocket watcher read failed", "object", name)
+					cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+						"Error while watching events: %s", err)
+					cfg.enqueueForReconcile(name)
+					return
+				}
+
+				matched := false
+				matched, err = cfg.streamSecretEvents(ctx, o, msgType, data)
+				if err == nil {
+					if matched {
+						cfg.enqueueForReconcile(name)
+					}
+					shouldBackoff = false
+					errorCount = 0
+					retryBackoff.Reset()
+					continue
+				}
+
+				errorCount++
+				shouldBackoff = true
+
+				// For any other errors, we emit the error as an event on the
+				// VSS/VDS and try again with backoff.
+				cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+					"Error while watching events: %s", err)
+
+				if errorCount >= InstantUpdateErrorThreshold {
+					logger.Error(err, "Too many errors while watching events, requeuing")
+					cfg.enqueueForReconcile(name)
+					return
+				}
 			}
-
-			errorCount++
-			shouldBackoff = true
-
-			// For any other errors, we emit the error as an event on the
-			// VSS/VDS, reload the client and try connecting again.
-			cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
-				"Error while watching events: %s", err)
-
-			if errorCount >= instantUpdateErrorThreshold {
-				logger.Error(err, "Too many errors while watching events, requeuing")
-				cfg.enqueueForReconcile(name)
-				return
-			}
-
-			newClient, clientErr := cfg.NewClientFunc(ctx, o)
-			if clientErr != nil {
-				logger.Error(clientErr, "Failed to retrieve Vault client")
-				cfg.enqueueForReconcile(name)
-				return
-			}
-
-			newWSClient, clientErr := newClient.WebsocketClient(cfg.WatchPath)
-			if clientErr != nil {
-				logger.Error(clientErr, "Failed to create new websocket client")
-				cfg.enqueueForReconcile(name)
-				return
-			}
-			wsClient = vaultWebsocketClientAdapter{client: newWSClient}
-
-			// Update the LastClientID in the event registry
-			meta, ok := cfg.Registry.Get(name)
-			if !ok {
-				logger.Error(fmt.Errorf("failed to get event watcher metadata"), "missing metadata", "object", name)
-				cfg.enqueueForReconcile(name)
-				return
-			}
-
-			meta.LastClientID = newClient.ID()
-			cfg.Registry.Register(name, meta)
 		}
 	}
 }
 
+func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj client.Object, _ websocket.MessageType, data []byte) (bool, error) {
+	logger := log.FromContext(ctx).WithName("streamSecretEvents")
+
+	message := vaultEventMessage{}
+	if err := json.Unmarshal(data, &message); err != nil {
+		return false, fmt.Errorf("failed to unmarshal event message: %w", err)
+	}
+
+	if message.Data.Event.Metadata.Modified == "" {
+		return false, nil
+	}
+
+	modified, err := strconv.ParseBool(message.Data.Event.Metadata.Modified)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse modified field: %w", err)
+	}
+	if !modified {
+		return false, nil
+	}
+
+	namespace := strings.Trim(message.Data.Namespace, "/")
+	path := message.Data.Event.Metadata.Path
+
+	var specNamespace string
+	var specPath string
+
+	switch o := obj.(type) {
+	case *secretsv1beta1.VaultStaticSecret:
+		specNamespace = strings.Trim(o.Spec.Namespace, "/")
+		if o.Spec.Type == consts.KVSecretTypeV1 {
+			specPath = strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+		} else {
+			specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+		}
+	default:
+		return false, fmt.Errorf("unexpected object type %T", obj)
+	}
+
+	if namespace != specNamespace || path != specPath {
+		logger.V(consts.LogLevelDebug).Info("Event is not relevant for instant updates, skipping",
+			"namespace", namespace, "path", path, "spec namespace", specNamespace, "spec path", specPath)
+		return false, nil
+	}
+
+	logger.V(consts.LogLevelDebug).Info("Event matches, requeueing",
+		"namespace", namespace, "path", path)
+	return true, nil
+}
+
 // enqueueForReconcile enqueues an object for reconciliation
-func (cfg InstantUpdateConfig) enqueueForReconcile(key types.NamespacedName) {
+func (cfg *InstantUpdateConfig) enqueueForReconcile(key types.NamespacedName) {
 	if cfg.SourceCh == nil || cfg.EventObjectFactory == nil {
 		return
 	}
 	cfg.SourceCh <- event.GenericEvent{
 		Object: cfg.EventObjectFactory(key),
-	}
-}
-
-// defaultEventObjectFactory creates a default event object factory for tests
-func defaultEventObjectFactory(template client.Object) func(types.NamespacedName) client.Object {
-	return func(key types.NamespacedName) client.Object {
-		objCopy := template.DeepCopyObject()
-		obj, ok := objCopy.(client.Object)
-		if !ok {
-			return template
-		}
-		obj.SetNamespace(key.Namespace)
-		obj.SetName(key.Name)
-		obj.SetResourceVersion("")
-		return obj
 	}
 }
 
@@ -296,12 +306,6 @@ func (cfg *InstantUpdateConfig) validate() error {
 	}
 	if cfg.Client == nil {
 		return fmt.Errorf("instant update watcher requires a Vault client")
-	}
-	if cfg.WatchPath == "" {
-		return fmt.Errorf("instant update watcher requires a watch path")
-	}
-	if cfg.StreamSecretEvents == nil {
-		return fmt.Errorf("instant update watcher requires a stream function")
 	}
 	if cfg.Registry == nil || cfg.BackOffRegistry == nil {
 		return fmt.Errorf("instant update watcher requires registries")
@@ -319,4 +323,19 @@ func (cfg *InstantUpdateConfig) validate() error {
 		cfg.EventObjectFactory = defaultEventObjectFactory(cfg.Secret)
 	}
 	return nil
+}
+
+// defaultEventObjectFactory creates a default event object factory for tests
+func defaultEventObjectFactory(template client.Object) func(types.NamespacedName) client.Object {
+	return func(key types.NamespacedName) client.Object {
+		objCopy := template.DeepCopyObject()
+		obj, ok := objCopy.(client.Object)
+		if !ok {
+			return template
+		}
+		obj.SetNamespace(key.Namespace)
+		obj.SetName(key.Name)
+		obj.SetResourceVersion("")
+		return obj
+	}
 }
