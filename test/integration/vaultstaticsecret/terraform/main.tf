@@ -144,7 +144,7 @@ path "${vault_mount.kv.path}/*" {
   subscribe_event_types = ["kv*"]
 }
 
-path "sys/events/subscribe/kv*" {
+path "sys/events/subscribe/*" {
   capabilities = ["read"]
 }
 EOT
