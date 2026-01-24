@@ -71,3 +71,152 @@ func TestStreamSecretEvents_NotModified(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, matched)
 }
+
+func TestStreamSecretEvents_ModifiedMissing(t *testing.T) {
+	t.Parallel()
+
+	vss := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			Namespace: "team-a",
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: "kv",
+				Path:  "app/config",
+				Type:  consts.KVSecretTypeV2,
+			},
+		},
+	}
+
+	eventJSON := []byte(fmt.Sprintf(
+		`{"data":{"event":{"metadata":{"path":"%s"}},"namespace":"/%s"}}`,
+		"kv/data/app/config",
+		vss.Spec.Namespace,
+	))
+
+	cfg := &InstantUpdateConfig{}
+	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
+	require.NoError(t, err)
+	require.False(t, matched)
+}
+
+func TestStreamSecretEvents_VaultStaticSecretKVV2MetadataPathMismatch(t *testing.T) {
+	t.Parallel()
+
+	vss := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			Namespace: "team-a",
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: "kv",
+				Path:  "app/config",
+				Type:  consts.KVSecretTypeV2,
+			},
+		},
+	}
+
+	eventJSON := []byte(fmt.Sprintf(
+		`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+		"kv/metadata/app/config",
+		vss.Spec.Namespace,
+	))
+
+	cfg := &InstantUpdateConfig{}
+	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
+	require.NoError(t, err)
+	require.False(t, matched)
+}
+
+func TestStreamSecretEvents_VaultStaticSecretKVV1PathMatch(t *testing.T) {
+	t.Parallel()
+
+	vss := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			Namespace: "team-a",
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: "kv",
+				Path:  "app/config",
+				Type:  consts.KVSecretTypeV1,
+			},
+		},
+	}
+
+	eventJSON := []byte(fmt.Sprintf(
+		`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+		"kv/app/config",
+		vss.Spec.Namespace,
+	))
+
+	cfg := &InstantUpdateConfig{}
+	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
+	require.NoError(t, err)
+	require.True(t, matched)
+}
+
+func TestStreamSecretEvents_VaultStaticSecretKVV1PathMismatch(t *testing.T) {
+	t.Parallel()
+
+	vss := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			Namespace: "team-a",
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: "kv",
+				Path:  "app/config",
+				Type:  consts.KVSecretTypeV1,
+			},
+		},
+	}
+
+	eventJSON := []byte(fmt.Sprintf(
+		`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+		"kv/data/app/config",
+		vss.Spec.Namespace,
+	))
+
+	cfg := &InstantUpdateConfig{}
+	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
+	require.NoError(t, err)
+	require.False(t, matched)
+}
+
+func TestStreamSecretEvents_MissingMetadataPath(t *testing.T) {
+	t.Parallel()
+
+	vss := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			Namespace: "team-a",
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: "kv",
+				Path:  "app/config",
+				Type:  consts.KVSecretTypeV2,
+			},
+		},
+	}
+
+	eventJSON := []byte(fmt.Sprintf(
+		`{"data":{"event":{"metadata":{"modified":"true"}},"namespace":"/%s"}}`,
+		vss.Spec.Namespace,
+	))
+
+	cfg := &InstantUpdateConfig{}
+	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
+	require.NoError(t, err)
+	require.False(t, matched)
+}
