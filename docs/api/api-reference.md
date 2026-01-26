@@ -1166,7 +1166,10 @@ _Appears in:_
 | `allowStaticCreds` _boolean_ | AllowStaticCreds should be set when syncing credentials that are periodically<br />rotated by the Vault server, rather than created upon request. These secrets<br />are sometimes referred to as "static roles", or "static credentials", with a<br />request path that contains "static-creds". |  |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
+| `syncConfig` _[VaultStaticSecretSyncConfig](#vaultstaticsecretsyncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
 | `refreshAfter` _string_ | RefreshAfter a period of time for VSO to sync the source secret data, in<br />duration notation e.g. 30s, 1m, 24h. This value only needs to be set when<br />syncing from a secret's engine that does not provide a lease TTL in its<br />response. The value should be within the secret engine's configured ttl or<br />max_ttl. The source secret's lease duration takes precedence over this<br />configuration when it is greater than 0. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
+
+
 
 
 
@@ -1398,6 +1401,7 @@ VaultStaticSecretSyncConfig configures sync behavior from Vault to VSO
 
 
 _Appears in:_
+- [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
 
 | Field | Description | Default | Validation |
