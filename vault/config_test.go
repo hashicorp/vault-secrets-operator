@@ -223,7 +223,7 @@ func TestClientConfig_MutuallyExclusiveCACerts(t *testing.T) {
 				Address:         "localhost",
 			},
 			CACert:        testCABytes,
-			expectedError: fmt.Errorf("invalid CA cert config: CACertSecretRef and CACertPath are mutually exclusive, only one can be set"),
+			expectedError: fmt.Errorf("invalid CA cert config: CACertPath and CACertSecretRef are mutually exclusive, only one can be set"),
 		},
 		"only CACertPath set - success": {
 			vaultConfig: &ClientConfig{
