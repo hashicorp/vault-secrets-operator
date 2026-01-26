@@ -13,12 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"nhooyr.io/websocket"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestStreamSecretEvents_VaultStaticSecretMatch(t *testing.T) {
+func TestStreamSecretEvents(t *testing.T) {
 	t.Parallel()
 
-	vss := &secretsv1beta1.VaultStaticSecret{
+	vssKVV2 := &secretsv1beta1.VaultStaticSecret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "example",
 			Namespace: "default",
@@ -33,20 +34,20 @@ func TestStreamSecretEvents_VaultStaticSecretMatch(t *testing.T) {
 		},
 	}
 
-	eventJSON := []byte(fmt.Sprintf(
-		`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
-		"kv/data/app/config",
-		vss.Spec.Namespace,
-	))
-
-	cfg := &InstantUpdateConfig{}
-	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
-	require.NoError(t, err)
-	require.True(t, matched)
-}
-
-func TestStreamSecretEvents_NotModified(t *testing.T) {
-	t.Parallel()
+	vssKVV1 := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			Namespace: "team-a",
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: "kv",
+				Path:  "app/config",
+				Type:  consts.KVSecretTypeV1,
+			},
+		},
+	}
 
 	vds := &secretsv1beta1.VaultDynamicSecret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -60,163 +61,92 @@ func TestStreamSecretEvents_NotModified(t *testing.T) {
 		},
 	}
 
-	eventJSON := []byte(fmt.Sprintf(
-		`{"data":{"event":{"metadata":{"path":"%s","modified":"false"}},"namespace":"/%s"}}`,
-		"db/creds/app",
-		vds.Spec.Namespace,
-	))
-
 	cfg := &InstantUpdateConfig{}
-	matched, err := cfg.streamSecretEvents(context.Background(), vds, websocket.MessageText, eventJSON)
-	require.NoError(t, err)
-	require.False(t, matched)
-}
-
-func TestStreamSecretEvents_ModifiedMissing(t *testing.T) {
-	t.Parallel()
-
-	vss := &secretsv1beta1.VaultStaticSecret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "example",
-			Namespace: "default",
+	tests := []struct {
+		name      string
+		obj       client.Object
+		eventJSON []byte
+		wantMatch bool
+	}{
+		{
+			name: "vss-kvv2-match",
+			obj:  vssKVV2,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+				"kv/data/app/config",
+				vssKVV2.Spec.Namespace,
+			)),
+			wantMatch: true,
 		},
-		Spec: secretsv1beta1.VaultStaticSecretSpec{
-			Namespace: "team-a",
-			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-				Mount: "kv",
-				Path:  "app/config",
-				Type:  consts.KVSecretTypeV2,
-			},
+		{
+			name: "vss-kvv2-metadata-mismatch",
+			obj:  vssKVV2,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+				"kv/metadata/app/config",
+				vssKVV2.Spec.Namespace,
+			)),
+			wantMatch: false,
+		},
+		{
+			name: "vss-kvv1-match",
+			obj:  vssKVV1,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+				"kv/app/config",
+				vssKVV1.Spec.Namespace,
+			)),
+			wantMatch: true,
+		},
+		{
+			name: "vss-kvv1-mismatch",
+			obj:  vssKVV1,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+				"kv/data/app/config",
+				vssKVV1.Spec.Namespace,
+			)),
+			wantMatch: false,
+		},
+		{
+			name: "not-modified",
+			obj:  vds,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"false"}},"namespace":"/%s"}}`,
+				"db/creds/app",
+				vds.Spec.Namespace,
+			)),
+			wantMatch: false,
+		},
+		{
+			name: "modified-missing",
+			obj:  vssKVV2,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s"}},"namespace":"/%s"}}`,
+				"kv/data/app/config",
+				vssKVV2.Spec.Namespace,
+			)),
+			wantMatch: false,
+		},
+		{
+			name: "missing-metadata-path",
+			obj:  vssKVV2,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"modified":"true"}},"namespace":"/%s"}}`,
+				vssKVV2.Spec.Namespace,
+			)),
+			wantMatch: false,
 		},
 	}
 
-	eventJSON := []byte(fmt.Sprintf(
-		`{"data":{"event":{"metadata":{"path":"%s"}},"namespace":"/%s"}}`,
-		"kv/data/app/config",
-		vss.Spec.Namespace,
-	))
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	cfg := &InstantUpdateConfig{}
-	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
-	require.NoError(t, err)
-	require.False(t, matched)
-}
-
-func TestStreamSecretEvents_VaultStaticSecretKVV2MetadataPathMismatch(t *testing.T) {
-	t.Parallel()
-
-	vss := &secretsv1beta1.VaultStaticSecret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "example",
-			Namespace: "default",
-		},
-		Spec: secretsv1beta1.VaultStaticSecretSpec{
-			Namespace: "team-a",
-			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-				Mount: "kv",
-				Path:  "app/config",
-				Type:  consts.KVSecretTypeV2,
-			},
-		},
+			matched, err := cfg.streamSecretEvents(context.Background(), tt.obj, websocket.MessageText, tt.eventJSON)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantMatch, matched)
+		})
 	}
-
-	eventJSON := []byte(fmt.Sprintf(
-		`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
-		"kv/metadata/app/config",
-		vss.Spec.Namespace,
-	))
-
-	cfg := &InstantUpdateConfig{}
-	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
-	require.NoError(t, err)
-	require.False(t, matched)
-}
-
-func TestStreamSecretEvents_VaultStaticSecretKVV1PathMatch(t *testing.T) {
-	t.Parallel()
-
-	vss := &secretsv1beta1.VaultStaticSecret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "example",
-			Namespace: "default",
-		},
-		Spec: secretsv1beta1.VaultStaticSecretSpec{
-			Namespace: "team-a",
-			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-				Mount: "kv",
-				Path:  "app/config",
-				Type:  consts.KVSecretTypeV1,
-			},
-		},
-	}
-
-	eventJSON := []byte(fmt.Sprintf(
-		`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
-		"kv/app/config",
-		vss.Spec.Namespace,
-	))
-
-	cfg := &InstantUpdateConfig{}
-	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
-	require.NoError(t, err)
-	require.True(t, matched)
-}
-
-func TestStreamSecretEvents_VaultStaticSecretKVV1PathMismatch(t *testing.T) {
-	t.Parallel()
-
-	vss := &secretsv1beta1.VaultStaticSecret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "example",
-			Namespace: "default",
-		},
-		Spec: secretsv1beta1.VaultStaticSecretSpec{
-			Namespace: "team-a",
-			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-				Mount: "kv",
-				Path:  "app/config",
-				Type:  consts.KVSecretTypeV1,
-			},
-		},
-	}
-
-	eventJSON := []byte(fmt.Sprintf(
-		`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
-		"kv/data/app/config",
-		vss.Spec.Namespace,
-	))
-
-	cfg := &InstantUpdateConfig{}
-	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
-	require.NoError(t, err)
-	require.False(t, matched)
-}
-
-func TestStreamSecretEvents_MissingMetadataPath(t *testing.T) {
-	t.Parallel()
-
-	vss := &secretsv1beta1.VaultStaticSecret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "example",
-			Namespace: "default",
-		},
-		Spec: secretsv1beta1.VaultStaticSecretSpec{
-			Namespace: "team-a",
-			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-				Mount: "kv",
-				Path:  "app/config",
-				Type:  consts.KVSecretTypeV2,
-			},
-		},
-	}
-
-	eventJSON := []byte(fmt.Sprintf(
-		`{"data":{"event":{"metadata":{"modified":"true"}},"namespace":"/%s"}}`,
-		vss.Spec.Namespace,
-	))
-
-	cfg := &InstantUpdateConfig{}
-	matched, err := cfg.streamSecretEvents(context.Background(), vss, websocket.MessageText, eventJSON)
-	require.NoError(t, err)
-	require.False(t, matched)
 }
