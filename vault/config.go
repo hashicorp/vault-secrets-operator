@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/vault/api"
@@ -144,10 +145,17 @@ func MakeVaultClient(ctx context.Context, cfg *ClientConfig, client ctrlclient.C
 	return c, nil
 }
 
-// validateCACertConfig ensures CACertSecretRef and CACertPath are mutually exclusive.
+// validateCACertConfig ensures CACertSecretRef and CACertPath are mutually exclusive,
+// and that CACertPath does not contain path traversal sequences.
 func validateCACertConfig(cfg *ClientConfig) error {
-	if cfg.CACertSecretRef != "" && cfg.CACertPath != "" {
-		return fmt.Errorf("CACertSecretRef and CACertPath are mutually exclusive, only one can be set")
+	if cfg.CACertPath != "" {
+		if cfg.CACertSecretRef != "" {
+			return fmt.Errorf("CACertPath and CACertSecretRef are mutually exclusive, only one can be set")
+		}
+
+		if strings.Contains(cfg.CACertPath, "..") {
+			return fmt.Errorf("path contains traversal sequence: %q", cfg.CACertPath)
+		}
 	}
 	return nil
 }
