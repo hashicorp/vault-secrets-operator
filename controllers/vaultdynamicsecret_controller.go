@@ -62,6 +62,7 @@ type VaultDynamicSecretReconciler struct {
 	HMACValidator               helpers.HMACValidator
 	SyncRegistry                *SyncRegistry
 	BackOffRegistry             *BackOffRegistry
+	eventWatcherRegistry        *eventWatcherRegistry
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
 	// sourceCh is used to trigger a requeue of resource instances from an
@@ -139,6 +140,25 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientConfigError,
 			"Failed to get Vault client: %s", err)
 		return ctrl.Result{RequeueAfter: computeHorizonWithJitter(requeueDurationOnError)}, nil
+	}
+
+	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
+		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
+
+		err := EnsureEventWatcher(ctx, &InstantUpdateConfig{
+			Secret:          o,
+			Client:          vClient,
+			Registry:        r.eventWatcherRegistry,
+			BackOffRegistry: r.BackOffRegistry,
+			SourceCh:        r.SourceCh,
+			Recorder:        r.Recorder,
+			NewClientFunc:   r.newVDSClient,
+		})
+		if err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
+		}
+	} else {
+		UnwatchEvents(r.eventWatcherRegistry, o)
 	}
 
 	// we can ignore the error here, since it was handled above in the Get() call.
@@ -684,12 +704,21 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 	return r.getVaultSecretLease(resp.Secret()), nil
 }
 
+func (r *VaultDynamicSecretReconciler) newVDSClient(ctx context.Context, obj client.Object) (vault.Client, error) {
+	vds, ok := obj.(*secretsv1beta1.VaultDynamicSecret)
+	if !ok {
+		return nil, fmt.Errorf("unexpected object type %T", obj)
+	}
+	return r.ClientFactory.Get(ctx, r.Client, vds)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
+	r.eventWatcherRegistry = newEventWatcherRegistry()
 
 	r.ClientFactory.RegisterClientCallbackHandler(
 		vault.ClientCallbackHandler{
@@ -748,6 +777,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.SyncRegistry.Delete(objKey)
 	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
+	UnwatchEvents(r.eventWatcherRegistry, o)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {
