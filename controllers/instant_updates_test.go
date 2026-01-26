@@ -109,6 +109,16 @@ func TestStreamSecretEvents(t *testing.T) {
 			wantMatch: false,
 		},
 		{
+			name: "vss-namespace-mismatch",
+			obj:  vssKVV2,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+				"kv/data/app/config",
+				"other-team",
+			)),
+			wantMatch: false,
+		},
+		{
 			name: "not-modified",
 			obj:  vds,
 			eventJSON: []byte(fmt.Sprintf(
