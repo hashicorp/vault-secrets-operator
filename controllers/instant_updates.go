@@ -275,6 +275,9 @@ func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj clie
 		} else {
 			specPath = strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
 		}
+	case *secretsv1beta1.VaultDynamicSecret:
+		specNamespace = strings.Trim(o.Spec.Namespace, "/")
+		specPath = vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	default:
 		return false, fmt.Errorf("unexpected object type %T", obj)
 	}
