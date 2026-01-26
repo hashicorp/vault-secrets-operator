@@ -949,6 +949,7 @@ func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS
 		TLSServerName:   connObj.Spec.TLSServerName,
 		K8sNamespace:    connObj.Namespace,
 		CACertSecretRef: connObj.Spec.CACertSecretRef,
+		CACertPath:      connObj.Spec.CACertPath,
 		Headers:         headers,
 		VaultNamespace:  vaultNS,
 	}

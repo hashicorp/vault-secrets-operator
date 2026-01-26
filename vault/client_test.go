@@ -289,7 +289,7 @@ func Test_defaultClient_Init(t *testing.T) {
 			connObj: defaultConnObj,
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err, fmt.Sprintf(
-					`no valid certificates found for key %q in CA secret "%s/%s"`, consts.TLSSecretCAKey, "vso", "baz"))
+					`invalid CA cert in secret "%s/%s": no valid certificates found in CA cert data`, "vso", "baz"))
 			},
 		},
 		{
