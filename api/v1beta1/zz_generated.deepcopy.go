@@ -1612,7 +1612,7 @@ func (in *VaultDynamicSecretSpec) DeepCopyInto(out *VaultDynamicSecretSpec) {
 	in.Destination.DeepCopyInto(&out.Destination)
 	if in.SyncConfig != nil {
 		in, out := &in.SyncConfig, &out.SyncConfig
-		*out = new(VaultStaticSecretSyncConfig)
+		*out = new(VaultDynamicSecretSyncConfig)
 		**out = **in
 	}
 }
