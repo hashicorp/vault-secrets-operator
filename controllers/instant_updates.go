@@ -216,15 +216,16 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 						return
 					}
 
+					// attempt to reconnect to the websocket upon error
 					newClient, newConn, reconnectErr := cfg.reloadClientAndReconnect(ctx, o)
 					if reconnectErr != nil {
 						logger.Error(reconnectErr, "Failed to reconnect websocket watcher", "object", name)
 						continue
 					}
-
 					if conn != nil {
 						conn.Close(websocket.StatusNormalClosure, "closing websocket watcher")
 					}
+
 					conn = newConn
 					cfg.Client = newClient
 					if meta, ok := cfg.Registry.Get(name); ok {
@@ -265,25 +266,6 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 			}
 		}
 	}
-}
-
-func (cfg *InstantUpdateConfig) reloadClientAndReconnect(ctx context.Context, obj client.Object) (vault.Client, *websocket.Conn, error) {
-	newClient, err := cfg.NewClientFunc(ctx, obj)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to reload vault client: %w", err)
-	}
-
-	wsClient, err := newClient.WebsocketClient(InstantUpdateEventPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create websocket client: %w", err)
-	}
-
-	conn, err := wsClient.Connect(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return newClient, conn, nil
 }
 
 func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj client.Object, _ websocket.MessageType, data []byte) (bool, error) {
@@ -333,6 +315,26 @@ func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj clie
 	logger.V(consts.LogLevelDebug).Info("Event matches, requeueing",
 		"namespace", namespace, "path", path)
 	return true, nil
+}
+
+// reloadClientAndReconnect reloads the vault client and reconnects to the websocket
+func (cfg *InstantUpdateConfig) reloadClientAndReconnect(ctx context.Context, obj client.Object) (vault.Client, *websocket.Conn, error) {
+	newClient, err := cfg.NewClientFunc(ctx, obj)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to reload vault client: %w", err)
+	}
+
+	wsClient, err := newClient.WebsocketClient(InstantUpdateEventPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create websocket client: %w", err)
+	}
+
+	conn, err := wsClient.Connect(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return newClient, conn, nil
 }
 
 // enqueueForReconcile enqueues an object for reconciliation
