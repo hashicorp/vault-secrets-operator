@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64", "s390x"]
+        arch: ["arm64", "amd64", "s390x", "ppc64le"]
       fail-fast: true
     steps:
       - name: Checkout
@@ -207,7 +207,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64", "s390x"]
+        arch: ["arm64", "amd64", "s390x", "ppc64le"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
@@ -219,7 +219,7 @@ jobs:
         run: |
           make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
-        if: ${{ matrix.arch != 's390x' }}
+        if: ${{ matrix.arch != 's390x' || matrix.arch != 'ppc64le' }}
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
@@ -232,8 +232,8 @@ jobs:
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
-      - name: Docker Build (Action) s390x
-        if: ${{ matrix.arch == 's390x' }}
+      - name: Docker Build (Action) s390x or ppc64le
+        if: ${{ matrix.arch == 's390x' || matrix.arch == 'ppc64le' }}
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
@@ -244,6 +244,7 @@ jobs:
           arch: ${{matrix.arch}}
           redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
       - name: Check binary version in container ${{ matrix.arch }}
+        #if: ${{ matrix.arch != 's390x' || matrix.arch != 'ppc64le' }}
         if: ${{ matrix.arch != 's390x' }}
         shell: bash
         run: |
