@@ -235,6 +235,7 @@ jobs:
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
+
   build-docker-ubi-rh-only:
     name: UBI ${{ matrix.arch }} build
     needs:
@@ -259,19 +260,6 @@ jobs:
         shell: bash
         run: |
           make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
-      - name: Docker Build (Action)
-        uses: hashicorp/actions-docker-build@v2
-        env:
-          VERSION: ${{ needs.get-product-version.outputs.product-version }}
-          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
-        with:
-          version: ${{env.version}}
-          target: release-ubi
-          arch: ${{matrix.arch}}
-          redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
-          tags: |
-            docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
-            public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
       - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v2
         env:
