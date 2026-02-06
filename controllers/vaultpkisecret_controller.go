@@ -454,7 +454,7 @@ func (r *VaultPKISecretReconciler) recordEvent(o *secretsv1beta1.VaultPKISecret,
 func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret, healthy bool, conditions ...metav1.Condition) error {
 	logger := log.FromContext(ctx).WithName("updateStatus")
 	logger.V(consts.LogLevelDebug).Info("Updating status")
-	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultPKISecret"))...)
+	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultPKISecret"), newReadyCondition(o, healthy, "VaultPKISecret"))...)
 	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
 	o.Status.Conditions = n
 

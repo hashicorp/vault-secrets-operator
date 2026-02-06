@@ -7,9 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // VaultStaticSecretSpec defines the desired state of VaultStaticSecret
 type VaultStaticSecretSpec struct {
 	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
@@ -97,6 +94,10 @@ type VaultStaticSecretStatus struct {
 // +kubebuilder:subresource:status
 
 // VaultStaticSecret is the Schema for the vaultstaticsecrets API
+// +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=`.status.conditions[?(@.type == "SecretSynced")].status`,description="secret sync status"
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type == "Ready")].status`,description="resource ready"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`,description="resource age"
 type VaultStaticSecret struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

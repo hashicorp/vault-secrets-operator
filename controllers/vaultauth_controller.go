@@ -210,7 +210,7 @@ func (r *VaultAuthReconciler) updateStatus(ctx context.Context, o *secretsv1beta
 	logger := log.FromContext(ctx)
 	valid := ptr.Deref(o.Status.Valid, false)
 	metrics.SetResourceStatus("vaultauth", o, valid)
-	o.Status.Conditions = updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, valid, "VaultAuth"))...)
+	o.Status.Conditions = updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, valid, "VaultAuth"), newReadyCondition(o, valid, "VaultAuth"))...)
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err
