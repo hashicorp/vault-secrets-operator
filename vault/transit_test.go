@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWithKeyVersion(t *testing.T) {
+func TestWithTransitKeyVersion(t *testing.T) {
 	tests := []struct {
 		name string
-		v    uint
+		v    uint32
 	}{
 		{
 			name: "key version 1",
@@ -28,7 +28,7 @@ func TestWithKeyVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := WithKeyVersion(tt.v)
+			opts := WithTransitKeyVersion(tt.v)
 			m := make(map[string]any)
 
 			opts(m)
