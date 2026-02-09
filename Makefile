@@ -278,7 +278,7 @@ docker-push: ## Push docker image with the manager.
 ##@ CI
 
 .PHONY: ci-build-scripts-dir
-ci-build-scripts-dir: ## Build operator binary (without generating assets).
+ci-build-scripts-dir: ## Build operator scripts directory; adds extra files to be included in the container image.
 	rm -rf $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts
 	mkdir -p $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts
 	cp -a chart/crds $(BUILD_DIR)/$(GOOS)/$(GOARCH)/scripts/.
@@ -661,6 +661,10 @@ build-diags:
 .PHONY: clean
 clean:
 	rm -rf build
+
+.PHONY: clean-dist
+clean-dist:
+	rm -rf ${BUILD_DIR}
 
 # Generate Helm reference docs from values.yaml and update Vault website.
 # Usage: make gen-helm-docs
