@@ -785,7 +785,6 @@ func Test_nullEventRecorder_Event(t *testing.T) {
 		eventType string
 		reason    string
 		message   string
-		wantPanic bool
 	}{
 		{
 			name:      "basic-event",
@@ -793,7 +792,6 @@ func Test_nullEventRecorder_Event(t *testing.T) {
 			eventType: corev1.EventTypeNormal,
 			reason:    "TestReason",
 			message:   "Test message",
-			wantPanic: false,
 		},
 		{
 			name:      "warning-event",
@@ -801,7 +799,6 @@ func Test_nullEventRecorder_Event(t *testing.T) {
 			eventType: corev1.EventTypeWarning,
 			reason:    "WarningReason",
 			message:   "Warning message",
-			wantPanic: false,
 		},
 		{
 			name:      "nil-object",
@@ -809,7 +806,6 @@ func Test_nullEventRecorder_Event(t *testing.T) {
 			eventType: corev1.EventTypeNormal,
 			reason:    "TestReason",
 			message:   "Test message",
-			wantPanic: false,
 		},
 		{
 			name:      "empty-strings",
@@ -817,7 +813,6 @@ func Test_nullEventRecorder_Event(t *testing.T) {
 			eventType: "",
 			reason:    "",
 			message:   "",
-			wantPanic: false,
 		},
 	}
 
@@ -845,7 +840,6 @@ func Test_nullEventRecorder_Eventf(t *testing.T) {
 		reason    string
 		message   string
 		args      []interface{}
-		wantPanic bool
 	}{
 		{
 			name:      "formatted-event",
@@ -854,7 +848,6 @@ func Test_nullEventRecorder_Eventf(t *testing.T) {
 			reason:    "TestReason",
 			message:   "Test message with %s and %d",
 			args:      []interface{}{"string", 42},
-			wantPanic: false,
 		},
 		{
 			name:      "no-format-args",
@@ -863,7 +856,6 @@ func Test_nullEventRecorder_Eventf(t *testing.T) {
 			reason:    "WarningReason",
 			message:   "Simple message",
 			args:      nil,
-			wantPanic: false,
 		},
 		{
 			name:      "nil-object",
@@ -872,7 +864,6 @@ func Test_nullEventRecorder_Eventf(t *testing.T) {
 			reason:    "TestReason",
 			message:   "Test message %v",
 			args:      []interface{}{nil},
-			wantPanic: false,
 		},
 		{
 			name:      "multiple-format-args",
@@ -881,7 +872,6 @@ func Test_nullEventRecorder_Eventf(t *testing.T) {
 			reason:    "Reason",
 			message:   "Message with %s, %d, %v, %t",
 			args:      []interface{}{"text", 123, []string{"a", "b"}, true},
-			wantPanic: false,
 		},
 	}
 
@@ -910,7 +900,6 @@ func Test_nullEventRecorder_AnnotatedEventf(t *testing.T) {
 		reason      string
 		message     string
 		args        []interface{}
-		wantPanic   bool
 	}{
 		{
 			name:   "annotated-event",
@@ -923,7 +912,6 @@ func Test_nullEventRecorder_AnnotatedEventf(t *testing.T) {
 			reason:    "TestReason",
 			message:   "Test message with %s",
 			args:      []interface{}{"annotation"},
-			wantPanic: false,
 		},
 		{
 			name:        "nil-annotations",
@@ -933,7 +921,6 @@ func Test_nullEventRecorder_AnnotatedEventf(t *testing.T) {
 			reason:      "WarningReason",
 			message:     "Warning message",
 			args:        nil,
-			wantPanic:   false,
 		},
 		{
 			name:        "empty-annotations",
@@ -943,7 +930,6 @@ func Test_nullEventRecorder_AnnotatedEventf(t *testing.T) {
 			reason:      "Reason",
 			message:     "Message",
 			args:        []interface{}{},
-			wantPanic:   false,
 		},
 		{
 			name:   "complex-annotations",
@@ -957,7 +943,6 @@ func Test_nullEventRecorder_AnnotatedEventf(t *testing.T) {
 			reason:    "ConnectionEstablished",
 			message:   "Connection to %s established at %s",
 			args:      []interface{}{"vault", "2024-01-01"},
-			wantPanic: false,
 		},
 		{
 			name:        "nil-object",
@@ -967,7 +952,6 @@ func Test_nullEventRecorder_AnnotatedEventf(t *testing.T) {
 			reason:      "TestReason",
 			message:     "Test message",
 			args:        nil,
-			wantPanic:   false,
 		},
 	}
 
