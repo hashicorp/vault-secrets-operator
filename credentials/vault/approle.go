@@ -6,15 +6,17 @@ package vault
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/helpers"
-
 	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
 var _ CredentialProvider = (*AppRoleCredentialProvider)(nil)
@@ -45,6 +47,12 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 	l.authObj = authObj
 	l.providerNamespace = providerNamespace
 
+	// If SecretIDPath is provided, use a new UUID for this provider instance
+	if authObj.Spec.AppRole.SecretIDPath != "" {
+		l.uid = uuid.NewUUID()
+		return nil
+	}
+
 	// We use the UID of the secret which holds the AppRole Role's secret_id for the provider UID
 	key := ctrlclient.ObjectKey{
 		Namespace: l.providerNamespace,
@@ -61,6 +69,31 @@ func (l *AppRoleCredentialProvider) Init(ctx context.Context, client ctrlclient.
 
 func (l *AppRoleCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.Client) (map[string]interface{}, error) {
 	logger := log.FromContext(ctx)
+
+	// If SecretIDPath is provided, read the secret_id from the file
+	if l.authObj.Spec.AppRole.SecretIDPath != "" {
+		secretIDPath := l.authObj.Spec.AppRole.SecretIDPath
+
+		secretID, err := os.ReadFile(secretIDPath)
+		if err != nil {
+			logger.Error(err, "Failed to read Secret ID from file", "path", secretIDPath)
+			return nil, fmt.Errorf("failed to read Secret ID from file %s: %w", secretIDPath, err)
+		}
+
+		// Trim whitespace from the secret
+		trimmedSecretID := strings.TrimSpace(string(secretID))
+		if len(trimmedSecretID) == 0 {
+			err := fmt.Errorf("approle secret-id file contains no data")
+			logger.Error(err, "Failed to get Secret ID from file", "path", secretIDPath)
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"role_id":   l.authObj.Spec.AppRole.RoleID,
+			"secret_id": trimmedSecretID,
+		}, nil
+	}
+
 	// Fetch the AppRole Role's SecretID from the Kubernetes Secret each time there is a call to
 	// GetCreds in case the SecretID has changed since the last time the client token was
 	// generated. In the case of AppRole this is assumed to be common.

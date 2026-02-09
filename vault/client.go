@@ -28,6 +28,9 @@ import (
 
 type NewClientFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (Client, error)
 
+// CacheKeyFunc is a function type that allows custom cache key computation logic.
+type CacheKeyFunc func(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, opts *ClientOptions) (ClientCacheKey, error)
+
 type ClientOptions struct {
 	SkipRenewal               bool
 	WatcherDoneCh             chan<- *ClientCallbackHandlerRequest
@@ -946,6 +949,7 @@ func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS
 		TLSServerName:   connObj.Spec.TLSServerName,
 		K8sNamespace:    connObj.Namespace,
 		CACertSecretRef: connObj.Spec.CACertSecretRef,
+		CACertPath:      connObj.Spec.CACertPath,
 		Headers:         headers,
 		VaultNamespace:  vaultNS,
 	}
