@@ -703,7 +703,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
+| `secretIDPath` _string_ | SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the<br />AppRole Role to use for authenticating to Vault.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
 
 
 #### VaultAuthConfigGCP
@@ -829,7 +830,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
+| `secretIDPath` _string_ | SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the<br />AppRole Role to use for authenticating to Vault.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
 | `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
 | `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
@@ -1114,7 +1116,8 @@ _Appears in:_
 | `address` _string_ | Address of the Vault server |  |  |
 | `headers` _object (keys:string, values:string)_ | Headers to be included in all Vault requests. |  |  |
 | `tlsServerName` _string_ | TLSServerName to use as the SNI host for TLS connections. |  |  |
-| `caCertSecretRef` _string_ | CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`. |  |  |
+| `caCertSecretRef` _string_ | CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`.<br />CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `caCertPath` _string_ | CACertPath is the path to a trusted PEM-encoded CA certificate file on the filesystem that can be used to validate<br />the certificate presented by the Vault server.<br />CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified. |  |  |
 | `skipTLSVerify` _boolean_ | SkipTLSVerify for TLS connections. | false |  |
 | `timeout` _string_ | Timeout applied to all Vault requests for this connection. If not set, the<br />default timeout from the Vault API client config is used. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
 

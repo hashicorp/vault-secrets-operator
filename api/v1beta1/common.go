@@ -4,6 +4,11 @@
 package v1beta1
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -123,4 +128,47 @@ type VaultClientMeta struct {
 	// ID is the Vault ID of the authenticated client. The ID should never contain
 	// any sensitive information.
 	ID string `json:"id,omitempty"`
+}
+
+// validatePath validates a file path for security. It checks for path traversal
+// attempts, ensures the path is absolute, and validates the file exists and is
+// not too large. Returns the cleaned path if valid.
+func validatePath(path string) (string, error) {
+	// Prevent path traversal attacks in the original input
+	if strings.Contains(path, "..") {
+		return "", fmt.Errorf("invalid path: path traversal detected")
+	}
+
+	cleanPath := filepath.Clean(path)
+
+	// Double-check the final normalized path is also safe from path traversal,
+	// since filepath.Clean uses OS-specific separators and could potentially
+	// normalize paths differently
+	if strings.Contains(cleanPath, "..") {
+		return "", fmt.Errorf("invalid path: path traversal detected")
+	}
+
+	// Ensure the path is absolute to prevent relative path issues
+	if !filepath.IsAbs(cleanPath) {
+		return "", fmt.Errorf("invalid path: must be an absolute path")
+	}
+
+	// Validate the file exists and get its info
+	fileInfo, err := os.Stat(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to access file %s: %w", cleanPath, err)
+	}
+
+	// Ensure it's a regular file, not a directory or special file
+	if !fileInfo.Mode().IsRegular() {
+		return "", fmt.Errorf("path must be a regular file, not a directory or special file")
+	}
+
+	// Limit file size to 1MB to prevent resource exhaustion attacks
+	const maxFileSize = 1024 * 1024
+	if fileInfo.Size() > maxFileSize {
+		return "", fmt.Errorf("file too large: %d bytes (max: %d)", fileInfo.Size(), maxFileSize)
+	}
+
+	return cleanPath, nil
 }
