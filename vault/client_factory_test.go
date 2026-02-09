@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/keymutex"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -690,4 +691,232 @@ func invalidateClient(t *testing.T, client Client) {
 	secret := client.GetTokenSecret()
 	require.NotNil(t, secret)
 	secret.Auth.LeaseDuration = 0
+}
+
+func Test_nullEventRecorder_Event(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		object    runtime.Object
+		eventType string
+		reason    string
+		message   string
+		wantPanic bool
+	}{
+		{
+			name:      "basic-event",
+			object:    &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "test-secret"}},
+			eventType: corev1.EventTypeNormal,
+			reason:    "TestReason",
+			message:   "Test message",
+			wantPanic: false,
+		},
+		{
+			name:      "warning-event",
+			object:    &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod"}},
+			eventType: corev1.EventTypeWarning,
+			reason:    "WarningReason",
+			message:   "Warning message",
+			wantPanic: false,
+		},
+		{
+			name:      "nil-object",
+			object:    nil,
+			eventType: corev1.EventTypeNormal,
+			reason:    "TestReason",
+			message:   "Test message",
+			wantPanic: false,
+		},
+		{
+			name:      "empty-strings",
+			object:    &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test-cm"}},
+			eventType: "",
+			reason:    "",
+			message:   "",
+			wantPanic: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := &nullEventRecorder{}
+
+			// Verify Event() doesn't panic and is a no-op
+			assert.NotPanics(t, func() {
+				recorder.Event(tt.object, tt.eventType, tt.reason, tt.message)
+			})
+		})
+	}
+}
+
+func Test_nullEventRecorder_Eventf(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		object    runtime.Object
+		eventType string
+		reason    string
+		message   string
+		args      []interface{}
+		wantPanic bool
+	}{
+		{
+			name:      "formatted-event",
+			object:    &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "test-secret"}},
+			eventType: corev1.EventTypeNormal,
+			reason:    "TestReason",
+			message:   "Test message with %s and %d",
+			args:      []interface{}{"string", 42},
+			wantPanic: false,
+		},
+		{
+			name:      "no-format-args",
+			object:    &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod"}},
+			eventType: corev1.EventTypeWarning,
+			reason:    "WarningReason",
+			message:   "Simple message",
+			args:      nil,
+			wantPanic: false,
+		},
+		{
+			name:      "nil-object",
+			object:    nil,
+			eventType: corev1.EventTypeNormal,
+			reason:    "TestReason",
+			message:   "Test message %v",
+			args:      []interface{}{nil},
+			wantPanic: false,
+		},
+		{
+			name:      "multiple-format-args",
+			object:    &secretsv1beta1.VaultAuth{ObjectMeta: metav1.ObjectMeta{Name: "test-auth"}},
+			eventType: corev1.EventTypeNormal,
+			reason:    "Reason",
+			message:   "Message with %s, %d, %v, %t",
+			args:      []interface{}{"text", 123, []string{"a", "b"}, true},
+			wantPanic: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := &nullEventRecorder{}
+
+			// Verify Eventf() doesn't panic and is a no-op
+			assert.NotPanics(t, func() {
+				recorder.Eventf(tt.object, tt.eventType, tt.reason, tt.message, tt.args...)
+			})
+		})
+	}
+}
+
+func Test_nullEventRecorder_AnnotatedEventf(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		object      runtime.Object
+		annotations map[string]string
+		eventType   string
+		reason      string
+		message     string
+		args        []interface{}
+		wantPanic   bool
+	}{
+		{
+			name:   "annotated-event",
+			object: &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "test-secret"}},
+			annotations: map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+			},
+			eventType: corev1.EventTypeNormal,
+			reason:    "TestReason",
+			message:   "Test message with %s",
+			args:      []interface{}{"annotation"},
+			wantPanic: false,
+		},
+		{
+			name:        "nil-annotations",
+			object:      &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod"}},
+			annotations: nil,
+			eventType:   corev1.EventTypeWarning,
+			reason:      "WarningReason",
+			message:     "Warning message",
+			args:        nil,
+			wantPanic:   false,
+		},
+		{
+			name:        "empty-annotations",
+			object:      &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test-cm"}},
+			annotations: map[string]string{},
+			eventType:   corev1.EventTypeNormal,
+			reason:      "Reason",
+			message:     "Message",
+			args:        []interface{}{},
+			wantPanic:   false,
+		},
+		{
+			name:   "complex-annotations",
+			object: &secretsv1beta1.VaultConnection{ObjectMeta: metav1.ObjectMeta{Name: "test-conn"}},
+			annotations: map[string]string{
+				"app":         "vault-secrets-operator",
+				"version":     "v1.0.0",
+				"environment": "production",
+			},
+			eventType: corev1.EventTypeNormal,
+			reason:    "ConnectionEstablished",
+			message:   "Connection to %s established at %s",
+			args:      []interface{}{"vault", "2024-01-01"},
+			wantPanic: false,
+		},
+		{
+			name:        "nil-object",
+			object:      nil,
+			annotations: map[string]string{"key": "value"},
+			eventType:   corev1.EventTypeNormal,
+			reason:      "TestReason",
+			message:     "Test message",
+			args:        nil,
+			wantPanic:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := &nullEventRecorder{}
+
+			// Verify AnnotatedEventf() doesn't panic and is a no-op
+			assert.NotPanics(t, func() {
+				recorder.AnnotatedEventf(tt.object, tt.annotations, tt.eventType, tt.reason, tt.message, tt.args...)
+			})
+		})
+	}
+}
+
+func Test_nullEventRecorder_interface_compliance(t *testing.T) {
+	t.Parallel()
+
+	// Verify that nullEventRecorder implements the EventRecorder interface
+	_ = (interface{})((*nullEventRecorder)(nil))
+
+	// Additional compile-time check
+	recorder := &nullEventRecorder{}
+	assert.NotNil(t, recorder)
+
+	// Verify all methods can be called without panic
+	assert.NotPanics(t, func() {
+		testObj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
+		recorder.Event(testObj, corev1.EventTypeNormal, "Reason", "Message")
+		recorder.Eventf(testObj, corev1.EventTypeNormal, "Reason", "Message %s", "formatted")
+		recorder.AnnotatedEventf(testObj, map[string]string{"key": "value"}, corev1.EventTypeNormal, "Reason", "Message %s", "annotated")
+	})
 }

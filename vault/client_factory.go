@@ -1054,8 +1054,18 @@ func InitCachingClientFactory(ctx context.Context, client ctrlclient.Client, con
 
 var _ record.EventRecorder = (*nullEventRecorder)(nil)
 
-type nullEventRecorder struct {
-	record.EventRecorder
-}
+type nullEventRecorder struct{}
 
+// Event does nothing, it is just a placeholder to satisfy the
+// record.EventRecorder interface.
 func (n *nullEventRecorder) Event(_ runtime.Object, _, _, _ string) {}
+
+// Eventf does nothing, it is just a placeholder to satisfy the
+// record.EventRecorder interface.
+func (n *nullEventRecorder) Eventf(_ runtime.Object, _, _, _ string, _ ...interface{}) {}
+
+// AnnotatedEventf is just like eventf, but with annotations attached. It does
+// nothing, it is just a placeholder to satisfy the record.EventRecorder
+// interface.
+func (n *nullEventRecorder) AnnotatedEventf(_ runtime.Object, _ map[string]string, _, reason, _ string, args ...interface{}) {
+}
