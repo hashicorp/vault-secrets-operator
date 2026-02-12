@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright IBM Corp. 2022, 2025
+# Copyright IBM Corp. 2022, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
 # Script to install the operator-sdk CLI tool to the bin directory.

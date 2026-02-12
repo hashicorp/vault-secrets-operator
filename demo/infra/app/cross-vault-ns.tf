@@ -1,4 +1,4 @@
-# Copyright IBM Corp. 2022, 2025
+# Copyright IBM Corp. 2022, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
 # demonstrates how to setup cross Vault namespace for VSO and K8s auth when var.vault_enterprise = true
