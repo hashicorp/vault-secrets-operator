@@ -34,7 +34,7 @@ EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
-COPYWRITE_VERSION ?= 0.18.0
+COPYWRITE_VERSION ?= 0.25.0
 OPERATOR_SDK_VERSION ?= v1.33.0
 YQ_VERSION ?= v4.43.1
 CRD_REF_DOCS_VERSION ?= v0.2.0
@@ -613,7 +613,7 @@ endif
 
 .PHONY: copywrite
 copywrite: ## Download copywrite locally if necessary.
-	@./hack/install_copywrite.sh
+	COPYWRITE_VERSION=$(COPYWRITE_VERSION) ./hack/install_copywrite.sh
 	$(eval COPYWRITE=$(LOCALBIN)/copywrite)
 
 .PHONY: yq
@@ -685,3 +685,7 @@ check-versions: yq
 	VSO_CSI_DRIVER_VERSION=$(VSO_CSI_DRIVER_VERSION) \
 	VSO_CSI_LIVENESS_PROBE_VERSION=$(VSO_CSI_LIVENESS_PROBE_VERSION) \
 	VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION=$(VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION) ./scripts/check-versions.sh
+
+.PHONY: copywrite-headers
+copywrite-headers: copywrite ## Update copyright headers globally
+	$(COPYWRITE) headers .

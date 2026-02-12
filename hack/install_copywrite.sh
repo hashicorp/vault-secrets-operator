@@ -9,7 +9,7 @@
 
 set -e -o pipefail
 
-COPYWRITE_VERSION="${COPYWRITE_VERSION-0.16.3}"
+COPYWRITE_VERSION="${COPYWRITE_VERSION-0.25.0}"
 
 pushd "$(git rev-parse --show-toplevel || echo .)" > /dev/null
 dest_filename="copywrite-${COPYWRITE_VERSION}"
