@@ -328,6 +328,27 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// sync the secret
 	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
+		// Check if this is a rotation-in-progress error (special handling)
+		var rotErr *RotationInProgressError
+		if errors.As(err, &rotErr) {
+			// Rotation is in progress; requeue with short fixed delay (no backoff escalation)
+			horizon := time.Second * 5
+			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretRotated,
+				"Static creds rotation in progress (ttl=%d); will retry in %s", rotErr.TTL, horizon)
+
+			conditions = append(conditions,
+				newSyncCondition(o, metav1.ConditionFalse,
+					"Static creds rotation in progress (ttl=%d); will retry in %s", rotErr.TTL, horizon,
+				))
+
+			if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{RequeueAfter: horizon}, nil
+		}
+
+		// Standard error handling with backoff
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
 			logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
@@ -558,7 +579,8 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 // awaitVaultSecretRotation waits for the Vault secret to be rotated. This is
 // necessary for the case where the Vault secret is a static-creds secret and includes
-// a rotation schedule.
+// a rotation schedule. It also handles the rotation_period-only case when TTL is 0,
+// which indicates rotation is in progress.
 func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret,
 	c vault.ClientBase, lastResponse vault.Response) (*secretsv1beta1.VaultStaticCredsMetaData,
 	vault.Response,
@@ -573,11 +595,89 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		return nil, nil, err
 	}
 
-	// if we are not handling static creds or the rotation schedule is not set, then
-	// we can return early.
-	if !r.isStaticCreds(staticCredsMeta) || staticCredsMeta.RotationSchedule == "" {
+	// if we are not handling static creds, return early.
+	if !r.isStaticCreds(staticCredsMeta) {
 		return staticCredsMeta, resp, nil
 	}
+
+	// Handle rotation_period-only mode (no rotation_schedule) when TTL is near/at zero.
+	// TTL<=2 indicates that a rotation is currently in progress. We retry with
+	// short capped backoff until last_vault_rotation changes.
+	if staticCredsMeta.RotationSchedule == "" && staticCredsMeta.TTL <= 2 {
+		// TTL<=2 detected for rotation_period static creds; treating as rotation in progress.
+		logger.V(consts.LogLevelDebug).Info(
+			"static creds rotation_period: ttl<=2, waiting for last_vault_rotation to advance",
+			"currentLastVaultRotation", staticCredsMeta.LastVaultRotation,
+			"ttl", staticCredsMeta.TTL,
+			"ttl_zero_wait", true,
+		)
+
+		// Set up a short capped backoff to wait for rotation to complete.
+		bo := backoff.NewExponentialBackOff(
+			backoff.WithMaxElapsedTime(time.Second*30), // max 30s total wait
+			backoff.WithMaxInterval(time.Second*2),      // max 2s between retries
+		)
+
+		initialLastVaultRotation := staticCredsMeta.LastVaultRotation
+		attemptCount := 0
+		if err := backoff.Retry(
+			func() error {
+				attemptCount++
+				resp, err = r.doVault(ctx, c, o)
+				if err != nil {
+					return backoff.Permanent(err)
+				}
+
+				newStaticCredsMeta, err := vaultStaticCredsMetaDataFromData(resp.Data())
+				if err != nil {
+					return backoff.Permanent(err)
+				}
+
+				// Check if rotation has completed (last_vault_rotation changed).
+				if newStaticCredsMeta.LastVaultRotation != initialLastVaultRotation {
+					logger.V(consts.LogLevelDebug).Info(
+						"Rotation completed for rotation_period static creds",
+						"oldLastVaultRotation", initialLastVaultRotation,
+						"newLastVaultRotation", newStaticCredsMeta.LastVaultRotation,
+						"newTTL", newStaticCredsMeta.TTL,
+						"attempts", attemptCount,
+						"ttl_zero_wait", true,
+					)
+					staticCredsMeta = newStaticCredsMeta
+					return nil
+				}
+
+				// Update staticCredsMeta with latest read for potential return on timeout.
+				staticCredsMeta = newStaticCredsMeta
+
+				// Rotation still in progress, retry.
+				logger.V(consts.LogLevelTrace).Info(
+					"Rotation still in progress for rotation_period static creds",
+					"lastVaultRotation", newStaticCredsMeta.LastVaultRotation,
+					"ttl", newStaticCredsMeta.TTL,
+					"attempt", attemptCount,
+				)
+				return errors.New("rotation in progress, last_vault_rotation unchanged")
+			}, bo); err != nil {
+			// Timeout waiting for rotation completion.
+			logger.V(consts.LogLevelDebug).Info(
+				"Timeout waiting for rotation_period static creds rotation to complete",
+				"lastVaultRotation", staticCredsMeta.LastVaultRotation,
+				"ttl", staticCredsMeta.TTL,
+				"attempts", attemptCount,
+				"ttl_zero_wait", true,
+			)
+			// Return the best-known meta/resp with RotationInProgressError for special handling.
+			return staticCredsMeta, resp, &RotationInProgressError{
+				TTL:               staticCredsMeta.TTL,
+				LastVaultRotation: staticCredsMeta.LastVaultRotation,
+			}
+		}
+
+		return staticCredsMeta, resp, nil
+	}
+
+	// Handle rotation_schedule mode (existing behavior).
 
 	lastSyncStaticCredsMeta := o.Status.StaticCredsMetaData.DeepCopy()
 	inLastSyncRotation := lastSyncStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation

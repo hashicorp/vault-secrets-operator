@@ -46,6 +46,17 @@ func (l *LeaseTruncatedError) Error() string {
 		l.Expected, l.Actual)
 }
 
+// RotationInProgressError indicates that a static-creds rotation is currently
+// in progress (TTL near/at zero) and the controller should retry soon.
+type RotationInProgressError struct {
+	TTL               int64
+	LastVaultRotation int64
+}
+
+func (e *RotationInProgressError) Error() string {
+	return fmt.Sprintf("rotation in progress (ttl=%d), last_vault_rotation unchanged", e.TTL)
+}
+
 // computeMaxJitter with max as 10% of the duration, and jitter a random amount
 // between 0-10%
 func computeMaxJitter(duration time.Duration) (maxHorizon float64, jitter uint64) {
