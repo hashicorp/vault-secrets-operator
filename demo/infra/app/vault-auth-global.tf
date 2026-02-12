@@ -1,3 +1,6 @@
+# Copyright (c) IBM Corp. 2022, 2026
+# SPDX-License-Identifier: BUSL-1.1
+
 resource "kubernetes_manifest" "vault-auth-global" {
   manifest = {
     apiVersion = "secrets.hashicorp.com/v1beta1"

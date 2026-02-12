@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) HashiCorp, Inc.
+# Copyright IBM Corp. 2022, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
 # Script to install the hashicorp/copywrite tool to the bin directory.
@@ -9,7 +9,7 @@
 
 set -e -o pipefail
 
-COPYWRITE_VERSION="${COPYWRITE_VERSION-0.16.3}"
+COPYWRITE_VERSION="${COPYWRITE_VERSION-0.25.0}"
 
 pushd "$(git rev-parse --show-toplevel || echo .)" > /dev/null
 dest_filename="copywrite-${COPYWRITE_VERSION}"

@@ -1,4 +1,4 @@
-# Copyright (c) HashiCorp, Inc.
+# Copyright IBM Corp. 2022, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
 resource "kubernetes_cluster_role" "k8s_secrets" {

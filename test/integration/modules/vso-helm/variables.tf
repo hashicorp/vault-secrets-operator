@@ -1,4 +1,4 @@
-# Copyright (c) HashiCorp, Inck
+# Copyright IBM Corp. 2022, 2026k
 # SPDX-License-Identifier: BUSL-1.1
 variable "k8s_vault_connection_address" {
   default = ""
