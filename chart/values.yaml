@@ -885,9 +885,13 @@ telemetry:
 
     # Selector labels to add to the ServiceMonitor.
     # When empty, defaults to:
-    #  release: prometheus
+    #  control-plane: controller-manager
     # @type: string
     selectors: {}
+
+    # NamespaceSelector labels to add Vault Secrets Operator metric's service namespace
+    # When empty , defaults to your Vault Secrets Operator's release namespace  
+    namespaceSelector: {}
 
     # Scheme of the service Prometheus scrapes metrics from. This must match the scheme of the metrics service of VSO
     # @type: string
@@ -904,6 +908,21 @@ telemetry:
     # File Prometheus reads bearer token from for scraping metrics
     # @type: string
     bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+    # tlsConfig for serviceMonitor.
+    # true means skip the verification of SSL/TLS certificates when establishing a secure connection to the target endpoints
+    insecureSkipVerify: true 
+
+    # Enable tlsconfiguration to provide CA certificates, client certificates, and client keys for SSL/TLS certificates validation
+    # @type: boolean
+    tlsconfiguration: 
+      enabled: false  
+      
+      # Uncomment following to add configuration
+      # @type: string
+      # caFile: /path/to/ca.crt
+      # certFile: /path/to/client.crt
+      # keyFile: /path/to/client.key
 
     # Interval at which Prometheus scrapes metrics
     # @type: string
