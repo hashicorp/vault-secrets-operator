@@ -11,15 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -57,12 +53,6 @@ func newStaticCredsResponse(lastRotation, password, username string, ttl, rotati
 		data["rotation_window"] = 3600
 	}
 	return newVaultResponse(data)
-}
-
-func assertInRange(t *testing.T, got, min, max time.Duration) {
-	t.Helper()
-	assert.GreaterOrEqual(t, got, min, "horizon below minimum")
-	assert.LessOrEqual(t, got, max, "horizon above maximum")
 }
 
 func withPollingBudget(t *testing.T, maxElapsed, maxInterval time.Duration) {
@@ -106,12 +96,7 @@ func assertRotationInProgressError(t assert.TestingT, err error) bool {
 	return assert.ErrorAs(t, err, &rotErr)
 }
 
-func fakeRecorder() record.EventRecorder {
-	return record.NewFakeRecorder(1024)
-}
-
 func Test_computeRelativeHorizon(t *testing.T) {
-	now := nowFunc()
 	tests := map[string]struct {
 		vds              *secretsv1beta1.VaultDynamicSecret
 		expectedInWindow bool
@@ -123,14 +108,14 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: now.Unix() - 600,
+					LastRenewalTime: nowFunc().Unix() - 600,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Until(time.Unix(now.Unix()-600, 0).Add(
+			expectedHorizon: time.Until(time.Unix(nowFunc().Unix()-600, 0).Add(
 				computeStartRenewingAt(time.Second*600, 67))),
 		},
 		"two thirds elapsed": {
@@ -139,15 +124,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: now.Unix() - 450,
+					LastRenewalTime: nowFunc().Unix() - 450,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(now.Unix()-450, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(now),
+			expectedHorizon: time.Unix(nowFunc().Unix()-450, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
 		},
 		"one third elapsed": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -155,15 +140,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: now.Unix() - 200,
+					LastRenewalTime: nowFunc().Unix() - 200,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(now.Unix()-200, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(now),
+			expectedHorizon: time.Unix(nowFunc().Unix()-200, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
 		},
 		"past end of lease": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -171,15 +156,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: now.Unix() - 800,
+					LastRenewalTime: nowFunc().Unix() - 800,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(now.Unix()-800, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(now),
+			expectedHorizon: time.Unix(nowFunc().Unix()-800, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
 		},
 		"renewalPercent is 0": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -187,15 +172,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: now.Unix() - 400,
+					LastRenewalTime: nowFunc().Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 0,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(now.Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, 0)).Sub(now),
+			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, 0)).Sub(nowFunc()),
 		},
 		"renewalPercent is cap": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -203,15 +188,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: now.Unix() - 400,
+					LastRenewalTime: nowFunc().Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: renewalPercentCap,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(now.Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, renewalPercentCap)).Sub(now),
+			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap)).Sub(nowFunc()),
 		},
 		"renewalPercent exceeds cap": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -219,15 +204,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: now.Unix() - 400,
+					LastRenewalTime: nowFunc().Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: renewalPercentCap + 1,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(now.Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, renewalPercentCap+1)).Sub(now),
+			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap+1)).Sub(nowFunc()),
 		},
 	}
 
@@ -818,8 +803,8 @@ func Test_computeRotationTime(t *testing.T) {
 }
 
 func Test_computeRelativeHorizonWithJitter(t *testing.T) {
-	now := time.Unix(nowFunc().Unix(), 0)
-	defaultNowFunc := func() time.Time { return now }
+	staticNow := time.Unix(nowFunc().Unix(), 0)
+	defaultNowFunc := func() time.Time { return staticNow }
 
 	tests := []struct {
 		name           string
@@ -837,7 +822,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: now.Unix(),
+						LastVaultRotation: defaultNowFunc().Unix(),
 						TTL:               30,
 					},
 				},
@@ -855,7 +840,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
 						TTL:               30,
-						LastVaultRotation: now.Unix() - 29,
+						LastVaultRotation: defaultNowFunc().Unix() - 29,
 					},
 				},
 			},
@@ -873,7 +858,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
 						TTL:               30,
-						LastVaultRotation: now.Unix() - 30,
+						LastVaultRotation: defaultNowFunc().Unix() - 30,
 					},
 				},
 			},
@@ -889,7 +874,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 					RenewalPercent: 90,
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					LastRenewalTime: now.Unix(),
+					LastRenewalTime: defaultNowFunc().Unix(),
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 100,
 					},
@@ -907,7 +892,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 					RenewalPercent: 89,
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					LastRenewalTime: now.Unix() - 90,
+					LastRenewalTime: defaultNowFunc().Unix() - 90,
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 100,
 					},
@@ -921,14 +906,26 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			isStatic := tt.o.Status.StaticCredsMetaData.TTL > 0
+
 			nowFuncOrig := nowFunc
 			t.Cleanup(func() {
 				nowFunc = nowFuncOrig
 			})
 			nowFunc = defaultNowFunc
 			gotHorizon, gotInWindow := computeRelativeHorizonWithJitter(tt.o, tt.minHorizon)
-			assert.Equal(t, tt.wantInWindow, gotInWindow)
-			assertInRange(t, gotHorizon, tt.wantMinHorizon, tt.wantMaxHorizon)
+			assert.Equalf(t, tt.wantInWindow, gotInWindow, "computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+			if isStatic {
+				assert.LessOrEqualf(t, tt.wantMinHorizon, gotHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+				assert.GreaterOrEqualf(t, tt.wantMaxHorizon, gotHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+			} else {
+				assert.LessOrEqualf(t, gotHorizon, tt.wantMaxHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+				assert.GreaterOrEqualf(t, gotHorizon, tt.wantMinHorizon,
+					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
+			}
 		})
 	}
 }
@@ -1052,7 +1049,8 @@ func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{}
 			got := r.computePostSyncHorizon(ctx, tt.o)
-			assertInRange(t, got, tt.wantMinHorizon, tt.wantMaxHorizon)
+			assert.GreaterOrEqualf(t, got, tt.wantMinHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
+			assert.LessOrEqualf(t, got, tt.wantMaxHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
 		})
 	}
 }
@@ -1487,248 +1485,4 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestVaultDynamicSecretReconciler_Reconcile_RotationInProgressError_RequeuesQuickly_AndDoesNotWriteSecret tests
-// that Reconcile handles RotationInProgressError specially:
-// - Returns nil error with RequeueAfter computed from BackOffRegistry (exponential backoff, not fixed delay)
-// - Does NOT create/update the destination Secret
-// - Exercises full Vault polling when rotation_period TTL is low
-// This implements PR #1217 Reconcile-level behavior for stuck rotations.
-func TestVaultDynamicSecretReconciler_Reconcile_RotationInProgressError_RequeuesQuickly_AndDoesNotWriteSecret(t *testing.T) {
-	ts, err := time.Parse(time.RFC3339Nano, "2024-05-02T19:48:01.328261545Z")
-	require.NoError(t, err)
-	tsStr := "2024-05-02T19:48:01.328261545Z"
-
-	ctx := context.Background()
-	withPollingBudget(t, 100*time.Millisecond, 10*time.Millisecond)
-
-	// Create a minimal VaultAuth object with proper kubernetes auth config
-	vaultAuth := &secretsv1beta1.VaultAuth{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-auth",
-			Namespace: "default",
-		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Method: consts.ProviderMethodKubernetes,
-			Mount:  "kubernetes",
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           "test-role",
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-		},
-	}
-
-	// Create VaultDynamicSecret in rotation_period mode with destination Secret
-	o := &secretsv1beta1.VaultDynamicSecret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "rotation-stuck",
-			Namespace: "default",
-		},
-		Spec: secretsv1beta1.VaultDynamicSecretSpec{
-			Mount:            "database",
-			Path:             "static-creds/stuck-role",
-			VaultAuthRef:     "test-auth",
-			AllowStaticCreds: true,
-			Destination: secretsv1beta1.Destination{
-				Name:   "rotation-stuck-secret",
-				Create: true,
-			},
-		},
-		Status: secretsv1beta1.VaultDynamicSecretStatus{
-			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts.Unix(),
-				RotationPeriod:    3600,
-				RotationSchedule:  "",
-				TTL:               55,
-			},
-		},
-	}
-
-	// Create fake k8s client and add the VaultDynamicSecret and VaultAuth
-	k8sClient := testutils.NewFakeClient()
-	require.NoError(t, k8sClient.Create(ctx, vaultAuth))
-	require.NoError(t, k8sClient.Create(ctx, o))
-
-	// Create mock Vault client that will timeout: stuck responses never advance LVR
-	// The initial read returns ttl=0 to trigger polling in awaitVaultSecretRotation.
-	// Subsequent reads (during polling) return stuck responses that don't advance LVR.
-	mockVaultClient := &vault.MockRecordingVaultClient{
-		ReadResponses: map[string][]vault.Response{
-			"database/static-creds/stuck-role": {
-				// Initial read: ttl <= 2 will trigger polling
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				// Polling reads: return stuck responses that don't advance LVR
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				// More responses in case of additional retries
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
-			},
-		},
-	}
-
-	// Create a mock ClientFactory that returns our mock Vault client
-	mockClientFactory := &testClientFactory{
-		client: &testVaultClient{MockRecordingVaultClient: mockVaultClient},
-	}
-
-	// Create BackOffRegistry with deterministic options (no randomization)
-	// This ensures RequeueAfter == InitialInterval on first call
-	backOffRegistry := NewBackOffRegistry(
-		backoff.WithInitialInterval(5*time.Second),
-		backoff.WithMaxInterval(60*time.Second),
-		backoff.WithRandomizationFactor(0),
-		backoff.WithMultiplier(2),
-	)
-	req := reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "rotation-stuck", Namespace: "default"},
-	}
-
-	// Create a reconciler with the fake k8s client and mock ClientFactory
-	r := &VaultDynamicSecretReconciler{
-		Client:          k8sClient,
-		ClientFactory:   mockClientFactory,
-		referenceCache:  NewResourceReferenceCache(),
-		SyncRegistry:    NewSyncRegistry(),
-		BackOffRegistry: backOffRegistry,
-		Recorder:        fakeRecorder(),
-	}
-
-	// Call Reconcile with the stuck rotation resource
-	res, err := r.Reconcile(ctx, req)
-
-	// Assertions
-	// 1. Reconcile returns nil error (RotationInProgressError is handled internally)
-	require.NoError(t, err, "expected Reconcile to handle RotationInProgressError and return nil error")
-
-	// 2. Result has the deterministic BackOffRegistry initial interval (5 seconds)
-	assert.Equal(t, 5*time.Second, res.RequeueAfter, "expected RequeueAfter == InitialInterval with zero randomization")
-
-	// 3. Destination Secret was NOT created
-	destSecretKey := types.NamespacedName{Name: "rotation-stuck-secret", Namespace: "default"}
-	destSecret := &corev1.Secret{}
-	err = k8sClient.Get(ctx, destSecretKey, destSecret)
-	assert.Error(t, err, "expected destination Secret NOT to be created when rotation is stuck")
-	assert.True(t, apierrors.IsNotFound(err), "expected NotFound error")
-
-	// 4. Resource status remains unchanged (rotation did not complete)
-	updated := &secretsv1beta1.VaultDynamicSecret{}
-	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: "rotation-stuck", Namespace: "default"}, updated))
-	assert.Equal(t, ts.Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation, "expected LastVaultRotation unchanged")
-
-	// 5. Prove polling actually occurred: multiple Vault reads to the expected path
-	assert.GreaterOrEqual(t, len(mockVaultClient.Requests), 2, "expected multiple Vault reads due to rotation-period polling")
-	assert.Equal(t, http.MethodGet, mockVaultClient.Requests[0].Method, "expected first request to be GET")
-	assert.Equal(t, "database/static-creds/stuck-role", mockVaultClient.Requests[0].Path, "expected request path to be the database secret path")
-	// Verify all requests are to the same path (no unexpected calls)
-	for i, req := range mockVaultClient.Requests {
-		assert.Equalf(t, "database/static-creds/stuck-role", req.Path, "request %d: expected all paths to match", i)
-	}
-
-	// 6. Verify side effects: object added to SyncRegistry and BackOffRegistry has the entry
-	assert.True(t, r.SyncRegistry.Has(req.NamespacedName), "expected object to be in SyncRegistry after RotationInProgressError")
-	entry, created := r.BackOffRegistry.Get(req.NamespacedName)
-	assert.False(t, created, "expected BackOffRegistry entry to already exist after Reconcile")
-	assert.NotNil(t, entry, "expected BackOffRegistry to have entry for the object")
-}
-
-// testClientFactory is a test stub that implements vault.ClientFactory
-type testClientFactory struct {
-	client vault.Client
-}
-
-func (f *testClientFactory) Get(context.Context, client.Client, client.Object) (vault.Client, error) {
-	return f.client, nil
-}
-
-func (f *testClientFactory) RegisterClientCallbackHandler(vault.ClientCallbackHandler) {
-	// no-op for tests
-}
-
-// testVaultClient wraps MockRecordingVaultClient to implement the full vault.Client interface for testing
-type testVaultClient struct {
-	*vault.MockRecordingVaultClient
-}
-
-func (c *testVaultClient) Init(context.Context, client.Client, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection, string, *vault.ClientOptions) error {
-	return nil
-}
-
-func (c *testVaultClient) Login(context.Context, client.Client) error {
-	return nil
-}
-
-func (c *testVaultClient) Restore(context.Context, *api.Secret) error {
-	return nil
-}
-
-func (c *testVaultClient) GetTokenSecret() *api.Secret {
-	return nil
-}
-
-func (c *testVaultClient) CheckExpiry(int64) (bool, error) {
-	return false, nil
-}
-
-func (c *testVaultClient) Validate(context.Context) error {
-	return nil
-}
-
-func (c *testVaultClient) GetVaultAuthObj() *secretsv1beta1.VaultAuth {
-	return nil
-}
-
-func (c *testVaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection {
-	return nil
-}
-
-func (c *testVaultClient) GetCredentialProvider() provider.CredentialProviderBase {
-	return nil
-}
-
-func (c *testVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
-	return "test-cache-key", nil
-}
-
-func (c *testVaultClient) Close(bool) {
-	// no-op
-}
-
-func (c *testVaultClient) Clone(string) (vault.Client, error) {
-	return c, nil
-}
-
-func (c *testVaultClient) IsClone() bool {
-	return false
-}
-
-func (c *testVaultClient) Namespace() string {
-	return ""
-}
-
-func (c *testVaultClient) SetNamespace(string) {
-	// no-op
-}
-
-func (c *testVaultClient) Tainted() bool {
-	return false
-}
-
-func (c *testVaultClient) Untaint() bool {
-	return true
-}
-
-func (c *testVaultClient) WebsocketClient(string) (*vault.WebsocketClient, error) {
-	return nil, nil
-}
-
-func (c *testVaultClient) Renewable() bool {
-	return true
 }

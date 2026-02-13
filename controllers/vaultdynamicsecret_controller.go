@@ -333,28 +333,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// sync the secret
 	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
-		// Check if this is a rotation-in-progress error (special handling)
-		var rotErr *RotationInProgressError
-		if errors.As(err, &rotErr) {
-			// Rotation is in progress; requeue with backoff like other sync errors (avoid hammering Vault)
-			r.SyncRegistry.Add(req.NamespacedName)
-			entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
-			horizon := entry.NextBackOff()
-			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretRotated,
-				"Static creds rotation in progress (ttl=%d); will retry in %s", rotErr.TTL, horizon)
-
-			conditions = append(conditions,
-				newSyncCondition(o, metav1.ConditionFalse,
-					"Static creds rotation in progress (ttl=%d); will retry in %s", rotErr.TTL, horizon,
-				))
-
-			if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{RequeueAfter: horizon}, nil
-		}
-
 		// Standard error handling with backoff
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
