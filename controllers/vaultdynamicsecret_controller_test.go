@@ -1676,13 +1676,55 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			},
 			wantRequestCount: 0, // No polling, initial response already shows rotation complete
 		},
+		{
+			name: "rotation-period-ttl-zero-first-sync-no-poll",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "database",
+					Path:  "static-creds/first-sync",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: 0, // first sync, never synced before
+						RotationPeriod:    3600,
+						TTL:               0,
+					},
+				},
+			},
+			initialResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z", // valid timestamp from Vault
+					"password":            "initial-password",
+					"rotation_period":     3600,
+					"ttl":                 0,
+					"username":            "dev-postgres-static-user",
+				},
+			},
+			c:       &vault.MockRecordingVaultClient{},
+			wantErr: assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: ts.Unix(),
+				RotationPeriod:    3600,
+				TTL:               0,
+			},
+			wantResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
+					"password":            "initial-password",
+					"rotation_period":     3600,
+					"ttl":                 0,
+					"username":            "dev-postgres-static-user",
+				},
+			},
+			wantRequestCount: 0, // No polling on first sync (Status.LastVaultRotation == 0, response != 0, so stillInSameRotation=false)
+		},
 	}
 
 	// Save and override polling budget for fast tests
 	origMaxElapsed := rotationPeriodPollMaxElapsed
 	origMaxInterval := rotationPeriodPollMaxInterval
-	rotationPeriodPollMaxElapsed = 50 * time.Millisecond
-	rotationPeriodPollMaxInterval = 5 * time.Millisecond
+	rotationPeriodPollMaxElapsed = 200 * time.Millisecond
+	rotationPeriodPollMaxInterval = 10 * time.Millisecond
 	defer func() {
 		rotationPeriodPollMaxElapsed = origMaxElapsed
 		rotationPeriodPollMaxInterval = origMaxInterval

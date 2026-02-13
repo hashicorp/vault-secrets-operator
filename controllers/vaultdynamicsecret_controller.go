@@ -608,11 +608,18 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	// Handle rotation_period-only mode (no rotation_schedule) when TTL is near/at zero.
 	// TTL<=2 indicates that a rotation is currently in progress. We retry with
 	// short capped backoff until last_vault_rotation changes from the initial value.
-	// However, if last_vault_rotation has already changed from the last sync, return immediately.
+	// Only poll if:
+	//   1. rotation_schedule is empty (rotation_period mode)
+	//   2. TTL <= 2 (rotation likely in progress)
+	//   3. last_vault_rotation is initialized (not 0)
+	//   4. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
 	lastSyncRotation := o.Status.StaticCredsMetaData.LastVaultRotation
-	rotationAlreadyHappened := staticCredsMeta.LastVaultRotation != lastSyncRotation
+	stillInSameRotation := staticCredsMeta.LastVaultRotation == lastSyncRotation
 	
-	if staticCredsMeta.RotationSchedule == "" && staticCredsMeta.TTL <= 2 && !rotationAlreadyHappened {
+	if staticCredsMeta.RotationSchedule == "" && 
+		staticCredsMeta.TTL <= 2 && 
+		staticCredsMeta.LastVaultRotation != 0 &&
+		stillInSameRotation {
 		// TTL<=2 detected for rotation_period static creds; treating as rotation in progress.
 		logger.V(consts.LogLevelDebug).Info(
 			"static creds rotation_period: ttl<=2, waiting for last_vault_rotation to advance",
