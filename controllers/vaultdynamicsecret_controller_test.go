@@ -33,7 +33,78 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
+// Test helpers
+
+func newVaultResponse(data map[string]any) *vaultResponse {
+	return &vaultResponse{data: data}
+}
+
+func newStaticCredsResponse(lastRotation, password, username string, ttl int, rotationPeriod int, rotationSchedule string) *vaultResponse {
+	data := map[string]any{
+		"last_vault_rotation": lastRotation,
+		"password":            password,
+		"username":            username,
+		"ttl":                 ttl,
+	}
+	if rotationPeriod > 0 {
+		data["rotation_period"] = rotationPeriod
+	}
+	if rotationSchedule != "" {
+		data["rotation_schedule"] = rotationSchedule
+		data["rotation_window"] = 3600
+	}
+	return newVaultResponse(data)
+}
+
+func assertInRange(t *testing.T, got, min, max time.Duration) {
+	t.Helper()
+	assert.GreaterOrEqual(t, got, min, "horizon below minimum")
+	assert.LessOrEqual(t, got, max, "horizon above maximum")
+}
+
+func withPollingBudget(t *testing.T, maxElapsed, maxInterval time.Duration) {
+	t.Helper()
+	orig := rotationPeriodPollMaxElapsed
+	origInterval := rotationPeriodPollMaxInterval
+	rotationPeriodPollMaxElapsed = maxElapsed
+	rotationPeriodPollMaxInterval = maxInterval
+	t.Cleanup(func() {
+		rotationPeriodPollMaxElapsed = orig
+		rotationPeriodPollMaxInterval = origInterval
+	})
+}
+
+func makeStuckRotationResponses(lastRotation, password, username string, n int) []vault.Response {
+	responses := make([]vault.Response, n)
+	for i := 0; i < n; i++ {
+		responses[i] = newStaticCredsResponse(lastRotation, password, username, 0, 3600, "")
+	}
+	return responses
+}
+
+func newRotationPeriodVDS(mount, path string, lastRotation int64, period, ttl int) *secretsv1beta1.VaultDynamicSecret {
+	return &secretsv1beta1.VaultDynamicSecret{
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: mount,
+			Path:  path,
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: lastRotation,
+				RotationPeriod:    int64(period),
+				TTL:               int64(ttl),
+			},
+		},
+	}
+}
+
+func assertRotationInProgressError(t assert.TestingT, err error) bool {
+	var rotErr *RotationInProgressError
+	return assert.ErrorAs(t, err, &rotErr)
+}
+
 func Test_computeRelativeHorizon(t *testing.T) {
+	now := nowFunc()
 	tests := map[string]struct {
 		vds              *secretsv1beta1.VaultDynamicSecret
 		expectedInWindow bool
@@ -45,14 +116,14 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: nowFunc().Unix() - 600,
+					LastRenewalTime: now.Unix() - 600,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Until(time.Unix(nowFunc().Unix()-600, 0).Add(
+			expectedHorizon: time.Until(time.Unix(now.Unix()-600, 0).Add(
 				computeStartRenewingAt(time.Second*600, 67))),
 		},
 		"two thirds elapsed": {
@@ -61,15 +132,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: nowFunc().Unix() - 450,
+					LastRenewalTime: now.Unix() - 450,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(nowFunc().Unix()-450, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
+			expectedHorizon: time.Unix(now.Unix()-450, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(now),
 		},
 		"one third elapsed": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -77,15 +148,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: nowFunc().Unix() - 200,
+					LastRenewalTime: now.Unix() - 200,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(nowFunc().Unix()-200, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
+			expectedHorizon: time.Unix(now.Unix()-200, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(now),
 		},
 		"past end of lease": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -93,15 +164,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: nowFunc().Unix() - 800,
+					LastRenewalTime: now.Unix() - 800,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 67,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(nowFunc().Unix()-800, 0).Add(
-				computeStartRenewingAt(time.Second*600, 67)).Sub(nowFunc()),
+			expectedHorizon: time.Unix(now.Unix()-800, 0).Add(
+				computeStartRenewingAt(time.Second*600, 67)).Sub(now),
 		},
 		"renewalPercent is 0": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -109,15 +180,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: nowFunc().Unix() - 400,
+					LastRenewalTime: now.Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: 0,
 				},
 			},
 			expectedInWindow: true,
-			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, 0)).Sub(nowFunc()),
+			expectedHorizon: time.Unix(now.Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, 0)).Sub(now),
 		},
 		"renewalPercent is cap": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -125,15 +196,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: nowFunc().Unix() - 400,
+					LastRenewalTime: now.Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: renewalPercentCap,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, renewalPercentCap)).Sub(nowFunc()),
+			expectedHorizon: time.Unix(now.Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap)).Sub(now),
 		},
 		"renewalPercent exceeds cap": {
 			vds: &secretsv1beta1.VaultDynamicSecret{
@@ -141,15 +212,15 @@ func Test_computeRelativeHorizon(t *testing.T) {
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 600,
 					},
-					LastRenewalTime: nowFunc().Unix() - 400,
+					LastRenewalTime: now.Unix() - 400,
 				},
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
 					RenewalPercent: renewalPercentCap + 1,
 				},
 			},
 			expectedInWindow: false,
-			expectedHorizon: time.Unix(nowFunc().Unix()-400, 0).Add(
-				computeStartRenewingAt(time.Second*600, renewalPercentCap+1)).Sub(nowFunc()),
+			expectedHorizon: time.Unix(now.Unix()-400, 0).Add(
+				computeStartRenewingAt(time.Second*600, renewalPercentCap+1)).Sub(now),
 		},
 	}
 
@@ -740,8 +811,8 @@ func Test_computeRotationTime(t *testing.T) {
 }
 
 func Test_computeRelativeHorizonWithJitter(t *testing.T) {
-	staticNow := time.Unix(nowFunc().Unix(), 0)
-	defaultNowFunc := func() time.Time { return staticNow }
+	now := time.Unix(nowFunc().Unix(), 0)
+	defaultNowFunc := func() time.Time { return now }
 
 	tests := []struct {
 		name           string
@@ -752,7 +823,6 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 		wantInWindow   bool
 	}{
 		{
-			// between Vault rotations, will enqueue with a new time horizon
 			name: "static-creds-in-rotation-window-after-sync",
 			o: &secretsv1beta1.VaultDynamicSecret{
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
@@ -760,7 +830,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: defaultNowFunc().Unix(),
+						LastVaultRotation: now.Unix(),
 						TTL:               30,
 					},
 				},
@@ -770,7 +840,6 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 			wantInWindow:   true,
 		},
 		{
-			// between Vault rotations, will enqueue with a new time horizon
 			name: "static-creds-in-rotation-window-by-1s",
 			o: &secretsv1beta1.VaultDynamicSecret{
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
@@ -779,7 +848,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
 						TTL:               30,
-						LastVaultRotation: defaultNowFunc().Unix() - 29,
+						LastVaultRotation: now.Unix() - 29,
 					},
 				},
 			},
@@ -789,7 +858,6 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 			wantInWindow:   true,
 		},
 		{
-			// not in Vault rotation window, will rotate.
 			name: "static-creds-not-in-rotation-window",
 			o: &secretsv1beta1.VaultDynamicSecret{
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{
@@ -798,7 +866,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
 						TTL:               30,
-						LastVaultRotation: defaultNowFunc().Unix() - 30,
+						LastVaultRotation: now.Unix() - 30,
 					},
 				},
 			},
@@ -814,7 +882,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 					RenewalPercent: 90,
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					LastRenewalTime: defaultNowFunc().Unix(),
+					LastRenewalTime: now.Unix(),
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 100,
 					},
@@ -832,7 +900,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 					RenewalPercent: 89,
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					LastRenewalTime: defaultNowFunc().Unix() - 90,
+					LastRenewalTime: now.Unix() - 90,
 					SecretLease: secretsv1beta1.VaultSecretLease{
 						LeaseDuration: 100,
 					},
@@ -846,26 +914,14 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			isStatic := tt.o.Status.StaticCredsMetaData.TTL > 0
-
 			nowFuncOrig := nowFunc
 			t.Cleanup(func() {
 				nowFunc = nowFuncOrig
 			})
 			nowFunc = defaultNowFunc
 			gotHorizon, gotInWindow := computeRelativeHorizonWithJitter(tt.o, tt.minHorizon)
-			assert.Equalf(t, tt.wantInWindow, gotInWindow, "computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
-			if isStatic {
-				assert.LessOrEqualf(t, tt.wantMinHorizon, gotHorizon,
-					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
-				assert.GreaterOrEqualf(t, tt.wantMaxHorizon, gotHorizon,
-					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
-			} else {
-				assert.LessOrEqualf(t, gotHorizon, tt.wantMaxHorizon,
-					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
-				assert.GreaterOrEqualf(t, gotHorizon, tt.wantMinHorizon,
-					"computeRelativeHorizonWithJitter(%v, %v)", tt.o, tt.minHorizon)
-			}
+			assert.Equal(t, tt.wantInWindow, gotInWindow)
+			assertInRange(t, gotHorizon, tt.wantMinHorizon, tt.wantMaxHorizon)
 		})
 	}
 }
@@ -989,8 +1045,7 @@ func TestVaultDynamicSecretReconciler_computePostSyncHorizon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{}
 			got := r.computePostSyncHorizon(ctx, tt.o)
-			assert.GreaterOrEqualf(t, got, tt.wantMinHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
-			assert.LessOrEqualf(t, got, tt.wantMaxHorizon, "computePostSyncHorizon(%v, %v)", ctx, tt.o)
+			assertInRange(t, got, tt.wantMinHorizon, tt.wantMaxHorizon)
 		})
 	}
 }
@@ -1247,8 +1302,7 @@ type vaultResponse struct {
 }
 
 func (s *vaultResponse) WrapInfo() *api.SecretWrapInfo {
-	// TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (s *vaultResponse) Secret() *api.Secret {
@@ -1265,33 +1319,16 @@ func (s *vaultResponse) SecretK8sData(_ *helpers.SecretTransformationOption) (ma
 
 func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 	ts, err := time.Parse(time.RFC3339Nano, "2024-05-02T19:48:01.328261545Z")
-	if err != nil {
-		require.NoError(t, err)
-	}
+	require.NoError(t, err)
 
 	ts1, err := time.Parse(time.RFC3339Nano, "2024-05-02T19:49:01.325799425Z")
-	if err != nil {
-		require.NoError(t, err)
-	}
+	require.NoError(t, err)
 
-	// Helper to create N identical stuck rotation responses for timeout testing
-	makeStuckRotationResponses := func(n int) []vault.Response {
-		responses := make([]vault.Response, n)
-		for i := 0; i < n; i++ {
-			responses[i] = &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "old-password",
-					"rotation_period":     3600,
-					"ttl":                 0,
-					"username":            "dev-postgres-static-user",
-				},
-			}
-		}
-		return responses
-	}
+	tsStr := "2024-05-02T19:48:01.328261545Z"
+	ts1Str := "2024-05-02T19:49:01.325799425Z"
 
 	ctx := context.Background()
+	withPollingBudget(t, 200*time.Millisecond, 10*time.Millisecond)
 	tests := []struct {
 		name                    string
 		o                       *secretsv1beta1.VaultDynamicSecret
@@ -1299,59 +1336,36 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		initialResponse         vault.Response
 		wantStaticCredsMetaData *secretsv1beta1.VaultStaticCredsMetaData
 		wantResponse            vault.Response
-		wantRequestCount        int // -1 means don't assert
+		assertRequestCount      bool
+		expectedRequestCount    int
 		wantErr                 assert.ErrorAssertionFunc
 	}{
+		// Error cases
 		{
-			name: "invalid-static-creds-meta-data",
-			c:    &vault.MockRecordingVaultClient{},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2-024-05-02T19:48:01.328261545Z",
-					"password":            "Y3pro72-fl1ndHTFOg9h",
-					"rotation_schedule":   "*/1 * * * *",
-					"rotation_window":     3600,
-					"ttl":                 59,
-					"username":            "dev-postgres-static-user-scheduled",
-				},
-			},
+			name:            "invalid-static-creds-meta-data",
+			c:               &vault.MockRecordingVaultClient{},
+			initialResponse: newStaticCredsResponse("2-024-05-02T19:48:01.328261545Z", "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-scheduled", 59, 0, "*/1 * * * *"),
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.ErrorContains(t, err, "invalid last_vault_rotation", i...)
 			},
 		},
+		// Non-static creds
 		{
-			name: "not-static-creds",
-			c:    &vault.MockRecordingVaultClient{},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"username": "foo",
-					"password": "bar",
-				},
-			},
-			wantErr: assert.NoError,
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"username": "foo",
-					"password": "bar",
-				},
-			},
+			name:                    "not-static-creds",
+			c:                       &vault.MockRecordingVaultClient{},
+			initialResponse:         newVaultResponse(map[string]any{"username": "foo", "password": "bar"}),
+			wantErr:                 assert.NoError,
+			wantResponse:            newVaultResponse(map[string]any{"username": "foo", "password": "bar"}),
 			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{},
-			wantRequestCount:        0,
+			assertRequestCount:      true,
+			expectedRequestCount:    0,
 		},
+		// Static creds with rotation_schedule (no TTL<=2 polling)
 		{
-			name: "empty-last-rotation-schedule",
-			c:    &vault.MockRecordingVaultClient{},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "Y3pro72-fl1ndHTFOg9h",
-					"rotation_schedule":   "*/1 * * * *",
-					"rotation_window":     3600,
-					"ttl":                 59,
-					"username":            "dev-postgres-static-user-scheduled",
-				},
-			},
-			wantErr: assert.NoError,
+			name:            "empty-last-rotation-schedule",
+			c:               &vault.MockRecordingVaultClient{},
+			initialResponse: newStaticCredsResponse(tsStr, "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-scheduled", 59, 0, "*/1 * * * *"),
+			wantErr:         assert.NoError,
 			o: &secretsv1beta1.VaultDynamicSecret{
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
@@ -1360,36 +1374,16 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 					},
 				},
 			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "Y3pro72-fl1ndHTFOg9h",
-					"rotation_schedule":   "*/1 * * * *",
-					"rotation_window":     3600,
-					"ttl":                 59,
-					"username":            "dev-postgres-static-user-scheduled",
-				},
-			},
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts.Unix(),
-				RotationSchedule:  "*/1 * * * *",
-				TTL:               59,
-			},
-			wantRequestCount: 0,
+			wantResponse:            newStaticCredsResponse(tsStr, "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-scheduled", 59, 0, "*/1 * * * *"),
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts.Unix(), RotationSchedule: "*/1 * * * *", TTL: 59},
+			assertRequestCount:      true,
+			expectedRequestCount:    0,
 		},
 		{
-			name: "static-creds-periodic-rotation",
-			c:    &vault.MockRecordingVaultClient{},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "Y3pro72-fl1ndHTFOg9h",
-					"rotation_period":     3600,
-					"ttl":                 59,
-					"username":            "dev-postgres-static-user-xxx",
-				},
-			},
-			wantErr: assert.NoError,
+			name:            "static-creds-periodic-rotation",
+			c:               &vault.MockRecordingVaultClient{},
+			initialResponse: newStaticCredsResponse(tsStr, "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-xxx", 59, 3600, ""),
+			wantErr:         assert.NoError,
 			o: &secretsv1beta1.VaultDynamicSecret{
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
@@ -1398,21 +1392,10 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 					},
 				},
 			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "Y3pro72-fl1ndHTFOg9h",
-					"rotation_period":     3600,
-					"ttl":                 59,
-					"username":            "dev-postgres-static-user-xxx",
-				},
-			},
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts.Unix(),
-				RotationPeriod:    3600,
-				TTL:               59,
-			},
-			wantRequestCount: 0,
+			wantResponse:            newStaticCredsResponse(tsStr, "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-xxx", 59, 3600, ""),
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts.Unix(), RotationPeriod: 3600, TTL: 59},
+			assertRequestCount:      true,
+			expectedRequestCount:    0,
 		},
 		{
 			name: "static-creds-scheduled-initial-ttl-zero",
@@ -1429,318 +1412,101 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 					},
 				},
 			},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "Y3pro72-fl1ndHTFOg9h",
-					"rotation_schedule":   "*/1 * * * *",
-					"rotation_window":     3600,
-					"ttl":                 0,
-					"username":            "dev-postgres-static-user-scheduled",
-				},
-			},
-			wantErr: assert.NoError,
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts1.Unix(),
-				RotationSchedule:  "*/1 * * * *",
-				TTL:               58,
-			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:49:01.325799425Z",
-					"password":            "qSGA-u8f1-H6WYkII4Yn",
-					"rotation_schedule":   "*/1 * * * *",
-					"rotation_window":     3600,
-					"ttl":                 58,
-					"username":            "dev-postgres-static-user-scheduled",
-				},
-			},
+			initialResponse:         newStaticCredsResponse(tsStr, "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-scheduled", 0, 0, "*/1 * * * *"),
+			wantErr:                 assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts1.Unix(), RotationSchedule: "*/1 * * * *", TTL: 58},
+			wantResponse:            newStaticCredsResponse(ts1Str, "qSGA-u8f1-H6WYkII4Yn", "dev-postgres-static-user-scheduled", 58, 0, "*/1 * * * *"),
 			c: &vault.MockRecordingVaultClient{
 				ReadResponses: map[string][]vault.Response{
 					"mount/static-creds/scheduled": {
-						&vaultResponse{
-							data: map[string]any{
-								"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-								"password":            "Y3pro72-fl1ndHTFOg9h",
-								"rotation_schedule":   "*/1 * * * *",
-								"rotation_window":     3600,
-								"ttl":                 59,
-								"username":            "dev-postgres-static-user-scheduled",
-							},
-						},
-						&vaultResponse{
-							data: map[string]any{
-								"last_vault_rotation": "2024-05-02T19:49:01.325799425Z",
-								"password":            "qSGA-u8f1-H6WYkII4Yn",
-								"rotation_schedule":   "*/1 * * * *",
-								"rotation_window":     3600,
-								"ttl":                 58,
-								"username":            "dev-postgres-static-user-scheduled",
-							},
-						},
+						newStaticCredsResponse(tsStr, "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-scheduled", 59, 0, "*/1 * * * *"),
+						newStaticCredsResponse(ts1Str, "qSGA-u8f1-H6WYkII4Yn", "dev-postgres-static-user-scheduled", 58, 0, "*/1 * * * *"),
 					},
 				},
 			},
-			wantRequestCount: 2,
+			assertRequestCount:   true,
+			expectedRequestCount: 2,
 		},
-		// --- rotation_period + TTL<=2 test cases (PR #1217) ---
-		// Override polling budget for fast tests
+		// rotation_period + TTL<=2 workaround (PR #1217)
 		{
-			name: "rotation-period-ttl-zero-success",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "database",
-					Path:  "static-creds/rotation-period-role",
-				},
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(),
-						RotationPeriod:    3600,
-						TTL:               55,
-					},
-				},
-			},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "old-password",
-					"rotation_period":     3600,
-					"ttl":                 0, // TTL=0 indicates rotation in progress
-					"username":            "dev-postgres-static-user",
-				},
-			},
+			name:            "rotation-period-success",
+			o:              newRotationPeriodVDS("database", "static-creds/rotation-period-role", ts.Unix(), 3600, 55),
+			initialResponse: newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
 			c: &vault.MockRecordingVaultClient{
 				ReadResponses: map[string][]vault.Response{
 					"database/static-creds/rotation-period-role": {
-						// Rotation completes on second retry
-						&vaultResponse{
-							data: map[string]any{
-								"last_vault_rotation": "2024-05-02T19:49:01.325799425Z",
-								"password":            "new-password",
-								"rotation_period":     3600,
-								"ttl":                 3599,
-								"username":            "dev-postgres-static-user",
-							},
-						},
+						newStaticCredsResponse(ts1Str, "new-password", "dev-postgres-static-user", 3599, 3600, ""),
 					},
 				},
 			},
-			wantErr: assert.NoError,
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts1.Unix(),
-				RotationPeriod:    3600,
-				TTL:               3599,
-			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:49:01.325799425Z",
-					"password":            "new-password",
-					"rotation_period":     3600,
-					"ttl":                 3599,
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			wantRequestCount: 1,
+			wantErr:                 assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts1.Unix(), RotationPeriod: 3600, TTL: 3599},
+			wantResponse:            newStaticCredsResponse(ts1Str, "new-password", "dev-postgres-static-user", 3599, 3600, ""),
+			assertRequestCount:      true,
+			expectedRequestCount:    1,
 		},
 		{
-			name: "rotation-period-ttl-zero-timeout",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "database",
-					Path:  "static-creds/stuck-rotation",
-				},
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(),
-						RotationPeriod:    3600,
-						TTL:               55,
-					},
-				},
-			},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "old-password",
-					"rotation_period":     3600,
-					"ttl":                 0,
-					"username":            "dev-postgres-static-user",
-				},
-			},
+			name:            "rotation-period-timeout",
+			o:              newRotationPeriodVDS("database", "static-creds/stuck-rotation", ts.Unix(), 3600, 55),
+			initialResponse: newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
 			c: &vault.MockRecordingVaultClient{
 				ReadResponses: map[string][]vault.Response{
-					// Small number of responses (tests will use tiny timeout)
-					"database/static-creds/stuck-rotation": makeStuckRotationResponses(5),
+					"database/static-creds/stuck-rotation": makeStuckRotationResponses(tsStr, "old-password", "dev-postgres-static-user", 5),
 				},
 			},
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
-				var rotErr *RotationInProgressError
-				return assert.ErrorAs(t, err, &rotErr, i...)
+				return assertRotationInProgressError(t, err)
 			},
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts.Unix(),
-				RotationPeriod:    3600,
-				TTL:               0,
-			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "old-password",
-					"rotation_period":     3600,
-					"ttl":                 0,
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			wantRequestCount: -1, // Don't assert on timeout
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts.Unix(), RotationPeriod: 3600, TTL: 0},
+			wantResponse:            newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+			assertRequestCount:      false,
 		},
 		{
-			name: "rotation-period-ttl-nonzero-no-retry",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "database",
-					Path:  "static-creds/normal",
-				},
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(),
-						RotationPeriod:    3600,
-						TTL:               55,
-					},
-				},
-			},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "current-password",
-					"rotation_period":     3600,
-					"ttl":                 3500, // Non-zero TTL, no retry needed
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			c:       &vault.MockRecordingVaultClient{},
-			wantErr: assert.NoError,
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts.Unix(),
-				RotationPeriod:    3600,
-				TTL:               3500,
-			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "current-password",
-					"rotation_period":     3600,
-					"ttl":                 3500,
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			wantRequestCount: 0,
+			name:                    "rotation-period-no-retry",
+			o:                       newRotationPeriodVDS("database", "static-creds/normal", ts.Unix(), 3600, 55),
+			initialResponse:         newStaticCredsResponse(tsStr, "current-password", "dev-postgres-static-user", 3500, 3600, ""),
+			c:                       &vault.MockRecordingVaultClient{},
+			wantErr:                 assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts.Unix(), RotationPeriod: 3600, TTL: 3500},
+			wantResponse:            newStaticCredsResponse(tsStr, "current-password", "dev-postgres-static-user", 3500, 3600, ""),
+			assertRequestCount:      true,
+			expectedRequestCount:    0,
 		},
 		{
-			name: "rotation-period-ttl-zero-already-rotated-no-poll",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "database",
-					Path:  "static-creds/already-rotated",
-				},
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(), // old timestamp
-						RotationPeriod:    3600,
-						TTL:               55,
-					},
-				},
-			},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:49:01.325799425Z", // NEW timestamp (ts1)
-					"password":            "new-password",
-					"rotation_period":     3600,
-					"ttl":                 0, // TTL=0 but rotation already happened
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			c:       &vault.MockRecordingVaultClient{},
-			wantErr: assert.NoError,
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts1.Unix(),
-				RotationPeriod:    3600,
-				TTL:               0,
-			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:49:01.325799425Z",
-					"password":            "new-password",
-					"rotation_period":     3600,
-					"ttl":                 0,
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			wantRequestCount: 0, // No polling, initial response already shows rotation complete
+			name:                    "rotation-period-already-rotated",
+			o:                       newRotationPeriodVDS("database", "static-creds/already-rotated", ts.Unix(), 3600, 55),
+			initialResponse:         newStaticCredsResponse(ts1Str, "new-password", "dev-postgres-static-user", 0, 3600, ""),
+			c:                       &vault.MockRecordingVaultClient{},
+			wantErr:                 assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts1.Unix(), RotationPeriod: 3600, TTL: 0},
+			wantResponse:            newStaticCredsResponse(ts1Str, "new-password", "dev-postgres-static-user", 0, 3600, ""),
+			assertRequestCount:      true,
+			expectedRequestCount:    0,
 		},
 		{
-			name: "rotation-period-ttl-zero-first-sync-no-poll",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "database",
-					Path:  "static-creds/first-sync",
-				},
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: 0, // first sync, never synced before
-						RotationPeriod:    3600,
-						TTL:               0,
-					},
-				},
-			},
-			initialResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z", // valid timestamp from Vault
-					"password":            "initial-password",
-					"rotation_period":     3600,
-					"ttl":                 0,
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			c:       &vault.MockRecordingVaultClient{},
-			wantErr: assert.NoError,
-			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts.Unix(),
-				RotationPeriod:    3600,
-				TTL:               0,
-			},
-			wantResponse: &vaultResponse{
-				data: map[string]any{
-					"last_vault_rotation": "2024-05-02T19:48:01.328261545Z",
-					"password":            "initial-password",
-					"rotation_period":     3600,
-					"ttl":                 0,
-					"username":            "dev-postgres-static-user",
-				},
-			},
-			wantRequestCount: 0, // No polling on first sync (Status.LastVaultRotation == 0, response != 0, so stillInSameRotation=false)
+			name:                    "rotation-period-first-sync",
+			o:                       newRotationPeriodVDS("database", "static-creds/first-sync", 0, 3600, 0),
+			initialResponse:         newStaticCredsResponse(tsStr, "initial-password", "dev-postgres-static-user", 0, 3600, ""),
+			c:                       &vault.MockRecordingVaultClient{},
+			wantErr:                 assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts.Unix(), RotationPeriod: 3600, TTL: 0},
+			wantResponse:            newStaticCredsResponse(tsStr, "initial-password", "dev-postgres-static-user", 0, 3600, ""),
+			assertRequestCount:      true,
+			expectedRequestCount:    0,
 		},
 	}
-
-	// Save and override polling budget for fast tests
-	origMaxElapsed := rotationPeriodPollMaxElapsed
-	origMaxInterval := rotationPeriodPollMaxInterval
-	rotationPeriodPollMaxElapsed = 200 * time.Millisecond
-	rotationPeriodPollMaxInterval = 10 * time.Millisecond
-	defer func() {
-		rotationPeriodPollMaxElapsed = origMaxElapsed
-		rotationPeriodPollMaxInterval = origMaxInterval
-	}()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{}
 			got, got1, err := r.awaitVaultSecretRotation(ctx, tt.o, tt.c, tt.initialResponse)
-			if !tt.wantErr(t, err, fmt.Sprintf("awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)) {
+			if !tt.wantErr(t, err) {
 				return
 			}
-			assert.Equalf(t, tt.wantStaticCredsMetaData, got, "awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)
-			assert.Equalf(t, tt.wantResponse, got1, "awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)
-			if tt.wantRequestCount >= 0 {
-				assert.Equalf(t, tt.wantRequestCount, len(tt.c.Requests), "awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)
+			assert.Equal(t, tt.wantStaticCredsMetaData, got)
+			assert.Equal(t, tt.wantResponse, got1)
+			if tt.assertRequestCount {
+				assert.Equal(t, tt.expectedRequestCount, len(tt.c.Requests))
 			}
 		})
 	}

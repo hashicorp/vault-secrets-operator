@@ -605,6 +605,10 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		return staticCredsMeta, resp, nil
 	}
 
+	// Get last sync metadata for comparison
+	lastSyncStaticCredsMeta := o.Status.StaticCredsMetaData.DeepCopy()
+	inLastSyncRotation := lastSyncStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation
+
 	// Handle rotation_period-only mode (no rotation_schedule) when TTL is near/at zero.
 	// TTL<=2 indicates that a rotation is currently in progress. We retry with
 	// short capped backoff until last_vault_rotation changes from the initial value.
@@ -613,13 +617,10 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	//   2. TTL <= 2 (rotation likely in progress)
 	//   3. last_vault_rotation is initialized (not 0)
 	//   4. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
-	lastSyncRotation := o.Status.StaticCredsMetaData.LastVaultRotation
-	stillInSameRotation := staticCredsMeta.LastVaultRotation == lastSyncRotation
-	
 	if staticCredsMeta.RotationSchedule == "" && 
 		staticCredsMeta.TTL <= 2 && 
 		staticCredsMeta.LastVaultRotation != 0 &&
-		stillInSameRotation {
+		inLastSyncRotation {
 		// TTL<=2 detected for rotation_period static creds; treating as rotation in progress.
 		logger.V(consts.LogLevelDebug).Info(
 			"static creds rotation_period: ttl<=2, waiting for last_vault_rotation to advance",
@@ -693,16 +694,15 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		return staticCredsMeta, resp, nil
 	}
 
-	// Handle rotation_schedule mode (existing behavior).
+	// For rotation_period mode (empty schedule) that doesn't need polling, return early.
+	if staticCredsMeta.RotationSchedule == "" {
+		return staticCredsMeta, resp, nil
+	}
 
-	lastSyncStaticCredsMeta := o.Status.StaticCredsMetaData.DeepCopy()
-	inLastSyncRotation := lastSyncStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation
+	// Handle rotation_schedule mode (existing behavior).
 	switch {
 	case !inLastSyncRotation:
 		// return early, not in the last rotation
-		return staticCredsMeta, resp, nil
-	case lastSyncStaticCredsMeta.RotationSchedule == "":
-		// return early, rotation schedule was not set in the last sync
 		return staticCredsMeta, resp, nil
 	case lastSyncStaticCredsMeta.RotationSchedule != staticCredsMeta.RotationSchedule:
 		// return early, rotation schedule has changed
