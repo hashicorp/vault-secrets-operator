@@ -18,8 +18,11 @@ import (
 	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,15 +38,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+	"github.com/hashicorp/vault-secrets-operator/utils"
+	vclient "github.com/hashicorp/vault-secrets-operator/vault"
+
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/controllers"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-	"github.com/hashicorp/vault-secrets-operator/internal/options"
-	"github.com/hashicorp/vault-secrets-operator/internal/utils"
-	vclient "github.com/hashicorp/vault-secrets-operator/internal/vault"
 	"github.com/hashicorp/vault-secrets-operator/internal/version"
+	"github.com/hashicorp/vault-secrets-operator/options"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -143,6 +147,8 @@ func main() {
 	var backoffRandomizationFactor float64
 	var backoffMultiplier float64
 	var backoffMaxElapsedTime time.Duration
+	var kubeClientQPS float64
+	var kubeClientBurst uint
 
 	// command-line args and flags
 	flag.BoolVar(&printVersion, "version", false, "Print the operator version information")
@@ -157,6 +163,12 @@ func main() {
 	flag.IntVar(&cfc.ClientCacheSize, "client-cache-size", cfc.ClientCacheSize,
 		"Size of the in-memory LRU client cache. "+
 			"Also set from environment variable VSO_CLIENT_CACHE_SIZE.")
+	// update chart/values.yaml if changing the default value
+	flag.IntVar(&cfc.ClientCacheNumLocks, "client-cache-num-locks", 100,
+		"Number of locks to use for the client cache. "+
+			"Increasing this value may improve performance during Vault client creation, but requires more memory. "+
+			"When the value is <= 0 the number of locks will be set to the number of logical CPUs of the run host. "+
+			"Also set from environment variable VSO_CLIENT_CACHE_NUM_LOCKS.")
 	flag.StringVar(&clientCachePersistenceModel, "client-cache-persistence-model", defaultPersistenceModel,
 		fmt.Sprintf(
 			"The type of client cache persistence model that should be employed. "+
@@ -192,7 +204,7 @@ func main() {
 		"Maximum elapsed time without a successful sync from the secret's source. "+
 			"It's important to note that setting this option to anything other than "+
 			"its default value of 0 will result in the secret sync no longer being retried after "+
-			"reaching the max elapsed time without a successful sync. This could "+
+			"reaching the max elapsed time without a successful sync. This could result in stale secrets."+
 			"All errors are tried using an exponential backoff strategy. "+
 			"Also set from environment variable VSO_BACKOFF_MAX_ELAPSED_TIME.")
 	flag.Float64Var(&backoffRandomizationFactor, "backoff-randomization-factor",
@@ -206,6 +218,14 @@ func main() {
 			"All errors are tried using an exponential backoff strategy. "+
 			"The value must be greater than zero. "+
 			"Also set from environment variable VSO_BACKOFF_MULTIPLIER.")
+	flag.Float64Var(&kubeClientQPS, "kube-client-qps", 0,
+		"Maximum queries per second to limit requests sent to the API server and prevent overload. "+
+			"When the value is 0, the kubernetes client's default is used. "+
+			"Also set from environment variable VSO_KUBE_CLIENT_QPS.")
+	flag.UintVar(&kubeClientBurst, "kube-client-burst", 0,
+		"Maximum burst for throttling requests to the Kubernetes API. "+
+			"When the value is 0, the kubernetes client's default is used. "+
+			"Also set from environment variable VSO_KUBE_CLIENT_BURST.")
 
 	opts := zap.Options{
 		Development: os.Getenv("VSO_LOGGER_DEVELOPMENT_MODE") != "",
@@ -228,6 +248,9 @@ func main() {
 	if vsoEnvOptions.ClientCacheSize != nil {
 		cfc.ClientCacheSize = *vsoEnvOptions.ClientCacheSize
 	}
+	if vsoEnvOptions.ClientCacheNumLocks != nil {
+		cfc.ClientCacheNumLocks = *vsoEnvOptions.ClientCacheNumLocks
+	}
 	if vsoEnvOptions.ClientCachePersistenceModel != "" {
 		clientCachePersistenceModel = vsoEnvOptions.ClientCachePersistenceModel
 	}
@@ -245,6 +268,9 @@ func main() {
 	if vsoEnvOptions.BackoffMaxInterval != 0 {
 		backoffMaxInterval = vsoEnvOptions.BackoffMaxInterval
 	}
+	if vsoEnvOptions.BackoffMaxElapsedTime != 0 {
+		backoffMaxElapsedTime = vsoEnvOptions.BackoffMaxElapsedTime
+	}
 	if vsoEnvOptions.BackoffRandomizationFactor != 0 {
 		backoffRandomizationFactor = vsoEnvOptions.BackoffRandomizationFactor
 	}
@@ -255,6 +281,12 @@ func main() {
 		globalVaultAuthOptsSet = vsoEnvOptions.GlobalVaultAuthOptions
 	} else if globalVaultAuthOpts != "" {
 		globalVaultAuthOptsSet = strings.Split(globalVaultAuthOpts, ",")
+	}
+	if vsoEnvOptions.KubeClientQPS != 0 {
+		kubeClientQPS = vsoEnvOptions.KubeClientQPS
+	}
+	if vsoEnvOptions.KubeClientBurst != nil {
+		kubeClientBurst = *vsoEnvOptions.KubeClientBurst
 	}
 
 	// versionInfo is used when setting up the buildInfo metric below
@@ -329,6 +361,13 @@ func main() {
 	cfc.GlobalVaultAuthOptions = globalVaultAuthOptions
 
 	config := ctrl.GetConfigOrDie()
+	// set the Kube Client QPS and Burst config if they are set
+	if kubeClientQPS != 0 {
+		config.QPS = float32(kubeClientQPS)
+	}
+	if kubeClientBurst != 0 {
+		config.Burst = int(kubeClientBurst)
+	}
 
 	defaultClient, err := client.NewWithWatch(config, client.Options{
 		Scheme: scheme,
@@ -363,6 +402,7 @@ func main() {
 			metrics.NewBuildInfoGauge(versionInfo),
 		)
 		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
+		metrics.MustRegisterResourceStatus()
 
 		metric := prometheus.NewGauge(
 			prometheus.GaugeOpts{
@@ -390,6 +430,15 @@ func main() {
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// disable caching of K8s Secrets to avoid OOM issues. Caching is not needed for
+				// the operator.
+				DisableFor: []client.Object{
+					&corev1.Secret{},
+				},
+			},
+		},
 		Metrics: server.Options{
 			BindAddress: metricsAddr,
 		},
@@ -414,6 +463,35 @@ func main() {
 		os.Exit(1)
 	}
 	ctx := ctrl.SetupSignalHandler()
+
+	var requirements []labels.Requirement
+	for _, k := range []string{helpers.ManagedByLabel, helpers.AppNameLabel} {
+		val, ok := helpers.OwnerLabels[k]
+		if !ok || val == "" {
+			setupLog.Error(errors.New("invalid option"),
+				fmt.Sprintf("Expected Owner label %q is not present, this is a bug", k))
+			os.Exit(1)
+		}
+
+		if r, err := labels.NewRequirement(
+			k, selection.Equals, []string{
+				val,
+			}); err != nil {
+			setupLog.Error(err, "Failed to create label requirement")
+			os.Exit(1)
+		} else {
+			requirements = append(requirements, *r)
+		}
+	}
+
+	// secretsClient is used to interact with secrets that match the selector. This
+	// client is useful to avoid caching all secrets in a cluster. The client will
+	// cache only secrets that match the selector.
+	secretsClient, err := helpers.NewSecretsClientForManager(ctx, mgr, labels.NewSelector().Add(requirements...))
+	if err != nil {
+		setupLog.Error(err, "Failed to create a Secrets client")
+		os.Exit(1)
+	}
 
 	var clientFactory vclient.CachingClientFactory
 	{
@@ -447,6 +525,7 @@ func main() {
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("VaultStaticSecret"),
 		SecretDataBuilder:           secretDataBuilder,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		ClientFactory:               clientFactory,
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
@@ -459,6 +538,7 @@ func main() {
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
 		ClientFactory:               clientFactory,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		SyncRegistry:                controllers.NewSyncRegistry(),
 		Recorder:                    mgr.GetEventRecorderFor("VaultPKISecret"),
@@ -504,6 +584,7 @@ func main() {
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("VaultDynamicSecret"),
 		ClientFactory:               clientFactory,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		SyncRegistry:                controllers.NewSyncRegistry(),
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
@@ -531,6 +612,7 @@ func main() {
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
 		SecretDataBuilder:           secretDataBuilder,
+		SecretsClient:               secretsClient,
 		HMACValidator:               hmacValidator,
 		MinRefreshAfter:             minRefreshAfterHVSA,
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
@@ -566,6 +648,12 @@ func main() {
 	}
 
 	setupLog.Info("Starting manager",
+		"gitVersion", versionInfo.GitVersion,
+		"gitCommit", versionInfo.GitCommit,
+		"gitTreeState", versionInfo.GitTreeState,
+		"buildDate", versionInfo.BuildDate,
+		"goVersion", versionInfo.GoVersion,
+		"platform", versionInfo.Platform,
 		"clientCachePersistenceModel", clientCachePersistenceModel,
 		"clientCacheSize", cfc.ClientCacheSize,
 		"backoffMultiplier", backoffMultiplier,

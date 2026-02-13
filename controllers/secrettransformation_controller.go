@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
@@ -80,7 +80,9 @@ func (r *SecretTransformationReconciler) Reconcile(ctx context.Context, req ctrl
 
 func (r *SecretTransformationReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.SecretTransformation) error {
 	logger := log.FromContext(ctx)
-	metrics.SetResourceStatus("secrettransformation", o, ptr.Deref(o.Status.Valid, false))
+	valid := ptr.Deref(o.Status.Valid, false)
+	metrics.SetResourceStatus("secrettransformation", o, valid)
+	o.Status.Conditions = updateConditions(o.Status.Conditions, newHealthyCondition(o, valid, "SecretsTransformation"), newReadyCondition(o, valid, "SecretsTransformation"))
 	if err := r.Status().Update(ctx, o); err != nil {
 		logger.Error(err, "Failed to update the resource's status")
 		return err

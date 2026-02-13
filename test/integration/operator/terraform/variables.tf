@@ -67,3 +67,19 @@ variable "operator_image_repo" {
 variable "operator_image_tag" {
   default = "0.0.0-dev"
 }
+
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+  default     = ""
+}
+
+variable "install_argo_rollouts" {
+  type    = bool
+  default = true
+}
+
+variable "create_namespace" {
+  type    = bool
+  default = true
+}

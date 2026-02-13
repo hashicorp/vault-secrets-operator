@@ -26,9 +26,10 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 type vssK8SOutputs struct {
@@ -55,6 +56,27 @@ func TestVaultStaticSecret(t *testing.T) {
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	defaultCreate := 2 // Default count if no VSS_CREATE_COUNT is set
+	if vssCreateCount, exists := getEnvInt(t, "VSS_CREATE_COUNT"); exists {
+		defaultCreate = vssCreateCount
+	}
+
+	kvv1Count, kvv2Count, bothCount, kvv2FixedCount, mixedBothCount, eventsBothCount := defaultCreate, defaultCreate, defaultCreate, defaultCreate, defaultCreate, defaultCreate
+
+	counts := map[string]*int{
+		"VSS_KVV1_CREATE":        &kvv1Count,
+		"VSS_KVV2_CREATE":        &kvv2Count,
+		"VSS_BOTH_CREATE":        &bothCount,
+		"VSS_KVV2_FIXED_CREATE":  &kvv2FixedCount,
+		"VSS_MIXED_BOTH_CREATE":  &mixedBothCount,
+		"VSS_EVENTS_BOTH_CREATE": &eventsBothCount,
+	}
+	for key, count := range counts {
+		if v, exists := getEnvInt(t, key); exists {
+			*count = v
+		}
+	}
 
 	// The events tests require Vault Enterprise >= 1.16.3, and since that
 	// changes the app policy required we need to set a flag in the test
@@ -218,9 +240,11 @@ func TestVaultStaticSecret(t *testing.T) {
 					// This Secret references an Auth Method in a different namespace.
 					// VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 					Namespace: outputs.AppVaultNamespace,
-					Mount:     outputs.KVMount,
-					Type:      consts.KVSecretTypeV1,
-					Path:      "secret",
+					VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+						Mount: outputs.KVMount,
+						Type:  consts.KVSecretTypeV1,
+						Path:  "secret",
+					},
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkv",
 						Create: false,
@@ -245,9 +269,11 @@ func TestVaultStaticSecret(t *testing.T) {
 					// This Secret references the default Auth Method.
 					VaultAuthRef: ctrlclient.ObjectKeyFromObject(defaultVaultAuth).String(),
 					Namespace:    outputs.AppK8sNamespace,
-					Mount:        outputs.KVV2Mount,
-					Type:         consts.KVSecretTypeV2,
-					Path:         "secret",
+					VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+						Mount: outputs.KVV2Mount,
+						Type:  consts.KVSecretTypeV2,
+						Path:  "secret",
+					},
 					Destination: secretsv1beta1.Destination{
 						Name:   "secretkvv2",
 						Create: false,
@@ -291,23 +317,23 @@ func TestVaultStaticSecret(t *testing.T) {
 		},
 		{
 			name:        "create-kv-v1",
-			create:      2,
+			create:      kvv1Count,
 			createTypes: []string{consts.KVSecretTypeV1},
 		},
 		{
 			name:        "create-kv-v2",
-			create:      1,
+			create:      kvv2Count,
 			createTypes: []string{consts.KVSecretTypeV2},
 		},
 		{
 			name:        "create-kv-v2-fixed-version",
-			create:      2,
+			create:      kvv2FixedCount,
 			createTypes: []string{consts.KVSecretTypeV2},
 			version:     1,
 		},
 		{
 			name:        "create-both",
-			create:      2,
+			create:      bothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
@@ -323,7 +349,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				},
 			},
 			existing:    getExisting(),
-			create:      2,
+			create:      mixedBothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 		},
 		{
@@ -348,7 +374,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				}
 				return vss
 			}(),
-			create:      2,
+			create:      eventsBothCount,
 			createTypes: []string{consts.KVSecretTypeV1, consts.KVSecretTypeV2},
 			useEvents:   true,
 		},
@@ -430,9 +456,40 @@ func TestVaultStaticSecret(t *testing.T) {
 				}
 			}
 
-			if !expectInitial && len(obj.Spec.RolloutRestartTargets) > 0 {
-				awaitRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
+			if !expectInitial {
+				if len(obj.Spec.RolloutRestartTargets) > 0 {
+					awaitRolloutRestarts(t, ctx, crdClient, obj, obj.Spec.RolloutRestartTargets)
+				} else {
+					// ensure that no rollout restarts are triggered when there are no targets
+					awaitNoRolloutRestartsVSS(t, ctx, crdClient, ctrlclient.ObjectKeyFromObject(obj))
+				}
 			}
+		}
+		if t.Failed() {
+			return
+		}
+
+		if expectInitial && obj.Spec.SyncConfig != nil && obj.Spec.SyncConfig.InstantUpdates {
+			// Ensure the (Vault) event watcher has started by waiting for the
+			// EventWatcherStarted k8s event so that subsequent Vault updates
+			// are detected and synced.
+			assert.NoError(t, backoff.Retry(func() error {
+				objEvents := corev1.EventList{}
+				err := crdClient.List(ctx, &objEvents,
+					ctrlclient.InNamespace(obj.Namespace),
+					ctrlclient.MatchingFields{
+						"involvedObject.name": obj.Name,
+						"reason":              consts.ReasonEventWatcherStarted,
+					},
+				)
+				if err != nil {
+					return err
+				}
+				if len(objEvents.Items) == 0 {
+					return fmt.Errorf("no EventWatcherStarted event for %s", obj.Name)
+				}
+				return nil
+			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 200)))
 		}
 	}
 
@@ -491,9 +548,11 @@ func TestVaultStaticSecret(t *testing.T) {
 							Spec: secretsv1beta1.VaultStaticSecretSpec{
 								VaultAuthRef: fmt.Sprintf("%s/%s", auths[0].ObjectMeta.Namespace, auths[0].ObjectMeta.Name),
 								Namespace:    outputs.AppVaultNamespace,
-								Mount:        mount,
-								Type:         kvType,
-								Path:         dest,
+								VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+									Mount: mount,
+									Type:  kvType,
+									Path:  dest,
+								},
 								Destination: secretsv1beta1.Destination{
 									Name:   dest,
 									Create: true,
@@ -587,17 +646,17 @@ func assertHMAC(t *testing.T, ctx context.Context, client ctrlclient.Client, ori
 
 	// TODO: this test is unreliable in CI. We can reenable it once we can capture
 	//  the Operator logs from the Kind cluster for further analysis
-	//assertSecretDataHMAC(t, ctx, client, vssObj)
-	//if t.Failed() {
+	// assertSecretDataHMAC(t, ctx, client, vssObj)
+	// if t.Failed() {
 	//	return
-	//}
+	// }
 
 	// TODO: this test is unreliable in CI. We can reenable it once we can capture
 	//  the Operator logs from the Kind cluster for further analysis
-	//assertHMACTriggeredRemediation(t, ctx, client, vssObj)
-	//if t.Failed() {
+	// assertHMACTriggeredRemediation(t, ctx, client, vssObj)
+	// if t.Failed() {
 	//	return
-	//}
+	// }
 }
 
 func awaitSecretHMACStatus(t *testing.T, ctx context.Context, client ctrlclient.Client,
@@ -733,4 +792,32 @@ func assertHMACTriggeredRemediation(t *testing.T, ctx context.Context, client ct
 	}
 
 	assert.Equal(t, vssObj.Status.SecretMAC, updated.Status.SecretMAC)
+}
+
+func awaitNoRolloutRestartsVSS(t *testing.T, ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) {
+	t.Helper()
+	require.NoError(t, backoff.Retry(
+		func() error {
+			var obj secretsv1beta1.VaultStaticSecret
+			if err := client.Get(ctx, objKey, &obj); err != nil {
+				return backoff.Permanent(err)
+			}
+
+			var synced bool
+			for _, cond := range obj.Status.Conditions {
+				switch cond.Type {
+				case consts.TypeSecretSynced:
+					synced = true
+				}
+				if synced && cond.Type == consts.TypeRolloutRestart {
+					return backoff.Permanent(fmt.Errorf("unexpected rollout restart condition on %s", objKey))
+				}
+			}
+			if !synced {
+				return fmt.Errorf("expected synced condition on %s", objKey)
+			}
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
+	))
 }

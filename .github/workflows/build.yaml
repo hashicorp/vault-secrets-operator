@@ -4,6 +4,7 @@ on:
   push:
     branches-ignore:
       - 'docs/**'
+
   workflow_dispatch:
     inputs:
       version:
@@ -22,7 +23,7 @@ jobs:
     outputs:
       product-version: ${{ steps.get-product-version.outputs.product-version }}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: get product version
         id: get-product-version
         run: |
@@ -36,9 +37,9 @@ jobs:
     outputs:
       go-version: ${{ steps.setup-go.outputs.go-version }}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - id: setup-go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version-file: .go-version
       - name: go mod download all
@@ -77,18 +78,18 @@ jobs:
     needs:
       - build-pre-checks
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version-file: .go-version
       - run: make ci-test
-      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: '20'
       - run: npm install -g bats@${BATS_VERSION}
         shell: bash
         env:
-          BATS_VERSION: '1.10.0'
+          BATS_VERSION: '1.12.0'
       - run: bats -v
         shell: bash
       - run: make unit-test
@@ -100,7 +101,7 @@ jobs:
       filepath: ${{ steps.generate-metadata-file.outputs.filepath }}
     steps:
       - name: Checkout directory
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Generate metadata file
         id: generate-metadata-file
         uses: hashicorp/actions-generate-metadata@v1
@@ -108,7 +109,7 @@ jobs:
           version: ${{ needs.get-product-version.outputs.product-version }}
           product: ${{ env.PKG_NAME }}
           repositoryOwner: "hashicorp"
-      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: metadata.json
           path: ${{ steps.generate-metadata-file.outputs.filepath }}
@@ -121,13 +122,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "s390x"]
       fail-fast: true
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version-file: .go-version
       - name: Build binary
@@ -143,12 +144,13 @@ jobs:
           make ci-build BUILD_DIR="${BUILD_DIR}"
           OUT_DIR="${BUILD_DIR}/out"
           mkdir -p "${OUT_DIR}"
+          cp -a LICENSE "${BUILD_DIR}/LICENSE.txt"
           ZIP_FILE="${OUT_DIR}/${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_linux_${{ matrix.arch }}.zip"
-          zip -r -j "${ZIP_FILE}" dist/${{ env.GOOS }}/${{ env.GOARCH }}/${{ env.PKG_NAME }} LICENSE
+          zip -r -j "${ZIP_FILE}" dist/${{ env.GOOS }}/${{ env.GOARCH }}/${{ env.PKG_NAME }} ${BUILD_DIR}/LICENSE.txt
           echo "path=${ZIP_FILE}" >> $GITHUB_OUTPUT
           echo "name=$(basename ${ZIP_FILE})" >> $GITHUB_OUTPUT
       - name: Upload binary
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.build-binary.outputs.name }}
           path: ${{ steps.build-binary.outputs.path }}
@@ -167,7 +169,7 @@ jobs:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup scripts directory
         shell: bash
         run: |
@@ -205,18 +207,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64"]
+        arch: ["arm64", "amd64", "s390x"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
       image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup scripts directory
         shell: bash
         run: |
           make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
+        if: ${{ matrix.arch != 's390x' }}
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
@@ -225,59 +228,26 @@ jobs:
           version: ${{env.version}}
           target: release-ubi
           arch: ${{matrix.arch}}
+          redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
-
-      - name: Check binary version in container
-        shell: bash
-        run: |
-          version_output=$(docker run hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
-          echo $version_output
-          git_version=$(echo $version_output | jq -r .gitVersion)
-
-          if [ "$git_version" != "${{ env.version }}" ]; then
-            echo "$gitVersion expected to be ${{ env.version }}"
-            exit 1
-          fi
-
-  build-docker-ubi-redhat:
-    name: UBI ${{ matrix.arch }} RedHat build
-    needs:
-      - get-product-version
-      - build-pre-checks
-      - build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # Building only amd64 for the RedHat registry for now
-        arch: ["amd64"]
-    env:
-      repo: ${{github.event.repository.name}}
-      version: ${{needs.get-product-version.outputs.product-version}}
-      image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
-    steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - name: Setup scripts directory
-        shell: bash
-        run: |
-          make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
-      - name: Docker Build (Action)
+      - name: Docker Build (Action) s390x
+        if: ${{ matrix.arch == 's390x' }}
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
           GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
         with:
           version: ${{env.version}}
-          target: release-ubi-redhat
+          target: release-ubi
           arch: ${{matrix.arch}}
-          # The quay id here corresponds to the project id on RedHat's portal
           redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
-
-      - name: Check binary version in container
+      - name: Check binary version in container ${{ matrix.arch }}
+        if: ${{ matrix.arch != 's390x' }}
         shell: bash
         run: |
-          version_output=$(docker run quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}} --version --output=json)
+          version_output=$(docker run --platform linux/${{matrix.arch}} hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
           echo $version_output
           git_version=$(echo $version_output | jq -r .gitVersion)
 
@@ -305,8 +275,16 @@ jobs:
         - "0.5.0"
         - "0.6.0"
         - "0.7.1"
+        - "0.8.0"
+        - "0.9.0"
+        - "0.9.1"
+        - "0.10.0"
+        - "1.0.0"
+        - "1.0.1"
+        - "1.1.0"
+        - "1.2.0"
     steps:
-      - uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e # v4.1.7
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
           name: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
       - name: Load docker image
@@ -314,11 +292,11 @@ jobs:
         run: |
             docker load --input ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
       - name: Install kind
-        uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
+        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
         with:
-          version: "v0.22.0"
+          version: "v0.31.0"
           install_only: true
-      - uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         id: setup-helm
         with:
           version: "v3.15.1"
@@ -326,9 +304,9 @@ jobs:
         shell: bash
         run: |
           helm repo add hashicorp https://helm.releases.hashicorp.com
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version-file: .go-version
       - name: Run tests
@@ -342,10 +320,52 @@ jobs:
       - run: echo "setting versions"
     outputs:
       # JSON encoded array of k8s versions
-      K8S_VERSIONS: '["1.30.0", "1.29.4", "1.28.9", "1.27.13", "1.26.15"]'
-      VAULT_N: "1.17.2"
-      VAULT_N_1: "1.16.6"
-      VAULT_N_2: "1.15.12"
+      K8S_VERSIONS: '["1.35.0", "1.34.3", "1.33.7", "1.32.11", "1.31.14"]'
+      VAULT_N: "1.21.2"
+      VAULT_N_1: "1.20.7"
+      VAULT_N_2: "1.19.13"
+      VAULT_LTS_1: "1.16.29"
+  oom-tests:
+    runs-on: ubuntu-latest
+    needs:
+      - get-product-version
+      - build-pre-checks
+      - build-docker
+      - versions
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s-version: ${{ fromJson(needs.versions.outputs.K8S_VERSIONS) }}
+    steps:
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
+      - name: Load docker image
+        shell: bash
+        run: |
+          docker load --input ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
+      - name: Install kind
+        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
+        with:
+          version: "v0.30.0"
+          install_only: true
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        id: setup-helm
+        with:
+          version: "v3.15.1"
+      - name: Add repo
+        shell: bash
+        run: |
+          helm repo add hashicorp https://helm.releases.hashicorp.com
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Setup go
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with:
+          go-version-file: .go-version
+      - name: Run tests
+        shell: bash
+        run: |
+          make integration-test-oom KIND_K8S_VERSION="v${{ matrix.k8s-version }}" VERSION=${{ needs.get-product-version.outputs.product-version }}
   latest-vault:
     name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }} ${{ matrix.installation-method }} enterprise=${{ matrix.vault-enterprise }}
     needs:
@@ -363,7 +383,7 @@ jobs:
         installation-method: [helm, kustomize]
         vault-enterprise: [true, false]
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/integration-test
         name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }}
         with:
@@ -394,12 +414,13 @@ jobs:
         vault-version:
           - ${{ needs.versions.outputs.VAULT_N_1 }}
           - ${{ needs.versions.outputs.VAULT_N_2 }}
+          - ${{ needs.versions.outputs.VAULT_LTS_1 }}
         k8s-version:
           - ${{ fromJson(needs.versions.outputs.K8S_VERSIONS)[0] }}
         installation-method: [kustomize]
         vault-enterprise: [true]
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/integration-test
         name: vault:${{ matrix.vault-version }} kind:${{ matrix.k8s-version }}
         with:
@@ -425,11 +446,11 @@ jobs:
       - build
       - build-docker
       - build-docker-ubi
-      - build-docker-ubi-redhat
       - chart-upgrade-tests
       - unit-tests
       - latest-vault
       - latest-k8s
+      - oom-tests
     steps:
     - name: cancelled
       if: ${{ (contains(needs.*.result, 'cancelled')) }}

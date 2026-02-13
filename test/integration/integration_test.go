@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 	"testing"
@@ -50,10 +51,12 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+
+	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
 )
 
 var (
@@ -71,6 +74,9 @@ var (
 	// make tests more verbose
 	withExtraVerbosity = os.Getenv("WITH_EXTRA_VERBOSITY") != ""
 	testInParallel     = os.Getenv("INTEGRATION_TESTS_PARALLEL") != ""
+	isScaleTest        = os.Getenv("SCALE_TESTS") != ""
+	eksClusterName     = os.Getenv("EKS_CLUSTER_NAME")
+	kindClusterName    = os.Getenv("KIND_CLUSTER_NAME")
 	// set in TestMain
 	clusterName       string
 	operatorImageRepo string
@@ -79,7 +85,8 @@ var (
 	// extended in TestMain
 	scheme = ctrlruntime.NewScheme()
 	// set in TestMain
-	restConfig = rest.Config{}
+	restConfig           = rest.Config{}
+	argoRolloutSupported = true
 )
 
 func init() {
@@ -126,11 +133,22 @@ const (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION_TESTS") != "" {
-		clusterName = os.Getenv("KIND_CLUSTER_NAME")
-		if clusterName == "" {
-			os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
-			os.Exit(1)
+		if isScaleTest {
+			// When SCALE_TESTS is set, use EKS cluster
+			clusterName = eksClusterName
+			if clusterName == "" {
+				os.Stderr.WriteString("error: EKS_CLUSTER_NAME is not set\n")
+				os.Exit(1)
+			}
+		} else {
+			// Otherwise, use KIND cluster
+			clusterName = kindClusterName
+			if clusterName == "" {
+				os.Stderr.WriteString("error: KIND_CLUSTER_NAME is not set\n")
+				os.Exit(1)
+			}
 		}
+
 		operatorImageRepo = os.Getenv("OPERATOR_IMAGE_REPO")
 		operatorImageTag = os.Getenv("OPERATOR_IMAGE_TAG")
 		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -153,8 +171,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
+	k8sConfigContext, ok := os.LookupEnv("K8S_CLUSTER_CONTEXT")
+	if !ok {
 		k8sConfigContext = "kind-" + clusterName
 	}
 
@@ -178,8 +196,22 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	var providerFile string
+	if isScaleTest {
+		providerFile = "eks.tf"
+	} else {
+		providerFile = "kind.tf"
+	}
+	providersDir := path.Join(testRoot, "operator/providers")
+
 	tfDir, err := files.CopyTerraformFolderToDest(
 		path.Join(testRoot, "operator/terraform"), tempDir, "terraform")
+
+	// copy the provider file to the terraform directory
+	if err := files.CopyFile(path.Join(providersDir, providerFile), path.Join(tfDir, "providers.tf")); err != nil {
+		log.Printf("Failed to copy provider file, err=%s", err)
+		os.Exit(1)
+	}
 
 	log.Printf("Test Root: %s", testRoot)
 	_, err = copyModulesDir(tfDir)
@@ -198,18 +230,33 @@ func TestMain(m *testing.M) {
 	// empty test case to be used with test helper functions
 	t := &testing.T{}
 
+	// get nodes architecture
+	nodes, err := k8s.GetNodesE(t, k8sOpts)
+	require.NoError(t, err)
+	for _, n := range nodes {
+		arch := n.Status.NodeInfo.Architecture
+		if arch == "amd64" || arch == "arm64" {
+			continue
+		}
+		log.Printf("Unsupported node architecture '%s', skipping ArgoRollout setup", arch)
+		argoRolloutSupported = false
+		break
+	}
+
 	// Construct the terraform options with default retryable errors to handle the most common
 	// retryable errors in terraform testing.
 	tfOptions := setCommonTFOptions(t, &terraform.Options{
 		// Set the path to the Terraform code that will be tested.
 		TerraformDir: tfDir,
 		Vars: map[string]interface{}{
+			"cluster_name":                 clusterName,
 			"k8s_vault_connection_address": testVaultAddress,
 			"k8s_config_context":           k8sConfigContext,
 			"k8s_vault_namespace":          k8sVaultNamespace,
 			// the service account is created in test/integration/infra/main.tf
-			"vault_address": os.Getenv("VAULT_ADDRESS"),
-			"vault_token":   os.Getenv("VAULT_TOKEN"),
+			"vault_address":         os.Getenv("VAULT_ADDR"),
+			"vault_token":           os.Getenv("VAULT_TOKEN"),
+			"install_argo_rollouts": argoRolloutSupported,
 		},
 	})
 
@@ -301,6 +348,7 @@ func setCommonTFOptions(t *testing.T, opts *terraform.Options) *terraform.Option
 		opts.Logger = logger.Discard
 	}
 
+	opts.TerraformBinary = "terraform"
 	opts = terraform.WithDefaultRetryableErrors(t, opts)
 	opts.MaxRetries = 30
 	opts.TimeBetweenRetries = time.Millisecond * 500
@@ -403,7 +451,7 @@ func waitForPKIData(t *testing.T, maxRetries int, delay time.Duration, vpsObj *s
 		}
 		for _, field := range []string{"certificate", "private_key"} {
 			if len(destSecret.Data[field]) == 0 {
-				return "", fmt.Errorf(field + " is empty")
+				return "", fmt.Errorf("%s is empty", field)
 			}
 		}
 		tlsFieldsCheck, err := checkTLSFields(destSecret)
@@ -471,10 +519,11 @@ type revocationK8sOutputs struct {
 }
 
 type authMethodsK8sOutputs struct {
-	AuthRole      string `json:"auth_role"`
-	AppRoleRoleID string `json:"role_id"`
-	GSAEmail      string `json:"gsa_email"`
-	VaultPolicy   string `json:"vault_policy"`
+	AuthRole            string `json:"auth_role"`
+	AppRoleRoleID       string `json:"role_id"`
+	AppRoleSecretIDPath string `json:"approle_secretid_path"`
+	GSAEmail            string `json:"gsa_email"`
+	VaultPolicy         string `json:"vault_policy"`
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,
@@ -596,6 +645,9 @@ func deployOperatorWithKustomizeE(t *testing.T, k8sOpts *k8s.KubectlOptions, kus
 // undeploying the Operator from Kubernetes.
 func exportKindLogsT(t *testing.T) {
 	t.Helper()
+	if isScaleTest {
+		return
+	}
 	require.NoError(t, exportKindLogs(t.Name(), t.Failed()))
 }
 
@@ -902,6 +954,17 @@ func copyChartDir(tfDir string) (string, error) {
 	)
 }
 
+func copyTestChartsDir(t *testing.T, tfDir string) string {
+	t.Helper()
+
+	dir, err := copyDir(
+		path.Join(testRoot, "charts"),
+		path.Join(tfDir, "..", "charts"),
+	)
+	require.NoError(t, err)
+	return dir
+}
+
 func createDeployment(t *testing.T, ctx context.Context, client ctrlclient.Client,
 	key ctrlclient.ObjectKey,
 ) *appsv1.Deployment {
@@ -1135,4 +1198,20 @@ func setupSignalHandler() (context.Context, context.CancelFunc) {
 	}()
 
 	return ctx, cancel
+}
+
+// getEnvInt fetches an integer from an environment variable. It returns the value
+// and a boolean indicating if the variable exists and is valid. If conversion fails,
+// the test fails.
+func getEnvInt(t *testing.T, key string) (int, bool) {
+	t.Helper()
+	value, exists := os.LookupEnv(key)
+	if exists {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue, true
+		} else {
+			require.NoErrorf(t, err, "failed to convert %s=%s to int", key, value)
+		}
+	}
+	return 0, false
 }

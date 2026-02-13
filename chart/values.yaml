@@ -8,6 +8,10 @@ controller:
   # @type: integer
   replicas: 1
 
+  # Set the priority class for the operator.
+  # @type: string
+  priorityClassName: ""
+
   # Configure update strategy for multi-replica deployments.
   # Kubernetes supports types Recreate, and RollingUpdate
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
@@ -66,6 +70,39 @@ controller:
   #           - antarctica-west1
   affinity: {}
 
+  # Topology spread constraint settings for the `vault-secrets-operator` pod
+  # as an array of PodSpec `topologySpreadConstraints` maps.
+  # VSO automatically adds a `labelSelector` entry to the templates if you do not provide a value.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/
+  # Example:
+  #
+  # ```yaml
+  # topologySpreadConstraints:
+  # - maxSkew: 1
+  #   topologyKey: zone
+  #   whenUnsatisfiable: DoNotSchedule
+  # ```
+  topologySpreadConstraints: []
+
+  # Configures the PodDisruptionBudget for the controller deployment.
+  podDisruptionBudget:
+
+    # Toggles the deployment of the PodDisruptionBudget for the controller.
+    # @type: boolean
+    enabled: false
+
+    # Sets the maximum number of unavailable pods during eviction.
+    # You cannot set both `maxUnavailable` and `minAvailable`.
+    # You can specify `maxUnavailable` as an integer ("2") or a percentage ("50%").
+    # @type: string
+    maxUnavailable: "0"
+
+    # Sets the minimum number of available pods allowed during eviction.
+    # You cannot set both `minAvailable` and `maxUnavailable`.
+    # You can specify `minAvailable` as an integer ("2") or a percentage ("50%").
+    # @type: string
+    minAvailable: "0"
+
   rbac:
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
     clusterRoleAggregation:
@@ -74,7 +111,7 @@ controller:
       # All values are case-insensitive.
       # Specifying '*' as the first element will include all roles in the aggregation.
       #
-      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-viewer.
+      # The ClusterRole name takes the form of `<chart-fullname>`-aggregate-role-viewer.
       #
       # Example usages:
       # all roles:
@@ -90,7 +127,7 @@ controller:
       # All values are case-insensitive.
       # Specifying '*' as the first element will include all roles in the aggregation.
       #
-      # The ClusterRole name takes the form of <chart-fullname>-aggregate-role-editor.
+      # The ClusterRole name takes the form of `<chart-fullname>`-aggregate-role-editor.
       #
       # Example usages:
       # all roles:
@@ -120,8 +157,8 @@ controller:
     # Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
     image:
       pullPolicy: IfNotPresent
-      repository: gcr.io/kubebuilder/kube-rbac-proxy
-      tag: v0.15.0
+      repository: quay.io/brancz/kube-rbac-proxy
+      tag: v0.18.1
 
     # Configures the default resources for the kube rbac proxy container.
     # For more information on configuring resources, see the K8s documentation:
@@ -156,12 +193,11 @@ controller:
 
   # Settings related to the vault-secrets-operator container.
   manager:
-
     # Image sets the repo and tag of the vault-secrets-operator image to use for the controller.
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 0.8.0
+      tag: 1.2.0
 
     # logging
     logging:
@@ -172,7 +208,13 @@ controller:
       level: info
 
       # Sets the time encoding for the operator.
-      # Options are: epoch, millis, nano, iso8601, rfc3339, rfc3339nano
+      # Options are:
+      # - `epoch` - Unix timestamp in seconds (e.g. 1695382800)
+      # - `millis` - Unix timestamp in milliseconds (e.g. 1695382800000)
+      # - `nano` - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
+      # - `iso8601` - ISO 8601 format (e.g. 2023-09-22T10:00:00Z)
+      # - `rfc3339` - RFC 3339 format (e.g. 2023-09-22T10:00:00Z)
+      # - `rfc3339nano` - RFC 3339 format with nanosecond precision (e.g. 2023-09-22T10:00:00.123456789Z)
       # Default: rfc3339
       # @type: string
       timeEncoding: rfc3339
@@ -194,7 +236,7 @@ controller:
 
     # Global Vault auth options. In addition to the boolean options
     # below, these options may be set via the
-    # `VSO_GLOBAL_VAULT_OPTION_OPTIONS` environment variable as a
+    # `VSO_GLOBAL_VAULT_AUTH_OPTIONS` environment variable as a
     # comma-separated list. Valid values are: `allow-default-globals`
     globalVaultAuthOptions:
       # allowDefaultGlobals directs the operator search for a "default"
@@ -266,6 +308,18 @@ controller:
       # default: 10000
       # @type: integer
       cacheSize:
+
+      # Defines the number of locks to use for the Vault client cache controller.
+      # May also be set via the `VSO_CLIENT_CACHE_NUM_LOCKS` environment variable.
+      #
+      # Setting this value less than 1 will cause the manager to set the number of locks equal
+      # to the number of logical CPUs of the run host.
+      #
+      # See the VSO help output for more information.
+      #
+      # default: 100
+      # @type: integer
+      numLocks:
 
       # StorageEncryption provides the necessary configuration to encrypt the client storage
       # cache within Kubernetes objects using (required) Vault Transit Engine.
@@ -453,6 +507,21 @@ controller:
     # @type: integer
     maxConcurrentReconciles:
 
+    kubeClient:
+      # QPS indicates the maximum QPS to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_QPS` environment variable.
+      # Default: 0
+      # @type: float
+      qps:
+
+      # Maximum burst for throttling requests to the kubernetes API.
+      # When the value is 0, the kubernetes client's default is used.
+      # May also set via the `VSO_KUBE_CLIENT_BURST` environment variable.
+      # Default: 0
+      # @type: uint
+      burst:
+
     # Defines additional environment variables to be added to the
     # vault-secrets-operator manager container.
     # Example:
@@ -478,6 +547,25 @@ controller:
     #
     # @type: array
     extraArgs: []
+
+    # Defines additional volumes to be added to the vault-secrets-operator manager pod.
+    # This can be used to mount secrets, configmaps, or other volume types.
+    # Note: The operator pod already has a downwardAPI volume named 'podinfo' at
+    # /var/run/podinfo. User-defined volumes cannot override this.
+    # Example:
+    #
+    # ```yaml
+    # volumes:
+    #   - name: approle-secret
+    #     secret:
+    #       secretName: my-approle-secret
+    #       defaultMode: 0400
+    #   - name: tls-certs
+    #     configMap:
+    #       name: vault-tls
+    # ```
+    # @type: array<map>
+    volumes: []
 
     # Configures the default resources for the vault-secrets-operator container.
     # For more information on configuring resources, see the K8s documentation:
@@ -580,7 +668,6 @@ defaultVaultConnection:
   #   X-vault-something: "foo"
   # @type: map
   headers: {}
-
 
 # Configures and deploys the default VaultAuthMethod CR which will be used by resources
 # if they do not specify a VaultAuthMethod reference. The name is 'default' and will
@@ -779,7 +866,6 @@ defaultAuthMethod:
       # @type: string
       params: none
 
-
 # Configures a Prometheus ServiceMonitor
 telemetry:
   serviceMonitor:
@@ -847,12 +933,240 @@ hooks:
 
     # Limit the number of retries for the CRD upgrade.
     # @type: integer
-    backoffLimit:  5
+    backoffLimit: 5
 
     # Set the timeout for the CRD upgrade. The operation should typically take less than 5s
     # to complete.
     # @type: string
     executionTimeout: 30s
+
+csi:
+  # Only supports Vault Enterprise servers.
+  # Toggles the deployment of the Vault Secrets Operator CSI driver. Setting `enabled` to `true`
+  # deploys the CSI driver and the necessary resources to the cluster.
+  # @type: boolean
+  enabled: false
+
+  # Configures the Pod level security context
+  # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+  #
+  # Note: the driver container security context can be configured below.
+  securityContext: {}
+
+  # Host Aliases settings for the `vault-secrets-operator-csi` pods as
+  # an array of PodSpec HostAlias maps.
+  # ref: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
+  # Example:
+  #
+  # ```yaml
+  # hostAliases:
+  #   - ip: 192.168.1.100
+  #     hostnames:
+  #     - vault.example.com
+  # @type: array<map>
+  hostAliases: []
+
+  # Node selector labels for `vault-secrets-operator-csi` pod assignment.
+  # @type: map
+  # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+  # Example:
+  #
+  # ```yaml
+  # nodeSelector:
+  #   beta.kubernetes.io/arch: amd64
+  # ```
+  nodeSelector: {}
+
+  # Toleration settings for `vault-secrets-operator-csi` pods
+  # as an array of PodSpec Toleration maps.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  # @type: array<map>
+  # Example:
+  #
+  # ```yaml
+  # tolerations:
+  #  - key: "key1"
+  #    operator: "Equal"
+  #    value: "value1"
+  #    effect: "NoSchedule"
+  # ```
+  tolerations: []
+
+  # Affinity settings for `vault-secrets-operator-csi` pods
+  # as a map of PodSpec Affinity maps.
+  # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+  # Example:
+  #
+  # ```yaml
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: topology.kubernetes.io/zone
+  #           operator: In
+  #           values:
+  #           - antarctica-east1
+  #           - antarctica-west1
+  # ```
+  affinity: {}
+
+  # Image pull secrets as an array of maps or strings for private container registry authentication for the controller
+  # service account.
+  # Refer to https://kubernetes.io/docs/concepts/containers/images/#using-a-private-registry.
+  # Example:
+  #
+  # ```yaml
+  # imagePullSecrets:
+  #   - name: pull-secret-name-1
+  #   - name: pull-secret-name-2
+  # ```
+  # @type: array<map>
+  imagePullSecrets: []
+
+  # Additional deployment labels as a YAML object (map).
+  extraLabels: {}
+
+  # Additional deployment annotations as a YAML object (map).
+  annotations: {}
+
+  driver:
+    # Configures the driver container's security context
+    # https://kubernetes.io/docs/tasks/configure-pod-container/security-context
+    #
+    # Note: the Pod level security can also be configured above.
+    #
+    # Note: when deploying to an OpenShift cluster you should set:
+    #   privileged: true
+    #
+    securityContext: {}
+
+    # Image information for the CSI driver.
+    # ref: https://kubernetes.io/docs/concepts/containers/images/
+    image:
+      # Determines when the kubelet attempts to download the specified image.
+      pullPolicy: IfNotPresent
+      # The Docker repository of the CSI driver image.
+      repository: hashicorp/vault-secrets-operator-csi
+      # The version of the CSI driver image to download.
+      tag: 1.0.1
+
+    # Additional environment variables for the
+    # CSI driver container.
+    # @type: array<map>
+    extraEnv: []
+
+    # Additional arguments to pass to the CSI driver.
+    # @type: array
+    extraArgs: []
+
+    # Configures logging output settings for the CSI driver.
+    logging:
+      # Sets the log level for the CSI driver.
+      # Must be one of: info, error, debug, debug-extended, trace.
+      # Default: info
+      # @type: string
+      level: info
+
+      # Sets the time encoding for the CSI driver.
+      # Must be one of:
+      # - epoch - Unix timestamp in seconds (e.g. 1695382800)
+      # - millis - Unix timestamp in milliseconds (e.g. 1695382800000)
+      # - nano - Unix timestamp in nanoseconds (e.g. 1695382800000000000)
+      # - iso8601 - ISO 8601 format (e.g. 2023-09-22T10:00:00Z)
+      # - rfc3339 - RFC 3339 format (e.g. 2023-09-22T10:00:00Z)
+      # - rfc3339nano - RFC 3339 format with nanosecond precision (e.g. 2023-09-22T10:00:00.123456789Z)
+      # Default: rfc3339
+      # @type: string
+      timeEncoding: rfc3339
+
+      # Sets the stacktrace level for the CSI driver.
+      # Must be one of: info, error, panic.
+      # Default: panic
+      # @type: string
+      stacktraceLevel: panic
+
+    # Describes backoff behavior for the CSI driver when the driver encounters
+    # an error fetching secrets from `SecretSource`.
+    # For example, the following configuration creates a backoff retry sequence like
+    # 5.5s, 7.5s, 11.25s, 16.87s, 25.3125s, 37.96s, 56.95, 60.95s, etc.:
+    #
+    # ```yaml
+    #   initialInterval: 5s
+    #   maxInterval: 60s
+    #   randomizationFactor: 0.5
+    #   multiplier: 1.5
+    # ```
+    # @type: object
+    backoffOnSecretSourceError:
+      # Initial interval between retries.
+      # @type: duration
+      initialInterval: "5s"
+      # Maximum interval between retries.
+      # @type: duration
+      maxInterval: "60s"
+      # Maximum elapsed time without a successful sync from the secret source.
+      # Setting an explicit `maxElapsedTime` tells VSO not to
+      # retry the secret sync once it reaches the max elapsed time.
+      # @type: duration
+      maxElapsedTime: "0s"
+      # Custom factor used to randomize the backoff interval between retries
+      # to spread out the retries and avoid a thundering herd.
+      # We strongly recommend using a randomization factor, but you can set
+      # `randomizationFactor` to 0 to disable randomization.
+      # @type: float
+      randomizationFactor: 0.5
+      # Sets a multiplier used to increase the backoff interval between retries.
+      # You cannot set `multiplier` to a value less than or equal to 0.
+      # @type: float
+      multiplier: 1.5
+
+  # The liveness probe checks the health of the CSI driver container.
+  livenessProbe:
+    # Image information for the CSI driver liveness probe.
+    # ref: https://kubernetes.io/docs/concepts/containers/images/
+    image:
+      # Determines when the kubelet attempts to download the specified image.
+      pullPolicy: IfNotPresent
+      # The Docker repository of the liveness probe image.
+      repository: registry.k8s.io/sig-storage/livenessprobe
+      # The version of the liveness probe image to download.
+      tag: v2.16.0
+
+    # Additional arguments to pass to the liveness probe container.
+    # @type: array
+    extraArgs: []
+
+  # The node driver registrar sidecar container handles registration with the kubelet.
+  nodeDriverRegistrar:
+    # Image information for the CSI driver node driver registrar.
+    # ref: https://kubernetes.io/docs/concepts/containers/images/
+    image:
+      # Determines when the kubelet attempts to download the specified image.
+      pullPolicy: IfNotPresent
+      # The Docker repository of the node driver registrar image.
+      repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+      # The version of the node driver registrar image to download.
+      tag: v2.14.0
+
+    # Additional arguments to pass to the node driver registrar container.
+    # @type: array
+    extraArgs: []
+
+  # Configures the update strategy for the CSI driver DaemonSet.
+  # Must be one of: Recreate, RollingUpdate.
+  # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+  # Example:
+  #
+  # ```yaml
+  # strategy: {}
+  #   rollingUpdate:
+  #     maxSurge: 1
+  #     maxUnavailable: 0
+  #   type: RollingUpdate
+  # ```
+  # @type: object
+  updateStrategy: {}
 
 ## Used by unit tests, and will not be rendered except when using `helm template`, this can be safely ignored.
 tests:

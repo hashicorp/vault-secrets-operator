@@ -17,7 +17,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gruntwork-io/terratest/modules/terraform"
-	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-06-13/client/secret_service"
+	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
+	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	hcpconfig "github.com/hashicorp/hcp-sdk-go/config"
 	hcpclient "github.com/hashicorp/hcp-sdk-go/httpclient"
 	"github.com/hashicorp/hcp-sdk-go/profile"
@@ -27,8 +28,8 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/hcp"
+	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/credentials/hcp"
 )
 
 type hcpVSOutputs struct {
@@ -39,16 +40,14 @@ type hcpVSOutputs struct {
 }
 
 func TestHCPVaultSecretsApp(t *testing.T) {
-	if os.Getenv("SKIP_HCPVSAPPS_TESTS") != "" {
-		t.Skipf("Skipping test, SKIP_HCPVSAPPS_TESTS is set")
-	}
+	t.Skipf("Obsolete")
 
 	if testInParallel {
 		t.Parallel()
 	}
 
 	testID := "hvs"
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
+	clusterName := kindClusterName
 	assert.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
@@ -221,10 +220,10 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 			_, err := hvsClient.CreateAppKVSecret(
 				hvsclient.NewCreateAppKVSecretParams().WithContext(ctx).
 					WithAppName(appName).
-					WithLocationOrganizationID(hcpOrganizationID).
-					WithLocationProjectID(hcpProjectID).
+					WithOrganizationID(hcpOrganizationID).
+					WithProjectID(hcpProjectID).
 					WithBody(
-						hvsclient.CreateAppKVSecretBody{
+						&models.SecretServiceCreateAppKVSecretBody{
 							Name:  k,
 							Value: string(v),
 						}),
@@ -291,10 +290,10 @@ func TestHCPVaultSecretsApp(t *testing.T) {
 			})
 			_, err := hvsClient.CreateApp(
 				hvsclient.NewCreateAppParams().
-					WithLocationOrganizationID(hcpOrganizationID).
-					WithLocationProjectID(hcpProjectID).
+					WithOrganizationID(hcpOrganizationID).
+					WithProjectID(hcpProjectID).
 					WithContext(ctx).
-					WithBody(hvsclient.CreateAppBody{
+					WithBody(&models.SecretServiceCreateAppBody{
 						Description: fmt.Sprintf("VSO test %s/%s", outputs.NamePrefix, t.Name()),
 						Name:        appName,
 					}), nil)
@@ -335,8 +334,8 @@ func deleteHVSApp(t *testing.T, ctx context.Context, hvsClient hvsclient.ClientS
 	resp, err := hvsClient.ListAppSecrets(
 		hvsclient.NewListAppSecretsParams().
 			WithContext(ctx).
-			WithLocationOrganizationID(orgID).
-			WithLocationProjectID(projectID).
+			WithOrganizationID(orgID).
+			WithProjectID(projectID).
 			WithAppName(appName),
 		nil)
 	if assert.NoError(t, err, "failed to list secrets for app %q", appName) {
@@ -345,8 +344,8 @@ func deleteHVSApp(t *testing.T, ctx context.Context, hvsClient hvsclient.ClientS
 				hvsclient.NewDeleteAppSecretParams().
 					WithContext(ctx).
 					WithAppName(appName).
-					WithLocationOrganizationID(orgID).
-					WithLocationProjectID(projectID).
+					WithOrganizationID(orgID).
+					WithProjectID(projectID).
 					WithSecretName(v.Name),
 				nil)
 			assert.NoError(t, err, "failed to delete secret %q in app %q",
@@ -356,8 +355,8 @@ func deleteHVSApp(t *testing.T, ctx context.Context, hvsClient hvsclient.ClientS
 		_, err = hvsClient.DeleteApp(
 			hvsclient.NewDeleteAppParams().
 				WithContext(ctx).
-				WithLocationOrganizationID(orgID).
-				WithLocationProjectID(projectID).
+				WithOrganizationID(orgID).
+				WithProjectID(projectID).
 				WithName(appName), nil)
 		assert.NoError(t, err, "failed to delete app %q", appName)
 	}

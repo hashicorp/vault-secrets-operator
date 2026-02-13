@@ -53,6 +53,22 @@ variable "vault_test_namespace" {
   default = ""
 }
 
+variable "cpu_limits" {
+  default = ""
+}
+
+variable "memory_limits" {
+  default = ""
+}
+
+variable "cpu_requests" {
+  default = ""
+}
+
+variable "memory_requests" {
+  default = ""
+}
+
 variable "client_cache_config" {
   type = object({
     persistence_model                = string
@@ -94,4 +110,24 @@ variable "manager_extra_args" {
   default = [
     "-zap-log-level=5"
   ]
+}
+
+variable "csi_enabled" {
+  type    = bool
+  default = false
+}
+
+variable "csi_logging_level" {
+  type    = string
+  default = "info"
+}
+
+variable "create_namespace" {
+  type    = bool
+  default = true
+}
+
+variable "image_pull_secrets" {
+  type    = list(string)
+  default = ["regcred"]
 }

@@ -13,13 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 )
 
 func Test_dynamicHorizon(t *testing.T) {
@@ -120,7 +117,6 @@ func Test_parseDurationString(t *testing.T) {
 }
 
 func Test_computeStartRenewingAt(t *testing.T) {
-	type args struct{}
 	tests := []struct {
 		name           string
 		leaseDuration  time.Duration
@@ -217,7 +213,6 @@ func Test_maybeAddFinalizer(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	clientBuilder := newClientBuilder()
 	deletionTimestamp := metav1.NewTime(time.Now())
 
 	tests := []struct {
@@ -343,7 +338,7 @@ func Test_maybeAddFinalizer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := clientBuilder.Build()
+			c := testutils.NewFakeClient()
 			var origResourceVersion string
 			if tt.create {
 				require.NoError(t, c.Create(ctx, tt.o))
@@ -371,14 +366,6 @@ func Test_maybeAddFinalizer(t *testing.T) {
 			}
 		})
 	}
-}
-
-// newClientBuilder copied from helpers.
-func newClientBuilder() *fake.ClientBuilder {
-	scheme := runtime.NewScheme()
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(secretsv1beta1.AddToScheme(scheme))
-	return fake.NewClientBuilder().WithScheme(scheme)
 }
 
 func Test_waitForStoppedCh(t *testing.T) {

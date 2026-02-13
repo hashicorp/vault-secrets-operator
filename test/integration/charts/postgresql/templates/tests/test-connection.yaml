@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "postgresql.fullname" . }}-test-connection"
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  serviceAccountName: {{ include "postgresql.serviceAccountName" . }}
+  automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+  containers:
+    - name: psql
+      securityContext:
+        capabilities:
+            drop:
+                - ALL
+      image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "postgresql.fullname" . }}
+              key: postgres-password
+      command: ['psql']
+      args:
+      - 'postgresql://postgres@{{ include "postgresql.fullname" . }}:{{ .Values.service.port }}/postgres'
+      - '-c'
+      - 'SELECT 1'
+  restartPolicy: Never

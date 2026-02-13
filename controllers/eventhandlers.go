@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/consts"
 )
 
 var maxRequeueAfter = time.Second * 1
@@ -27,18 +27,41 @@ var maxRequeueAfter = time.Second * 1
 // instance. It includes a ValidatorFunc that prevents the referring objects from
 // being queued for reconciliation.
 func NewEnqueueRefRequestsHandlerST(refCache ResourceReferenceCache, syncReg *SyncRegistry) handler.EventHandler {
-	return NewEnqueueRefRequestsHandler(
-		SecretTransformation, refCache, syncReg,
-		ValidateSecretTransformation,
-	)
+	return NewEnqueueRefRequestsHandlerWithOptions(&EnqueueRefRequestOptions{
+		Validator:    ValidateSecretTransformation,
+		SyncRegistry: syncReg,
+		RefCache:     refCache,
+		Kind:         SecretTransformation,
+	})
 }
 
+type EnqueueRefRequestOptions struct {
+	Validator       ValidatorFunc
+	MaxRequeueAfter time.Duration
+	SyncRegistry    *SyncRegistry
+	RefCache        ResourceReferenceCache
+	Kind            ResourceKind
+}
+
+// NewEnqueueRefRequestsHandler returns a handler.EventHandler for Watchers of ResourceKind.
+// Deprecated: Use NewEnqueueRefRequestsHandlerWithOptions instead.
 func NewEnqueueRefRequestsHandler(kind ResourceKind, refCache ResourceReferenceCache, syncReg *SyncRegistry, validator ValidatorFunc) handler.EventHandler {
+	return NewEnqueueRefRequestsHandlerWithOptions(&EnqueueRefRequestOptions{
+		Kind:         kind,
+		RefCache:     refCache,
+		SyncRegistry: syncReg,
+		Validator:    validator,
+	})
+}
+
+// NewEnqueueRefRequestsHandlerWithOptions returns a handler.EventHandler for
+// Watchers of ResourceKind.
+func NewEnqueueRefRequestsHandlerWithOptions(opts *EnqueueRefRequestOptions) handler.EventHandler {
 	return &enqueueRefRequestsHandler{
-		kind:      kind,
-		refCache:  refCache,
-		syncReg:   syncReg,
-		validator: validator,
+		kind:      opts.Kind,
+		refCache:  opts.RefCache,
+		syncReg:   opts.SyncRegistry,
+		validator: opts.Validator,
 	}
 }
 
@@ -53,13 +76,13 @@ type enqueueRefRequestsHandler struct {
 }
 
 func (e *enqueueRefRequestsHandler) Create(ctx context.Context,
-	evt event.CreateEvent, q workqueue.RateLimitingInterface,
+	evt event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 	e.enqueue(ctx, q, evt.Object)
 }
 
 func (e *enqueueRefRequestsHandler) Update(ctx context.Context,
-	evt event.UpdateEvent, q workqueue.RateLimitingInterface,
+	evt event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 	if evt.ObjectOld == nil {
 		return
@@ -73,19 +96,19 @@ func (e *enqueueRefRequestsHandler) Update(ctx context.Context,
 	}
 }
 
-func (e *enqueueRefRequestsHandler) Delete(ctx context.Context,
-	evt event.DeleteEvent, _ workqueue.RateLimitingInterface,
+func (e *enqueueRefRequestsHandler) Delete(_ context.Context,
+	evt event.DeleteEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 	e.refCache.Prune(e.kind, client.ObjectKeyFromObject(evt.Object))
 }
 
-func (e *enqueueRefRequestsHandler) Generic(ctx context.Context,
-	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
+func (e *enqueueRefRequestsHandler) Generic(_ context.Context,
+	_ event.GenericEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 }
 
 func (e *enqueueRefRequestsHandler) enqueue(ctx context.Context,
-	q workqueue.RateLimitingInterface, o client.Object,
+	q workqueue.TypedRateLimitingInterface[reconcile.Request], o client.Object,
 ) {
 	logger := log.FromContext(ctx).WithName(
 		"enqueueRefRequestsHandler").
@@ -138,17 +161,17 @@ type enqueueOnDeletionRequestHandler struct {
 }
 
 func (e *enqueueOnDeletionRequestHandler) Create(_ context.Context,
-	_ event.CreateEvent, _ workqueue.RateLimitingInterface,
+	_ event.CreateEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 }
 
 func (e *enqueueOnDeletionRequestHandler) Update(_ context.Context,
-	_ event.UpdateEvent, _ workqueue.RateLimitingInterface,
+	_ event.UpdateEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 }
 
 func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
-	evt event.DeleteEvent, q workqueue.RateLimitingInterface,
+	evt event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 	logger := log.FromContext(ctx).WithName("enqueueOnDeletionRequestHandler").
 		WithValues("ownerGVK", e.gvk)
@@ -179,7 +202,7 @@ func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
 }
 
 func (e *enqueueOnDeletionRequestHandler) Generic(ctx context.Context,
-	_ event.GenericEvent, _ workqueue.RateLimitingInterface,
+	_ event.GenericEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
 }
 
@@ -189,16 +212,16 @@ type enqueueDelayingSyncEventHandler struct {
 	enqueueDurationForJitter time.Duration
 }
 
-func (e *enqueueDelayingSyncEventHandler) Create(_ context.Context, _ event.CreateEvent, _ workqueue.RateLimitingInterface) {
+func (e *enqueueDelayingSyncEventHandler) Create(_ context.Context, _ event.CreateEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
-func (e *enqueueDelayingSyncEventHandler) Update(_ context.Context, _ event.UpdateEvent, _ workqueue.RateLimitingInterface) {
+func (e *enqueueDelayingSyncEventHandler) Update(_ context.Context, _ event.UpdateEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
-func (e *enqueueDelayingSyncEventHandler) Delete(_ context.Context, _ event.DeleteEvent, _ workqueue.RateLimitingInterface) {
+func (e *enqueueDelayingSyncEventHandler) Delete(_ context.Context, _ event.DeleteEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
-func (e *enqueueDelayingSyncEventHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (e *enqueueDelayingSyncEventHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	logger := log.FromContext(ctx).WithName("enqueueDelayingSyncEventHandler")
 	if evt.Object == nil {
 		logger.Error(nil,

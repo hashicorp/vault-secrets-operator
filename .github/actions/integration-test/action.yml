@@ -56,18 +56,18 @@ runs:
         fi
         [ -n "${{ inputs.version }}" ] || (echo "inputs.version not set" >&2 ; exit 1)
     # Checkout this repo.
-    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: Setup go
-      uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+      uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
       with:
         go-version-file: .go-version
     - name: Create Kind Cluster
-      uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
+      uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
       with:
         cluster_name: ${{ inputs.kind-cluster-name }}
         config: test/integration/kind/config.yaml
         node_image: kindest/node:v${{ inputs.k8s-version }}
-        version: "v0.22.0"
+        version: "v0.31.0"
     - name: Create kind export log root
       id: create_kind_export_log_root
       shell: bash
@@ -81,7 +81,7 @@ runs:
         mkdir -vp "${log_root}"
         echo "log_root=${log_root}" >> $GITHUB_OUTPUT
         echo "log_artifact_name=${log_artifact_name}" >> $GITHUB_OUTPUT
-    - uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e # v4.1.7
+    - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
       with:
         name: ${{ inputs.operator-image-archive }}
     - name: Load vault-secrets-operator ${{ inputs.version }} image
@@ -101,6 +101,7 @@ runs:
         HCP_PROJECT_ID: ${{ inputs.hcp-project-id }}
         HCP_CLIENT_ID: ${{ inputs.hcp-client-id }}
         HCP_CLIENT_SECRET: ${{ inputs.hcp-client-secret }}
+        SKIP_HCPVSAPPS_TESTS: "true"
         GITHUB_TOKEN: ${{ inputs.github-token }}
         # used by scripts that fetch build tools from GH
         GH_GET_RETRIES: 5
@@ -117,13 +118,13 @@ runs:
         make $make_target VERSION=${{ inputs.version }} INTEGRATION_TESTS_PARALLEL=true SUPPRESS_TF_OUTPUT=true EXPORT_KIND_LOGS_ROOT=${{ steps.create_kind_export_log_root.outputs.log_root }}
     - name: Store kind cluster logs
       if: success()
-      uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}
         path: ${{ steps.create_kind_export_log_root.outputs.log_root }}
     - name: Store kind cluster logs failure
       if: failure()
-      uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: ${{ steps.create_kind_export_log_root.outputs.log_artifact_name }}-failed
         path: ${{ steps.create_kind_export_log_root.outputs.log_root }}

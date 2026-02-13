@@ -150,7 +150,7 @@ imagePullSecrets generates pull secrets from either string or map values.
 A map value must be indexable by the key 'name'.
 */}}
 {{- define "vso.imagePullSecrets" -}}
-{{ with .Values.controller.imagePullSecrets -}}
+{{ with . -}}
 imagePullSecrets:
 {{- range . -}}
 {{- if typeIs "string" . }}
@@ -161,7 +161,6 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end }}
-
 
 {{/*
 globalTransformationOptions configures the manager's --global-transformation-options flag.
@@ -196,6 +195,32 @@ secret source error occurs.
 {{- define "vso.backoffOnSecretSourceError" -}}
 {{- $opts := list -}}
 {{- with .Values.controller.manager.backoffOnSecretSourceError -}}
+{{- with .initialInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxInterval -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-interval=%s" .) -}}
+{{- end -}}
+{{- with .maxElapsedTime -}}
+{{- $opts = mustAppend $opts (printf "--backoff-max-elapsed-time=%s" .) -}}
+{{- end -}}
+{{- with .multiplier -}}
+{{- $opts = mustAppend $opts (printf "--backoff-multiplier=%.2f"  (. | float64)) -}}
+{{- end -}}
+{{- with .randomizationFactor -}}
+{{- $opts = mustAppend $opts (printf "--backoff-randomization-factor=%.2f" (. | float64)) -}}
+{{- end -}}
+{{- $opts | toYaml | nindent 8 -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+csiBackoffArgs provides the backoff options for the CSI driver when a
+secret source error occurs.
+*/}}
+{{- define "vso.csiBackoffArgs" -}}
+{{- $opts := list -}}
+{{- with .Values.csi.driver.backoffOnSecretSourceError -}}
 {{- with .initialInterval -}}
 {{- $opts = mustAppend $opts (printf "--backoff-initial-interval=%s" .) -}}
 {{- end -}}
@@ -333,4 +358,179 @@ vaultAuthGlobalRef generates the default VaultAuth spec.vaultAuthGlobalRef.
 {{- if $ret -}}
 {{- $ret | toYaml | nindent 4 -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+clientCache numLocks
+*/}}
+{{- define "vso.clientCacheNumLocks" -}}
+{{- with .Values.controller.manager.clientCache -}}
+{{- if or .numLocks (eq .numLocks 0) -}}
+--client-cache-num-locks={{ .numLocks }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+logging args
+*/}}
+{{- define "vso.csiControllerLoggingArgs" -}}
+{{- $extraArgs := dict -}}
+{{- with .Values.csi.driver.extraArgs -}}
+{{- range . -}}
+{{ $parts := splitList "=" . -}}
+{{ $arg := (($parts | first) | trimPrefix "-") }}
+{{- $_ := set $extraArgs ( $arg | trimPrefix "-")  . -}}
+{{- end -}}
+{{- end -}}
+{{- $ret := list -}}
+{{- with .Values.csi.driver.logging -}}
+{{- if $level := .level -}}
+{{ $arg := "zap-log-level" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- if eq $level "debug-extended" -}}
+{{- $level = "5" -}}
+{{- end -}}
+{{- if eq .level "trace" -}}
+{{- $level = "6" -}}
+{{- end -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg $level) -}}
+{{- end -}}
+{{- end -}}
+{{- if .timeEncoding -}}
+{{ $arg := "zap-time-encoding" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg .timeEncoding) -}}
+{{- end -}}
+{{- end -}}
+{{- if .stacktraceLevel -}}
+{{ $arg := "zap-stacktrace-level" -}}
+{{- if not (hasKey $extraArgs $arg) -}}
+{{- $ret = append $ret (printf "--%s=%s" $arg .stacktraceLevel) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $ret -}}
+{{- $ret | toYaml | nindent 8 -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+nodeSelector generates labels for the CSI Driver
+*/}}
+{{- define "vso.csi.nodeSelector" -}}
+{{- $labels := dict -}}
+{{- with .Values.csi.nodeSelector -}}
+{{- range $k, $v := . -}}
+{{- $_ := set $labels $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $labels "kubernetes.io/os" "linux" -}}
+{{- $labels | toYaml -}}
+{{- end -}}
+
+{{/*
+annotations generates labels for the CSI Driver
+*/}}
+{{- define "vso.csi.annotations" -}}
+{{- $labels := dict -}}
+{{- with .Values.csi.annotations -}}
+{{- range $k, $v := . -}}
+{{- $_ := set $labels $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $labels "kubectl.kubernetes.io/default-container" "secrets-store" -}}
+{{- $labels | toYaml -}}
+{{- end -}}
+
+{{/*
+toleration generates toleration settings for the CSI Driver.
+*/}}
+{{- define "vso.csi.tolerations" -}}
+{{- $tolerations := list -}}
+{{- if .Values.csi.tolerations }}
+  {{- range .Values.csi.tolerations }}
+    {{- $tolerations = append $tolerations . }}
+  {{- end }}
+{{- end }}
+{{- $existsToleration := false -}}
+{{- range $t := $tolerations }}
+  {{- if and (hasKey $t "operator") (eq $t.operator "Exists") }}
+    {{- $existsToleration = true -}}
+  {{- end -}}
+{{- end -}}
+{{- if not $existsToleration }}
+  {{- $tolerations = append $tolerations (dict "operator" "Exists") }}
+{{- end -}}
+{{- if $tolerations -}}
+{{- $tolerations | toYaml -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+topologySpreadConstraints appends the "vso.chart.selectorLabels" to .Values.controller.topologySpreadConstraints if no labelSelector was specified
+*/}}
+{{- define "vso.topologySpreadConstraints" -}}
+{{- $default := dict "labelSelector" (dict "matchLabels" (include "vso.chart.selectorLabels" . | fromYaml)) -}}
+{{- $out := list -}}
+{{- range $c := .Values.controller.topologySpreadConstraints -}}
+  {{- if hasKey $c "labelSelector" -}}
+    {{- $out = append $out $c -}}
+  {{- else -}}
+    {{- $out = append $out (merge $c $default) -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml $out -}}
+{{- end -}}
+
+{{/*
+vso.privileged.securityContext extends the given securithContext to always
+include privileged: true
+*/}}
+{{- define "vso.privilegedContainer.securityContext" -}}
+{{- $sc := dict -}}
+{{- with . -}}
+{{- range $k, $v := . -}}
+{{- $_ := set $sc $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $sc "privileged" true -}}
+{{- toYaml $sc -}}
+{{- end -}}
+
+{{/*
+controller.volumes generates the volume list for the controller pod.
+This helper ensures that the required podinfo volume is always present
+and user-defined volumes do not conflict with it.
+*/}}
+{{- define "vso.controller.volumes" -}}
+{{- $volumes := list -}}
+{{- $podinfoVolume := dict "name" "podinfo" "downwardAPI" (dict "items" (list (dict "fieldRef" (dict "fieldPath" "metadata.name") "path" "name") (dict "fieldRef" (dict "fieldPath" "metadata.uid") "path" "uid"))) -}}
+{{- $volumes = append $volumes $podinfoVolume -}}
+{{- range .Values.controller.manager.volumes -}}
+{{- if ne .name "podinfo" -}}
+{{- $volumes = append $volumes . -}}
+{{- end -}}
+{{- end -}}
+{{- $volumes | toYaml -}}
+{{- end -}}
+
+{{/*
+controller.volumeMounts generates the volumeMount list for the manager container.
+This helper ensures the podinfo volume mount is always present.
+*/}}
+{{- define "vso.controller.volumeMounts" -}}
+{{- $mounts := list -}}
+{{- $podinfoMount := dict "mountPath" "/var/run/podinfo" "name" "podinfo" -}}
+{{- $mounts = append $mounts $podinfoMount -}}
+{{- range .Values.controller.manager.volumes -}}
+{{- if and (ne .name "podinfo") (ne .mountPath "/var/run/podinfo") .mountPath -}}
+{{- $mount := dict "name" .name "mountPath" .mountPath -}}
+{{- if .readOnly -}}
+{{- $_ := set $mount "readOnly" .readOnly -}}
+{{- end -}}
+{{- $mounts = append $mounts $mount -}}
+{{- end -}}
+{{- end -}}
+{{- $mounts | toYaml -}}
 {{- end -}}

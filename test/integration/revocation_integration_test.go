@@ -23,7 +23,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
+	"github.com/hashicorp/vault-secrets-operator/consts"
 )
 
 // TestRevocation tests the revocation logic on Helm uninstall
@@ -177,9 +177,11 @@ func TestRevocation(t *testing.T) {
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					VaultAuthRef: a.Name,
 					Namespace:    testVaultNamespace,
-					Mount:        testKvv2MountPath,
-					Type:         consts.KVSecretTypeV2,
-					Path:         dest,
+					VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+						Mount: testKvv2MountPath,
+						Type:  consts.KVSecretTypeV2,
+						Path:  dest,
+					},
 					Destination: secretsv1beta1.Destination{
 						Name:   dest,
 						Create: true,

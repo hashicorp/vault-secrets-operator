@@ -4,7 +4,10 @@
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
-KUBE_RBAC_PROXY_VERSION = v0.15.0
+KUBE_RBAC_PROXY_VERSION = v0.18.1
+VSO_CSI_DRIVER_VERSION ?= 1.0.1
+VSO_CSI_LIVENESS_PROBE_VERSION ?= v2.16.0
+VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION ?= v2.14.0
 
 GO_VERSION = $(shell cat .go-version)
 
@@ -20,11 +23,12 @@ BUNDLE_DIR ?= $(OPERATOR_BUILD_DIR)/bundle
 CHART_ROOT ?= chart
 CHART_CRDS_DIR ?= $(CHART_ROOT)/crds
 
+VAULT_DOCS_VERSION ?= v1.21.x
 VAULT_IMAGE_TAG ?= latest
 VAULT_IMAGE_REPO ?=
 K8S_VAULT_NAMESPACE ?= vault
-KIND_K8S_VERSION ?= v1.30.0
-VAULT_HELM_VERSION ?= 0.25.0
+KIND_K8S_VERSION ?= v1.32.3
+VAULT_HELM_VERSION ?= 0.31.0
 # Root directory to export kind cluster logs after each test run.
 EXPORT_KIND_LOGS_ROOT ?=
 
@@ -33,7 +37,7 @@ GOFUMPT_VERSION ?= v0.4.0
 COPYWRITE_VERSION ?= 0.18.0
 OPERATOR_SDK_VERSION ?= v1.33.0
 YQ_VERSION ?= v4.43.1
-CRD_REF_DOCS_VERSION ?= v0.12.0
+CRD_REF_DOCS_VERSION ?= v0.2.0
 
 TESTCOUNT ?= 1
 TESTARGS ?= -test.v -count=$(TESTCOUNT)
@@ -52,6 +56,7 @@ SKIP_CLEANUP ?=
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
 SKIP_GCP_TESTS ?= true
+SKIP_HCPVSAPPS_TESTS ?= false
 
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
@@ -345,6 +350,14 @@ integration-test-chart:
 	INTEGRATION_TESTS=true \
 	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
 
+.PHONY: integration-test-oom
+integration-test-oom:
+	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
+	VERSION=$(VERSION) \
+	INTEGRATION_TESTS=true \
+	KIND_K8S_VERSION=$(KIND_K8S_VERSION) \
+	go test github.com/hashicorp/vault-secrets-operator/test/oom/... $(TESTARGS) -timeout=10m
+
 .PHONY: setup-kind
 setup-kind: ## create a kind cluster for running the acceptance tests locally
 	kind get clusters | grep --silent "^$(KIND_CLUSTER_NAME)$$" || \
@@ -499,7 +512,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.14.0
+CONTROLLER_TOOLS_VERSION ?= v0.19.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "./hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -615,7 +628,7 @@ operator-sdk: ## Download operator-sdk locally if necessary.
 .PHONY: crd-ref-docs
 CRD_REF_DOCS = $(LOCALBIN)/crd-ref-docs
 crd-ref-docs: ## Install crd-ref-docs locally if necessary.
-	@./hack/install_crd-ref-docs.sh CRD_REF_DOCS_VERSION=$(CRD_REF_DOCS_VERSION)
+	 @CRD_REF_DOCS_VERSION=$(CRD_REF_DOCS_VERSION) ./hack/install_crd-ref-docs.sh
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
@@ -653,7 +666,7 @@ clean:
 # Usage: make gen-helm-docs
 # If no options are given, helm.mdx from a local copy of the vault repository will be used.
 # Adapted from https://github.com/hashicorp/consul-k8s/tree/main/hack/helm-reference-gen
-VAULT_DOCS_PATH ?= ../vault/website/content/docs/platform/k8s/vso/helm.mdx
+VAULT_DOCS_PATH ?= ../web-unified-docs/content/vault/$(VAULT_DOCS_VERSION)/content/docs/deploy/kubernetes/vso/helm.mdx
 gen-helm-docs:
 	@cd hack/helm-reference-gen; go run ./... --vault=$(VAULT_DOCS_PATH)
 
@@ -667,4 +680,8 @@ endif
 
 .PHONY: check-versions
 check-versions: yq
-	VERSION=$(VERSION) KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) ./scripts/check-versions.sh
+	VERSION=$(VERSION) \
+	KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) \
+	VSO_CSI_DRIVER_VERSION=$(VSO_CSI_DRIVER_VERSION) \
+	VSO_CSI_LIVENESS_PROBE_VERSION=$(VSO_CSI_LIVENESS_PROBE_VERSION) \
+	VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION=$(VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION) ./scripts/check-versions.sh

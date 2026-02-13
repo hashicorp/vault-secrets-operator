@@ -6,10 +6,7 @@ resource "helm_release" "postgres" {
   name             = "postgres"
   create_namespace = false
   wait             = true
-  wait_for_jobs    = true
-
-  repository = "https://charts.bitnami.com/bitnami"
-  chart      = "postgresql"
+  chart            = var.chart_postgres
 }
 
 resource "kubernetes_namespace" "postgres" {
@@ -29,7 +26,7 @@ data "kubernetes_secret" "postgres" {
 data "kubernetes_service" "postgres" {
   metadata {
     namespace = helm_release.postgres.namespace
-    name      = "${helm_release.postgres.name}-${helm_release.postgres.chart}"
+    name      = "${helm_release.postgres.name}-postgresql"
   }
 }
 
@@ -126,7 +123,7 @@ resource "vault_database_secret_backend_static_role" "postgres" {
   db_name             = vault_database_secrets_mount.db.postgresql[0].name
   username            = local.db_role_static_user
   rotation_statements = ["ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
-  rotation_period     = 10
+  rotation_period     = 30
   depends_on = [
     null_resource.create-pg-user,
   ]

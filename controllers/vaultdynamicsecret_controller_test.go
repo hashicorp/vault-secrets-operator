@@ -23,12 +23,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
+	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
+
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/provider"
-	"github.com/hashicorp/vault-secrets-operator/internal/credentials/vault/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 func Test_computeRelativeHorizon(t *testing.T) {
@@ -838,7 +840,7 @@ func Test_computeRelativeHorizonWithJitter(t *testing.T) {
 			},
 			minHorizon:     1 * time.Second,
 			wantMinHorizon: time.Duration(.8 * float64(time.Second)),
-			wantMaxHorizon: time.Duration(1 * time.Second),
+			wantMaxHorizon: 1 * time.Second,
 			wantInWindow:   true,
 		},
 	}
@@ -1021,7 +1023,6 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 	key1 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa724")
 	key2 := fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "2a8108711ae49ac0faa725")
 
-	builder := newClientBuilder()
 	// instances in the same namespace that should be included by the callback.
 	instances := []*secretsv1beta1.VaultDynamicSecret{
 		{
@@ -1134,7 +1135,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			syncRegistry := NewSyncRegistry()
 			r := &VaultDynamicSecretReconciler{
-				Client:       builder.Build(),
+				Client:       testutils.NewFakeClient(),
 				SyncRegistry: syncRegistry,
 				SourceCh:     make(chan event.GenericEvent),
 			}
@@ -1155,7 +1156,7 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			cs := source.Channel(r.SourceCh, handler)
 
 			q := &DelegatingQueue{
-				Interface: workqueue.New(),
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
 			}
 
 			go func() {
@@ -1243,6 +1244,11 @@ func Test_vaultStaticCredsMetaDataFromData(t *testing.T) {
 
 type vaultResponse struct {
 	data map[string]any
+}
+
+func (s *vaultResponse) WrapInfo() *api.SecretWrapInfo {
+	// TODO implement me
+	panic("implement me")
 }
 
 func (s *vaultResponse) Secret() *api.Secret {

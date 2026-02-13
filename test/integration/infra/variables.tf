@@ -34,11 +34,11 @@ variable "vault_image_repo_ent" {
 }
 
 variable "vault_image_tag" {
-  default = "1.15"
+  default = "1.17"
 }
 
 variable "vault_image_tag_ent" {
-  default = "1.15-ent"
+  default = "1.17-ent"
 }
 
 variable "vault_enterprise" {
@@ -47,7 +47,7 @@ variable "vault_enterprise" {
 }
 
 variable "vault_chart_version" {
-  default = "0.27.0"
+  default = "0.31.0"
 }
 
 variable "install_kube_prometheus" {
@@ -57,5 +57,5 @@ variable "install_kube_prometheus" {
 
 variable "metrics_server_enabled" {
   type    = bool
-  default = true
+  default = false
 }

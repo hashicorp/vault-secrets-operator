@@ -5,7 +5,7 @@ terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.13.1"
+      version = "2.16.1"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -39,6 +39,13 @@ provider "kubernetes" {
 resource "kubernetes_namespace" "dev" {
   metadata {
     name = local.k8s_namespace_name
+  }
+}
+
+resource "kubernetes_namespace" "vso" {
+  count = var.create_namespace ? 1 : 0
+  metadata {
+    name = var.operator_namespace
   }
 }
 

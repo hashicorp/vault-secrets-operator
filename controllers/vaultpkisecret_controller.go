@@ -16,6 +16,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
@@ -27,10 +28,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
-	"github.com/hashicorp/vault-secrets-operator/internal/vault"
+
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 const vaultPKIFinalizer = "vaultpkisecrets.secrets.hashicorp.com/finalizer"
@@ -48,6 +50,7 @@ type VaultPKISecretReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
+	SecretsClient               client.Client
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultpkisecrets,verbs=get;list;watch;create;update;patch;delete
@@ -91,6 +94,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	destinationExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
 	// In the case where the secret should exist already, check that it does
 	// before proceeding to issue a cert
+	var conditions []metav1.Condition
+
 	if !o.Spec.Destination.Create && !destinationExists {
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
 		msg := fmt.Sprintf("Kubernetes secret %q does not exist yet, horizon=%s",
@@ -98,7 +103,8 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Info(msg)
 		o.Status.Error = consts.ReasonK8sClientError
 		r.recordEvent(o, o.Status.Error, msg)
-		if err := r.updateStatus(ctx, o); err != nil {
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
+			"Failed to sync the secret, horizon=%s, err=%s", horizon, consts.ReasonK8sClientError)); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -133,7 +139,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		syncReason = consts.ReasonInexistentDestination
 	case destinationExists:
 		if schemaEpoch > 0 {
-			if matched, err := helpers.HMACDestinationSecret(ctx, r.Client,
+			if matched, err := helpers.HMACDestinationSecret(ctx, r.SecretsClient,
 				r.HMACValidator, o); err == nil && !matched {
 				syncReason = consts.ReasonSecretDataDrift
 			} else if err != nil {
@@ -146,7 +152,10 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		helpers.GetTransformationRefObjKeys(
 			o.Spec.Destination.Transformation, o.Namespace)...)
 
-	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
+	var data map[string][]byte
+	var err error
+	var transOption *helpers.SecretTransformationOption
+	transOption, err = helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
 			"Failed setting up SecretTransformationOption: %s", err)
@@ -178,7 +187,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData()))
+	resp, err := c.Write(ctx, vault.NewWriteRequest(path, o.GetIssuerAPIData(), nil))
 	if err != nil {
 		if vault.IsForbiddenError(err) {
 			c.Taint()
@@ -187,14 +196,16 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Failed to issue certificate from Vault"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
+		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+		horizon := entry.NextBackOff()
+		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
+			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
 
 		r.SyncRegistry.Add(req.NamespacedName)
-		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
 		return ctrl.Result{
-			RequeueAfter: entry.NextBackOff(),
+			RequeueAfter: horizon,
 		}, nil
 	} else {
 		r.BackOffRegistry.Delete(req.NamespacedName)
@@ -206,7 +217,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Failed to unmarshal PKI response"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -219,7 +230,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		msg := "Invalid Vault secret data, serial_number cannot be empty"
 		logger.Error(nil, msg)
 		r.recordEvent(o, o.Status.Error, msg)
-		if err := r.updateStatus(ctx, o); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -227,13 +238,13 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}, nil
 	}
 
-	data, err := resp.SecretK8sData(transOption)
+	data, err = resp.SecretK8sData(transOption)
 	if err != nil {
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Failed to marshal Vault secret data"
 		logger.Error(err, msg)
 		r.recordEvent(o, o.Status.Error, msg+": %s", err)
-		if err := r.updateStatus(ctx, o); err != nil {
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
@@ -251,11 +262,11 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if b, err := json.Marshal(data); err == nil {
-		newMAC, err := r.HMACValidator.HMAC(ctx, r.Client, b)
+		newMAC, err := r.HMACValidator.HMAC(ctx, r.SecretsClient, b)
 		if err != nil {
 			logger.Error(err, "HMAC data")
 			o.Status.Error = consts.ReasonHMACDataError
-			if err := r.updateStatus(ctx, o); err != nil {
+			if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{
@@ -268,11 +279,15 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := helpers.SyncSecret(ctx, r.Client, o, data); err != nil {
 		logger.Error(err, "Sync secret")
 		o.Status.Error = consts.ReasonSecretSyncError
-		if err := r.updateStatus(ctx, o); err != nil {
+		requeueAfter := computeHorizonWithJitter(requeueDurationOnError)
+		conditions = append(conditions,
+			newSyncCondition(o, metav1.ConditionFalse,
+				"Secret sync error, horizon=%s", requeueAfter))
+		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{
-			RequeueAfter: computeHorizonWithJitter(requeueDurationOnError),
+			RequeueAfter: requeueAfter,
 		}, nil
 	}
 
@@ -295,19 +310,24 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
+	conditions = append(conditions,
+		newSyncCondition(o, metav1.ConditionTrue,
+			"Secret synced, horizon=%s", horizon),
+	)
+
 	o.Status.Valid = ptr.To(true)
 	o.Status.Error = ""
 	o.Status.SerialNumber = certResp.SerialNumber
 	o.Status.Expiration = certResp.Expiration
 	o.Status.LastRotation = time.Now().Unix()
-	if err := r.updateStatus(ctx, o); err != nil {
+	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 		logger.Error(err, "Failed to update the status")
 		return ctrl.Result{}, err
 	}
 
 	r.SyncRegistry.Delete(req.NamespacedName)
 
-	horizon, _ := computePKIRenewalWindow(ctx, o, .05)
 	r.recordEvent(o, reason, fmt.Sprintf("Secret synced, horizon=%s", horizon))
 	logger.Info("Successfully updated the secret", "horizon", horizon)
 	return ctrl.Result{
@@ -345,7 +365,7 @@ func (r *VaultPKISecretReconciler) handleDeletion(ctx context.Context, o *secret
 }
 
 func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
-	r.referenceCache = newResourceReferenceCache()
+	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
@@ -357,7 +377,12 @@ func (r *VaultPKISecretReconciler) SetupWithManager(mgr ctrl.Manager, opts contr
 			&secretsv1beta1.SecretTransformation{},
 			NewEnqueueRefRequestsHandlerST(r.referenceCache, r.SyncRegistry),
 		).
-		Watches(
+		// In order to reduce the operator's memory usage, we only watch for the
+		// Secret's metadata. That is sufficient for us to know when a Secret is
+		// deleted. If we ever need to access to the Secret's data, we can always fetch
+		// it from the API server in a RequestHandler, selectively based on the Secret's
+		// labels.
+		WatchesMetadata(
 			&corev1.Secret{},
 			&enqueueOnDeletionRequestHandler{
 				gvk: secretsv1beta1.GroupVersion.WithKind(VaultPKISecret.String()),
@@ -376,14 +401,14 @@ func (r *VaultPKISecretReconciler) finalizePKI(ctx context.Context, l logr.Logge
 	}
 
 	if !s.Spec.Destination.Create && s.Spec.Clear {
-		if err := r.clearSecretData(ctx, l, s); err != nil {
+		if err := r.clearSecretData(ctx, s); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, l logr.Logger, s *secretsv1beta1.VaultPKISecret) error {
+func (r *VaultPKISecretReconciler) clearSecretData(ctx context.Context, s *secretsv1beta1.VaultPKISecret) error {
 	return helpers.SyncSecret(ctx, r.Client, s, nil)
 }
 
@@ -397,7 +422,7 @@ func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr
 
 	if _, err := c.Write(ctx, vault.NewWriteRequest(fmt.Sprintf("%s/revoke", s.Spec.Mount), map[string]any{
 		"serial_number": s.Status.SerialNumber,
-	})); err != nil {
+	}, nil)); err != nil {
 		l.Error(err, "Failed to revoke certificate", "serial_number", s.Status.SerialNumber)
 		return err
 	}
@@ -426,9 +451,12 @@ func (r *VaultPKISecretReconciler) recordEvent(o *secretsv1beta1.VaultPKISecret,
 	r.Recorder.Eventf(o, eventType, reason, msg, i...)
 }
 
-func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret) error {
-	logger := log.FromContext(ctx)
-	logger.V(consts.LogLevelTrace).Info("Update status called")
+func (r *VaultPKISecretReconciler) updateStatus(ctx context.Context, o *secretsv1beta1.VaultPKISecret, healthy bool, conditions ...metav1.Condition) error {
+	logger := log.FromContext(ctx).WithName("updateStatus")
+	logger.V(consts.LogLevelDebug).Info("Updating status")
+	n := updateConditions(o.Status.Conditions, append(conditions, newHealthyCondition(o, healthy, "VaultPKISecret"), newReadyCondition(o, healthy, "VaultPKISecret"))...)
+	logger.V(consts.LogLevelDebug).Info("Updating status", "n", n, "o", o.Status.Conditions)
+	o.Status.Conditions = n
 
 	metrics.SetResourceStatus("vaultpkisecret", o, ptr.Deref(o.Status.Valid, false))
 

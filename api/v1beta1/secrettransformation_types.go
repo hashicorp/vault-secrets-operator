@@ -11,12 +11,19 @@ import (
 type SecretTransformationStatus struct {
 	Valid *bool  `json:"valid"`
 	Error string `json:"error"`
+
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
 // SecretTransformation is the Schema for the secrettransformations API
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type == "Ready")].status`,description="resource ready"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`,description="resource age"
 type SecretTransformation struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -28,18 +35,18 @@ type SecretTransformation struct {
 // SecretTransformationSpec defines the desired state of SecretTransformation
 type SecretTransformationSpec struct {
 	// Templates maps a template name to its Template. Templates are always included
-	// in the rendered K8s Secret with the specified key.
+	// in the rendered secret with the specified key.
 	Templates map[string]Template `json:"templates,omitempty"`
-	// SourceTemplates are never included in the rendered K8s Secret, they can be
+	// SourceTemplates are never included in the rendered secret, they can be
 	// used to provide common template definitions, etc.
 	SourceTemplates []SourceTemplate `json:"sourceTemplates,omitempty"`
 	// Includes contains regex patterns used to filter top-level source secret data
-	// fields for inclusion in the final K8s Secret data. These pattern filters are
+	// fields for inclusion in the final secret data. These pattern filters are
 	// never applied to templated fields as defined in Templates. They are always
 	// applied last.
 	Includes []string `json:"includes,omitempty"`
 	// Excludes contains regex patterns used to filter top-level source secret data
-	// fields for exclusion from the final K8s Secret data. These pattern filters are
+	// fields for exclusion from the final secret data. These pattern filters are
 	// never applied to templated fields as defined in Templates. They are always
 	// applied before any inclusion patterns. To exclude all source secret data
 	// fields, you can configure the single pattern ".*".

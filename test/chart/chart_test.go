@@ -7,18 +7,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -30,15 +27,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/hashicorp/vault-secrets-operator/internal/utils"
+	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
+	"github.com/hashicorp/vault-secrets-operator/utils"
 )
 
 var (
-	testRoot             string
-	chartPath            string
-	onlyOneSignalHandler = make(chan struct{})
-	shutdownSignals      = []os.Signal{os.Interrupt, syscall.SIGTERM}
-	vsoNamespace         = "vault-secrets-operator-system"
+	testRoot     string
+	chartPath    string
+	vsoNamespace = "vault-secrets-operator-system"
 	// kindClusterName is set in TestMain
 	kindClusterName string
 	// set in TestMain
@@ -104,7 +100,7 @@ func TestMain(m *testing.M) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	ctx, cancel := setupSignalHandler()
+	ctx, cancel := testutils.SetupSignalHandler()
 	{
 		go func() {
 			select {
@@ -154,7 +150,7 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	b := bytes.NewBuffer([]byte{})
 	chart := "hashicorp/vault-secrets-operator"
 	require.NoError(t,
-		runHelm(t, context.Background(), time.Second*30, b, nil,
+		testutils.RunHelm(t, context.Background(), time.Second*30, b, nil,
 			"show", "crds",
 			"--version", startChartVersion,
 			chart,
@@ -176,14 +172,25 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	var expectCRDUpgrade bool
 	// expectUpgradeMap is used to determine if a CRD should have been upgraded.
 	expectUpgradeMap := map[string]bool{}
-	for _, crd := range wantCRDs {
-		if o, ok := incomingCRDsMap[crd.Name]; ok {
-			if reflect.DeepEqual(o.Spec, crd.Spec) && reflect.DeepEqual(o.ObjectMeta, crd.ObjectMeta) {
-				expectUpgradeMap[crd.Name] = false
-			} else {
-				expectCRDUpgrade = true
-				expectUpgradeMap[crd.Name] = true
+	for _, want := range wantCRDs {
+		if incoming, ok := incomingCRDsMap[want.Name]; ok {
+			if reflect.DeepEqual(incoming.Spec, want.Spec) {
+				// changes to annotations/labels do not result in a resource generation bump, so
+				// we can unset them before comparing.
+				incomingObjMetaC := incoming.ObjectMeta.DeepCopy()
+				incomingObjMetaC.Annotations = nil
+				incomingObjMetaC.Labels = nil
+				wantObjMetaC := want.ObjectMeta.DeepCopy()
+				wantObjMetaC.Annotations = nil
+				wantObjMetaC.Labels = nil
+				if reflect.DeepEqual(incomingObjMetaC, wantObjMetaC) {
+					expectUpgradeMap[want.Name] = false
+					continue
+				}
 			}
+
+			expectCRDUpgrade = true
+			expectUpgradeMap[want.Name] = true
 		}
 	}
 
@@ -193,19 +200,19 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	releaseName := strings.Replace(strings.ToLower(t.Name()), "_", "-", -1)
 	ctx := context.Background()
 	t.Cleanup(func() {
-		assert.NoError(t, uninstallVSO(t, ctx,
+		assert.NoError(t, testutils.UninstallVSO(t, ctx,
 			"--wait",
 			"--namespace", vsoNamespace,
 			releaseName,
 		))
 	})
 
-	require.NoError(t, runKind(t, ctx,
+	require.NoError(t, testutils.RunKind(t, ctx,
 		"load", "docker-image", image,
 		"--name", kindClusterName,
 	))
 
-	require.NoError(t, installVSO(t, ctx,
+	require.NoError(t, testutils.InstallVSO(t, ctx,
 		"--wait",
 		"--create-namespace",
 		"--namespace", vsoNamespace,
@@ -222,7 +229,7 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		installedCRDsMap[o.Name] = o
 	}
 
-	require.NoError(t, upgradeVSO(t, ctx,
+	require.NoError(t, testutils.UpgradeVSO(t, ctx,
 		"--wait",
 		"--namespace", vsoNamespace,
 		"--set", fmt.Sprintf("controller.manager.image.repository=%s", operatorImageRepo),
@@ -266,76 +273,4 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		assert.Equal(t, wantCRD.Spec.Names, updatedCRD.Status.AcceptedNames, "CRD %q .status.acceptedNames mismatch", wantCRD.Name)
 		assert.Equal(t, len(updatedCRD.Status.StoredVersions), len(wantCRD.Spec.Versions), "CRD %q .status.storedVersions", wantCRD.Name)
 	}
-}
-
-func installVSO(t *testing.T, ctx context.Context, extraArgs ...string) error {
-	t.Helper()
-	return runHelm(t, ctx, time.Minute*5, nil, nil, append([]string{"install"}, extraArgs...)...)
-}
-
-func upgradeVSO(t *testing.T, ctx context.Context, extraArgs ...string) error {
-	t.Helper()
-	return runHelm(t, ctx, time.Minute*5, nil, nil, append([]string{"upgrade"}, extraArgs...)...)
-}
-
-func uninstallVSO(t *testing.T, ctx context.Context, extraArgs ...string) error {
-	t.Helper()
-	return runHelm(t, ctx, time.Minute*3, nil, nil, append([]string{"uninstall"}, extraArgs...)...)
-}
-
-func runHelm(t *testing.T, ctx context.Context, timeout time.Duration, stdout, stderr io.Writer, args ...string) error {
-	t.Helper()
-	return runCommandWithTimeout(t, ctx, timeout, stdout, stderr, "helm", args...)
-}
-
-func runKind(t *testing.T, ctx context.Context, args ...string) error {
-	t.Helper()
-	return runCommandWithTimeout(t, ctx, time.Minute*5, nil, nil, "kind", args...)
-}
-
-func runCommandWithTimeout(t *testing.T, ctx context.Context, timeout time.Duration, stdout, stderr io.Writer, name string, args ...string) error {
-	t.Helper()
-	var ctx_ context.Context
-	var cancel context.CancelFunc
-	if timeout > 0 {
-		ctx_, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	} else {
-		ctx_ = ctx
-	}
-
-	cmd := exec.CommandContext(ctx_, name, args...)
-	if stdout != nil {
-		cmd.Stdout = stdout
-	} else {
-		cmd.Stdout = os.Stdout
-	}
-	if stderr != nil {
-		cmd.Stderr = stderr
-	} else {
-		cmd.Stderr = os.Stderr
-	}
-
-	t.Logf("Running command %q", cmd)
-	return cmd.Run()
-}
-
-// // setupSignalHandler registers for SIGTERM and SIGINT. A context is returned
-// // which is canceled on one of these signals. If a second signal is caught, the program
-// // is terminated with exit code 1.
-func setupSignalHandler() (context.Context, context.CancelFunc) {
-	close(onlyOneSignalHandler) // panics when called twice
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	c := make(chan os.Signal, 2)
-	signal.Notify(c, shutdownSignals...)
-	go func() {
-		<-c
-		cancel()
-		<-c
-		os.Exit(1) // second signal. Exit directly.
-	}()
-
-	return ctx, cancel
 }

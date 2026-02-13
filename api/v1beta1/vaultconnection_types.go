@@ -7,9 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // VaultConnectionSpec defines the desired state of VaultConnection
 type VaultConnectionSpec struct {
 	// Address of the Vault server
@@ -19,22 +16,38 @@ type VaultConnectionSpec struct {
 	// TLSServerName to use as the SNI host for TLS connections.
 	TLSServerName string `json:"tlsServerName,omitempty"`
 	// CACertSecretRef is the name of a Kubernetes secret containing the trusted PEM encoded CA certificate chain as `ca.crt`.
+	// CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified.
 	CACertSecretRef string `json:"caCertSecretRef,omitempty"`
+	// CACertPath is the path to a trusted PEM-encoded CA certificate file on the filesystem that can be used to validate
+	// the certificate presented by the Vault server.
+	// CACertPath and CACertSecretRef are mutually exclusive, and only one should be specified.
+	CACertPath string `json:"caCertPath,omitempty"`
 	// SkipTLSVerify for TLS connections.
 	// +kubebuilder:default=false
 	SkipTLSVerify bool `json:"skipTLSVerify"`
+	// Timeout applied to all Vault requests for this connection. If not set, the
+	// default timeout from the Vault API client config is used.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
+	Timeout string `json:"timeout,omitempty"`
 }
 
 // VaultConnectionStatus defines the observed state of VaultConnection
 type VaultConnectionStatus struct {
 	// Valid auth mechanism.
 	Valid *bool `json:"valid"`
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
 // VaultConnection is the Schema for the vaultconnections API
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type == "Ready")].status`,description="resource ready"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`,description="resource age"
 type VaultConnection struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -29,9 +29,9 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/internal/common"
-	"github.com/hashicorp/vault-secrets-operator/internal/consts"
-	"github.com/hashicorp/vault-secrets-operator/internal/helpers"
+	"github.com/hashicorp/vault-secrets-operator/common"
+	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
 type dynamicK8SOutputs struct {
@@ -63,8 +63,11 @@ type dynamicK8SOutputs struct {
 	XnsMemberEntityIDs []string `json:"xns_member_entity_ids"`
 }
 
-// updated in init()
-var withStaticRoleScheduled = true
+var (
+	postgresEnablePersistence bool
+	// updated in init()
+	withStaticRoleScheduled = true
+)
 
 func init() {
 	vaultImageTag := os.Getenv("VAULT_IMAGE_TAG")
@@ -83,11 +86,34 @@ func TestVaultDynamicSecret(t *testing.T) {
 		t.Parallel()
 	}
 
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	var clusterName string
+	if isScaleTest {
+		postgresEnablePersistence = false
+		// When SCALE_TESTS is set, use EKS cluster
+		clusterName = eksClusterName
+		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		// Otherwise, use KIND cluster
+		clusterName = kindClusterName
+		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	}
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	// TODO: Extend this to support other dynamic create test cases
+	defaultCreate := 5 // Default count if no VDS_CREATE_COUNT is set
+	if vdsCreateCount, exists := getEnvInt(t, "VDS_CREATE_COUNT"); exists {
+		defaultCreate = vdsCreateCount
+	}
+
+	createOnlyCount, mixedCount := defaultCreate, defaultCreate
+	if v, exists := getEnvInt(t, "VDS_CREATE_ONLY"); exists {
+		createOnlyCount = v
+	}
+	if v, exists := getEnvInt(t, "VDS_MIXED_CREATE"); exists {
+		mixedCount = v
+	}
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -98,6 +124,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
 	copyModulesDirT(t, tfDir)
+	chartsDir := copyTestChartsDir(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
@@ -120,6 +147,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 15,
 			"with_static_role_scheduled": withStaticRoleScheduled,
+			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
 		},
 	}
 	if entTests {
@@ -227,9 +255,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 			},
 		},
 		{
-			name:            "create-only",
-			create:          5,
-			withArgoRollout: true,
+			name:   "create-only",
+			create: createOnlyCount,
+			// skip ArgoRollout tests on unsupported K8s cluster; those running an unsupported architecture.
+			withArgoRollout: argoRolloutSupported,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -238,7 +267,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:               "mixed",
-			create:             5,
+			create:             mixedCount,
 			createStatic:       5,
 			createNonRenewable: 5,
 			existing:           5,
@@ -417,6 +446,18 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 			for idx := 0; idx < tt.createStatic; idx++ {
 				dest := fmt.Sprintf("%s-create-static-creds-%d", tt.name, idx)
+
+				depObj := createDeployment(t, ctx, crdClient, ctrlclient.ObjectKey{
+					Namespace: outputs.K8sNamespace,
+					Name:      rolloutRestartObjName(dest, "deployment"),
+				})
+				rolloutRestartTargets := []secretsv1beta1.RolloutRestartTarget{
+					{
+						Kind: "Deployment",
+						Name: depObj.Name,
+					},
+				}
+				otherObjsCreated = append(otherObjsCreated, depObj)
 				vdsObj := &secretsv1beta1.VaultDynamicSecret{
 					ObjectMeta: v1.ObjectMeta{
 						Namespace: outputs.K8sNamespace,
@@ -432,6 +473,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 							Name:   dest,
 							Create: true,
 						},
+						RolloutRestartTargets: rolloutRestartTargets,
 					},
 				}
 
@@ -644,8 +686,17 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 		t.Parallel()
 	}
 
-	clusterName := os.Getenv("KIND_CLUSTER_NAME")
-	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	var clusterName string
+	if isScaleTest {
+		postgresEnablePersistence = false
+		// When SCALE_TESTS is set, use EKS cluster
+		clusterName = eksClusterName
+		require.NotEmpty(t, clusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		// Otherwise, use KIND cluster
+		clusterName = kindClusterName
+		require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	}
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -655,6 +706,8 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
 	copyModulesDirT(t, tfDir)
+
+	chartsDir := copyTestChartsDir(t, tfDir)
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
@@ -680,7 +733,8 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			"vault_db_default_lease_ttl": 600,
 			"with_static_role_scheduled": withStaticRoleScheduled,
 			// disabling until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released
-			"with_xns": false,
+			"with_xns":       false,
+			"chart_postgres": filepath.Join(chartsDir, "postgresql"),
 		},
 	}
 	if entTests {
@@ -851,9 +905,9 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.xns {
-				t.Skipf("skipping xns test %s, until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released", tt.name)
-			}
+			// if tt.xns {
+			//	t.Skipf("skipping xns test %s, until https://github.com/hashicorp/terraform-provider-vault/pull/2289 is released", tt.name)
+			// }
 
 			if tt.xns && !outputs.WithXns {
 				t.Skipf("skipping xns test %s, test infrastructure not supported", tt.name)
@@ -1260,7 +1314,7 @@ func awaitDynamicSecretReconciled(t *testing.T, ctx context.Context, client ctrl
 			vdsObjFinal = vdsObj
 			return nil
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 20),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 60),
 	))
 	return &vdsObjFinal, valid
 }

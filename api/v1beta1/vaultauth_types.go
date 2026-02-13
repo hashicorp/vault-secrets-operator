@@ -127,9 +127,15 @@ type VaultAuthConfigAppRole struct {
 	// RoleID of the AppRole Role to use for authenticating to Vault.
 	RoleID string `json:"roleId,omitempty"`
 
+	// SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the
+	// AppRole Role to use for authenticating to Vault.
+	// SecretIDPath and SecretRef are mutually exclusive, and only one should be specified.
+	SecretIDPath string `json:"secretIDPath,omitempty"`
+
 	// SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which
 	// provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the
 	// AppRole Role's secretID.
+	// SecretIDPath and SecretRef are mutually exclusive, and only one should be specified.
 	SecretRef string `json:"secretRef,omitempty"`
 }
 
@@ -140,6 +146,9 @@ func (a *VaultAuthConfigAppRole) Merge(other *VaultAuthConfigAppRole) (*VaultAut
 	c := a.DeepCopy()
 	if c.RoleID == "" {
 		c.RoleID = other.RoleID
+	}
+	if c.SecretIDPath == "" {
+		c.SecretIDPath = other.SecretIDPath
 	}
 	if c.SecretRef == "" {
 		c.SecretRef = other.SecretRef
@@ -159,8 +168,20 @@ func (a *VaultAuthConfigAppRole) Validate() error {
 		errs = errors.Join(fmt.Errorf("empty roleID"))
 	}
 
-	if a.SecretRef == "" {
-		errs = errors.Join(fmt.Errorf("empty secretRef"))
+	if a.SecretRef == "" && a.SecretIDPath == "" {
+		errs = errors.Join(errs, fmt.Errorf("either secretRef or secretIDPath must be specified"))
+	}
+
+	if a.SecretRef != "" && a.SecretIDPath != "" {
+		errs = errors.Join(errs, fmt.Errorf("secretRef and secretIDPath are mutually exclusive, only one should be specified"))
+	}
+
+	if a.SecretIDPath != "" {
+		safePath, err := validatePath(a.SecretIDPath)
+		if err != nil {
+			return fmt.Errorf("invalid SecretIDPath: %w", err)
+		}
+		a.SecretIDPath = safePath
 	}
 
 	return errs
@@ -323,7 +344,7 @@ type VaultAuthGlobalRef struct {
 	Name string `json:"name,omitempty"`
 	// Namespace of the VaultAuthGlobal resource. If not provided, the namespace of
 	// the referring VaultAuth resource is used.
-	// +kubebuilder:validation:Pattern=`^([a-z0-9.-]{1,253})$`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9-]{1,63})$`
 	Namespace string `json:"namespace,omitempty"`
 	// MergeStrategy configures the merge strategy for HTTP headers and parameters
 	// that are included in all Vault authentication requests.
@@ -381,7 +402,7 @@ type MergeStrategy struct {
 type VaultAuthSpec struct {
 	// VaultConnectionRef to the VaultConnection resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultConnectionRefB`. If no namespace prefix is provided it will default to
-	// namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
+	// the namespace of the VaultConnection CR. If no value is specified for VaultConnectionRef the
 	// Operator will default to the `default` VaultConnection, configured in the operator's namespace.
 	VaultConnectionRef string `json:"vaultConnectionRef,omitempty"`
 	// VaultAuthGlobalRef.
@@ -392,6 +413,9 @@ type VaultAuthSpec struct {
 	// This field allows administrators to customize which Kubernetes namespaces are authorized to
 	// use with this AuthMethod. While Vault will still enforce its own rules, this has the added
 	// configurability of restricting which VaultAuthMethods can be used by which namespaces.
+	// You only need to set allowedNamespaces when you want to control access from a resource in
+	// a different namespace than the VaultAuth it references. Secret resources in
+	// the same namespace as the VaultAuth bypass this check.
 	// Accepted values:
 	// []{"*"} - wildcard, all namespaces.
 	// []{"a", "b"} - list of namespaces.
@@ -429,16 +453,23 @@ type VaultAuthSpec struct {
 // VaultAuthStatus defines the observed state of VaultAuth
 type VaultAuthStatus struct {
 	// Valid auth mechanism.
-	Valid      *bool              `json:"valid,omitempty"`
-	Error      string             `json:"error,omitempty"`
+	Valid *bool `json:"valid,omitempty"`
+	// Error is a human-readable error message indicating why the VaultAuth is invalid.
+	Error string `json:"error,omitempty"`
+	// Conditions hold information that can be used by other apps to determine the
+	// health of the resource instance.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	SpecHash   string             `json:"specHash,omitempty"`
+	// SpecHash is a SHA256 hash of the spec, used to determine if the spec has changed.
+	SpecHash string `json:"specHash,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
 // VaultAuth is the Schema for the vaultauths API
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=`.status.conditions[?(@.type == "Healthy")].status`,description="health status"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type == "Ready")].status`,description="resource ready"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`,description="resource age"
 type VaultAuth struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -454,6 +485,18 @@ type StorageEncryption struct {
 	Mount string `json:"mount"`
 	// KeyName to use for encrypt/decrypt operations via Vault Transit.
 	KeyName string `json:"keyName"`
+}
+
+type VaultAuthRef struct {
+	// Name of the VaultAuth resource.
+	Name string `json:"name"`
+	// Namespace of the VaultAuth resource.
+	Namespace string `json:"namespace,omitempty"`
+	// TrustNamespace of the referring VaultAuth resource. This means that any Vault
+	// credentials will be provided by resources in the same namespace as the
+	// VaultAuth resource. Otherwise, the credentials will be provided by the secret
+	// resource's namespace.
+	TrustNamespace bool `json:"trustNamespace,omitempty"`
 }
 
 // +kubebuilder:object:root=true
