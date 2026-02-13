@@ -616,17 +616,19 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	// short capped backoff until last_vault_rotation changes from the initial value.
 	// Only poll if:
 	//   1. rotation_schedule is empty (rotation_period mode)
-	//   2. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
-	//   3. last_vault_rotation is initialized (not 0)
+	//   2. last_vault_rotation is initialized (not 0)
+	//   3. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
 	//   4. TTL <= 2 (rotation likely in progress)
 	if staticCredsMeta.RotationSchedule == "" &&
-		inLastSyncRotation &&
 		staticCredsMeta.LastVaultRotation != 0 &&
+		inLastSyncRotation &&
 		staticCredsMeta.TTL <= 2 {
 		// Rotation in progress detected; polling for rotation completion.
 		logger.V(consts.LogLevelDebug).Info(
 			"Static credentials rotation in progress",
-			"currentLastVaultRotation", staticCredsMeta.LastVaultRotation,
+			"mode", "periodic",
+			"rotationPeriod", staticCredsMeta.RotationPeriod,
+			"lastVaultRotation", staticCredsMeta.LastVaultRotation,
 			"ttl", staticCredsMeta.TTL,
 			"ttlZeroWait", true,
 		)
@@ -654,9 +656,10 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 				if newStaticCredsMeta.LastVaultRotation != initialLastVaultRotation {
 					logger.V(consts.LogLevelDebug).Info(
 						"Rotation completed for periodic static credentials",
+						"mode", "periodic",
 						"oldLastVaultRotation", initialLastVaultRotation,
 						"newLastVaultRotation", newStaticCredsMeta.LastVaultRotation,
-						"newTTL", newStaticCredsMeta.TTL,
+						"newTtl", newStaticCredsMeta.TTL,
 						"ttlZeroWait", true,
 					)
 					staticCredsMeta = newStaticCredsMeta
@@ -668,7 +671,8 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 
 				// Rotation still in progress, retry.
 				logger.V(consts.LogLevelTrace).Info(
-					"Rotation still in progress for periodic static credentials",
+					"Static credentials rotation in progress",
+					"mode", "periodic",
 					"lastVaultRotation", newStaticCredsMeta.LastVaultRotation,
 					"ttl", newStaticCredsMeta.TTL,
 				)
@@ -677,6 +681,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 			// Timeout waiting for rotation completion.
 			logger.V(consts.LogLevelDebug).Info(
 				"Timeout waiting for periodic static credentials rotation",
+				"mode", "periodic",
 				"lastVaultRotation", staticCredsMeta.LastVaultRotation,
 				"ttl", staticCredsMeta.TTL,
 				"ttlZeroWait", true,
@@ -707,6 +712,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	}
 
 	logger = logger.WithValues(
+		"mode", "scheduled",
 		"staticCredsMeta", staticCredsMeta,
 		"lastSyncStaticCredsMeta", lastSyncStaticCredsMeta,
 		"ttl", staticCredsMeta.TTL,
@@ -746,7 +752,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 				}
 			}
 
-			logger.V(consts.LogLevelDebug).Info("Stale static creds backoff",
+			logger.V(consts.LogLevelDebug).Info("Static credentials backoff",
 				"newStaticCredsMeta", newStaticCredsMeta,
 				"retryError", retryError,
 			)
