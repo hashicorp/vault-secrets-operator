@@ -39,7 +39,7 @@ func newVaultResponse(data map[string]any) *vaultResponse {
 	return &vaultResponse{data: data}
 }
 
-func newStaticCredsResponse(lastRotation, password, username string, ttl int, rotationPeriod int, rotationSchedule string) *vaultResponse {
+func newStaticCredsResponse(lastRotation, password, username string, ttl, rotationPeriod int, rotationSchedule string) *vaultResponse {
 	data := map[string]any{
 		"last_vault_rotation": lastRotation,
 		"password":            password,
@@ -1430,7 +1430,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		// rotation_period + TTL<=2 workaround (PR #1217)
 		{
 			name:            "rotation-period-success",
-			o:              newRotationPeriodVDS("database", "static-creds/rotation-period-role", ts.Unix(), 3600, 55),
+			o:               newRotationPeriodVDS("database", "static-creds/rotation-period-role", ts.Unix(), 3600, 55),
 			initialResponse: newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
 			c: &vault.MockRecordingVaultClient{
 				ReadResponses: map[string][]vault.Response{
@@ -1447,7 +1447,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		},
 		{
 			name:            "rotation-period-timeout",
-			o:              newRotationPeriodVDS("database", "static-creds/stuck-rotation", ts.Unix(), 3600, 55),
+			o:               newRotationPeriodVDS("database", "static-creds/stuck-rotation", ts.Unix(), 3600, 55),
 			initialResponse: newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
 			c: &vault.MockRecordingVaultClient{
 				ReadResponses: map[string][]vault.Response{

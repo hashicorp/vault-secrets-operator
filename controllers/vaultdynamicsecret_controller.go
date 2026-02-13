@@ -50,11 +50,11 @@ const (
 // rotationPeriodPollMaxElapsed and rotationPeriodPollMaxInterval control the
 // backoff behavior when polling for rotation_period static-creds with TTL<=2.
 var (
-	staticCredsJitterHorizon          = time.Second * 3
-	rotationPeriodPollMaxElapsed      = time.Second * 30
-	rotationPeriodPollMaxInterval     = time.Second * 2
-	vdsJitterFactor          = 0.05
-	staticTransOpt           = &helpers.SecretTransformationOption{
+	staticCredsJitterHorizon      = time.Second * 3
+	rotationPeriodPollMaxElapsed  = time.Second * 30
+	rotationPeriodPollMaxInterval = time.Second * 2
+	vdsJitterFactor               = 0.05
+	staticTransOpt                = &helpers.SecretTransformationOption{
 		Excludes: []string{
 			fmt.Sprintf("^%s$", strings.Join([]string{
 				"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", helpers.SecretDataKeyRaw,
@@ -617,8 +617,8 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	//   2. TTL <= 2 (rotation likely in progress)
 	//   3. last_vault_rotation is initialized (not 0)
 	//   4. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
-	if staticCredsMeta.RotationSchedule == "" && 
-		staticCredsMeta.TTL <= 2 && 
+	if staticCredsMeta.RotationSchedule == "" &&
+		staticCredsMeta.TTL <= 2 &&
 		staticCredsMeta.LastVaultRotation != 0 &&
 		inLastSyncRotation {
 		// TTL<=2 detected for rotation_period static creds; treating as rotation in progress.
