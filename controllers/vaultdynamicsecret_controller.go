@@ -46,10 +46,15 @@ const (
 
 // staticCredsJitterHorizon should be used when computing the jitter
 // duration for the static-creds rotation time horizon.
+//
+// rotationPeriodPollMaxElapsed and rotationPeriodPollMaxInterval control the
+// backoff behavior when polling for rotation_period static-creds with TTL<=2.
 var (
-	staticCredsJitterHorizon = time.Second * 3
-	vdsJitterFactor          = 0.05
-	staticTransOpt           = &helpers.SecretTransformationOption{
+	staticCredsJitterHorizon      = time.Second * 3
+	rotationPeriodPollMaxElapsed  = time.Second * 30
+	rotationPeriodPollMaxInterval = time.Second * 2
+	vdsJitterFactor               = 0.05
+	staticTransOpt                = &helpers.SecretTransformationOption{
 		Excludes: []string{
 			fmt.Sprintf("^%s$", strings.Join([]string{
 				"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", helpers.SecretDataKeyRaw,
@@ -328,6 +333,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// sync the secret
 	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption)
 	if err != nil {
+		// Standard error handling with backoff
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
 			logger.V(consts.LogLevelWarning).Info("Tainting client", "err", err)
@@ -558,7 +564,8 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 // awaitVaultSecretRotation waits for the Vault secret to be rotated. This is
 // necessary for the case where the Vault secret is a static-creds secret and includes
-// a rotation schedule.
+// a rotation schedule. It also handles the rotation_period-only case when TTL is 0,
+// which indicates rotation is in progress.
 func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret,
 	c vault.ClientBase, lastResponse vault.Response) (*secretsv1beta1.VaultStaticCredsMetaData,
 	vault.Response,
@@ -573,20 +580,109 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		return nil, nil, err
 	}
 
-	// if we are not handling static creds or the rotation schedule is not set, then
-	// we can return early.
-	if !r.isStaticCreds(staticCredsMeta) || staticCredsMeta.RotationSchedule == "" {
+	// if we are not handling static creds, return early.
+	if !r.isStaticCreds(staticCredsMeta) {
 		return staticCredsMeta, resp, nil
 	}
 
+	// Get last sync metadata for comparison
 	lastSyncStaticCredsMeta := o.Status.StaticCredsMetaData.DeepCopy()
 	inLastSyncRotation := lastSyncStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation
+
+	// Handle rotation_period-only mode (no rotation_schedule) when TTL is near/at zero.
+	// TTL<=2 indicates that a rotation is currently in progress. We retry with
+	// short capped backoff until last_vault_rotation changes from the initial value.
+	// Only poll if:
+	//   1. rotation_schedule is empty (rotation_period mode)
+	//   2. last_vault_rotation is initialized (not 0)
+	//   3. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
+	//   4. TTL <= 2 (rotation likely in progress)
+	if staticCredsMeta.RotationSchedule == "" &&
+		staticCredsMeta.LastVaultRotation != 0 &&
+		inLastSyncRotation &&
+		staticCredsMeta.TTL <= 2 {
+		// Rotation in progress detected; polling for rotation completion.
+		logger.V(consts.LogLevelDebug).Info(
+			"Static credentials rotation in progress",
+			"mode", "periodic",
+			"rotationPeriod", staticCredsMeta.RotationPeriod,
+			"lastVaultRotation", staticCredsMeta.LastVaultRotation,
+			"ttl", staticCredsMeta.TTL,
+			"ttlZeroWait", true,
+		)
+
+		// Set up a short capped backoff to wait for rotation to complete.
+		bo := backoff.NewExponentialBackOff(
+			backoff.WithMaxElapsedTime(rotationPeriodPollMaxElapsed),
+			backoff.WithMaxInterval(rotationPeriodPollMaxInterval),
+		)
+
+		initialLastVaultRotation := staticCredsMeta.LastVaultRotation
+		if err := backoff.Retry(
+			func() error {
+				resp, err = r.doVault(ctx, c, o)
+				if err != nil {
+					return backoff.Permanent(err)
+				}
+
+				newStaticCredsMeta, err := vaultStaticCredsMetaDataFromData(resp.Data())
+				if err != nil {
+					return backoff.Permanent(err)
+				}
+
+				// Check if rotation has completed (last_vault_rotation changed).
+				if newStaticCredsMeta.LastVaultRotation != initialLastVaultRotation {
+					logger.V(consts.LogLevelDebug).Info(
+						"Rotation completed for periodic static credentials",
+						"mode", "periodic",
+						"oldLastVaultRotation", initialLastVaultRotation,
+						"newLastVaultRotation", newStaticCredsMeta.LastVaultRotation,
+						"newTtl", newStaticCredsMeta.TTL,
+						"ttlZeroWait", true,
+					)
+					staticCredsMeta = newStaticCredsMeta
+					return nil
+				}
+
+				// Update staticCredsMeta with latest read for potential return on timeout.
+				staticCredsMeta = newStaticCredsMeta
+
+				// Rotation still in progress, retry.
+				logger.V(consts.LogLevelTrace).Info(
+					"Static credentials rotation in progress",
+					"mode", "periodic",
+					"lastVaultRotation", newStaticCredsMeta.LastVaultRotation,
+					"ttl", newStaticCredsMeta.TTL,
+				)
+				return errors.New("rotation in progress, last_vault_rotation unchanged")
+			}, bo); err != nil {
+			// Timeout waiting for rotation completion.
+			logger.V(consts.LogLevelDebug).Info(
+				"Timeout waiting for periodic static credentials rotation",
+				"mode", "periodic",
+				"lastVaultRotation", staticCredsMeta.LastVaultRotation,
+				"ttl", staticCredsMeta.TTL,
+				"ttlZeroWait", true,
+			)
+			// Return the best-known meta/resp with RotationInProgressError for special handling.
+			return staticCredsMeta, resp, &RotationInProgressError{
+				TTL:               staticCredsMeta.TTL,
+				LastVaultRotation: staticCredsMeta.LastVaultRotation,
+			}
+		}
+
+		return staticCredsMeta, resp, nil
+	}
+
+	// For rotation_period mode (empty schedule) that doesn't need polling, return early.
+	if staticCredsMeta.RotationSchedule == "" {
+		return staticCredsMeta, resp, nil
+	}
+
+	// Handle rotation_schedule mode (existing behavior).
 	switch {
 	case !inLastSyncRotation:
 		// return early, not in the last rotation
-		return staticCredsMeta, resp, nil
-	case lastSyncStaticCredsMeta.RotationSchedule == "":
-		// return early, rotation schedule was not set in the last sync
 		return staticCredsMeta, resp, nil
 	case lastSyncStaticCredsMeta.RotationSchedule != staticCredsMeta.RotationSchedule:
 		// return early, rotation schedule has changed
@@ -594,6 +690,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	}
 
 	logger = logger.WithValues(
+		"mode", "scheduled",
 		"staticCredsMeta", staticCredsMeta,
 		"lastSyncStaticCredsMeta", lastSyncStaticCredsMeta,
 		"ttl", staticCredsMeta.TTL,
@@ -633,7 +730,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 				}
 			}
 
-			logger.V(consts.LogLevelDebug).Info("Stale static creds backoff",
+			logger.V(consts.LogLevelDebug).Info("Static credentials backoff",
 				"newStaticCredsMeta", newStaticCredsMeta,
 				"retryError", retryError,
 			)
