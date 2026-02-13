@@ -11,11 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -26,7 +30,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
 
-	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
@@ -101,6 +104,10 @@ func newRotationPeriodVDS(mount, path string, lastRotation int64, period, ttl in
 func assertRotationInProgressError(t assert.TestingT, err error) bool {
 	var rotErr *RotationInProgressError
 	return assert.ErrorAs(t, err, &rotErr)
+}
+
+func fakeRecorder() record.EventRecorder {
+	return record.NewFakeRecorder(1024)
 }
 
 func Test_computeRelativeHorizon(t *testing.T) {
@@ -645,12 +652,12 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 func TestVaultDynamicSecretReconciler_isStaticCreds(t *testing.T) {
 	tests := []struct {
 		name     string
-		metaData *v1beta1.VaultStaticCredsMetaData
+		metaData *secretsv1beta1.VaultStaticCredsMetaData
 		want     bool
 	}{
 		{
 			name: "static-cred-with-rotation-period",
-			metaData: &v1beta1.VaultStaticCredsMetaData{
+			metaData: &secretsv1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 1695430611,
 				RotationPeriod:    300,
 			},
@@ -658,7 +665,7 @@ func TestVaultDynamicSecretReconciler_isStaticCreds(t *testing.T) {
 		},
 		{
 			name: "not-static-cred-with-rotation-period",
-			metaData: &v1beta1.VaultStaticCredsMetaData{
+			metaData: &secretsv1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 0,
 				RotationPeriod:    0,
 			},
@@ -666,7 +673,7 @@ func TestVaultDynamicSecretReconciler_isStaticCreds(t *testing.T) {
 		},
 		{
 			name: "static-cred-with-rotation-schedule",
-			metaData: &v1beta1.VaultStaticCredsMetaData{
+			metaData: &secretsv1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 1695430611,
 				RotationSchedule:  "1 0 * * *",
 			},
@@ -674,7 +681,7 @@ func TestVaultDynamicSecretReconciler_isStaticCreds(t *testing.T) {
 		},
 		{
 			name: "not-static-cred-with-rotation-schedule",
-			metaData: &v1beta1.VaultStaticCredsMetaData{
+			metaData: &secretsv1beta1.VaultStaticCredsMetaData{
 				LastVaultRotation: 0,
 				RotationSchedule:  "",
 			},
@@ -1306,7 +1313,9 @@ func (s *vaultResponse) WrapInfo() *api.SecretWrapInfo {
 }
 
 func (s *vaultResponse) Secret() *api.Secret {
-	return nil
+	return &api.Secret{
+		Data: s.data,
+	}
 }
 
 func (s *vaultResponse) Data() map[string]any {
@@ -1344,6 +1353,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		{
 			name:            "invalid-static-creds-meta-data",
 			c:               &vault.MockRecordingVaultClient{},
+			o:               &secretsv1beta1.VaultDynamicSecret{},
 			initialResponse: newStaticCredsResponse("2-024-05-02T19:48:01.328261545Z", "Y3pro72-fl1ndHTFOg9h", "dev-postgres-static-user-scheduled", 59, 0, "*/1 * * * *"),
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.ErrorContains(t, err, "invalid last_vault_rotation", i...)
@@ -1494,6 +1504,35 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			assertRequestCount:      true,
 			expectedRequestCount:    0,
 		},
+		// TTL boundary cases: ttl<=2 triggers polling, ttl>2 does not
+		{
+			name:            "rotation-period-ttl-2-retry",
+			o:               newRotationPeriodVDS("database", "static-creds/ttl-2-role", ts.Unix(), 3600, 55),
+			initialResponse: newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 2, 3600, ""),
+			c: &vault.MockRecordingVaultClient{
+				ReadResponses: map[string][]vault.Response{
+					"database/static-creds/ttl-2-role": {
+						newStaticCredsResponse(ts1Str, "new-password", "dev-postgres-static-user", 3599, 3600, ""),
+					},
+				},
+			},
+			wantErr:                 assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts1.Unix(), RotationPeriod: 3600, TTL: 3599},
+			wantResponse:            newStaticCredsResponse(ts1Str, "new-password", "dev-postgres-static-user", 3599, 3600, ""),
+			assertRequestCount:      true,
+			expectedRequestCount:    1,
+		},
+		{
+			name:                    "rotation-period-ttl-3-no-retry",
+			o:                       newRotationPeriodVDS("database", "static-creds/ttl-3-role", ts.Unix(), 3600, 55),
+			initialResponse:         newStaticCredsResponse(tsStr, "current-password", "dev-postgres-static-user", 3, 3600, ""),
+			c:                       &vault.MockRecordingVaultClient{},
+			wantErr:                 assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{LastVaultRotation: ts.Unix(), RotationPeriod: 3600, TTL: 3},
+			wantResponse:            newStaticCredsResponse(tsStr, "current-password", "dev-postgres-static-user", 3, 3600, ""),
+			assertRequestCount:      true,
+			expectedRequestCount:    0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1510,4 +1549,328 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestVaultDynamicSecretReconciler_awaitRotation_RotationPeriodPolling_WaitForAdvance tests that awaitVaultSecretRotation
+// successfully polls Vault when rotation_period mode encounters ttl<=2, waiting for last_vault_rotation to advance.
+// This implements PR #1217 workaround: when TTL<=2 is detected for rotation_period static creds,
+// the reconciler polls with short backoff until the rotation completes (LVR changes).
+func TestVaultDynamicSecretReconciler_awaitRotation_RotationPeriodPolling_WaitForAdvance(t *testing.T) {
+	ts, err := time.Parse(time.RFC3339Nano, "2024-05-02T19:48:01.328261545Z")
+	require.NoError(t, err)
+	ts1, err := time.Parse(time.RFC3339Nano, "2024-05-02T19:49:01.325799425Z")
+	require.NoError(t, err)
+
+	tsStr := "2024-05-02T19:48:01.328261545Z"
+	ts1Str := "2024-05-02T19:49:01.325799425Z"
+
+	ctx := context.Background()
+	withPollingBudget(t, 2*time.Second, 100*time.Millisecond)
+
+	// Setup: VaultDynamicSecret in rotation_period mode (no rotation_schedule).
+	// Initial response has ttl=0 with LVR=ts.Unix(), simulating rotation in progress.
+	o := newRotationPeriodVDS("database", "static-creds/rotation-period-role", ts.Unix(), 3600, 55)
+	initialResponse := newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, "")
+
+	// Mock Vault client returns a sequence of stuck responses followed by advanced response.
+	// This proves polling actually occurs (multiple read attempts) before rotation completes.
+	c := &vault.MockRecordingVaultClient{
+		ReadResponses: map[string][]vault.Response{
+			"database/static-creds/rotation-period-role": {
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 2, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 1, 3600, ""),
+				newStaticCredsResponse(ts1Str, "new-password", "dev-postgres-static-user", 3599, 3600, ""),
+			},
+		},
+	}
+
+	r := &VaultDynamicSecretReconciler{}
+	staticMeta, finalResp, err := r.awaitVaultSecretRotation(ctx, o, c, initialResponse)
+
+	// Assertions
+	require.NoError(t, err, "expected polling to succeed when LVR advances")
+	assert.Equal(t, ts1.Unix(), staticMeta.LastVaultRotation, "expected LastVaultRotation to advance after polling")
+	assert.Equal(t, int64(3599), staticMeta.TTL, "expected updated TTL after rotation completes")
+
+	finalData := finalResp.Data()
+	assert.Equal(t, "new-password", finalData["password"], "expected new password after rotation")
+	assert.GreaterOrEqual(t, len(c.Requests), 2, "expected multiple read attempts during polling to prove polling occurred")
+}
+
+// TestVaultDynamicSecretReconciler_awaitRotation_RotationPeriodTimeout tests that awaitVaultSecretRotation
+// returns RotationInProgressError when polling times out waiting for last_vault_rotation to advance.
+// This implements PR #1217 timeout handling: when polling doesn't see LVR change within the timeout window,
+// awaitVaultSecretRotation returns RotationInProgressError for special handling in Reconcile.
+func TestVaultDynamicSecretReconciler_awaitRotation_RotationPeriodTimeout(t *testing.T) {
+	ts, err := time.Parse(time.RFC3339Nano, "2024-05-02T19:48:01.328261545Z")
+	require.NoError(t, err)
+	tsStr := "2024-05-02T19:48:01.328261545Z"
+
+	ctx := context.Background()
+	withPollingBudget(t, 100*time.Millisecond, 10*time.Millisecond)
+
+	// Setup: VaultDynamicSecret in rotation_period mode with stuck rotation.
+	o := newRotationPeriodVDS("database", "static-creds/stuck-rotation", ts.Unix(), 3600, 55)
+	initialResponse := newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, "")
+
+	// Mock Vault client returns multiple stuck responses: LVR never advances, ttl stays at 0.
+	// Provide enough responses to allow multiple polling attempts before timeout.
+	c := &vault.MockRecordingVaultClient{
+		ReadResponses: map[string][]vault.Response{
+			"database/static-creds/stuck-rotation": makeStuckRotationResponses(tsStr, "old-password", "dev-postgres-static-user", 50),
+		},
+	}
+
+	r := &VaultDynamicSecretReconciler{}
+	staticMeta, _, err := r.awaitVaultSecretRotation(ctx, o, c, initialResponse)
+
+	// Assertions
+	var rotErr *RotationInProgressError
+	require.ErrorAs(t, err, &rotErr, "expected RotationInProgressError when polling times out")
+	assert.Equal(t, ts.Unix(), staticMeta.LastVaultRotation, "expected LastVaultRotation unchanged (rotation did not complete)")
+	assert.Equal(t, int64(0), staticMeta.TTL, "expected TTL unchanged from stuck rotation")
+}
+
+// TestVaultDynamicSecretReconciler_Reconcile_RotationInProgressError_RequeuesQuickly_AndDoesNotWriteSecret tests
+// that Reconcile handles RotationInProgressError specially:
+// - Returns nil error with RequeueAfter computed from BackOffRegistry (exponential backoff, not fixed delay)
+// - Does NOT create/update the destination Secret
+// - Exercises full Vault polling when rotation_period TTL is low
+// This implements PR #1217 Reconcile-level behavior for stuck rotations.
+func TestVaultDynamicSecretReconciler_Reconcile_RotationInProgressError_RequeuesQuickly_AndDoesNotWriteSecret(t *testing.T) {
+	ts, err := time.Parse(time.RFC3339Nano, "2024-05-02T19:48:01.328261545Z")
+	require.NoError(t, err)
+	tsStr := "2024-05-02T19:48:01.328261545Z"
+
+	ctx := context.Background()
+	withPollingBudget(t, 100*time.Millisecond, 10*time.Millisecond)
+
+	// Create a minimal VaultAuth object with proper kubernetes auth config
+	vaultAuth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-auth",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Method: consts.ProviderMethodKubernetes,
+			Mount:  "kubernetes",
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           "test-role",
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+		},
+	}
+
+	// Create VaultDynamicSecret in rotation_period mode with destination Secret
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "rotation-stuck",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount:            "database",
+			Path:             "static-creds/stuck-role",
+			VaultAuthRef:     "test-auth",
+			AllowStaticCreds: true,
+			Destination: secretsv1beta1.Destination{
+				Name:   "rotation-stuck-secret",
+				Create: true,
+			},
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: ts.Unix(),
+				RotationPeriod:    3600,
+				RotationSchedule:  "",
+				TTL:               55,
+			},
+		},
+	}
+
+	// Create fake k8s client and add the VaultDynamicSecret and VaultAuth
+	k8sClient := testutils.NewFakeClient()
+	require.NoError(t, k8sClient.Create(ctx, vaultAuth))
+	require.NoError(t, k8sClient.Create(ctx, o))
+
+	// Create mock Vault client that will timeout: stuck responses never advance LVR
+	// The initial read returns ttl=0 to trigger polling in awaitVaultSecretRotation.
+	// Subsequent reads (during polling) return stuck responses that don't advance LVR.
+	mockVaultClient := &vault.MockRecordingVaultClient{
+		ReadResponses: map[string][]vault.Response{
+			"database/static-creds/stuck-role": {
+				// Initial read: ttl <= 2 will trigger polling
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				// Polling reads: return stuck responses that don't advance LVR
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				// More responses in case of additional retries
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+				newStaticCredsResponse(tsStr, "old-password", "dev-postgres-static-user", 0, 3600, ""),
+			},
+		},
+	}
+
+	// Create a mock ClientFactory that returns our mock Vault client
+	mockClientFactory := &testClientFactory{
+		client: &testVaultClient{MockRecordingVaultClient: mockVaultClient},
+	}
+
+	// Create BackOffRegistry with deterministic options (no randomization)
+	// This ensures RequeueAfter == InitialInterval on first call
+	backOffRegistry := NewBackOffRegistry(
+		backoff.WithInitialInterval(5*time.Second),
+		backoff.WithMaxInterval(60*time.Second),
+		backoff.WithRandomizationFactor(0),
+		backoff.WithMultiplier(2),
+	)
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "rotation-stuck", Namespace: "default"},
+	}
+
+	// Create a reconciler with the fake k8s client and mock ClientFactory
+	r := &VaultDynamicSecretReconciler{
+		Client:          k8sClient,
+		ClientFactory:   mockClientFactory,
+		referenceCache:  NewResourceReferenceCache(),
+		SyncRegistry:    NewSyncRegistry(),
+		BackOffRegistry: backOffRegistry,
+		Recorder:        fakeRecorder(),
+	}
+
+	// Call Reconcile with the stuck rotation resource
+	res, err := r.Reconcile(ctx, req)
+
+	// Assertions
+	// 1. Reconcile returns nil error (RotationInProgressError is handled internally)
+	require.NoError(t, err, "expected Reconcile to handle RotationInProgressError and return nil error")
+
+	// 2. Result has the deterministic BackOffRegistry initial interval (5 seconds)
+	assert.Equal(t, 5*time.Second, res.RequeueAfter, "expected RequeueAfter == InitialInterval with zero randomization")
+
+	// 3. Destination Secret was NOT created
+	destSecretKey := types.NamespacedName{Name: "rotation-stuck-secret", Namespace: "default"}
+	destSecret := &corev1.Secret{}
+	err = k8sClient.Get(ctx, destSecretKey, destSecret)
+	assert.Error(t, err, "expected destination Secret NOT to be created when rotation is stuck")
+	assert.True(t, apierrors.IsNotFound(err), "expected NotFound error")
+
+	// 4. Resource status remains unchanged (rotation did not complete)
+	updated := &secretsv1beta1.VaultDynamicSecret{}
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: "rotation-stuck", Namespace: "default"}, updated))
+	assert.Equal(t, ts.Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation, "expected LastVaultRotation unchanged")
+
+	// 5. Prove polling actually occurred: multiple Vault reads to the expected path
+	assert.GreaterOrEqual(t, len(mockVaultClient.Requests), 2, "expected multiple Vault reads due to rotation-period polling")
+	assert.Equal(t, http.MethodGet, mockVaultClient.Requests[0].Method, "expected first request to be GET")
+	assert.Equal(t, "database/static-creds/stuck-role", mockVaultClient.Requests[0].Path, "expected request path to be the database secret path")
+	// Verify all requests are to the same path (no unexpected calls)
+	for i, req := range mockVaultClient.Requests {
+		assert.Equalf(t, "database/static-creds/stuck-role", req.Path, "request %d: expected all paths to match", i)
+	}
+
+	// 6. Verify side effects: object added to SyncRegistry and BackOffRegistry has the entry
+	assert.True(t, r.SyncRegistry.Has(req.NamespacedName), "expected object to be in SyncRegistry after RotationInProgressError")
+	entry, created := r.BackOffRegistry.Get(req.NamespacedName)
+	assert.False(t, created, "expected BackOffRegistry entry to already exist after Reconcile")
+	assert.NotNil(t, entry, "expected BackOffRegistry to have entry for the object")
+}
+
+// testClientFactory is a test stub that implements vault.ClientFactory
+type testClientFactory struct {
+	client vault.Client
+}
+
+func (f *testClientFactory) Get(context.Context, client.Client, client.Object) (vault.Client, error) {
+	return f.client, nil
+}
+
+func (f *testClientFactory) RegisterClientCallbackHandler(vault.ClientCallbackHandler) {
+	// no-op for tests
+}
+
+// testVaultClient wraps MockRecordingVaultClient to implement the full vault.Client interface for testing
+type testVaultClient struct {
+	*vault.MockRecordingVaultClient
+}
+
+func (c *testVaultClient) Init(context.Context, client.Client, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection, string, *vault.ClientOptions) error {
+	return nil
+}
+
+func (c *testVaultClient) Login(context.Context, client.Client) error {
+	return nil
+}
+
+func (c *testVaultClient) Restore(context.Context, *api.Secret) error {
+	return nil
+}
+
+func (c *testVaultClient) GetTokenSecret() *api.Secret {
+	return nil
+}
+
+func (c *testVaultClient) CheckExpiry(int64) (bool, error) {
+	return false, nil
+}
+
+func (c *testVaultClient) Validate(context.Context) error {
+	return nil
+}
+
+func (c *testVaultClient) GetVaultAuthObj() *secretsv1beta1.VaultAuth {
+	return nil
+}
+
+func (c *testVaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection {
+	return nil
+}
+
+func (c *testVaultClient) GetCredentialProvider() provider.CredentialProviderBase {
+	return nil
+}
+
+func (c *testVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
+	return "test-cache-key", nil
+}
+
+func (c *testVaultClient) Close(bool) {
+	// no-op
+}
+
+func (c *testVaultClient) Clone(string) (vault.Client, error) {
+	return c, nil
+}
+
+func (c *testVaultClient) IsClone() bool {
+	return false
+}
+
+func (c *testVaultClient) Namespace() string {
+	return ""
+}
+
+func (c *testVaultClient) SetNamespace(string) {
+	// no-op
+}
+
+func (c *testVaultClient) Tainted() bool {
+	return false
+}
+
+func (c *testVaultClient) Untaint() bool {
+	return true
+}
+
+func (c *testVaultClient) WebsocketClient(string) (*vault.WebsocketClient, error) {
+	return nil, nil
+}
+
+func (c *testVaultClient) Renewable() bool {
+	return true
 }

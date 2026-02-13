@@ -336,8 +336,10 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// Check if this is a rotation-in-progress error (special handling)
 		var rotErr *RotationInProgressError
 		if errors.As(err, &rotErr) {
-			// Rotation is in progress; requeue with short fixed delay (no backoff escalation)
-			horizon := time.Second * 5
+			// Rotation is in progress; requeue with backoff like other sync errors (avoid hammering Vault)
+			r.SyncRegistry.Add(req.NamespacedName)
+			entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+			horizon := entry.NextBackOff()
 			r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonSecretRotated,
 				"Static creds rotation in progress (ttl=%d); will retry in %s", rotErr.TTL, horizon)
 
@@ -614,19 +616,19 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 	// short capped backoff until last_vault_rotation changes from the initial value.
 	// Only poll if:
 	//   1. rotation_schedule is empty (rotation_period mode)
-	//   2. TTL <= 2 (rotation likely in progress)
+	//   2. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
 	//   3. last_vault_rotation is initialized (not 0)
-	//   4. we're still in the same rotation as last sync (LastVaultRotation hasn't changed yet)
+	//   4. TTL <= 2 (rotation likely in progress)
 	if staticCredsMeta.RotationSchedule == "" &&
-		staticCredsMeta.TTL <= 2 &&
+		inLastSyncRotation &&
 		staticCredsMeta.LastVaultRotation != 0 &&
-		inLastSyncRotation {
-		// TTL<=2 detected for rotation_period static creds; treating as rotation in progress.
+		staticCredsMeta.TTL <= 2 {
+		// Rotation in progress detected; polling for rotation completion.
 		logger.V(consts.LogLevelDebug).Info(
-			"static creds rotation_period: ttl<=2, waiting for last_vault_rotation to advance",
+			"Static credentials rotation in progress",
 			"currentLastVaultRotation", staticCredsMeta.LastVaultRotation,
 			"ttl", staticCredsMeta.TTL,
-			"ttl_zero_wait", true,
+			"ttlZeroWait", true,
 		)
 
 		// Set up a short capped backoff to wait for rotation to complete.
@@ -636,10 +638,8 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		)
 
 		initialLastVaultRotation := staticCredsMeta.LastVaultRotation
-		attemptCount := 0
 		if err := backoff.Retry(
 			func() error {
-				attemptCount++
 				resp, err = r.doVault(ctx, c, o)
 				if err != nil {
 					return backoff.Permanent(err)
@@ -653,12 +653,11 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 				// Check if rotation has completed (last_vault_rotation changed).
 				if newStaticCredsMeta.LastVaultRotation != initialLastVaultRotation {
 					logger.V(consts.LogLevelDebug).Info(
-						"Rotation completed for rotation_period static creds",
+						"Rotation completed for periodic static credentials",
 						"oldLastVaultRotation", initialLastVaultRotation,
 						"newLastVaultRotation", newStaticCredsMeta.LastVaultRotation,
 						"newTTL", newStaticCredsMeta.TTL,
-						"attempts", attemptCount,
-						"ttl_zero_wait", true,
+						"ttlZeroWait", true,
 					)
 					staticCredsMeta = newStaticCredsMeta
 					return nil
@@ -669,20 +668,18 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 
 				// Rotation still in progress, retry.
 				logger.V(consts.LogLevelTrace).Info(
-					"Rotation still in progress for rotation_period static creds",
+					"Rotation still in progress for periodic static credentials",
 					"lastVaultRotation", newStaticCredsMeta.LastVaultRotation,
 					"ttl", newStaticCredsMeta.TTL,
-					"attempt", attemptCount,
 				)
 				return errors.New("rotation in progress, last_vault_rotation unchanged")
 			}, bo); err != nil {
 			// Timeout waiting for rotation completion.
 			logger.V(consts.LogLevelDebug).Info(
-				"Timeout waiting for rotation_period static creds rotation to complete",
+				"Timeout waiting for periodic static credentials rotation",
 				"lastVaultRotation", staticCredsMeta.LastVaultRotation,
 				"ttl", staticCredsMeta.TTL,
-				"attempts", attemptCount,
-				"ttl_zero_wait", true,
+				"ttlZeroWait", true,
 			)
 			// Return the best-known meta/resp with RotationInProgressError for special handling.
 			return staticCredsMeta, resp, &RotationInProgressError{
