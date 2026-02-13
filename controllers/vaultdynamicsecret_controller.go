@@ -46,8 +46,13 @@ const (
 
 // staticCredsJitterHorizon should be used when computing the jitter
 // duration for the static-creds rotation time horizon.
+//
+// rotationPeriodPollMaxElapsed and rotationPeriodPollMaxInterval control the
+// backoff behavior when polling for rotation_period static-creds with TTL<=2.
 var (
-	staticCredsJitterHorizon = time.Second * 3
+	staticCredsJitterHorizon          = time.Second * 3
+	rotationPeriodPollMaxElapsed      = time.Second * 30
+	rotationPeriodPollMaxInterval     = time.Second * 2
 	vdsJitterFactor          = 0.05
 	staticTransOpt           = &helpers.SecretTransformationOption{
 		Excludes: []string{
@@ -602,8 +607,12 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 
 	// Handle rotation_period-only mode (no rotation_schedule) when TTL is near/at zero.
 	// TTL<=2 indicates that a rotation is currently in progress. We retry with
-	// short capped backoff until last_vault_rotation changes.
-	if staticCredsMeta.RotationSchedule == "" && staticCredsMeta.TTL <= 2 {
+	// short capped backoff until last_vault_rotation changes from the initial value.
+	// However, if last_vault_rotation has already changed from the last sync, return immediately.
+	lastSyncRotation := o.Status.StaticCredsMetaData.LastVaultRotation
+	rotationAlreadyHappened := staticCredsMeta.LastVaultRotation != lastSyncRotation
+	
+	if staticCredsMeta.RotationSchedule == "" && staticCredsMeta.TTL <= 2 && !rotationAlreadyHappened {
 		// TTL<=2 detected for rotation_period static creds; treating as rotation in progress.
 		logger.V(consts.LogLevelDebug).Info(
 			"static creds rotation_period: ttl<=2, waiting for last_vault_rotation to advance",
@@ -614,8 +623,8 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 
 		// Set up a short capped backoff to wait for rotation to complete.
 		bo := backoff.NewExponentialBackOff(
-			backoff.WithMaxElapsedTime(time.Second*30), // max 30s total wait
-			backoff.WithMaxInterval(time.Second*2),      // max 2s between retries
+			backoff.WithMaxElapsedTime(rotationPeriodPollMaxElapsed),
+			backoff.WithMaxInterval(rotationPeriodPollMaxInterval),
 		)
 
 		initialLastVaultRotation := staticCredsMeta.LastVaultRotation
