@@ -110,11 +110,6 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 		return fmt.Errorf("failed to create websocket client: %w", err)
 	}
 
-	conn, err := wsClient.Connect(ctx)
-	if err != nil {
-		return err
-	}
-
 	watchCtx, cancel := context.WithCancel(context.Background())
 	stoppedCh := make(chan struct{}, 1)
 	updatedMeta := &eventWatcherMeta{
@@ -136,7 +131,7 @@ func EnsureEventWatcher(ctx context.Context, cfg *InstantUpdateConfig) error {
 	}
 
 	// launch the goroutine to watch events
-	go cfg.getEvents(watchCtx, obj, conn, stoppedCh)
+	go cfg.getEvents(watchCtx, obj, wsClient, stoppedCh)
 
 	return nil
 }
@@ -157,15 +152,12 @@ func UnwatchEvents(registry *eventWatcherRegistry, obj client.Object) {
 	}
 }
 
-// getEvents streams event notifications from Vault and handles errors and retries
-func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, conn *websocket.Conn, stoppedCh chan struct{}) {
+// getEvents calls streamSecretEvents in a loop and handles retries/reconnects.
+func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, wsClient *vault.WebsocketClient, stoppedCh chan struct{}) {
 	logger := log.FromContext(ctx).WithName("getEvents")
 	name := client.ObjectKeyFromObject(o)
 	defer func() {
 		cfg.Registry.Delete(name)
-		if conn != nil {
-			conn.Close(websocket.StatusNormalClosure, "closing websocket watcher")
-		}
 		close(stoppedCh)
 	}()
 
@@ -174,8 +166,6 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 
 	shouldBackoff := false
 	errorCount := 0
-
-	cfg.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
 
 	for {
 		select {
@@ -193,83 +183,86 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				time.Sleep(nextBackoff)
 			}
 
-			select {
-			case <-ctx.Done():
-				logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
+			err := cfg.streamSecretEvents(ctx, o, wsClient)
+			if err == nil {
+				shouldBackoff = false
+				errorCount = 0
+				retryBackoff.Reset()
+				continue
+			}
+			if ctx.Err() != nil {
 				return
-			default:
-				msgType, data, err := conn.Read(ctx)
-				if err != nil {
-					if ctx.Err() != nil {
-						return
-					}
+			}
 
-					logger.Error(err, "Websocket watcher read failed", "object", name)
-					cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
-						"Error while watching events: %s", err)
-					errorCount++
-					shouldBackoff = true
+			errorCount++
+			shouldBackoff = true
 
-					if errorCount >= InstantUpdateErrorThreshold {
-						logger.Error(err, "Too many errors while watching events, requeuing")
-						cfg.enqueueForReconcile(name)
-						return
-					}
+			cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+				"Error while watching events: %s", err)
 
-					// attempt to reconnect to the websocket upon error
-					newClient, newConn, reconnectErr := cfg.reloadClientAndReconnect(ctx, o)
-					if reconnectErr != nil {
-						logger.Error(reconnectErr, "Failed to reconnect websocket watcher", "object", name)
-						continue
-					}
-					if conn != nil {
-						conn.Close(websocket.StatusNormalClosure, "closing websocket watcher")
-					}
+			if errorCount >= InstantUpdateErrorThreshold {
+				logger.Error(err, "Too many errors while watching events, requeuing")
+				cfg.enqueueForReconcile(name)
+				return
+			}
 
-					conn = newConn
-					cfg.Client = newClient
-					if meta, ok := cfg.Registry.Get(name); ok {
-						meta.LastClientID = newClient.ID()
-					}
+			newClient, newWSClient, reconnectErr := cfg.reloadClientAndReconnect(ctx, o)
+			if reconnectErr != nil {
+				logger.Error(reconnectErr, "Failed to reconnect websocket watcher", "object", name)
+				continue
+			}
 
-					shouldBackoff = false
-					errorCount = 0
-					retryBackoff.Reset()
-					continue
-				}
+			wsClient = newWSClient
+			cfg.Client = newClient
+			if meta, ok := cfg.Registry.Get(name); ok {
+				meta.LastClientID = newClient.ID()
+			}
 
-				matched := false
-				matched, err = cfg.streamSecretEvents(ctx, o, msgType, data)
-				if err == nil {
-					if matched {
-						cfg.enqueueForReconcile(name)
-					}
-					shouldBackoff = false
-					errorCount = 0
-					retryBackoff.Reset()
-					continue
-				}
+			shouldBackoff = false
+			errorCount = 0
+			retryBackoff.Reset()
+		}
+	}
+}
 
-				errorCount++
-				shouldBackoff = true
+// streamSecretEvents connects to Vault's websocket and streams events until an error occurs.
+func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, o client.Object, wsClient *vault.WebsocketClient) error {
+	logger := log.FromContext(ctx).WithName("streamSecretEvents")
+	name := client.ObjectKeyFromObject(o)
 
-				// For any other errors, we emit the error as an event on the
-				// VSS/VDS and try again with backoff.
-				cfg.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
-					"Error while watching events: %s", err)
+	conn, err := wsClient.Connect(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to vault websocket: %w", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "closing event watcher")
 
-				if errorCount >= InstantUpdateErrorThreshold {
-					logger.Error(err, "Too many errors while watching events, requeuing")
-					cfg.enqueueForReconcile(name)
-					return
-				}
+	cfg.Recorder.Event(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted, "Started watching events")
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.V(consts.LogLevelDebug).Info("Context done, closing websocket", "object", name)
+			return nil
+		default:
+			_, data, err := conn.Read(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to read from websocket: %w", err)
+			}
+
+			matched, err := cfg.matchSecretEvent(ctx, o, data)
+			if err != nil {
+				return err
+			}
+			if matched {
+				cfg.enqueueForReconcile(name)
 			}
 		}
 	}
 }
 
-func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj client.Object, _ websocket.MessageType, data []byte) (bool, error) {
-	logger := log.FromContext(ctx).WithName("streamSecretEvents")
+// matchSecretEvent matches a Vault event with the corresponding secret to determine if it should trigger a reconcile
+func (cfg *InstantUpdateConfig) matchSecretEvent(ctx context.Context, obj client.Object, data []byte) (bool, error) {
+	logger := log.FromContext(ctx).WithName("matchSecretEvent")
 
 	message := vaultEventMessage{}
 	if err := json.Unmarshal(data, &message); err != nil {
@@ -320,8 +313,8 @@ func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj clie
 	return true, nil
 }
 
-// reloadClientAndReconnect reloads the vault client and reconnects to the websocket
-func (cfg *InstantUpdateConfig) reloadClientAndReconnect(ctx context.Context, obj client.Object) (vault.Client, *websocket.Conn, error) {
+// reloadClientAndReconnect reloads the vault client and returns a fresh websocket client.
+func (cfg *InstantUpdateConfig) reloadClientAndReconnect(ctx context.Context, obj client.Object) (vault.Client, *vault.WebsocketClient, error) {
 	newClient, err := cfg.NewClientFunc(ctx, obj)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to reload vault client: %w", err)
@@ -332,12 +325,7 @@ func (cfg *InstantUpdateConfig) reloadClientAndReconnect(ctx context.Context, ob
 		return nil, nil, fmt.Errorf("failed to create websocket client: %w", err)
 	}
 
-	conn, err := wsClient.Connect(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return newClient, conn, nil
+	return newClient, wsClient, nil
 }
 
 // enqueueForReconcile enqueues an object for reconciliation
