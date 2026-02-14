@@ -153,7 +153,7 @@ func TestStreamSecretEvents(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			matched, err := cfg.streamSecretEvents(context.Background(), tt.obj, tt.eventJSON)
+			matched, err := cfg.matchSecretEvent(context.Background(), tt.obj, tt.eventJSON)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantMatch, matched)
 		})
