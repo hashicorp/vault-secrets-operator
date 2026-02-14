@@ -128,6 +128,26 @@ func TestStreamSecretEvents(t *testing.T) {
 			wantMatch: false,
 		},
 		{
+			name: "vds-match",
+			obj:  vds,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+				"db/creds/app",
+				vds.Spec.Namespace,
+			)),
+			wantMatch: true,
+		},
+		{
+			name: "vds-path-mismatch",
+			obj:  vds,
+			eventJSON: []byte(fmt.Sprintf(
+				`{"data":{"event":{"metadata":{"path":"%s","modified":"true"}},"namespace":"/%s"}}`,
+				"db/creds/other",
+				vds.Spec.Namespace,
+			)),
+			wantMatch: false,
+		},
+		{
 			name: "modified-missing",
 			obj:  vssKVV2,
 			eventJSON: []byte(fmt.Sprintf(
