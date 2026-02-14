@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"nhooyr.io/websocket"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -154,7 +153,7 @@ func TestStreamSecretEvents(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			matched, err := cfg.streamSecretEvents(context.Background(), tt.obj, websocket.MessageText, tt.eventJSON)
+			matched, err := cfg.streamSecretEvents(context.Background(), tt.obj, tt.eventJSON)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantMatch, matched)
 		})

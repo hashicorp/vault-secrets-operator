@@ -239,7 +239,7 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				}
 
 				matched := false
-				matched, err = cfg.streamSecretEvents(ctx, o, msgType, data)
+				matched, err = cfg.streamSecretEvents(ctx, o, data)
 				if err == nil {
 					if matched {
 						cfg.enqueueForReconcile(name)
@@ -268,7 +268,7 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 	}
 }
 
-func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj client.Object, _ websocket.MessageType, data []byte) (bool, error) {
+func (cfg *InstantUpdateConfig) streamSecretEvents(ctx context.Context, obj client.Object, data []byte) (bool, error) {
 	logger := log.FromContext(ctx).WithName("streamSecretEvents")
 
 	message := vaultEventMessage{}
