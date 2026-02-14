@@ -518,6 +518,22 @@ _Appears in:_
 | `keyName` _string_ | KeyName to use for encrypt/decrypt operations via Vault Transit. |  |  |
 
 
+#### SyncConfig
+
+
+
+SyncConfig configures sync behavior from Vault to VSO
+
+
+
+_Appears in:_
+- [VaultStaticSecretSpec](#vaultstaticsecretspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this VaultStaticSecret |  |  |
+
+
 #### Template
 
 
@@ -1380,28 +1396,12 @@ _Appears in:_
 | `hmacSecretData` _boolean_ | HMACSecretData determines whether the Operator computes the<br />HMAC of the Secret's data. The MAC value will be stored in<br />the resource's Status.SecretMac field, and will be used for drift detection<br />and during incoming Vault secret comparison.<br />Enabling this feature is recommended to ensure that Secret's data stays consistent with Vault. | true |  |
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets will be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
-| `syncConfig` _[VaultStaticSecretSyncConfig](#vaultstaticsecretsyncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
+| `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
 
-
-
-#### VaultStaticSecretSyncConfig
-
-
-
-VaultStaticSecretSyncConfig configures sync behavior from Vault to VSO
-
-
-
-_Appears in:_
-- [VaultStaticSecretSpec](#vaultstaticsecretspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this VaultStaticSecret |  |  |
 
 
