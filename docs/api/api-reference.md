@@ -531,7 +531,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this VaultStaticSecret |  |  |
+| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this VaultStaticSecret or VaultDynamicSecret |  |  |
 
 
 #### Template
