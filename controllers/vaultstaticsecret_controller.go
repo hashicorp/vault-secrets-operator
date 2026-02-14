@@ -116,38 +116,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// we can ignore the error here, since it was handled above in the Get() call.
 	clientCacheKey, _ := c.GetCacheKey()
-	lastClientCacheKey := o.Status.VaultClientMeta.CacheKey
-	lastClientID := o.Status.VaultClientMeta.ID
 
 	// update the VaultClientMeta in the resource's status.
 	o.Status.VaultClientMeta.CacheKey = clientCacheKey.String()
 	o.Status.VaultClientMeta.ID = c.ID()
-
-	var syncReason string
-	switch {
-	// indicates that the resource has not been synced yet.
-	case o.Status.LastGeneration == 0:
-		syncReason = consts.ReasonInitialSync
-	// indicates that the resource has been updated since the last sync.
-	case o.GetGeneration() != o.Status.LastGeneration:
-		syncReason = consts.ReasonResourceUpdated
-	// indicates that the destination secret does not exist and the resource is configured to create it.
-	case o.Spec.Destination.Create && !destExists:
-		syncReason = consts.ReasonInexistentDestination
-	// indicates that the cache key has changed since the last sync. This can happen
-	// when the VaultAuth or VaultConnection objects are updated since the last sync.
-	case lastClientCacheKey != "" && lastClientCacheKey != o.Status.VaultClientMeta.CacheKey:
-		syncReason = consts.ReasonVaultClientConfigChanged
-	// indicates that the Vault client ID has changed since the last sync. This can
-	// happen when the client has re-authenticated to Vault since the last sync.
-	case lastClientID != "" && lastClientID != o.Status.VaultClientMeta.ID:
-		syncReason = consts.ReasonVaultTokenRotated
-	// indicates that the secret has been changed in Vault since the last sync.
-	case o.GetGeneration() > 0:
-		syncReason = consts.ReasonSecretRotated
-	default:
-		syncReason = consts.ReasonSecretSynced
-	}
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
@@ -496,6 +468,8 @@ eventLoop:
 				// again.
 				r.Recorder.Eventf(&o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
 					"Error while watching events: %s", err)
+
+				logger.Error(err, "Error while watching events", "namespace", o.Namespace, "name", o.Name)
 
 				if errorCount >= errorThreshold {
 					logger.Error(err, "Too many errors while watching events, requeuing")
