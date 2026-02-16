@@ -85,6 +85,11 @@ spec:
   template:
     metadata:
       name: {{ printf "%s-%s" "upgrade-crds" (include "vso.chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+      labels:
+        app.kubernetes.io/component: controller-manager
+      {{- if  .Values.controller.extraLabels }}
+        {{- toYaml .Values.controller.extraLabels | nindent 8 }}
+      {{- end }}
     spec:
       serviceAccountName: {{ template "vso.chart.fullname" . }}-upgrade-crds
       securityContext:
