@@ -122,7 +122,7 @@ resource "vault_database_secret_backend_static_role" "postgres" {
   name                = local.db_role_static
   db_name             = vault_database_secrets_mount.db.postgresql[0].name
   username            = local.db_role_static_user
-  rotation_statements = ["ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
+  rotation_statements = ["SELECT pg_sleep(10); ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
   rotation_period     = 30
   depends_on = [
     null_resource.create-pg-user,

@@ -575,20 +575,18 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 
 	// if we are not handling static creds or the rotation schedule is not set, then
 	// we can return early.
-	if !r.isStaticCreds(staticCredsMeta) || staticCredsMeta.RotationSchedule == "" {
+	if !r.isStaticCreds(staticCredsMeta) {
 		return staticCredsMeta, resp, nil
 	}
 
 	lastSyncStaticCredsMeta := o.Status.StaticCredsMetaData.DeepCopy()
 	inLastSyncRotation := lastSyncStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation
+	isScheduled := staticCredsMeta.RotationSchedule != ""
 	switch {
 	case !inLastSyncRotation:
 		// return early, not in the last rotation
 		return staticCredsMeta, resp, nil
-	case lastSyncStaticCredsMeta.RotationSchedule == "":
-		// return early, rotation schedule was not set in the last sync
-		return staticCredsMeta, resp, nil
-	case lastSyncStaticCredsMeta.RotationSchedule != staticCredsMeta.RotationSchedule:
+	case isScheduled && lastSyncStaticCredsMeta.RotationSchedule != staticCredsMeta.RotationSchedule:
 		// return early, rotation schedule has changed
 		return staticCredsMeta, resp, nil
 	}
@@ -605,7 +603,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		// Ideally we could use the rotation's TTL value here, but that value is not
 		// considered to be reliable to the TTL roll-over bug that might exist in the database
 		// secrets engine.
-		backoff.WithMaxElapsedTime(time.Second*10),
+		backoff.WithMaxElapsedTime(time.Second*30),
 		backoff.WithMaxInterval(time.Second*2))
 	if err := backoff.Retry(
 		func() error {
