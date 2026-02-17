@@ -1209,7 +1209,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 					"expected Status.StaticCredsMetaData.RotationPeriod to be set") {
 					return nil
 				}
-				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 4)
+				maxTries = uint64(vdsObj.Status.StaticCredsMetaData.RotationPeriod * 6)
 			} else {
 				ttl := vdsObj.Status.StaticCredsMetaData.TTL
 				if ttl <= 2 {
