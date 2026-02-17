@@ -99,6 +99,7 @@ resource "vault_database_secrets_mount" "db" {
     allowed_roles = [
       local.db_role,
       local.db_role_static,
+      local.db_role_static_delayed,
       # optionally created since vault 1.14 does not support scheduled static roles.
       local.db_role_static_scheduled,
     ]
@@ -120,6 +121,19 @@ resource "vault_database_secret_backend_static_role" "postgres" {
   namespace           = local.namespace
   backend             = vault_database_secrets_mount.db.path
   name                = local.db_role_static
+  db_name             = vault_database_secrets_mount.db.postgresql[0].name
+  username            = local.db_role_static_user
+  rotation_statements = ["ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
+  rotation_period     = 30
+  depends_on = [
+    null_resource.create-pg-user,
+  ]
+}
+
+resource "vault_database_secret_backend_static_role" "postgres-delayed" {
+  namespace           = local.namespace
+  backend             = vault_database_secrets_mount.db.path
+  name                = local.db_role_static_delayed
   db_name             = vault_database_secrets_mount.db.postgresql[0].name
   username            = local.db_role_static_user
   rotation_statements = ["SELECT pg_sleep(10); ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
@@ -151,6 +165,9 @@ path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_back
   capabilities = ["read"]
 }
 path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
+  capabilities = ["read"]
+}
+path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres-delayed.name}" {
   capabilities = ["read"]
 }
 EOT
