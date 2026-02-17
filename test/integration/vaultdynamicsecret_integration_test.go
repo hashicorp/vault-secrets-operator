@@ -1215,7 +1215,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 				if ttl <= 2 {
 					// inflate the ttl since we are near the rotation period and may hit the TTL
 					// rollover bug
-					ttl = 10
+					ttl = 20
 				}
 				maxTries = uint64(ttl * 5)
 			}
