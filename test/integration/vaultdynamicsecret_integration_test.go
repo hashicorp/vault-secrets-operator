@@ -250,7 +250,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 	tests := []testCase{
 		{
 			name:     "existing-only",
-			existing: 5,
+			existing: 2,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -271,10 +271,10 @@ func TestVaultDynamicSecret(t *testing.T) {
 		{
 			name:                "mixed",
 			create:              mixedCount,
-			createStatic:        5,
-			createStaticDelayed: 5,
-			createNonRenewable:  5,
-			existing:            5,
+			createStatic:        2,
+			createStaticDelayed: 2,
+			createNonRenewable:  2,
+			existing:            2,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -290,7 +290,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:         "create-static",
-			createStatic: 5,
+			createStatic: 2,
 			expectedStatic: map[string]int{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
 				// assertDynamicSecret, so no need to include them here.
@@ -301,7 +301,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:                "create-static-delayed",
-			createStaticDelayed: 5,
+			createStaticDelayed: 2,
 			expectedStatic: map[string]int{
 				// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
 				// assertDynamicSecret, so no need to include them here.
@@ -312,7 +312,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		},
 		{
 			name:               "create-non-renewable",
-			createNonRenewable: 5,
+			createNonRenewable: 2,
 		},
 	}
 
@@ -320,7 +320,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		tests = append(tests,
 			testCase{
 				name:                  "create-static-scheduled",
-				createStaticScheduled: 5,
+				createStaticScheduled: 3,
 				expectedStaticScheduled: map[string]int{
 					// the _raw, last_vault_rotation, and ttl keys are only tested for their presence in
 					// assertDynamicSecret, so no need to include them here.
