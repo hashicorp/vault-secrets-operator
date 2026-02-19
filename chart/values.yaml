@@ -173,6 +173,15 @@ controller:
         cpu: 5m
         memory: 64Mi
 
+    # Defines additional commandline arguments to be passed to the kube-rbac-proxy container.
+    # Example:
+    # ```yaml
+    # extraArgs:
+    #   - --client-ca-file=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    # ```
+    # @type: array
+    extraArgs: []
+
   # Image pull secret to use for private container registry authentication which will be applied to the controllers
   # service account. Alternatively, the value may be specified as an array of strings.
   # Example:
