@@ -365,7 +365,7 @@ clientCache numLocks
 */}}
 {{- define "vso.clientCacheNumLocks" -}}
 {{- with .Values.controller.manager.clientCache -}}
-{{- if or .numLocks (eq .numLocks 0) -}}
+{{- if hasKey . "numLocks" -}}
 --client-cache-num-locks={{ .numLocks }}
 {{- end -}}
 {{- end -}}
