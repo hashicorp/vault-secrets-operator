@@ -58,6 +58,25 @@ function checkVersion {
  done
 }
 
+# checkVersionGrep checks for a version string in a non-YAML file using grep
+# args: filename, version, pattern (grep extended regex that should match lines containing the version)
+function checkVersionGrep {
+ local filename="${1}"
+ local version="${2}"
+ local pattern="${3}"
+ if ! [ -e "${filename}" ]; then
+   echo "${filename} file does not exist'" >&2
+   _result=1
+   return 1
+ fi
+
+ echo "  * Expect version ${version} in ${filename} pattern='${pattern}'"
+ if ! grep -qE "${pattern}.*${version}" "${filename}"; then
+   echo "grep pattern '${pattern}.*${version}' not found in ${filename}" >&2
+   _result=1
+ fi
+}
+
 echo "* Checking VSO images versions"
 checkVersion "${CHART_ROOT}/Chart.yaml" "${VERSION}" .version .appVersion
 checkVersion "${CHART_ROOT}/values.yaml" "${VERSION}" .controller.manager.image.tag
@@ -74,5 +93,11 @@ echo "* Checking VSO-CSI related image versions"
 checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_DRIVER_VERSION}" .csi.driver.image.tag
 checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION}" .csi.nodeDriverRegistrar.image.tag
 checkVersion "${CHART_ROOT}/values.yaml" "${VSO_CSI_LIVENESS_PROBE_VERSION}" .csi.livenessProbe.image.tag
+
+# check VSO-CSI related versions in non-YAML files
+MAKEFILE_ROOT="${MAKEFILE_ROOT-$(readlink -f ${ROOT_DIR}/..)}"
+TEST_ROOT="${TEST_ROOT-$(readlink -f ${ROOT_DIR}/../test)}"
+checkVersionGrep "${MAKEFILE_ROOT}/Makefile" "${VSO_CSI_DRIVER_VERSION}" "^VSO_CSI_DRIVER_VERSION \?="
+checkVersionGrep "${TEST_ROOT}/unit/csi-driver.bats" "${VSO_CSI_DRIVER_VERSION}" "hashicorp/vault-secrets-operator-csi:"
 
 exit $_result

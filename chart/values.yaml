@@ -197,7 +197,7 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 1.2.0
+      tag: 1.3.0
 
     # logging
     logging:
@@ -1049,7 +1049,7 @@ csi:
       # The Docker repository of the CSI driver image.
       repository: hashicorp/vault-secrets-operator-csi
       # The version of the CSI driver image to download.
-      tag: 1.0.1
+      tag: 1.0.2
 
     # Additional environment variables for the
     # CSI driver container.
