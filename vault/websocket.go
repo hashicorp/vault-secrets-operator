@@ -110,3 +110,9 @@ func (w *WebsocketClient) Connect(ctx context.Context) (*websocket.Conn, error) 
 
 	return conn, nil
 }
+
+// Namespace returns the namespace associated with the client.
+// If no namespace is set, an empty string is returned.
+func (w *WebsocketClient) Namespace() string {
+	return w.Headers.Get(api.NamespaceHeaderName)
+}
