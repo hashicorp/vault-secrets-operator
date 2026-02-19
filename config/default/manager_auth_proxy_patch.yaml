@@ -1,4 +1,4 @@
-# Copyright (c) HashiCorp, Inc.
+# Copyright IBM Corp. 2022, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
 # This patch inject a sidecar container which is a HTTP proxy for the

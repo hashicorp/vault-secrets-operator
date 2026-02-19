@@ -1,7 +1,6 @@
 #!/usr/bin/env bats
-
 #
-# Copyright (c) HashiCorp, Inc.
+# Copyright IBM Corp. 2022, 2026
 # SPDX-License-Identifier: BUSL-1.1
 #
 

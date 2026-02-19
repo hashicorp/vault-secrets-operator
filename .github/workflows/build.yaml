@@ -67,6 +67,7 @@ jobs:
           make generate manifests
           if [ -n "$(git status --porcelain)" ]; then
             echo "Generated manifests are out of date. Please run 'make generate manifests' and commit the changes."
+            git diff
             exit 1
           fi
       - name: go vet
