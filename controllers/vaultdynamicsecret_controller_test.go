@@ -1271,17 +1271,13 @@ func (s *vaultResponse) SecretK8sData(_ *helpers.SecretTransformationOption) (ma
 }
 
 func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
-	tsVal := "2024-05-02T19:48:01.328261545Z"
-	ts, err := time.Parse(time.RFC3339Nano, tsVal)
-	if err != nil {
-		require.NoError(t, err)
-	}
+	tslVal0 := "2024-05-02T19:48:01.328261545Z"
+	ts0, err := time.Parse(time.RFC3339Nano, tslVal0)
+	require.NoError(t, err)
 
 	tsVal1 := "2024-05-02T19:49:01.325799425Z"
 	ts1, err := time.Parse(time.RFC3339Nano, tsVal1)
-	if err != nil {
-		require.NoError(t, err)
-	}
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	tests := []struct {
@@ -1335,7 +1331,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			c:    &vault.MockRecordingVaultClient{},
 			initialResponse: &vaultResponse{
 				data: map[string]any{
-					"last_vault_rotation": tsVal,
+					"last_vault_rotation": tslVal0,
 					"password":            "Y3pro72-fl1ndHTFOg9h",
 					"rotation_schedule":   "*/1 * * * *",
 					"rotation_window":     3600,
@@ -1347,14 +1343,14 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			o: &secretsv1beta1.VaultDynamicSecret{
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(),
+						LastVaultRotation: ts0.Unix(),
 						TTL:               55,
 					},
 				},
 			},
 			wantResponse: &vaultResponse{
 				data: map[string]any{
-					"last_vault_rotation": tsVal,
+					"last_vault_rotation": tslVal0,
 					"password":            "Y3pro72-fl1ndHTFOg9h",
 					"rotation_schedule":   "*/1 * * * *",
 					"rotation_window":     3600,
@@ -1363,7 +1359,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 				},
 			},
 			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: ts.Unix(),
+				LastVaultRotation: ts0.Unix(),
 				RotationSchedule:  "*/1 * * * *",
 				TTL:               59,
 			},
@@ -1388,7 +1384,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(),
+						LastVaultRotation: ts0.Unix(),
 						TTL:               59,
 					},
 				},
@@ -1430,7 +1426,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			},
 			initialResponse: &vaultResponse{
 				data: map[string]any{
-					"last_vault_rotation": tsVal,
+					"last_vault_rotation": tslVal0,
 					"password":            "Y3pro72-fl1ndHTFOg9h",
 					"rotation_period":     3600,
 					"ttl":                 2,
@@ -1444,7 +1440,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(),
+						LastVaultRotation: ts0.Unix(),
 						TTL:               59,
 					},
 				},
@@ -1475,7 +1471,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 				},
 				Status: secretsv1beta1.VaultDynamicSecretStatus{
 					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-						LastVaultRotation: ts.Unix(),
+						LastVaultRotation: ts0.Unix(),
 						RotationSchedule:  "*/1 * * * *",
 						TTL:               55,
 					},
@@ -1483,7 +1479,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			},
 			initialResponse: &vaultResponse{
 				data: map[string]any{
-					"last_vault_rotation": tsVal,
+					"last_vault_rotation": tslVal0,
 					"password":            "Y3pro72-fl1ndHTFOg9h",
 					"rotation_schedule":   "*/1 * * * *",
 					"rotation_window":     3600,
@@ -1512,7 +1508,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 					"mount/static-creds/scheduled": {
 						&vaultResponse{
 							data: map[string]any{
-								"last_vault_rotation": tsVal,
+								"last_vault_rotation": tslVal0,
 								"password":            "Y3pro72-fl1ndHTFOg9h",
 								"rotation_schedule":   "*/1 * * * *",
 								"rotation_window":     3600,
