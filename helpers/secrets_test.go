@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -185,7 +186,7 @@ func TestFindSecretsOwnedByObj(t *testing.T) {
 }
 
 func TestSyncSecret(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	ctx := context.Background()
 
@@ -504,6 +505,7 @@ func TestSyncSecret(t *testing.T) {
 								Kind:       tt.obj.Kind,
 								Name:       tt.obj.Name,
 								UID:        tt.obj.GetUID(),
+								Controller: ptr.To(true),
 							},
 						},
 					},
