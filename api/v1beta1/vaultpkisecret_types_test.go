@@ -96,6 +96,36 @@ func TestVaultPKISecret_GetIssuerAPIData(t *testing.T) {
 				"remove_roots_from_chain": true,
 			},
 		},
+		{
+			name: "remove-roots-false",
+			spec: VaultPKISecretSpec{
+				CommonName:       "qux",
+				AltNames:         []string{"foo", "baz"},
+				IPSans:           []string{"buz", "qux"},
+				URISans:          []string{"*.foo.net", "*.baz.net"},
+				OtherSans:        []string{"other1", "other2"},
+				UserIDs:          []string{"12345", "67890"},
+				TTL:              "30s",
+				NotAfter:         "2026-05-01T00:00:00Z",
+				Format:           "pem",
+				PrivateKeyFormat: "rsa",
+				RemoveRootsFromChain: false,
+			},
+			want: map[string]interface{}{
+				"common_name":             "qux",
+				"alt_names":               "foo,baz",
+				"ip_sans":                 "buz,qux",
+				"uri_sans":                "*.foo.net,*.baz.net",
+				"other_sans":              "other1,other2",
+				"user_ids":                "12345,67890",
+				"ttl":                     "30s",
+				"not_after":               "2026-05-01T00:00:00Z",
+				"exclude_cn_from_sans":    false,
+				"format":                  "pem",
+				"private_key_format":      "rsa",
+				"remove_roots_from_chain": false,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
