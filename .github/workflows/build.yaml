@@ -437,6 +437,7 @@ jobs:
           hcp-client-secret: ${{ secrets.HCP_CLIENT_SECRET }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           log-prefix: "latest-k8s-"
+          publish-swagger: "true"
 
   # This job is used as a requirement for the repo's branch protection setup.
   build-done:
