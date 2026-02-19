@@ -403,6 +403,7 @@ func main() {
 		)
 		vclient.MustRegisterClientMetrics(cfc.MetricsRegistry)
 		metrics.MustRegisterResourceStatus()
+		metrics.MustRegisterRolloutRestarts()
 
 		metric := prometheus.NewGauge(
 			prometheus.GaugeOpts{

@@ -39,6 +39,7 @@ const (
 	NameRequestsTotal         = "requests_total"
 	NameRequestsErrorsTotal   = "requests_errors_total"
 	NameTaintedClients        = "tainted_clients"
+	subsystemRolloutRestarts  = "rollout_restarts"
 )
 
 var ResourceStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -53,6 +54,25 @@ var ResourceStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 func MustRegisterResourceStatus() {
 	metrics.Registry.MustRegister(
 		ResourceStatus,
+	)
+}
+
+var RolloutRestartsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: prometheus.BuildFQName(
+		Namespace, subsystemRolloutRestarts, "total"),
+	Help: "Number of total rollout restarts.",
+}, []string{"namespace", "name", "target_name", "target_kind"})
+
+var RolloutRestartsErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: prometheus.BuildFQName(
+		Namespace, subsystemRolloutRestarts, "errors_total"),
+	Help: "Number of total rollout restarts.",
+}, []string{"namespace", "name", "target_name", "target_kind"})
+
+func MustRegisterRolloutRestarts() {
+	metrics.Registry.MustRegister(
+		RolloutRestartsTotal,
+		RolloutRestartsErrors,
 	)
 }
 
