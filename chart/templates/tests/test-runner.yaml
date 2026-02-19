@@ -19,5 +19,5 @@ metadata:
 spec:
   containers:
     - name: vault-operator-test
-      image: "{{ .Values.controller.manager.image.repository }}"
+      image: "{{ .Values.controller.manager.image.repository.tag }}"
 {{- end }}
