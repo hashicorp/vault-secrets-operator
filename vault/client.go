@@ -868,11 +868,32 @@ type MockRequest struct {
 
 var _ ClientBase = (*MockRecordingVaultClient)(nil)
 
+// MockRecordingVaultClient is a mock implementation of the Client interface that
+// records all requests made to it and returns pre-configured responses.
 type MockRecordingVaultClient struct {
-	ReadResponses  map[string][]Response
+	// ReadResponses is a map of path to a slice of Responses to return for Read
+	// requests. The slice allows for multiple responses to be returned for the same
+	// path, in the order they were added to the map. This is useful for testing
+	// scenarios where multiple requests are made to the same path, and different
+	// responses are expected for each request.
+	ReadResponses map[string][]Response
+	// WriteResponses is a map of path to a slice of Responses to return for Write
+	// requests. The slice allows for multiple responses to be returned for the same
+	// path, in the order they were added to the map. This is useful for testing
+	// scenarios where multiple requests are made to the same path, and different
+	// responses are expected for each request.
 	WriteResponses map[string][]Response
-	Requests       []*MockRequest
-	Id             string
+	// Requests is a slice of all requests made to this client, in the order they
+	// were received. This is useful for asserting that expected requests were made,
+	// and in the expected order.
+	Requests []*MockRequest
+	// Id is an optional identifier for this mock client, useful for distinguishing
+	// between multiple instances in tests.
+	Id string
+	// CheckPaths indicates whether to check for the presence of paths in the
+	// response maps, returning an error if not found. This is useful for ensuring
+	// that tests are properly configured with expected paths and responses.
+	CheckPaths bool
 }
 
 func (m *MockRecordingVaultClient) ID() string {
@@ -897,6 +918,8 @@ func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Respo
 		resp := resps[0]
 		resps = append(resps[:0], resps[1:]...)
 		return resp, nil
+	} else if m.CheckPaths {
+		return nil, fmt.Errorf("no responses for %q", s.Path())
 	}
 
 	return &defaultResponse{
@@ -921,6 +944,8 @@ func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Res
 		resp := resps[0]
 		resps = append(resps[:0], resps[1:]...)
 		return resp, nil
+	} else if m.CheckPaths {
+		return nil, fmt.Errorf("no responses for %q", s.Path())
 	}
 
 	return &defaultResponse{
