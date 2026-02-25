@@ -605,6 +605,8 @@ func TestVaultStaticSecret(t *testing.T) {
 	}
 }
 
+// Forward-looking regression guard for customer-reported EOF websocket events
+// with short Kubernetes auth TTLs, validated over repeated token renewal cycles.
 func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 	if testInParallel {
 		t.Parallel()
@@ -666,8 +668,8 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 
 	authClient := getVaultClient(t, outputs.AppVaultNamespace)
 
-	// Reproduce the short auth-token lifetime scenario:
-	// auth role max_ttl/default_ttl and auth mount max_ttl/default_ttl at 1m.
+	// Reproduce the reported short-lived Kubernetes auth token scenario by
+	// setting both the auth mount and auth role TTLs to 1 minute.
 	tunePath := fmt.Sprintf("sys/auth/%s/tune", outputs.AuthMount)
 	_, err = authClient.Logical().Write(tunePath, map[string]interface{}{
 		"default_lease_ttl": "1m",
@@ -771,7 +773,8 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 		vssObj.ObjectMeta.Namespace, expectedData)
 	require.NoError(t, err)
 
-	// Ensure the event watcher is up before beginning TTL cycle checks.
+	// Ensure the event watcher is active before validating behavior across
+	// token renewal boundaries.
 	require.NoError(t, backoff.Retry(func() error {
 		objEvents := corev1.EventList{}
 		err := crdClient.List(ctx, &objEvents,
@@ -790,8 +793,8 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-	// Wait through 3 TTL cycles and keep mutating the secret to verify
-	// event streaming still drives sync updates.
+	// Wait through 3 TTL cycles (~1 minute each) and mutate Vault data each
+	// cycle to verify websocket event streaming continues to drive sync updates.
 	for i := 1; i <= 3; i++ {
 		time.Sleep(70 * time.Second)
 
@@ -806,8 +809,8 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Allow a short settling window, then assert no EventWatcherError contains
-	// the websocket EOF signature.
+	// After the 3-cycle window, assert no EventWatcherError warning was emitted
+	// with the historical websocket EOF signatures.
 	time.Sleep(10 * time.Second)
 	objEvents := corev1.EventList{}
 	require.NoError(t, crdClient.List(ctx, &objEvents,
