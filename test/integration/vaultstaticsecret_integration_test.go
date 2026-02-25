@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -601,6 +602,230 @@ func TestVaultStaticSecret(t *testing.T) {
 
 			assert.Greater(t, count, 0, "no tests were run")
 		})
+	}
+}
+
+func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
+	if testInParallel {
+		t.Parallel()
+	}
+
+	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+	if !entTests {
+		t.Skip("Skipping because this test requires Vault Enterprise events support")
+	}
+
+	rootVaultClient := getVaultClient(t, "")
+	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
+		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
+	}
+
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.NoError(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultstaticsecret/terraform"), tempDir)
+	copyModulesDirT(t, tfDir)
+
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
+
+	tfOptions := setCommonTFOptions(t, &terraform.Options{
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_config_context": k8sConfigContext,
+			"vault_enterprise":   true,
+			"use_events":         true,
+		},
+	})
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+	t.Cleanup(func() {
+		if skipCleanup {
+			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
+			return
+		}
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
+		terraform.Destroy(t, tfOptions)
+		assert.NoError(t, os.RemoveAll(tempDir))
+	})
+
+	terraform.InitAndApply(t, tfOptions)
+
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.NoError(t, err)
+
+	var outputs vssK8SOutputs
+	require.NoError(t, json.Unmarshal(b, &outputs))
+
+	authClient := getVaultClient(t, outputs.AppVaultNamespace)
+
+	// Reproduce the short auth-token lifetime scenario:
+	// auth role max_ttl/default_ttl and auth mount max_ttl/default_ttl at 1m.
+	tunePath := fmt.Sprintf("sys/auth/%s/tune", outputs.AuthMount)
+	_, err = authClient.Logical().Write(tunePath, map[string]interface{}{
+		"default_lease_ttl": "1m",
+		"max_lease_ttl":     "1m",
+	})
+	require.NoError(t, err)
+
+	rolePath := fmt.Sprintf("auth/%s/role/%s", outputs.AuthMount, outputs.AuthRole)
+	roleConfig, err := authClient.Logical().Read(rolePath)
+	require.NoError(t, err)
+	require.NotNil(t, roleConfig)
+	require.NotNil(t, roleConfig.Data)
+
+	_, err = authClient.Logical().Write(rolePath, map[string]interface{}{
+		"bound_service_account_names":      roleConfig.Data["bound_service_account_names"],
+		"bound_service_account_namespaces": roleConfig.Data["bound_service_account_namespaces"],
+		"token_policies":                   roleConfig.Data["token_policies"],
+		"audience":                         roleConfig.Data["audience"],
+		"token_ttl":                        "1m",
+		"token_max_ttl":                    "1m",
+	})
+	require.NoError(t, err)
+
+	vaultConn := &secretsv1beta1.VaultConnection{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vaultconnection-short-ttl-events",
+			Namespace: outputs.AdminK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: testVaultAddress,
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultConn))
+	if !skipCleanup {
+		t.Cleanup(func() {
+			assert.NoError(t, crdClient.Delete(ctx, vaultConn))
+		})
+	}
+
+	vaultAuth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vaultauth-short-ttl-events",
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: ctrlclient.ObjectKeyFromObject(vaultConn).String(),
+			Namespace:          outputs.AppK8sNamespace,
+			Method:             "kubernetes",
+			Mount:              outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+			AllowedNamespaces: []string{outputs.AppK8sNamespace},
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+	if !skipCleanup {
+		t.Cleanup(func() {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		})
+	}
+
+	vssObj := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vaultstaticsecret-short-ttl-events",
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultAuthRef: ctrlclient.ObjectKeyFromObject(vaultAuth).String(),
+			Namespace:    outputs.AppVaultNamespace,
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: outputs.KVV2Mount,
+				Type:  consts.KVSecretTypeV2,
+				Path:  "short-ttl-events",
+			},
+			Destination: secretsv1beta1.Destination{
+				Name:   "short-ttl-events",
+				Create: true,
+			},
+			SyncConfig: &secretsv1beta1.SyncConfig{
+				InstantUpdates: true,
+			},
+			RefreshAfter: "1h",
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vssObj))
+	if !skipCleanup {
+		t.Cleanup(func() {
+			assert.NoError(t, crdClient.Delete(ctx, vssObj))
+		})
+	}
+
+	vClient := getVaultClient(t, outputs.AppVaultNamespace)
+	expectedData := map[string]interface{}{"value": "cycle-0"}
+	_, err = vClient.KVv2(outputs.KVV2Mount).Put(ctx, vssObj.Spec.Path, expectedData)
+	require.NoError(t, err)
+
+	_, err = waitForSecretData(t, ctx, crdClient, 60, time.Second, vssObj.Spec.Destination.Name,
+		vssObj.ObjectMeta.Namespace, expectedData)
+	require.NoError(t, err)
+
+	// Ensure the event watcher is up before beginning TTL cycle checks.
+	require.NoError(t, backoff.Retry(func() error {
+		objEvents := corev1.EventList{}
+		err := crdClient.List(ctx, &objEvents,
+			ctrlclient.InNamespace(vssObj.Namespace),
+			ctrlclient.MatchingFields{
+				"involvedObject.name": vssObj.Name,
+				"reason":              consts.ReasonEventWatcherStarted,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if len(objEvents.Items) == 0 {
+			return fmt.Errorf("no EventWatcherStarted event for %s", vssObj.Name)
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
+
+	// Wait through 3 TTL cycles and keep mutating the secret to verify
+	// event streaming still drives sync updates.
+	for i := 1; i <= 3; i++ {
+		time.Sleep(70 * time.Second)
+
+		expectedData = map[string]interface{}{
+			"value": fmt.Sprintf("cycle-%d", i),
+		}
+		_, err = vClient.KVv2(outputs.KVV2Mount).Put(ctx, vssObj.Spec.Path, expectedData)
+		require.NoError(t, err)
+
+		_, err = waitForSecretData(t, ctx, crdClient, 90, time.Second, vssObj.Spec.Destination.Name,
+			vssObj.ObjectMeta.Namespace, expectedData)
+		require.NoError(t, err)
+	}
+
+	// Allow a short settling window, then assert no EventWatcherError contains
+	// the websocket EOF signature.
+	time.Sleep(10 * time.Second)
+	objEvents := corev1.EventList{}
+	require.NoError(t, crdClient.List(ctx, &objEvents,
+		ctrlclient.InNamespace(vssObj.Namespace),
+		ctrlclient.MatchingFields{
+			"involvedObject.name": vssObj.Name,
+			"reason":              consts.ReasonEventWatcherError,
+		},
+	))
+
+	for _, event := range objEvents.Items {
+		if event.Type != corev1.EventTypeWarning {
+			continue
+		}
+		if strings.Contains(event.Message, "failed to read frame header: EOF") ||
+			strings.Contains(event.Message, "failed to read from websocket") {
+			t.Fatalf("unexpected websocket EOF event for %s: %s", vssObj.Name, event.Message)
+		}
 	}
 }
 
