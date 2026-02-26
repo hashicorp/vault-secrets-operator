@@ -224,9 +224,17 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 
 			wsClient = newWSClient
 			cfg.Client = newClient
-			if meta, ok := cfg.Registry.Get(name); ok {
-				meta.LastClientID = newClient.ID()
+
+			meta, ok := cfg.Registry.Get(name)
+			if !ok {
+				logger.Error(
+					fmt.Errorf("failed to get event watcher metadata for VaultStaticSecret"),
+					"key", name.String())
+				return
 			}
+
+			meta.LastClientID = newClient.ID()
+			cfg.Registry.Register(name, meta)
 
 			shouldBackoff = false
 			errorCount = 0
