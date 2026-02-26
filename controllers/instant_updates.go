@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"github.com/hashicorp/go-secure-stdlib/parseutil"
 	"strings"
 	"time"
 
@@ -279,11 +279,7 @@ func (cfg *InstantUpdateConfig) matchSecretEvent(ctx context.Context, obj client
 		return false, fmt.Errorf("failed to unmarshal event message: %w", err)
 	}
 
-	if message.Data.Event.Metadata.Modified == "" {
-		return false, nil
-	}
-
-	modified, err := strconv.ParseBool(message.Data.Event.Metadata.Modified)
+	modified, err := parseutil.ParseBool(message.Data.Event.Metadata.Modified)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse modified field: %w", err)
 	}
