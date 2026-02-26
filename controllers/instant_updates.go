@@ -7,9 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/go-secure-stdlib/parseutil"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/go-secure-stdlib/parseutil"
 
 	"github.com/cenkalti/backoff/v4"
 	corev1 "k8s.io/api/core/v1"
