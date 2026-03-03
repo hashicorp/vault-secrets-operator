@@ -191,11 +191,8 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				retryBackoff.Reset()
 				continue
 			}
-			if ctx.Err() != nil {
-				return
-			}
 			if strings.Contains(err.Error(), "use of closed network connection") ||
-				strings.Contains(err.Error(), "context canceled") {
+				ctx.Err() != nil {
 				// The connection and/or context was closed, so we should
 				// exit the goroutine (and the defer will remove this from
 				// the registry)
