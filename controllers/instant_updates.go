@@ -237,9 +237,6 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 			meta.LastClientID = newClient.ID()
 			cfg.Registry.Register(name, meta)
 
-			shouldBackoff = false
-			errorCount = 0
-			retryBackoff.Reset()
 		}
 	}
 }
