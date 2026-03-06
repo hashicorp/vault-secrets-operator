@@ -228,6 +228,7 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				logger.Error(
 					fmt.Errorf("failed to get event watcher metadata for VaultStaticSecret"),
 					"key", name.String())
+				cfg.enqueueForReconcile(name)
 				return
 			}
 
