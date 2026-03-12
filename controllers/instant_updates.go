@@ -191,11 +191,8 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				retryBackoff.Reset()
 				continue
 			}
-			if ctx.Err() != nil {
-				return
-			}
 			if strings.Contains(err.Error(), "use of closed network connection") ||
-				strings.Contains(err.Error(), "context canceled") {
+				ctx.Err() != nil {
 				// The connection and/or context was closed, so we should
 				// exit the goroutine (and the defer will remove this from
 				// the registry)
@@ -231,15 +228,13 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				logger.Error(
 					fmt.Errorf("failed to get event watcher metadata for VaultStaticSecret"),
 					"key", name.String())
+				cfg.enqueueForReconcile(name)
 				return
 			}
 
 			meta.LastClientID = newClient.ID()
 			cfg.Registry.Register(name, meta)
 
-			shouldBackoff = false
-			errorCount = 0
-			retryBackoff.Reset()
 		}
 	}
 }
