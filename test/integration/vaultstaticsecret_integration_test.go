@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/json"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -473,19 +474,41 @@ func TestVaultStaticSecret(t *testing.T) {
 			// Ensure the (Vault) event watcher has started by waiting for the
 			// EventWatcherStarted k8s event so that subsequent Vault updates
 			// are detected and synced.
+			hasEventWatcherStarted := func(ctx context.Context, obj *secretsv1beta1.VaultStaticSecret) (bool, error) {
+				listOptions := &ctrlclient.ListOptions{
+					Namespace: obj.Namespace,
+				}
+
+				// Check both v1 and core/v1 events because recorders can emit either.
+				coreEvents := &corev1.EventList{}
+				if err := crdClient.List(ctx, coreEvents, listOptions); err != nil {
+					return false, err
+				}
+				for _, event := range coreEvents.Items {
+					if event.InvolvedObject.Name == obj.Name && event.Reason == consts.ReasonEventWatcherStarted {
+						return true, nil
+					}
+				}
+
+				eventsV1 := &eventsv1.EventList{}
+				if err := crdClient.List(ctx, eventsV1, listOptions); err != nil {
+					return false, err
+				}
+				for _, event := range eventsV1.Items {
+					if event.Regarding.Name == obj.Name && event.Reason == consts.ReasonEventWatcherStarted {
+						return true, nil
+					}
+				}
+
+				return false, nil
+			}
+
 			assert.NoError(t, backoff.Retry(func() error {
-				objEvents := corev1.EventList{}
-				err := crdClient.List(ctx, &objEvents,
-					ctrlclient.InNamespace(obj.Namespace),
-					ctrlclient.MatchingFields{
-						"involvedObject.name": obj.Name,
-						"reason":              consts.ReasonEventWatcherStarted,
-					},
-				)
+				found, err := hasEventWatcherStarted(ctx, obj)
 				if err != nil {
 					return err
 				}
-				if len(objEvents.Items) == 0 {
+				if !found {
 					return fmt.Errorf("no EventWatcherStarted event for %s", obj.Name)
 				}
 				return nil
