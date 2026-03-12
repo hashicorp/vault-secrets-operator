@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestStreamSecretEvents(t *testing.T) {
+func Test_matchSecretEvent(t *testing.T) {
 	t.Parallel()
 
 	vssKVV2 := &secretsv1beta1.VaultStaticSecret{
@@ -169,7 +169,6 @@ func TestStreamSecretEvents(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

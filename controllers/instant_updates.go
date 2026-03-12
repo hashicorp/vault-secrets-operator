@@ -7,9 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/go-secure-stdlib/parseutil"
 
 	"github.com/cenkalti/backoff/v4"
 	corev1 "k8s.io/api/core/v1"
@@ -170,7 +171,7 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
+			logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher", "namespace", name.Namespace, "name", name.Name)
 			return
 		default:
 			if shouldBackoff {
@@ -190,7 +191,14 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 				retryBackoff.Reset()
 				continue
 			}
-			if ctx.Err() != nil {
+			if strings.Contains(err.Error(), "use of closed network connection") ||
+				ctx.Err() != nil {
+				// The connection and/or context was closed, so we should
+				// exit the goroutine (and the defer will remove this from
+				// the registry)
+				logger.V(consts.LogLevelDebug).Info(
+					"Websocket client closed, stopping GetEvents for",
+					"namespace", o.GetNamespace(), "name", o.GetName())
 				return
 			}
 
@@ -214,13 +222,19 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 
 			wsClient = newWSClient
 			cfg.Client = newClient
-			if meta, ok := cfg.Registry.Get(name); ok {
-				meta.LastClientID = newClient.ID()
+
+			meta, ok := cfg.Registry.Get(name)
+			if !ok {
+				logger.Error(
+					fmt.Errorf("failed to get event watcher metadata for VaultStaticSecret"),
+					"key", name.String())
+				cfg.enqueueForReconcile(name)
+				return
 			}
 
-			shouldBackoff = false
-			errorCount = 0
-			retryBackoff.Reset()
+			meta.LastClientID = newClient.ID()
+			cfg.Registry.Register(name, meta)
+
 		}
 	}
 }
@@ -269,11 +283,7 @@ func (cfg *InstantUpdateConfig) matchSecretEvent(ctx context.Context, obj client
 		return false, fmt.Errorf("failed to unmarshal event message: %w", err)
 	}
 
-	if message.Data.Event.Metadata.Modified == "" {
-		return false, nil
-	}
-
-	modified, err := strconv.ParseBool(message.Data.Event.Metadata.Modified)
+	modified, err := parseutil.ParseBool(message.Data.Event.Metadata.Modified)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse modified field: %w", err)
 	}
@@ -363,17 +373,14 @@ func (cfg *InstantUpdateConfig) validate() error {
 	return nil
 }
 
-// defaultEventObjectFactory creates a default event object factory for tests
+// defaultEventObjectFactory creates a default event object factory
 func defaultEventObjectFactory(template client.Object) func(types.NamespacedName) client.Object {
-	return func(key types.NamespacedName) client.Object {
+	return func(_ types.NamespacedName) client.Object {
 		objCopy := template.DeepCopyObject()
 		obj, ok := objCopy.(client.Object)
 		if !ok {
 			return template
 		}
-		obj.SetNamespace(key.Namespace)
-		obj.SetName(key.Name)
-		obj.SetResourceVersion("")
 		return obj
 	}
 }
