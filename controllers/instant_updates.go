@@ -171,7 +171,7 @@ func (cfg *InstantUpdateConfig) getEvents(ctx context.Context, o client.Object, 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher")
+			logger.V(consts.LogLevelDebug).Info("Context done, stopping watcher", "namespace", name.Namespace, "name", name.Name)
 			return
 		default:
 			if shouldBackoff {
@@ -375,17 +375,14 @@ func (cfg *InstantUpdateConfig) validate() error {
 	return nil
 }
 
-// defaultEventObjectFactory creates a default event object factory for tests
+// defaultEventObjectFactory creates a default event object factory
 func defaultEventObjectFactory(template client.Object) func(types.NamespacedName) client.Object {
-	return func(key types.NamespacedName) client.Object {
+	return func(_ types.NamespacedName) client.Object {
 		objCopy := template.DeepCopyObject()
 		obj, ok := objCopy.(client.Object)
 		if !ok {
 			return template
 		}
-		obj.SetNamespace(key.Namespace)
-		obj.SetName(key.Name)
-		obj.SetResourceVersion("")
 		return obj
 	}
 }
