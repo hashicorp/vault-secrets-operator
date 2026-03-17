@@ -215,8 +215,11 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--name", kindClusterName,
 	))
 
+	// This test only needs the starting chart version to create its CRDs before
+	// the upgrade. Waiting for an older controller deployment to become ready can
+	// fail on newer kind/Kubernetes versions and is not required for the CRD
+	// upgrade assertions below.
 	require.NoError(t, testutils.InstallVSO(t, ctx,
-		"--wait",
 		"--create-namespace",
 		"--namespace", vsoNamespace,
 		"--version", startChartVersion,
