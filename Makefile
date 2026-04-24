@@ -348,6 +348,7 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 integration-test-chart:
 	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
 	VERSION=$(VERSION) \
+	KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) \
 	INTEGRATION_TESTS=true \
 	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
 

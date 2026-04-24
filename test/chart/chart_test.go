@@ -212,11 +212,14 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--name", kindClusterName,
 	))
 
+	kubeRbacProxyTag := os.Getenv("KUBE_RBAC_PROXY_VERSION")
 	require.NoError(t, testutils.InstallVSO(t, ctx,
 		"--wait",
 		"--create-namespace",
 		"--namespace", vsoNamespace,
 		"--version", startChartVersion,
+		"--set", "controller.kubeRbacProxy.image.repository=quay.io/brancz/kube-rbac-proxy",
+		"--set", fmt.Sprintf("controller.kubeRbacProxy.image.tag=%s", kubeRbacProxyTag),
 		releaseName,
 		chart,
 	))
