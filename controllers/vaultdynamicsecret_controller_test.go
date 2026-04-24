@@ -5,6 +5,9 @@ package controllers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -14,8 +17,10 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -32,6 +37,132 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
+
+type testHMACValidator struct{}
+
+func (v *testHMACValidator) HMAC(_ context.Context, _ client.Client, message []byte) ([]byte, error) {
+	sum := sha256.Sum256(message)
+	ret := make([]byte, len(sum))
+	copy(ret, sum[:])
+	return ret, nil
+}
+
+func (v *testHMACValidator) Validate(ctx context.Context, c client.Client, message, _ []byte) (bool, []byte, error) {
+	newMAC, err := v.HMAC(ctx, c, message)
+	if err != nil {
+		return false, nil, err
+	}
+	return true, newMAC, nil
+}
+
+type staticCredsVaultResponse struct {
+	secret *api.Secret
+	data   map[string]any
+	k8s    map[string][]byte
+}
+
+type reconcileTestClientFactory struct {
+	client vault.Client
+}
+
+func (f *reconcileTestClientFactory) Get(context.Context, client.Client, client.Object) (vault.Client, error) {
+	return f.client, nil
+}
+
+func (f *reconcileTestClientFactory) RegisterClientCallbackHandler(vault.ClientCallbackHandler) {}
+
+type reconcileTestVaultClient struct {
+	*vault.MockRecordingVaultClient
+	cacheKey vault.ClientCacheKey
+}
+
+func (c *reconcileTestVaultClient) Init(context.Context, client.Client, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection, string, *vault.ClientOptions) error {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) Login(context.Context, client.Client) error {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) Restore(context.Context, *api.Secret) error {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) GetTokenSecret() *api.Secret {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) CheckExpiry(int64) (bool, error) {
+	return false, nil
+}
+
+func (c *reconcileTestVaultClient) Validate(context.Context) error {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) GetVaultAuthObj() *secretsv1beta1.VaultAuth {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) GetCredentialProvider() provider.CredentialProviderBase {
+	return nil
+}
+
+func (c *reconcileTestVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
+	return c.cacheKey, nil
+}
+
+func (c *reconcileTestVaultClient) Close(bool) {}
+
+func (c *reconcileTestVaultClient) Clone(string) (vault.Client, error) {
+	return c, nil
+}
+
+func (c *reconcileTestVaultClient) IsClone() bool {
+	return false
+}
+
+func (c *reconcileTestVaultClient) Namespace() string {
+	return ""
+}
+
+func (c *reconcileTestVaultClient) SetNamespace(string) {}
+
+func (c *reconcileTestVaultClient) Tainted() bool {
+	return false
+}
+
+func (c *reconcileTestVaultClient) Untaint() bool {
+	return false
+}
+
+func (c *reconcileTestVaultClient) WebsocketClient(string) (*vault.WebsocketClient, error) {
+	return nil, nil
+}
+
+func (c *reconcileTestVaultClient) Renewable() bool {
+	return false
+}
+
+func (s *staticCredsVaultResponse) WrapInfo() *api.SecretWrapInfo {
+	panic("implement me")
+}
+
+func (s *staticCredsVaultResponse) Secret() *api.Secret {
+	return s.secret
+}
+
+func (s *staticCredsVaultResponse) Data() map[string]any {
+	return s.data
+}
+
+func (s *staticCredsVaultResponse) SecretK8sData(_ *helpers.SecretTransformationOption) (map[string][]byte, error) {
+	return s.k8s, nil
+}
 
 func Test_computeRelativeHorizon(t *testing.T) {
 	tests := map[string]struct {
@@ -568,6 +699,204 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)
 		})
 	}
+}
+
+func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	vClient := &vault.MockRecordingVaultClient{
+		ReadResponses: map[string][]vault.Response{
+			"database/static-creds/app": {
+				&staticCredsVaultResponse{
+					secret: &api.Secret{},
+					data: map[string]any{
+						"last_vault_rotation": "2026-04-21T12:00:00Z",
+						"rotation_period":     600,
+						"ttl":                 540,
+						"username":            "db-user",
+						"password":            "db-pass",
+					},
+					k8s: map[string][]byte{
+						"username": []byte("db-user"),
+						"password": []byte("db-pass"),
+					},
+				},
+			},
+		},
+	}
+
+	validator := &testHMACValidator{}
+	message, err := json.Marshal(map[string][]byte{
+		"password": []byte("db-pass"),
+		"username": []byte("db-user"),
+	})
+	require.NoError(t, err)
+	messageMAC, err := validator.HMAC(ctx, nil, message)
+	require.NoError(t, err)
+
+	obj := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount:            "database",
+			Path:             "static-creds/app",
+			AllowStaticCreds: true,
+			Destination: secretsv1beta1.Destination{
+				Name:   "app",
+				Create: true,
+			},
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			SecretMAC: base64.StdEncoding.EncodeToString(messageMAC),
+			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: time.Date(2026, 4, 21, 11, 59, 0, 0, time.UTC).Unix(),
+				RotationPeriod:    600,
+				TTL:               600,
+			},
+		},
+	}
+
+	secretClient := fake.NewClientBuilder().WithObjects(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"username": []byte("db-user"),
+			"password": []byte("db-pass"),
+		},
+	}).Build()
+
+	r := &VaultDynamicSecretReconciler{
+		Client:        secretClient,
+		SecretsClient: secretClient,
+		HMACValidator: validator,
+	}
+
+	lease, updated, err := r.syncSecret(ctx, vClient, obj, nil)
+	require.NoError(t, err)
+	assert.False(t, updated)
+	assert.Equal(t, &secretsv1beta1.VaultSecretLease{
+		LeaseDuration: 0,
+		Renewable:     false,
+	}, lease)
+	assert.Equal(t, int64(540), obj.Status.StaticCredsMetaData.TTL)
+	assert.Equal(t, int64(600), obj.Status.StaticCredsMetaData.RotationPeriod)
+	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), obj.Status.StaticCredsMetaData.LastVaultRotation)
+	assert.Equal(t, 1, len(vClient.Requests))
+}
+
+func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	validator := &testHMACValidator{}
+	secretData := map[string][]byte{
+		"password": []byte("db-pass"),
+		"username": []byte("db-user"),
+	}
+	message, err := json.Marshal(secretData)
+	require.NoError(t, err)
+	messageMAC, err := validator.HMAC(ctx, nil, message)
+	require.NoError(t, err)
+
+	obj := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "app",
+			Namespace:  "default",
+			UID:        types.UID("vds-app"),
+			Generation: 7,
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount:            "database",
+			Path:             "static-creds/app",
+			AllowStaticCreds: true,
+			Destination: secretsv1beta1.Destination{
+				Name:   "app",
+				Create: true,
+			},
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			LastGeneration: 7,
+			SecretMAC:      base64.StdEncoding.EncodeToString(messageMAC),
+			VaultClientMeta: secretsv1beta1.VaultClientMeta{
+				CacheKey: "cache-key",
+				ID:       "client-1",
+			},
+			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: time.Date(2026, 4, 21, 11, 59, 0, 0, time.UTC).Unix(),
+				RotationPeriod:    600,
+				TTL:               600,
+			},
+		},
+	}
+
+	destSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Data: secretData,
+	}
+
+	secretClient := testutils.NewFakeClientBuilder().
+		WithStatusSubresource(obj).
+		WithObjects(obj, destSecret).
+		Build()
+
+	vClient := &reconcileTestVaultClient{
+		MockRecordingVaultClient: &vault.MockRecordingVaultClient{
+			Id: "client-1",
+			ReadResponses: map[string][]vault.Response{
+				"database/static-creds/app": {
+					&staticCredsVaultResponse{
+						secret: &api.Secret{},
+						data: map[string]any{
+							"last_vault_rotation": "2026-04-21T12:00:00Z",
+							"rotation_period":     600,
+							"ttl":                 540,
+							"username":            "db-user",
+							"password":            "db-pass",
+						},
+						k8s: secretData,
+					},
+				},
+			},
+		},
+		cacheKey: "cache-key",
+	}
+
+	syncRegistry := NewSyncRegistry()
+	objKey := client.ObjectKeyFromObject(obj)
+	syncRegistry.Add(objKey)
+
+	r := &VaultDynamicSecretReconciler{
+		Client:                      secretClient,
+		SecretsClient:               secretClient,
+		ClientFactory:               &reconcileTestClientFactory{client: vClient},
+		HMACValidator:               validator,
+		Recorder:                    record.NewFakeRecorder(10),
+		SyncRegistry:                syncRegistry,
+		BackOffRegistry:             NewBackOffRegistry(),
+		referenceCache:              NewResourceReferenceCache(),
+		GlobalTransformationOptions: &helpers.GlobalTransformationOptions{},
+	}
+
+	result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+	assert.Len(t, vClient.Requests, 1)
+	assert.False(t, syncRegistry.Has(objKey))
+	assert.GreaterOrEqual(t, result.RequeueAfter, 540*time.Second+500*time.Millisecond)
+	assert.LessOrEqual(t, result.RequeueAfter, 540*time.Second+650*time.Millisecond)
+
+	updated := &secretsv1beta1.VaultDynamicSecret{}
+	require.NoError(t, secretClient.Get(ctx, objKey, updated))
+	assert.Equal(t, int64(540), updated.Status.StaticCredsMetaData.TTL)
+	assert.Equal(t, int64(600), updated.Status.StaticCredsMetaData.RotationPeriod)
+	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation)
 }
 
 // TestVaultDynamicSecretReconciler_isStaticCreds tests that we can appropriately

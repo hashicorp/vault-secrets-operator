@@ -534,12 +534,12 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 		logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
 
+		o.Status.StaticCredsMetaData = *staticCredsMeta
 		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
 		if macsEqual {
 			return secretLease, false, nil
 		}
 
-		o.Status.StaticCredsMetaData = *staticCredsMeta
 		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
 	} else {
 		data, err = resp.SecretK8sData(opt)
