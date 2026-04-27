@@ -701,6 +701,20 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 	}
 }
 
+// TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC
+// covers the static-creds case where Vault returns refreshed rotation metadata
+// but the secret data itself is unchanged.
+//
+// Covered behavior:
+//   - static creds are allowed and returned from Vault
+//   - the destination Secret already contains the same username/password
+//   - the stored SecretMAC matches the newly computed HMAC
+//   - syncSecret therefore does not rewrite the Secret (`updated == false`)
+//   - syncSecret still refreshes status metadata such as TTL and
+//     LastVaultRotation from the latest Vault response
+//
+// Previous status: TTL=600, LastVaultRotation=11:59
+// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
 func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC(t *testing.T) {
 	t.Parallel()
 
@@ -789,6 +803,23 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 	assert.Equal(t, 1, len(vClient.Requests))
 }
 
+// TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL
+// covers the force-sync reconcile path for static credentials when Vault returns
+// refreshed rotation metadata but the secret data itself is unchanged.
+//
+// Covered behavior:
+//   - Reconcile is triggered through SyncRegistry (force sync)
+//   - the Vault client is obtained through ClientFactory and matches the
+//     object's cached client metadata
+//   - Vault returns updated static-creds metadata (TTL and LastVaultRotation)
+//   - the destination Secret already contains the same data, so the secret
+//     payload is not rewritten
+//   - Reconcile still persists the refreshed static-creds status
+//   - computePostSyncHorizon uses the refreshed TTL for RequeueAfter
+//   - the SyncRegistry entry is removed after a successful reconcile
+//
+// Previous status: TTL=600, LastVaultRotation=11:59
+// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
 func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL(t *testing.T) {
 	t.Parallel()
 
