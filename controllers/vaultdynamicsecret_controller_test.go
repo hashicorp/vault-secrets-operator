@@ -55,12 +55,6 @@ func (v *testHMACValidator) Validate(ctx context.Context, c client.Client, messa
 	return true, newMAC, nil
 }
 
-type staticCredsVaultResponse struct {
-	secret *api.Secret
-	data   map[string]any
-	k8s    map[string][]byte
-}
-
 type reconcileTestClientFactory struct {
 	client vault.Client
 }
@@ -71,97 +65,37 @@ func (f *reconcileTestClientFactory) Get(context.Context, client.Client, client.
 
 func (f *reconcileTestClientFactory) RegisterClientCallbackHandler(vault.ClientCallbackHandler) {}
 
+// reconcileTestVaultClient implements vault.Client for Reconcile-path tests.
+// It embeds vault.Client (nil) to satisfy all interface methods not explicitly
+// overridden — those methods must not be called during the test, or the nil
+// interface will panic (same pattern as stubVaultClient).
+// MockRecordingVaultClient is held as a named field to avoid Go's ambiguity
+// rule, which would otherwise suppress Read/Write/ID/Taint promotion when both
+// an interface and a struct embedding provide those same method names.
 type reconcileTestVaultClient struct {
-	*vault.MockRecordingVaultClient
-	cacheKey vault.ClientCacheKey
+	vault.Client
+	MockRecordingVaultClient *vault.MockRecordingVaultClient
+	cacheKey                 vault.ClientCacheKey
 }
 
-func (c *reconcileTestVaultClient) Init(context.Context, client.Client, *secretsv1beta1.VaultAuth, *secretsv1beta1.VaultConnection, string, *vault.ClientOptions) error {
-	return nil
+func (c *reconcileTestVaultClient) Read(ctx context.Context, r vault.ReadRequest) (vault.Response, error) {
+	return c.MockRecordingVaultClient.Read(ctx, r)
 }
 
-func (c *reconcileTestVaultClient) Login(context.Context, client.Client) error {
-	return nil
+func (c *reconcileTestVaultClient) Write(ctx context.Context, r vault.WriteRequest) (vault.Response, error) {
+	return c.MockRecordingVaultClient.Write(ctx, r)
 }
 
-func (c *reconcileTestVaultClient) Restore(context.Context, *api.Secret) error {
-	return nil
+func (c *reconcileTestVaultClient) ID() string {
+	return c.MockRecordingVaultClient.ID()
 }
 
-func (c *reconcileTestVaultClient) GetTokenSecret() *api.Secret {
-	return nil
-}
-
-func (c *reconcileTestVaultClient) CheckExpiry(int64) (bool, error) {
-	return false, nil
-}
-
-func (c *reconcileTestVaultClient) Validate(context.Context) error {
-	return nil
-}
-
-func (c *reconcileTestVaultClient) GetVaultAuthObj() *secretsv1beta1.VaultAuth {
-	return nil
-}
-
-func (c *reconcileTestVaultClient) GetVaultConnectionObj() *secretsv1beta1.VaultConnection {
-	return nil
-}
-
-func (c *reconcileTestVaultClient) GetCredentialProvider() provider.CredentialProviderBase {
-	return nil
+func (c *reconcileTestVaultClient) Taint() {
+	c.MockRecordingVaultClient.Taint()
 }
 
 func (c *reconcileTestVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
 	return c.cacheKey, nil
-}
-
-func (c *reconcileTestVaultClient) Close(bool) {}
-
-func (c *reconcileTestVaultClient) Clone(string) (vault.Client, error) {
-	return c, nil
-}
-
-func (c *reconcileTestVaultClient) IsClone() bool {
-	return false
-}
-
-func (c *reconcileTestVaultClient) Namespace() string {
-	return ""
-}
-
-func (c *reconcileTestVaultClient) SetNamespace(string) {}
-
-func (c *reconcileTestVaultClient) Tainted() bool {
-	return false
-}
-
-func (c *reconcileTestVaultClient) Untaint() bool {
-	return false
-}
-
-func (c *reconcileTestVaultClient) WebsocketClient(string) (*vault.WebsocketClient, error) {
-	return nil, nil
-}
-
-func (c *reconcileTestVaultClient) Renewable() bool {
-	return false
-}
-
-func (s *staticCredsVaultResponse) WrapInfo() *api.SecretWrapInfo {
-	panic("implement me")
-}
-
-func (s *staticCredsVaultResponse) Secret() *api.Secret {
-	return s.secret
-}
-
-func (s *staticCredsVaultResponse) Data() map[string]any {
-	return s.data
-}
-
-func (s *staticCredsVaultResponse) SecretK8sData(_ *helpers.SecretTransformationOption) (map[string][]byte, error) {
-	return s.k8s, nil
 }
 
 func Test_computeRelativeHorizon(t *testing.T) {
@@ -702,41 +636,48 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 }
 
 // TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC
-// covers the static-creds case where Vault returns refreshed rotation metadata
-// but the secret data itself is unchanged.
+// covers the static-creds case where Vault returns a fresh TTL for a periodic
+// static-creds role but the secret data and LastVaultRotation are unchanged.
+// This tests the scenario: the VaultAuth token expires, causing a
+// ForceSync, but no Vault rotation has occurred in the meantime.
 //
 // Covered behavior:
 //   - static creds are allowed and returned from Vault
 //   - the destination Secret already contains the same username/password
+//   - LastVaultRotation is identical to the stored status (no rotation happened)
+//   - awaitVaultSecretRotation enters the backoff loop (inLastSyncRotation=true)
+//     and makes a second Vault request, which returns the same data
 //   - the stored SecretMAC matches the newly computed HMAC
 //   - syncSecret therefore does not rewrite the Secret (`updated == false`)
-//   - syncSecret still refreshes status metadata such as TTL and
-//     LastVaultRotation from the latest Vault response
+//   - syncSecret still refreshes status metadata: TTL is updated from the
+//     fresh Vault response even though LastVaultRotation is unchanged
 //
-// Previous status: TTL=600, LastVaultRotation=11:59
-// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
+// Previous status: TTL=600, LastVaultRotation=12:00
+// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00 (unchanged)
 func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	freshResponse := &vaultResponse{
+		secret: &api.Secret{},
+		data: map[string]any{
+			"last_vault_rotation": "2026-04-21T12:00:00Z",
+			"rotation_period":     600,
+			"ttl":                 540,
+			"username":            "db-user",
+			"password":            "db-pass",
+		},
+		k8s: map[string][]byte{
+			"username": []byte("db-user"),
+			"password": []byte("db-pass"),
+		},
+	}
 	vClient := &vault.MockRecordingVaultClient{
 		ReadResponses: map[string][]vault.Response{
-			"database/static-creds/app": {
-				&staticCredsVaultResponse{
-					secret: &api.Secret{},
-					data: map[string]any{
-						"last_vault_rotation": "2026-04-21T12:00:00Z",
-						"rotation_period":     600,
-						"ttl":                 540,
-						"username":            "db-user",
-						"password":            "db-pass",
-					},
-					k8s: map[string][]byte{
-						"username": []byte("db-user"),
-						"password": []byte("db-pass"),
-					},
-				},
-			},
+			// Two responses: one for the initial doVault call in syncSecret, one
+			// for the doVault call inside the awaitVaultSecretRotation backoff loop
+			// (triggered because inLastSyncRotation=true).
+			"database/static-creds/app": {freshResponse, freshResponse},
 		},
 	}
 
@@ -766,7 +707,7 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 		Status: secretsv1beta1.VaultDynamicSecretStatus{
 			SecretMAC: base64.StdEncoding.EncodeToString(messageMAC),
 			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: time.Date(2026, 4, 21, 11, 59, 0, 0, time.UTC).Unix(),
+				LastVaultRotation: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(),
 				RotationPeriod:    600,
 				TTL:               600,
 			},
@@ -800,26 +741,32 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 	assert.Equal(t, int64(540), obj.Status.StaticCredsMetaData.TTL)
 	assert.Equal(t, int64(600), obj.Status.StaticCredsMetaData.RotationPeriod)
 	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), obj.Status.StaticCredsMetaData.LastVaultRotation)
-	assert.Equal(t, 1, len(vClient.Requests))
+	// Two requests: initial doVault + one backoff-loop doVault (inLastSyncRotation=true)
+	assert.Equal(t, 2, len(vClient.Requests))
 }
 
 // TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL
-// covers the force-sync reconcile path for static credentials when Vault returns
-// refreshed rotation metadata but the secret data itself is unchanged.
+// covers the scenario: a VaultAuth token expiry evicts the cacheKey and
+// triggers a ForceSync via SyncRegistry, but no Vault rotation has occurred.
+// Vault returns a lower TTL (time has passed) with the same LastVaultRotation.
+// VSO must update status with the fresh TTL so that computePostSyncHorizon
+// produces the correct RequeueAfter — not the stale horizon from the last sync.
 //
 // Covered behavior:
 //   - Reconcile is triggered through SyncRegistry (force sync)
 //   - the Vault client is obtained through ClientFactory and matches the
 //     object's cached client metadata
-//   - Vault returns updated static-creds metadata (TTL and LastVaultRotation)
+//   - Vault returns a lower TTL but the same LastVaultRotation (no rotation)
+//   - awaitVaultSecretRotation enters the backoff loop (inLastSyncRotation=true)
+//     and makes a second Vault request, confirming the same stable state
 //   - the destination Secret already contains the same data, so the secret
 //     payload is not rewritten
-//   - Reconcile still persists the refreshed static-creds status
+//   - Reconcile persists the refreshed TTL from the latest Vault response
 //   - computePostSyncHorizon uses the refreshed TTL for RequeueAfter
 //   - the SyncRegistry entry is removed after a successful reconcile
 //
-// Previous status: TTL=600, LastVaultRotation=11:59
-// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
+// Previous status: TTL=600, LastVaultRotation=12:00
+// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00 (unchanged)
 func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL(t *testing.T) {
 	t.Parallel()
 
@@ -858,7 +805,7 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 				ID:       "client-1",
 			},
 			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: time.Date(2026, 4, 21, 11, 59, 0, 0, time.UTC).Unix(),
+				LastVaultRotation: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(),
 				RotationPeriod:    600,
 				TTL:               600,
 			},
@@ -878,23 +825,25 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 		WithObjects(obj, destSecret).
 		Build()
 
+	freshResponse := &vaultResponse{
+		secret: &api.Secret{},
+		data: map[string]any{
+			"last_vault_rotation": "2026-04-21T12:00:00Z",
+			"rotation_period":     600,
+			"ttl":                 540,
+			"username":            "db-user",
+			"password":            "db-pass",
+		},
+		k8s: secretData,
+	}
 	vClient := &reconcileTestVaultClient{
 		MockRecordingVaultClient: &vault.MockRecordingVaultClient{
 			Id: "client-1",
 			ReadResponses: map[string][]vault.Response{
-				"database/static-creds/app": {
-					&staticCredsVaultResponse{
-						secret: &api.Secret{},
-						data: map[string]any{
-							"last_vault_rotation": "2026-04-21T12:00:00Z",
-							"rotation_period":     600,
-							"ttl":                 540,
-							"username":            "db-user",
-							"password":            "db-pass",
-						},
-						k8s: secretData,
-					},
-				},
+				// Two responses: one for the initial doVault call in syncSecret, one
+				// for the doVault call inside the awaitVaultSecretRotation backoff
+				// loop (triggered because inLastSyncRotation=true).
+				"database/static-creds/app": {freshResponse, freshResponse},
 			},
 		},
 		cacheKey: "cache-key",
@@ -918,7 +867,8 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 
 	result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
 	require.NoError(t, err)
-	assert.Len(t, vClient.Requests, 1)
+	// Two requests: initial doVault + one backoff-loop doVault (inLastSyncRotation=true)
+	assert.Len(t, vClient.MockRecordingVaultClient.Requests, 2)
 	assert.False(t, syncRegistry.Has(objKey))
 	assert.GreaterOrEqual(t, result.RequeueAfter, 540*time.Second+500*time.Millisecond)
 	assert.LessOrEqual(t, result.RequeueAfter, 540*time.Second+650*time.Millisecond)
@@ -927,6 +877,7 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	require.NoError(t, secretClient.Get(ctx, objKey, updated))
 	assert.Equal(t, int64(540), updated.Status.StaticCredsMetaData.TTL)
 	assert.Equal(t, int64(600), updated.Status.StaticCredsMetaData.RotationPeriod)
+	// LastVaultRotation is unchanged: no rotation occurred, only the TTL decreased
 	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation)
 }
 
@@ -1610,7 +1561,9 @@ func Test_vaultStaticCredsMetaDataFromData(t *testing.T) {
 }
 
 type vaultResponse struct {
-	data map[string]any
+	secret *api.Secret
+	data   map[string]any
+	k8s    map[string][]byte
 }
 
 func (s *vaultResponse) WrapInfo() *api.SecretWrapInfo {
@@ -1619,7 +1572,7 @@ func (s *vaultResponse) WrapInfo() *api.SecretWrapInfo {
 }
 
 func (s *vaultResponse) Secret() *api.Secret {
-	return nil
+	return s.secret
 }
 
 func (s *vaultResponse) Data() map[string]any {
@@ -1627,7 +1580,7 @@ func (s *vaultResponse) Data() map[string]any {
 }
 
 func (s *vaultResponse) SecretK8sData(_ *helpers.SecretTransformationOption) (map[string][]byte, error) {
-	return nil, nil
+	return s.k8s, nil
 }
 
 func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
