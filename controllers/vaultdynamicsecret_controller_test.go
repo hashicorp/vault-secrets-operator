@@ -1531,6 +1531,293 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			},
 			wantRequestCount: 2,
 		},
+		{
+			// Regression: even schedule where the next TTL equals the last sync TTL.
+			// The >= check fires (60 >= 60), so retries should happen.
+			name: "static-creds-scheduled-ttl-equal-last-sync-ttl",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "mount",
+					Path:  "static-creds/scheduled",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: ts0.Unix(),
+						RotationSchedule:  "*/1 * * * *",
+						TTL:               60,
+					},
+				},
+			},
+			initialResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tslVal0,
+					"password":            "oldpassword",
+					"rotation_schedule":   "*/1 * * * *",
+					"ttl":                 60,
+					"username":            "dev-postgres-static-user-scheduled",
+				},
+			},
+			c: &vault.MockRecordingVaultClient{
+				CheckPaths: true,
+				ReadResponses: map[string][]vault.Response{
+					"mount/static-creds/scheduled": {
+						// Poll 1: still same LastVaultRotation, TTL == lastSyncTTL → retry
+						&vaultResponse{
+							data: map[string]any{
+								"last_vault_rotation": tslVal0,
+								"password":            "oldpassword",
+								"rotation_schedule":   "*/1 * * * *",
+								"ttl":                 60,
+								"username":            "dev-postgres-static-user-scheduled",
+							},
+						},
+						// Poll 2: rotated
+						&vaultResponse{
+							data: map[string]any{
+								"last_vault_rotation": tsVal1,
+								"password":            "newpassword",
+								"rotation_schedule":   "*/1 * * * *",
+								"ttl":                 58,
+								"username":            "dev-postgres-static-user-scheduled",
+							},
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: ts1.Unix(),
+				RotationSchedule:  "*/1 * * * *",
+				TTL:               58,
+			},
+			wantResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tsVal1,
+					"password":            "newpassword",
+					"rotation_schedule":   "*/1 * * * *",
+					"ttl":                 58,
+					"username":            "dev-postgres-static-user-scheduled",
+				},
+			},
+			wantRequestCount: 2,
+		},
+		{
+			// Regression: classic TTL rollover bug where the next TTL is greater than
+			// the last sync TTL. The >= check fires (600 >= 240), so retries happen.
+			name: "static-creds-scheduled-ttl-greater-than-last-sync-ttl",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "mount",
+					Path:  "static-creds/scheduled",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: ts0.Unix(),
+						RotationSchedule:  "*/4 * * * *",
+						TTL:               240,
+					},
+				},
+			},
+			initialResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tslVal0,
+					"password":            "oldpassword",
+					"rotation_schedule":   "*/4 * * * *",
+					"ttl":                 240,
+					"username":            "dev-postgres-static-user-scheduled",
+				},
+			},
+			c: &vault.MockRecordingVaultClient{
+				CheckPaths: true,
+				ReadResponses: map[string][]vault.Response{
+					"mount/static-creds/scheduled": {
+						// Poll 1: TTL rolled over to larger value (rollover bug) → retry
+						&vaultResponse{
+							data: map[string]any{
+								"last_vault_rotation": tslVal0,
+								"password":            "oldpassword",
+								"rotation_schedule":   "*/4 * * * *",
+								"ttl":                 600,
+								"username":            "dev-postgres-static-user-scheduled",
+							},
+						},
+						// Poll 2: rotated
+						&vaultResponse{
+							data: map[string]any{
+								"last_vault_rotation": tsVal1,
+								"password":            "newpassword",
+								"rotation_schedule":   "*/4 * * * *",
+								"ttl":                 58,
+								"username":            "dev-postgres-static-user-scheduled",
+							},
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: ts1.Unix(),
+				RotationSchedule:  "*/4 * * * *",
+				TTL:               58,
+			},
+			wantResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tsVal1,
+					"password":            "newpassword",
+					"rotation_schedule":   "*/4 * * * *",
+					"ttl":                 58,
+					"username":            "dev-postgres-static-user-scheduled",
+				},
+			},
+			wantRequestCount: 2,
+		},
+		{
+			// Bug: uneven rotation schedule (e.g. "30 3,16 * * *") where the next
+			// interval is shorter than the last sync TTL. Vault resets the TTL for
+			// the shorter interval (39600 < 46800) before updating LastVaultRotation
+			// due to DB lag. The old ">= lastSyncTTL" check misses this case —
+			// the loop exits immediately with stale credentials instead of retrying.
+			// See: test/integration/modules/vault/VSO Bug
+			name: "static-creds-scheduled-ttl-less-than-last-sync-ttl-uneven-schedule",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "mount",
+					Path:  "static-creds/scheduled",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: ts0.Unix(),
+						RotationSchedule:  "30 3,16 * * *",
+						// 13h — last synced after the 3:30 rotation, next rotation at 16:30
+						TTL: 46800,
+					},
+				},
+			},
+			initialResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tslVal0,
+					"password":            "oldpassword",
+					"rotation_schedule":   "30 3,16 * * *",
+					// Vault reset TTL to 11h (shorter slot: 16:30→3:30) but
+					// LastVaultRotation not yet updated due to DB lag.
+					"ttl":      39600,
+					"username": "dev-postgres-static-user-scheduled",
+				},
+			},
+			c: &vault.MockRecordingVaultClient{
+				CheckPaths: true,
+				ReadResponses: map[string][]vault.Response{
+					"mount/static-creds/scheduled": {
+						// Poll 1: still stale — LastVaultRotation unchanged, TTL < lastSyncTTL.
+						// The old code exits here without retrying (the bug).
+						&vaultResponse{
+							data: map[string]any{
+								"last_vault_rotation": tslVal0,
+								"password":            "oldpassword",
+								"rotation_schedule":   "30 3,16 * * *",
+								"ttl":                 39600,
+								"username":            "dev-postgres-static-user-scheduled",
+							},
+						},
+						// Poll 2: DB lag cleared, rotation complete.
+						&vaultResponse{
+							data: map[string]any{
+								"last_vault_rotation": tsVal1,
+								"password":            "newpassword",
+								"rotation_schedule":   "30 3,16 * * *",
+								"ttl":                 39598,
+								"username":            "dev-postgres-static-user-scheduled",
+							},
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: ts1.Unix(),
+				RotationSchedule:  "30 3,16 * * *",
+				TTL:               39598,
+			},
+			wantResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tsVal1,
+					"password":            "newpassword",
+					"rotation_schedule":   "30 3,16 * * *",
+					"ttl":                 39598,
+					"username":            "dev-postgres-static-user-scheduled",
+				},
+			},
+			wantRequestCount: 2,
+		},
+		{
+			// Remediation: K8s destination secret deleted mid-cycle on an uneven
+			// schedule. TTL has naturally decreased since last sync — no Vault
+			// rotation occurred. The function must NOT retry; it should return
+			// the current (valid) credentials so the controller can re-create
+			// the K8s secret.
+			name: "static-creds-scheduled-remediation-mid-cycle-uneven",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "mount",
+					Path:  "static-creds/scheduled",
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					LastRenewalTime: nowFunc().Unix() - 3600, // synced 1h ago
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: ts0.Unix(),
+						RotationSchedule:  "30 3,16 * * *",
+						// 13h — TTL at the time of last sync
+						TTL: 46800,
+					},
+				},
+			},
+			initialResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tslVal0,
+					"password":            "samepassword",
+					"rotation_schedule":   "30 3,16 * * *",
+					// TTL naturally decreased by ~1h (46800 - 3600 = 43200)
+					"ttl":      43200,
+					"username": "dev-postgres-static-user-scheduled",
+				},
+			},
+			c: &vault.MockRecordingVaultClient{
+				CheckPaths: true,
+				ReadResponses: map[string][]vault.Response{
+					"mount/static-creds/scheduled": {
+						// Single poll: same LastVaultRotation, TTL naturally decreased.
+						// expectedTTL = 46800 - 3600 = 43200 (not near zero),
+						// so neither TTL reset check fires → no retry.
+						&vaultResponse{
+							data: map[string]any{
+								"last_vault_rotation": tslVal0,
+								"password":            "samepassword",
+								"rotation_schedule":   "30 3,16 * * *",
+								"ttl":                 43200,
+								"username":            "dev-postgres-static-user-scheduled",
+							},
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+			wantStaticCredsMetaData: &secretsv1beta1.VaultStaticCredsMetaData{
+				LastVaultRotation: ts0.Unix(),
+				RotationSchedule:  "30 3,16 * * *",
+				TTL:               43200,
+			},
+			wantResponse: &vaultResponse{
+				data: map[string]any{
+					"last_vault_rotation": tslVal0,
+					"password":            "samepassword",
+					"rotation_schedule":   "30 3,16 * * *",
+					"ttl":                 43200,
+					"username":            "dev-postgres-static-user-scheduled",
+				},
+			},
+			// One doVault call in the loop, no retry — returns immediately.
+			wantRequestCount: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
