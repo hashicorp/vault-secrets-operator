@@ -4,8 +4,9 @@
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
-KUBE_RBAC_PROXY_VERSION = v0.18.1
-OPENSHIFT_KUBE_RBAC_PROXY_VERSION = v4.15.0
+KUBE_RBAC_PROXY_VERSION ?= v0.18.1
+KUBE_RBAC_PROXY_REPOSITORY ?= quay.io/brancz/kube-rbac-proxy
+OPENSHIFT_KUBE_RBAC_PROXY_VERSION ?= v4.15.0
 VSO_CSI_DRIVER_VERSION ?= 1.0.2
 VSO_CSI_LIVENESS_PROBE_VERSION ?= v2.16.0
 VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION ?= v2.14.0
