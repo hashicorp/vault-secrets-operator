@@ -653,7 +653,7 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 //     fresh Vault response even though LastVaultRotation is unchanged
 //
 // Previous status: TTL=600, LastVaultRotation=12:00
-// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00 (unchanged)
+// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
 func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC(t *testing.T) {
 	t.Parallel()
 
@@ -766,7 +766,7 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 //   - the SyncRegistry entry is removed after a successful reconcile
 //
 // Previous status: TTL=600, LastVaultRotation=12:00
-// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00 (unchanged)
+// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
 func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL(t *testing.T) {
 	t.Parallel()
 
