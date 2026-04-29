@@ -1,3 +1,16 @@
+## 1.4.0 (April 29th, 2026)
+
+Fix:
+* Detect TTL reset for uneven rotation schedules with ttl rollover bug: ([#1259](https://github.com/hashicorp/vault-secrets-operator/pull/1259))
+* Update kube-rbac-proxy version for openshift: ([#1254](https://github.com/hashicorp/vault-secrets-operator/pull/1254))
+* VSS: Add vault client callback handler: ([#867](https://github.com/hashicorp/vault-secrets-operator/pull/867))
+
+Dependency Updates:
+* Bump github.com/jackc/pgx/v5 from 5.7.1 to 5.9.2: ([#1251](https://github.com/hashicorp/vault-secrets-operator/pull/1251))
+* Bump github.com/go-jose/go-jose/v4 from 4.1.3 to 4.1.4: ([#1242](https://github.com/hashicorp/vault-secrets-operator/pull/1242))
+* Bump google.golang.org/grpc from 1.78.0 to 1.79.3: ([#1238](https://github.com/hashicorp/vault-secrets-operator/pull/1238))
+* Bump filippo.io/edwards25519 from 1.1.0 to 1.1.1: ([#1223](https://github.com/hashicorp/vault-secrets-operator/pull/1223))
+
 ## 1.3.0 (February 19th, 2026)
 
 Enhancements:

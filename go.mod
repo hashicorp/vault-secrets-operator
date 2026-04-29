@@ -1,6 +1,6 @@
 module github.com/hashicorp/vault-secrets-operator
 
-go 1.25.0
+go 1.26.2
 
 // k8s.io module versions must be kept in sync with each other, but
 // indirect dependencies in the vault-secrets-operator module are
