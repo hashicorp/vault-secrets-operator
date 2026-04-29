@@ -1,3 +1,28 @@
+## 1.3.0 (February 19th, 2026)
+
+Enhancements:
+* Add Ready condition: ([#1204](https://github.com/hashicorp/vault-secrets-operator/pull/1204))
+* Support CA cert from disk: ([#1203](https://github.com/hashicorp/vault-secrets-operator/pull/1203))
+* Add additional printer column fields: ([#1202](https://github.com/hashicorp/vault-secrets-operator/pull/1202))
+* Allow custom cache key func: ([#1199](https://github.com/hashicorp/vault-secrets-operator/pull/1199))
+* Internal integration work: ([#1186](https://github.com/hashicorp/vault-secrets-operator/pull/1186))
+* Get AppRole secret ID from file on disk: ([#1153](https://github.com/hashicorp/vault-secrets-operator/pull/1153))
+
+Fix:
+* VDS: ensure periodic static-role rotations are honored: ([#1220](https://github.com/hashicorp/vault-secrets-operator/pull/1220))
+* fix: nullEventLogger panics on calls to Eventf(): ([#1214](https://github.com/hashicorp/vault-secrets-operator/pull/1214))
+
+Build:
+* Add 1.2.0 chart upgrade test: ([#1205](https://github.com/hashicorp/vault-secrets-operator/pull/1205))
+
+Dependency Updates:
+* Bump golang.org/x/crypto from 0.46.0 to 0.47.0 in the gomod-backward-compatible group: ([#1201](https://github.com/hashicorp/vault-secrets-operator/pull/1201))
+* Bump google.golang.org/api from 0.264.0 to 0.265.0 in the gomod-backward-compatible group: ([#1213](https://github.com/hashicorp/vault-secrets-operator/pull/1213))
+* Bump the gomod-backward-compatible group across 1 directory with 3 updates: ([#1210](https://github.com/hashicorp/vault-secrets-operator/pull/1210))
+* Bump the gomod-backward-compatible group with 2 updates: ([#1206](https://github.com/hashicorp/vault-secrets-operator/pull/1206))
+* Bump the gomod-backward-compatible group across 1 directory with 6 updates: ([#1216](https://github.com/hashicorp/vault-secrets-operator/pull/1216))
+
+
 ## 1.2.0 (January 12th, 2026)
 
 Fix:

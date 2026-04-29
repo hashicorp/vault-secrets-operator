@@ -4,8 +4,10 @@
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.0-dev
-KUBE_RBAC_PROXY_VERSION = v0.18.1
-VSO_CSI_DRIVER_VERSION ?= 1.0.1
+KUBE_RBAC_PROXY_VERSION ?= v0.18.1
+KUBE_RBAC_PROXY_REPOSITORY ?= quay.io/brancz/kube-rbac-proxy
+OPENSHIFT_KUBE_RBAC_PROXY_VERSION ?= v4.15.0
+VSO_CSI_DRIVER_VERSION ?= 1.0.2
 VSO_CSI_LIVENESS_PROBE_VERSION ?= v2.16.0
 VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION ?= v2.14.0
 
@@ -347,6 +349,7 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 integration-test-chart:
 	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
 	VERSION=$(VERSION) \
+	KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) \
 	INTEGRATION_TESTS=true \
 	go test github.com/hashicorp/vault-secrets-operator/test/chart/... $(TESTARGS) -timeout=10m
 
@@ -682,6 +685,7 @@ endif
 check-versions: yq
 	VERSION=$(VERSION) \
 	KUBE_RBAC_PROXY_VERSION=$(KUBE_RBAC_PROXY_VERSION) \
+	OPENSHIFT_KUBE_RBAC_PROXY_VERSION=$(OPENSHIFT_KUBE_RBAC_PROXY_VERSION) \
 	VSO_CSI_DRIVER_VERSION=$(VSO_CSI_DRIVER_VERSION) \
 	VSO_CSI_LIVENESS_PROBE_VERSION=$(VSO_CSI_LIVENESS_PROBE_VERSION) \
 	VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION=$(VSO_CSI_NODE_DRIVER_REGISTRAR_VERSION) ./scripts/check-versions.sh

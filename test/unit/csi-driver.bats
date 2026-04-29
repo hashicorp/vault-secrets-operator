@@ -330,7 +330,7 @@ load _helpers
     --set 'csi.enabled=true' \
     . | tee /dev/stderr |
     yq 'select(.kind == "DaemonSet") | .spec.template.spec.containers[1].image' | tee /dev/stderr)
-  [ "${actual}" = "hashicorp/vault-secrets-operator-csi:1.0.1" ]
+  [ "${actual}" = "hashicorp/vault-secrets-operator-csi:1.0.2" ]
 }
 
 @test "CSIDriver/DaemonSet: custom driver image can be set" {
