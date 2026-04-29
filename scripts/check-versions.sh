@@ -22,6 +22,13 @@ case "${KUBE_RBAC_PROXY_VERSION}" in
     ;;
 esac
 
+case "${OPENSHIFT_KUBE_RBAC_PROXY_VERSION}" in
+  "")
+    echo "OPENSHIFT_KUBE_RBAC_PROXY_VERSION variable must be set" >&2
+    exit 1
+    ;;
+esac
+
 ROOT_DIR="${0%/*}"
 # update PATH to prefer scripts relative to this one e.g. yq
 export PATH="${ROOT_DIR}:${ROOT_DIR}/../bin:${PATH}"
@@ -87,6 +94,8 @@ checkVersion "${KUSTOMIZE_ROOT}/manager/kustomization.yaml" "${VERSION}" \
 checkVersion "${CHART_ROOT}/values.yaml" "${KUBE_RBAC_PROXY_VERSION}" .controller.kubeRbacProxy.image.tag
 checkVersion "${KUSTOMIZE_ROOT}/default/manager_auth_proxy_patch.yaml" \
   "${KUBE_RBAC_PROXY_VERSION}"  ".spec.template.spec.containers.[] | select(.name == \"kube-rbac-proxy\") | .image"
+checkVersion "${KUSTOMIZE_ROOT}/default-openshift/manager_ubi_auth_proxy_patch.yaml" \
+  "${OPENSHIFT_KUBE_RBAC_PROXY_VERSION}"  ".spec.template.spec.containers.[] | select(.name == \"kube-rbac-proxy\") | .image"
 
 # check VSO-CSI related image versions
 echo "* Checking VSO-CSI related image versions"
