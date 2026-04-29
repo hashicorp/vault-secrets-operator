@@ -129,21 +129,21 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
-		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
+		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339Nano)
 		return client.Patch(ctx, t, patch)
 	case *appsv1.StatefulSet:
 		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
-		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
+		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339Nano)
 		return client.Patch(ctx, t, patch)
 	case *appsv1.DaemonSet:
 		patch := ctrlclient.StrategicMergeFrom(t.DeepCopy())
 		if t.Spec.Template.ObjectMeta.Annotations == nil {
 			t.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 		}
-		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
+		t.Spec.Template.ObjectMeta.Annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339Nano)
 		return client.Patch(ctx, t, patch)
 	case *argorolloutsv1alpha1.Rollout:
 		// use MergeFrom() since it supports CRDs whereas StrategicMergeFrom() does not.
