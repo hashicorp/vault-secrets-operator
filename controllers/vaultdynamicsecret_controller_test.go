@@ -1677,7 +1677,6 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			// the shorter interval (39600 < 46800) before updating LastVaultRotation
 			// due to DB lag. The old ">= lastSyncTTL" check misses this case —
 			// the loop exits immediately with stale credentials instead of retrying.
-			// See: test/integration/modules/vault/VSO Bug
 			name: "static-creds-scheduled-ttl-less-than-last-sync-ttl-uneven-schedule",
 			o: &secretsv1beta1.VaultDynamicSecret{
 				Spec: secretsv1beta1.VaultDynamicSecretSpec{

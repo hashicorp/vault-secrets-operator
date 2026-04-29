@@ -651,6 +651,10 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 					//    this by checking whether the expected countdown TTL is near
 					//    zero (we're at the rotation boundary) while the observed TTL
 					//    is still large (it was reset to a new period).
+					//
+					// 5s tolerance accounts for the backoff poll interval (~2s) plus
+					// network latency, while staying below any realistic mid-cycle TTL
+					// to avoid false retries during remediation (e.g. K8s secret deletion).
 					const ttlResetTolerance = int64(5)
 					timeSinceLastSync := nowFunc().Unix() - o.Status.LastRenewalTime
 					expectedTTL := lastSyncStaticCredsMeta.TTL - timeSinceLastSync
