@@ -40,6 +40,12 @@ var (
 	// set in TestMain
 	client ctrlclient.Client
 	scheme = ctrlruntime.NewScheme()
+	// kubeRBACProxyRepository is set to work around the issue where the image from
+	// GCR is no longer available, it is used to install previous versions of VSO
+	// kubeRBACProxyRepository set in init()
+	kubeRBACProxyRepository = "quay.io/brancz/kube-rbac-proxy"
+	// kubeRBACProxyVersion set in init()
+	kubeRBACProxyVersion string
 )
 
 func init() {
@@ -53,6 +59,16 @@ func init() {
 	}
 
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
+
+	var ok bool
+	kubeRBACProxyVersion, ok = os.LookupEnv("KUBE_RBAC_PROXY_VERSION")
+	if !ok {
+		kubeRBACProxyVersion = "v0.18.1"
+	}
+	kubeRBACProxyRepository, ok = os.LookupEnv("KUBE_RBAC_PROXY_REPOSITORY")
+	if !ok {
+		kubeRBACProxyRepository = "quay.io/brancz/kube-rbac-proxy"
+	}
 }
 
 func TestMain(m *testing.M) {
@@ -217,6 +233,8 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--create-namespace",
 		"--namespace", vsoNamespace,
 		"--version", startChartVersion,
+		"--set", fmt.Sprintf("controller.kubeRbacProxy.image.repository=%s", kubeRBACProxyRepository),
+		"--set", fmt.Sprintf("controller.kubeRbacProxy.image.tag=%s", kubeRBACProxyVersion),
 		releaseName,
 		chart,
 	))
