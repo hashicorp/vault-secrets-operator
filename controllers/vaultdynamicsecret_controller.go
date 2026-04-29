@@ -639,10 +639,32 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 					// but the new secret is not yet available. This can be the case for both
 					// scheduled and non-scheduled rotations.
 					retryError = errors.New("near rotation, ttl<=2")
-				} else if isScheduled && newStaticCredsMeta.TTL >= lastSyncStaticCredsMeta.TTL {
-					// this condition is specific to scheduled rotations, and is meant to catch the
-					// case where the secrets engine has the TTL rollover bug.
-					retryError = errors.New("not rotated, handling ttl rollover bug")
+				} else if isScheduled {
+					// Detect a TTL reset indicating a rotation is in progress.
+					// Two cases:
+					//
+					// 1. Classic TTL rollover (even schedule): newTTL >= lastSyncTTL,
+					//    meaning Vault reset it upward to the start of a new period.
+					//
+					// 2. Uneven schedule (e.g. alternating 2-min/1-min): newTTL resets
+					//    to a SHORTER interval, so the ">=" check misses it. We detect
+					//    this by checking whether the expected countdown TTL is near
+					//    zero (we're at the rotation boundary) while the observed TTL
+					//    is still large (it was reset to a new period).
+					//
+					// 5s tolerance accounts for the backoff poll interval (~2s) plus
+					// network latency, while staying below any realistic mid-cycle TTL
+					// to avoid false retries during remediation (e.g. K8s secret deletion).
+					const ttlResetTolerance = int64(5)
+					timeSinceLastSync := nowFunc().Unix() - o.Status.LastRenewalTime
+					expectedTTL := lastSyncStaticCredsMeta.TTL - timeSinceLastSync
+					if expectedTTL < 0 {
+						expectedTTL = 0
+					}
+					if newStaticCredsMeta.TTL >= lastSyncStaticCredsMeta.TTL ||
+						(expectedTTL <= ttlResetTolerance && newStaticCredsMeta.TTL > ttlResetTolerance) {
+						retryError = errors.New("TTL reset detected, awaiting scheduled rotation commit")
+					}
 				}
 			}
 
