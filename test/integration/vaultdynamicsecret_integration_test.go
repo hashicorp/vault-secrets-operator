@@ -1197,7 +1197,6 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 	vdsObj *secretsv1beta1.VaultDynamicSecret, skipLeaseRevocation bool, maxTriesOverride uint64,
 ) *secretsv1beta1.VaultDynamicSecret {
 	bo := backoff.NewConstantBackOff(time.Millisecond * 500)
-	const minScheduledStaticCredsMaxTries = 240
 	var maxTries uint64
 	if maxTriesOverride > 0 {
 		maxTries = maxTriesOverride
@@ -1218,13 +1217,7 @@ func assertDynamicSecretRotation(t *testing.T, ctx context.Context, client ctrlc
 					// rollover bug
 					ttl = 20
 				}
-				// Scheduled rotations are minute-boundary sensitive. Allow enough time to
-				// observe another full schedule window when the initial sync lands near a
-				// rollover and Vault briefly reports a low TTL without rotating yet.
-				maxTries = uint64(ttl * 10)
-				if maxTries < minScheduledStaticCredsMaxTries {
-					maxTries = minScheduledStaticCredsMaxTries
-				}
+				maxTries = uint64(ttl * 5)
 			}
 			if !assert.NotEmpty(t, vdsObj.Status.SecretMAC,
 				"expected Status.SecretMAC to be set") {

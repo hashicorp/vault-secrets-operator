@@ -5,7 +5,6 @@ package controllers
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -37,66 +36,6 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
-
-type testHMACValidator struct{}
-
-func (v *testHMACValidator) HMAC(_ context.Context, _ client.Client, message []byte) ([]byte, error) {
-	sum := sha256.Sum256(message)
-	ret := make([]byte, len(sum))
-	copy(ret, sum[:])
-	return ret, nil
-}
-
-func (v *testHMACValidator) Validate(ctx context.Context, c client.Client, message, _ []byte) (bool, []byte, error) {
-	newMAC, err := v.HMAC(ctx, c, message)
-	if err != nil {
-		return false, nil, err
-	}
-	return true, newMAC, nil
-}
-
-type reconcileTestClientFactory struct {
-	client vault.Client
-}
-
-func (f *reconcileTestClientFactory) Get(context.Context, client.Client, client.Object) (vault.Client, error) {
-	return f.client, nil
-}
-
-func (f *reconcileTestClientFactory) RegisterClientCallbackHandler(vault.ClientCallbackHandler) {}
-
-// reconcileTestVaultClient implements vault.Client for Reconcile-path tests.
-// It embeds vault.Client (nil) to satisfy all interface methods not explicitly
-// overridden — those methods must not be called during the test, or the nil
-// interface will panic (same pattern as stubVaultClient).
-// MockRecordingVaultClient is held as a named field to avoid Go's ambiguity
-// rule, which would otherwise suppress Read/Write/ID/Taint promotion when both
-// an interface and a struct embedding provide those same method names.
-type reconcileTestVaultClient struct {
-	vault.Client
-	MockRecordingVaultClient *vault.MockRecordingVaultClient
-	cacheKey                 vault.ClientCacheKey
-}
-
-func (c *reconcileTestVaultClient) Read(ctx context.Context, r vault.ReadRequest) (vault.Response, error) {
-	return c.MockRecordingVaultClient.Read(ctx, r)
-}
-
-func (c *reconcileTestVaultClient) Write(ctx context.Context, r vault.WriteRequest) (vault.Response, error) {
-	return c.MockRecordingVaultClient.Write(ctx, r)
-}
-
-func (c *reconcileTestVaultClient) ID() string {
-	return c.MockRecordingVaultClient.ID()
-}
-
-func (c *reconcileTestVaultClient) Taint() {
-	c.MockRecordingVaultClient.Taint()
-}
-
-func (c *reconcileTestVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
-	return c.cacheKey, nil
-}
 
 func Test_computeRelativeHorizon(t *testing.T) {
 	tests := map[string]struct {
@@ -635,11 +574,57 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 	}
 }
 
+type reconcileTestClientFactory struct {
+	client vault.Client
+}
+
+func (f *reconcileTestClientFactory) Get(context.Context, client.Client, client.Object) (vault.Client, error) {
+	return f.client, nil
+}
+
+func (f *reconcileTestClientFactory) RegisterClientCallbackHandler(vault.ClientCallbackHandler) {}
+
+// reconcileTestVaultClient implements vault.Client for Reconcile-path tests.
+// It embeds vault.Client (nil) to satisfy all interface methods not explicitly
+// overridden — those methods must not be called during the test, or the nil
+// interface will panic (same pattern as stubVaultClient).
+// MockRecordingVaultClient is held as a named field to avoid Go's ambiguity
+// rule, which would otherwise suppress Read/Write/ID/Taint promotion when both
+// an interface and a struct embedding provide those same method names.
+type reconcileTestVaultClient struct {
+	vault.Client
+	MockRecordingVaultClient *vault.MockRecordingVaultClient
+	cacheKey                 vault.ClientCacheKey
+}
+
+func (c *reconcileTestVaultClient) Read(ctx context.Context, r vault.ReadRequest) (vault.Response, error) {
+	return c.MockRecordingVaultClient.Read(ctx, r)
+}
+
+func (c *reconcileTestVaultClient) Write(ctx context.Context, r vault.WriteRequest) (vault.Response, error) {
+	return c.MockRecordingVaultClient.Write(ctx, r)
+}
+
+func (c *reconcileTestVaultClient) ID() string {
+	return c.MockRecordingVaultClient.ID()
+}
+
+func (c *reconcileTestVaultClient) Taint() {
+	c.MockRecordingVaultClient.Taint()
+}
+
+func (c *reconcileTestVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
+	return c.cacheKey, nil
+}
+
 // TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC
-// covers the static-creds case where Vault returns a fresh TTL for a periodic
-// static-creds role but the secret data and LastVaultRotation are unchanged.
-// This tests the scenario: the VaultAuth token expires, causing a
-// ForceSync, but no Vault rotation has occurred in the meantime.
+// is a regression test for the bug where VSO retained a stale TTL horizon after
+// a ForceSync triggered by VaultAuth token expiry when no Vault rotation had
+// occurred. It exercises syncSecret directly, in isolation from Reconcile.
+//
+// Scenario: the VaultAuth token expires, ForceSync is triggered, but the
+// static-creds role has not rotated since the last sync. Vault returns the same
+// LastVaultRotation with a lower TTL (time has elapsed since the last rotation).
 //
 // Covered behavior:
 //   - static creds are allowed and returned from Vault
@@ -648,16 +633,20 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 //   - awaitVaultSecretRotation enters the backoff loop (inLastSyncRotation=true)
 //     and makes a second Vault request, which returns the same data
 //   - the stored SecretMAC matches the newly computed HMAC
-//   - syncSecret therefore does not rewrite the Secret (`updated == false`)
-//   - syncSecret still refreshes status metadata: TTL is updated from the
-//     fresh Vault response even though LastVaultRotation is unchanged
+//   - syncSecret therefore does not rewrite the destination Secret (updated == false)
+//   - syncSecret unconditionally refreshes StaticCredsMetaData before the HMAC
+//     comparison, so the fresh TTL is persisted even when the HMAC matches
 //
-// Previous status: TTL=600, LastVaultRotation=12:00
-// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
+// Previous status:          TTL=600, RotationPeriod=600, LastVaultRotation=12:00
+// Refreshed Vault response: TTL=540, RotationPeriod=600, LastVaultRotation=12:00
 func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	secretData := map[string][]byte{
+		"username": []byte("db-user"),
+		"password": []byte("db-pass"),
+	}
 	freshResponse := &vaultResponse{
 		secret: &api.Secret{},
 		data: map[string]any{
@@ -667,10 +656,7 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 			"username":            "db-user",
 			"password":            "db-pass",
 		},
-		k8s: map[string][]byte{
-			"username": []byte("db-user"),
-			"password": []byte("db-pass"),
-		},
+		k8s: secretData,
 	}
 	vClient := &vault.MockRecordingVaultClient{
 		ReadResponses: map[string][]vault.Response{
@@ -681,13 +667,35 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 		},
 	}
 
-	validator := &testHMACValidator{}
-	message, err := json.Marshal(map[string][]byte{
-		"password": []byte("db-pass"),
-		"username": []byte("db-user"),
-	})
+	hmacKey := []byte("0123456789abcdef") // 16 bytes
+	secretClient := fake.NewClientBuilder().WithObjects(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Data: secretData,
+	}, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hmac-key",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			helpers.HMACKeyName: hmacKey,
+		},
+	}).Build()
+
+	// Use the real HMACValidator backed by an HMAC key secret rather than
+	// reimplementing HMAC logic in the test.
+	hmacObjKey := client.ObjectKey{Namespace: "default", Name: "hmac-key"}
+	validator := helpers.NewHMACValidator(hmacObjKey)
+
+	// Pre-compute the MAC the same way syncSecret does: filter the k8s data
+	// through staticTransOpt, JSON-marshal it, and HMAC with the key.
+	filteredData, err := helpers.FilterData(staticTransOpt, secretData)
 	require.NoError(t, err)
-	messageMAC, err := validator.HMAC(ctx, nil, message)
+	message, err := json.Marshal(filteredData)
+	require.NoError(t, err)
+	messageMAC, err := helpers.MACMessage(hmacKey, message)
 	require.NoError(t, err)
 
 	obj := &secretsv1beta1.VaultDynamicSecret{
@@ -714,17 +722,6 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 		},
 	}
 
-	secretClient := fake.NewClientBuilder().WithObjects(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app",
-			Namespace: "default",
-		},
-		Data: map[string][]byte{
-			"username": []byte("db-user"),
-			"password": []byte("db-pass"),
-		},
-	}).Build()
-
 	r := &VaultDynamicSecretReconciler{
 		Client:        secretClient,
 		SecretsClient: secretClient,
@@ -746,39 +743,61 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 }
 
 // TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL
-// covers the scenario: a VaultAuth token expiry evicts the cacheKey and
-// triggers a ForceSync via SyncRegistry, but no Vault rotation has occurred.
-// Vault returns a lower TTL (time has passed) with the same LastVaultRotation.
-// VSO must update status with the fresh TTL so that computePostSyncHorizon
-// produces the correct RequeueAfter — not the stale horizon from the last sync.
+// is a regression test for the bug where VSO retained a stale TTL horizon after
+// a ForceSync triggered by VaultAuth token expiry when no Vault rotation had
+// occurred. It exercises the full Reconcile path, including status persistence
+// and RequeueAfter computation via computePostSyncHorizon.
+//
+// Scenario: the VaultAuth token reaches max_ttl, the cacheKey is evicted, and
+// SyncRegistry triggers a ForceSync. The static-creds role has not rotated, so
+// Vault returns the same LastVaultRotation with a lower TTL.
 //
 // Covered behavior:
 //   - Reconcile is triggered through SyncRegistry (force sync)
 //   - the Vault client is obtained through ClientFactory and matches the
-//     object's cached client metadata
+//     object's cached VaultClientMeta (CacheKey and ID)
 //   - Vault returns a lower TTL but the same LastVaultRotation (no rotation)
 //   - awaitVaultSecretRotation enters the backoff loop (inLastSyncRotation=true)
 //     and makes a second Vault request, confirming the same stable state
 //   - the destination Secret already contains the same data, so the secret
 //     payload is not rewritten
-//   - Reconcile persists the refreshed TTL from the latest Vault response
+//   - Reconcile unconditionally refreshes StaticCredsMetaData before the HMAC
+//     comparison, so the fresh TTL is persisted in status even when HMAC matches
 //   - computePostSyncHorizon uses the refreshed TTL for RequeueAfter
 //   - the SyncRegistry entry is removed after a successful reconcile
 //
-// Previous status: TTL=600, LastVaultRotation=12:00
-// Refreshed Vault metadata: TTL=540, LastVaultRotation=12:00
+// Previous status:          TTL=600, RotationPeriod=600, LastVaultRotation=12:00
+// Refreshed Vault response: TTL=540, RotationPeriod=600, LastVaultRotation=12:00
 func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshedTTL(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	validator := &testHMACValidator{}
 	secretData := map[string][]byte{
 		"password": []byte("db-pass"),
 		"username": []byte("db-user"),
 	}
-	message, err := json.Marshal(secretData)
+
+	// Set up a known HMAC key and pre-compute the MAC before building the
+	// fake client, so everything (including SecretMAC on the status) is
+	// available at object-creation time.
+	hmacObjKey := client.ObjectKey{Namespace: "default", Name: "hmac-key"}
+	hmacKey := []byte("0123456789abcdef") // 16 bytes
+	hmacKeySecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hmacObjKey.Name,
+			Namespace: hmacObjKey.Namespace,
+		},
+		Data: map[string][]byte{
+			helpers.HMACKeyName: hmacKey,
+		},
+	}
+	validator := helpers.NewHMACValidator(hmacObjKey)
+
+	filteredData, err := helpers.FilterData(staticTransOpt, secretData)
 	require.NoError(t, err)
-	messageMAC, err := validator.HMAC(ctx, nil, message)
+	message, err := json.Marshal(filteredData)
+	require.NoError(t, err)
+	messageMAC, err := helpers.MACMessage(hmacKey, message)
 	require.NoError(t, err)
 
 	obj := &secretsv1beta1.VaultDynamicSecret{
@@ -822,7 +841,7 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 
 	secretClient := testutils.NewFakeClientBuilder().
 		WithStatusSubresource(obj).
-		WithObjects(obj, destSecret).
+		WithObjects(obj, destSecret, hmacKeySecret).
 		Build()
 
 	freshResponse := &vaultResponse{
@@ -870,6 +889,7 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	// Two requests: initial doVault + one backoff-loop doVault (inLastSyncRotation=true)
 	assert.Len(t, vClient.MockRecordingVaultClient.Requests, 2)
 	assert.False(t, syncRegistry.Has(objKey))
+	// horizon = TTL(540s) + 500ms (periodic static-creds buffer) + jitter [0, 150ms]
 	assert.GreaterOrEqual(t, result.RequeueAfter, 540*time.Second+500*time.Millisecond)
 	assert.LessOrEqual(t, result.RequeueAfter, 540*time.Second+650*time.Millisecond)
 
