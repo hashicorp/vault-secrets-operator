@@ -534,13 +534,16 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 		logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
 
+		// Always update StaticCredsMetaData before the macsEqual check so that a
+		// refreshed TTL (e.g. from a ForceSync on VaultAuth token expiry) is
+		// persisted even when the secret data has not changed.
+		o.Status.StaticCredsMetaData = *staticCredsMeta
 		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
+
 		if macsEqual {
 			return secretLease, false, nil
 		}
-
-		o.Status.StaticCredsMetaData = *staticCredsMeta
-		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
 	} else {
 		data, err = resp.SecretK8sData(opt)
 		if err != nil {
