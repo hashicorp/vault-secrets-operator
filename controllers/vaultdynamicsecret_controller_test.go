@@ -584,13 +584,10 @@ func (f *reconcileTestClientFactory) Get(context.Context, client.Client, client.
 
 func (f *reconcileTestClientFactory) RegisterClientCallbackHandler(vault.ClientCallbackHandler) {}
 
-// reconcileTestVaultClient implements vault.Client for Reconcile-path tests.
-// It embeds vault.Client (nil) to satisfy all interface methods not explicitly
-// overridden — those methods must not be called during the test, or the nil
-// interface will panic (same pattern as stubVaultClient).
-// MockRecordingVaultClient is held as a named field to avoid Go's ambiguity
-// rule, which would otherwise suppress Read/Write/ID/Taint promotion when both
-// an interface and a struct embedding provide those same method names.
+// reconcileTestVaultClient wraps MockRecordingVaultClient with a cacheKey and
+// satisfies the full vault.Client interface via a nil vault.Client embedding.
+// MockRecordingVaultClient is a named field (not embedded) to avoid Go's
+// method ambiguity with the embedded vault.Client interface.
 type reconcileTestVaultClient struct {
 	vault.Client
 	MockRecordingVaultClient *vault.MockRecordingVaultClient
