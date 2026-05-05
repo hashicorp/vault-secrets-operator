@@ -260,7 +260,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			if secretLease.ID != leaseID {
 				// the new lease ID does not match, this should never happen.
 				err := fmt.Errorf("lease ID changed after renewal, expected=%s, actual=%s", leaseID, secretLease.ID)
-				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal, err.Error())
+				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal, "%s", err)
 				return ctrl.Result{}, err
 			}
 			conditions = append(conditions,

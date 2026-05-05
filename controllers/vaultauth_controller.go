@@ -189,7 +189,7 @@ func (r *VaultAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	} else {
 		logger.Error(errs, "Failed to handle VaultAuth resource request", "horizon", horizon)
 		r.recordEvent(o, consts.ReasonAccepted,
-			fmt.Sprintf("Failed to handle VaultAuth resource request: err=%s", errs))
+			"Failed to handle VaultAuth resource request: err=%s", errs)
 	}
 
 	return ctrl.Result{
