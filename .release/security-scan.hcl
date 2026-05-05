@@ -37,6 +37,7 @@ container {
                 "CVE-2025-69720",
                 // glibc - CVE not explicitly listed in UBI 10.1 changelog; no patched version available
                 "CVE-2025-15281",
+                "CVE-2026-4046",
                 // libcap - fix is present in UBI 10.1 changelog (backported)
                 "CVE-2026-4878",
             ]
