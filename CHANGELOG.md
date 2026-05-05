@@ -1,4 +1,4 @@
-## 1.4.0 (April 30th, 2026)
+## 1.4.0 (May 5th, 2026)
 
 Fix:
 * Detect TTL reset for uneven rotation schedules with ttl rollover bug: ([#1259](https://github.com/hashicorp/vault-secrets-operator/pull/1259))
@@ -7,6 +7,7 @@ Fix:
 * fix: Update VDS static credentials metadata handling: ([#1255](https://github.com/hashicorp/vault-secrets-operator/pull/1255))
 
 Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 12 updates: ([#1262](https://github.com/hashicorp/vault-secrets-operator/pull/1262))
 * Bump go.opentelemetry.io/otel from 1.39.0 to 1.41.0: ([#1257](https://github.com/hashicorp/vault-secrets-operator/pull/1257))
 * Bump github.com/jackc/pgx/v5 from 5.7.1 to 5.9.2: ([#1251](https://github.com/hashicorp/vault-secrets-operator/pull/1251))
 * Bump github.com/moby/spdystream from 0.5.0 to 0.5.1: ([#1248](https://github.com/hashicorp/vault-secrets-operator/pull/1248))
