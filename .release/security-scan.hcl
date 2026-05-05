@@ -33,6 +33,12 @@ container {
             vulnerabilities = [
                 // Addresses a false positive from scan (our security scanner)
                 "CVE-2025-6020",
+                // ncurses-base - fix is present in UBI 10.1 changelog (backported)
+                "CVE-2025-69720",
+                // glibc - CVE not explicitly listed in UBI 10.1 changelog; no patched version available
+                "CVE-2025-15281",
+                // libcap - fix is present in UBI 10.1 changelog (backported)
+                "CVE-2026-4878",
             ]
         }
     }
