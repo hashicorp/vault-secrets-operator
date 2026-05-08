@@ -102,7 +102,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			o.Spec.Destination.Name, horizon)
 		logger.Info(msg)
 		o.Status.Error = consts.ReasonK8sClientError
-		r.recordEvent(o, o.Status.Error, msg)
+		r.recordEvent(o, o.Status.Error, "%s", msg)
 		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
 			"Failed to sync the secret, horizon=%s, err=%s", horizon, consts.ReasonK8sClientError)); err != nil {
 			return ctrl.Result{}, err
@@ -229,7 +229,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		o.Status.Error = consts.ReasonK8sClientError
 		msg := "Invalid Vault secret data, serial_number cannot be empty"
 		logger.Error(nil, msg)
-		r.recordEvent(o, o.Status.Error, msg)
+		r.recordEvent(o, o.Status.Error, "%s", msg)
 		if err := r.updateStatus(ctx, o, false, conditions...); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -328,7 +328,7 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	r.SyncRegistry.Delete(req.NamespacedName)
 
-	r.recordEvent(o, reason, fmt.Sprintf("Secret synced, horizon=%s", horizon))
+	r.recordEvent(o, reason, "Secret synced, horizon=%s", horizon)
 	logger.Info("Successfully updated the secret", "horizon", horizon)
 	return ctrl.Result{
 		RequeueAfter: horizon,

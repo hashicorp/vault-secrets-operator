@@ -260,7 +260,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			if secretLease.ID != leaseID {
 				// the new lease ID does not match, this should never happen.
 				err := fmt.Errorf("lease ID changed after renewal, expected=%s, actual=%s", leaseID, secretLease.ID)
-				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal, err.Error())
+				r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretLeaseRenewal, "%s", err)
 				return ctrl.Result{}, err
 			}
 			conditions = append(conditions,
@@ -534,13 +534,16 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 		logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
 
+		// Always update StaticCredsMetaData before the macsEqual check so that a
+		// refreshed TTL (e.g. from a ForceSync on VaultAuth token expiry) is
+		// persisted even when the secret data has not changed.
+		o.Status.StaticCredsMetaData = *staticCredsMeta
 		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
+
 		if macsEqual {
 			return secretLease, false, nil
 		}
-
-		o.Status.StaticCredsMetaData = *staticCredsMeta
-		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
 	} else {
 		data, err = resp.SecretK8sData(opt)
 		if err != nil {
@@ -575,20 +578,18 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 
 	// if we are not handling static creds or the rotation schedule is not set, then
 	// we can return early.
-	if !r.isStaticCreds(staticCredsMeta) || staticCredsMeta.RotationSchedule == "" {
+	if !r.isStaticCreds(staticCredsMeta) {
 		return staticCredsMeta, resp, nil
 	}
 
 	lastSyncStaticCredsMeta := o.Status.StaticCredsMetaData.DeepCopy()
 	inLastSyncRotation := lastSyncStaticCredsMeta.LastVaultRotation == staticCredsMeta.LastVaultRotation
+	isScheduled := staticCredsMeta.RotationSchedule != ""
 	switch {
 	case !inLastSyncRotation:
 		// return early, not in the last rotation
 		return staticCredsMeta, resp, nil
-	case lastSyncStaticCredsMeta.RotationSchedule == "":
-		// return early, rotation schedule was not set in the last sync
-		return staticCredsMeta, resp, nil
-	case lastSyncStaticCredsMeta.RotationSchedule != staticCredsMeta.RotationSchedule:
+	case isScheduled && lastSyncStaticCredsMeta.RotationSchedule != staticCredsMeta.RotationSchedule:
 		// return early, rotation schedule has changed
 		return staticCredsMeta, resp, nil
 	}
@@ -600,12 +601,20 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		"inLastSyncRotation", inLastSyncRotation,
 	)
 
+	// backoff to await the Vault secret rotation, which should happen within the
+	// rotation period/schedule. a terminating error is returned if the rotation does
+	// not happen within the expected time horizon; it is expected that the
+	// controller will requeue and try again in this case, which allows for handling
+	// cases where the secrets engine has the TTL rollover bug or there is latency in
+	// the rotation happening after the scheduled time.
 	bo := backoff.NewExponentialBackOff(
 		// the minimum rotation period is 5s, so it should be safe to double that.
 		// Ideally we could use the rotation's TTL value here, but that value is not
 		// considered to be reliable to the TTL roll-over bug that might exist in the database
 		// secrets engine.
 		backoff.WithMaxElapsedTime(time.Second*10),
+		// the jitter is necessary in order to avoid thundering herds of requests to
+		// Vault in the case of secrets with similar rotation schedules or periods
 		backoff.WithMaxInterval(time.Second*2))
 	if err := backoff.Retry(
 		func() error {
@@ -625,22 +634,59 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 				// rotation if it is less than 2s away or if the ttl has increased wrt. to the
 				// last rotation. An increase in ttl indicates that secrets engine has the TTL
 				// rollover bug, so we need to wait for the next rotation in order to get the
-				// correct/true TTL value.
+				// correct/true TTL value. For periodic (non-scheduled) rotations, a TTL value of
+				// 0 means that the secret is being rotated and the new secret is not yet
+				// available, so we should also wait in this case.
 				if newStaticCredsMeta.TTL <= 2 {
+					// this condition is a catch-all for the case where the secret is being rotated
+					// but the new secret is not yet available. This can be the case for both
+					// scheduled and non-scheduled rotations.
 					retryError = errors.New("near rotation, ttl<=2")
-				} else if newStaticCredsMeta.TTL >= lastSyncStaticCredsMeta.TTL {
-					retryError = errors.New("not rotated, handling ttl rollover bug")
+				} else if isScheduled {
+					// Detect a TTL reset indicating a rotation is in progress.
+					// Two cases:
+					//
+					// 1. Classic TTL rollover (even schedule): newTTL >= lastSyncTTL,
+					//    meaning Vault reset it upward to the start of a new period.
+					//
+					// 2. Uneven schedule (e.g. alternating 2-min/1-min): newTTL resets
+					//    to a SHORTER interval, so the ">=" check misses it. We detect
+					//    this by checking whether the expected countdown TTL is near
+					//    zero (we're at the rotation boundary) while the observed TTL
+					//    is still large (it was reset to a new period).
+					//
+					// 5s tolerance accounts for the backoff poll interval (~2s) plus
+					// network latency, while staying below any realistic mid-cycle TTL
+					// to avoid false retries during remediation (e.g. K8s secret deletion).
+					const ttlResetTolerance = int64(5)
+					timeSinceLastSync := nowFunc().Unix() - o.Status.LastRenewalTime
+					expectedTTL := lastSyncStaticCredsMeta.TTL - timeSinceLastSync
+					if expectedTTL < 0 {
+						expectedTTL = 0
+					}
+					if newStaticCredsMeta.TTL >= lastSyncStaticCredsMeta.TTL ||
+						(expectedTTL <= ttlResetTolerance && newStaticCredsMeta.TTL > ttlResetTolerance) {
+						retryError = errors.New("TTL reset detected, awaiting scheduled rotation commit")
+					}
 				}
 			}
 
-			logger.V(consts.LogLevelDebug).Info("Stale static creds backoff",
-				"newStaticCredsMeta", newStaticCredsMeta,
-				"retryError", retryError,
-			)
 			if retryError != nil {
+				var logMsg string
+				if isScheduled {
+					logMsg = "Stale static creds backoff"
+				} else {
+					logMsg = "In static creds rotation backoff"
+				}
+
+				logger.V(consts.LogLevelDebug).Info(logMsg,
+					"newStaticCredsMeta", newStaticCredsMeta,
+					"retryError", retryError,
+				)
 				return retryError
 			}
 
+			// new static creds are available
 			staticCredsMeta = newStaticCredsMeta
 			return nil
 		}, bo); err != nil {

@@ -920,6 +920,13 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 //
 // Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
 func NewSyncableSecretMetaDataI(obj ctrlclient.Object) (SyncableSecretMetaDataI, error) {
+	// If obj already implements SyncableSecretMetaDataI, return it directly.
+	// This allows external consumers to provide custom types
+	// without modifying this function.
+	if metaObj, ok := obj.(SyncableSecretMetaDataI); ok {
+		return metaObj, nil
+	}
+
 	meta := &SyncableSecretMetaData{
 		Name:      obj.GetName(),
 		Namespace: obj.GetNamespace(),

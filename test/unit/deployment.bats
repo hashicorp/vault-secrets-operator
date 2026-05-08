@@ -1510,96 +1510,242 @@ load _helpers
   [ "${actual}" = "DoNotSchedule" ]
 }
 
-@test "controller/Deployment: topologySpreadConstraint automatically adds labelSelector when not provided" {
+#--------------------------------------------------------------------
+# controller.manager.volumes
+
+@test "controller/Deployment: default volumes includes only podinfo" {
   cd `chart_dir`
   local object
   object=$(helm template \
     -s templates/deployment.yaml \
-    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
-    --set "controller.topologySpreadConstraints[0].topologyKey=kubernetes.io/zone" \
-    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
     . | tee /dev/stderr |
-    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.volumes' | tee /dev/stderr)
 
   local actual
-  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
-  [ "${actual}" = "vault-secrets-operator" ]
-  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/instance"' | tee /dev/stderr)
-  [ "${actual}" = "release-name" ]
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+  actual=$(echo "$object" | yq '.[0].downwardAPI' | tee /dev/stderr)
+  [ "${actual}" != "null" ]
 }
 
-@test "controller/Deployment: topologySpreadConstraint preserves existing labelSelector" {
+@test "controller/Deployment: default volumeMounts includes only podinfo" {
   cd `chart_dir`
   local object
   object=$(helm template \
     -s templates/deployment.yaml \
-    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
-    --set "controller.topologySpreadConstraints[0].topologyKey=kubernetes.io/zone" \
-    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
-    --set "controller.topologySpreadConstraints[0].labelSelector.matchLabels.custom=value" \
     . | tee /dev/stderr |
-    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .volumeMounts' | tee /dev/stderr)
 
   local actual
-  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels.custom' | tee /dev/stderr)
-  [ "${actual}" = "value" ]
-  # Should not have auto-added labels when labelSelector is provided
-  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
-  [ "${actual}" = "null" ]
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+  actual=$(echo "$object" | yq '.[0].mountPath' | tee /dev/stderr)
+  [ "${actual}" = "/var/run/podinfo" ]
 }
 
-@test "controller/Deployment: multiple topologySpreadConstraints with mixed labelSelector scenarios" {
+@test "controller/Deployment: can add a secret volume without mountPath" {
   cd `chart_dir`
   local object
   object=$(helm template \
     -s templates/deployment.yaml \
-    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
-    --set "controller.topologySpreadConstraints[0].topologyKey=kubernetes.io/zone" \
-    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
-    --set "controller.topologySpreadConstraints[1].maxSkew=2" \
-    --set "controller.topologySpreadConstraints[1].topologyKey=kubernetes.io/hostname" \
-    --set "controller.topologySpreadConstraints[1].whenUnsatisfiable=ScheduleAnyway" \
-    --set "controller.topologySpreadConstraints[1].labelSelector.matchLabels.custom=label" \
+    --set 'controller.manager.volumes[0].name=my-secret' \
+    --set 'controller.manager.volumes[0].secret.secretName=test-secret' \
+    --set 'controller.manager.volumes[0].secret.defaultMode=0400' \
     . | tee /dev/stderr |
-    yq '.spec.template.spec.topologySpreadConstraints | select(documentIndex == 1)' | tee /dev/stderr)
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.volumes' | tee /dev/stderr)
 
+  # Should have 2 volumes: podinfo + my-secret
   local actual
-  # Check array length
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
   [ "${actual}" = "2" ]
-
-  # First constraint should have auto-added labelSelector
-  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
-  [ "${actual}" = "vault-secrets-operator" ]
-  actual=$(echo "$object" | yq '.[0].labelSelector.matchLabels."app.kubernetes.io/instance"' | tee /dev/stderr)
-  [ "${actual}" = "release-name" ]
-
-  # Second constraint should preserve its custom labelSelector
-  actual=$(echo "$object" | yq '.[1].labelSelector.matchLabels.custom' | tee /dev/stderr)
-  [ "${actual}" = "label" ]
-  actual=$(echo "$object" | yq '.[1].labelSelector.matchLabels."app.kubernetes.io/name"' | tee /dev/stderr)
-  [ "${actual}" = "null" ]
+  
+  # First volume should still be podinfo
+  actual=$(echo "$object" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+  
+  # Second volume should be the secret
+  actual=$(echo "$object" | yq '.[1].name' | tee /dev/stderr)
+  [ "${actual}" = "my-secret" ]
+  actual=$(echo "$object" | yq '.[1].secret.secretName' | tee /dev/stderr)
+  [ "${actual}" = "test-secret" ]
+  actual=$(echo "$object" | yq '.[1].secret.defaultMode' | tee /dev/stderr)
+  [ "${actual}" = "0400" ]
 }
 
-@test "controller/Deployment: topologySpreadConstraints generates valid YAML structure" {
+@test "controller/Deployment: volume without mountPath does not create volumeMount" {
   cd `chart_dir`
-  local template_output
-  # This test ensures the template doesn't produce parse errors
-  template_output=$(helm template \
+  local object
+  object=$(helm template \
     -s templates/deployment.yaml \
-    --set "controller.topologySpreadConstraints[0].maxSkew=1" \
-    --set "controller.topologySpreadConstraints[0].topologyKey=kubernetes.io/zone" \
-    --set "controller.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule" \
-    --set "controller.topologySpreadConstraints[1].maxSkew=2" \
-    --set "controller.topologySpreadConstraints[1].topologyKey=kubernetes.io/hostname" \
-    --set "controller.topologySpreadConstraints[1].whenUnsatisfiable=ScheduleAnyway" \
-    . 2>&1)
+    --set 'controller.manager.volumes[0].name=my-secret' \
+    --set 'controller.manager.volumes[0].secret.secretName=test-secret' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .volumeMounts' | tee /dev/stderr)
 
-  # Check that helm template succeeded (no parse errors)
-  local exit_code=$?
-  [ $exit_code -eq 0 ]
+  # Should only have podinfo mount
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$object" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+}
 
-  # Check that the output contains no YAML parse error messages
-  echo "$template_output" | grep -v "error converting YAML to JSON"
-  echo "$template_output" | grep -v "mapping values are not allowed in this context"
+@test "controller/Deployment: can add volume with mountPath" {
+  cd `chart_dir`
+  local volumes
+  volumes=$(helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.manager.volumes[0].name=my-secret' \
+    --set 'controller.manager.volumes[0].secret.secretName=test-secret' \
+    --set 'controller.manager.volumes[0].mountPath=/vault/secrets' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.volumes' | tee /dev/stderr)
+
+  local mounts
+  mounts=$(helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.manager.volumes[0].name=my-secret' \
+    --set 'controller.manager.volumes[0].secret.secretName=test-secret' \
+    --set 'controller.manager.volumes[0].mountPath=/vault/secrets' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .volumeMounts' | tee /dev/stderr)
+
+  # Check volume is defined
+  local actual
+  actual=$(echo "$volumes" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  actual=$(echo "$volumes" | yq '.[1].name' | tee /dev/stderr)
+  [ "${actual}" = "my-secret" ]
+
+  # Check volumeMount is created
+  actual=$(echo "$mounts" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  actual=$(echo "$mounts" | yq '.[1].name' | tee /dev/stderr)
+  [ "${actual}" = "my-secret" ]
+  actual=$(echo "$mounts" | yq '.[1].mountPath' | tee /dev/stderr)
+  [ "${actual}" = "/vault/secrets" ]
+}
+
+@test "controller/Deployment: can add volume with mountPath and readOnly" {
+  cd `chart_dir`
+  local mounts
+  mounts=$(helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.manager.volumes[0].name=my-secret' \
+    --set 'controller.manager.volumes[0].secret.secretName=test-secret' \
+    --set 'controller.manager.volumes[0].mountPath=/vault/secrets' \
+    --set 'controller.manager.volumes[0].readOnly=true' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .volumeMounts' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$mounts" | yq '.[1].readOnly' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: can add multiple volumes" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.manager.volumes[0].name=secret-vol' \
+    --set 'controller.manager.volumes[0].secret.secretName=my-secret' \
+    --set 'controller.manager.volumes[0].mountPath=/secrets' \
+    --set 'controller.manager.volumes[1].name=config-vol' \
+    --set 'controller.manager.volumes[1].configMap.name=my-config' \
+    --set 'controller.manager.volumes[1].mountPath=/config' \
+    --set 'controller.manager.volumes[2].name=empty-vol' \
+    --set 'controller.manager.volumes[2].emptyDir={}' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.volumes' | tee /dev/stderr)
+
+  # Should have 4 volumes: podinfo + 3 custom
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "4" ]
+  
+  actual=$(echo "$object" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+  actual=$(echo "$object" | yq '.[1].name' | tee /dev/stderr)
+  [ "${actual}" = "secret-vol" ]
+  actual=$(echo "$object" | yq '.[2].name' | tee /dev/stderr)
+  [ "${actual}" = "config-vol" ]
+  actual=$(echo "$object" | yq '.[3].name' | tee /dev/stderr)
+  [ "${actual}" = "empty-vol" ]
+}
+
+@test "controller/Deployment: cannot override podinfo volume" {
+  cd `chart_dir`
+  local object
+  object=$(helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.manager.volumes[0].name=podinfo' \
+    --set 'controller.manager.volumes[0].emptyDir={}' \
+    --set 'controller.manager.volumes[1].name=my-secret' \
+    --set 'controller.manager.volumes[1].secret.secretName=test-secret' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.volumes' | tee /dev/stderr)
+
+  # Should have 2 volumes: podinfo (original) + my-secret
+  # The podinfo override should be filtered out
+  local actual
+  actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "2" ]
+  
+  # First should still be the downwardAPI podinfo
+  actual=$(echo "$object" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+  actual=$(echo "$object" | yq '.[0].downwardAPI' | tee /dev/stderr)
+  [ "${actual}" != "null" ]
+  actual=$(echo "$object" | yq '.[0].emptyDir' | tee /dev/stderr)
+  [ "${actual}" = "null" ]
+  
+  # Second should be my-secret
+  actual=$(echo "$object" | yq '.[1].name' | tee /dev/stderr)
+  [ "${actual}" = "my-secret" ]
+}
+
+@test "controller/Deployment: cannot override podinfo volumeMount path" {
+  cd `chart_dir`
+  local mounts
+  mounts=$(helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.manager.volumes[0].name=podinfo' \
+    --set 'controller.manager.volumes[0].emptyDir={}' \
+    --set 'controller.manager.volumes[0].mountPath=/different/path' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .volumeMounts' | tee /dev/stderr)
+
+  # Should only have the original podinfo mount
+  local actual
+  actual=$(echo "$mounts" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$mounts" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+  actual=$(echo "$mounts" | yq '.[0].mountPath' | tee /dev/stderr)
+  [ "${actual}" = "/var/run/podinfo" ]
+}
+
+@test "controller/Deployment: cannot use podinfo mountPath with different volume name" {
+  cd "$(chart_dir)"
+  mounts=$(helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.manager.volumes[0].name=my-volume' \
+    --set 'controller.manager.volumes[0].emptyDir={}' \
+    --set 'controller.manager.volumes[0].mountPath=/var/run/podinfo' \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .volumeMounts' | tee /dev/stderr)
+
+  # Should only have the original podinfo mount, user's mount should be filtered out
+  local actual
+  actual=$(echo "$mounts" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$mounts" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "podinfo" ]
+  actual=$(echo "$mounts" | yq '.[0].mountPath' | tee /dev/stderr)
+  [ "${actual}" = "/var/run/podinfo" ]
 }

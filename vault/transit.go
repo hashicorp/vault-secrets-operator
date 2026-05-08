@@ -92,8 +92,8 @@ func DecryptCiphertextWithTransit(ctx context.Context, vaultClient Client, mount
 	return base64.StdEncoding.DecodeString(d.Plaintext)
 }
 
-// WithKeyVersion sets the key version for EncryptWithTransit.
+// WithTransitKeyVersion sets the key version for EncryptWithTransit.
 // It is ignored when passed to DecryptWithTransit.
-func WithKeyVersion(v uint) TransitOption {
+func WithTransitKeyVersion(v uint32) TransitOption {
 	return func(m map[string]any) { m["key_version"] = v }
 }

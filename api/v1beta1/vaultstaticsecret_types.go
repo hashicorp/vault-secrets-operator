@@ -85,6 +85,9 @@ type VaultStaticSecretStatus struct {
 	// The SecretMac is also used to detect drift in the Destination Secret's Data.
 	// If drift is detected the data will be synced to the Destination.
 	SecretMAC string `json:"secretMAC,omitempty"`
+	// VaultClientMeta contains the status of the Vault client and is used during
+	// resource reconciliation.
+	VaultClientMeta VaultClientMeta `json:"vaultClientMeta,omitempty"`
 	// Conditions hold information that can be used by other apps to determine the
 	// health of the resource instance.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

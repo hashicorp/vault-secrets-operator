@@ -197,7 +197,7 @@ controller:
     image:
       pullPolicy: IfNotPresent
       repository: hashicorp/vault-secrets-operator
-      tag: 1.2.0
+      tag: 1.4.0
 
     # logging
     logging:
@@ -547,6 +547,25 @@ controller:
     #
     # @type: array
     extraArgs: []
+
+    # Defines additional volumes to be added to the vault-secrets-operator manager pod.
+    # This can be used to mount secrets, configmaps, or other volume types.
+    # Note: The operator pod already has a downwardAPI volume named 'podinfo' at
+    # /var/run/podinfo. User-defined volumes cannot override this.
+    # Example:
+    #
+    # ```yaml
+    # volumes:
+    #   - name: approle-secret
+    #     secret:
+    #       secretName: my-approle-secret
+    #       defaultMode: 0400
+    #   - name: tls-certs
+    #     configMap:
+    #       name: vault-tls
+    # ```
+    # @type: array<map>
+    volumes: []
 
     # Configures the default resources for the vault-secrets-operator container.
     # For more information on configuring resources, see the K8s documentation:
@@ -1030,7 +1049,7 @@ csi:
       # The Docker repository of the CSI driver image.
       repository: hashicorp/vault-secrets-operator-csi
       # The version of the CSI driver image to download.
-      tag: 1.0.1
+      tag: 1.0.2
 
     # Additional environment variables for the
     # CSI driver container.

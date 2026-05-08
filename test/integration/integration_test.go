@@ -519,10 +519,11 @@ type revocationK8sOutputs struct {
 }
 
 type authMethodsK8sOutputs struct {
-	AuthRole      string `json:"auth_role"`
-	AppRoleRoleID string `json:"role_id"`
-	GSAEmail      string `json:"gsa_email"`
-	VaultPolicy   string `json:"vault_policy"`
+	AuthRole            string `json:"auth_role"`
+	AppRoleRoleID       string `json:"role_id"`
+	AppRoleSecretIDPath string `json:"approle_secretid_path"`
+	GSAEmail            string `json:"gsa_email"`
+	VaultPolicy         string `json:"vault_policy"`
 }
 
 func assertDynamicSecret(t *testing.T, client ctrlclient.Client, maxRetries int,

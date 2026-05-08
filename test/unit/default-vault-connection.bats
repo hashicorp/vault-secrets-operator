@@ -75,3 +75,15 @@ load _helpers
     actual=$(echo "$object" | yq '.spec.headers.baz' | tee /dev/stderr)
      [ "${actual}" = "qux" ]
 }
+
+@test "defaultConnection/CR: can set caCertPath" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-vault-connection.yaml  \
+        --set 'defaultVaultConnection.enabled=true' \
+        --set 'defaultVaultConnection.caCertPath=/etc/ssl/certs/ca.crt' \
+        . | tee /dev/stderr)
+
+    local actual=$(echo "$object" | yq '.spec.caCertPath' | tee /dev/stderr)
+     [ "${actual}" = "/etc/ssl/certs/ca.crt" ]
+}

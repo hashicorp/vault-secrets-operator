@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -190,4 +191,111 @@ func makeVaultHttpHeaders(t *testing.T, namespace string, headers http.Header) h
 	}
 
 	return h
+}
+
+func TestClientConfig_MutuallyExclusiveCACerts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	testCABytes, err := generateCA()
+	require.NoError(t, err)
+
+	// Create a temporary CA cert file for testing
+	tmpFile, err := os.CreateTemp("", "test-ca-*.pem")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	_, err = tmpFile.Write(testCABytes)
+	require.NoError(t, err)
+	require.NoError(t, tmpFile.Close())
+
+	tests := map[string]struct {
+		vaultConfig   *ClientConfig
+		CACert        []byte
+		expectedError error
+	}{
+		"both CACertSecretRef and CACertPath set": {
+			vaultConfig: &ClientConfig{
+				CACertSecretRef: "vault-cert",
+				CACertPath:      tmpFile.Name(),
+				K8sNamespace:    "vault",
+				Address:         "localhost",
+			},
+			CACert:        testCABytes,
+			expectedError: fmt.Errorf("invalid CA cert config: CACertPath and CACertSecretRef are mutually exclusive, only one can be set"),
+		},
+		"only CACertPath set - success": {
+			vaultConfig: &ClientConfig{
+				CACertPath:    tmpFile.Name(),
+				K8sNamespace:  "vault",
+				Address:       "localhost",
+				TLSServerName: "vault-server",
+			},
+			CACert:        nil,
+			expectedError: nil,
+		},
+		"only CACertSecretRef set - success": {
+			vaultConfig: &ClientConfig{
+				CACertSecretRef: "vault-cert",
+				K8sNamespace:    "vault",
+				Address:         "localhost",
+				TLSServerName:   "vault-server",
+			},
+			CACert:        testCABytes,
+			expectedError: nil,
+		},
+		"CACertPath file does not exist": {
+			vaultConfig: &ClientConfig{
+				CACertPath:   "/nonexistent/ca.pem",
+				K8sNamespace: "vault",
+				Address:      "localhost",
+			},
+			CACert:        nil,
+			expectedError: fmt.Errorf("failed to read CA cert file \"/nonexistent/ca.pem\": open /nonexistent/ca.pem: no such file or directory"),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			clientBuilder := fake.NewClientBuilder()
+			if len(tc.CACert) != 0 {
+				caCertSecret := corev1.Secret{
+					ObjectMeta: v1.ObjectMeta{
+						Name:      tc.vaultConfig.CACertSecretRef,
+						Namespace: tc.vaultConfig.K8sNamespace,
+					},
+					Data: map[string][]byte{consts.TLSSecretCAKey: tc.CACert},
+				}
+				clientBuilder = clientBuilder.WithObjects(&caCertSecret)
+			}
+			fakeClient := clientBuilder.Build()
+			vaultClient, err := MakeVaultClient(ctx, tc.vaultConfig, fakeClient)
+			if tc.expectedError != nil {
+				assert.EqualError(t, err, tc.expectedError.Error())
+				assert.Nil(t, vaultClient)
+			} else {
+				assert.NoError(t, err)
+				require.NotNil(t, vaultClient)
+				vaultClient.SetCloneHeaders(true)
+				vaultConfig := vaultClient.CloneConfig()
+
+				tlsConfig := vaultConfig.HttpClient.Transport.(*http.Transport).TLSClientConfig
+
+				assert.Equal(t, tc.vaultConfig.Address, vaultConfig.Address)
+				assert.Equal(t, tc.vaultConfig.SkipTLSVerify, tlsConfig.InsecureSkipVerify)
+				assert.Equal(t, tc.vaultConfig.TLSServerName, tlsConfig.ServerName)
+
+				// Verify CA cert pool is set when CACertPath is used
+				if tc.vaultConfig.CACertPath != "" {
+					require.NotNil(t, tlsConfig.RootCAs)
+					expectedCertPool, err := rootcerts.AppendCertificate(testCABytes)
+					require.NoError(t, err)
+					assert.Truef(t, tlsConfig.RootCAs.Equal(expectedCertPool),
+						"expected CA cert pool %v, got %v", expectedCertPool, tlsConfig.RootCAs,
+					)
+				}
+			}
+		})
+	}
 }

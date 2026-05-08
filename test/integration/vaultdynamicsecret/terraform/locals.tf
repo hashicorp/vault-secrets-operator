@@ -21,6 +21,7 @@ locals {
   postgres_host                 = "${data.kubernetes_service.postgres.metadata[0].name}.${helm_release.postgres.namespace}.svc.cluster.local:${data.kubernetes_service.postgres.spec[0].port[0].port}"
   db_role                       = "dev-postgres"
   db_role_static                = "${local.db_role}-static"
+  db_role_static_delayed        = "${local.db_role_static}-delayed"
   db_role_static_user           = "${local.db_role_static}-user"
   db_role_static_scheduled      = "${local.db_role_static}-scheduled"
   db_role_static_user_scheduled = "${local.db_role_static}-user-scheduled"
