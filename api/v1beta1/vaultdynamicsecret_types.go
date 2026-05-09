@@ -70,6 +70,31 @@ type VaultDynamicSecretSpec struct {
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))$`
 	RefreshAfter string `json:"refreshAfter,omitempty"`
+	// SyncConfig configures sync behavior from Vault to VSO. When
+	// SyncConfig.InstantUpdates is true, EngineType MUST be set to one of
+	// "database" or "ldap"; the operator subscribes to the corresponding Vault
+	// event stream and triggers a reconcile on rotation events that match this
+	// resource's mount and role name. Requires Vault Enterprise >= 1.16
+	// (database) or >= 1.21 (ldap).
+	SyncConfig *VaultDynamicSecretSyncConfig `json:"syncConfig,omitempty"`
+}
+
+// VaultDynamicSecretSyncConfig configures sync behavior from Vault to VSO for
+// a VaultDynamicSecret. It is the dynamic-secret counterpart of
+// VaultStaticSecret.Spec.SyncConfig.
+type VaultDynamicSecretSyncConfig struct {
+	// InstantUpdates enables event-driven updates for this VaultDynamicSecret.
+	// Requires Vault Enterprise >= 1.16 (database) or >= 1.21 (ldap), and a
+	// VaultAuth role with read on sys/events/subscribe/<engineType>/* and
+	// list+subscribe on the secret path with subscribe_event_types = ["*"].
+	// +kubebuilder:default=false
+	InstantUpdates bool `json:"instantUpdates,omitempty"`
+	// EngineType declares which Vault secrets-engine plugin produces the events
+	// VSO should subscribe to. Required when InstantUpdates is true. The
+	// selection is intentionally restricted to engines that publish rotation
+	// events suitable for instant updates.
+	// +kubebuilder:validation:Enum={database,ldap}
+	EngineType string `json:"engineType,omitempty"`
 }
 
 // VaultDynamicSecretStatus defines the observed state of VaultDynamicSecret

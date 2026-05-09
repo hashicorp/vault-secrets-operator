@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/hashicorp/go-secure-stdlib/parseutil"
 	"github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"nhooyr.io/websocket"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -78,8 +80,9 @@ type VaultDynamicSecretReconciler struct {
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
-	runtimePodUID types.UID
-	SecretsClient client.Client
+	runtimePodUID        types.UID
+	SecretsClient        client.Client
+	eventWatcherRegistry *eventWatcherRegistry
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -128,6 +131,24 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if o.GetDeletionTimestamp() != nil {
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
+	}
+
+	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
+		switch o.Spec.SyncConfig.EngineType {
+		case consts.VaultEngineTypeDatabase, consts.VaultEngineTypeLDAP:
+		default:
+			r.unWatchEvents(o)
+			r.Recorder.Eventf(o, corev1.EventTypeWarning,
+				consts.ReasonVaultDynamicSecret,
+				"spec.syncConfig.engineType must be %q or %q when instantUpdates is enabled",
+				consts.VaultEngineTypeDatabase, consts.VaultEngineTypeLDAP)
+			horizon := computeHorizonWithJitter(requeueDurationOnError)
+			if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
+				"Invalid spec.syncConfig.engineType, horizon=%s", horizon)); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: horizon}, nil
+		}
 	}
 
 	r.referenceCache.Set(SecretTransformation, req.NamespacedName,
@@ -415,6 +436,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
+		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
+		if err := r.ensureEventWatcher(ctx, o, vClient); err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning,
+				consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
+		}
+	} else {
+		r.unWatchEvents(o)
 	}
 
 	if horizon.Seconds() == 0 {
@@ -765,6 +796,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 
 	// TODO: close this channel when the controller is stopped.
 	r.SourceCh = make(chan event.GenericEvent)
+	r.eventWatcherRegistry = newEventWatcherRegistry()
 	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
@@ -810,6 +842,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.revokeLease(ctx, o, "")
 
 	objKey := client.ObjectKeyFromObject(o)
+	r.unWatchEvents(o)
 	r.SyncRegistry.Delete(objKey)
 	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
@@ -1089,4 +1122,316 @@ func vaultStaticCredsMetaDataFromData(data map[string]any) (*secretsv1beta1.Vaul
 	}
 
 	return &ret, nil
+}
+
+const (
+	databaseEventPath = "/v1/sys/events/subscribe/database/*"
+	ldapEventPath     = "/v1/sys/events/subscribe/ldap/*"
+)
+
+var dynamicSecretEventTypes = map[string]struct{}{
+	"database/rotate":              {},
+	"database/static-creds-create": {},
+	"database/role-update":         {},
+	"database/static-role-update":  {},
+	"ldap/rotate":                  {},
+	"ldap/role-update":             {},
+	"ldap/static-role-update":      {},
+}
+
+type dynamicSecretEventMsg struct {
+	Data struct {
+		Event struct {
+			Metadata struct {
+				Path      string `json:"path"`
+				Name      string `json:"name"`
+				Operation string `json:"operation"`
+				Modified  string `json:"modified"`
+			} `json:"metadata"`
+		} `json:"event"`
+		EventType  string `json:"event_type"`
+		PluginInfo struct {
+			MountPath string `json:"mount_path"`
+		} `json:"plugin_info"`
+		Namespace string `json:"namespace"`
+	} `json:"data"`
+}
+
+func eventPathForEngine(engineType string) (string, error) {
+	switch engineType {
+	case consts.VaultEngineTypeDatabase:
+		return databaseEventPath, nil
+	case consts.VaultEngineTypeLDAP:
+		return ldapEventPath, nil
+	default:
+		return "", fmt.Errorf("unsupported engineType %q for instant updates", engineType)
+	}
+}
+
+func matchEvent(o *secretsv1beta1.VaultDynamicSecret, ev *dynamicSecretEventMsg) bool {
+	if _, ok := dynamicSecretEventTypes[ev.Data.EventType]; !ok {
+		return false
+	}
+	if strings.Trim(ev.Data.Namespace, "/") != strings.Trim(o.Spec.Namespace, "/") {
+		return false
+	}
+	expectedMount := strings.TrimRight(o.Spec.Mount, "/") + "/"
+	if ev.Data.PluginInfo.MountPath != expectedMount {
+		return false
+	}
+	specPath := strings.Trim(o.Spec.Path, "/")
+	name := ev.Data.Event.Metadata.Name
+	if name == "" {
+		return false
+	}
+	if specPath != name && !strings.HasSuffix(specPath, "/"+name) {
+		return false
+	}
+	return true
+}
+
+func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
+	ctx context.Context, o *secretsv1beta1.VaultDynamicSecret, c vault.Client,
+) error {
+	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
+	name := client.ObjectKeyFromObject(o)
+
+	if o.Spec.SyncConfig == nil {
+		return fmt.Errorf("syncConfig is nil")
+	}
+	eventPath, err := eventPathForEngine(o.Spec.SyncConfig.EngineType)
+	if err != nil {
+		return err
+	}
+
+	if r.eventWatcherRegistry == nil {
+		r.eventWatcherRegistry = newEventWatcherRegistry()
+	}
+
+	meta, ok := r.eventWatcherRegistry.Get(name)
+	if ok {
+		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
+			logger.V(consts.LogLevelDebug).Info("Event watcher already running",
+				"namespace", o.Namespace, "name", o.Name)
+			return nil
+		}
+	}
+	if meta != nil {
+		if meta.Cancel != nil {
+			meta.Cancel()
+			waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			defer cancel()
+			if err := waitForStoppedCh(waitCtx, meta.StoppedCh); err != nil {
+				logger.Error(err, "Failed to stop event watcher", "name", name)
+			}
+		} else {
+			logger.Error(fmt.Errorf("nil cancel function"),
+				"event watcher has nil cancel function",
+				"VDS", name, "meta", meta)
+		}
+	}
+
+	wsClient, err := c.WebsocketClient(eventPath)
+	if err != nil {
+		return fmt.Errorf("failed to create websocket client: %w", err)
+	}
+
+	watchCtx, cancel := context.WithCancel(context.Background())
+	stoppedCh := make(chan struct{}, 1)
+	updatedMeta := &eventWatcherMeta{
+		Cancel:         cancel,
+		LastClientID:   c.ID(),
+		LastGeneration: o.GetGeneration(),
+		StoppedCh:      stoppedCh,
+	}
+	logger.V(consts.LogLevelDebug).Info("Starting event watcher", "meta", updatedMeta)
+	r.eventWatcherRegistry.Register(name, updatedMeta)
+	go r.getDynamicSecretEvents(watchCtx, *o, wsClient, stoppedCh)
+	return nil
+}
+
+func (r *VaultDynamicSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultDynamicSecret) {
+	if r.eventWatcherRegistry == nil {
+		return
+	}
+	name := client.ObjectKeyFromObject(o)
+	if meta, ok := r.eventWatcherRegistry.Get(name); ok {
+		if meta.Cancel != nil {
+			meta.Cancel()
+		}
+		r.eventWatcherRegistry.Delete(name)
+	}
+}
+
+func (r *VaultDynamicSecretReconciler) getDynamicSecretEvents(
+	ctx context.Context,
+	o secretsv1beta1.VaultDynamicSecret,
+	wsClient *vault.WebsocketClient,
+	stoppedCh chan struct{},
+) {
+	logger := log.FromContext(ctx).WithName("getDynamicSecretEvents")
+	name := client.ObjectKeyFromObject(&o)
+	defer func() {
+		r.eventWatcherRegistry.Delete(name)
+		close(stoppedCh)
+	}()
+
+	retryBackoff := backoff.NewExponentialBackOff(r.BackOffRegistry.opts...)
+	shouldBackoff := false
+	errorThreshold := 5
+	errorCount := 0
+
+eventLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			logger.V(consts.LogLevelDebug).Info("Context done, stopping",
+				"namespace", o.Namespace, "name", o.Name)
+			return
+		default:
+			if shouldBackoff {
+				nextBackoff := retryBackoff.NextBackOff()
+				if nextBackoff == backoff.Stop {
+					logger.Error(fmt.Errorf("backoff limit reached"), "Backoff limit reached, requeuing")
+					break eventLoop
+				}
+				time.Sleep(retryBackoff.NextBackOff())
+			}
+
+			err := r.streamDynamicSecretEvents(ctx, &o, wsClient)
+			if err == nil {
+				continue
+			}
+
+			if strings.Contains(err.Error(), "use of closed network connection") ||
+				strings.Contains(err.Error(), "context canceled") {
+				logger.V(consts.LogLevelDebug).Info(
+					"Websocket client closed, stopping",
+					"namespace", o.Namespace, "name", o.Name)
+				return
+			}
+
+			errorCount++
+			shouldBackoff = true
+			r.Recorder.Eventf(&o, corev1.EventTypeWarning,
+				consts.ReasonEventWatcherError,
+				"Error while watching events: %s", err)
+			logger.Error(err, "Error while watching events",
+				"namespace", o.Namespace, "name", o.Name)
+			if errorCount >= errorThreshold {
+				logger.Error(err, "Too many errors, requeuing")
+				break eventLoop
+			}
+
+			newVaultClient, gerr := r.ClientFactory.Get(ctx, r.Client, &o)
+			if gerr != nil {
+				logger.Error(gerr, "Failed to retrieve Vault client")
+				break eventLoop
+			}
+			eventPath, perr := eventPathForEngine(o.Spec.SyncConfig.EngineType)
+			if perr != nil {
+				logger.Error(perr, "Invalid engineType during reload")
+				break eventLoop
+			}
+			wsClient, err = newVaultClient.WebsocketClient(eventPath)
+			if err != nil {
+				logger.Error(err, "Failed to create new websocket client")
+				break eventLoop
+			}
+
+			key := client.ObjectKeyFromObject(&o)
+			meta, ok := r.eventWatcherRegistry.Get(key)
+			if !ok {
+				logger.Error(
+					fmt.Errorf("failed to get event watcher metadata for VaultStaticSecret"),
+					"key", key.String())
+				break eventLoop
+			}
+			meta.LastClientID = newVaultClient.ID()
+			r.eventWatcherRegistry.Register(key, meta)
+		}
+	}
+
+	r.SyncRegistry.Add(client.ObjectKeyFromObject(&o))
+	r.SourceCh <- event.GenericEvent{
+		Object: &secretsv1beta1.VaultDynamicSecret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: o.Namespace,
+				Name:      o.Name,
+			},
+		},
+	}
+}
+
+func (r *VaultDynamicSecretReconciler) streamDynamicSecretEvents(
+	ctx context.Context,
+	o *secretsv1beta1.VaultDynamicSecret,
+	wsClient *vault.WebsocketClient,
+) error {
+	logger := log.FromContext(ctx).WithName("streamDynamicSecretEvents")
+	conn, err := wsClient.Connect(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to vault websocket: %w", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "closing event watcher")
+
+	r.Recorder.Event(o, corev1.EventTypeNormal,
+		consts.ReasonEventWatcherStarted, "Started watching events")
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.V(consts.LogLevelDebug).Info("Context done, closing websocket",
+				"namespace", o.Namespace, "name", o.Name)
+			return nil
+		default:
+			msgType, message, err := conn.Read(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to read from websocket: %w, message: %q",
+					err, string(message))
+			}
+
+			ev := dynamicSecretEventMsg{}
+			if err := json.Unmarshal(message, &ev); err != nil {
+				return fmt.Errorf("failed to unmarshal event message: %w", err)
+			}
+			logger.V(consts.LogLevelTrace).Info("Received message",
+				"messageType", msgType,
+				"event_type", ev.Data.EventType,
+				"name", ev.Data.Event.Metadata.Name,
+				"mount", ev.Data.PluginInfo.MountPath,
+				"namespace", ev.Data.Namespace)
+
+			modified, err := parseutil.ParseBool(ev.Data.Event.Metadata.Modified)
+			if err != nil {
+				return fmt.Errorf("failed to parse modified field: %w", err)
+			}
+			if !modified {
+				logger.V(consts.LogLevelTrace).Info("Event is not a modification, ignoring",
+					"event_type", ev.Data.EventType,
+					"name", ev.Data.Event.Metadata.Name)
+				continue
+			}
+			if !matchEvent(o, &ev) {
+				logger.V(consts.LogLevelTrace).Info("Event does not match, ignoring",
+					"event_type", ev.Data.EventType,
+					"name", ev.Data.Event.Metadata.Name)
+				continue
+			}
+
+			logger.V(consts.LogLevelDebug).Info("Event matches, sending requeue",
+				"event_type", ev.Data.EventType,
+				"name", ev.Data.Event.Metadata.Name)
+
+			r.SyncRegistry.Add(client.ObjectKeyFromObject(o))
+			r.SourceCh <- event.GenericEvent{
+				Object: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: o.Namespace,
+						Name:      o.Name,
+					},
+				},
+			}
+		}
+	}
 }

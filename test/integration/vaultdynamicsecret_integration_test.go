@@ -1442,3 +1442,237 @@ func revokeTokenForEntityIDs(t *testing.T, vc *api.Client, ctx context.Context, 
 	}
 	wg.Wait()
 }
+
+// TestVaultDynamicSecretInstantUpdates_Database verifies that a static-creds
+// VaultDynamicSecret with syncConfig.instantUpdates=true detects a server-side
+// rotation via the Vault event stream and re-syncs the destination Secret
+// significantly faster than the rotation_period polling cadence would allow.
+func TestVaultDynamicSecretInstantUpdates_Database(t *testing.T) {
+	if testInParallel {
+		t.Parallel()
+	}
+
+	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	if !entTests {
+		t.Skip("Skipping because this test requires Vault Enterprise events support")
+	}
+
+	rootVaultClient := getVaultClient(t, "")
+	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
+		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
+	}
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.NoError(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
+	copyModulesDirT(t, tfDir)
+	chartsDir := copyTestChartsDir(t, tfDir)
+
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + kindClusterName
+	}
+
+	tfOptions := setCommonTFOptions(t, &terraform.Options{
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_config_context":         k8sConfigContext,
+			"k8s_vault_namespace":        k8sVaultNamespace,
+			"k8s_vault_service_account":  "vault",
+			"name_prefix":                "vds-evt",
+			"vault_address":              os.Getenv("VAULT_ADDRESS"),
+			"vault_token":                os.Getenv("VAULT_TOKEN"),
+			"vault_token_period":         120,
+			"vault_db_default_lease_ttl": 60,
+			"with_static_role_scheduled": withStaticRoleScheduled,
+			"with_xns":                   false,
+			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
+			"vault_enterprise":           true,
+			"use_events":                 true,
+		},
+	})
+
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+	var created []ctrlclient.Object
+	t.Cleanup(func() {
+		if skipCleanup {
+			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
+			return
+		}
+		for _, o := range created {
+			assert.NoError(t, crdClient.Delete(ctx, o))
+		}
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
+		terraform.Destroy(t, tfOptions)
+		assert.NoError(t, os.RemoveAll(tempDir))
+	})
+
+	terraform.InitAndApply(t, tfOptions)
+
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.NoError(t, err)
+
+	var outputs dynamicK8SOutputs
+	require.NoError(t, json.Unmarshal(b, &outputs))
+
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	auth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vds-instant-updates",
+			Namespace: operatorNS,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Namespace: outputs.Namespace,
+			Method:    "kubernetes",
+			Mount:     outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+			AllowedNamespaces: []string{outputs.K8sNamespace},
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, auth))
+	created = append(created, auth)
+
+	dest := "vds-instant-updates-static"
+	vds := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: outputs.K8sNamespace,
+			Name:      dest,
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			VaultAuthRef:     ctrlclient.ObjectKeyFromObject(auth).String(),
+			Namespace:        outputs.Namespace,
+			Mount:            outputs.DBPath,
+			Path:             "static-creds/" + outputs.DBRoleStatic,
+			AllowStaticCreds: true,
+			Destination: secretsv1beta1.Destination{
+				Name:   dest,
+				Create: true,
+			},
+			SyncConfig: &secretsv1beta1.VaultDynamicSecretSyncConfig{
+				InstantUpdates: true,
+				EngineType:     consts.VaultEngineTypeDatabase,
+			},
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vds))
+	created = append(created, vds)
+
+	objKey := ctrlclient.ObjectKeyFromObject(vds)
+	require.NoError(t, backoff.Retry(func() error {
+		var v secretsv1beta1.VaultDynamicSecret
+		if err := crdClient.Get(ctx, objKey, &v); err != nil {
+			return err
+		}
+		if v.Status.StaticCredsMetaData.LastVaultRotation == 0 {
+			return fmt.Errorf("waiting for initial static-creds sync")
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 90)))
+
+	require.NoError(t, backoff.Retry(func() error {
+		evList := corev1.EventList{}
+		if err := crdClient.List(ctx, &evList,
+			ctrlclient.InNamespace(vds.Namespace),
+			ctrlclient.MatchingFields{
+				"involvedObject.name": vds.Name,
+				"reason":              consts.ReasonEventWatcherStarted,
+			},
+		); err != nil {
+			return err
+		}
+		if len(evList.Items) == 0 {
+			return fmt.Errorf("no EventWatcherStarted event for %s", vds.Name)
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
+
+	var beforeVDS secretsv1beta1.VaultDynamicSecret
+	require.NoError(t, crdClient.Get(ctx, objKey, &beforeVDS))
+	beforeRotation := beforeVDS.Status.StaticCredsMetaData.LastVaultRotation
+	require.NotZero(t, beforeRotation)
+
+	authClient := getVaultClient(t, outputs.Namespace)
+	rotatePath := fmt.Sprintf("%s/rotate-role/%s", outputs.DBPath, outputs.DBRoleStatic)
+	_, err = authClient.Logical().WriteWithContext(ctx, rotatePath, nil)
+	require.NoError(t, err, "failed to rotate static role at %s", rotatePath)
+
+	rotateAt := time.Now()
+	require.NoError(t, backoff.Retry(func() error {
+		var v secretsv1beta1.VaultDynamicSecret
+		if err := crdClient.Get(ctx, objKey, &v); err != nil {
+			return err
+		}
+		if v.Status.StaticCredsMetaData.LastVaultRotation == beforeRotation {
+			return fmt.Errorf("waiting for event-driven rotation pickup")
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(500*time.Millisecond), 30)))
+
+	elapsed := time.Since(rotateAt)
+	t.Logf("event-driven rotation picked up in %s", elapsed)
+
+	require.Less(t, elapsed, 15*time.Second,
+		"expected event-driven rotation to be detected well below the rotation_period")
+
+	evList := corev1.EventList{}
+	require.NoError(t, crdClient.List(ctx, &evList,
+		ctrlclient.InNamespace(vds.Namespace),
+		ctrlclient.MatchingFields{
+			"involvedObject.name": vds.Name,
+			"reason":              consts.ReasonEventWatcherError,
+		},
+	))
+	for _, ev := range evList.Items {
+		if ev.Type == corev1.EventTypeWarning {
+			t.Errorf("unexpected EventWatcherError warning: %s", ev.Message)
+		}
+	}
+}
+
+// TestVaultDynamicSecretInstantUpdates_InvalidEngineType verifies that the CRD
+// enum rejects an empty/invalid engineType.
+func TestVaultDynamicSecretInstantUpdates_InvalidEngineType(t *testing.T) {
+	if testInParallel {
+		t.Parallel()
+	}
+	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	vds := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: operatorNS,
+			Name:      "vds-invalid-engine-type",
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "static-creds/whatever",
+			Destination: secretsv1beta1.Destination{
+				Name:   "vds-invalid-engine-type",
+				Create: true,
+			},
+			SyncConfig: &secretsv1beta1.VaultDynamicSecretSyncConfig{
+				InstantUpdates: true,
+				EngineType:     "kv",
+			},
+		},
+	}
+	err := crdClient.Create(ctx, vds)
+	require.Error(t, err, "CRD enum should reject engineType=kv")
+}

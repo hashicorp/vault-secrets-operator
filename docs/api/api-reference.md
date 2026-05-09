@@ -1187,8 +1187,28 @@ _Appears in:_
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
 | `refreshAfter` _string_ | RefreshAfter a period of time for VSO to sync the source secret data, in<br />duration notation e.g. 30s, 1m, 24h. This value only needs to be set when<br />syncing from a secret's engine that does not provide a lease TTL in its<br />response. The value should be within the secret engine's configured ttl or<br />max_ttl. The source secret's lease duration takes precedence over this<br />configuration when it is greater than 0. |  | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
+| `syncConfig` _[VaultDynamicSecretSyncConfig](#vaultdynamicsecretsyncconfig)_ | SyncConfig configures sync behavior from Vault to VSO. When<br />SyncConfig.InstantUpdates is true, EngineType MUST be set to one of<br />"database" or "ldap"; the operator subscribes to the corresponding Vault<br />event stream and triggers a reconcile on rotation events that match this<br />resource's mount and role name. Requires Vault Enterprise >= 1.16<br />(database) or >= 1.21 (ldap). |  |  |
 
 
+
+
+#### VaultDynamicSecretSyncConfig
+
+
+
+VaultDynamicSecretSyncConfig configures sync behavior from Vault to VSO for
+a VaultDynamicSecret. It is the dynamic-secret counterpart of
+VaultStaticSecret.Spec.SyncConfig.
+
+
+
+_Appears in:_
+- [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `instantUpdates` _boolean_ | InstantUpdates enables event-driven updates for this VaultDynamicSecret.<br />Requires Vault Enterprise >= 1.16 (database) or >= 1.21 (ldap), and a<br />VaultAuth role with read on sys/events/subscribe/<engineType>/* and<br />list+subscribe on the secret path with subscribe_event_types = ["*"]. | false |  |
+| `engineType` _string_ | EngineType declares which Vault secrets-engine plugin produces the events<br />VSO should subscribe to. Required when InstantUpdates is true. The<br />selection is intentionally restricted to engines that publish rotation<br />events suitable for instant updates. |  | Enum: [database ldap] <br /> |
 
 
 #### VaultPKISecret
