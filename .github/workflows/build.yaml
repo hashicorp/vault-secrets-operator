@@ -17,6 +17,9 @@ env:
   # used by scripts that fetch build tools from GH
   GH_GET_RETRIES: 5
 
+permissions:
+  contents: read
+
 jobs:
   get-product-version:
     runs-on: ubuntu-latest
