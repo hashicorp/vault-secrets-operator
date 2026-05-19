@@ -25,6 +25,9 @@ output "db_role" {
 output "db_role_static" {
   value = local.db_role_static
 }
+output "db_role_static_delayed" {
+  value = local.db_role_static_delayed
+}
 output "db_role_static_user" {
   value = local.db_role_static_user
 }

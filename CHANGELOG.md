@@ -1,3 +1,50 @@
+## 1.4.0 (May 5th, 2026)
+
+Fix:
+* Detect TTL reset for uneven rotation schedules with ttl rollover bug: ([#1259](https://github.com/hashicorp/vault-secrets-operator/pull/1259))
+* Update kube-rbac-proxy version for openshift: ([#1254](https://github.com/hashicorp/vault-secrets-operator/pull/1254))
+* VSS: Add vault client callback handler: ([#867](https://github.com/hashicorp/vault-secrets-operator/pull/867))
+* fix: Update VDS static credentials metadata handling: ([#1255](https://github.com/hashicorp/vault-secrets-operator/pull/1255))
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 12 updates: ([#1262](https://github.com/hashicorp/vault-secrets-operator/pull/1262))
+* Bump go.opentelemetry.io/otel from 1.39.0 to 1.41.0: ([#1257](https://github.com/hashicorp/vault-secrets-operator/pull/1257))
+* Bump github.com/jackc/pgx/v5 from 5.7.1 to 5.9.2: ([#1251](https://github.com/hashicorp/vault-secrets-operator/pull/1251))
+* Bump github.com/moby/spdystream from 0.5.0 to 0.5.1: ([#1248](https://github.com/hashicorp/vault-secrets-operator/pull/1248))
+* Bump github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream from 1.6.7 to 1.7.8: ([#1246](https://github.com/hashicorp/vault-secrets-operator/pull/1246))
+* Bump github.com/aws/aws-sdk-go-v2/service/s3 from 1.69.0 to 1.97.3: ([#1245](https://github.com/hashicorp/vault-secrets-operator/pull/1245))
+* Bump github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs from 1.44.0 to 1.65.0: ([#1244](https://github.com/hashicorp/vault-secrets-operator/pull/1244))
+* Bump github.com/aws/aws-sdk-go-v2/service/lambda from 1.69.0 to 1.88.5: ([#1243](https://github.com/hashicorp/vault-secrets-operator/pull/1243))
+* Bump github.com/go-jose/go-jose/v4 from 4.1.3 to 4.1.4: ([#1242](https://github.com/hashicorp/vault-secrets-operator/pull/1242))
+* Bump google.golang.org/grpc from 1.78.0 to 1.79.3: ([#1238](https://github.com/hashicorp/vault-secrets-operator/pull/1238))
+* Bump filippo.io/edwards25519 from 1.1.0 to 1.1.1: ([#1223](https://github.com/hashicorp/vault-secrets-operator/pull/1223))
+
+
+## 1.3.0 (February 19th, 2026)
+
+Enhancements:
+* Add Ready condition: ([#1204](https://github.com/hashicorp/vault-secrets-operator/pull/1204))
+* Support CA cert from disk: ([#1203](https://github.com/hashicorp/vault-secrets-operator/pull/1203))
+* Add additional printer column fields: ([#1202](https://github.com/hashicorp/vault-secrets-operator/pull/1202))
+* Allow custom cache key func: ([#1199](https://github.com/hashicorp/vault-secrets-operator/pull/1199))
+* Internal integration work: ([#1186](https://github.com/hashicorp/vault-secrets-operator/pull/1186))
+* Get AppRole secret ID from file on disk: ([#1153](https://github.com/hashicorp/vault-secrets-operator/pull/1153))
+
+Fix:
+* VDS: ensure periodic static-role rotations are honored: ([#1220](https://github.com/hashicorp/vault-secrets-operator/pull/1220))
+* fix: nullEventLogger panics on calls to Eventf(): ([#1214](https://github.com/hashicorp/vault-secrets-operator/pull/1214))
+
+Build:
+* Add 1.2.0 chart upgrade test: ([#1205](https://github.com/hashicorp/vault-secrets-operator/pull/1205))
+
+Dependency Updates:
+* Bump golang.org/x/crypto from 0.46.0 to 0.47.0 in the gomod-backward-compatible group: ([#1201](https://github.com/hashicorp/vault-secrets-operator/pull/1201))
+* Bump google.golang.org/api from 0.264.0 to 0.265.0 in the gomod-backward-compatible group: ([#1213](https://github.com/hashicorp/vault-secrets-operator/pull/1213))
+* Bump the gomod-backward-compatible group across 1 directory with 3 updates: ([#1210](https://github.com/hashicorp/vault-secrets-operator/pull/1210))
+* Bump the gomod-backward-compatible group with 2 updates: ([#1206](https://github.com/hashicorp/vault-secrets-operator/pull/1206))
+* Bump the gomod-backward-compatible group across 1 directory with 6 updates: ([#1216](https://github.com/hashicorp/vault-secrets-operator/pull/1216))
+
+
 ## 1.2.0 (January 12th, 2026)
 
 Fix:
