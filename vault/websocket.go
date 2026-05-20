@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/coder/websocket"
 	"github.com/hashicorp/vault/api"
-	"nhooyr.io/websocket"
 )
 
 type WebsocketClient struct {

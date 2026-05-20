@@ -195,6 +195,8 @@ type Client interface {
 	Untaint() bool
 	WebsocketClient(string) (*WebsocketClient, error)
 	Renewable() bool
+	SubscribeToEvents(context.Context, EventType, *Subscriber) error
+	UnsubscribeFromEvents(EventType, SubscriptionKey, string) error
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -218,6 +220,9 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
+	// websockets stores SharedWebSocket instances per event type
+	websockets  map[EventType]*SharedWebSocket
+	websocketMu sync.RWMutex
 }
 
 // Renewable returns true if the Vault auth token is renewable.
@@ -474,6 +479,18 @@ func (c *defaultClient) Close(revoke bool) {
 	c.inClosing = true
 	logger := log.FromContext(nil).WithValues("id", c.id)
 	logger.Info("Close() called")
+
+	// Close all WebSocket connections
+	c.websocketMu.Lock()
+	for eventType, ws := range c.websockets {
+		logger.V(consts.LogLevelDebug).Info("Closing WebSocket", "eventType", eventType)
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close WebSocket", "eventType", eventType)
+		}
+		delete(c.websockets, eventType)
+	}
+	c.websocketMu.Unlock()
+
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
@@ -987,4 +1004,147 @@ func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS
 		cfg.Timeout = &d
 	}
 	return cfg, nil
+}
+
+// SubscribeToEvents subscribes a resource to Vault events via this client's WebSocket
+func (c *defaultClient) SubscribeToEvents(
+	ctx context.Context,
+	eventType EventType,
+	sub *Subscriber,
+) error {
+	logger := log.FromContext(ctx).WithValues(
+		"clientID", c.id,
+		"eventType", eventType,
+		"resource", sub.ResourceKey,
+	)
+
+	ws, err := c.getOrCreateWebSocket(ctx, eventType)
+	if err != nil {
+		logger.Error(err, "Failed to get or create WebSocket")
+		return err
+	}
+
+	if err := ws.Subscribe(sub); err != nil {
+		logger.Error(err, "Failed to subscribe to WebSocket")
+		return err
+	}
+
+	logger.V(consts.LogLevelDebug).Info("Successfully subscribed to events")
+	return nil
+}
+
+// UnsubscribeFromEvents removes a subscription from this client's WebSocket.
+// pathKey identifies the Vault path, resourceKey identifies the specific CR subscriber.
+func (c *defaultClient) UnsubscribeFromEvents(
+	eventType EventType,
+	pathKey SubscriptionKey,
+	resourceKey string,
+) error {
+	logger := log.FromContext(context.TODO()).WithValues(
+		"clientID", c.id,
+		"eventType", eventType,
+		"pathKey", pathKey.String(),
+		"resource", resourceKey,
+	)
+
+	c.websocketMu.RLock()
+	ws, exists := c.websockets[eventType]
+	c.websocketMu.RUnlock()
+
+	if !exists {
+		logger.V(consts.LogLevelDebug).Info("WebSocket not found for event type")
+		return fmt.Errorf("websocket not found for event type %s", eventType)
+	}
+
+	lastSubscriber := ws.Unsubscribe(pathKey, resourceKey)
+	logger.V(consts.LogLevelDebug).Info("Unsubscribed from events", "lastSubscriber", lastSubscriber)
+
+	// Close WebSocket if no more subscribers
+	if lastSubscriber {
+		c.closeWebSocket(eventType)
+	}
+
+	return nil
+}
+
+// getOrCreateWebSocket gets an existing WebSocket or creates a new one
+func (c *defaultClient) getOrCreateWebSocket(
+	ctx context.Context,
+	eventType EventType,
+) (*SharedWebSocket, error) {
+	// Check if WebSocket already exists (read lock)
+	c.websocketMu.RLock()
+	if ws, exists := c.websockets[eventType]; exists {
+		c.websocketMu.RUnlock()
+		return ws, nil
+	}
+	c.websocketMu.RUnlock()
+
+	// Create new WebSocket (write lock)
+	c.websocketMu.Lock()
+	defer c.websocketMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if ws, exists := c.websockets[eventType]; exists {
+		return ws, nil
+	}
+
+	// Create new SharedWebSocket
+	ws, err := NewSharedWebSocket(ctx, c, eventType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shared websocket: %w", err)
+	}
+
+	// Initialize map if needed
+	if c.websockets == nil {
+		c.websockets = make(map[EventType]*SharedWebSocket)
+	}
+
+	c.websockets[eventType] = ws
+
+	logger := log.FromContext(ctx).WithValues(
+		"clientID", c.id,
+		"eventType", eventType,
+	)
+	logger.Info("Created new SharedWebSocket")
+
+	return ws, nil
+}
+
+// closeWebSocket closes a specific WebSocket
+func (c *defaultClient) closeWebSocket(eventType EventType) {
+	c.websocketMu.Lock()
+	defer c.websocketMu.Unlock()
+
+	if ws, exists := c.websockets[eventType]; exists {
+		logger := log.FromContext(context.TODO()).WithValues(
+			"clientID", c.id,
+			"eventType", eventType,
+		)
+		logger.Info("Closing WebSocket (no more subscribers)")
+
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close WebSocket")
+		}
+		delete(c.websockets, eventType)
+	}
+}
+
+// GetWebSocketCount returns the number of active WebSocket connections
+func (c *defaultClient) GetWebSocketCount() int {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+	return len(c.websockets)
+}
+
+// GetWebSocketSubscriberCount returns the total number of subscribers across all WebSockets
+func (c *defaultClient) GetWebSocketSubscriberCount() int {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+
+	total := 0
+	for _, ws := range c.websockets {
+		total += ws.GetSubscriberCount()
+	}
+	return total
 }

@@ -4,7 +4,6 @@
 package controllers
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,29 +17,21 @@ func TestEventWatcherRegistry(t *testing.T) {
 	registry := newEventWatcherRegistry()
 	assert.Equal(t, 0, registry.registry.ItemCount())
 
-	ctx, cancel := context.WithCancel(context.Background())
-	stoppedCh := make(chan struct{}, 1)
-
-	// Create a new event watcher metadata
+	// Create a new event subscription metadata
 	meta := &eventWatcherMeta{
 		LastGeneration: 123,
 		LastClientID:   "client-id",
-		Cancel:         cancel,
-		StoppedCh:      stoppedCh,
 	}
 
-	// Register the event watcher
+	// Register the event subscription
 	itemName := types.NamespacedName{Name: "test", Namespace: "default"}
 	registry.Register(itemName, meta)
 	assert.Equal(t, 1, registry.registry.ItemCount())
 
-	// close the channel
-	close(stoppedCh)
-
-	// Get the event watcher
+	// Get the event subscription metadata
 	got, ok := registry.Get(itemName)
-	require.True(t, ok, "expected to get event watcher, got none")
-	require.NotNil(t, got, "expected to get event watcher, got nil")
+	require.True(t, ok, "expected to get event subscription metadata, got none")
+	require.NotNil(t, got, "expected to get event subscription metadata, got nil")
 
 	assert.Equal(t, int64(123), got.LastGeneration)
 	assert.Equal(t, "client-id", got.LastClientID)
@@ -52,25 +43,18 @@ func TestEventWatcherRegistry(t *testing.T) {
 
 	// Get again
 	gotAgain, ok := registry.Get(itemName)
-	require.True(t, ok, "expected to get event watcher again, got none")
-	require.NotNil(t, gotAgain, "expected to get event watcher again, got nil")
+	require.True(t, ok, "expected to get event subscription metadata again, got none")
+	require.NotNil(t, gotAgain, "expected to get event subscription metadata again, got nil")
 
 	assert.Equal(t, int64(456), gotAgain.LastGeneration)
 	assert.Equal(t, "client-id", gotAgain.LastClientID)
 
-	// Cancel context received from the registry, check the original
-	gotAgain.Cancel()
-	assert.Equal(t, ctx.Err(), context.Canceled)
-
-	_, isOpen := <-gotAgain.StoppedCh
-	assert.False(t, isOpen, "expected stoppedCh from registry item to be closed")
-
-	// Delete the event watcher
+	// Delete the event subscription
 	registry.Delete(itemName)
 	assert.Equal(t, 0, registry.registry.ItemCount())
 
-	// Get the event watcher
+	// Get the event subscription metadata
 	gotFinally, ok := registry.Get(itemName)
-	assert.False(t, ok, "expected to not get event watcher, got one")
-	assert.Nil(t, gotFinally, "expected nil event watcher")
+	assert.False(t, ok, "expected to not get event subscription metadata, got one")
+	assert.Nil(t, gotFinally, "expected nil event subscription metadata")
 }
