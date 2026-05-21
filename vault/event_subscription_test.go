@@ -112,10 +112,10 @@ func TestGetEventPath(t *testing.T) {
 
 // newTestSharedWebSocket creates a SharedWebSocket suitable for unit tests
 // (no real WebSocket connection).
-func newTestSharedWebSocket() *SharedWebSocket {
+func newTestSharedWebSocket(eventType EventType) *SharedWebSocket {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &SharedWebSocket{
-		eventType:   EventTypeKV,
+		eventType:   eventType,
 		subscribers: make(map[string]map[string]*Subscriber),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -125,7 +125,7 @@ func newTestSharedWebSocket() *SharedWebSocket {
 }
 
 func TestSharedWebSocket_Subscribe(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	reconcileCh := make(chan event.GenericEvent, 10)
@@ -146,7 +146,7 @@ func TestSharedWebSocket_Subscribe(t *testing.T) {
 }
 
 func TestSharedWebSocket_Subscribe_NilRejects(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	err := ws.Subscribe(nil)
@@ -155,7 +155,7 @@ func TestSharedWebSocket_Subscribe_NilRejects(t *testing.T) {
 }
 
 func TestSharedWebSocket_MultipleSubscribers_SamePath(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	ch1 := make(chan event.GenericEvent, 10)
@@ -193,7 +193,7 @@ func TestSharedWebSocket_MultipleSubscribers_SamePath(t *testing.T) {
 }
 
 func TestSharedWebSocket_Unsubscribe_DifferentPaths(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	ch := make(chan event.GenericEvent, 10)
@@ -228,7 +228,7 @@ func TestSharedWebSocket_Unsubscribe_DifferentPaths(t *testing.T) {
 }
 
 func TestSharedWebSocket_RouteEvent_SingleSubscriber(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	ch := make(chan event.GenericEvent, 10)
@@ -255,7 +255,7 @@ func TestSharedWebSocket_RouteEvent_SingleSubscriber(t *testing.T) {
 }
 
 func TestSharedWebSocket_RouteEvent_MultipleSubscribers(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	ch1 := make(chan event.GenericEvent, 10)
@@ -291,7 +291,7 @@ func TestSharedWebSocket_RouteEvent_MultipleSubscribers(t *testing.T) {
 }
 
 func TestSharedWebSocket_RouteEvent_NonModified_Dropped(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	ch := make(chan event.GenericEvent, 10)
@@ -314,7 +314,7 @@ func TestSharedWebSocket_RouteEvent_NonModified_Dropped(t *testing.T) {
 }
 
 func TestSharedWebSocket_RouteEvent_NoMatch_Dropped(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	ch := make(chan event.GenericEvent, 10)
@@ -384,7 +384,7 @@ func TestEventMessage_Structure(t *testing.T) {
 }
 
 func TestSharedWebSocket_ConcurrentSubscribeUnsubscribe(t *testing.T) {
-	ws := newTestSharedWebSocket()
+	ws := newTestSharedWebSocket(EventTypeKV)
 	defer ws.cancel()
 
 	var wg sync.WaitGroup
