@@ -240,7 +240,13 @@ func (ws *SharedWebSocket) readAndRoute() error {
 	// Zero out before reuse
 	msg.Data.Event.Metadata.Path = ""
 	msg.Data.Event.Metadata.Modified = ""
+	msg.Data.Event.Metadata.Name = ""
+	msg.Data.Event.Metadata.Operation = ""
+	msg.Data.Event.Metadata.LeaseID = ""
+	msg.Data.EventType = ""
 	msg.Data.Namespace = ""
+	msg.Data.PluginInfo.MountPath = ""
+	msg.Data.PluginInfo.Plugin = ""
 
 	if err := json.Unmarshal(message, msg); err != nil {
 		ws.logger.Error(err, "Failed to unmarshal event message")
@@ -251,7 +257,9 @@ func (ws *SharedWebSocket) readAndRoute() error {
 		"messageType", msgType,
 		"namespace", msg.Data.Namespace,
 		"path", msg.Data.Event.Metadata.Path,
-		"modified", msg.Data.Event.Metadata.Modified)
+		"modified", msg.Data.Event.Metadata.Modified,
+		"name", msg.Data.Event.Metadata.Name,
+		"eventType", msg.Data.EventType)
 
 	ws.routeEvent(msg)
 	return nil
@@ -292,12 +300,47 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 	}
 
 	vaultNS := strings.Trim(msg.Data.Namespace, "/")
-	vaultPath := msg.Data.Event.Metadata.Path
 
-	lookupKey := SubscriptionKey{
-		VaultNamespace: vaultNS,
-		VaultPath:      vaultPath,
-	}.String()
+	var lookupKey string
+	switch ws.eventType {
+	case EventTypeKV:
+		lookupKey = SubscriptionKey{
+			VaultNamespace: vaultNS,
+			VaultPath:      msg.Data.Event.Metadata.Path,
+		}.String()
+	case EventTypeDatabase, EventTypeLDAP:
+		// Route by mount + role name instead of exact path, since the event
+		// path (e.g. "database/rotate-role/my-role") differs from the read
+		// path (e.g. "database/static-creds/my-role").
+		roleName := msg.Data.Event.Metadata.Name
+		mount := strings.TrimSuffix(msg.Data.PluginInfo.MountPath, "/")
+		if roleName == "" || mount == "" {
+			// Fallback: extract from path for events missing plugin_info
+			mount, roleName = extractMountAndRole(msg.Data.Event.Metadata.Path)
+		}
+		if roleName == "" {
+			return
+		}
+		lookupKey = SubscriptionKey{
+			VaultNamespace: vaultNS,
+			VaultPath:      mount + "/" + roleName,
+		}.String()
+	case EventTypeLease:
+		// Route by lease ID — subscribers register with their lease ID as key
+		leaseID := msg.Data.Event.Metadata.LeaseID
+		if leaseID == "" {
+			return
+		}
+		lookupKey = SubscriptionKey{
+			VaultNamespace: vaultNS,
+			VaultPath:      leaseID,
+		}.String()
+	default:
+		lookupKey = SubscriptionKey{
+			VaultNamespace: vaultNS,
+			VaultPath:      msg.Data.Event.Metadata.Path,
+		}.String()
+	}
 
 	ws.subscriberMu.RLock()
 	subs, exists := ws.subscribers[lookupKey]

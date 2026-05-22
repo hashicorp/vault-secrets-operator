@@ -69,6 +69,16 @@ func TestEventType_String(t *testing.T) {
 			eventType: EventTypePKI,
 			want:      "pki",
 		},
+		{
+			name:      "ldap",
+			eventType: EventTypeLDAP,
+			want:      "ldap",
+		},
+		{
+			name:      "lease",
+			eventType: EventTypeLease,
+			want:      "lease",
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,6 +109,16 @@ func TestGetEventPath(t *testing.T) {
 			name:      "pki",
 			eventType: EventTypePKI,
 			want:      "/v1/sys/events/subscribe/pki*",
+		},
+		{
+			name:      "ldap",
+			eventType: EventTypeLDAP,
+			want:      "/v1/sys/events/subscribe/ldap*",
+		},
+		{
+			name:      "lease",
+			eventType: EventTypeLease,
+			want:      "/v1/sys/events/subscribe/lease*",
 		},
 	}
 
@@ -361,14 +381,65 @@ func TestEventMessage_Pool(t *testing.T) {
 	// Zero it like readAndRoute does
 	msg.Data.Event.Metadata.Path = ""
 	msg.Data.Event.Metadata.Modified = ""
+	msg.Data.Event.Metadata.Name = ""
+	msg.Data.Event.Metadata.Operation = ""
+	msg.Data.Event.Metadata.LeaseID = ""
+	msg.Data.EventType = ""
 	msg.Data.Namespace = ""
+	msg.Data.PluginInfo.MountPath = ""
+	msg.Data.PluginInfo.Plugin = ""
 
-	raw := `{"data":{"event":{"metadata":{"path":"kv/data/x","modified":"true"}},"namespace":"ns1"}}`
+	raw := `{"data":{"event":{"metadata":{"path":"kv/data/x","modified":"true","name":"my-role"}},"event_type":"database/rotate","namespace":"ns1","plugin_info":{"mount_path":"database/","plugin":"postgresql-database-plugin"}}}`
 	require.NoError(t, json.Unmarshal([]byte(raw), msg))
 	assert.Equal(t, "kv/data/x", msg.Data.Event.Metadata.Path)
 	assert.Equal(t, "ns1", msg.Data.Namespace)
+	assert.Equal(t, "my-role", msg.Data.Event.Metadata.Name)
+	assert.Equal(t, "database/rotate", msg.Data.EventType)
+	assert.Equal(t, "database/", msg.Data.PluginInfo.MountPath)
+	assert.Equal(t, "postgresql-database-plugin", msg.Data.PluginInfo.Plugin)
 
 	eventMessagePool.Put(msg)
+}
+
+func TestEventMessage_PoolZeroesNewFields(t *testing.T) {
+	msg := eventMessagePool.Get().(*EventMessage)
+
+	// Simulate a previous message with all fields set
+	msg.Data.Event.Metadata.Path = "old/path"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "old-role"
+	msg.Data.Event.Metadata.Operation = "rotate"
+	msg.Data.Event.Metadata.LeaseID = "old-lease-id"
+	msg.Data.EventType = "database/rotate"
+	msg.Data.Namespace = "old-ns"
+	msg.Data.PluginInfo.MountPath = "old-mount/"
+	msg.Data.PluginInfo.Plugin = "old-plugin"
+
+	eventMessagePool.Put(msg)
+
+	// Get it back and zero like readAndRoute does
+	msg = eventMessagePool.Get().(*EventMessage)
+	msg.Data.Event.Metadata.Path = ""
+	msg.Data.Event.Metadata.Modified = ""
+	msg.Data.Event.Metadata.Name = ""
+	msg.Data.Event.Metadata.Operation = ""
+	msg.Data.Event.Metadata.LeaseID = ""
+	msg.Data.EventType = ""
+	msg.Data.Namespace = ""
+	msg.Data.PluginInfo.MountPath = ""
+	msg.Data.PluginInfo.Plugin = ""
+
+	// Unmarshal a KV event that doesn't include the new fields
+	raw := `{"data":{"event":{"metadata":{"path":"kv/data/x","modified":"true"}},"namespace":"ns1"}}`
+	require.NoError(t, json.Unmarshal([]byte(raw), msg))
+
+	// New fields should be empty (not stale from the previous message)
+	assert.Equal(t, "", msg.Data.Event.Metadata.Name)
+	assert.Equal(t, "", msg.Data.Event.Metadata.Operation)
+	assert.Equal(t, "", msg.Data.Event.Metadata.LeaseID)
+	assert.Equal(t, "", msg.Data.EventType)
+	assert.Equal(t, "", msg.Data.PluginInfo.MountPath)
+	assert.Equal(t, "", msg.Data.PluginInfo.Plugin)
 }
 
 func TestEventMessage_Structure(t *testing.T) {
@@ -377,10 +448,22 @@ func TestEventMessage_Structure(t *testing.T) {
 	msg.Data.Namespace = "prod"
 	msg.Data.Event.Metadata.Path = "kv/data/app1/config"
 	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.Event.Metadata.Operation = "rotate"
+	msg.Data.Event.Metadata.LeaseID = "database/creds/my-role/abc123"
+	msg.Data.EventType = "database/rotate"
+	msg.Data.PluginInfo.MountPath = "database/"
+	msg.Data.PluginInfo.Plugin = "postgresql-database-plugin"
 
 	assert.Equal(t, "prod", msg.Data.Namespace)
 	assert.Equal(t, "kv/data/app1/config", msg.Data.Event.Metadata.Path)
 	assert.Equal(t, "true", msg.Data.Event.Metadata.Modified)
+	assert.Equal(t, "my-role", msg.Data.Event.Metadata.Name)
+	assert.Equal(t, "rotate", msg.Data.Event.Metadata.Operation)
+	assert.Equal(t, "database/creds/my-role/abc123", msg.Data.Event.Metadata.LeaseID)
+	assert.Equal(t, "database/rotate", msg.Data.EventType)
+	assert.Equal(t, "database/", msg.Data.PluginInfo.MountPath)
+	assert.Equal(t, "postgresql-database-plugin", msg.Data.PluginInfo.Plugin)
 }
 
 func TestSharedWebSocket_ConcurrentSubscribeUnsubscribe(t *testing.T) {
@@ -413,4 +496,601 @@ func TestSharedWebSocket_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 // Placeholder for future integration tests
 func TestSharedWebSocket_Integration(t *testing.T) {
 	t.Skip("Integration tests will be added in Phase 4")
+}
+
+// --- Database event routing tests ---
+
+func TestSharedWebSocket_RouteEvent_Database_WithPluginInfo(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Simulate a database/rotate event with plugin_info metadata
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "database/rotate-role/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.EventType = "database/rotate"
+	msg.Data.PluginInfo.MountPath = "database/"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vds", evt.Object.GetName())
+	assert.Equal(t, "default", evt.Object.GetNamespace())
+}
+
+func TestSharedWebSocket_RouteEvent_Database_FallbackFromPath(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Simulate an event without plugin_info (fallback to path parsing)
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "database/rotate-role/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	// No Name or PluginInfo set
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vds", evt.Object.GetName())
+}
+
+func TestSharedWebSocket_RouteEvent_Database_WithNamespace(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "prod",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = "prod/"
+	msg.Data.Event.Metadata.Path = "database/rotate-role/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.PluginInfo.MountPath = "database/"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+}
+
+func TestSharedWebSocket_RouteEvent_Database_NamespaceMismatch(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "prod",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Event from a different Vault namespace
+	msg := &EventMessage{}
+	msg.Data.Namespace = "staging"
+	msg.Data.Event.Metadata.Path = "database/rotate-role/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.PluginInfo.MountPath = "database/"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0, "namespace mismatch should not route")
+}
+
+func TestSharedWebSocket_RouteEvent_Database_RoleMismatch(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "database/rotate-role/other-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "other-role"
+	msg.Data.PluginInfo.MountPath = "database/"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0, "role mismatch should not route")
+}
+
+func TestSharedWebSocket_RouteEvent_Database_EmptyName_EmptyPath(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Event with no name and an unparseable path
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "database"
+	msg.Data.Event.Metadata.Modified = "true"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0, "event with no role info should be dropped")
+}
+
+func TestSharedWebSocket_RouteEvent_Database_CustomMount(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "my-db/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "my-db/rotate-role/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.PluginInfo.MountPath = "my-db/"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vds", evt.Object.GetName())
+}
+
+func TestSharedWebSocket_RouteEvent_Database_MultipleSubscribers(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch1 := make(chan event.GenericEvent, 10)
+	ch2 := make(chan event.GenericEvent, 10)
+
+	sub1 := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "ns1", Name: "vds-1"},
+		VaultNS:      "",
+		VaultPath:    "database/shared-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch1,
+	}
+	sub2 := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "ns2", Name: "vds-2"},
+		VaultNS:      "",
+		VaultPath:    "database/shared-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch2,
+	}
+
+	require.NoError(t, ws.Subscribe(sub1))
+	require.NoError(t, ws.Subscribe(sub2))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "database/rotate-role/shared-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "shared-role"
+	msg.Data.PluginInfo.MountPath = "database/"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch1, 1, "first subscriber should receive event")
+	assert.Len(t, ch2, 1, "second subscriber should receive event")
+}
+
+func TestSharedWebSocket_RouteEvent_Database_StaticRoleUpdate(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Static role update event
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "database/static-roles/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.EventType = "database/static-role-update"
+	msg.Data.PluginInfo.MountPath = "database/"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+}
+
+func TestSharedWebSocket_RouteEvent_Database_DynamicRoleUpdate(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Dynamic role update event
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "database/roles/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.EventType = "database/role-update"
+	msg.Data.PluginInfo.MountPath = "database/"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+}
+
+// --- LDAP event routing tests ---
+
+func TestSharedWebSocket_RouteEvent_LDAP_Rotate(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLDAP)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "ldap/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "ldap/rotate-role/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.EventType = "ldap/rotate"
+	msg.Data.PluginInfo.MountPath = "ldap/"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vds", evt.Object.GetName())
+}
+
+func TestSharedWebSocket_RouteEvent_LDAP_FallbackFromPath(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLDAP)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "ldap/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// No Name or PluginInfo, fallback to path parsing
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "ldap/static-roles/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+}
+
+func TestSharedWebSocket_RouteEvent_LDAP_RoleMismatch(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLDAP)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "ldap/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "ldap/rotate-role/other-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "other-role"
+	msg.Data.PluginInfo.MountPath = "ldap/"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0)
+}
+
+// --- Lease event routing tests ---
+
+func TestSharedWebSocket_RouteEvent_Lease_ByLeaseID(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLease)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	leaseID := "database/creds/my-role/abc123"
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    leaseID,
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.LeaseID = leaseID
+	msg.Data.EventType = "lease/revoked"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vds", evt.Object.GetName())
+}
+
+func TestSharedWebSocket_RouteEvent_Lease_MismatchedLeaseID(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLease)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/creds/my-role/abc123",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.LeaseID = "database/creds/my-role/different456"
+	msg.Data.EventType = "lease/revoked"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0, "mismatched lease ID should not route")
+}
+
+func TestSharedWebSocket_RouteEvent_Lease_EmptyLeaseID(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLease)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "database/creds/my-role/abc123",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.LeaseID = ""
+	msg.Data.EventType = "lease/expired"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0, "empty lease ID should be dropped")
+}
+
+func TestSharedWebSocket_RouteEvent_Lease_WithNamespace(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLease)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	leaseID := "database/creds/my-role/abc123"
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "prod",
+		VaultPath:    leaseID,
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = "prod/"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.LeaseID = leaseID
+	msg.Data.EventType = "lease/expired"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+}
+
+func TestSharedWebSocket_RouteEvent_Lease_NamespaceMismatch(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLease)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	leaseID := "database/creds/my-role/abc123"
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "prod",
+		VaultPath:    leaseID,
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = "staging"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.LeaseID = leaseID
+	msg.Data.EventType = "lease/revoked"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0, "namespace mismatch should not route")
+}
+
+// --- extractMountAndRole tests ---
+
+func TestExtractMountAndRole(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		wantMnt  string
+		wantRole string
+	}{
+		{
+			name:     "database rotate path",
+			path:     "database/rotate-role/my-role",
+			wantMnt:  "database",
+			wantRole: "my-role",
+		},
+		{
+			name:     "database static-creds path",
+			path:     "database/static-creds/my-role",
+			wantMnt:  "database",
+			wantRole: "my-role",
+		},
+		{
+			name:     "database creds path",
+			path:     "database/creds/my-role",
+			wantMnt:  "database",
+			wantRole: "my-role",
+		},
+		{
+			name:     "ldap rotate path",
+			path:     "ldap/rotate-role/my-role",
+			wantMnt:  "ldap",
+			wantRole: "my-role",
+		},
+		{
+			name:     "custom mount path",
+			path:     "my-db/roles/my-role",
+			wantMnt:  "my-db",
+			wantRole: "my-role",
+		},
+		{
+			name:     "too few segments",
+			path:     "database/my-role",
+			wantMnt:  "",
+			wantRole: "",
+		},
+		{
+			name:     "single segment",
+			path:     "database",
+			wantMnt:  "",
+			wantRole: "",
+		},
+		{
+			name:     "empty path",
+			path:     "",
+			wantMnt:  "",
+			wantRole: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mount, role := extractMountAndRole(tt.path)
+			assert.Equal(t, tt.wantMnt, mount)
+			assert.Equal(t, tt.wantRole, role)
+		})
+	}
+}
+
+// --- KV routing still works with new routing logic ---
+
+func TestSharedWebSocket_RouteEvent_KV_StillWorksWithBranching(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vss"},
+		VaultNS:      "",
+		VaultPath:    "kv/data/app1/config",
+		ResourceType: "VaultStaticSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "kv/data/app1/config"
+	msg.Data.Event.Metadata.Modified = "true"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vss", evt.Object.GetName())
 }

@@ -5,6 +5,7 @@ package vault
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -21,6 +22,10 @@ const (
 	EventTypeDatabase EventType = "database"
 	// EventTypePKI represents PKI secret engine events
 	EventTypePKI EventType = "pki"
+	// EventTypeLDAP represents LDAP secret engine events
+	EventTypeLDAP EventType = "ldap"
+	// EventTypeLease represents lease lifecycle events
+	EventTypeLease EventType = "lease"
 )
 
 // String returns the string representation of the EventType
@@ -33,11 +38,19 @@ type EventMessage struct {
 	Data struct {
 		Event struct {
 			Metadata struct {
-				Path     string `json:"path"`
-				Modified string `json:"modified"`
+				Path      string `json:"path"`
+				Modified  string `json:"modified"`
+				Name      string `json:"name"`
+				Operation string `json:"operation"`
+				LeaseID   string `json:"lease_id"`
 			} `json:"metadata"`
 		} `json:"event"`
-		Namespace string `json:"namespace"`
+		EventType  string `json:"event_type"`
+		Namespace  string `json:"namespace"`
+		PluginInfo struct {
+			MountPath string `json:"mount_path"`
+			Plugin    string `json:"plugin"`
+		} `json:"plugin_info"`
 	} `json:"data"`
 }
 
@@ -91,6 +104,19 @@ func getEventPath(eventType EventType) string {
 		EventTypeKV:       "/v1/sys/events/subscribe/kv*",
 		EventTypeDatabase: "/v1/sys/events/subscribe/database*",
 		EventTypePKI:      "/v1/sys/events/subscribe/pki*",
+		EventTypeLDAP:     "/v1/sys/events/subscribe/ldap*",
+		EventTypeLease:    "/v1/sys/events/subscribe/lease*",
 	}
 	return paths[eventType]
+}
+
+// extractMountAndRole parses a database/LDAP event path like
+// "database/rotate-role/my-role" into (mount, roleName).
+// Returns ("", "") if the path cannot be parsed.
+func extractMountAndRole(path string) (string, string) {
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 3 {
+		return "", ""
+	}
+	return parts[0], parts[2]
 }
