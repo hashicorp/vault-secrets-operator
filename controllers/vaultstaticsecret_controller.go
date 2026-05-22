@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -51,6 +53,11 @@ type VaultStaticSecretReconciler struct {
 	// This channel should be closed when the controller is stopped.
 	SourceCh             chan event.GenericEvent
 	eventWatcherRegistry *eventWatcherRegistry
+	// pendingVaultIndex stores the vault_index from the most recent matched
+	// Vault event for each secret. Consumed once per reconcile via LoadAndDelete
+	// to attach X-Vault-Index on the subsequent Vault read request.
+	// Key: types.NamespacedName, Value: string.
+	pendingVaultIndex sync.Map
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -139,7 +146,16 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}, nil
 	}
 
-	kvReq, err := newKVRequest(o.Spec)
+	// Consume any vault_index stored by the event watcher goroutine when the
+	// event that triggered this reconcile was received. Attach it as
+	// X-Vault-Index so Performance Standbys forward to the active node when
+	// their local WAL index is behind, guaranteeing fresh data.
+	var kvHeaders http.Header
+	if idx, ok := r.pendingVaultIndex.LoadAndDelete(req.NamespacedName); ok {
+		kvHeaders = http.Header{consts.HeaderVaultIndex: []string{idx.(string)}}
+	}
+
+	kvReq, err := newKVRequest(o.Spec, kvHeaders)
 	if err != nil {
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
@@ -283,19 +299,23 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// starts listening to events that are relevant to the secret so that updates can be triggered
 		// on a near-instant basis
 		err := EnsureEventWatcher(ctx, &InstantUpdateConfig{
-			Secret:          o,
-			Client:          c,
-			Registry:        r.eventWatcherRegistry,
-			BackOffRegistry: r.BackOffRegistry,
-			SourceCh:        r.SourceCh,
-			Recorder:        r.Recorder,
-			NewClientFunc:   r.newVSSClient,
+			Secret:            o,
+			Client:            c,
+			Registry:          r.eventWatcherRegistry,
+			BackOffRegistry:   r.BackOffRegistry,
+			SourceCh:          r.SourceCh,
+			Recorder:          r.Recorder,
+			NewClientFunc:     r.newVSSClient,
+			PendingVaultIndex: &r.pendingVaultIndex,
 		})
 		if err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
 		}
 	} else {
 		UnwatchEvents(r.eventWatcherRegistry, o)
+		// Clear any pending index so it does not persist across reconciles when
+		// instant updates is disabled.
+		r.pendingVaultIndex.Delete(req.NamespacedName)
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
@@ -330,6 +350,8 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 	objKey := client.ObjectKeyFromObject(o)
 	r.referenceCache.Remove(SecretTransformation, objKey)
 	r.BackOffRegistry.Delete(objKey)
+	// Clean up any pending vault_index entry so it does not leak after deletion.
+	r.pendingVaultIndex.Delete(objKey)
 	UnwatchEvents(r.eventWatcherRegistry, o)
 	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
 		logger.Info("Removing finalizer")
@@ -390,13 +412,13 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 		Complete(r)
 }
 
-func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.ReadRequest, error) {
+func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec, headers http.Header) (vault.ReadRequest, error) {
 	var kvReq vault.ReadRequest
 	switch s.Type {
 	case consts.KVSecretTypeV1:
-		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path, nil)
+		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path, headers)
 	case consts.KVSecretTypeV2:
-		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version, nil)
+		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version, headers)
 	default:
 		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
 	}

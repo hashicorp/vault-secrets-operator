@@ -170,9 +170,10 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 		runtimePodUID types.UID
 	}
 	type args struct {
-		ctx     context.Context
-		vClient *vault.MockRecordingVaultClient
-		o       *secretsv1beta1.VaultDynamicSecret
+		ctx          context.Context
+		vClient      *vault.MockRecordingVaultClient
+		o            *secretsv1beta1.VaultDynamicSecret
+		vaultHeaders http.Header
 	}
 	tests := []struct {
 		name           string
@@ -552,18 +553,150 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 					"unsupported HTTP method %q for sync", http.MethodOptions), i...)
 			},
 		},
+		// ── X-Vault-Index header propagation ───
+		{
+			// GET request with X-Vault-Index header — verifies the header is
+			// forwarded to the underlying Vault read request.
+			name: "with-vault-index-header-get",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &vault.MockRecordingVaultClient{},
+				o: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Mount:  "baz",
+						Path:   "foo",
+						Params: nil,
+						Destination: secretsv1beta1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
+				},
+				vaultHeaders: http.Header{"X-Vault-Index": []string{"AAAAAAAAAZk="}},
+			},
+			want: &secretsv1beta1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*vault.MockRequest{
+				{
+					Method:  http.MethodGet,
+					Path:    "baz/foo",
+					Params:  nil,
+					Headers: http.Header{"X-Vault-Index": []string{"AAAAAAAAAZk="}},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			// PUT request with params and X-Vault-Index header — verifies the
+			// header is forwarded to the underlying Vault write request.
+			name: "with-vault-index-header-put",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &vault.MockRecordingVaultClient{},
+				o: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Mount: "baz",
+						Path:  "foo",
+						Params: map[string]string{
+							"qux": "bar",
+						},
+						Destination: secretsv1beta1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
+				},
+				vaultHeaders: http.Header{"X-Vault-Index": []string{"AAAAAAAAAZk="}},
+			},
+			want: &secretsv1beta1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*vault.MockRequest{
+				{
+					Method:  http.MethodPut,
+					Path:    "baz/foo",
+					Params:  map[string]any{"qux": "bar"},
+					Headers: http.Header{"X-Vault-Index": []string{"AAAAAAAAAZk="}},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			// nil headers must not alter the recorded request — no regression for
+			// the normal (non-event-triggered) reconcile path.
+			name: "nil-headers-get-no-regression",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:          nil,
+				vClient:      &vault.MockRecordingVaultClient{},
+				vaultHeaders: nil,
+				o: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Mount:  "baz",
+						Path:   "foo",
+						Params: nil,
+						Destination: secretsv1beta1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1beta1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*vault.MockRequest{
+				{
+					Method:  http.MethodGet,
+					Path:    "baz/foo",
+					Params:  nil,
+					Headers: nil,
+				},
+			},
+			wantErr: assert.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client: tt.fields.Client,
 			}
-			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o, nil)
-			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)) {
+			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o, nil, tt.args.vaultHeaders)
+			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, tt.args.vaultHeaders)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)
-			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)
+			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, tt.args.vaultHeaders)
+			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, tt.args.vaultHeaders)
 		})
 	}
 }

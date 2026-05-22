@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-secure-stdlib/parseutil"
@@ -54,6 +55,11 @@ type InstantUpdateConfig struct {
 	// EventObjectFactory builds the object sent on SourceCh. When nil a default
 	// factory that deep copies Object is used.
 	EventObjectFactory func(types.NamespacedName) client.Object
+	// PendingVaultIndex stores the vault_index from the latest matched event so
+	// the reconciler can attach it as X-Vault-Index on the subsequent Vault
+	// request for conditional forwarding (Performance Standbys only).
+	// Key: types.NamespacedName, Value: string.
+	PendingVaultIndex *sync.Map
 }
 
 // vaultEventMessage is used to extract the relevant fields from an event message sent from Vault.
@@ -61,8 +67,9 @@ type vaultEventMessage struct {
 	Data struct {
 		Event struct {
 			Metadata struct {
-				Path     string `json:"path"`
-				Modified string `json:"modified"`
+				Path       string `json:"path"`
+				Modified   string `json:"modified"`
+				VaultIndex string `json:"vault_index"`
 			} `json:"metadata"`
 		} `json:"event"`
 		Namespace string `json:"namespace"`
@@ -316,6 +323,17 @@ func (cfg *InstantUpdateConfig) matchSecretEvent(ctx context.Context, obj client
 		logger.V(consts.LogLevelDebug).Info("Event is not relevant for instant updates, skipping",
 			"namespace", namespace, "path", path, "spec namespace", specNamespace, "spec path", specPath)
 		return false, nil
+	}
+
+	// Store the vault_index so the reconciler can attach X-Vault-Index on the
+	// subsequent Vault request, ensuring the responding node has applied at least
+	// this WAL entry before serving data (conditional forwarding for Performance
+	// Standbys). TrimSpace guards against empty or whitespace-only values that
+	// would produce a meaningless header.
+	if cfg.PendingVaultIndex != nil {
+		if vaultIndex := strings.TrimSpace(message.Data.Event.Metadata.VaultIndex); vaultIndex != "" {
+			cfg.PendingVaultIndex.Store(client.ObjectKeyFromObject(obj), vaultIndex)
+		}
 	}
 
 	logger.V(consts.LogLevelDebug).Info("Event matches, requeueing",

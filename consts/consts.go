@@ -24,4 +24,10 @@ const (
 
 	AnnotationResync = "vso.hashicorp.com/resync"
 	HeaderUserAgent  = "User-Agent"
+
+	// HeaderVaultIndex is the Vault consistency header for conditional forwarding
+	// on Performance Standbys. When set on a request, the standby node either
+	// serves the request locally (if its WAL index >= the value) or immediately
+	// forwards to the active node — avoiding blocking waits.
+	HeaderVaultIndex = "X-Vault-Index"
 )

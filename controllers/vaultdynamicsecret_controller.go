@@ -12,6 +12,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -74,6 +75,11 @@ type VaultDynamicSecretReconciler struct {
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
 	runtimePodUID types.UID
 	SecretsClient client.Client
+	// pendingVaultIndex stores the vault_index from the most recent matched
+	// Vault event for each secret. Consumed once per reconcile via LoadAndDelete
+	// to attach X-Vault-Index on the subsequent Vault read/write request.
+	// Key: types.NamespacedName, Value: string.
+	pendingVaultIndex sync.Map
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -146,19 +152,23 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
 
 		err := EnsureEventWatcher(ctx, &InstantUpdateConfig{
-			Secret:          o,
-			Client:          vClient,
-			Registry:        r.eventWatcherRegistry,
-			BackOffRegistry: r.BackOffRegistry,
-			SourceCh:        r.SourceCh,
-			Recorder:        r.Recorder,
-			NewClientFunc:   r.newVDSClient,
+			Secret:            o,
+			Client:            vClient,
+			Registry:          r.eventWatcherRegistry,
+			BackOffRegistry:   r.BackOffRegistry,
+			SourceCh:          r.SourceCh,
+			Recorder:          r.Recorder,
+			NewClientFunc:     r.newVDSClient,
+			PendingVaultIndex: &r.pendingVaultIndex,
 		})
 		if err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError, "Failed to watch events: %s", err)
 		}
 	} else {
 		UnwatchEvents(r.eventWatcherRegistry, o)
+		// Clear any pending index so it does not persist across reconciles when
+		// instant updates is disabled.
+		r.pendingVaultIndex.Delete(req.NamespacedName)
 	}
 
 	// we can ignore the error here, since it was handled above in the Get() call.
@@ -339,7 +349,16 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// sync the secret
-	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption)
+	// Consume any vault_index stored by the event watcher goroutine when the
+	// event that triggered this reconcile was received. Attach it as
+	// X-Vault-Index so Performance Standbys forward to the active node when
+	// their local WAL index is behind, guaranteeing fresh data.
+	var vaultHeaders http.Header
+	if idx, ok := r.pendingVaultIndex.LoadAndDelete(req.NamespacedName); ok {
+		vaultHeaders = http.Header{consts.HeaderVaultIndex: []string{idx.(string)}}
+	}
+
+	secretLease, staticCredsUpdated, err := r.syncSecret(ctx, vClient, o, transOption, vaultHeaders)
 	if err != nil {
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
@@ -446,7 +465,7 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 }
 
 // doVault performs a Vault request based on the VaultDynamicSecret's spec.
-func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (vault.Response, error) {
+func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret, headers http.Header) (vault.Response, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp vault.Response
@@ -476,9 +495,9 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	logger = logger.WithValues("path", path, "method", method)
 	switch method {
 	case http.MethodPut, http.MethodPost:
-		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, nil))
+		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, headers))
 	case http.MethodGet:
-		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, nil))
+		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, headers))
 	default:
 		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
@@ -496,11 +515,11 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 }
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
-	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
+	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption, headers http.Header,
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	logger := log.FromContext(ctx).WithName("syncSecret")
 
-	resp, err := r.doVault(ctx, c, o)
+	resp, err := r.doVault(ctx, c, o, headers)
 	if err != nil {
 		return nil, false, err
 	}
@@ -610,7 +629,9 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		backoff.WithMaxInterval(time.Second*2))
 	if err := backoff.Retry(
 		func() error {
-			resp, err = r.doVault(ctx, c, o)
+			// No consistency header on retry — this is a poll within the same
+			// reconcile cycle for static-creds rotation, not a new event trigger.
+			resp, err = r.doVault(ctx, c, o, nil)
 			if err != nil {
 				return err
 			}
@@ -777,6 +798,8 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.SyncRegistry.Delete(objKey)
 	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
+	// Clean up any pending vault_index entry so it does not leak after deletion.
+	r.pendingVaultIndex.Delete(objKey)
 	UnwatchEvents(r.eventWatcherRegistry, o)
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
