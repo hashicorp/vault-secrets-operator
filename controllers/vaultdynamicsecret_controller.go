@@ -1025,16 +1025,17 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
 	name := client.ObjectKeyFromObject(o)
 
+	currentLeaseID := o.Status.SecretLease.ID
 	meta, ok := r.eventWatcherRegistry.Get(name)
 	if ok {
-		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
+		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() && meta.LastLeaseID == currentLeaseID {
 			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
 				"namespace", o.Namespace, "name", o.Name)
 			return nil
 		}
-		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata or client change",
+		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata, client, or lease change",
 			"namespace", o.Namespace, "name", o.Name)
-		r.unWatchEvents(o, c)
+		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
 	}
 
 	eventType := resolveEventType(o)
@@ -1056,7 +1057,6 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
 		leaseSubscriber := &vault.Subscriber{
 			ResourceKey:  name,
-			VaultNS:      o.Spec.Namespace,
 			VaultPath:    buildLeaseEventKey(o),
 			ResourceType: "VaultDynamicSecret",
 			ReconcileCh:  r.SourceCh,
@@ -1071,6 +1071,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	updatedMeta := &eventWatcherMeta{
 		LastClientID:   c.ID(),
 		LastGeneration: o.GetGeneration(),
+		LastLeaseID:    currentLeaseID,
 	}
 	r.eventWatcherRegistry.Register(name, updatedMeta)
 
@@ -1082,7 +1083,9 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	return nil
 }
 
-// unWatchEvents unsubscribes the VDS from events and removes it from the registry
+// unWatchEvents unsubscribes the VDS from events and removes it from the registry.
+// It uses the lease ID from the registry metadata to ensure the correct (previously
+// subscribed) lease is cleaned up, not the potentially-updated status lease ID.
 func (r *VaultDynamicSecretReconciler) unWatchEvents(
 	o *secretsv1beta1.VaultDynamicSecret,
 	c vault.Client,
@@ -1092,10 +1095,26 @@ func (r *VaultDynamicSecretReconciler) unWatchEvents(
 	}
 
 	name := client.ObjectKeyFromObject(o)
-	_, ok := r.eventWatcherRegistry.Get(name)
+	meta, ok := r.eventWatcherRegistry.Get(name)
 	if !ok {
 		return
 	}
+
+	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
+}
+
+// unWatchEventsWithLeaseID performs the actual unsubscription using the provided
+// lease ID rather than the current status, which may have already been updated.
+func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
+	o *secretsv1beta1.VaultDynamicSecret,
+	c vault.Client,
+	leaseID string,
+) {
+	if r.eventWatcherRegistry == nil {
+		return
+	}
+
+	name := client.ObjectKeyFromObject(o)
 
 	eventType := resolveEventType(o)
 	vaultPath := buildVaultEventKey(o)
@@ -1110,11 +1129,10 @@ func (r *VaultDynamicSecretReconciler) unWatchEvents(
 			"namespace", o.Namespace, "name", o.Name, "error", err)
 	}
 
-	// Also unsubscribe from lease events if applicable
-	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
+	// Unsubscribe from lease events using the tracked lease ID
+	if leaseID != "" {
 		leaseKey := vault.SubscriptionKey{
-			VaultNamespace: o.Spec.Namespace,
-			VaultPath:      o.Status.SecretLease.ID,
+			VaultPath: leaseID,
 		}
 		_ = c.UnsubscribeFromEvents(vault.EventTypeLease, leaseKey, name.String())
 	}

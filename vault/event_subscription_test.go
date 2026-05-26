@@ -947,6 +947,8 @@ func TestSharedWebSocket_RouteEvent_Lease_EmptyLeaseID(t *testing.T) {
 	assert.Len(t, ch, 0, "empty lease ID should be dropped")
 }
 
+// TestSharedWebSocket_RouteEvent_Lease_WithNamespace verifies that lease
+// routing ignores the event namespace because lease IDs are globally unique.
 func TestSharedWebSocket_RouteEvent_Lease_WithNamespace(t *testing.T) {
 	ws := newTestSharedWebSocket(EventTypeLease)
 	defer ws.cancel()
@@ -955,13 +957,14 @@ func TestSharedWebSocket_RouteEvent_Lease_WithNamespace(t *testing.T) {
 	leaseID := "database/creds/my-role/abc123"
 	sub := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
-		VaultNS:      "prod",
 		VaultPath:    leaseID,
 		ResourceType: "VaultDynamicSecret",
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
 
+	// Event carries a namespace, but routing should still match because
+	// lease lookup keys intentionally exclude namespace.
 	msg := &EventMessage{}
 	msg.Data.Namespace = "prod/"
 	msg.Data.Event.Metadata.Modified = "true"
@@ -973,7 +976,10 @@ func TestSharedWebSocket_RouteEvent_Lease_WithNamespace(t *testing.T) {
 	require.Len(t, ch, 1)
 }
 
-func TestSharedWebSocket_RouteEvent_Lease_NamespaceMismatch(t *testing.T) {
+// TestSharedWebSocket_RouteEvent_Lease_IgnoresNamespace verifies that a
+// different namespace on the event still routes, since lease IDs are
+// globally unique and namespace is not part of the lookup key.
+func TestSharedWebSocket_RouteEvent_Lease_IgnoresNamespace(t *testing.T) {
 	ws := newTestSharedWebSocket(EventTypeLease)
 	defer ws.cancel()
 
@@ -981,7 +987,6 @@ func TestSharedWebSocket_RouteEvent_Lease_NamespaceMismatch(t *testing.T) {
 	leaseID := "database/creds/my-role/abc123"
 	sub := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
-		VaultNS:      "prod",
 		VaultPath:    leaseID,
 		ResourceType: "VaultDynamicSecret",
 		ReconcileCh:  ch,
@@ -996,7 +1001,46 @@ func TestSharedWebSocket_RouteEvent_Lease_NamespaceMismatch(t *testing.T) {
 
 	ws.routeEvent(msg)
 
-	assert.Len(t, ch, 0, "namespace mismatch should not route")
+	require.Len(t, ch, 1, "lease routing should match regardless of namespace")
+}
+
+// TestSharedWebSocket_RouteEvent_Lease_IgnoresRenewals verifies that
+// lease/renewed events (operation=renew) are silently dropped to prevent
+// a feedback loop where VSO's own LifetimeWatcher renewals trigger
+// unnecessary reconciliations.
+func TestSharedWebSocket_RouteEvent_Lease_IgnoresRenewals(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeLease)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	leaseID := "database/creds/my-role/abc123"
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultPath:    leaseID,
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Renewal events should be dropped
+	renewMsg := &EventMessage{}
+	renewMsg.Data.Event.Metadata.Modified = "true"
+	renewMsg.Data.Event.Metadata.LeaseID = leaseID
+	renewMsg.Data.Event.Metadata.Operation = "renew"
+	renewMsg.Data.EventType = "lease/renewed"
+
+	ws.routeEvent(renewMsg)
+	require.Empty(t, ch, "lease renewal events should not trigger reconciliation")
+
+	// Revoke events should still be delivered
+	revokeMsg := &EventMessage{}
+	revokeMsg.Data.Event.Metadata.Modified = "true"
+	revokeMsg.Data.Event.Metadata.LeaseID = leaseID
+	revokeMsg.Data.Event.Metadata.Operation = "revoke"
+	revokeMsg.Data.EventType = "lease/revoked"
+
+	ws.routeEvent(revokeMsg)
+	require.Len(t, ch, 1, "lease revoke events should trigger reconciliation")
 }
 
 // --- extractMountAndRole tests ---
