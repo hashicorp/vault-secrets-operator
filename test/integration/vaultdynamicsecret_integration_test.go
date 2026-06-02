@@ -1576,8 +1576,9 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	// Wait for initial sync: the K8s secret must exist with the raw data key.
 	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
 		map[string]int{
-			"password": 20,
-			"username": len(outputs.DBRoleStaticUser),
+			"password":        20,
+			"username":        len(outputs.DBRoleStaticUser),
+			"rotation_period": 2,
 		},
 		helpers.SecretDataKeyRaw,
 		"last_vault_rotation",
