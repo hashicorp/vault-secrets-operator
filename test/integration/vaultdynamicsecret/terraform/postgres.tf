@@ -185,6 +185,15 @@ path "${vault_database_secrets_mount.db.path}/*" {
 path "sys/events/subscribe/database*" {
   capabilities = ["read"]
 }
+
+path "sys/leases/*" {
+  capabilities = ["subscribe"]
+  subscribe_event_types = ["lease*"]
+}
+
+path "sys/events/subscribe/lease*" {
+  capabilities = ["read"]
+}
 EOT
 }
 
