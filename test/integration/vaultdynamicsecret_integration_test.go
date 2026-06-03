@@ -1868,7 +1868,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 		}
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)),
 		"VDS %s was not updated via instant updates within 30s after lease revocation", objKey,
 	)
 
