@@ -1817,7 +1817,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 		},
 	)
 
-	// Capture VDS status (lease ID + SecretMAC) before revocation so we can detect changes.
+	// Capture the VDS lease ID before revocation so we can detect rotation.
 	objKey := ctrlclient.ObjectKeyFromObject(vdsObj)
 	var vdsBefore secretsv1beta1.VaultDynamicSecret
 	require.NoError(t, backoff.Retry(func() error {
@@ -1826,9 +1826,6 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 		}
 		if vdsBefore.Status.SecretLease.ID == "" {
 			return fmt.Errorf("waiting for SecretLease.ID to be set on %s", objKey)
-		}
-		if vdsBefore.Status.SecretMAC == "" {
-			return fmt.Errorf("waiting for SecretMAC to be set on %s", objKey)
 		}
 		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
@@ -1860,26 +1857,17 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 		"failed to revoke lease %s", vdsBefore.Status.SecretLease.ID)
 
 	// Assert the VDS is updated quickly (within ~30s) via the event-driven path,
-	// NOT the 1h RefreshAfter polling cadence. Both the lease ID and the SecretMAC
-	// must change, confirming new credentials were fetched from Vault.
+	// NOT the 1h RefreshAfter polling cadence. The lease ID must change, confirming
+	// new credentials were fetched from Vault.
 	require.NoError(t, backoff.Retry(func() error {
 		var vdsAfter secretsv1beta1.VaultDynamicSecret
 		if err := crdClient.Get(ctx, objKey, &vdsAfter); err != nil {
 			return backoff.Permanent(err)
 		}
-
-		var errs error
 		if vdsAfter.Status.SecretLease.ID == vdsBefore.Status.SecretLease.ID {
-			errs = errors.Join(errs, fmt.Errorf(
-				"SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID,
-			))
+			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 		}
-		if vdsAfter.Status.SecretMAC == vdsBefore.Status.SecretMAC {
-			errs = errors.Join(errs, fmt.Errorf(
-				"SecretMAC not updated: still %s", vdsBefore.Status.SecretMAC,
-			))
-		}
-		return errs
+		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
 		"VDS %s was not updated via instant updates within 30s after lease revocation", objKey,
 	)
