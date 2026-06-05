@@ -1493,6 +1493,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 30,
 			"with_static_role_scheduled": false,
+			"use_events":                 true,
 			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
 		},
 	}

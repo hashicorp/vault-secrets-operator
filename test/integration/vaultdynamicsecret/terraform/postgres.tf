@@ -158,6 +158,7 @@ resource "vault_database_secret_backend_static_role" "postgres-scheduled" {
   ]
 }
 resource "vault_policy" "db" {
+  count     = var.use_events ? 0 : 1
   namespace = local.namespace
   name      = "${local.auth_policy}-db"
   policy    = <<EOT
@@ -173,10 +174,20 @@ path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secr
 EOT
 }
 
-resource "vault_policy" "db-events" {
+resource "vault_policy" "db-with-events" {
+  count     = var.use_events ? 1 : 0
   namespace = local.namespace
-  name      = "${local.auth_policy}-db-events"
+  name      = "${local.auth_policy}-db"
   policy    = <<EOT
+path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_backend_role.postgres.name}" {
+  capabilities = ["read"]
+}
+path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
+  capabilities = ["read"]
+}
+path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres-delayed.name}" {
+  capabilities = ["read"]
+}
 path "${vault_database_secrets_mount.db.path}/*" {
   capabilities = ["subscribe"]
   subscribe_event_types = ["database*"]
