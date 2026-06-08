@@ -26,9 +26,15 @@ import (
 
 const (
 	// reconnection backoff constants
-	initialReconnectDelay   = 1 * time.Second
-	maxReconnectDelay       = 60 * time.Second
-	maxReconnectElapsedTime = 10 * time.Minute
+	initialReconnectDelay = 1 * time.Second
+	maxReconnectDelay     = 60 * time.Second
+	// maxReconnectElapsedTime is set to 0 to retry indefinitely (until context is cancelled).
+	// This matches the main branch behavior where WebSocket goroutines keep retrying
+	// until they succeed or are explicitly stopped. The SharedWebSocket will keep
+	// retrying to reconnect when Vault is down, and automatically recover when Vault
+	// comes back up, without requiring external triggers (requeue events or periodic
+	// reconciliation).
+	maxReconnectElapsedTime = 0
 )
 
 // SharedWebSocket manages a single WebSocket connection with multiple subscribers
@@ -170,6 +176,8 @@ func (ws *SharedWebSocket) GetSubscriberCount() int {
 func (ws *SharedWebSocket) eventLoop() {
 	defer func() {
 		ws.logger.Info("Event loop exiting", "subscribers", ws.GetSubscriberCount())
+		// Notify all subscribers that the WebSocket is stopping
+		ws.notifySubscribersOfStop()
 	}()
 
 	ws.logger.Info("Event loop started")
@@ -221,6 +229,46 @@ func (ws *SharedWebSocket) eventLoop() {
 				return
 			}
 			ws.logger.Info("Successfully reconnected to WebSocket")
+		}
+	}
+}
+
+// notifySubscribersOfStop notifies all subscribers that the WebSocket is stopping
+// and triggers reconciliation by sending a requeue event.
+func (ws *SharedWebSocket) notifySubscribersOfStop() {
+	ws.subscriberMu.RLock()
+	defer ws.subscriberMu.RUnlock()
+
+	for pathKey, subs := range ws.subscribers {
+		for subKey, sub := range subs {
+			ws.logger.V(consts.LogLevelDebug).Info("Notifying subscriber of stop",
+				"pathKey", pathKey,
+				"subscriber", subKey,
+				"resourceType", sub.ResourceType)
+
+			// Call OnStop callback for cleanup
+			if sub.OnStop != nil {
+				ws.logger.V(consts.LogLevelDebug).Info("Calling OnStop callback",
+					"subscriber", subKey)
+				sub.OnStop()
+			}
+
+			// Send requeue event to trigger reconciliation
+			select {
+			case sub.ReconcileCh <- event.GenericEvent{
+				Object: &secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      sub.ResourceKey.Name,
+						Namespace: sub.ResourceKey.Namespace,
+					},
+				},
+			}:
+				ws.logger.Info("Sent requeue event for reconciliation",
+					"subscriber", subKey)
+			default:
+				ws.logger.V(consts.LogLevelDebug).Info("ReconcileCh full, skipping requeue",
+					"subscriber", subKey)
+			}
 		}
 	}
 }

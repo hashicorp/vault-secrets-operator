@@ -359,17 +359,29 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 
 	meta, ok := r.eventWatcherRegistry.Get(name)
 	if ok {
-		// The subscription is active, and if the VSS object has not been updated,
-		// and the client ID is the same, just return
-		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
-			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
+		// Check if the WebSocket is actually healthy (Orphaned Entry Detection)
+		// This is a safety net in case OnStop callback didn't run or there was a race condition
+		ws := c.GetWebSocket(vault.EventTypeKV)
+		if ws != nil && ws.IsHealthy() {
+			// WebSocket is healthy, check if metadata matches
+			if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
+				// The subscription is active, and if the VSS object has not been updated,
+				// and the client ID is the same, just return
+				logger.V(consts.LogLevelDebug).Info("Event subscription already active",
+					"namespace", o.Namespace, "name", o.Name)
+				return nil
+			}
+			// The subscription exists but metadata or vault client has changed, unsubscribe first
+			logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata or client change",
 				"namespace", o.Namespace, "name", o.Name)
-			return nil
+			r.unWatchEvents(o, c)
+		} else {
+			// WebSocket is dead or missing - orUnsubscribing due to metadataphaned registry entry detected
+			logger.Info("Detected orphaned registry entry (WebSocket is dead or missing), cleaning up",
+				"namespace", o.Namespace, "name", o.Name)
+			r.eventWatcherRegistry.Delete(name)
+			// Fall through to create a new WebSocket subscription
 		}
-		// The subscription exists but metadata or vault client has changed, unsubscribe first
-		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata or client change",
-			"namespace", o.Namespace, "name", o.Name)
-		r.unWatchEvents(o, c)
 	}
 
 	// Build the vault path for subscription
@@ -382,6 +394,13 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 		VaultPath:    vaultPath,
 		ResourceType: "VaultStaticSecret",
 		ReconcileCh:  r.SourceCh,
+		// OnStop callback cleans up registry when WebSocket dies
+		OnStop: func() {
+			logger.Info("WebSocket stopped, cleaning up registry entry",
+				"namespace", name.Namespace,
+				"name", name.Name)
+			r.eventWatcherRegistry.Delete(name)
+		},
 	}
 
 	if err := c.SubscribeToEvents(ctx, vault.EventTypeKV, subscriber); err != nil {
