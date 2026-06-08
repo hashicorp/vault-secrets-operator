@@ -207,6 +207,7 @@ type Client interface {
 	// WebSocket connections.
 	GetWebSocketSubscriberCount() int
 	GetMountType(context.Context, string) (string, error)
+	GetWebSocket(EventType) *SharedWebSocket
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -1125,9 +1126,9 @@ func (c *defaultClient) getOrCreateWebSocket(
 	ctx context.Context,
 	eventType EventType,
 ) (*SharedWebSocket, error) {
-	// Check if WebSocket already exists (read lock)
+	// Check if WebSocket already exists and is healthy (read lock)
 	c.websocketMu.RLock()
-	if ws, exists := c.websockets[eventType]; exists {
+	if ws, exists := c.websockets[eventType]; exists && ws.IsHealthy() {
 		c.websocketMu.RUnlock()
 		return ws, nil
 	}
@@ -1139,7 +1140,17 @@ func (c *defaultClient) getOrCreateWebSocket(
 
 	// Double-check after acquiring write lock
 	if ws, exists := c.websockets[eventType]; exists {
-		return ws, nil
+		// Check if it's healthy
+		if ws.IsHealthy() {
+			return ws, nil
+		}
+		// WebSocket exists but is dead, remove it from map
+		logger := log.FromContext(ctx).WithValues(
+			"clientID", c.id,
+			"eventType", eventType,
+		)
+		logger.Info("Removing dead WebSocket from map before creating new one")
+		delete(c.websockets, eventType)
 	}
 
 	// Create new SharedWebSocket
@@ -1200,4 +1211,11 @@ func (c *defaultClient) GetWebSocketSubscriberCount() int {
 		total += ws.GetSubscriberCount()
 	}
 	return total
+}
+
+// GetWebSocket returns the SharedWebSocket for the given event type, or nil if not found
+func (c *defaultClient) GetWebSocket(eventType EventType) *SharedWebSocket {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+	return c.websockets[eventType]
 }

@@ -82,6 +82,8 @@ type Subscriber struct {
 	// X-Vault-Index, ensuring the read is served from a node that has replicated
 	// the write. A nil value disables this feature for the subscriber.
 	PendingVaultIndex *sync.Map
+	// OnStop is called when the WebSocket event loop stops
+	OnStop func()
 }
 
 // SubscriptionKey uniquely identifies a subscription based on Vault namespace and path
