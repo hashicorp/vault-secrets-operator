@@ -1493,6 +1493,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": 30,
 			"with_static_role_scheduled": false,
+			"use_events":                 true,
 			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
 		},
 	}
@@ -1530,10 +1531,11 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 		created = append(created, o)
 	}
 
+	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      consts.NameDefault,
-			Namespace: operatorNS,
+			Name:      vaultAuthName,
+			Namespace: outputs.K8sNamespace,
 		},
 		Spec: secretsv1beta1.VaultAuthSpec{
 			Namespace: outputs.Namespace,
@@ -1560,6 +1562,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			Path:             "static-creds/" + outputs.DBRoleStatic,
 			AllowStaticCreds: true,
 			Revoke:           false,
+			VaultAuthRef:     vaultAuthName,
 			Destination: secretsv1beta1.Destination{
 				Name:   destName,
 				Create: true,
@@ -1576,8 +1579,9 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	// Wait for initial sync: the K8s secret must exist with the raw data key.
 	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
 		map[string]int{
-			"password": 20,
-			"username": len(outputs.DBRoleStaticUser),
+			"password":        20,
+			"username":        len(outputs.DBRoleStaticUser),
+			"rotation_period": 2,
 		},
 		helpers.SecretDataKeyRaw,
 		"last_vault_rotation",
