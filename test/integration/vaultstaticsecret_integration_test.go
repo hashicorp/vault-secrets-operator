@@ -175,7 +175,7 @@ func waitForEventWatcherStarted(t *testing.T, ctx context.Context, crdClient ctr
 }
 
 // waitForNewOperatorPod waits for a new operator pod to be ready after the old one is deleted
-func waitForNewOperatorPod(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, operatorNS string, oldPodUID string, maxRetries uint64) error {
+func waitForNewOperatorPod(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, operatorNS, oldPodUID string, maxRetries uint64) error {
 	return backoff.Retry(func() error {
 		newPodList := &corev1.PodList{}
 		if err := crdClient.List(ctx, newPodList, ctrlclient.InNamespace(operatorNS),
