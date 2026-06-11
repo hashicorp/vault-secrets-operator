@@ -1189,9 +1189,9 @@ func awaitNoRolloutRestartsVSS(t *testing.T, ctx context.Context, client ctrlcli
 // This verifies the fix for: "No Requeue Event After Event Loop Exit"
 func TestVaultStaticSecret_RequeueAfterEventLoopExit(t *testing.T) {
 	// Test initialization
-	if testInParallel {
-		t.Parallel()
-	}
+	// if testInParallel {
+	// 	t.Parallel()
+	// }
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
@@ -1380,9 +1380,9 @@ func TestVaultStaticSecret_RequeueAfterEventLoopExit(t *testing.T) {
 func TestVaultStaticSecret_RegistryCleanup(t *testing.T) {
 	// Test verifies event watcher registry properly cleans up when VaultStaticSecrets are deleted
 	// This ensures no memory leaks or orphaned goroutines
-	if testInParallel {
-		t.Parallel()
-	}
+	// if testInParallel {
+	// 	t.Parallel()
+	// }
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
@@ -1548,9 +1548,9 @@ func TestVaultStaticSecret_RegistryCleanup(t *testing.T) {
 }
 
 func TestVaultStaticSecret_OrphanedRegistryRecovery(t *testing.T) {
-	if testInParallel {
-		t.Parallel()
-	}
+	// if testInParallel {
+	// 	t.Parallel()
+	// }
 
 	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
 
