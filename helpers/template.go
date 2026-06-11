@@ -74,6 +74,9 @@ func (e *TemplateNotFoundError) Error() string {
 // SecretTransformationOption provides the configuration necessary when
 // performing source secret data transformations.
 type SecretTransformationOption struct {
+	// KeyTemplate is used to transform each included raw source secret data key
+	// before writing it to the destination K8s Secret.
+	KeyTemplate string
 	// Excludes contains regex patterns that are applied to the raw secret data. All
 	// matches will be excluded for resulting K8s Secret data.
 	Excludes []string
@@ -136,11 +139,12 @@ func NewSecretTransformationOptionWithTransformation(ctx context.Context, client
 ) (*SecretTransformationOption, error) {
 	opt := &SecretTransformationOption{}
 	if transformation != nil {
-		keyedTemplates, ff, err := gatherTemplates(ctx, client, obj, transformation)
+		keyedTemplates, ff, keyTemplate, err := gatherTemplates(ctx, client, obj, transformation)
 		if err != nil {
 			return nil, err
 		}
 
+		opt.KeyTemplate = keyTemplate
 		opt.Annotations = obj.GetAnnotations()
 		opt.Labels = obj.GetLabels()
 		opt.Excludes = ff.excludes()
@@ -160,12 +164,12 @@ func NewSecretTransformationOptionWithTransformation(ctx context.Context, client
 
 // gatherTemplates attempts to collect all v1beta1.Template(s) for the
 // syncable secret object.
-func gatherTemplates(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, transformation *secretsv1beta1.Transformation) ([]*KeyedTemplate, *fieldFilters, error) {
+func gatherTemplates(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, transformation *secretsv1beta1.Transformation) ([]*KeyedTemplate, *fieldFilters, string, error) {
 	var errs error
 	var keyedTemplates []*KeyedTemplate
 
 	if transformation == nil {
-		return nil, nil, fmt.Errorf("transformation is nil")
+		return nil, nil, "", fmt.Errorf("transformation is nil")
 	}
 
 	// used to deduplicate templates by name
@@ -195,8 +199,10 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 
 	objKey := ctrlclient.ObjectKeyFromObject(obj)
 	if err := common.ValidateObjectKey(objKey); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
+
+	keyTemplate := transformation.KeyTemplate
 
 	// get the in-line template templates
 	for key, tmpl := range transformation.Templates {
@@ -231,6 +237,10 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 		if err != nil {
 			errs = errors.Join(errs, err)
 			continue
+		}
+
+		if keyTemplate == "" {
+			keyTemplate = obj.Spec.KeyTemplate
 		}
 
 		if !ptr.Deref(obj.Status.Valid, false) {
@@ -306,14 +316,14 @@ func gatherTemplates(ctx context.Context, client ctrlclient.Client, obj ctrlclie
 	}
 
 	if errs != nil {
-		return nil, nil, errs
+		return nil, nil, "", errs
 	}
 
 	slices.SortFunc(keyedTemplates, func(a, b *KeyedTemplate) int {
 		return a.Cmp(b)
 	})
 
-	return keyedTemplates, ff, nil
+	return keyedTemplates, ff, keyTemplate, nil
 }
 
 // loadTemplates parses all v1beta1.Template(s) into a single
@@ -368,6 +378,35 @@ func renderTemplates(opt *SecretTransformationOption,
 	}
 
 	return data, nil
+}
+
+const keyTemplateName = "_keyTemplate"
+
+func loadKeyTemplate(text string) (template.SecretTemplate, error) {
+	t := template.NewSecretTemplate("")
+	if err := t.Parse(keyTemplateName, text); err != nil {
+		return nil, err
+	}
+
+	return t, nil
+}
+
+type keyTemplateInput struct {
+	// Name is the original source secret data key.
+	Name string `json:"name"`
+}
+
+func renderKeyTemplate(tmpl template.SecretTemplate, name string) (string, error) {
+	input := keyTemplateInput{Name: name}
+	b, err := tmpl.ExecuteTemplate(keyTemplateName, input)
+	if err != nil {
+		return "", err
+	}
+	if len(b) == 0 {
+		return "", fmt.Errorf("rendered key template is empty for source key %q", name)
+	}
+
+	return string(b), nil
 }
 
 func matchField(pat, f string) (bool, error) {
@@ -442,6 +481,33 @@ func FilterData[V any](opt *SecretTransformationOption, data map[string]V) (map[
 	}
 
 	return m, nil
+}
+
+// TransformDataKeys applies KeyTemplate to each source data key. If
+// SecretTransformationOption is nil, data is returned unchanged.
+func TransformDataKeys[V any](opt *SecretTransformationOption, data map[string]V) (map[string]V, error) {
+	if opt == nil || opt.KeyTemplate == "" {
+		return data, nil
+	}
+
+	tmpl, err := loadKeyTemplate(opt.KeyTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	transformed := make(map[string]V, len(data))
+	for k, v := range data {
+		key, err := renderKeyTemplate(tmpl, k)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := transformed[key]; ok {
+			return nil, fmt.Errorf("key template rendered duplicate key %q", key)
+		}
+		transformed[key] = v
+	}
+
+	return transformed, nil
 }
 
 // SecretInput provides a standard data structure for secret template rendering.

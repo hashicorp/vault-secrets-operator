@@ -475,6 +475,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `keyTemplate` _string_ | KeyTemplate is a Go text template used to transform each included source<br />secret data key before writing it to the destination Secret. The template is<br />executed once per source key with .Name set to the original source key. For<br />example, "\{\{ .Name \}\}.json" renders a source key named "db" as "db.json". |  |  |
 | `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included<br />in the rendered secret with the specified key. |  |  |
 | `sourceTemplates` _[SourceTemplate](#sourcetemplate) array_ | SourceTemplates are never included in the rendered secret, they can be<br />used to provide common template definitions, etc. |  |  |
 | `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data<br />fields for inclusion in the final secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied last. |  |  |
@@ -586,6 +587,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `keyTemplate` _string_ | KeyTemplate is a Go text template used to transform each included source<br />secret data key before writing it to the destination Secret. The template is<br />executed once per source key with .Name set to the original source key. For<br />example, "\{\{ .Name \}\}.json" renders a source key named "db" as "db.json".<br />Templates are not affected by KeyTemplate. |  |  |
 | `templates` _object (keys:string, values:[Template](#template))_ | Templates maps a template name to its Template. Templates are always included<br />in the rendered K8s Secret, and take precedence over templates defined in a<br />SecretTransformation. |  |  |
 | `transformationRefs` _[TransformationRef](#transformationref) array_ | TransformationRefs contain references to template configuration from<br />SecretTransformation. |  |  |
 | `includes` _string array_ | Includes contains regex patterns used to filter top-level source secret data<br />fields for inclusion in the final K8s Secret data. These pattern filters are<br />never applied to templated fields as defined in Templates. They are always<br />applied last. |  |  |

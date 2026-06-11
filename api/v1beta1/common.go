@@ -54,6 +54,12 @@ type RolloutRestartTarget struct {
 }
 
 type Transformation struct {
+	// KeyTemplate is a Go text template used to transform each included source
+	// secret data key before writing it to the destination Secret. The template is
+	// executed once per source key with .Name set to the original source key. For
+	// example, "{{ .Name }}.json" renders a source key named "db" as "db.json".
+	// Templates are not affected by KeyTemplate.
+	KeyTemplate string `json:"keyTemplate,omitempty"`
 	// Templates maps a template name to its Template. Templates are always included
 	// in the rendered K8s Secret, and take precedence over templates defined in a
 	// SecretTransformation.
