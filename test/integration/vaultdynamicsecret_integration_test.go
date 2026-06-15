@@ -1443,10 +1443,74 @@ func revokeTokenForEntityIDs(t *testing.T, vc *api.Client, ctx context.Context, 
 	wg.Wait()
 }
 
-// TestVaultDynamicSecret_InstantUpdates validates that a VaultDynamicSecret
-// with SyncConfig.InstantUpdates=true receives near-instant credential updates
-// when Vault rotates a database static role, driven by WebSocket events rather
-// than polling.
+// setupInstantUpdatesInfra provisions the shared Terraform infrastructure for
+// instant-updates integration tests. Callers are responsible for cleaning up any CRD objects they create
+// (those cleanups must be registered after this call so that they run first,
+// before Terraform destroy, per Go's LIFO cleanup order).
+func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (*terraform.Options, dynamicK8SOutputs) {
+	t.Helper()
+
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.NoError(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
+	copyModulesDirT(t, tfDir)
+	chartsDir := copyTestChartsDir(t, tfDir)
+
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + kindClusterName
+	}
+
+	tfOptions := &terraform.Options{
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_config_context":         k8sConfigContext,
+			"k8s_vault_namespace":        k8sVaultNamespace,
+			"k8s_vault_service_account":  "vault",
+			"name_prefix":                namePrefix,
+			"vault_address":              os.Getenv("VAULT_ADDRESS"),
+			"vault_token":                os.Getenv("VAULT_TOKEN"),
+			"vault_token_period":         120,
+			"vault_db_default_lease_ttl": dbLeaseTTL,
+			"with_static_role_scheduled": false,
+			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
+		},
+	}
+	if entTests {
+		tfOptions.Vars["vault_enterprise"] = true
+	}
+
+	tfOptions = setCommonTFOptions(t, tfOptions)
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+	t.Cleanup(func() {
+		if !skipCleanup {
+			if !testInParallel {
+				exportKindLogsT(t)
+			}
+			terraform.Destroy(t, tfOptions)
+			assert.NoError(t, os.RemoveAll(tempDir))
+		} else {
+			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
+		}
+	})
+
+	terraform.InitAndApply(t, tfOptions)
+
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.NoError(t, err)
+
+	var outputs dynamicK8SOutputs
+	require.NoError(t, json.Unmarshal(b, &outputs))
+
+	return tfOptions, outputs
+}
+
+// TestVaultDynamicSecret_InstantUpdates validates that a VaultDynamicSecret with
+// SyncConfig.InstantUpdates=true receives near-instant credential updates driven
+// by WebSocket events rather than polling. It covers both static role credentials
+// (database* events) and dynamic credentials (lease* events) in parallel subtests
+// that share the same Terraform infrastructure.
 func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	if testInParallel {
 		t.Parallel()
@@ -1467,69 +1531,16 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
-	var created []ctrlclient.Object
 
-	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
-	require.NoError(t, err)
+	// vault_db_default_lease_ttl=600 ensures dynamic-creds lease renewals
+	// (~420s) fall well outside the 30s assertion window, so any observed
+	// rotation is event-driven, not caused by a TTL-triggered renewal.
+	// Static-creds rotation is governed by rotation_period, not lease TTL,
+	// so 600 is equally safe for the StaticCreds subtest.
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events", 600)
 
-	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
-	copyModulesDirT(t, tfDir)
-	chartsDir := copyTestChartsDir(t, tfDir)
-
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + kindClusterName
-	}
-
-	tfOptions := &terraform.Options{
-		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"k8s_config_context":         k8sConfigContext,
-			"k8s_vault_namespace":        k8sVaultNamespace,
-			"k8s_vault_service_account":  "vault",
-			"name_prefix":                "vds-events",
-			"vault_address":              os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 30,
-			"with_static_role_scheduled": false,
-			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
-		},
-	}
-	if entTests {
-		tfOptions.Vars["vault_enterprise"] = true
-	}
-
-	tfOptions = setCommonTFOptions(t, tfOptions)
-	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
-	t.Cleanup(func() {
-		if !skipCleanup {
-			for _, c := range created {
-				assert.NoError(t, crdClient.Delete(ctx, c))
-			}
-			if !testInParallel {
-				exportKindLogsT(t)
-			}
-			terraform.Destroy(t, tfOptions)
-			assert.NoError(t, os.RemoveAll(tempDir))
-		} else {
-			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
-		}
-	})
-
-	terraform.InitAndApply(t, tfOptions)
-
-	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
-	require.NoError(t, err)
-
-	var outputs dynamicK8SOutputs
-	require.NoError(t, json.Unmarshal(b, &outputs))
-
-	create := func(o ctrlclient.Object) {
-		require.NoError(t, crdClient.Create(ctx, o))
-		created = append(created, o)
-	}
-
+	// Create the shared VaultAuth. Register its cleanup after setupInstantUpdatesInfra
+	// so that it runs first (LIFO), deleting the CRD before Terraform destroy.
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
 		ObjectMeta: v1.ObjectMeta{
@@ -1547,350 +1558,266 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			},
 		},
 	}
-	create(vaultAuth)
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
 
-	destName := "vds-instant-updates-static"
-	vdsObj := &secretsv1beta1.VaultDynamicSecret{
-		ObjectMeta: v1.ObjectMeta{
-			Namespace: outputs.K8sNamespace,
-			Name:      destName,
-		},
-		Spec: secretsv1beta1.VaultDynamicSecretSpec{
-			Namespace:        outputs.Namespace,
-			Mount:            outputs.DBPath,
-			Path:             "static-creds/" + outputs.DBRoleStatic,
-			AllowStaticCreds: true,
-			Revoke:           false,
-			VaultAuthRef:     vaultAuthName,
-			Destination: secretsv1beta1.Destination{
-				Name:   destName,
-				Create: true,
-			},
-			SyncConfig: &secretsv1beta1.SyncConfig{
-				InstantUpdates: true,
-			},
-			// Long RefreshAfter so any observed sync must be event-driven.
-			RefreshAfter: "1h",
-		},
-	}
-	create(vdsObj)
-
-	// Wait for initial sync: the K8s secret must exist with the raw data key.
-	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
-		map[string]int{
-			"password":        20,
-			"username":        len(outputs.DBRoleStaticUser),
-			"rotation_period": 2,
-		},
-		helpers.SecretDataKeyRaw,
-		"last_vault_rotation",
-		"ttl",
-	)
-
-	// Capture the VDS status before rotation so we can detect changes.
-	objKey := ctrlclient.ObjectKeyFromObject(vdsObj)
-	var vdsBefore secretsv1beta1.VaultDynamicSecret
-	require.NoError(t, backoff.Retry(func() error {
-		if err := crdClient.Get(ctx, objKey, &vdsBefore); err != nil {
-			return err
-		}
-		if vdsBefore.Status.StaticCredsMetaData.LastVaultRotation < 1 {
-			return fmt.Errorf("waiting for LastVaultRotation to be set on %s", objKey)
-		}
-		if vdsBefore.Status.SecretMAC == "" {
-			return fmt.Errorf("waiting for SecretMAC to be set on %s", objKey)
-		}
-		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
-
-	// Wait for the EventWatcherStarted event, confirming the WebSocket
-	// subscription is active.
-	require.NoError(t, backoff.Retry(func() error {
-		objEvents := corev1.EventList{}
-		err := crdClient.List(ctx, &objEvents,
-			ctrlclient.InNamespace(vdsObj.Namespace),
-			ctrlclient.MatchingFields{
-				"involvedObject.name": vdsObj.Name,
-				"reason":              consts.ReasonEventWatcherStarted,
-			},
-		)
-		if err != nil {
-			return err
-		}
-		if len(objEvents.Items) == 0 {
-			return fmt.Errorf("no EventWatcherStarted event for %s", vdsObj.Name)
-		}
-		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
-
-	// Force-rotate the static database role in Vault. This emits a database*
-	// event that the WebSocket subscription should pick up immediately.
-	vClient := getVaultClient(t, outputs.Namespace)
-	rotatePath := fmt.Sprintf("%s/rotate-role/%s", outputs.DBPath, outputs.DBRoleStatic)
-	_, err = vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
-	require.NoError(t, err, "failed to force-rotate static role %s", outputs.DBRoleStatic)
-
-	// Assert the K8s secret is updated quickly (within ~30s) via the event-driven
-	// path, NOT the 1h RefreshAfter polling cadence.
-	require.NoError(t, backoff.Retry(func() error {
-		var vdsAfter secretsv1beta1.VaultDynamicSecret
-		if err := crdClient.Get(ctx, objKey, &vdsAfter); err != nil {
-			return backoff.Permanent(err)
-		}
-
-		var errs error
-		if vdsAfter.Status.StaticCredsMetaData.LastVaultRotation == vdsBefore.Status.StaticCredsMetaData.LastVaultRotation {
-			errs = errors.Join(errs, fmt.Errorf(
-				"LastVaultRotation not updated: before=%d, after=%d",
-				vdsBefore.Status.StaticCredsMetaData.LastVaultRotation,
-				vdsAfter.Status.StaticCredsMetaData.LastVaultRotation,
-			))
-		}
-		if vdsAfter.Status.SecretMAC == vdsBefore.Status.SecretMAC {
-			errs = errors.Join(errs, fmt.Errorf(
-				"SecretMAC not updated: still %s", vdsBefore.Status.SecretMAC,
-			))
-		}
-		return errs
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
-		"VDS %s was not updated via instant updates within 30s after forced rotation", objKey,
-	)
-
-	// Assert no EventWatcherError warning was emitted with websocket EOF
-	// signatures during the test.
-	objEvents := corev1.EventList{}
-	require.NoError(t, crdClient.List(ctx, &objEvents,
-		ctrlclient.InNamespace(vdsObj.Namespace),
-		ctrlclient.MatchingFields{
-			"involvedObject.name": vdsObj.Name,
-			"reason":              consts.ReasonEventWatcherError,
-		},
-	))
-	for _, event := range objEvents.Items {
-		if event.Type != corev1.EventTypeWarning {
-			continue
-		}
-		if strings.Contains(event.Message, "failed to read frame header: EOF") ||
-			strings.Contains(event.Message, "failed to read from websocket") {
-			t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
-		}
-	}
-}
-
-// TestVaultDynamicSecret_InstantUpdates_DynamicCreds validates that a VaultDynamicSecret
-// with SyncConfig.InstantUpdates=true and dynamic (non-static) credentials receives
-// near-instant credential rotation when a lease is revoked, driven by WebSocket lease
-// events rather than polling.
-func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
-	if testInParallel {
+	t.Run("StaticCreds", func(t *testing.T) {
 		t.Parallel()
-	}
 
-	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
-	if !entTests {
-		t.Skip("Skipping because this test requires Vault Enterprise events support")
-	}
-
-	rootVaultClient := getVaultClient(t, "")
-	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
-		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
-	}
-
-	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
-	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
-
-	ctx := context.Background()
-	crdClient := getCRDClient(t)
-	var created []ctrlclient.Object
-
-	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
-	require.NoError(t, err)
-
-	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
-	copyModulesDirT(t, tfDir)
-	chartsDir := copyTestChartsDir(t, tfDir)
-
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + kindClusterName
-	}
-
-	tfOptions := &terraform.Options{
-		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"k8s_config_context":         k8sConfigContext,
-			"k8s_vault_namespace":        k8sVaultNamespace,
-			"k8s_vault_service_account":  "vault",
-			"name_prefix":                "vds-events-dyn",
-			"vault_address":              os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 60,
-			"with_static_role_scheduled": false,
-			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
-		},
-	}
-	if entTests {
-		tfOptions.Vars["vault_enterprise"] = true
-	}
-
-	tfOptions = setCommonTFOptions(t, tfOptions)
-	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
-	t.Cleanup(func() {
-		if !skipCleanup {
-			for _, c := range created {
-				assert.NoError(t, crdClient.Delete(ctx, c))
+		destName := "vds-instant-updates-static"
+		vdsObj := &secretsv1beta1.VaultDynamicSecret{
+			ObjectMeta: v1.ObjectMeta{
+				Namespace: outputs.K8sNamespace,
+				Name:      destName,
+			},
+			Spec: secretsv1beta1.VaultDynamicSecretSpec{
+				Namespace:        outputs.Namespace,
+				Mount:            outputs.DBPath,
+				Path:             "static-creds/" + outputs.DBRoleStatic,
+				AllowStaticCreds: true,
+				Revoke:           false,
+				VaultAuthRef:     vaultAuthName,
+				Destination: secretsv1beta1.Destination{
+					Name:   destName,
+					Create: true,
+				},
+				SyncConfig: &secretsv1beta1.SyncConfig{
+					InstantUpdates: true,
+				},
+				// Long RefreshAfter so any observed sync must be event-driven.
+				RefreshAfter: "1h",
+			},
+		}
+		require.NoError(t, crdClient.Create(ctx, vdsObj))
+		t.Cleanup(func() {
+			if os.Getenv("SKIP_CLEANUP") == "" {
+				assert.NoError(t, crdClient.Delete(ctx, vdsObj))
 			}
-			if !testInParallel {
-				exportKindLogsT(t)
+		})
+
+		// Wait for initial sync: the K8s secret must exist with the raw data key.
+		assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
+			map[string]int{
+				"password":        20,
+				"username":        len(outputs.DBRoleStaticUser),
+				"rotation_period": 2,
+			},
+			helpers.SecretDataKeyRaw,
+			"last_vault_rotation",
+			"ttl",
+		)
+
+		// Capture the VDS status before rotation so we can detect changes.
+		objKey := ctrlclient.ObjectKeyFromObject(vdsObj)
+		var vdsBefore secretsv1beta1.VaultDynamicSecret
+		require.NoError(t, backoff.Retry(func() error {
+			if err := crdClient.Get(ctx, objKey, &vdsBefore); err != nil {
+				return err
 			}
-			terraform.Destroy(t, tfOptions)
-			assert.NoError(t, os.RemoveAll(tempDir))
-		} else {
-			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
-		}
-	})
+			if vdsBefore.Status.StaticCredsMetaData.LastVaultRotation < 1 {
+				return fmt.Errorf("waiting for LastVaultRotation to be set on %s", objKey)
+			}
+			if vdsBefore.Status.SecretMAC == "" {
+				return fmt.Errorf("waiting for SecretMAC to be set on %s", objKey)
+			}
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-	terraform.InitAndApply(t, tfOptions)
+		// Wait for the EventWatcherStarted event, confirming the WebSocket
+		// subscription is active.
+		require.NoError(t, backoff.Retry(func() error {
+			objEvents := corev1.EventList{}
+			err := crdClient.List(ctx, &objEvents,
+				ctrlclient.InNamespace(vdsObj.Namespace),
+				ctrlclient.MatchingFields{
+					"involvedObject.name": vdsObj.Name,
+					"reason":              consts.ReasonEventWatcherStarted,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			if len(objEvents.Items) == 0 {
+				return fmt.Errorf("no EventWatcherStarted event for %s", vdsObj.Name)
+			}
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
-	require.NoError(t, err)
+		// Force-rotate the static database role in Vault. This emits a database*
+		// event that the WebSocket subscription should pick up immediately.
+		vClient := getVaultClient(t, outputs.Namespace)
+		rotatePath := fmt.Sprintf("%s/rotate-role/%s", outputs.DBPath, outputs.DBRoleStatic)
+		_, err := vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
+		require.NoError(t, err, "failed to force-rotate static role %s", outputs.DBRoleStatic)
 
-	var outputs dynamicK8SOutputs
-	require.NoError(t, json.Unmarshal(b, &outputs))
+		// Assert the K8s secret is updated quickly (within ~30s) via the event-driven
+		// path, NOT the 1h RefreshAfter polling cadence.
+		require.NoError(t, backoff.Retry(func() error {
+			var vdsAfter secretsv1beta1.VaultDynamicSecret
+			if err := crdClient.Get(ctx, objKey, &vdsAfter); err != nil {
+				return backoff.Permanent(err)
+			}
 
-	create := func(o ctrlclient.Object) {
-		require.NoError(t, crdClient.Create(ctx, o))
-		created = append(created, o)
-	}
+			var errs error
+			if vdsAfter.Status.StaticCredsMetaData.LastVaultRotation == vdsBefore.Status.StaticCredsMetaData.LastVaultRotation {
+				errs = errors.Join(errs, fmt.Errorf(
+					"LastVaultRotation not updated: before=%d, after=%d",
+					vdsBefore.Status.StaticCredsMetaData.LastVaultRotation,
+					vdsAfter.Status.StaticCredsMetaData.LastVaultRotation,
+				))
+			}
+			if vdsAfter.Status.SecretMAC == vdsBefore.Status.SecretMAC {
+				errs = errors.Join(errs, fmt.Errorf(
+					"SecretMAC not updated: still %s", vdsBefore.Status.SecretMAC,
+				))
+			}
+			return errs
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
+			"VDS %s was not updated via instant updates within 30s after forced rotation", objKey,
+		)
 
-	vaultAuthName := outputs.NamePrefix + "-default"
-	vaultAuth := &secretsv1beta1.VaultAuth{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      vaultAuthName,
-			Namespace: outputs.K8sNamespace,
-		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Namespace: outputs.Namespace,
-			Method:    "kubernetes",
-			Mount:     outputs.AuthMount,
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-		},
-	}
-	create(vaultAuth)
-
-	destName := "vds-instant-updates-dynamic"
-	vdsObj := &secretsv1beta1.VaultDynamicSecret{
-		ObjectMeta: v1.ObjectMeta{
-			Namespace: outputs.K8sNamespace,
-			Name:      destName,
-		},
-		Spec: secretsv1beta1.VaultDynamicSecretSpec{
-			Namespace:    outputs.Namespace,
-			Mount:        outputs.DBPath,
-			Path:         "creds/" + outputs.DBRole,
-			Revoke:       true,
-			VaultAuthRef: vaultAuthName,
-			Destination: secretsv1beta1.Destination{
-				Name:   destName,
-				Create: true,
-			},
-			SyncConfig: &secretsv1beta1.SyncConfig{
-				InstantUpdates: true,
-			},
-			// Long RefreshAfter so any observed sync must be event-driven.
-			RefreshAfter: "1h",
-		},
-	}
-	create(vdsObj)
-
-	// Wait for initial sync: the K8s secret must exist with expected credential fields.
-	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
-		map[string]int{
-			helpers.SecretDataKeyRaw: 100,
-			"username":               51,
-			"password":               20,
-		},
-	)
-
-	// Capture the VDS lease ID before revocation so we can detect rotation.
-	objKey := ctrlclient.ObjectKeyFromObject(vdsObj)
-	var vdsBefore secretsv1beta1.VaultDynamicSecret
-	require.NoError(t, backoff.Retry(func() error {
-		if err := crdClient.Get(ctx, objKey, &vdsBefore); err != nil {
-			return err
-		}
-		if vdsBefore.Status.SecretLease.ID == "" {
-			return fmt.Errorf("waiting for SecretLease.ID to be set on %s", objKey)
-		}
-		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
-
-	// Wait for the EventWatcherStarted event, confirming the WebSocket
-	// subscription is active (both database* and lease* subscriptions attempted).
-	require.NoError(t, backoff.Retry(func() error {
+		// Assert no EventWatcherError warning was emitted with websocket EOF
+		// signatures during the test.
 		objEvents := corev1.EventList{}
-		err := crdClient.List(ctx, &objEvents,
+		require.NoError(t, crdClient.List(ctx, &objEvents,
 			ctrlclient.InNamespace(vdsObj.Namespace),
 			ctrlclient.MatchingFields{
 				"involvedObject.name": vdsObj.Name,
-				"reason":              consts.ReasonEventWatcherStarted,
+				"reason":              consts.ReasonEventWatcherError,
+			},
+		))
+		for _, event := range objEvents.Items {
+			if event.Type != corev1.EventTypeWarning {
+				continue
+			}
+			if strings.Contains(event.Message, "failed to read frame header: EOF") ||
+				strings.Contains(event.Message, "failed to read from websocket") {
+				t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
+			}
+		}
+	})
+
+	t.Run("DynamicCreds", func(t *testing.T) {
+		t.Parallel()
+
+		destName := "vds-instant-updates-dynamic"
+		vdsObj := &secretsv1beta1.VaultDynamicSecret{
+			ObjectMeta: v1.ObjectMeta{
+				Namespace: outputs.K8sNamespace,
+				Name:      destName,
+			},
+			Spec: secretsv1beta1.VaultDynamicSecretSpec{
+				Namespace:    outputs.Namespace,
+				Mount:        outputs.DBPath,
+				Path:         "creds/" + outputs.DBRole,
+				Revoke:       true,
+				VaultAuthRef: vaultAuthName,
+				Destination: secretsv1beta1.Destination{
+					Name:   destName,
+					Create: true,
+				},
+				SyncConfig: &secretsv1beta1.SyncConfig{
+					InstantUpdates: true,
+				},
+				// Long RefreshAfter so any observed sync must be event-driven.
+				RefreshAfter: "1h",
+			},
+		}
+		require.NoError(t, crdClient.Create(ctx, vdsObj))
+		t.Cleanup(func() {
+			if os.Getenv("SKIP_CLEANUP") == "" {
+				assert.NoError(t, crdClient.Delete(ctx, vdsObj))
+			}
+		})
+
+		// Wait for initial sync: the K8s secret must exist with expected credential fields.
+		assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
+			map[string]int{
+				helpers.SecretDataKeyRaw: 100,
+				"username":               51,
+				"password":               20,
 			},
 		)
-		if err != nil {
-			return err
-		}
-		if len(objEvents.Items) == 0 {
-			return fmt.Errorf("no EventWatcherStarted event for %s", vdsObj.Name)
-		}
-		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-	// Revoke the active lease. Vault emits a lease* event, which the WebSocket
-	// subscription should pick up and trigger an immediate reconciliation.
-	vClient := getVaultClient(t, outputs.Namespace)
-	require.NoError(t, vClient.Sys().Revoke(vdsBefore.Status.SecretLease.ID),
-		"failed to revoke lease %s", vdsBefore.Status.SecretLease.ID)
+		// Capture the VDS lease ID before revocation so we can detect rotation.
+		objKey := ctrlclient.ObjectKeyFromObject(vdsObj)
+		var vdsBefore secretsv1beta1.VaultDynamicSecret
+		require.NoError(t, backoff.Retry(func() error {
+			if err := crdClient.Get(ctx, objKey, &vdsBefore); err != nil {
+				return err
+			}
+			if vdsBefore.Status.SecretLease.ID == "" {
+				return fmt.Errorf("waiting for SecretLease.ID to be set on %s", objKey)
+			}
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-	// Assert the VDS is updated quickly (within ~30s) via the event-driven path,
-	// NOT the 1h RefreshAfter polling cadence. The lease ID must change, confirming
-	// new credentials were fetched from Vault.
-	require.NoError(t, backoff.Retry(func() error {
-		var vdsAfter secretsv1beta1.VaultDynamicSecret
-		if err := crdClient.Get(ctx, objKey, &vdsAfter); err != nil {
-			return backoff.Permanent(err)
-		}
-		if vdsAfter.Status.SecretLease.ID == vdsBefore.Status.SecretLease.ID {
-			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
-		}
-		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)),
-		"VDS %s was not updated via instant updates within 30s after lease revocation", objKey,
-	)
+		// Wait for the EventWatcherStarted event, confirming the WebSocket
+		// subscription is active (both database* and lease* subscriptions attempted).
+		require.NoError(t, backoff.Retry(func() error {
+			objEvents := corev1.EventList{}
+			err := crdClient.List(ctx, &objEvents,
+				ctrlclient.InNamespace(vdsObj.Namespace),
+				ctrlclient.MatchingFields{
+					"involvedObject.name": vdsObj.Name,
+					"reason":              consts.ReasonEventWatcherStarted,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			if len(objEvents.Items) == 0 {
+				return fmt.Errorf("no EventWatcherStarted event for %s", vdsObj.Name)
+			}
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-	// Assert no EventWatcherError warning was emitted with websocket EOF
-	// signatures during the test.
-	objEvents := corev1.EventList{}
-	require.NoError(t, crdClient.List(ctx, &objEvents,
-		ctrlclient.InNamespace(vdsObj.Namespace),
-		ctrlclient.MatchingFields{
-			"involvedObject.name": vdsObj.Name,
-			"reason":              consts.ReasonEventWatcherError,
-		},
-	))
-	for _, event := range objEvents.Items {
-		if event.Type != corev1.EventTypeWarning {
-			continue
+		// Revoke the active lease. Vault emits a lease* event, which the WebSocket
+		// subscription should pick up and trigger an immediate reconciliation.
+		vClient := getVaultClient(t, outputs.Namespace)
+		require.NoError(t, vClient.Sys().Revoke(vdsBefore.Status.SecretLease.ID),
+			"failed to revoke lease %s", vdsBefore.Status.SecretLease.ID)
+
+		// Assert the VDS is updated quickly (within ~60s) via the event-driven path,
+		// NOT the 1h RefreshAfter polling cadence. The lease ID must change, confirming
+		// new credentials were fetched from Vault.
+		require.NoError(t, backoff.Retry(func() error {
+			var vdsAfter secretsv1beta1.VaultDynamicSecret
+			if err := crdClient.Get(ctx, objKey, &vdsAfter); err != nil {
+				return backoff.Permanent(err)
+			}
+			if vdsAfter.Status.SecretLease.ID == vdsBefore.Status.SecretLease.ID {
+				return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
+			}
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)),
+			"VDS %s was not updated via instant updates within 60s after lease revocation", objKey,
+		)
+
+		// Assert no EventWatcherError warning was emitted with websocket EOF
+		// signatures during the test.
+		objEvents := corev1.EventList{}
+		require.NoError(t, crdClient.List(ctx, &objEvents,
+			ctrlclient.InNamespace(vdsObj.Namespace),
+			ctrlclient.MatchingFields{
+				"involvedObject.name": vdsObj.Name,
+				"reason":              consts.ReasonEventWatcherError,
+			},
+		))
+		for _, event := range objEvents.Items {
+			if event.Type != corev1.EventTypeWarning {
+				continue
+			}
+			if strings.Contains(event.Message, "failed to read frame header: EOF") ||
+				strings.Contains(event.Message, "failed to read from websocket") {
+				t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
+			}
 		}
-		if strings.Contains(event.Message, "failed to read frame header: EOF") ||
-			strings.Contains(event.Message, "failed to read from websocket") {
-			t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
-		}
-	}
+	})
 }
 
 // TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange validates
@@ -1917,68 +1844,10 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
-	var created []ctrlclient.Object
 
-	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
-	require.NoError(t, err)
-
-	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
-	copyModulesDirT(t, tfDir)
-	chartsDir := copyTestChartsDir(t, tfDir)
-
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + kindClusterName
-	}
-
-	tfOptions := &terraform.Options{
-		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"k8s_config_context":         k8sConfigContext,
-			"k8s_vault_namespace":        k8sVaultNamespace,
-			"k8s_vault_service_account":  "vault",
-			"name_prefix":                "vds-events-auth",
-			"vault_address":              os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 30,
-			"with_static_role_scheduled": false,
-			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
-		},
-	}
-	if entTests {
-		tfOptions.Vars["vault_enterprise"] = true
-	}
-
-	tfOptions = setCommonTFOptions(t, tfOptions)
-	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
-	t.Cleanup(func() {
-		if !skipCleanup {
-			for _, c := range created {
-				assert.NoError(t, crdClient.Delete(ctx, c))
-			}
-			if !testInParallel {
-				exportKindLogsT(t)
-			}
-			terraform.Destroy(t, tfOptions)
-			assert.NoError(t, os.RemoveAll(tempDir))
-		} else {
-			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
-		}
-	})
-
-	terraform.InitAndApply(t, tfOptions)
-
-	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
-	require.NoError(t, err)
-
-	var outputs dynamicK8SOutputs
-	require.NoError(t, json.Unmarshal(b, &outputs))
-
-	create := func(o ctrlclient.Object) {
-		require.NoError(t, crdClient.Create(ctx, o))
-		created = append(created, o)
-	}
+	// Uses its own name_prefix so it gets an isolated Terraform stack, preventing
+	// the VaultAuth mutation in this test from interfering with other tests.
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-auth", 60)
 
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
@@ -1997,7 +1866,12 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 			},
 		},
 	}
-	create(vaultAuth)
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
 
 	destName := "vds-instant-updates-auth-change"
 	vdsObj := &secretsv1beta1.VaultDynamicSecret{
@@ -2023,7 +1897,12 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 			RefreshAfter: "1h",
 		},
 	}
-	create(vdsObj)
+	require.NoError(t, crdClient.Create(ctx, vdsObj))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vdsObj))
+		}
+	})
 
 	// Wait for initial sync.
 	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
@@ -2131,7 +2010,7 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 	// deliver this event and trigger an immediate reconciliation.
 	vClient := getVaultClient(t, outputs.Namespace)
 	rotatePath := fmt.Sprintf("%s/rotate-role/%s", outputs.DBPath, outputs.DBRoleStatic)
-	_, err = vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
+	_, err := vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
 	require.NoError(t, err, "failed to force-rotate static role %s", outputs.DBRoleStatic)
 
 	// Assert the K8s secret is updated within ~30s via the event-driven path,
