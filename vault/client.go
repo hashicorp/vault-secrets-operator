@@ -949,9 +949,10 @@ func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Respo
 
 func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Response, error) {
 	m.Requests = append(m.Requests, &MockRequest{
-		Method: http.MethodPut,
-		Path:   s.Path(),
-		Params: s.Data(),
+		Method:  http.MethodPut,
+		Path:    s.Path(),
+		Params:  s.Data(),
+		Headers: s.Headers(),
 	})
 
 	resps, ok := m.WriteResponses[s.Path()]
