@@ -498,6 +498,171 @@ func TestSharedWebSocket_Integration(t *testing.T) {
 	t.Skip("Integration tests will be added in Phase 4")
 }
 
+// TestRouteEvent_VaultIndex_Stored verifies that vault_index is stored in
+// PendingVaultIndex when a matching event carries a non-empty value.
+func TestRouteEvent_VaultIndex_Stored(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	var pendingIdx sync.Map
+	ch := make(chan event.GenericEvent, 10)
+	resourceKey := types.NamespacedName{Namespace: "default", Name: "my-vss"}
+
+	sub := &Subscriber{
+		ResourceKey:       resourceKey,
+		VaultNS:           "prod",
+		VaultPath:         "kv/data/app1/config",
+		ResourceType:      "VaultStaticSecret",
+		ReconcileCh:       ch,
+		PendingVaultIndex: &pendingIdx,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = "prod"
+	msg.Data.Event.Metadata.Path = "kv/data/app1/config"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.VaultIndex = "42"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+
+	val, ok := pendingIdx.Load(resourceKey)
+	require.True(t, ok, "vault_index should be stored in PendingVaultIndex")
+	assert.Equal(t, "42", val.(string))
+}
+
+// TestRouteEvent_VaultIndex_Empty_NotStored verifies that an empty vault_index
+// is not stored (avoids sending a header with an empty value).
+func TestRouteEvent_VaultIndex_Empty_NotStored(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	var pendingIdx sync.Map
+	ch := make(chan event.GenericEvent, 10)
+	resourceKey := types.NamespacedName{Namespace: "default", Name: "my-vss"}
+
+	sub := &Subscriber{
+		ResourceKey:       resourceKey,
+		VaultNS:           "",
+		VaultPath:         "kv/data/secret",
+		ResourceType:      "VaultStaticSecret",
+		ReconcileCh:       ch,
+		PendingVaultIndex: &pendingIdx,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "kv/data/secret"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.VaultIndex = "" // empty
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1, "reconcile event must still be sent")
+
+	_, ok := pendingIdx.Load(resourceKey)
+	assert.False(t, ok, "empty vault_index must not be stored")
+}
+
+// TestRouteEvent_VaultIndex_Whitespace_NotStored verifies that a
+// whitespace-only vault_index is not stored.
+func TestRouteEvent_VaultIndex_Whitespace_NotStored(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	var pendingIdx sync.Map
+	ch := make(chan event.GenericEvent, 10)
+	resourceKey := types.NamespacedName{Namespace: "default", Name: "my-vss"}
+
+	sub := &Subscriber{
+		ResourceKey:       resourceKey,
+		VaultNS:           "",
+		VaultPath:         "kv/data/secret",
+		ResourceType:      "VaultStaticSecret",
+		ReconcileCh:       ch,
+		PendingVaultIndex: &pendingIdx,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "kv/data/secret"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.VaultIndex = "   " // whitespace only
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1, "reconcile event must still be sent")
+
+	_, ok := pendingIdx.Load(resourceKey)
+	assert.False(t, ok, "whitespace-only vault_index must not be stored")
+}
+
+// TestRouteEvent_VaultIndex_NilPendingVaultIndex_NoPanic verifies that a nil
+// PendingVaultIndex does not panic and that the reconcile event is still sent.
+func TestRouteEvent_VaultIndex_NilPendingVaultIndex_NoPanic(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+
+	sub := &Subscriber{
+		ResourceKey:       types.NamespacedName{Namespace: "default", Name: "my-vss"},
+		VaultNS:           "",
+		VaultPath:         "kv/data/secret",
+		ResourceType:      "VaultStaticSecret",
+		ReconcileCh:       ch,
+		PendingVaultIndex: nil, // feature disabled
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "kv/data/secret"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.VaultIndex = "99"
+
+	assert.NotPanics(t, func() { ws.routeEvent(msg) })
+	assert.Len(t, ch, 1, "reconcile event must still be sent even with nil PendingVaultIndex")
+}
+
+// TestRouteEvent_VaultIndex_NoPathMatch_NotStored verifies that vault_index is
+// not stored when the event path does not match any subscriber.
+func TestRouteEvent_VaultIndex_NoPathMatch_NotStored(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	var pendingIdx sync.Map
+	ch := make(chan event.GenericEvent, 10)
+	resourceKey := types.NamespacedName{Namespace: "default", Name: "my-vss"}
+
+	sub := &Subscriber{
+		ResourceKey:       resourceKey,
+		VaultNS:           "",
+		VaultPath:         "kv/data/my-secret",
+		ResourceType:      "VaultStaticSecret",
+		ReconcileCh:       ch,
+		PendingVaultIndex: &pendingIdx,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "kv/data/other-secret" // no match
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.VaultIndex = "77"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0, "no reconcile event should be sent for unmatched path")
+
+	_, ok := pendingIdx.Load(resourceKey)
+	assert.False(t, ok, "vault_index must not be stored when path does not match")
+}
+
 // --- Database event routing tests ---
 
 func TestSharedWebSocket_RouteEvent_Database_WithPluginInfo(t *testing.T) {

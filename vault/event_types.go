@@ -38,11 +38,12 @@ type EventMessage struct {
 	Data struct {
 		Event struct {
 			Metadata struct {
-				Path      string `json:"path"`
-				Modified  string `json:"modified"`
-				Name      string `json:"name"`
-				Operation string `json:"operation"`
-				LeaseID   string `json:"lease_id"`
+				Path       string `json:"path"`
+				Modified   string `json:"modified"`
+				Name       string `json:"name"`
+				Operation  string `json:"operation"`
+				LeaseID    string `json:"lease_id"`
+				VaultIndex string `json:"vault_index"`
 			} `json:"metadata"`
 		} `json:"event"`
 		EventType  string `json:"event_type"`
@@ -76,6 +77,11 @@ type Subscriber struct {
 	ResourceType string
 	// ReconcileCh is the channel to send reconciliation events to
 	ReconcileCh chan event.GenericEvent
+	// PendingVaultIndex is used to carry the vault_index value from the event
+	// that triggered this reconciliation so the read request can include it as
+	// X-Vault-Index, ensuring the read is served from a node that has replicated
+	// the write. A nil value disables this feature for the subscriber.
+	PendingVaultIndex *sync.Map
 }
 
 // SubscriptionKey uniquely identifies a subscription based on Vault namespace and path

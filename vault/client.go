@@ -878,9 +878,10 @@ func (c *defaultClient) incrementOperationCounter(operation string, err error) {
 }
 
 type MockRequest struct {
-	Method string
-	Path   string
-	Params map[string]any
+	Method  string
+	Path    string
+	Params  map[string]any
+	Headers http.Header
 }
 
 var _ ClientBase = (*MockRecordingVaultClient)(nil)
@@ -921,10 +922,10 @@ func (m *MockRecordingVaultClient) Taint() {}
 
 func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {
 	m.Requests = append(m.Requests, &MockRequest{
-		Method: http.MethodGet,
-
-		Path:   s.Path(),
-		Params: nil,
+		Method:  http.MethodGet,
+		Path:    s.Path(),
+		Params:  nil,
+		Headers: s.Headers(),
 	})
 
 	resps, ok := m.ReadResponses[s.Path()]
