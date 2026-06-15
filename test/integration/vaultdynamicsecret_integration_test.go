@@ -1540,31 +1540,39 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	// so 600 is equally safe for the StaticCreds subtest.
 	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events", 600)
 
-	// Create the shared VaultAuth. Register its cleanup after setupInstantUpdatesInfra
-	// so that it runs first (LIFO), deleting the CRD before Terraform destroy.
-	vaultAuthName := outputs.NamePrefix + "-default"
-	vaultAuth := &secretsv1beta1.VaultAuth{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      vaultAuthName,
-			Namespace: outputs.K8sNamespace,
-		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Namespace: outputs.Namespace,
-			Method:    "kubernetes",
-			Mount:     outputs.AuthMount,
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
+	// Each subtest gets its own VaultAuth so it receives a separate Vault client
+	// and an independent WebSocket event connection. Sharing one client would mean
+	// the StaticCreds database-rotation event and the DynamicCreds lease-revocation
+	// event travel over the same connection, which can delay event delivery and
+	// cause flaky failures.
+	newVaultAuth := func(name string) {
+		auth := &secretsv1beta1.VaultAuth{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      name,
+				Namespace: outputs.K8sNamespace,
 			},
-		},
-	}
-	require.NoError(t, crdClient.Create(ctx, vaultAuth))
-	t.Cleanup(func() {
-		if os.Getenv("SKIP_CLEANUP") == "" {
-			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+			Spec: secretsv1beta1.VaultAuthSpec{
+				Namespace: outputs.Namespace,
+				Method:    "kubernetes",
+				Mount:     outputs.AuthMount,
+				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+					Role:           outputs.AuthRole,
+					ServiceAccount: "default",
+					TokenAudiences: []string{"vault"},
+				},
+			},
 		}
-	})
+		require.NoError(t, crdClient.Create(ctx, auth))
+		t.Cleanup(func() {
+			if os.Getenv("SKIP_CLEANUP") == "" {
+				assert.NoError(t, crdClient.Delete(ctx, auth))
+			}
+		})
+	}
+	staticVaultAuthName := outputs.NamePrefix + "-static-default"
+	dynamicVaultAuthName := outputs.NamePrefix + "-dynamic-default"
+	newVaultAuth(staticVaultAuthName)
+	newVaultAuth(dynamicVaultAuthName)
 
 	t.Run("StaticCreds", func(t *testing.T) {
 		t.Parallel()
@@ -1581,7 +1589,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				Path:             "static-creds/" + outputs.DBRoleStatic,
 				AllowStaticCreds: true,
 				Revoke:           false,
-				VaultAuthRef:     vaultAuthName,
+				VaultAuthRef:     staticVaultAuthName,
 				Destination: secretsv1beta1.Destination{
 					Name:   destName,
 					Create: true,
@@ -1716,7 +1724,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				Mount:        outputs.DBPath,
 				Path:         "creds/" + outputs.DBRole,
 				Revoke:       true,
-				VaultAuthRef: vaultAuthName,
+				VaultAuthRef: dynamicVaultAuthName,
 				Destination: secretsv1beta1.Destination{
 					Name:   destName,
 					Create: true,
