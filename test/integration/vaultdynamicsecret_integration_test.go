@@ -1474,6 +1474,7 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 			"vault_token_period":         120,
 			"vault_db_default_lease_ttl": dbLeaseTTL,
 			"with_static_role_scheduled": false,
+			"use_events":                 true,
 			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
 		},
 	}
