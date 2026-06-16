@@ -1091,12 +1091,15 @@ func (c *defaultClient) getOrCreateWebSocket(
 		if ws.IsHealthy() {
 			return ws, nil
 		}
-		// WebSocket exists but is dead, remove it from map
+		// WebSocket exists but is dead, close it properly before removing from map
 		logger := log.FromContext(ctx).WithValues(
 			"clientID", c.id,
 			"eventType", eventType,
 		)
-		logger.Info("Removing dead WebSocket from map before creating new one")
+		logger.Info("Closing dead WebSocket before creating new one")
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close dead WebSocket")
+		}
 		delete(c.websockets, eventType)
 	}
 
