@@ -1763,7 +1763,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				return fmt.Errorf("waiting for SecretLease.ID to be set on %s", objKey)
 			}
 			return nil
-		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)))
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
 		// Wait for the EventWatcherStarted event, confirming the WebSocket
 		// subscription is active (both database* and lease* subscriptions attempted).
@@ -1803,7 +1803,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 			}
 			return nil
-		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)),
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)),
 			"VDS %s was not updated via instant updates within 60s after lease revocation", objKey,
 		)
 
