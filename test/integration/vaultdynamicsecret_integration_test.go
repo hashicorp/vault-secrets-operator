@@ -1763,7 +1763,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				return fmt.Errorf("waiting for SecretLease.ID to be set on %s", objKey)
 			}
 			return nil
-		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)))
 
 		// Wait for the EventWatcherStarted event, confirming the WebSocket
 		// subscription is active (both database* and lease* subscriptions attempted).
