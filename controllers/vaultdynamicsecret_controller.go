@@ -1025,17 +1025,19 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
 	name := client.ObjectKeyFromObject(o)
 
-	currentLeaseID := o.Status.SecretLease.ID
 	meta, ok := r.eventWatcherRegistry.Get(name)
 	if ok {
-		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() && meta.LastLeaseID == currentLeaseID {
+		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
+			// Lease subscription uses the credential path (mount/spec-path) as its key,
+			// which is stable across lease rotations. No need to re-subscribe when only
+			// the lease ID changes.
 			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
 				"namespace", o.Namespace, "name", o.Name)
 			return nil
 		}
-		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata, client, or lease change",
+		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to generation or client change",
 			"namespace", o.Namespace, "name", o.Name)
-		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
+		r.unWatchEvents(o, c)
 	}
 
 	eventType := resolveEventType(o)
@@ -1071,7 +1073,6 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	updatedMeta := &eventWatcherMeta{
 		LastClientID:   c.ID(),
 		LastGeneration: o.GetGeneration(),
-		LastLeaseID:    currentLeaseID,
 	}
 	r.eventWatcherRegistry.Register(name, updatedMeta)
 
@@ -1095,20 +1096,23 @@ func (r *VaultDynamicSecretReconciler) unWatchEvents(
 	}
 
 	name := client.ObjectKeyFromObject(o)
-	meta, ok := r.eventWatcherRegistry.Get(name)
+	_, ok := r.eventWatcherRegistry.Get(name)
 	if !ok {
 		return
 	}
 
-	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
+	r.unWatchEventsWithLeaseID(o, c, "")
 }
 
-// unWatchEventsWithLeaseID performs the actual unsubscription using the provided
-// lease ID rather than the current status, which may have already been updated.
+// unWatchEventsWithLeaseID unsubscribes the VDS from all events and removes it
+// from the registry. The leaseID parameter is retained for call-site compatibility
+// but is no longer used; unsubscription uses the stable path-based key instead.
+//
+// Deprecated: call unWatchEvents instead.
 func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 	o *secretsv1beta1.VaultDynamicSecret,
 	c vault.Client,
-	leaseID string,
+	_ string,
 ) {
 	if r.eventWatcherRegistry == nil {
 		return
@@ -1129,10 +1133,12 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 			"namespace", o.Namespace, "name", o.Name, "error", err)
 	}
 
-	// Unsubscribe from lease events using the tracked lease ID
-	if leaseID != "" {
+	// Unsubscribe from lease events. Use the path-based key (buildLeaseEventKey)
+	// rather than leaseID directly, because the subscriber was registered with
+	// the credential path (mount/spec-path) as its key, not the raw lease UUID.
+	if !o.Spec.AllowStaticCreds {
 		leaseKey := vault.SubscriptionKey{
-			VaultPath: leaseID,
+			VaultPath: buildLeaseEventKey(o),
 		}
 		_ = c.UnsubscribeFromEvents(vault.EventTypeLease, leaseKey, name.String())
 	}
@@ -1158,9 +1164,14 @@ func buildVaultEventKey(o *secretsv1beta1.VaultDynamicSecret) string {
 }
 
 // buildLeaseEventKey returns the subscription key for lease lifecycle events.
-// The key is the lease ID from the VDS status.
+// It uses the credential path (Spec.Mount + "/" + Spec.Path) rather than the
+// lease ID from Status.SecretLease.ID, because in Vault Enterprise the
+// metadata.lease_id field in WebSocket events includes a namespace prefix
+// (e.g. "ns1/mount/creds/role/UUID") while the status lease ID does not.
+// metadata.path ("mount/creds/role") is namespace-agnostic and always matches
+// this key regardless of the Vault namespace in use.
 func buildLeaseEventKey(o *secretsv1beta1.VaultDynamicSecret) string {
-	return o.Status.SecretLease.ID
+	return o.Spec.Mount + "/" + o.Spec.Path
 }
 
 // extractRoleName extracts the role name from a VDS spec path.
