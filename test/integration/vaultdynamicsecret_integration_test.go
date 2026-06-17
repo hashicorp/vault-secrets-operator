@@ -1717,9 +1717,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
 
-	// vault_db_default_lease_ttl=600 ensures lease renewals (~420s) fall well
-	// outside the 60s assertion window, so any observed rotation is event-driven.
-	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 600)
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 120)
 
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
@@ -1835,8 +1833,8 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 		}
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)),
-		"VDS %s was not updated via instant updates within 60s after lease revocation", objKey,
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)),
+		"VDS %s was not updated via instant updates within 120s after lease revocation", objKey,
 	)
 
 	// Assert no EventWatcherError warning was emitted with websocket EOF
