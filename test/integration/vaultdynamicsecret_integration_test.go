@@ -1538,7 +1538,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	// rotation is event-driven, not caused by a TTL-triggered renewal.
 	// Static-creds rotation is governed by rotation_period, not lease TTL,
 	// so 600 is equally safe for the StaticCreds subtest.
-	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events", 200)
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events", 600)
 
 	// Each subtest gets its own VaultAuth so it receives a separate Vault client
 	// and an independent WebSocket event connection. Sharing one client would mean
@@ -1803,7 +1803,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 			}
 			return nil
-		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 150)),
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 90)),
 			"VDS %s was not updated via instant updates within 60s after lease revocation", objKey,
 		)
 
