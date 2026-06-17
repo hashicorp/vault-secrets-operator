@@ -1538,7 +1538,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	// rotation is event-driven, not caused by a TTL-triggered renewal.
 	// Static-creds rotation is governed by rotation_period, not lease TTL,
 	// so 600 is equally safe for the StaticCreds subtest.
-	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events", 120)
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events", 300)
 
 	// Each subtest gets its own VaultAuth so it receives a separate Vault client
 	// and an independent WebSocket event connection. Sharing one client would mean
