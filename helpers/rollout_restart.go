@@ -7,12 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	argorolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -23,6 +26,16 @@ import (
 
 // AnnotationRestartedAt is updated to trigger a rollout-restart
 const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
+
+// strimziKafkaConnectGVK identifies the Strimzi KafkaConnect CRD targeted for
+// rollout-restart. It is handled as an unstructured object so that VSO does not
+// depend on the Strimzi Go API. Strimzi serves this resource under the
+// kafka.strimzi.io/v1 API.
+var strimziKafkaConnectGVK = schema.GroupVersionKind{
+	Group:   "kafka.strimzi.io",
+	Version: "v1",
+	Kind:    "KafkaConnect",
+}
 
 // HandleRolloutRestarts for all v1beta1.RolloutRestartTarget(s) configured for obj.
 // Supported objs are: v1beta1.VaultDynamicSecret, v1beta1.VaultStaticSecret, v1beta1.VaultPKISecret
@@ -78,7 +91,7 @@ func HandleRolloutRestarts(ctx context.Context, client ctrlclient.Client, obj ct
 }
 
 // RolloutRestart patches the target in namespace for rollout-restart.
-// Supported target Kinds are: DaemonSet, Deployment, StatefulSet
+// Supported target Kinds are: DaemonSet, Deployment, StatefulSet, argo.Rollout, KafkaConnect
 func RolloutRestart(ctx context.Context, namespace string, target v1beta1.RolloutRestartTarget, client ctrlclient.Client) error {
 	if namespace == "" {
 		return fmt.Errorf("namespace cannot be empty")
@@ -107,6 +120,12 @@ func RolloutRestart(ctx context.Context, namespace string, target v1beta1.Rollou
 		obj = &argorolloutsv1alpha1.Rollout{
 			ObjectMeta: objectMeta,
 		}
+	case "KafkaConnect":
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(strimziKafkaConnectGVK)
+		u.SetNamespace(namespace)
+		u.SetName(target.Name)
+		obj = u
 	default:
 		return fmt.Errorf("unsupported Kind %q for %T", target.Kind, target)
 	}
@@ -149,6 +168,28 @@ func patchForRolloutRestart(ctx context.Context, obj ctrlclient.Object, client c
 		// use MergeFrom() since it supports CRDs whereas StrategicMergeFrom() does not.
 		patch := ctrlclient.MergeFrom(t.DeepCopy())
 		t.Spec.RestartAt = &metav1.Time{Time: time.Now()}
+		return client.Patch(ctx, t, patch)
+	case *unstructured.Unstructured:
+		// Strimzi CRDs (e.g. KafkaConnect) are handled as unstructured objects so
+		// that VSO does not depend on the Strimzi Go API. Strimzi triggers a
+		// rolling update of the managed pods when the annotations under
+		// spec.template.pod.metadata.annotations change. Use MergeFrom() since it
+		// supports CRDs whereas StrategicMergeFrom() does not.
+		annotationsPath := []string{"spec", "template", "pod", "metadata", "annotations"}
+		patch := ctrlclient.MergeFrom(t.DeepCopy())
+		annotations, _, err := unstructured.NestedStringMap(t.Object, annotationsPath...)
+		if err != nil {
+			return fmt.Errorf("failed to read %s for %s, err=%w",
+				strings.Join(annotationsPath, "."), ctrlclient.ObjectKeyFromObject(t), err)
+		}
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+		annotations[AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
+		if err := unstructured.SetNestedStringMap(t.Object, annotations, annotationsPath...); err != nil {
+			return fmt.Errorf("failed to set %s for %s, err=%w",
+				strings.Join(annotationsPath, "."), ctrlclient.ObjectKeyFromObject(t), err)
+		}
 		return client.Patch(ctx, t, patch)
 	default:
 		return fmt.Errorf("unsupported type %T for rollout-restart patching", t)
