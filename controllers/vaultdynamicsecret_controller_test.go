@@ -615,6 +615,13 @@ func (c *reconcileTestVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
 	return c.cacheKey, nil
 }
 
+func (c *reconcileTestVaultClient) GetMountType(_ context.Context, mountPath string) (string, error) {
+	if mountPath == "" {
+		return "", fmt.Errorf("mount path cannot be empty")
+	}
+	return mountPath, nil
+}
+
 // staticCredsFixture holds the common test objects for the stale-TTL regression
 // tests (syncSecret and Reconcile). It pre-computes the HMAC so both tests
 // share identical setup.
@@ -2244,73 +2251,46 @@ func Test_buildLeaseEventKey(t *testing.T) {
 	}
 }
 
-func Test_resolveEventType(t *testing.T) {
-	tests := []struct {
-		name string
-		o    *secretsv1beta1.VaultDynamicSecret
-		want vault.EventType
-	}{
-		{
-			name: "database mount",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "database",
-				},
-			},
-			want: vault.EventTypeDatabase,
-		},
-		{
-			name: "ldap mount",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "ldap",
-				},
-			},
-			want: vault.EventTypeLDAP,
-		},
-		{
-			name: "LDAP mount uppercase",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "LDAP",
-				},
-			},
-			want: vault.EventTypeLDAP,
-		},
-		{
-			name: "custom ldap mount with prefix",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "my-ldap-mount",
-				},
-			},
-			want: vault.EventTypeLDAP,
-		},
-		{
-			name: "custom database mount",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "my-db",
-				},
-			},
-			want: vault.EventTypeDatabase,
-		},
-		{
-			name: "postgres mount defaults to database",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Spec: secretsv1beta1.VaultDynamicSecretSpec{
-					Mount: "postgres",
-				},
-			},
-			want: vault.EventTypeDatabase,
+type watchUnsubscribeClient struct {
+	vault.Client
+	seen []vault.EventType
+}
+
+func (m *watchUnsubscribeClient) UnsubscribeFromEvents(
+	eventType vault.EventType,
+	_ vault.SubscriptionKey,
+	_ string,
+) error {
+	m.seen = append(m.seen, eventType)
+	return nil
+}
+
+func Test_unWatchEvents_UsesStoredEventType(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app"},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Namespace: "",
+			Mount:     "database",
+			Path:      "static-creds/my-role",
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := resolveEventType(tt.o)
-			assert.Equal(t, tt.want, got)
-		})
-	}
+
+	key := client.ObjectKeyFromObject(o)
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastLeaseID:   "database/creds/my-role/abc123",
+		LastEventType: vault.EventTypeLDAP,
+	})
+
+	m := &watchUnsubscribeClient{}
+	r.unWatchEvents(o, m)
+
+	require.Len(t, m.seen, 2)
+	assert.Equal(t, vault.EventTypeLDAP, m.seen[0])
+	assert.Equal(t, vault.EventTypeLease, m.seen[1])
 }
 
 // TestVaultDynamicSecretReconciler_syncSecret_vaultIndex verifies that when an

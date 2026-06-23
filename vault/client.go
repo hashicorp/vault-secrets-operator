@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -197,6 +198,7 @@ type Client interface {
 	Renewable() bool
 	SubscribeToEvents(context.Context, EventType, *Subscriber) error
 	UnsubscribeFromEvents(EventType, SubscriptionKey, string) error
+	GetMountType(context.Context, string) (string, error)
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -220,6 +222,7 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
+	mountTypeCache     map[string]string
 	// websockets stores SharedWebSocket instances per event type
 	websockets  map[EventType]*SharedWebSocket
 	websocketMu sync.RWMutex
@@ -501,8 +504,48 @@ func (c *defaultClient) Close(revoke bool) {
 				"Failed to revoke Vault client token", "err", err)
 		}
 	}
+	c.mountTypeCache = nil
 	c.id = ""
 	c.closed = true
+}
+
+// GetMountType returns the Vault plugin type for a mount path.
+// Results are cached per-client to avoid repeated sys/mounts lookups.
+func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (string, error) {
+	mountPath = strings.Trim(mountPath, "/")
+	if mountPath == "" {
+		return "", fmt.Errorf("mount path cannot be empty")
+	}
+
+	c.mu.RLock()
+	if c.closed {
+		c.mu.RUnlock()
+		return "", fmt.Errorf("client instance is closed")
+	}
+	if t, ok := c.mountTypeCache[mountPath]; ok {
+		c.mu.RUnlock()
+		return t, nil
+	}
+	c.mu.RUnlock()
+
+	resp, err := c.Read(ctx, NewReadRequest("sys/mounts/"+mountPath, nil, nil))
+	if err != nil {
+		return "", fmt.Errorf("failed to read mount info for %q: %w", mountPath, err)
+	}
+
+	mountType, ok := resp.Data()["type"].(string)
+	if !ok || mountType == "" {
+		return "", fmt.Errorf("missing or empty type field in sys/mounts/%s response", mountPath)
+	}
+
+	c.mu.Lock()
+	if c.mountTypeCache == nil {
+		c.mountTypeCache = make(map[string]string)
+	}
+	c.mountTypeCache[mountPath] = mountType
+	c.mu.Unlock()
+
+	return mountType, nil
 }
 
 // startLifetimeWatcher starts an api.LifetimeWatcher in a Go routine for this Client.

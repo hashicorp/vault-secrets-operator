@@ -1048,10 +1048,23 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 		}
 		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata, client, or lease change",
 			"namespace", o.Namespace, "name", o.Name)
-		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
+		eventType := meta.LastEventType
+		if eventType == "" {
+			eventType = vault.EventTypeDatabase
+		}
+		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, eventType)
 	}
 
-	eventType := resolveEventType(o)
+	pluginType, err := c.GetMountType(ctx, o.Spec.Mount)
+	if err != nil {
+		logger.V(consts.LogLevelWarning).Info(
+			"Failed to resolve mount type, falling back to database events",
+			"mount", o.Spec.Mount,
+			"error", err,
+		)
+		pluginType = string(vault.EventTypeDatabase)
+	}
+	eventType := vault.EventType(pluginType)
 	vaultPath := buildVaultEventKey(o)
 
 	subscriber := &vault.Subscriber{
@@ -1087,6 +1100,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 		LastClientID:   c.ID(),
 		LastGeneration: o.GetGeneration(),
 		LastLeaseID:    currentLeaseID,
+		LastEventType:  eventType,
 	}
 	r.eventWatcherRegistry.Register(name, updatedMeta)
 
@@ -1115,7 +1129,11 @@ func (r *VaultDynamicSecretReconciler) unWatchEvents(
 		return
 	}
 
-	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
+	eventType := meta.LastEventType
+	if eventType == "" {
+		eventType = vault.EventTypeDatabase
+	}
+	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, eventType)
 }
 
 // unWatchEventsWithLeaseID performs the actual unsubscription using the provided
@@ -1124,6 +1142,7 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 	o *secretsv1beta1.VaultDynamicSecret,
 	c vault.Client,
 	leaseID string,
+	eventType vault.EventType,
 ) {
 	if r.eventWatcherRegistry == nil {
 		return
@@ -1131,7 +1150,6 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 
 	name := client.ObjectKeyFromObject(o)
 
-	eventType := resolveEventType(o)
 	vaultPath := buildVaultEventKey(o)
 	pathKey := vault.SubscriptionKey{
 		VaultNamespace: o.Spec.Namespace,
@@ -1153,15 +1171,6 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 	}
 
 	r.eventWatcherRegistry.Delete(name)
-}
-
-// resolveEventType determines the correct EventType based on the VDS mount.
-func resolveEventType(o *secretsv1beta1.VaultDynamicSecret) vault.EventType {
-	mount := strings.ToLower(o.Spec.Mount)
-	if strings.Contains(mount, "ldap") {
-		return vault.EventTypeLDAP
-	}
-	return vault.EventTypeDatabase
 }
 
 // buildVaultEventKey constructs the subscription key for a VaultDynamicSecret.
