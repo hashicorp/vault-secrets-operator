@@ -194,6 +194,12 @@ path "sys/leases/*" {
 path "sys/events/subscribe/lease*" {
   capabilities = ["read"]
 }
+
+# Required for GetMountType: resolves the Vault plugin type for a mount path
+# so that the operator subscribes to the correct event stream.
+path "sys/mounts/*" {
+  capabilities = ["read"]
+}
 EOT
 }
 
