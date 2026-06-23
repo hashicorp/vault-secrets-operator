@@ -104,6 +104,14 @@ controller:
     minAvailable: "0"
 
   rbac:
+    # enabled controls whether the chart creates the RBAC resources required by the
+    # operator (ClusterRole, ClusterRoleBinding, Role, RoleBinding). Set this to false
+    # when installing into a cluster where the deploying user lacks permissions to
+    # create RBAC resources, in which case a cluster administrator is expected to
+    # pre-provision the equivalent RBAC resources out-of-band.
+    # @type: boolean
+    enabled: true
+
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
     clusterRoleAggregation:
       # viewerRoles is a list of roles that will be aggregated into the viewer ClusterRole.
