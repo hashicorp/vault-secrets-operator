@@ -1028,8 +1028,17 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 }
 
 // ensureEventWatcher subscribes the VDS to Vault events for instant updates.
-// For static creds, subscribes to secret engine events (database/LDAP).
+// For static creds, subscribes to secret engine events (database/LDAP/custom).
 // For dynamic leases, additionally subscribes to lease lifecycle events.
+//
+// Mount type resolution strategy (in priority order):
+//  1. GetMountType succeeds → use the resolved plugin type.
+//  2. GetMountType fails but a prior LastEventType is stored → reuse it; the
+//     mount engine is unlikely to have changed without a spec update.
+//  3. GetMountType fails and no prior type exists → skip engine-event
+//     subscription this cycle to avoid subscribing to the wrong event stream;
+//     lease events are still set up if applicable; error returned so next
+//     reconcile retries.
 func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	ctx context.Context,
 	o *secretsv1beta1.VaultDynamicSecret,
@@ -1039,34 +1048,78 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	name := client.ObjectKeyFromObject(o)
 
 	currentLeaseID := o.Status.SecretLease.ID
-	meta, ok := r.eventWatcherRegistry.Get(name)
-	if ok {
-		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() && meta.LastLeaseID == currentLeaseID {
-			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
-				"namespace", o.Namespace, "name", o.Name)
-			return nil
+	meta, hasMeta := r.eventWatcherRegistry.Get(name)
+
+	// Step 1: resolve mount type BEFORE touching any existing subscription so
+	// that a transient lookup failure does not first tear down a working watcher.
+	pluginType, mountTypeErr := c.GetMountType(ctx, o.Spec.Mount)
+
+	var eventType vault.EventType
+	switch {
+	case mountTypeErr == nil:
+		// Happy path: authoritative type from Vault.
+		eventType = vault.EventType(pluginType)
+
+	case hasMeta && meta.LastEventType != "":
+		// Transient failure — reuse the last known correct type rather than
+		// silently defaulting to an arbitrary engine type.
+		logger.V(consts.LogLevelWarning).Info(
+			"Failed to resolve mount type; reusing last known event type",
+			"mount", o.Spec.Mount,
+			"lastEventType", meta.LastEventType,
+			"error", mountTypeErr,
+		)
+		eventType = meta.LastEventType
+
+	default:
+		// No prior type and lookup failed — subscribing without knowing the
+		// type would target the wrong WebSocket and silently miss events.
+		// Emit a clear, actionable warning and skip engine-event subscription.
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+			"Cannot determine Vault mount type for %q: %s. "+
+				"Ensure the VaultAuth policy grants read on sys/mounts/*. "+
+				"Engine-event subscription skipped; will retry next reconcile.",
+			o.Spec.Mount, mountTypeErr)
+		// Lease events are mount-type-independent; still subscribe if applicable.
+		if !o.Spec.AllowStaticCreds && currentLeaseID != "" {
+			if !(hasMeta && meta.LastLeaseID == currentLeaseID && meta.LastClientID == c.ID()) {
+				leaseSubscriber := &vault.Subscriber{
+					ResourceKey:       name,
+					VaultPath:         currentLeaseID,
+					ResourceType:      "VaultDynamicSecret",
+					ReconcileCh:       r.SourceCh,
+					PendingVaultIndex: &r.pendingVaultIndex,
+				}
+				if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
+					logger.V(consts.LogLevelWarning).Info("Failed to subscribe to lease events", "error", err)
+				}
+			}
 		}
+		return fmt.Errorf("failed to resolve mount type for %q: %w", o.Spec.Mount, mountTypeErr)
+	}
+
+	// Step 2: check whether the existing subscription is still valid.
+	// Include eventType in the staleness check: if a prior cycle used a cached
+	// fallback type and this cycle resolved the correct type, we must re-subscribe.
+	if hasMeta &&
+		meta.LastGeneration == o.GetGeneration() &&
+		meta.LastClientID == c.ID() &&
+		meta.LastLeaseID == currentLeaseID &&
+		meta.LastEventType == eventType {
+		logger.V(consts.LogLevelDebug).Info("Event subscription already active",
+			"namespace", o.Namespace, "name", o.Name)
+		return nil
+	}
+
+	// Step 3: tear down the stale subscription now that we have a valid type.
+	if hasMeta {
 		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata, client, or lease change",
 			"namespace", o.Namespace, "name", o.Name)
-		eventType := meta.LastEventType
-		if eventType == "" {
-			eventType = vault.EventTypeDatabase
-		}
-		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, eventType)
+		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType)
 	}
 
-	pluginType, err := c.GetMountType(ctx, o.Spec.Mount)
-	if err != nil {
-		logger.V(consts.LogLevelWarning).Info(
-			"Failed to resolve mount type, falling back to database events",
-			"mount", o.Spec.Mount,
-			"error", err,
-		)
-		pluginType = string(vault.EventTypeDatabase)
-	}
-	eventType := vault.EventType(pluginType)
+	// Step 4: subscribe to engine events.
 	vaultPath := buildVaultEventKey(o)
-
 	subscriber := &vault.Subscriber{
 		ResourceKey:       name,
 		VaultNS:           o.Spec.Namespace,
@@ -1075,24 +1128,21 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 		ReconcileCh:       r.SourceCh,
 		PendingVaultIndex: &r.pendingVaultIndex,
 	}
-
 	if err := c.SubscribeToEvents(ctx, eventType, subscriber); err != nil {
 		return fmt.Errorf("failed to subscribe to %s events: %w", eventType, err)
 	}
 
-	// For dynamic leases, also subscribe to lease lifecycle events
-	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
+	// Step 5: for dynamic leases, also subscribe to lease lifecycle events.
+	if !o.Spec.AllowStaticCreds && currentLeaseID != "" {
 		leaseSubscriber := &vault.Subscriber{
 			ResourceKey:       name,
-			VaultPath:         buildLeaseEventKey(o),
+			VaultPath:         currentLeaseID,
 			ResourceType:      "VaultDynamicSecret",
 			ReconcileCh:       r.SourceCh,
 			PendingVaultIndex: &r.pendingVaultIndex,
 		}
 		if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
-			// Non-fatal: lease events are supplementary
-			logger.V(consts.LogLevelWarning).Info("Failed to subscribe to lease events",
-				"error", err)
+			logger.V(consts.LogLevelWarning).Info("Failed to subscribe to lease events", "error", err)
 		}
 	}
 
@@ -1129,11 +1179,9 @@ func (r *VaultDynamicSecretReconciler) unWatchEvents(
 		return
 	}
 
-	eventType := meta.LastEventType
-	if eventType == "" {
-		eventType = vault.EventTypeDatabase
-	}
-	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, eventType)
+	// Pass LastEventType directly — if it is empty, unWatchEventsWithLeaseID
+	// will skip the engine-event unsubscribe rather than targeting the wrong stream.
+	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType)
 }
 
 // unWatchEventsWithLeaseID performs the actual unsubscription using the provided
@@ -1150,19 +1198,23 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 
 	name := client.ObjectKeyFromObject(o)
 
-	vaultPath := buildVaultEventKey(o)
-	pathKey := vault.SubscriptionKey{
-		VaultNamespace: o.Spec.Namespace,
-		VaultPath:      vaultPath,
+	// Only unsubscribe from engine events when we know the exact type that was
+	// used at subscribe time. Guessing a type targets the wrong SharedWebSocket
+	// and leaves the real subscription dangling instead of cleaning it up.
+	if eventType != "" {
+		vaultPath := buildVaultEventKey(o)
+		pathKey := vault.SubscriptionKey{
+			VaultNamespace: o.Spec.Namespace,
+			VaultPath:      vaultPath,
+		}
+		if err := c.UnsubscribeFromEvents(eventType, pathKey, name.String()); err != nil {
+			log.FromContext(context.Background()).V(consts.LogLevelDebug).Info(
+				"Failed to unsubscribe from events (may already be cleaned up)",
+				"namespace", o.Namespace, "name", o.Name, "error", err)
+		}
 	}
 
-	if err := c.UnsubscribeFromEvents(eventType, pathKey, name.String()); err != nil {
-		log.FromContext(context.Background()).V(consts.LogLevelDebug).Info(
-			"Failed to unsubscribe from events (may already be cleaned up)",
-			"namespace", o.Namespace, "name", o.Name, "error", err)
-	}
-
-	// Unsubscribe from lease events using the tracked lease ID
+	// Lease subscriptions are keyed by lease ID only, independent of engine type.
 	if leaseID != "" {
 		leaseKey := vault.SubscriptionKey{
 			VaultPath: leaseID,
