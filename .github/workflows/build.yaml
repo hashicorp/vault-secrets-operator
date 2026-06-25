@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64", "s390x"]
+        arch: ["arm64", "amd64", "s390x", "ppc64le"]
       fail-fast: true
     steps:
       - name: Checkout
@@ -207,19 +207,22 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: ["arm64", "amd64", "s390x"]
+        arch: ["arm64", "amd64"]
     env:
       repo: ${{github.event.repository.name}}
       version: ${{needs.get-product-version.outputs.product-version}}
       image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      #- name: Clean dist
+      #  shell: bash
+      #  run: |
+      #    make clean-dist
       - name: Setup scripts directory
         shell: bash
         run: |
           make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
       - name: Docker Build (Action)
-        if: ${{ matrix.arch != 's390x' }}
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
@@ -232,8 +235,32 @@ jobs:
           tags: |
             docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
-      - name: Docker Build (Action) s390x
-        if: ${{ matrix.arch == 's390x' }}
+
+  build-docker-ubi-rh-only:
+    name: UBI ${{ matrix.arch }} build
+    needs:
+      - get-product-version
+      - build-pre-checks
+      - build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: ["s390x", "ppc64le"]
+    env:
+      repo: ${{github.event.repository.name}}
+      version: ${{needs.get-product-version.outputs.product-version}}
+      image_tag: ${{needs.get-product-version.outputs.product-version}}-ubi
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      #- name: Clean dist
+      #  shell: bash
+      #  run: |
+      #    make clean-dist
+      - name: Setup scripts directory
+        shell: bash
+        run: |
+          make ci-build-scripts-dir GOARCH="${{ matrix.arch }}"
+      - name: Docker Build (Action)
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
@@ -244,7 +271,6 @@ jobs:
           arch: ${{matrix.arch}}
           redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
       - name: Check binary version in container ${{ matrix.arch }}
-        if: ${{ matrix.arch != 's390x' }}
         shell: bash
         run: |
           version_output=$(docker run --platform linux/${{matrix.arch}} hashicorp/${{env.repo}}:${{env.image_tag}} --version --output=json)
