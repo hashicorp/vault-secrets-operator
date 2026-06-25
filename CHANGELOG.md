@@ -1,5 +1,9 @@
-## 1.4.0 (May 5th, 2026)
+## Unreleased
 
+Enhancements:
+* VDS: instant updates for `database` and `ldap` static-roles via Vault event notifications. Set `spec.syncConfig.instantUpdates: true` and `spec.syncConfig.engineType: database|ldap` on a `VaultDynamicSecret` to subscribe to rotation events on the configured Vault mount. Requires Vault Enterprise (>= 1.16 for database, >= 1.21 for ldap) and a VaultAuth role with `read` on `sys/events/subscribe/<engine>/*` plus `list`+`subscribe`+`subscribe_event_types = ["*"]` on the secret path.
+
+## 1.4.0 (May 5th, 2026)
 Fix:
 * Detect TTL reset for uneven rotation schedules with ttl rollover bug: ([#1259](https://github.com/hashicorp/vault-secrets-operator/pull/1259))
 * Update kube-rbac-proxy version for openshift: ([#1254](https://github.com/hashicorp/vault-secrets-operator/pull/1254))

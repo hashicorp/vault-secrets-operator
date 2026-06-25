@@ -24,4 +24,7 @@ const (
 
 	AnnotationResync = "vso.hashicorp.com/resync"
 	HeaderUserAgent  = "User-Agent"
+
+	VaultEngineTypeDatabase = "database"
+	VaultEngineTypeLDAP     = "ldap"
 )

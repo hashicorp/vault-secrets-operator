@@ -19,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	vsoconsts "github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
 
@@ -2108,5 +2110,470 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			assert.Equalf(t, tt.wantResponse, got1, "awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)
 			assert.Equalf(t, tt.wantRequestCount, len(tt.c.Requests), "awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)
 		})
+	}
+}
+
+func init() {
+	_ = secretsv1beta1.AddToScheme(scheme.Scheme)
+}
+
+// TestEventPathForEngine tests the eventPathForEngine function.
+func TestEventPathForEngine(t *testing.T) {
+	tests := []struct {
+		name       string
+		engineType string
+		want       string
+		wantErr    bool
+	}{
+		{name: "database", engineType: vsoconsts.VaultEngineTypeDatabase, want: databaseEventPath},
+		{name: "ldap", engineType: vsoconsts.VaultEngineTypeLDAP, want: ldapEventPath},
+		{name: "empty", engineType: "", wantErr: true},
+		{name: "unsupported", engineType: "kv", wantErr: true},
+		{name: "case-sensitive", engineType: "Database", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := eventPathForEngine(tt.engineType)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func newVDSForMatch(mount, path, namespace string) *secretsv1beta1.VaultDynamicSecret {
+	return &secretsv1beta1.VaultDynamicSecret{
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount:     mount,
+			Path:      path,
+			Namespace: namespace,
+		},
+	}
+}
+
+func newEvent(eventType, mountPath, name, namespace string) *dynamicSecretEventMsg {
+	ev := &dynamicSecretEventMsg{}
+	ev.Data.EventType = eventType
+	ev.Data.PluginInfo.MountPath = mountPath
+	ev.Data.Event.Metadata.Name = name
+	ev.Data.Namespace = namespace
+	return ev
+}
+
+// TestMatchEvent tests the matchEvent function to ensure it correctly matches events to VaultDynamicSecret objects
+// based on event type, mount path, role name, and namespace.
+// It includes various test cases covering happy paths and edge cases for mismatches.
+func TestMatchEvent(t *testing.T) {
+	tests := []struct {
+		name string
+		o    *secretsv1beta1.VaultDynamicSecret
+		ev   *dynamicSecretEventMsg
+		want bool
+	}{
+		{
+			name: "happy-database-rotate",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("database/rotate", "database/", "myrole", ""),
+			want: true,
+		},
+		{
+			name: "happy-database-rotate",
+			o:    newVDSForMatch("database", "creds/myrole", ""),
+			ev:   newEvent("database/rotate", "database/", "myrole", ""),
+			want: true,
+		},
+		{
+			name: "happy-database-static-creds-create",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("database/static-creds-create", "database/", "myrole", ""),
+			want: true,
+		},
+		{
+			name: "happy-database-role-update",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("database/role-update", "database/", "myrole", ""),
+			want: true,
+		},
+		{
+			name: "happy-ldap-rotate",
+			o:    newVDSForMatch("ldap", "static-cred/myrole", ""),
+			ev:   newEvent("ldap/rotate", "ldap/", "myrole", ""),
+			want: true,
+		},
+		{
+			name: "happy-ldap-static-role-update",
+			o:    newVDSForMatch("ldap", "static-cred/myrole", ""),
+			ev:   newEvent("ldap/static-role-update", "ldap/", "myrole", ""),
+			want: true,
+		},
+		{
+			name: "happy-ldap-rotate-nested-role-name",
+			o:    newVDSForMatch("ldap", "static-cred/group1/group2/myrole", ""),
+			ev:   newEvent("ldap/rotate", "ldap/", "group1/group2/myrole", ""),
+			want: true,
+		},
+		{
+			name: "happy-database-namespace-with-leading-slash-on-event",
+			o:    newVDSForMatch("database", "static-creds/myrole", "ns1"),
+			ev:   newEvent("database/rotate", "database/", "myrole", "/ns1/"),
+			want: true,
+		},
+		{
+			name: "happy-mount-without-trailing-slash-on-spec",
+			o:    newVDSForMatch("database/", "static-creds/myrole", ""),
+			ev:   newEvent("database/rotate", "database/", "myrole", ""),
+			want: true,
+		},
+		{
+			name: "rejected-event-type-not-in-allowlist",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("database/role-create", "database/", "myrole", ""),
+			want: false,
+		},
+		{
+			name: "rejected-database-root-rotate",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("database/root-rotate", "database/", "myrole", ""),
+			want: false,
+		},
+		{
+			name: "rejected-kv-event-on-database-watcher",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("kv-v2/data-write", "database/", "myrole", ""),
+			want: false,
+		},
+		{
+			name: "rejected-namespace-mismatch",
+			o:    newVDSForMatch("database", "static-creds/myrole", "ns1"),
+			ev:   newEvent("database/rotate", "database/", "myrole", "ns2"),
+			want: false,
+		},
+		{
+			name: "rejected-mount-mismatch",
+			o:    newVDSForMatch("db", "static-creds/myrole", ""),
+			ev:   newEvent("database/rotate", "database/", "myrole", ""),
+			want: false,
+		},
+		{
+			name: "rejected-role-name-mismatch",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("database/rotate", "database/", "otherrole", ""),
+			want: false,
+		},
+		{
+			name: "rejected-role-name-substring-without-segment-boundary",
+			o:    newVDSForMatch("database", "static-creds/notmyrole", ""),
+			ev:   newEvent("database/rotate", "database/", "myrole", ""),
+			want: false,
+		},
+		{
+			name: "rejected-empty-event-name",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("database/rotate", "database/", "", ""),
+			want: false,
+		},
+		{
+			name: "rejected-empty-event-type",
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			ev:   newEvent("", "database/", "myrole", ""),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, matchEvent(tt.o, tt.ev))
+		})
+	}
+}
+
+// TestMatchEvent_JSONRoundTrip tests that the matchEvent function correctly matches events to VaultDynamicSecret objects
+func TestMatchEvent_JSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		o       *secretsv1beta1.VaultDynamicSecret
+		want    bool
+	}{
+		{
+			name: "root-namespace-event-omits-namespace-field",
+			payload: `{
+				"id":"abc",
+				"data":{
+					"event":{
+						"id":"abc",
+						"metadata":{
+							"path":"database/rotate-role/myrole",
+							"name":"myrole",
+							"operation":"rotate",
+							"modified":"true"
+						}
+					},
+					"event_type":"database/rotate",
+					"plugin_info":{
+						"mount_class":"secret",
+						"mount_path":"database/",
+						"plugin":"database"
+					}
+				}
+			}`,
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			want: true,
+		},
+		{
+			name: "root-namespace-event-with-explicit-empty-namespace",
+			payload: `{
+				"data":{
+					"event":{
+						"metadata":{
+							"path":"database/rotate-role/myrole",
+							"name":"myrole",
+							"operation":"rotate",
+							"modified":"true"
+						}
+					},
+					"event_type":"database/rotate",
+					"plugin_info":{"mount_path":"database/"},
+					"namespace":""
+				}
+			}`,
+			o:    newVDSForMatch("database", "static-creds/myrole", ""),
+			want: true,
+		},
+		{
+			name: "root-namespace-event-rejected-by-namespaced-vds",
+			payload: `{
+				"data":{
+					"event":{
+						"metadata":{
+							"name":"myrole",
+							"modified":"true"
+						}
+					},
+					"event_type":"database/rotate",
+					"plugin_info":{"mount_path":"database/"}
+				}
+			}`,
+			o:    newVDSForMatch("database", "static-creds/myrole", "ns1"),
+			want: false,
+		},
+		{
+			name: "child-namespace-event-with-trailing-slash",
+			payload: `{
+				"data":{
+					"event":{
+						"metadata":{
+							"name":"myrole",
+							"modified":"true"
+						}
+					},
+					"event_type":"database/rotate",
+					"plugin_info":{"mount_path":"database/"},
+					"namespace":"ns1/"
+				}
+			}`,
+			o:    newVDSForMatch("database", "static-creds/myrole", "ns1"),
+			want: true,
+		},
+		{
+			name: "ldap-rotate-nested-role-name-real-payload",
+			payload: `{
+				"id":"8fea78ca-47c5-0057-fc6f-38a631e4c0e5",
+				"data":{
+					"event":{
+						"id":"8fea78ca-47c5-0057-fc6f-38a631e4c0e5",
+						"metadata":{
+							"modified":"true",
+							"name":"group1/group2/myrole",
+							"operation":"rotate",
+							"path":"ldap/rotate-role/group1/group2/myrole"
+						}
+					},
+					"event_type":"ldap/rotate",
+					"plugin_info":{"mount_path":"ldap/","plugin":"ldap"}
+				}
+			}`,
+			o:    newVDSForMatch("ldap", "static-cred/group1/group2/myrole", ""),
+			want: true,
+		},
+		{
+			name: "ldap-rotate-nested-role-name-rejected-when-nesting-doesnt-match",
+			payload: `{
+				"data":{
+					"event":{
+						"metadata":{
+							"modified":"true",
+							"name":"group1/group2/myrole",
+							"operation":"rotate"
+						}
+					},
+					"event_type":"ldap/rotate",
+					"plugin_info":{"mount_path":"ldap/","plugin":"ldap"}
+				}
+			}`,
+			o:    newVDSForMatch("ldap", "static-cred/myrole", ""),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := dynamicSecretEventMsg{}
+			require.NoError(t, json.Unmarshal([]byte(tt.payload), &ev))
+			assert.Equal(t, tt.want, matchEvent(tt.o, &ev))
+		})
+	}
+}
+
+func newVDS(name, namespace string, syncCfg *secretsv1beta1.VaultDynamicSecretSyncConfig) *secretsv1beta1.VaultDynamicSecret {
+	return &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount:      "database",
+			Path:       "static-creds/myrole",
+			SyncConfig: syncCfg,
+		},
+	}
+}
+
+// TestVDS_UnWatchEvents tests the unWatchEvents function to ensure it correctly unregisters event watchers
+// and cancels their contexts. It verifies that the registry is updated and that the context is canceled as expected.
+func TestVDS_UnWatchEvents(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+	o := newVDS("foo", "default", nil)
+
+	r.unWatchEvents(o)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stoppedCh := make(chan struct{}, 1)
+	r.eventWatcherRegistry.Register(client.ObjectKeyFromObject(o), &eventWatcherMeta{
+		Cancel:         cancel,
+		StoppedCh:      stoppedCh,
+		LastGeneration: 1,
+		LastClientID:   "id-1",
+	})
+	require.Equal(t, 1, r.eventWatcherRegistry.registry.ItemCount())
+
+	r.unWatchEvents(o)
+	assert.Equal(t, 0, r.eventWatcherRegistry.registry.ItemCount())
+	assert.ErrorIs(t, ctx.Err(), context.Canceled)
+
+	r.unWatchEvents(o)
+}
+
+func TestVDS_EnsureEventWatcher_NilSyncConfig(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+	o := newVDS("foo", "default", nil)
+	err := r.ensureEventWatcher(context.Background(), o, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "syncConfig is nil")
+	assert.Equal(t, 0, r.eventWatcherRegistry.registry.ItemCount())
+}
+
+func TestVDS_EnsureEventWatcher_InvalidEngineType(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+	o := newVDS("foo", "default", &secretsv1beta1.VaultDynamicSecretSyncConfig{
+		InstantUpdates: true,
+		EngineType:     "kv",
+	})
+	err := r.ensureEventWatcher(context.Background(), o, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported engineType")
+	assert.Equal(t, 0, r.eventWatcherRegistry.registry.ItemCount())
+}
+
+// TestVDS_EnsureEventWatcher_RegistersWatcher tests that ensureEventWatcher correctly registers an event
+// watcher for a valid VaultDynamicSecret object.
+func TestVDS_HandleDeletionStopsWatcher(t *testing.T) {
+	o := newVDS("foo", "default", &secretsv1beta1.VaultDynamicSecretSyncConfig{
+		InstantUpdates: true,
+		EngineType:     "database",
+	})
+	o.Finalizers = []string{vaultDynamicSecretFinalizer}
+
+	c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(o).Build()
+	r := &VaultDynamicSecretReconciler{
+		Client:               c,
+		Recorder:             record.NewFakeRecorder(8),
+		SyncRegistry:         NewSyncRegistry(),
+		BackOffRegistry:      NewBackOffRegistry(),
+		referenceCache:       NewResourceReferenceCache(),
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stoppedCh := make(chan struct{}, 1)
+	r.eventWatcherRegistry.Register(client.ObjectKeyFromObject(o), &eventWatcherMeta{
+		Cancel:         cancel,
+		StoppedCh:      stoppedCh,
+		LastGeneration: 1,
+		LastClientID:   "id-1",
+	})
+	require.Equal(t, 1, r.eventWatcherRegistry.registry.ItemCount())
+
+	r.unWatchEvents(o)
+	assert.Equal(t, 0, r.eventWatcherRegistry.registry.ItemCount())
+	assert.ErrorIs(t, ctx.Err(), context.Canceled)
+}
+
+func TestVDS_StreamMatchTriggersSync_FilterOnly(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{
+		SyncRegistry: NewSyncRegistry(),
+		SourceCh:     make(chan event.GenericEvent, 1),
+	}
+	o := newVDS("foo", "default", &secretsv1beta1.VaultDynamicSecretSyncConfig{
+		InstantUpdates: true,
+		EngineType:     "database",
+	})
+
+	ev := newEvent("database/rotate", "database/", "myrole", "")
+	require.True(t, matchEvent(o, ev), "expected match for the test event")
+
+	key := client.ObjectKeyFromObject(o)
+	r.SyncRegistry.Add(key)
+	r.SourceCh <- event.GenericEvent{
+		Object: &secretsv1beta1.VaultDynamicSecret{
+			ObjectMeta: metav1.ObjectMeta{Name: o.Name, Namespace: o.Namespace},
+		},
+	}
+
+	assert.True(t, r.SyncRegistry.Has(key))
+	select {
+	case got := <-r.SourceCh:
+		assert.Equal(t, o.Name, got.Object.GetName())
+		assert.Equal(t, o.Namespace, got.Object.GetNamespace())
+	default:
+		t.Fatal("expected a GenericEvent on SourceCh")
+	}
+}
+
+// TestVDS_StreamFilterDropsNonMatchingEvent tests that non-matching events are correctly
+// filtered out and do not trigger a sync.
+func TestVDS_StreamFilterDropsNonMatchingEvent(t *testing.T) {
+	o := newVDS("foo", "default", &secretsv1beta1.VaultDynamicSecretSyncConfig{
+		InstantUpdates: true,
+		EngineType:     "database",
+	})
+
+	cases := []*dynamicSecretEventMsg{
+		newEvent("kv-v2/data-write", "database/", "myrole", ""),     // wrong event type (not in allow-list)
+		newEvent("database/role-create", "database/", "myrole", ""), // wrong event type (not in allow-list)
+		newEvent("database/rotate", "database/", "otherrole", ""),   // role-name mismatch (Spec.Path = static-creds/myrole)
+		newEvent("database/rotate", "db/", "myrole", ""),            // mount path mismatch (Spec.Path = static-creds/myrole)
+	}
+	for _, ev := range cases {
+		assert.False(t, matchEvent(o, ev),
+			"unexpected match for event_type=%s mount=%s name=%s",
+			ev.Data.EventType, ev.Data.PluginInfo.MountPath, ev.Data.Event.Metadata.Name)
 	}
 }
