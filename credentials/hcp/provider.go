@@ -12,6 +12,10 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 )
 
+// CredentialProviderHCP provides credentials for authenticating to HCP.
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 type CredentialProviderHCP interface {
 	provider.CredentialProviderBase
 	Init(context.Context, client.Client, *v1beta1.HCPAuth, string) error
