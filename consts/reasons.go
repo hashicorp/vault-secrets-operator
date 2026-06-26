@@ -43,4 +43,5 @@ const (
 	ReasonHealthy                       = "Healthy"
 	ReasonUnhealthy                     = "Unhealthy"
 	ReasonReady                         = "Ready"
+	ReasonDeprecated                    = "Deprecated"
 )

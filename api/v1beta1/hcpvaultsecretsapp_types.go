@@ -8,6 +8,10 @@ import (
 )
 
 // HCPVaultSecretsAppSpec defines the desired state of HCPVaultSecretsApp
+//
+// Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+// and will be removed in a future release of the Vault Secrets Operator.
+// Migrate off HCP Vault Secrets before upgrading to the removal release.
 type HCPVaultSecretsAppSpec struct {
 	// AppName of the Vault Secrets Application that is to be synced.
 	AppName string `json:"appName"`
@@ -37,12 +41,18 @@ type HCPVaultSecretsAppSpec struct {
 }
 
 // HVSSyncConfig configures sync behavior from HVS to VSO
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 type HVSSyncConfig struct {
 	// Dynamic configures sync behavior for dynamic secrets.
 	Dynamic *HVSDynamicSyncConfig `json:"dynamic,omitempty"`
 }
 
 // HVSDynamicSyncConfig configures sync behavior for HVS dynamic secrets.
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 type HVSDynamicSyncConfig struct {
 	// RenewalPercent is the percent out of 100 of a dynamic secret's TTL when
 	// new secrets are generated. Defaults to 67 percent plus up to 10% jitter.
@@ -54,6 +64,9 @@ type HVSDynamicSyncConfig struct {
 
 // HVSDynamicStatus defines the observed state of a dynamic secret within an HCP
 // Vault Secrets App
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 type HVSDynamicStatus struct {
 	// Name of the dynamic secret
 	Name string `json:"name,omitempty"`
@@ -66,6 +79,10 @@ type HVSDynamicStatus struct {
 }
 
 // HCPVaultSecretsAppStatus defines the observed state of HCPVaultSecretsApp
+//
+// Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+// and will be removed in a future release of the Vault Secrets Operator.
+// Migrate off HCP Vault Secrets before upgrading to the removal release.
 type HCPVaultSecretsAppStatus struct {
 	// LastGeneration is the Generation of the last reconciled resource.
 	LastGeneration int64 `json:"lastGeneration"`
@@ -88,8 +105,13 @@ type HCPVaultSecretsAppStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="HCPVaultSecretsApp is deprecated and will be removed in a future release of the Vault Secrets Operator. HCP Vault Secrets support is being retired; migrate off HCP Vault Secrets before upgrading to the removal release."
 
 // HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
+//
+// Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+// and will be removed in a future release of the Vault Secrets Operator.
+// Migrate off HCP Vault Secrets before upgrading to the removal release.
 type HCPVaultSecretsApp struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -101,6 +123,10 @@ type HCPVaultSecretsApp struct {
 // +kubebuilder:object:root=true
 
 // HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
+//
+// Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+// and will be removed in a future release of the Vault Secrets Operator.
+// Migrate off HCP Vault Secrets before upgrading to the removal release.
 type HCPVaultSecretsAppList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

@@ -29,6 +29,9 @@ var ProviderMethodsSupported = []string{
 
 // NewCredentialProvider returns a new provider.CredentialProviderBase instance
 // for the given object. It supports objects of type VaultAuth and HCPAuth.
+//
+// Deprecated: support for HCPAuth objects is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 func NewCredentialProvider(ctx context.Context, client client.Client, obj client.Object, providerNamespace string) (provider.CredentialProviderBase, error) {
 	var p provider.CredentialProviderBase
 	switch authObj := obj.(type) {

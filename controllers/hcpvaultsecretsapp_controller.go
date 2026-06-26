@@ -75,6 +75,10 @@ var (
 )
 
 // HCPVaultSecretsAppReconciler reconciles a HCPVaultSecretsApp object
+//
+// Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+// and will be removed in a future release of the Vault Secrets Operator.
+// Migrate off HCP Vault Secrets before upgrading to the removal release.
 type HCPVaultSecretsAppReconciler struct {
 	client.Client
 	Scheme                      *runtime.Scheme
@@ -103,6 +107,9 @@ type HCPVaultSecretsAppReconciler struct {
 // Reconcile a secretsv1beta1.HCPVaultSecretsApp Custom Resource instance. Each
 // invocation will ensure that the configured HCP Vault Secrets Application data
 // is synced to the configured K8s Secret.
+//
+// Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+// and will be removed in a future release of the Vault Secrets Operator.
 func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -120,6 +127,14 @@ func (r *HCPVaultSecretsAppReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Info("Got deletion timestamp", "obj", o)
 		return ctrl.Result{}, r.handleDeletion(ctx, o)
 	}
+
+	logger.Info("HCPVaultSecretsApp is deprecated and will be removed in a future " +
+		"release of the Vault Secrets Operator; migrate off HCP Vault Secrets before " +
+		"upgrading to the removal release")
+	r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonDeprecated,
+		"HCPVaultSecretsApp is deprecated and will be removed in a future release of "+
+			"the Vault Secrets Operator; migrate off HCP Vault Secrets before upgrading "+
+			"to the removal release")
 
 	var requeueAfter time.Duration
 	if o.Spec.RefreshAfter != "" {
@@ -298,6 +313,9 @@ func (r *HCPVaultSecretsAppReconciler) updateStatus(ctx context.Context, o *secr
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+// Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+// and will be removed in a future release of the Vault Secrets Operator.
 func (r *HCPVaultSecretsAppReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = NewResourceReferenceCache()
 	if r.BackOffRegistry == nil {

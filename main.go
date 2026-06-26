@@ -601,8 +601,9 @@ func main() {
 	}()
 
 	if err = (&controllers.HCPAuthReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("HCPAuth"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HCPAuth")
 		os.Exit(1)

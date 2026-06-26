@@ -605,6 +605,9 @@ func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.Names
 
 // GetHCPAuthForObj returns the corresponding secretsv1beta1.HCPAuth for obj.
 // Supported client.Object: secretsv1beta1.HCPVaultSecretsApp
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 func GetHCPAuthForObj(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.HCPAuth, error) {
 	authRef, err := getAuthRefNamespacedName(obj)
 	if err != nil {
@@ -627,6 +630,11 @@ func GetHCPAuthForObj(ctx context.Context, c client.Client, obj client.Object) (
 	return authObj, nil
 }
 
+// GetHCPAuthWithRetry returns the secretsv1beta1.HCPAuth for key, retrying on
+// transient not-found errors.
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 func GetHCPAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName,
 	delay time.Duration, max uint64,
 ) (*secretsv1beta1.HCPAuth, error) {

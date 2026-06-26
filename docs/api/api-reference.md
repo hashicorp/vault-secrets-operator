@@ -179,6 +179,10 @@ _Appears in:_
 
 HCPAuth is the Schema for the hcpauths API
 
+Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+removed in a future release of the Vault Secrets Operator. Migrate off HCP
+Vault Secrets before upgrading to the removal release.
+
 
 
 _Appears in:_
@@ -197,6 +201,10 @@ _Appears in:_
 
 
 HCPAuthList contains a list of HCPAuth
+
+Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+removed in a future release of the Vault Secrets Operator. Migrate off HCP
+Vault Secrets before upgrading to the removal release.
 
 
 
@@ -217,6 +225,10 @@ HCPAuthList contains a list of HCPAuth
 HCPAuthServicePrincipal provides HCPAuth configuration options needed for
 authenticating to HCP using a service principal configured in SecretRef.
 
+Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+removed in a future release of the Vault Secrets Operator. Migrate off HCP
+Vault Secrets before upgrading to the removal release.
+
 
 
 _Appears in:_
@@ -232,6 +244,10 @@ _Appears in:_
 
 
 HCPAuthSpec defines the desired state of HCPAuth
+
+Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+removed in a future release of the Vault Secrets Operator. Migrate off HCP
+Vault Secrets before upgrading to the removal release.
 
 
 
@@ -255,6 +271,10 @@ _Appears in:_
 
 HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
 
+Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+and will be removed in a future release of the Vault Secrets Operator.
+Migrate off HCP Vault Secrets before upgrading to the removal release.
+
 
 
 _Appears in:_
@@ -274,6 +294,10 @@ _Appears in:_
 
 HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
 
+Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+and will be removed in a future release of the Vault Secrets Operator.
+Migrate off HCP Vault Secrets before upgrading to the removal release.
+
 
 
 
@@ -291,6 +315,10 @@ HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
 
 
 HCPVaultSecretsAppSpec defines the desired state of HCPVaultSecretsApp
+
+Deprecated: HCPVaultSecretsApp and HCP Vault Secrets support are deprecated
+and will be removed in a future release of the Vault Secrets Operator.
+Migrate off HCP Vault Secrets before upgrading to the removal release.
 
 
 
@@ -316,6 +344,9 @@ _Appears in:_
 HVSDynamicStatus defines the observed state of a dynamic secret within an HCP
 Vault Secrets App
 
+Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+future release of the Vault Secrets Operator.
+
 
 
 _Appears in:_
@@ -335,6 +366,9 @@ _Appears in:_
 
 HVSDynamicSyncConfig configures sync behavior for HVS dynamic secrets.
 
+Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+future release of the Vault Secrets Operator.
+
 
 
 _Appears in:_
@@ -350,6 +384,9 @@ _Appears in:_
 
 
 HVSSyncConfig configures sync behavior from HVS to VSO
+
+Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+future release of the Vault Secrets Operator.
 
 
 

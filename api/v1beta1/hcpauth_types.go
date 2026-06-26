@@ -8,6 +8,10 @@ import (
 )
 
 // HCPAuthSpec defines the desired state of HCPAuth
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator. Migrate off HCP
+// Vault Secrets before upgrading to the removal release.
 type HCPAuthSpec struct {
 	// OrganizationID of the HCP organization.
 	OrganizationID string `json:"organizationID"`
@@ -35,6 +39,10 @@ type HCPAuthSpec struct {
 
 // HCPAuthServicePrincipal provides HCPAuth configuration options needed for
 // authenticating to HCP using a service principal configured in SecretRef.
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator. Migrate off HCP
+// Vault Secrets before upgrading to the removal release.
 type HCPAuthServicePrincipal struct {
 	// SecretRef is the name of a Kubernetes secret in the consumer's
 	// (VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID,
@@ -47,6 +55,10 @@ type HCPAuthServicePrincipal struct {
 }
 
 // HCPAuthStatus defines the observed state of HCPAuth
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator. Migrate off HCP
+// Vault Secrets before upgrading to the removal release.
 type HCPAuthStatus struct {
 	// Valid auth mechanism.
 	Valid *bool  `json:"valid"`
@@ -58,8 +70,13 @@ type HCPAuthStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="HCPAuth is deprecated and will be removed in a future release of the Vault Secrets Operator. HCP Vault Secrets support is being retired; migrate off HCP Vault Secrets before upgrading to the removal release."
 
 // HCPAuth is the Schema for the hcpauths API
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator. Migrate off HCP
+// Vault Secrets before upgrading to the removal release.
 type HCPAuth struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -71,6 +88,10 @@ type HCPAuth struct {
 // +kubebuilder:object:root=true
 
 // HCPAuthList contains a list of HCPAuth
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator. Migrate off HCP
+// Vault Secrets before upgrading to the removal release.
 type HCPAuthList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

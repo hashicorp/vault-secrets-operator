@@ -163,6 +163,16 @@ func RemoveAllFinalizers(ctx context.Context, c client.Client, log logr.Logger) 
 		log.Error(err, "Unable to list VaultPKISecret resources")
 	}
 	removeFinalizers(ctx, c, log, vpkiList)
+
+	// HCPVaultSecretsApp is deprecated. This cleanup is included so that its
+	// finalizer does not go stale and block deletion once the controller is
+	// removed in a future release.
+	hvsaList := &secretsv1beta1.HCPVaultSecretsAppList{}
+	err = c.List(ctx, hvsaList, opts...)
+	if err != nil {
+		log.Error(err, "Unable to list HCPVaultSecretsApp resources")
+	}
+	removeFinalizers(ctx, c, log, hvsaList)
 	return nil
 }
 
@@ -209,6 +219,16 @@ func removeFinalizers(ctx context.Context, c client.Client, log logr.Logger, obj
 				log.Info(fmt.Sprintf("Updating finalizer for DynamicSecret %s", x.Name))
 				if err := c.Update(ctx, &x, &client.UpdateOptions{}); err != nil {
 					log.Error(err, fmt.Sprintf("Unable to update finalizer for %s: %s", vaultDynamicSecretFinalizer, x.Name))
+				}
+			}
+		}
+	case *secretsv1beta1.HCPVaultSecretsAppList:
+		for _, x := range t.Items {
+			cnt++
+			if controllerutil.RemoveFinalizer(&x, hcpVaultSecretsAppFinalizer) {
+				log.Info(fmt.Sprintf("Updating finalizer for HCPVaultSecretsApp %s", x.Name))
+				if err := c.Update(ctx, &x, &client.UpdateOptions{}); err != nil {
+					log.Error(err, fmt.Sprintf("Unable to update finalizer for %s: %s", hcpVaultSecretsAppFinalizer, x.Name))
 				}
 			}
 		}
