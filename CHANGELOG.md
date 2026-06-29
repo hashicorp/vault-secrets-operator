@@ -1,3 +1,8 @@
+## Unreleased
+
+Deprecations:
+* HCPAuth and HCPVaultSecretsApp (HCP Vault Secrets) are deprecated and will be removed in a future release of the Vault Secrets Operator. The operator now emits a `Deprecated` warning event on each reconcile of these resources, and `kubectl` will surface a deprecation warning for the corresponding CRDs. Migrate off HCP Vault Secrets and remove any `HCPVaultSecretsApp` and `HCPAuth` resources before upgrading to the removal release.
+
 ## 1.4.0 (May 5th, 2026)
 
 Fix:

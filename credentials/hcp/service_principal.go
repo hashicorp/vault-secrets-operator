@@ -28,6 +28,9 @@ var _ CredentialProviderHCP = (*ServicePrincipleCredentialProvider)(nil)
 // ServicePrincipleCredentialProvider provides credentials for authenticating to
 // HCP using a service principal. For security reasons, only project-level
 // service principals should ever be used.
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 type ServicePrincipleCredentialProvider struct {
 	authObj           *secretsv1beta1.HCPAuth
 	providerNamespace string

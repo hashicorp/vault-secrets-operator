@@ -11,21 +11,29 @@ import (
 	"time"
 
 	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
+	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 // HCPAuthReconciler reconciles a HCPAuth object
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator. Migrate off HCP
+// Vault Secrets before upgrading to the removal release.
 type HCPAuthReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=hcpauths,verbs=get;list;watch;create;update;patch;delete
@@ -36,6 +44,9 @@ type HCPAuthReconciler struct {
 
 // Reconcile validates the HCPAuth CR instance, updating the instance's status
 // with the result.
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator.
 func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -53,6 +64,16 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Info("Got deletion timestamp", "obj", o)
 		metrics.DeleteResourceStatus("hcpauth", o)
 		return ctrl.Result{}, nil
+	}
+
+	logger.Info("HCPAuth is deprecated and will be removed in a future release of " +
+		"the Vault Secrets Operator; migrate off HCP Vault Secrets before upgrading " +
+		"to the removal release")
+	if r.Recorder != nil {
+		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonDeprecated,
+			"HCPAuth is deprecated and will be removed in a future release of the "+
+				"Vault Secrets Operator; migrate off HCP Vault Secrets before upgrading "+
+				"to the removal release")
 	}
 
 	// perform a rudimentary health check on the HCP host on port 443.
@@ -101,6 +122,9 @@ func (r *HCPAuthReconciler) updateStatus(ctx context.Context, a *secretsv1beta1.
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+// Deprecated: HCPAuth and HCP Vault Secrets support are deprecated and will be
+// removed in a future release of the Vault Secrets Operator.
 func (r *HCPAuthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.HCPAuth{}).
