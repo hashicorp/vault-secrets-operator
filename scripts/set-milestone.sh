@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright IBM Corp. 2024, 2026
+# SPDX-License-Identifier: BUSL-1.1
+
 #
 # This script sets the milestone for all PRs merged since the given tag.
 # Usage: ./scripts/set-milestone.sh [START_TAG] [MILESTONE_NAME]
