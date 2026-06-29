@@ -376,7 +376,7 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 				"namespace", o.Namespace, "name", o.Name)
 			r.unWatchEvents(o, c)
 		} else {
-			// WebSocket is dead or missing - orUnsubscribing due to metadataphaned registry entry detected
+			// WebSocket is dead or missing - orphaned registry entry detected
 			logger.Info("Detected orphaned registry entry (WebSocket is dead or missing), cleaning up",
 				"namespace", o.Namespace, "name", o.Name)
 			r.eventWatcherRegistry.Delete(name)

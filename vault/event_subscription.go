@@ -35,6 +35,11 @@ const (
 	// comes back up, without requiring external triggers (requeue events or periodic
 	// reconciliation).
 	maxReconnectElapsedTime = 0
+	// maxReconnectErrorThreshold is the number of consecutive reconnect cycles allowed
+	// before the event loop gives up and stops, triggering notifySubscribersOfStop()
+	// which requeues all subscriber CRs for reconciliation. The counter resets to 0
+	// after any successful read, so transient blips do not accumulate.
+	maxReconnectErrorThreshold = 5
 )
 
 // SharedWebSocket manages a single WebSocket connection with multiple subscribers
@@ -182,6 +187,8 @@ func (ws *SharedWebSocket) eventLoop() {
 
 	ws.logger.Info("Event loop started")
 
+	errorCount := 0
+
 	for {
 		select {
 		case <-ws.ctx.Done():
@@ -193,6 +200,8 @@ func (ws *SharedWebSocket) eventLoop() {
 		default:
 			err := ws.readAndRoute()
 			if err == nil {
+				// Reset error count on any successful read.
+				errorCount = 0
 				continue
 			}
 
@@ -228,7 +237,14 @@ func (ws *SharedWebSocket) eventLoop() {
 				ws.logger.Error(reconnErr, "Failed to reconnect after backoff, stopping event loop")
 				return
 			}
-			ws.logger.Info("Successfully reconnected to WebSocket")
+
+			errorCount++
+			if errorCount >= maxReconnectErrorThreshold {
+				ws.logger.Error(nil, "Too many reconnects, stopping event loop",
+					"errorCount", errorCount, "threshold", maxReconnectErrorThreshold)
+				return
+			}
+			ws.logger.Info("Successfully reconnected to WebSocket", "errorCount", errorCount)
 		}
 	}
 }
