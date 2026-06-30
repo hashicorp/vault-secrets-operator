@@ -1,3 +1,19 @@
+## 1.4.1 (June 30th, 2026)
+
+* Building with Go 1.26.4
+* Test with Vault 2.0.3, 1.21.8, 1.20.13, 1.19.19
+* Test with Kind v0.32.0
+* Test with K8s 1.36.1, 1.35.5, 1.34.8, 1.33.12, 1.32.11
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group with 4 updates: ([#1294](https://github.com/hashicorp/vault-secrets-operator/pull/1294))
+* Bump the gomod-backward-compatible group with 9 updates: ([#1290](https://github.com/hashicorp/vault-secrets-operator/pull/1290))
+* Bump github.com/gruntwork-io/terratest from 0.56.0 to 1.0.0 in the gomod-breaking group across 1 directory: ([#1289](https://github.com/hashicorp/vault-secrets-operator/pull/1289))
+* Bump ubi10/ubi-minimal from 10.1 to 10.2: ([#1275](https://github.com/hashicorp/vault-secrets-operator/pull/1275))
+* Bump ubi10/ubi-micro from 10.1 to 10.2: ([#1274](https://github.com/hashicorp/vault-secrets-operator/pull/1274))
+* Bump the gomod-backward-compatible group across 1 directory with 10 updates: ([#1273](https://github.com/hashicorp/vault-secrets-operator/pull/1273))
+
+
 ## 1.4.0 (May 5th, 2026)
 
 Fix:
