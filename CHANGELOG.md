@@ -1,3 +1,9 @@
+## Unreleased
+
+Enhancements:
+* Support rollout-restart of Strimzi `KafkaConnect` resources: ([#TBD](https://github.com/hashicorp/vault-secrets-operator/pull/TBD))
+
+
 ## 1.4.0 (May 5th, 2026)
 
 Fix:

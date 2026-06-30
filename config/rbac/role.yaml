@@ -66,6 +66,15 @@ rules:
   - patch
   - watch
 - apiGroups:
+  - kafka.strimzi.io
+  resources:
+  - kafkaconnects
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
   - secrets.hashicorp.com
   resources:
   - csisecrets

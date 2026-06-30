@@ -44,10 +44,14 @@ type Destination struct {
 // with a timestamp value of when the trigger was executed.
 // E.g. vso.secrets.hashicorp.com/restartedAt: "2023-03-23T13:39:31Z"
 //
-// Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
+// For Strimzi KafkaConnect the annotation is instead applied to
+// 'spec.template.pod.metadata.annotations', which is where Strimzi propagates
+// pod-level annotations from.
+//
+// Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout, KafkaConnect
 type RolloutRestartTarget struct {
 	// Kind of the resource
-	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet,argo.Rollout}
+	// +kubebuilder:validation:Enum={Deployment,DaemonSet,StatefulSet,argo.Rollout,KafkaConnect}
 	Kind string `json:"kind"`
 	// Name of the resource
 	Name string `json:"name"`

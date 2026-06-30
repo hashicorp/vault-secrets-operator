@@ -71,6 +71,7 @@ type VaultStaticSecretReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=argoproj.io,resources=rollouts,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=kafka.strimzi.io,resources=kafkaconnects,verbs=get;list;watch;patch
 //
 
 func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
