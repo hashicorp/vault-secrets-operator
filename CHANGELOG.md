@@ -1,5 +1,6 @@
 ## 1.4.1 (June 30th, 2026)
 
+Build:
 * Building with Go 1.26.4
 * Test with Vault 2.0.3, 1.21.8, 1.20.13, 1.19.19
 * Test with Kind v0.32.0
