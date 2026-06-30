@@ -28,7 +28,7 @@ require (
 	github.com/go-openapi/runtime v0.32.4
 	github.com/go-openapi/strfmt v0.26.4
 	github.com/google/uuid v1.6.0
-	github.com/gruntwork-io/terratest v1.0.1
+	github.com/gruntwork-io/terratest v0.56.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-rootcerts v1.0.2
 	github.com/hashicorp/go-secure-stdlib/awsutil v0.3.0
@@ -64,7 +64,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.16 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.15 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.22 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.1.17 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.41 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.23 // indirect
@@ -74,7 +74,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.57.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.297.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.57.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.39.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.78.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.8 // indirect
