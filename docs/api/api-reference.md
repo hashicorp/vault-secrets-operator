@@ -532,7 +532,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this secret |  |  |
+| `instantUpdates` _boolean_ | InstantUpdates is a flag to indicate that event-driven updates are<br />enabled for this secret. When enabled, VSO subscribes to Vault's event<br />streaming API and reconciles immediately when a change is detected.<br />On event-triggered reconciles, VSO automatically attaches the<br />X-Vault-Index header to Vault requests to prevent stale reads on Vault<br />Performance Standbys. Requires Vault 1.20+ for X-Vault-Index support. |  |  |
 
 
 #### Template
