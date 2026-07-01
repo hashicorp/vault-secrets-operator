@@ -410,6 +410,72 @@ func TestSharedWebSocket_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 	assert.Greater(t, ws.GetSubscriberCount(), 0)
 }
 
+// TestSharedWebSocket_NotifySubscribersOfStop_CallsOnStopAndRequeues verifies
+// that stop notification invokes the subscriber cleanup callback and enqueues a
+// reconciliation event for the subscribed resource.
+func TestSharedWebSocket_NotifySubscribersOfStop_CallsOnStopAndRequeues(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	onStopCalled := false
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "test-secret"},
+		VaultPath:    "kv/data/app1/config",
+		ResourceType: "VaultStaticSecret",
+		ReconcileCh:  reconcileCh,
+		OnStop: func() {
+			onStopCalled = true
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	assert.True(t, onStopCalled)
+	require.Len(t, reconcileCh, 1)
+	evt := <-reconcileCh
+	assert.Equal(t, "test-secret", evt.Object.GetName())
+	assert.Equal(t, "default", evt.Object.GetNamespace())
+}
+
+// TestSharedWebSocket_NotifySubscribersOfStop_FullChannelStillCallsOnStop
+// verifies that stop notification still runs subscriber cleanup even when the
+// reconciliation channel is already full and the requeue event is dropped.
+func TestSharedWebSocket_NotifySubscribersOfStop_FullChannelStillCallsOnStop(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	reconcileCh <- event.GenericEvent{}
+	onStopCalled := false
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "test-secret"},
+		VaultPath:    "kv/data/app1/config",
+		ResourceType: "VaultStaticSecret",
+		ReconcileCh:  reconcileCh,
+		OnStop: func() {
+			onStopCalled = true
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	assert.True(t, onStopCalled)
+	assert.Len(t, reconcileCh, 1)
+}
+
+// TestSharedWebSocket_IsHealthy_StoppedReturnsFalse verifies that a websocket
+// marked as stopped is no longer considered healthy.
+func TestSharedWebSocket_IsHealthy_StoppedReturnsFalse(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	ws.stopped = true
+	assert.False(t, ws.IsHealthy())
+}
+
 // Placeholder for future integration tests
 func TestSharedWebSocket_Integration(t *testing.T) {
 	t.Skip("Integration tests will be added in Phase 4")

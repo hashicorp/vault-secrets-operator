@@ -197,6 +197,7 @@ type Client interface {
 	Renewable() bool
 	SubscribeToEvents(context.Context, EventType, *Subscriber) error
 	UnsubscribeFromEvents(EventType, SubscriptionKey, string) error
+	GetWebSocket(EventType) *SharedWebSocket
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -1072,9 +1073,9 @@ func (c *defaultClient) getOrCreateWebSocket(
 	ctx context.Context,
 	eventType EventType,
 ) (*SharedWebSocket, error) {
-	// Check if WebSocket already exists (read lock)
+	// Check if WebSocket already exists and is healthy (read lock)
 	c.websocketMu.RLock()
-	if ws, exists := c.websockets[eventType]; exists {
+	if ws, exists := c.websockets[eventType]; exists && ws.IsHealthy() {
 		c.websocketMu.RUnlock()
 		return ws, nil
 	}
@@ -1086,13 +1087,34 @@ func (c *defaultClient) getOrCreateWebSocket(
 
 	// Double-check after acquiring write lock
 	if ws, exists := c.websockets[eventType]; exists {
-		return ws, nil
+		// Check if it's healthy
+		if ws.IsHealthy() {
+			return ws, nil
+		}
+		// WebSocket exists but is dead, close it properly before removing from map
+		logger := log.FromContext(ctx).WithValues(
+			"clientID", c.id,
+			"eventType", eventType,
+		)
+		logger.Info("Closing dead WebSocket before creating new one")
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close dead WebSocket")
+		}
+		delete(c.websockets, eventType)
 	}
 
 	// Create new SharedWebSocket
 	ws, err := NewSharedWebSocket(ctx, c, eventType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shared websocket: %w", err)
+	}
+	// Remove this websocket from the client registry when its event loop stops.
+	ws.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[eventType]; exists && current == ws {
+			delete(c.websockets, eventType)
+		}
 	}
 
 	// Initialize map if needed
@@ -1147,4 +1169,11 @@ func (c *defaultClient) GetWebSocketSubscriberCount() int {
 		total += ws.GetSubscriberCount()
 	}
 	return total
+}
+
+// GetWebSocket returns the SharedWebSocket for the given event type, or nil if not found
+func (c *defaultClient) GetWebSocket(eventType EventType) *SharedWebSocket {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+	return c.websockets[eventType]
 }

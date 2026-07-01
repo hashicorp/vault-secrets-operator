@@ -63,6 +63,8 @@ type Subscriber struct {
 	ResourceType string
 	// ReconcileCh is the channel to send reconciliation events to
 	ReconcileCh chan event.GenericEvent
+	// OnStop is called when the WebSocket event loop stops
+	OnStop func()
 }
 
 // SubscriptionKey uniquely identifies a subscription based on Vault namespace and path

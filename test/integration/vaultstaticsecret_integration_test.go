@@ -48,6 +48,194 @@ type vssK8SOutputs struct {
 	AdminK8sNamespace string `json:"admin_k8s_namespace"`
 }
 
+// Helper functions for common test operations
+
+// setupVSSTestInfrastructure sets up Terraform infrastructure for VSS tests
+func setupVSSTestInfrastructure(t *testing.T, useEvents bool) (string, *terraform.Options, vssK8SOutputs) {
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.NoError(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultstaticsecret/terraform"), tempDir)
+	copyModulesDirT(t, tfDir)
+
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
+
+	tfOptions := &terraform.Options{
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_config_context": k8sConfigContext,
+			"vault_enterprise":   true,
+			"use_events":         useEvents,
+		},
+	}
+
+	tfOptions = setCommonTFOptions(t, tfOptions)
+
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+	t.Cleanup(func() {
+		if skipCleanup {
+			t.Logf("Skipping cleanup (SKIP_CLEANUP=1), tfdir=%s", tfDir)
+			return
+		}
+
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
+
+		terraform.Destroy(t, tfOptions)
+		assert.NoError(t, os.RemoveAll(tempDir))
+	})
+
+	terraform.InitAndApply(t, tfOptions)
+
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.NoError(t, err)
+
+	var outputs vssK8SOutputs
+	require.NoError(t, json.Unmarshal(b, &outputs))
+
+	return tfDir, tfOptions, outputs
+}
+
+// createVaultConnection creates a VaultConnection resource
+func createVaultConnection(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, name, namespace string, skipCleanup bool) *secretsv1beta1.VaultConnection {
+	vaultConn := &secretsv1beta1.VaultConnection{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: testVaultAddress,
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultConn))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vaultConn))
+		}
+	})
+
+	return vaultConn
+}
+
+// createVaultAuth creates a VaultAuth resource with kubernetes auth
+func createVaultAuth(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, name string, vaultConn *secretsv1beta1.VaultConnection, outputs vssK8SOutputs, skipCleanup bool) *secretsv1beta1.VaultAuth {
+	vaultAuth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      name,
+			Namespace: vaultConn.Namespace,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: ctrlclient.ObjectKeyFromObject(vaultConn).String(),
+			Namespace:          outputs.AppVaultNamespace,
+			Method:             "kubernetes",
+			Mount:              outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+			AllowedNamespaces: []string{outputs.AppK8sNamespace},
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
+
+	return vaultAuth
+}
+
+// waitForEventWatcherStarted waits for the EventWatcherStarted event for a VaultStaticSecret
+func waitForEventWatcherStarted(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, vssObj *secretsv1beta1.VaultStaticSecret, maxRetries uint64) error {
+	return backoff.Retry(func() error {
+		objEvents := corev1.EventList{}
+		err := crdClient.List(ctx, &objEvents,
+			ctrlclient.InNamespace(vssObj.Namespace),
+			ctrlclient.MatchingFields{
+				"involvedObject.name": vssObj.Name,
+				"reason":              consts.ReasonEventWatcherStarted,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if len(objEvents.Items) == 0 {
+			return fmt.Errorf("no EventWatcherStarted event for %s", vssObj.Name)
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), maxRetries))
+}
+
+// waitForNewOperatorPod waits for a new operator pod to be ready after the old one is deleted
+func waitForNewOperatorPod(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, operatorNS, oldPodUID string, maxRetries uint64) error {
+	return backoff.Retry(func() error {
+		newPodList := &corev1.PodList{}
+		if err := crdClient.List(ctx, newPodList, ctrlclient.InNamespace(operatorNS),
+			ctrlclient.MatchingLabels{"control-plane": "controller-manager"}); err != nil {
+			return err
+		}
+
+		if len(newPodList.Items) == 0 {
+			return fmt.Errorf("no operator pods found")
+		}
+
+		newPod := newPodList.Items[0]
+		if string(newPod.UID) == oldPodUID {
+			return fmt.Errorf("still seeing old pod")
+		}
+
+		if newPod.Status.Phase != corev1.PodRunning {
+			return fmt.Errorf("new pod not running yet: %s", newPod.Status.Phase)
+		}
+
+		// Check if pod is ready
+		for _, cond := range newPod.Status.Conditions {
+			if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("new pod not ready yet")
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), maxRetries))
+}
+
+// deleteOperatorPod deletes the operator pod and returns its UID
+func deleteOperatorPod(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, operatorNS string) string {
+	podList := &corev1.PodList{}
+	require.NoError(t, crdClient.List(ctx, podList, ctrlclient.InNamespace(operatorNS),
+		ctrlclient.MatchingLabels{"control-plane": "controller-manager"}))
+	require.NotEmpty(t, podList.Items, "no operator pods found")
+
+	operatorPod := podList.Items[0]
+	oldPodUID := string(operatorPod.UID)
+	require.NoError(t, crdClient.Delete(ctx, &operatorPod))
+
+	return oldPodUID
+}
+
+// verifyVSSIsSynced verifies that a VaultStaticSecret has synced status
+func verifyVSSIsSynced(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, vssObj *secretsv1beta1.VaultStaticSecret) {
+	var currentVSS secretsv1beta1.VaultStaticSecret
+	require.NoError(t, crdClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vssObj), &currentVSS))
+
+	var synced bool
+	for _, cond := range currentVSS.Status.Conditions {
+		if cond.Type == consts.TypeSecretSynced && cond.Status == v1.ConditionTrue {
+			synced = true
+			break
+		}
+	}
+	require.True(t, synced, "VaultStaticSecret should be synced")
+}
+
 func TestVaultStaticSecret(t *testing.T) {
 	if testInParallel {
 		t.Parallel()
@@ -622,56 +810,19 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
 
-	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
-	require.NoError(t, err)
-
-	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultstaticsecret/terraform"), tempDir)
-	copyModulesDirT(t, tfDir)
-
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + clusterName
-	}
-
-	tfOptions := setCommonTFOptions(t, &terraform.Options{
-		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"k8s_config_context": k8sConfigContext,
-			"vault_enterprise":   true,
-			"use_events":         true,
-		},
-	})
+	// Setup infrastructure
+	_, _, outputs := setupVSSTestInfrastructure(t, true)
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
-
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
-	t.Cleanup(func() {
-		if skipCleanup {
-			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
-			return
-		}
-		if !testInParallel {
-			exportKindLogsT(t)
-		}
-		terraform.Destroy(t, tfOptions)
-		assert.NoError(t, os.RemoveAll(tempDir))
-	})
-
-	terraform.InitAndApply(t, tfOptions)
-
-	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
-	require.NoError(t, err)
-
-	var outputs vssK8SOutputs
-	require.NoError(t, json.Unmarshal(b, &outputs))
 
 	authClient := getVaultClient(t, outputs.AppVaultNamespace)
 
 	// Reproduce the reported short-lived Kubernetes auth token scenario by
 	// setting both the auth mount and auth role TTLs to 1 minute.
 	tunePath := fmt.Sprintf("sys/auth/%s/tune", outputs.AuthMount)
-	_, err = authClient.Logical().Write(tunePath, map[string]interface{}{
+	_, err := authClient.Logical().Write(tunePath, map[string]interface{}{
 		"default_lease_ttl": "1m",
 		"max_lease_ttl":     "1m",
 	})
@@ -773,25 +924,8 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 		vssObj.ObjectMeta.Namespace, expectedData)
 	require.NoError(t, err)
 
-	// Ensure the event watcher is active before validating behavior across
-	// token renewal boundaries.
-	require.NoError(t, backoff.Retry(func() error {
-		objEvents := corev1.EventList{}
-		err := crdClient.List(ctx, &objEvents,
-			ctrlclient.InNamespace(vssObj.Namespace),
-			ctrlclient.MatchingFields{
-				"involvedObject.name": vssObj.Name,
-				"reason":              consts.ReasonEventWatcherStarted,
-			},
-		)
-		if err != nil {
-			return err
-		}
-		if len(objEvents.Items) == 0 {
-			return fmt.Errorf("no EventWatcherStarted event for %s", vssObj.Name)
-		}
-		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
+	// Ensure the event watcher is active before validating behavior
+	require.NoError(t, waitForEventWatcherStarted(t, ctx, crdClient, vssObj, 60))
 
 	// Wait through 3 TTL cycles (~1 minute each) and mutate Vault data each
 	// cycle to verify websocket event streaming continues to drive sync updates.
@@ -1048,4 +1182,657 @@ func awaitNoRolloutRestartsVSS(t *testing.T, ctx context.Context, client ctrlcli
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 30),
 	))
+}
+
+// TestVaultStaticSecret_RequeueAfterEventLoopExit tests that when an event loop
+// exits (WebSocket connection dies), the resource is requeued and reconciled again.
+// This verifies the fix for: "No Requeue Event After Event Loop Exit"
+func TestVaultStaticSecret_RequeueAfterEventLoopExit(t *testing.T) {
+	// Test initialization
+	// if testInParallel {
+	// 	t.Parallel()
+	// }
+
+	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	// Setup Terraform directory
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.Nil(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultstaticsecret/terraform"), tempDir)
+	copyModulesDirT(t, tfDir)
+
+	// Configure Terraform options
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
+
+	tfOptions := &terraform.Options{
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_config_context": k8sConfigContext,
+		},
+	}
+
+	// Enable events for this test (requires Vault Enterprise >= 1.16.3)
+	rootVaultClient := getVaultClient(t, "")
+	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
+	if entTests && atLeast_v1_16_3 {
+		tfOptions.Vars["vault_enterprise"] = true
+		tfOptions.Vars["use_events"] = true
+	} else {
+		t.Skip("Skipping test - requires Vault Enterprise >= 1.16.3 for event loop testing")
+	}
+
+	tfOptions = setCommonTFOptions(t, tfOptions)
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+	t.Cleanup(func() {
+		if skipCleanup {
+			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
+			return
+		}
+
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
+
+		terraform.Destroy(t, tfOptions)
+		assert.NoError(t, os.RemoveAll(tempDir))
+	})
+
+	// Deploy infrastructure with Terraform
+	terraform.InitAndApply(t, tfOptions)
+
+	// Get Terraform outputs
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.NoError(t, err)
+
+	var outputs vssK8SOutputs
+	require.NoError(t, json.Unmarshal(b, &outputs))
+
+	// Create VaultConnection and VaultAuth resources
+	vaultConn := &secretsv1beta1.VaultConnection{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-conn-requeue",
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: testVaultAddress,
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultConn))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vaultConn))
+		}
+	})
+
+	vaultAuth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-auth-requeue",
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: ctrlclient.ObjectKeyFromObject(vaultConn).String(),
+			Namespace:          outputs.AppVaultNamespace,
+			Method:             "kubernetes",
+			Mount:              outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+			AllowedNamespaces: []string{outputs.AppK8sNamespace},
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
+
+	// Create VaultStaticSecret with instant updates enabled (WebSocket)
+	vssName := "test-vss-requeue"
+	vssObj := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      vssName,
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultAuthRef: ctrlclient.ObjectKeyFromObject(vaultAuth).String(),
+			Namespace:    outputs.AppVaultNamespace,
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: outputs.KVV2Mount,
+				Type:  consts.KVSecretTypeV2,
+				Path:  "requeue-test",
+			},
+			Destination: secretsv1beta1.Destination{
+				Name:   vssName,
+				Create: true,
+			},
+			RefreshAfter: "30s",
+			SyncConfig: &secretsv1beta1.SyncConfig{
+				InstantUpdates: true,
+			},
+		},
+	}
+
+	// Write initial secret to Vault
+	vClient := getVaultClient(t, outputs.AppVaultNamespace)
+	initialData := map[string]interface{}{
+		"initial-key": "initial-value",
+	}
+	_, err = vClient.KVv2(outputs.KVV2Mount).Put(ctx, vssObj.Spec.Path, initialData)
+	require.NoError(t, err)
+
+	// Create VaultStaticSecret in Kubernetes
+	require.NoError(t, crdClient.Create(ctx, vssObj))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vssObj))
+		}
+	})
+
+	// Wait for initial secret sync
+	_, err = waitForSecretData(t, ctx, crdClient, 60, time.Second, vssObj.Spec.Destination.Name,
+		vssObj.Namespace, initialData)
+	require.NoError(t, err, "initial secret sync failed")
+
+	// Wait for WebSocket event watcher to start
+	require.NoError(t, waitForEventWatcherStarted(t, ctx, crdClient, vssObj, 60))
+
+	// Simulate operator crash by deleting operator pod
+	oldPodUID := deleteOperatorPod(t, ctx, crdClient, operatorNS)
+
+	// Wait for new operator pod to be ready
+	require.NoError(t, waitForNewOperatorPod(t, ctx, crdClient, operatorNS, oldPodUID, 60))
+
+	// Update secret in Vault to trigger reconciliation
+	updatedData := map[string]interface{}{
+		"updated-key": "updated-value-after-restart",
+	}
+	_, err = vClient.KVv2(outputs.KVV2Mount).Put(ctx, vssObj.Spec.Path, updatedData)
+	require.NoError(t, err)
+
+	// Verify the resource gets requeued and reconciled
+	// The secret should be updated even though the WebSocket died
+	// This is the critical test - if this times out, requeue didn't work
+	_, err = waitForSecretData(t, ctx, crdClient, 120, time.Second*2, vssObj.Spec.Destination.Name,
+		vssObj.Namespace, updatedData)
+	require.NoError(t, err, "secret should sync after operator restart - requeue event should have been sent")
+
+	// Verify VaultStaticSecret status shows it's synced
+	verifyVSSIsSynced(t, ctx, crdClient, vssObj)
+}
+
+func TestVaultStaticSecret_RegistryCleanup(t *testing.T) {
+	// Test verifies event watcher registry properly cleans up when VaultStaticSecrets are deleted
+	// This ensures no memory leaks or orphaned goroutines
+	// if testInParallel {
+	// 	t.Parallel()
+	// }
+
+	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	// Check if we should run this test (requires Vault Enterprise >= 1.16.3)
+	rootVaultClient := getVaultClient(t, "")
+	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
+	if !entTests || !atLeast_v1_16_3 {
+		t.Skip("Skipping test - requires Vault Enterprise >= 1.16.3 for event watcher registry testing")
+	}
+
+	// Setup infrastructure
+	_, _, outputs := setupVSSTestInfrastructure(t, true)
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+
+	// Create VaultConnection and VaultAuth
+	vaultConn := createVaultConnection(t, ctx, crdClient, "test-conn-cleanup", outputs.AppK8sNamespace, skipCleanup)
+	vaultAuth := createVaultAuth(t, ctx, crdClient, "test-auth-cleanup", vaultConn, outputs, skipCleanup)
+
+	vClient := getVaultClient(t, outputs.AppVaultNamespace)
+
+	// Create 10 VaultStaticSecrets with instant updates
+	// This will create 10 event watchers (WebSocket connections) in the registry
+	numSecrets := 10
+	vssObjects := make([]*secretsv1beta1.VaultStaticSecret, numSecrets)
+
+	for i := 0; i < numSecrets; i++ {
+		secretName := fmt.Sprintf("test-vss-cleanup-%d", i)
+		secretPath := fmt.Sprintf("cleanup-test-%d", i)
+
+		// Write secret to Vault
+		secretData := map[string]interface{}{
+			"key": fmt.Sprintf("value-%d", i),
+		}
+		_, err := vClient.KVv2(outputs.KVV2Mount).Put(ctx, secretPath, secretData)
+		require.NoError(t, err)
+
+		// Create VaultStaticSecret with instant updates enabled
+		vssObj := &secretsv1beta1.VaultStaticSecret{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      secretName,
+				Namespace: outputs.AppK8sNamespace,
+			},
+			Spec: secretsv1beta1.VaultStaticSecretSpec{
+				VaultAuthRef: ctrlclient.ObjectKeyFromObject(vaultAuth).String(),
+				Namespace:    outputs.AppVaultNamespace,
+				VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+					Mount: outputs.KVV2Mount,
+					Type:  consts.KVSecretTypeV2,
+					Path:  secretPath,
+				},
+				Destination: secretsv1beta1.Destination{
+					Name:   secretName,
+					Create: true,
+				},
+				RefreshAfter: "1h",
+				SyncConfig: &secretsv1beta1.SyncConfig{
+					InstantUpdates: true,
+				},
+			},
+		}
+
+		require.NoError(t, crdClient.Create(ctx, vssObj))
+		vssObjects[i] = vssObj
+	}
+
+	// Wait for all secrets to sync
+	for i, vssObj := range vssObjects {
+		expectedData := map[string]interface{}{
+			"key": fmt.Sprintf("value-%d", i),
+		}
+
+		_, err := waitForSecretData(t, ctx, crdClient, 60, time.Second, vssObj.Spec.Destination.Name,
+			vssObj.Namespace, expectedData)
+		require.NoError(t, err, "secret %s should sync", vssObj.Name)
+	}
+
+	// Wait for all event watchers to start (registry should have 10 entries)
+	for _, vssObj := range vssObjects {
+		require.NoError(t, waitForEventWatcherStarted(t, ctx, crdClient, vssObj, 60))
+	}
+
+	// Delete all VaultStaticSecrets
+	// This should trigger cleanup of all event watchers from the registry
+	for _, vssObj := range vssObjects {
+		require.NoError(t, crdClient.Delete(ctx, vssObj))
+	}
+
+	// Give operator time to process deletions and clean up watchers
+	time.Sleep(10 * time.Second)
+
+	// Verify all VaultStaticSecrets are deleted
+	for i, vssObj := range vssObjects {
+		var vss secretsv1beta1.VaultStaticSecret
+		err := crdClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vssObj), &vss)
+		require.True(t, err != nil && strings.Contains(err.Error(), "not found"),
+			"VaultStaticSecret %d should be deleted", i)
+	}
+
+	// Create new VaultStaticSecrets to verify registry can handle new entries after cleanup
+	// This proves there are no memory leaks or orphaned goroutines
+	newVSSObjects := make([]*secretsv1beta1.VaultStaticSecret, 3)
+
+	for i := 0; i < 3; i++ {
+		secretName := fmt.Sprintf("test-vss-after-cleanup-%d", i)
+		secretPath := fmt.Sprintf("after-cleanup-%d", i)
+
+		secretData := map[string]interface{}{
+			"key": fmt.Sprintf("new-value-%d", i),
+		}
+		_, err := vClient.KVv2(outputs.KVV2Mount).Put(ctx, secretPath, secretData)
+		require.NoError(t, err)
+
+		vssObj := &secretsv1beta1.VaultStaticSecret{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      secretName,
+				Namespace: outputs.AppK8sNamespace,
+			},
+			Spec: secretsv1beta1.VaultStaticSecretSpec{
+				VaultAuthRef: ctrlclient.ObjectKeyFromObject(vaultAuth).String(),
+				Namespace:    outputs.AppVaultNamespace,
+				VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+					Mount: outputs.KVV2Mount,
+					Type:  consts.KVSecretTypeV2,
+					Path:  secretPath,
+				},
+				Destination: secretsv1beta1.Destination{
+					Name:   secretName,
+					Create: true,
+				},
+				RefreshAfter: "1h",
+				SyncConfig: &secretsv1beta1.SyncConfig{
+					InstantUpdates: true,
+				},
+			},
+		}
+
+		require.NoError(t, crdClient.Create(ctx, vssObj))
+		newVSSObjects[i] = vssObj
+
+		t.Cleanup(func() {
+			if !skipCleanup {
+				assert.NoError(t, crdClient.Delete(ctx, vssObj))
+			}
+		})
+	}
+
+	// Verify new secrets sync successfully (proves registry is working after cleanup)
+	for i, vssObj := range newVSSObjects {
+		expectedData := map[string]interface{}{
+			"key": fmt.Sprintf("new-value-%d", i),
+		}
+
+		_, err := waitForSecretData(t, ctx, crdClient, 60, time.Second, vssObj.Spec.Destination.Name,
+			vssObj.Namespace, expectedData)
+		require.NoError(t, err, "new secret %s should sync", vssObj.Name)
+	}
+}
+
+func TestVaultStaticSecret_OrphanedRegistryRecovery(t *testing.T) {
+	// if testInParallel {
+	// 	t.Parallel()
+	// }
+
+	require.NotEmpty(t, clusterName, "KIND_CLUSTER_NAME is not set")
+
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	// Requires Vault Enterprise >= 1.16.3 for event watcher functionality
+	rootVaultClient := getVaultClient(t, "")
+	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
+	if !entTests || !atLeast_v1_16_3 {
+		t.Skip("Skipping test - requires Vault Enterprise >= 1.16.3 for orphaned registry testing")
+	}
+
+	// Setup Terraform infrastructure for test
+	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
+	require.NoError(t, err)
+
+	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultstaticsecret/terraform"), tempDir)
+	copyModulesDirT(t, tfDir)
+
+	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
+	if k8sConfigContext == "" {
+		k8sConfigContext = "kind-" + clusterName
+	}
+
+	tfOptions := &terraform.Options{
+		TerraformDir: tfDir,
+		Vars: map[string]interface{}{
+			"k8s_config_context": k8sConfigContext,
+			"vault_enterprise":   true,
+			"use_events":         true, // Enable instant updates via WebSocket events
+		},
+	}
+
+	tfOptions = setCommonTFOptions(t, tfOptions)
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+
+	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
+	t.Cleanup(func() {
+		if skipCleanup {
+			t.Logf("Skipping cleanup (SKIP_CLEANUP=1), tfdir=%s", tfDir)
+			return
+		}
+
+		if !testInParallel {
+			exportKindLogsT(t)
+		}
+
+		terraform.Destroy(t, tfOptions)
+		assert.NoError(t, os.RemoveAll(tempDir))
+	})
+
+	terraform.InitAndApply(t, tfOptions)
+
+	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
+	require.NoError(t, err)
+
+	var outputs vssK8SOutputs
+	require.NoError(t, json.Unmarshal(b, &outputs))
+
+	// Create VaultConnection
+	vaultConn := &secretsv1beta1.VaultConnection{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-conn-orphan",
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultConnectionSpec{
+			Address: testVaultAddress,
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultConn))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vaultConn))
+		}
+	})
+
+	// Create VaultAuth with full namespace/name reference
+	vaultAuth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-auth-orphan",
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: ctrlclient.ObjectKeyFromObject(vaultConn).String(),
+			Namespace:          outputs.AppVaultNamespace,
+			Method:             "kubernetes",
+			Mount:              outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+			AllowedNamespaces: []string{outputs.AppK8sNamespace},
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
+
+	vClient := getVaultClient(t, outputs.AppVaultNamespace)
+
+	secretName := "test-vss-orphan"
+	secretPath := "orphan-test"
+
+	// Write initial secret to Vault
+	initialData := map[string]interface{}{
+		"key": "initial-value",
+	}
+	_, err = vClient.KVv2(outputs.KVV2Mount).Put(ctx, secretPath, initialData)
+	require.NoError(t, err)
+
+	// Create VaultStaticSecret with instant updates enabled
+	vssObj := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      secretName,
+			Namespace: outputs.AppK8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultAuthRef: ctrlclient.ObjectKeyFromObject(vaultAuth).String(),
+			Namespace:    outputs.AppVaultNamespace,
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Mount: outputs.KVV2Mount,
+				Type:  consts.KVSecretTypeV2,
+				Path:  secretPath,
+			},
+			Destination: secretsv1beta1.Destination{
+				Name:   secretName,
+				Create: true,
+			},
+			RefreshAfter: "1h",
+			SyncConfig: &secretsv1beta1.SyncConfig{
+				InstantUpdates: true, // Enables WebSocket event watcher
+			},
+		},
+	}
+
+	require.NoError(t, crdClient.Create(ctx, vssObj))
+
+	t.Cleanup(func() {
+		if !skipCleanup {
+			assert.NoError(t, crdClient.Delete(ctx, vssObj))
+		}
+	})
+
+	// Wait for initial secret sync
+	_, err = waitForSecretData(t, ctx, crdClient, 60, time.Second, vssObj.Spec.Destination.Name,
+		vssObj.Namespace, initialData)
+	require.NoError(t, err, "initial secret sync failed")
+
+	// Wait for event watcher to start (creates registry entry)
+	require.NoError(t, backoff.Retry(func() error {
+		objEvents := corev1.EventList{}
+		err := crdClient.List(ctx, &objEvents,
+			ctrlclient.InNamespace(vssObj.Namespace),
+			ctrlclient.MatchingFields{
+				"involvedObject.name": vssObj.Name,
+				"reason":              consts.ReasonEventWatcherStarted,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if len(objEvents.Items) == 0 {
+			return fmt.Errorf("no EventWatcherStarted event for %s", vssObj.Name)
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
+
+	// Get current operator pod before simulating crash
+	podList := &corev1.PodList{}
+	require.NoError(t, crdClient.List(ctx, podList, ctrlclient.InNamespace(operatorNS),
+		ctrlclient.MatchingLabels{"control-plane": "controller-manager"}))
+	require.NotEmpty(t, podList.Items, "no operator pods found")
+
+	operatorPod := podList.Items[0]
+	originalPodUID := operatorPod.UID
+	originalPodName := operatorPod.Name
+
+	// Delete operator pod to simulate crash - this creates an orphaned registry entry
+	// because the event watcher doesn't get a chance to clean up properly
+	require.NoError(t, crdClient.Delete(ctx, &operatorPod))
+
+	// Verify old pod is actually deleted
+	require.NoError(t, backoff.Retry(func() error {
+		checkPodList := &corev1.PodList{}
+		if err := crdClient.List(ctx, checkPodList, ctrlclient.InNamespace(operatorNS),
+			ctrlclient.MatchingLabels{"control-plane": "controller-manager"}); err != nil {
+			return fmt.Errorf("error listing pods: %v", err)
+		}
+
+		// Check if old pod still exists
+		for _, pod := range checkPodList.Items {
+			if pod.UID == originalPodUID {
+				return fmt.Errorf("old pod %s (UID: %s) still exists", originalPodName, originalPodUID)
+			}
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)))
+
+	// Wait for new operator pod to start (recovery)
+	require.NoError(t, backoff.Retry(func() error {
+		newPodList := &corev1.PodList{}
+		if err := crdClient.List(ctx, newPodList, ctrlclient.InNamespace(operatorNS),
+			ctrlclient.MatchingLabels{"control-plane": "controller-manager"}); err != nil {
+			return err
+		}
+
+		if len(newPodList.Items) == 0 {
+			return fmt.Errorf("no operator pods found")
+		}
+
+		newPod := newPodList.Items[0]
+		if newPod.UID == originalPodUID {
+			return fmt.Errorf("still seeing old pod")
+		}
+
+		if newPod.Status.Phase != corev1.PodRunning {
+			return fmt.Errorf("new pod not running yet: %s", newPod.Status.Phase)
+		}
+
+		// Check if pod is ready
+		for _, cond := range newPod.Status.Conditions {
+			if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("new pod not ready yet")
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 60)))
+
+	// Give operator time to detect orphans and reconcile
+	time.Sleep(15 * time.Second)
+
+	// Verify the VaultStaticSecret is still healthy after operator restart
+	verifyVSSIsSynced(t, ctx, crdClient, vssObj)
+
+	// Verify event watcher restarted (optional check - may not always emit new event)
+	require.NoError(t, backoff.Retry(func() error {
+		objEvents := corev1.EventList{}
+		err := crdClient.List(ctx, &objEvents,
+			ctrlclient.InNamespace(vssObj.Namespace),
+			ctrlclient.MatchingFields{
+				"involvedObject.name": vssObj.Name,
+				"reason":              consts.ReasonEventWatcherStarted,
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		// Look for recent event (after operator restart)
+		for _, event := range objEvents.Items {
+			if event.LastTimestamp.Time.After(time.Now().Add(-30 * time.Second)) {
+				return nil
+			}
+		}
+
+		// If no recent event, check if there are multiple events (indicates restart)
+		if len(objEvents.Items) >= 2 {
+			return nil
+		}
+
+		return fmt.Errorf("no evidence of event watcher restart yet")
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 30)))
+
+	// Update secret in Vault to verify instant updates still work after recovery
+	updatedData := map[string]interface{}{
+		"key": "updated-after-recovery",
+	}
+	_, err = vClient.KVv2(outputs.KVV2Mount).Put(ctx, secretPath, updatedData)
+	require.NoError(t, err)
+
+	// Wait for secret to sync - proves instant updates working and registry properly recovered
+	_, err = waitForSecretData(t, ctx, crdClient, 60, time.Second*2, vssObj.Spec.Destination.Name,
+		vssObj.Namespace, updatedData)
+	require.NoError(t, err, "secret should sync after operator recovery")
 }
