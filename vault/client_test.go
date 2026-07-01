@@ -20,9 +20,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/common"
@@ -1055,6 +1057,234 @@ func Test_defaultClient_Untaint(t *testing.T) {
 			tt.assertFunc(t, got, "Untaint()")
 		})
 	}
+}
+
+// Test_defaultClient_WebSocketManagement tests the WebSocket management methods
+// added to defaultClient for the shared WebSocket architecture. These tests verify:
+// - GetWebSocketCount() returns correct count of active WebSockets
+// - GetWebSocketSubscriberCount() returns correct total subscriber count
+// - UnsubscribeFromEvents() handles non-existent WebSockets correctly
+// - closeWebSocket() properly removes WebSockets from the map
+//
+// These tests use mock WebSockets (via newTestSharedWebSocket) to avoid requiring
+// real Vault connections. Integration tests should cover end-to-end WebSocket lifecycle.
+func Test_defaultClient_WebSocketManagement(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GetWebSocketCount-zero", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		assert.Equal(t, 0, c.GetWebSocketCount())
+	})
+
+	t.Run("GetWebSocketCount-one", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		// Manually add a test WebSocket
+		c.websockets[EventTypeKV] = newTestSharedWebSocket(EventTypeKV)
+		assert.Equal(t, 1, c.GetWebSocketCount())
+	})
+
+	t.Run("GetWebSocketCount-multiple", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		c.websockets[EventTypeKV] = newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeDatabase] = newTestSharedWebSocket(EventTypeDatabase)
+		assert.Equal(t, 2, c.GetWebSocketCount())
+	})
+
+	t.Run("GetWebSocketSubscriberCount-zero", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		assert.Equal(t, 0, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("GetWebSocketSubscriberCount-with-subscribers", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		ws := newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeKV] = ws
+
+		// Add subscribers directly to the WebSocket
+		sub1 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-1"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: "VaultStaticSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		sub2 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-2"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: "VaultStaticSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		require.NoError(t, ws.Subscribe(sub1))
+		require.NoError(t, ws.Subscribe(sub2))
+
+		assert.Equal(t, 2, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("GetWebSocketSubscriberCount-multiple-websockets", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		// KV WebSocket with 2 subscribers
+		kvWS := newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeKV] = kvWS
+		sub1 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-1"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: "VaultStaticSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		sub2 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-2"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: "VaultStaticSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		require.NoError(t, kvWS.Subscribe(sub1))
+		require.NoError(t, kvWS.Subscribe(sub2))
+
+		// Database WebSocket with 1 subscriber
+		dbWS := newTestSharedWebSocket(EventTypeDatabase)
+		c.websockets[EventTypeDatabase] = dbWS
+		sub3 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "db-secret"},
+			VaultNS:      "",
+			VaultPath:    "database/creds/readonly",
+			ResourceType: "VaultDynamicSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		require.NoError(t, dbWS.Subscribe(sub3))
+
+		assert.Equal(t, 3, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("UnsubscribeFromEvents-nonexistent-websocket", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		pathKey := SubscriptionKey{
+			VaultNamespace: "",
+			VaultPath:      "kv/data/app/config",
+		}
+		err := c.UnsubscribeFromEvents(EventTypeKV, pathKey, "default/test-secret")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "websocket not found")
+	})
+
+	t.Run("closeWebSocket", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		ws := newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeKV] = ws
+
+		assert.Equal(t, 1, c.GetWebSocketCount())
+		c.closeWebSocket(EventTypeKV)
+		assert.Equal(t, 0, c.GetWebSocketCount())
+	})
+}
+
+func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("subscribe-unsubscribe-closes-websocket", func(t *testing.T) {
+		t.Skip("Skipping test that requires real Vault WebSocket connection - use integration tests")
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		ctx := context.Background()
+		sub := &Subscriber{
+			ResourceKey: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test-secret",
+			},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: "VaultStaticSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+
+		// Subscribe
+		err := c.SubscribeToEvents(ctx, EventTypeKV, sub)
+		require.NoError(t, err)
+		assert.Equal(t, 1, c.GetWebSocketCount())
+		assert.Equal(t, 1, c.GetWebSocketSubscriberCount())
+
+		// Unsubscribe
+		pathKey := SubscriptionKey{
+			VaultNamespace: sub.VaultNS,
+			VaultPath:      sub.VaultPath,
+		}
+		err = c.UnsubscribeFromEvents(EventTypeKV, pathKey, sub.ResourceKey.String())
+		require.NoError(t, err)
+		assert.Equal(t, 0, c.GetWebSocketCount())
+		assert.Equal(t, 0, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("multiple-event-types-multiple-websockets", func(t *testing.T) {
+		t.Skip("Skipping test that requires real Vault WebSocket connection - use integration tests")
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		ctx := context.Background()
+
+		// Subscribe to KV events
+		kvSub := &Subscriber{
+			ResourceKey: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test-kv-secret",
+			},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: "VaultStaticSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		err := c.SubscribeToEvents(ctx, EventTypeKV, kvSub)
+		require.NoError(t, err)
+
+		// Subscribe to Database events
+		dbSub := &Subscriber{
+			ResourceKey: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test-db-secret",
+			},
+			VaultNS:      "",
+			VaultPath:    "database/creds/readonly",
+			ResourceType: "VaultDynamicSecret",
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		err = c.SubscribeToEvents(ctx, EventTypeDatabase, dbSub)
+		require.NoError(t, err)
+
+		assert.Equal(t, 2, c.GetWebSocketCount())
+		assert.Equal(t, 2, c.GetWebSocketSubscriberCount())
+	})
 }
 
 func Test_defaultClient_Clone(t *testing.T) {

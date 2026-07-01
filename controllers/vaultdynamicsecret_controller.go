@@ -78,8 +78,9 @@ type VaultDynamicSecretReconciler struct {
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
-	runtimePodUID types.UID
-	SecretsClient client.Client
+	runtimePodUID        types.UID
+	SecretsClient        client.Client
+	eventWatcherRegistry *eventWatcherRegistry
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -411,6 +412,17 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if ok := r.SyncRegistry.Delete(req.NamespacedName); ok {
 		logger.V(consts.LogLevelDebug).Info("Deleted object from SyncRegistry",
 			"obj", req.NamespacedName)
+	}
+
+	// Manage event watcher lifecycle based on SyncConfig
+	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
+		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
+		if err := r.ensureEventWatcher(ctx, o, vClient); err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+				"Failed to watch events: %s", err)
+		}
+	} else {
+		r.unWatchEvents(o, vClient)
 	}
 
 	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
@@ -752,6 +764,7 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = NewResourceReferenceCache()
+	r.eventWatcherRegistry = newEventWatcherRegistry()
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
@@ -813,6 +826,20 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.SyncRegistry.Delete(objKey)
 	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
+
+	// Clean up event subscription
+	if r.eventWatcherRegistry != nil {
+		c, err := r.ClientFactory.Get(ctx, r.Client, o)
+		if err != nil {
+			logger.V(consts.LogLevelDebug).Info(
+				"Client unavailable during deletion, removing from registry only",
+				"error", err)
+			r.eventWatcherRegistry.Delete(objKey)
+		} else {
+			r.unWatchEvents(o, c)
+		}
+	}
+
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {
@@ -985,6 +1012,167 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 				"Skipping, cacheKey error", "error", err)
 		}
 	}
+}
+
+// ensureEventWatcher subscribes the VDS to Vault events for instant updates.
+// For static creds, subscribes to secret engine events (database/LDAP).
+// For dynamic leases, additionally subscribes to lease lifecycle events.
+func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
+	ctx context.Context,
+	o *secretsv1beta1.VaultDynamicSecret,
+	c vault.Client,
+) error {
+	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
+	name := client.ObjectKeyFromObject(o)
+
+	currentLeaseID := o.Status.SecretLease.ID
+	meta, ok := r.eventWatcherRegistry.Get(name)
+	if ok {
+		if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() && meta.LastLeaseID == currentLeaseID {
+			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
+				"namespace", o.Namespace, "name", o.Name)
+			return nil
+		}
+		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata, client, or lease change",
+			"namespace", o.Namespace, "name", o.Name)
+		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
+	}
+
+	eventType := resolveEventType(o)
+	vaultPath := buildVaultEventKey(o)
+
+	subscriber := &vault.Subscriber{
+		ResourceKey:  name,
+		VaultNS:      o.Spec.Namespace,
+		VaultPath:    vaultPath,
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  r.SourceCh,
+	}
+
+	if err := c.SubscribeToEvents(ctx, eventType, subscriber); err != nil {
+		return fmt.Errorf("failed to subscribe to %s events: %w", eventType, err)
+	}
+
+	// For dynamic leases, also subscribe to lease lifecycle events
+	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
+		leaseSubscriber := &vault.Subscriber{
+			ResourceKey:  name,
+			VaultPath:    buildLeaseEventKey(o),
+			ResourceType: "VaultDynamicSecret",
+			ReconcileCh:  r.SourceCh,
+		}
+		if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
+			// Non-fatal: lease events are supplementary
+			logger.V(consts.LogLevelWarning).Info("Failed to subscribe to lease events",
+				"error", err)
+		}
+	}
+
+	updatedMeta := &eventWatcherMeta{
+		LastClientID:   c.ID(),
+		LastGeneration: o.GetGeneration(),
+		LastLeaseID:    currentLeaseID,
+	}
+	r.eventWatcherRegistry.Register(name, updatedMeta)
+
+	logger.V(consts.LogLevelDebug).Info("Event subscription active",
+		"eventType", eventType, "vaultPath", vaultPath, "meta", updatedMeta)
+	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted,
+		"Started watching %s events", eventType)
+
+	return nil
+}
+
+// unWatchEvents unsubscribes the VDS from events and removes it from the registry.
+// It uses the lease ID from the registry metadata to ensure the correct (previously
+// subscribed) lease is cleaned up, not the potentially-updated status lease ID.
+func (r *VaultDynamicSecretReconciler) unWatchEvents(
+	o *secretsv1beta1.VaultDynamicSecret,
+	c vault.Client,
+) {
+	if r.eventWatcherRegistry == nil {
+		return
+	}
+
+	name := client.ObjectKeyFromObject(o)
+	meta, ok := r.eventWatcherRegistry.Get(name)
+	if !ok {
+		return
+	}
+
+	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID)
+}
+
+// unWatchEventsWithLeaseID performs the actual unsubscription using the provided
+// lease ID rather than the current status, which may have already been updated.
+func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
+	o *secretsv1beta1.VaultDynamicSecret,
+	c vault.Client,
+	leaseID string,
+) {
+	if r.eventWatcherRegistry == nil {
+		return
+	}
+
+	name := client.ObjectKeyFromObject(o)
+
+	eventType := resolveEventType(o)
+	vaultPath := buildVaultEventKey(o)
+	pathKey := vault.SubscriptionKey{
+		VaultNamespace: o.Spec.Namespace,
+		VaultPath:      vaultPath,
+	}
+
+	if err := c.UnsubscribeFromEvents(eventType, pathKey, name.String()); err != nil {
+		log.FromContext(context.Background()).V(consts.LogLevelDebug).Info(
+			"Failed to unsubscribe from events (may already be cleaned up)",
+			"namespace", o.Namespace, "name", o.Name, "error", err)
+	}
+
+	// Unsubscribe from lease events using the tracked lease ID
+	if leaseID != "" {
+		leaseKey := vault.SubscriptionKey{
+			VaultPath: leaseID,
+		}
+		_ = c.UnsubscribeFromEvents(vault.EventTypeLease, leaseKey, name.String())
+	}
+
+	r.eventWatcherRegistry.Delete(name)
+}
+
+// resolveEventType determines the correct EventType based on the VDS mount.
+func resolveEventType(o *secretsv1beta1.VaultDynamicSecret) vault.EventType {
+	mount := strings.ToLower(o.Spec.Mount)
+	if strings.Contains(mount, "ldap") {
+		return vault.EventTypeLDAP
+	}
+	return vault.EventTypeDatabase
+}
+
+// buildVaultEventKey constructs the subscription key for a VaultDynamicSecret.
+// Unlike KV events (matched by full path), database/LDAP events are matched by
+// mount + role name, since the event path differs from the read path.
+func buildVaultEventKey(o *secretsv1beta1.VaultDynamicSecret) string {
+	roleName := extractRoleName(o.Spec.Path)
+	return o.Spec.Mount + "/" + roleName
+}
+
+// buildLeaseEventKey returns the subscription key for lease lifecycle events.
+// The key is the lease ID from the VDS status.
+func buildLeaseEventKey(o *secretsv1beta1.VaultDynamicSecret) string {
+	return o.Status.SecretLease.ID
+}
+
+// extractRoleName extracts the role name from a VDS spec path.
+// e.g., "static-creds/my-role" → "my-role"
+//
+//	"creds/my-role"        → "my-role"
+func extractRoleName(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return path
+	}
+	return parts[len(parts)-1]
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {

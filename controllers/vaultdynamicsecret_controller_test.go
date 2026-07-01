@@ -2110,3 +2110,204 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		})
 	}
 }
+
+func Test_extractRoleName(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "static-creds path",
+			path: "static-creds/my-role",
+			want: "my-role",
+		},
+		{
+			name: "creds path",
+			path: "creds/my-role",
+			want: "my-role",
+		},
+		{
+			name: "simple role name",
+			path: "my-role",
+			want: "my-role",
+		},
+		{
+			name: "nested path",
+			path: "some/deep/path/my-role",
+			want: "my-role",
+		},
+		{
+			name: "empty path",
+			path: "",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractRoleName(tt.path)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_buildVaultEventKey(t *testing.T) {
+	tests := []struct {
+		name string
+		o    *secretsv1beta1.VaultDynamicSecret
+		want string
+	}{
+		{
+			name: "database static-creds",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "database",
+					Path:  "static-creds/my-role",
+				},
+			},
+			want: "database/my-role",
+		},
+		{
+			name: "database dynamic creds",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "database",
+					Path:  "creds/my-role",
+				},
+			},
+			want: "database/my-role",
+		},
+		{
+			name: "custom mount",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "my-db",
+					Path:  "static-creds/prod-role",
+				},
+			},
+			want: "my-db/prod-role",
+		},
+		{
+			name: "ldap mount",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "ldap",
+					Path:  "static-creds/ldap-role",
+				},
+			},
+			want: "ldap/ldap-role",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildVaultEventKey(tt.o)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_buildLeaseEventKey(t *testing.T) {
+	tests := []struct {
+		name string
+		o    *secretsv1beta1.VaultDynamicSecret
+		want string
+	}{
+		{
+			name: "with lease ID",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						ID: "database/creds/my-role/abc123",
+					},
+				},
+			},
+			want: "database/creds/my-role/abc123",
+		},
+		{
+			name: "empty lease ID",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretLease: secretsv1beta1.VaultSecretLease{
+						ID: "",
+					},
+				},
+			},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildLeaseEventKey(tt.o)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_resolveEventType(t *testing.T) {
+	tests := []struct {
+		name string
+		o    *secretsv1beta1.VaultDynamicSecret
+		want vault.EventType
+	}{
+		{
+			name: "database mount",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "database",
+				},
+			},
+			want: vault.EventTypeDatabase,
+		},
+		{
+			name: "ldap mount",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "ldap",
+				},
+			},
+			want: vault.EventTypeLDAP,
+		},
+		{
+			name: "LDAP mount uppercase",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "LDAP",
+				},
+			},
+			want: vault.EventTypeLDAP,
+		},
+		{
+			name: "custom ldap mount with prefix",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "my-ldap-mount",
+				},
+			},
+			want: vault.EventTypeLDAP,
+		},
+		{
+			name: "custom database mount",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "my-db",
+				},
+			},
+			want: vault.EventTypeDatabase,
+		},
+		{
+			name: "postgres mount defaults to database",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "postgres",
+				},
+			},
+			want: vault.EventTypeDatabase,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveEventType(tt.o)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

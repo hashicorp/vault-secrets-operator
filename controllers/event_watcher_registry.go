@@ -4,25 +4,22 @@
 package controllers
 
 import (
-	"context"
-
 	gocache "github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// eventWatcherMeta - metadata for managing an event watcher goroutine
+// eventWatcherMeta - metadata for tracking event subscriptions
 type eventWatcherMeta struct {
-	// Cancel will close the watcher's context (and stop the watcher goroutine)
-	Cancel context.CancelFunc `json:"-"`
-	// StoppedCh lets the watcher goroutine signal the caller that it has
-	// stopped (and removed itself from the registry)
-	StoppedCh chan struct{} `json:"-"`
-	// LastGeneration is the generation of the VaultStaticSecret resource, used
-	// to detect if the event watcher needs to be recreated
+	// LastGeneration is the generation of the resource, used
+	// to detect if the event subscription needs to be recreated
 	LastGeneration int64
-	// LastClientID - vault client ID for the last successful connection, used
-	// to detect if the Vault client has changed since the event watcher started
+	// LastClientID - vault client ID for the last successful subscription, used
+	// to detect if the Vault client has changed since the subscription started
 	LastClientID string
+	// LastLeaseID tracks the lease ID that was subscribed to for lease events.
+	// This allows detecting when the lease changes (e.g. after credential rotation)
+	// so the old subscription can be cleaned up and a new one created.
+	LastLeaseID string
 }
 
 // eventWatcherRegistry - registry for keeping track of running event watcher

@@ -1,0 +1,18 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+# This patch adds the IPC_LOCK capability to the Vault container.
+# Vault requires this capability to use mlock() to prevent memory from being
+# swapped to disk, which is important for security.
+# Note: allowPrivilegeEscalation must be true to use IPC_LOCK capability.
+spec:
+  template:
+    spec:
+      containers:
+        - name: vault
+          securityContext:
+            allowPrivilegeEscalation: true
+            capabilities:
+              add:
+                - IPC_LOCK
+                
