@@ -28,17 +28,10 @@ const (
 	// reconnection backoff constants
 	initialReconnectDelay = 1 * time.Second
 	maxReconnectDelay     = 60 * time.Second
-	// maxReconnectElapsedTime is set to 0 to retry indefinitely (until context is cancelled).
-	// This matches the main branch behavior where WebSocket goroutines keep retrying
-	// until they succeed or are explicitly stopped. The SharedWebSocket will keep
-	// retrying to reconnect when Vault is down, and automatically recover when Vault
-	// comes back up, without requiring external triggers (requeue events or periodic
-	// reconciliation).
-	maxReconnectElapsedTime = 0
-	// maxReconnectErrorThreshold is the number of consecutive reconnect cycles allowed
-	// before the event loop gives up and stops, triggering notifySubscribersOfStop()
-	// which requeues all subscriber CRs for reconciliation. The counter resets to 0
-	// after any successful read, so transient blips do not accumulate.
+	// maxReconnectErrorThreshold is the number of consecutive reconnect failures
+	// allowed for a single SharedWebSocket instance before the event loop gives up
+	// and stops. Stopping triggers notifySubscribersOfStop(), which requeues all
+	// subscriber CRs for reconciliation so a fresh SharedWebSocket can be created.
 	maxReconnectErrorThreshold = 5
 )
 
@@ -46,6 +39,12 @@ const (
 type SharedWebSocket struct {
 	// conn is the underlying WebSocket connection
 	conn *websocket.Conn
+	// stopped indicates that the event loop has exited and this websocket should
+	// no longer be considered healthy or reusable.
+	stopped bool
+	// notifyOnStop indicates that subscribers should be requeued because the
+	// event loop is exiting due to reconnect failure exhaustion.
+	notifyOnStop bool
 	// eventType is the type of events this WebSocket subscribes to
 	eventType EventType
 	// subscribers maps SubscriptionKey -> (subscriberKey -> *Subscriber)
@@ -63,6 +62,9 @@ type SharedWebSocket struct {
 	logger logr.Logger
 	// clientID is the ID of the client that owns this WebSocket
 	clientID string
+	// onStop is called once when the event loop exits so the owning client can
+	// remove this websocket from its registry.
+	onStop func()
 }
 
 // NewSharedWebSocket creates a new shared WebSocket connection
@@ -175,18 +177,29 @@ func (ws *SharedWebSocket) GetSubscriberCount() int {
 }
 
 // eventLoop reads events from the WebSocket and routes them to subscribers.
-// It reconnects automatically with exponential backoff (with jitter) on
-// transient errors, using the same cenkalti/backoff library as the rest of
-// the project.
+// On read failures it retries reconnect with exponential backoff. After too
+// many consecutive reconnect failures, the loop stops and subscribers are
+// requeued so reconciliation can create a fresh SharedWebSocket instance.
 func (ws *SharedWebSocket) eventLoop() {
 	defer func() {
+		ws.stopped = true
+		if ws.onStop != nil {
+			ws.onStop()
+		}
 		ws.logger.Info("Event loop exiting", "subscribers", ws.GetSubscriberCount())
-		// Notify all subscribers that the WebSocket is stopping
-		ws.notifySubscribersOfStop()
+		if ws.notifyOnStop {
+			// Notify all subscribers that the WebSocket is stopping due to failure.
+			ws.notifySubscribersOfStop()
+		}
 	}()
 
 	ws.logger.Info("Event loop started")
 
+	bo := backoff.NewExponentialBackOff(
+		backoff.WithInitialInterval(initialReconnectDelay),
+		backoff.WithMaxInterval(maxReconnectDelay),
+	)
+	bo.Reset()
 	errorCount := 0
 
 	for {
@@ -200,12 +213,11 @@ func (ws *SharedWebSocket) eventLoop() {
 		default:
 			err := ws.readAndRoute()
 			if err == nil {
-				// Reset error count on any successful read.
 				errorCount = 0
+				bo.Reset()
 				continue
 			}
 
-			// Check if the context was cancelled (clean shutdown)
 			if ws.ctx.Err() != nil {
 				return
 			}
@@ -218,33 +230,35 @@ func (ws *SharedWebSocket) eventLoop() {
 
 			ws.logger.Error(err, "WebSocket read error, attempting reconnect with backoff")
 
-			// Reconnect with exponential backoff + jitter, consistent with
-			// project-wide patterns (BackOffRegistry, helpers, cache_storage).
-			bo := backoff.NewExponentialBackOff(
-				backoff.WithInitialInterval(initialReconnectDelay),
-				backoff.WithMaxInterval(maxReconnectDelay),
-				backoff.WithMaxElapsedTime(maxReconnectElapsedTime),
-			)
-			reconnErr := backoff.Retry(func() error {
+			for {
 				if reconnErr := ws.reconnect(); reconnErr != nil {
-					ws.logger.Error(reconnErr, "Failed to reconnect, will retry")
-					return reconnErr
+					errorCount++
+					ws.logger.Error(reconnErr, "Failed to reconnect", "errorCount", errorCount)
+					if errorCount >= maxReconnectErrorThreshold {
+						ws.logger.Error(reconnErr, "Too many reconnect failures, stopping event loop",
+							"errorCount", errorCount, "threshold", maxReconnectErrorThreshold)
+						ws.notifyOnStop = true
+						if ws.conn != nil {
+							ws.conn.Close(websocket.StatusNormalClosure, "reconnect threshold reached")
+						}
+						ws.cancel()
+						return
+					}
+
+					nextBackoff := bo.NextBackOff()
+					select {
+					case <-ws.ctx.Done():
+						return
+					case <-time.After(nextBackoff):
+					}
+					continue
 				}
-				return nil
-			}, backoff.WithContext(bo, ws.ctx))
 
-			if reconnErr != nil {
-				ws.logger.Error(reconnErr, "Failed to reconnect after backoff, stopping event loop")
-				return
+				ws.logger.Info("Successfully reconnected to WebSocket", "errorCount", errorCount)
+				errorCount = 0
+				bo.Reset()
+				break
 			}
-
-			errorCount++
-			if errorCount >= maxReconnectErrorThreshold {
-				ws.logger.Error(nil, "Too many reconnects, stopping event loop",
-					"errorCount", errorCount, "threshold", maxReconnectErrorThreshold)
-				return
-			}
-			ws.logger.Info("Successfully reconnected to WebSocket", "errorCount", errorCount)
 		}
 	}
 }
@@ -436,6 +450,9 @@ func (ws *SharedWebSocket) Close() error {
 
 // IsHealthy checks if the WebSocket is still healthy
 func (ws *SharedWebSocket) IsHealthy() bool {
+	if ws.stopped {
+		return false
+	}
 	select {
 	case <-ws.ctx.Done():
 		return false

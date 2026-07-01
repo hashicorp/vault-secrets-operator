@@ -1108,6 +1108,14 @@ func (c *defaultClient) getOrCreateWebSocket(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shared websocket: %w", err)
 	}
+	// Remove this websocket from the client registry when its event loop stops.
+	ws.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[eventType]; exists && current == ws {
+			delete(c.websockets, eventType)
+		}
+	}
 
 	// Initialize map if needed
 	if c.websockets == nil {
