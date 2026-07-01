@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/coder/websocket"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"nhooyr.io/websocket"
 )
 
 func TestWebSocketClient(t *testing.T) {
