@@ -95,3 +95,8 @@ variable "with_xns" {
 variable "chart_postgres" {
   type = string
 }
+
+variable "use_events" {
+  type    = bool
+  default = false
+}
