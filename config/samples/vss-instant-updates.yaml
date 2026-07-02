@@ -1,0 +1,20 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  namespace: tenant-1
+  name: vaultstaticsecret-instant-updates
+spec:
+  vaultAuthRef: vaultauth-sample
+  mount: kvv2
+  type: kv-v2
+  path: secret
+  refreshAfter: 60s
+  hmacSecretData: true
+  syncConfig:
+    instantUpdates: true
+  destination:
+    name: secret-instant
+    create: true

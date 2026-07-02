@@ -243,6 +243,7 @@ func (ws *SharedWebSocket) readAndRoute() error {
 	msg.Data.Event.Metadata.Name = ""
 	msg.Data.Event.Metadata.Operation = ""
 	msg.Data.Event.Metadata.LeaseID = ""
+	msg.Data.Event.Metadata.VaultIndex = ""
 	msg.Data.EventType = ""
 	msg.Data.Namespace = ""
 	msg.Data.PluginInfo.MountPath = ""
@@ -368,6 +369,8 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 		"key", lookupKey,
 		"count", len(subsCopy))
 
+	vaultIndex := strings.TrimSpace(msg.Data.Event.Metadata.VaultIndex)
+
 	for _, sub := range subsCopy {
 		var obj client.Object
 		switch sub.ResourceType {
@@ -389,6 +392,13 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 			ws.logger.Error(fmt.Errorf("unknown resource type: %s", sub.ResourceType),
 				"Skipping subscriber", "resource", sub.ResourceKey)
 			continue
+		}
+
+		// Store vault_index before sending the reconcile event so the reconciler
+		// can attach X-Vault-Index to the subsequent Vault read, ensuring it is
+		// served from a node that has replicated the write.
+		if sub.PendingVaultIndex != nil && vaultIndex != "" {
+			sub.PendingVaultIndex.Store(sub.ResourceKey, vaultIndex)
 		}
 
 		select {

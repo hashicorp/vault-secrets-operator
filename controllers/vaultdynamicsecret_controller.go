@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -81,6 +82,11 @@ type VaultDynamicSecretReconciler struct {
 	runtimePodUID        types.UID
 	SecretsClient        client.Client
 	eventWatcherRegistry *eventWatcherRegistry
+	// pendingVaultIndex stores the vault_index value extracted from the Vault
+	// WebSocket event that triggered the last reconcile for each resource.
+	// The reconciler consumes it once via LoadAndDelete to attach X-Vault-Index
+	// to the Vault read/write, then clears it.
+	pendingVaultIndex sync.Map
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -327,7 +333,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// sync the secret
-	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption)
+	var vaultHeaders http.Header
+	if idx, ok := r.pendingVaultIndex.LoadAndDelete(req.NamespacedName); ok {
+		vaultHeaders = http.Header{consts.HeaderVaultIndex: []string{idx.(string)}}
+	}
+	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption, vaultHeaders)
 	if err != nil {
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
@@ -423,6 +433,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	} else {
 		r.unWatchEvents(o, vClient)
+		r.pendingVaultIndex.Delete(req.NamespacedName)
 	}
 
 	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
@@ -457,7 +468,7 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 }
 
 // doVault performs a Vault request based on the VaultDynamicSecret's spec.
-func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (vault.Response, error) {
+func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret, headers http.Header) (vault.Response, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp vault.Response
@@ -487,9 +498,9 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	logger = logger.WithValues("path", path, "method", method)
 	switch method {
 	case http.MethodPut, http.MethodPost:
-		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, nil))
+		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, headers))
 	case http.MethodGet:
-		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, nil))
+		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, headers))
 	default:
 		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
@@ -508,10 +519,11 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
 	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
+	headers http.Header,
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	logger := log.FromContext(ctx).WithName("syncSecret")
 
-	resp, err := r.doVault(ctx, c, o)
+	resp, err := r.doVault(ctx, c, o, headers)
 	if err != nil {
 		return nil, false, err
 	}
@@ -630,7 +642,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		backoff.WithMaxInterval(time.Second*2))
 	if err := backoff.Retry(
 		func() error {
-			resp, err = r.doVault(ctx, c, o)
+			resp, err = r.doVault(ctx, c, o, nil)
 			if err != nil {
 				return err
 			}
@@ -839,6 +851,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 			r.unWatchEvents(o, c)
 		}
 	}
+	r.pendingVaultIndex.Delete(objKey)
 
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
@@ -1042,11 +1055,12 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	vaultPath := buildVaultEventKey(o)
 
 	subscriber := &vault.Subscriber{
-		ResourceKey:  name,
-		VaultNS:      o.Spec.Namespace,
-		VaultPath:    vaultPath,
-		ResourceType: "VaultDynamicSecret",
-		ReconcileCh:  r.SourceCh,
+		ResourceKey:       name,
+		VaultNS:           o.Spec.Namespace,
+		VaultPath:         vaultPath,
+		ResourceType:      "VaultDynamicSecret",
+		ReconcileCh:       r.SourceCh,
+		PendingVaultIndex: &r.pendingVaultIndex,
 	}
 
 	if err := c.SubscribeToEvents(ctx, eventType, subscriber); err != nil {
@@ -1056,10 +1070,11 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	// For dynamic leases, also subscribe to lease lifecycle events
 	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
 		leaseSubscriber := &vault.Subscriber{
-			ResourceKey:  name,
-			VaultPath:    buildLeaseEventKey(o),
-			ResourceType: "VaultDynamicSecret",
-			ReconcileCh:  r.SourceCh,
+			ResourceKey:       name,
+			VaultPath:         buildLeaseEventKey(o),
+			ResourceType:      "VaultDynamicSecret",
+			ReconcileCh:       r.SourceCh,
+			PendingVaultIndex: &r.pendingVaultIndex,
 		}
 		if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
 			// Non-fatal: lease events are supplementary

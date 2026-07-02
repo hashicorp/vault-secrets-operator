@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	vsoconsts "github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
 
@@ -564,12 +565,12 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client: tt.fields.Client,
 			}
-			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o, nil)
-			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)) {
+			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)
+			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)
-			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)
+			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)
+			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)
 		})
 	}
 }
@@ -729,7 +730,7 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMat
 		HMACValidator: f.validator,
 	}
 
-	lease, updated, err := r.syncSecret(ctx, vClient, obj, nil)
+	lease, updated, err := r.syncSecret(ctx, vClient, obj, nil, nil)
 	require.NoError(t, err)
 	assert.False(t, updated)
 	assert.Equal(t, f.secretMAC, obj.Status.SecretMAC)
@@ -844,6 +845,46 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	assert.Equal(t, f.secretMAC, updated.Status.SecretMAC)
 	// LastVaultRotation is unchanged: no rotation occurred, only the TTL decreased
 	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation)
+
+	// Verify pendingVaultIndex one-time consumption (LoadAndDelete semantics):
+	// Pre-populate as routeEvent() would when a Vault event arrives.
+	r.pendingVaultIndex.Store(objKey, "vault-idx-42")
+
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
+	vClient.MockRecordingVaultClient.ReadResponses = map[string][]vault.Response{
+		"database/static-creds/app": {f.freshResponse, f.freshResponse},
+	}
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	// The first Vault request of this reconcile must carry X-Vault-Index.
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	firstReq := vClient.MockRecordingVaultClient.Requests[0]
+	require.NotNil(t, firstReq.Headers, "expected X-Vault-Index header on first request after event")
+	assert.Equal(t, []string{"vault-idx-42"}, firstReq.Headers[vsoconsts.HeaderVaultIndex])
+
+	// Entry must be consumed — map must be empty after LoadAndDelete.
+	_, stillPresent := r.pendingVaultIndex.Load(objKey)
+	assert.False(t, stillPresent, "pendingVaultIndex entry must be deleted after use")
+
+	// Third reconcile without pre-population must NOT carry the header.
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
+	vClient.MockRecordingVaultClient.ReadResponses = map[string][]vault.Response{
+		"database/static-creds/app": {f.freshResponse, f.freshResponse},
+	}
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	secondReq := vClient.MockRecordingVaultClient.Requests[0]
+	if secondReq.Headers != nil {
+		assert.Empty(t, secondReq.Headers[vsoconsts.HeaderVaultIndex],
+			"X-Vault-Index must not be sent when no pending index is stored")
+	}
 }
 
 // TestVaultDynamicSecretReconciler_isStaticCreds tests that we can appropriately
@@ -2308,6 +2349,89 @@ func Test_resolveEventType(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := resolveEventType(tt.o)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestVaultDynamicSecretReconciler_syncSecret_vaultIndex verifies that when an
+// X-Vault-Index header is passed to syncSecret it is forwarded to the initial
+// Vault request (GET or PUT), ensuring stale-read protection on instant updates.
+func TestVaultDynamicSecretReconciler_syncSecret_vaultIndex(t *testing.T) {
+	vaultIndexHeader := http.Header{vsoconsts.HeaderVaultIndex: []string{"42"}}
+
+	tests := []struct {
+		name            string
+		method          string
+		params          map[string]string
+		headers         http.Header
+		wantHeaderInReq bool
+	}{
+		{
+			name:            "GET request receives X-Vault-Index header",
+			method:          http.MethodGet,
+			params:          nil,
+			headers:         vaultIndexHeader,
+			wantHeaderInReq: true,
+		},
+		{
+			name:            "PUT request receives X-Vault-Index header",
+			method:          http.MethodPut,
+			params:          map[string]string{"role": "my-role"},
+			headers:         vaultIndexHeader,
+			wantHeaderInReq: true,
+		},
+		{
+			name:            "nil headers — no X-Vault-Index forwarded",
+			method:          http.MethodGet,
+			params:          nil,
+			headers:         nil,
+			wantHeaderInReq: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var params map[string]string
+			if tt.params != nil {
+				params = tt.params
+			}
+
+			vClient := &vault.MockRecordingVaultClient{}
+			o := &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-vds",
+					Namespace: "default",
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount:             "database",
+					Path:              "creds/my-role",
+					RequestHTTPMethod: tt.method,
+					Params:            params,
+					Destination: secretsv1beta1.Destination{
+						Name:   "dest-secret",
+						Create: true,
+					},
+				},
+			}
+
+			r := &VaultDynamicSecretReconciler{
+				Client: fake.NewClientBuilder().Build(),
+			}
+			_, _, err := r.syncSecret(context.Background(), vClient, o, nil, tt.headers)
+			require.NoError(t, err)
+			require.Len(t, vClient.Requests, 1)
+
+			req := vClient.Requests[0]
+			if tt.wantHeaderInReq {
+				require.NotNil(t, req.Headers, "expected X-Vault-Index header on request")
+				assert.Equal(t, []string{"42"}, req.Headers[vsoconsts.HeaderVaultIndex])
+			} else {
+				if req.Headers != nil {
+					assert.Empty(t, req.Headers[vsoconsts.HeaderVaultIndex])
+				}
+			}
 		})
 	}
 }
