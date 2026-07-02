@@ -52,7 +52,9 @@ var (
 	staticTransOpt           = &helpers.SecretTransformationOption{
 		Excludes: []string{
 			fmt.Sprintf("^%s$", strings.Join([]string{
-				"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", helpers.SecretDataKeyRaw,
+				"ttl", "rotation_schedule", "rotation_period", "rotation_policy",
+				"last_vault_rotation", "next_vault_rotation", "rotation_window",
+				helpers.SecretDataKeyRaw,
 			}, "|")),
 		},
 	}
@@ -494,6 +496,42 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	return resp, nil
 }
 
+// checkStaticCredsHMAC performs HMAC-based drift detection for static credentials.
+// Returns true if sync should be skipped (credentials unchanged), false if sync needed.
+func (r *VaultDynamicSecretReconciler) checkStaticCredsHMAC(
+	ctx context.Context,
+	o *secretsv1beta1.VaultDynamicSecret,
+	data map[string][]byte,
+	staticCredsMeta *secretsv1beta1.VaultStaticCredsMetaData,
+	logPrefix string,
+) (bool, error) {
+	logger := log.FromContext(ctx).WithName("checkStaticCredsHMAC")
+
+	// Filter data to exclude metadata fields (ttl, rotation_schedule, rotation_policy, etc.)
+	// HMAC is calculated only on credentials (username, password)
+	dataToMAC, err := helpers.FilterData(staticTransOpt, data)
+	if err != nil {
+		return false, err
+	}
+
+	macsEqual, messageMAC, err := helpers.HandleSecretHMACWithTransOpt(
+		ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC, staticTransOpt)
+	if err != nil {
+		return false, err
+	}
+
+	logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
+
+	// Always update StaticCredsMetaData before the macsEqual check so that a
+	// refreshed TTL (e.g. from a ForceSync on VaultAuth token expiry) is
+	// persisted even when the secret data has not changed.
+	o.Status.StaticCredsMetaData = *staticCredsMeta
+	o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+	logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
+
+	return macsEqual, nil
+}
+
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
 	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
@@ -510,44 +548,36 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 	var data map[string][]byte
 	secretLease := r.getVaultSecretLease(resp.Secret())
-	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
-		staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+
+	// Extract static credentials metadata
+	staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+	if err != nil {
+		return nil, false, err
+	}
+
+	resp = rotatedResponse
+	data, err = resp.SecretK8sData(opt)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Determine if this is a static credentials secret
+	isStaticCredsSecret := r.isStaticCreds(staticCredsMeta)
+
+	// Use HMAC-based drift detection for static credentials
+	if isStaticCredsSecret {
+		logPrefix := "Dynamic static-creds"
+		if !o.Spec.AllowStaticCreds {
+			logPrefix = "Dynamic non-static-creds"
+		}
+
+		macsEqual, err := r.checkStaticCredsHMAC(ctx, o, data, staticCredsMeta, logPrefix)
 		if err != nil {
 			return nil, false, err
 		}
-
-		resp = rotatedResponse
-		data, err = resp.SecretK8sData(opt)
-		if err != nil {
-			return nil, false, err
-		}
-
-		dataToMAC, err := helpers.FilterData(staticTransOpt, data)
-		if err != nil {
-			return nil, false, err
-		}
-
-		macsEqual, messageMAC, err := helpers.HandleSecretHMACWithTransOpt(ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC, staticTransOpt)
-		if err != nil {
-			return nil, false, err
-		}
-
-		logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
-
-		// Always update StaticCredsMetaData before the macsEqual check so that a
-		// refreshed TTL (e.g. from a ForceSync on VaultAuth token expiry) is
-		// persisted even when the secret data has not changed.
-		o.Status.StaticCredsMetaData = *staticCredsMeta
-		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
-		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
 
 		if macsEqual {
 			return secretLease, false, nil
-		}
-	} else {
-		data, err = resp.SecretK8sData(opt)
-		if err != nil {
-			return nil, false, err
 		}
 	}
 
