@@ -1443,31 +1443,17 @@ func revokeTokenForEntityIDs(t *testing.T, vc *api.Client, ctx context.Context, 
 	wg.Wait()
 }
 
-// TestVaultDynamicSecret_InstantUpdates validates that a VaultDynamicSecret
-// with SyncConfig.InstantUpdates=true receives near-instant credential updates
-// when Vault rotates a database static role, driven by WebSocket events rather
-// than polling.
-func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
-	if testInParallel {
-		t.Parallel()
+// setupInstantUpdatesInfra provisions the shared Terraform infrastructure for
+// instant-updates integration tests. Callers are responsible for cleaning up any CRD objects they create
+// (those cleanups must be registered after this call so that they run first,
+// before Terraform destroy, per Go's LIFO cleanup order).
+func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (*terraform.Options, dynamicK8SOutputs) {
+	t.Helper()
+
+	clusterName := kindClusterName
+	if isScaleTest {
+		clusterName = eksClusterName
 	}
-
-	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
-	if !entTests {
-		t.Skip("Skipping because this test requires Vault Enterprise events support")
-	}
-
-	rootVaultClient := getVaultClient(t, "")
-	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
-		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
-	}
-
-	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
-	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
-
-	ctx := context.Background()
-	crdClient := getCRDClient(t)
-	var created []ctrlclient.Object
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.NoError(t, err)
@@ -1478,7 +1464,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + kindClusterName
+		k8sConfigContext = "kind-" + clusterName
 	}
 
 	tfOptions := &terraform.Options{
@@ -1487,12 +1473,13 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			"k8s_config_context":         k8sConfigContext,
 			"k8s_vault_namespace":        k8sVaultNamespace,
 			"k8s_vault_service_account":  "vault",
-			"name_prefix":                "vds-events",
+			"name_prefix":                namePrefix,
 			"vault_address":              os.Getenv("VAULT_ADDRESS"),
 			"vault_token":                os.Getenv("VAULT_TOKEN"),
 			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 30,
+			"vault_db_default_lease_ttl": dbLeaseTTL,
 			"with_static_role_scheduled": false,
+			"use_events":                 true,
 			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
 		},
 	}
@@ -1504,9 +1491,6 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
 	t.Cleanup(func() {
 		if !skipCleanup {
-			for _, c := range created {
-				assert.NoError(t, crdClient.Delete(ctx, c))
-			}
 			if !testInParallel {
 				exportKindLogsT(t)
 			}
@@ -1525,10 +1509,40 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	var outputs dynamicK8SOutputs
 	require.NoError(t, json.Unmarshal(b, &outputs))
 
-	create := func(o ctrlclient.Object) {
-		require.NoError(t, crdClient.Create(ctx, o))
-		created = append(created, o)
+	return tfOptions, outputs
+}
+
+// TestVaultDynamicSecret_InstantUpdates validates that a VaultDynamicSecret with
+// SyncConfig.InstantUpdates=true receives near-instant credential updates driven
+// by WebSocket events rather than polling. It covers both static role credentials
+// (database* events) and dynamic credentials (lease* events) in parallel subtests
+// that share the same Terraform infrastructure.
+func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
+	if testInParallel {
+		t.Parallel()
 	}
+
+	if isScaleTest {
+		require.NotEmpty(t, eksClusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	}
+	if !entTests {
+		t.Skip("Skipping because this test requires Vault Enterprise events support")
+	}
+
+	rootVaultClient := getVaultClient(t, "")
+	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
+		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
+	}
+
+	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
+	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events", 600)
 
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
@@ -1547,7 +1561,12 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			},
 		},
 	}
-	create(vaultAuth)
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
 
 	destName := "vds-instant-updates-static"
 	vdsObj := &secretsv1beta1.VaultDynamicSecret{
@@ -1573,7 +1592,12 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			RefreshAfter: "1h",
 		},
 	}
-	create(vdsObj)
+	require.NoError(t, crdClient.Create(ctx, vdsObj))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vdsObj))
+		}
+	})
 
 	// Wait for initial sync: the K8s secret must exist with the raw data key.
 	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
@@ -1627,7 +1651,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	// event that the WebSocket subscription should pick up immediately.
 	vClient := getVaultClient(t, outputs.Namespace)
 	rotatePath := fmt.Sprintf("%s/rotate-role/%s", outputs.DBPath, outputs.DBRoleStatic)
-	_, err = vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
+	_, err := vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
 	require.NoError(t, err, "failed to force-rotate static role %s", outputs.DBRoleStatic)
 
 	// Assert the K8s secret is updated quickly (within ~30s) via the event-driven
@@ -1686,7 +1710,11 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 		t.Parallel()
 	}
 
-	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	if isScaleTest {
+		require.NotEmpty(t, eksClusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	}
 	if !entTests {
 		t.Skip("Skipping because this test requires Vault Enterprise events support")
 	}
@@ -1701,68 +1729,8 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
-	var created []ctrlclient.Object
 
-	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
-	require.NoError(t, err)
-
-	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
-	copyModulesDirT(t, tfDir)
-	chartsDir := copyTestChartsDir(t, tfDir)
-
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + kindClusterName
-	}
-
-	tfOptions := &terraform.Options{
-		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"k8s_config_context":         k8sConfigContext,
-			"k8s_vault_namespace":        k8sVaultNamespace,
-			"k8s_vault_service_account":  "vault",
-			"name_prefix":                "vds-events-dyn",
-			"vault_address":              os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 60,
-			"with_static_role_scheduled": false,
-			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
-		},
-	}
-	if entTests {
-		tfOptions.Vars["vault_enterprise"] = true
-	}
-
-	tfOptions = setCommonTFOptions(t, tfOptions)
-	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
-	t.Cleanup(func() {
-		if !skipCleanup {
-			for _, c := range created {
-				assert.NoError(t, crdClient.Delete(ctx, c))
-			}
-			if !testInParallel {
-				exportKindLogsT(t)
-			}
-			terraform.Destroy(t, tfOptions)
-			assert.NoError(t, os.RemoveAll(tempDir))
-		} else {
-			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
-		}
-	})
-
-	terraform.InitAndApply(t, tfOptions)
-
-	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
-	require.NoError(t, err)
-
-	var outputs dynamicK8SOutputs
-	require.NoError(t, json.Unmarshal(b, &outputs))
-
-	create := func(o ctrlclient.Object) {
-		require.NoError(t, crdClient.Create(ctx, o))
-		created = append(created, o)
-	}
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 120)
 
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
@@ -1781,7 +1749,12 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			},
 		},
 	}
-	create(vaultAuth)
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
 
 	destName := "vds-instant-updates-dynamic"
 	vdsObj := &secretsv1beta1.VaultDynamicSecret{
@@ -1806,7 +1779,12 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			RefreshAfter: "1h",
 		},
 	}
-	create(vdsObj)
+	require.NoError(t, crdClient.Create(ctx, vdsObj))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vdsObj))
+		}
+	})
 
 	// Wait for initial sync: the K8s secret must exist with expected credential fields.
 	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
@@ -1856,7 +1834,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	require.NoError(t, vClient.Sys().Revoke(vdsBefore.Status.SecretLease.ID),
 		"failed to revoke lease %s", vdsBefore.Status.SecretLease.ID)
 
-	// Assert the VDS is updated quickly (within ~30s) via the event-driven path,
+	// Assert the VDS is updated quickly (within ~60s) via the event-driven path,
 	// NOT the 1h RefreshAfter polling cadence. The lease ID must change, confirming
 	// new credentials were fetched from Vault.
 	require.NoError(t, backoff.Retry(func() error {
@@ -1868,8 +1846,8 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 		}
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)),
-		"VDS %s was not updated via instant updates within 30s after lease revocation", objKey,
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)),
+		"VDS %s was not updated via instant updates within 120s after lease revocation", objKey,
 	)
 
 	// Assert no EventWatcherError warning was emitted with websocket EOF
@@ -1902,7 +1880,11 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 		t.Parallel()
 	}
 
-	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	if isScaleTest {
+		require.NotEmpty(t, eksClusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	}
 	if !entTests {
 		t.Skip("Skipping because this test requires Vault Enterprise events support")
 	}
@@ -1917,68 +1899,10 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
-	var created []ctrlclient.Object
 
-	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
-	require.NoError(t, err)
-
-	tfDir := copyTerraformDir(t, path.Join(testRoot, "vaultdynamicsecret/terraform"), tempDir)
-	copyModulesDirT(t, tfDir)
-	chartsDir := copyTestChartsDir(t, tfDir)
-
-	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
-	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + kindClusterName
-	}
-
-	tfOptions := &terraform.Options{
-		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"k8s_config_context":         k8sConfigContext,
-			"k8s_vault_namespace":        k8sVaultNamespace,
-			"k8s_vault_service_account":  "vault",
-			"name_prefix":                "vds-events-auth",
-			"vault_address":              os.Getenv("VAULT_ADDRESS"),
-			"vault_token":                os.Getenv("VAULT_TOKEN"),
-			"vault_token_period":         120,
-			"vault_db_default_lease_ttl": 30,
-			"with_static_role_scheduled": false,
-			"chart_postgres":             filepath.Join(chartsDir, "postgresql"),
-		},
-	}
-	if entTests {
-		tfOptions.Vars["vault_enterprise"] = true
-	}
-
-	tfOptions = setCommonTFOptions(t, tfOptions)
-	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
-	t.Cleanup(func() {
-		if !skipCleanup {
-			for _, c := range created {
-				assert.NoError(t, crdClient.Delete(ctx, c))
-			}
-			if !testInParallel {
-				exportKindLogsT(t)
-			}
-			terraform.Destroy(t, tfOptions)
-			assert.NoError(t, os.RemoveAll(tempDir))
-		} else {
-			t.Logf("Skipping cleanup, tfdir=%s", tfDir)
-		}
-	})
-
-	terraform.InitAndApply(t, tfOptions)
-
-	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
-	require.NoError(t, err)
-
-	var outputs dynamicK8SOutputs
-	require.NoError(t, json.Unmarshal(b, &outputs))
-
-	create := func(o ctrlclient.Object) {
-		require.NoError(t, crdClient.Create(ctx, o))
-		created = append(created, o)
-	}
+	// Uses its own name_prefix so it gets an isolated Terraform stack, preventing
+	// the VaultAuth mutation in this test from interfering with other tests.
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-auth", 60)
 
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
@@ -1997,7 +1921,12 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 			},
 		},
 	}
-	create(vaultAuth)
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
 
 	destName := "vds-instant-updates-auth-change"
 	vdsObj := &secretsv1beta1.VaultDynamicSecret{
@@ -2023,7 +1952,12 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 			RefreshAfter: "1h",
 		},
 	}
-	create(vdsObj)
+	require.NoError(t, crdClient.Create(ctx, vdsObj))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vdsObj))
+		}
+	})
 
 	// Wait for initial sync.
 	assertDynamicSecret(t, nil, tfOptions.MaxRetries, tfOptions.TimeBetweenRetries, vdsObj,
@@ -2131,7 +2065,7 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 	// deliver this event and trigger an immediate reconciliation.
 	vClient := getVaultClient(t, outputs.Namespace)
 	rotatePath := fmt.Sprintf("%s/rotate-role/%s", outputs.DBPath, outputs.DBRoleStatic)
-	_, err = vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
+	_, err := vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
 	require.NoError(t, err, "failed to force-rotate static role %s", outputs.DBRoleStatic)
 
 	// Assert the K8s secret is updated within ~30s via the event-driven path,

@@ -852,6 +852,46 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	assert.Equal(t, f.secretMAC, updated.Status.SecretMAC)
 	// LastVaultRotation is unchanged: no rotation occurred, only the TTL decreased
 	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation)
+
+	// Verify pendingVaultIndex one-time consumption (LoadAndDelete semantics):
+	// Pre-populate as routeEvent() would when a Vault event arrives.
+	r.pendingVaultIndex.Store(objKey, "vault-idx-42")
+
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
+	vClient.MockRecordingVaultClient.ReadResponses = map[string][]vault.Response{
+		"database/static-creds/app": {f.freshResponse, f.freshResponse},
+	}
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	// The first Vault request of this reconcile must carry X-Vault-Index.
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	firstReq := vClient.MockRecordingVaultClient.Requests[0]
+	require.NotNil(t, firstReq.Headers, "expected X-Vault-Index header on first request after event")
+	assert.Equal(t, []string{"vault-idx-42"}, firstReq.Headers[vsoconsts.HeaderVaultIndex])
+
+	// Entry must be consumed — map must be empty after LoadAndDelete.
+	_, stillPresent := r.pendingVaultIndex.Load(objKey)
+	assert.False(t, stillPresent, "pendingVaultIndex entry must be deleted after use")
+
+	// Third reconcile without pre-population must NOT carry the header.
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
+	vClient.MockRecordingVaultClient.ReadResponses = map[string][]vault.Response{
+		"database/static-creds/app": {f.freshResponse, f.freshResponse},
+	}
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	secondReq := vClient.MockRecordingVaultClient.Requests[0]
+	if secondReq.Headers != nil {
+		assert.Empty(t, secondReq.Headers[vsoconsts.HeaderVaultIndex],
+			"X-Vault-Index must not be sent when no pending index is stored")
+	}
 }
 
 // TestVaultDynamicSecretReconciler_isStaticCreds tests that we can appropriately
