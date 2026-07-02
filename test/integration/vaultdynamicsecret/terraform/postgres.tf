@@ -199,6 +199,30 @@ path "sys/events/subscribe/database*" {
 EOT
 }
 
+resource "vault_policy" "db-events" {
+  namespace = local.namespace
+  name      = "${local.auth_policy}-db-events"
+  policy    = <<EOT
+path "${vault_database_secrets_mount.db.path}/*" {
+  capabilities = ["subscribe"]
+  subscribe_event_types = ["database*"]
+}
+
+path "sys/events/subscribe/database*" {
+  capabilities = ["read"]
+}
+
+path "sys/leases/*" {
+  capabilities = ["subscribe"]
+  subscribe_event_types = ["lease*"]
+}
+
+path "sys/events/subscribe/lease*" {
+  capabilities = ["read"]
+}
+EOT
+}
+
 resource "vault_policy" "db-scheduled" {
   count     = var.with_static_role_scheduled ? 1 : 0
   namespace = local.namespace

@@ -36,6 +36,7 @@ locals {
     [
       vault_policy.revocation.name,
       one(coalescelist(vault_policy.db-with-events[*].name, vault_policy.db[*].name)),
+      vault_policy.db-events.name,
       vault_policy.k8s_secrets.name,
     ],
     vault_policy.db-scheduled[*].name,
