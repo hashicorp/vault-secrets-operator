@@ -1450,6 +1450,11 @@ func revokeTokenForEntityIDs(t *testing.T, vc *api.Client, ctx context.Context, 
 func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (*terraform.Options, dynamicK8SOutputs) {
 	t.Helper()
 
+	clusterName := kindClusterName
+	if isScaleTest {
+		clusterName = eksClusterName
+	}
+
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
 	require.NoError(t, err)
 
@@ -1459,7 +1464,7 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 
 	k8sConfigContext := os.Getenv("K8S_CLUSTER_CONTEXT")
 	if k8sConfigContext == "" {
-		k8sConfigContext = "kind-" + kindClusterName
+		k8sConfigContext = "kind-" + clusterName
 	}
 
 	tfOptions := &terraform.Options{
@@ -1517,7 +1522,11 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 		t.Parallel()
 	}
 
-	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	if isScaleTest {
+		require.NotEmpty(t, eksClusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	}
 	if !entTests {
 		t.Skip("Skipping because this test requires Vault Enterprise events support")
 	}
@@ -1701,7 +1710,11 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 		t.Parallel()
 	}
 
-	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	if isScaleTest {
+		require.NotEmpty(t, eksClusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	}
 	if !entTests {
 		t.Skip("Skipping because this test requires Vault Enterprise events support")
 	}
@@ -1867,7 +1880,11 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 		t.Parallel()
 	}
 
-	require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	if isScaleTest {
+		require.NotEmpty(t, eksClusterName, "EKS_CLUSTER_NAME is not set")
+	} else {
+		require.NotEmpty(t, kindClusterName, "KIND_CLUSTER_NAME is not set")
+	}
 	if !entTests {
 		t.Skip("Skipping because this test requires Vault Enterprise events support")
 	}
