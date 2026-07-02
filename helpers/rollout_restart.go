@@ -19,6 +19,7 @@ import (
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 )
 
 // AnnotationRestartedAt is updated to trigger a rollout-restart
@@ -62,9 +63,11 @@ func HandleRolloutRestarts(ctx context.Context, client ctrlclient.Client, obj ct
 			errs = errors.Join(err)
 			recorder.Eventf(obj, corev1.EventTypeWarning, consts.ReasonRolloutRestartFailed,
 				"Rollout restart failed for target %#v: err=%s", target, err)
+			metrics.RolloutRestartsErrors.WithLabelValues(obj.GetNamespace(), obj.GetName(), target.Name, target.Kind).Inc()
 		} else {
 			recorder.Eventf(obj, corev1.EventTypeNormal, consts.ReasonRolloutRestartTriggered,
 				"Rollout restart triggered for %v", target)
+			metrics.RolloutRestartsTotal.WithLabelValues(obj.GetNamespace(), obj.GetName(), target.Name, target.Kind).Inc()
 		}
 	}
 
