@@ -549,6 +549,100 @@ func TestSecretDataBuilder_FilterData_with_any(t *testing.T) {
 	}
 }
 
+func TestSecretDataBuilder_TransformDataKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		opt     *SecretTransformationOption
+		d       map[string]any
+		want    map[string]any
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "key-template",
+			opt: &SecretTransformationOption{
+				KeyTemplate: "{{ .Name }}.json",
+			},
+			d: map[string]any{
+				"auth":  "auth-value",
+				"db":    "db-value",
+				"redis": "redis-value",
+			},
+			want: map[string]any{
+				"auth.json":  "auth-value",
+				"db.json":    "db-value",
+				"redis.json": "redis-value",
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "key-template-with-function",
+			opt: &SecretTransformationOption{
+				KeyTemplate: "{{ .Name | upper }}.json",
+			},
+			d: map[string]any{
+				"db": "db-value",
+			},
+			want: map[string]any{
+				"DB.json": "db-value",
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "duplicate-rendered-key",
+			opt: &SecretTransformationOption{
+				KeyTemplate: "config.json",
+			},
+			d: map[string]any{
+				"auth": "auth-value",
+				"db":   "db-value",
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.EqualError(t, err, `key template rendered duplicate key "config.json"`)
+			},
+		},
+		{
+			name: "empty-rendered-key",
+			opt: &SecretTransformationOption{
+				KeyTemplate: "",
+			},
+			d: map[string]any{
+				"db": "db-value",
+			},
+			want: map[string]any{
+				"db": "db-value",
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "invalid-key-template",
+			opt: &SecretTransformationOption{
+				KeyTemplate: "{{",
+			},
+			d: map[string]any{
+				"db": "db-value",
+			},
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err, "parse error")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+			got, err := TransformDataKeys[any](tt.opt, tt.d)
+			if !tt.wantErr(t, err, fmt.Sprintf(
+				"TransformDataKeys(%v, %v)", tt.opt, tt.d)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got,
+				"TransformDataKeys(%v, %v)", tt.opt, tt.d)
+		})
+	}
+}
+
 func TestNewSecretTransformationOption(t *testing.T) {
 	t.Parallel()
 
@@ -692,6 +786,70 @@ func TestNewSecretTransformationOption(t *testing.T) {
 				}),
 			want: &SecretTransformationOption{
 				Includes: []string{".+"},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "inline-key-template",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					KeyTemplate: "{{ .Name }}.json",
+					Includes:    []string{".+"},
+				}),
+			want: &SecretTransformationOption{
+				KeyTemplate: "{{ .Name }}.json",
+				Includes:    []string{".+"},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "inline-key-template-takes-precedence",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					KeyTemplate: "{{ .Name }}.json",
+					TransformationRefs: []secretsv1beta1.TransformationRef{
+						{
+							Namespace: "default",
+							Name:      "templates",
+						},
+					},
+				}),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						KeyTemplate: "{{ .Name }}.txt",
+					},
+					nil,
+				),
+			},
+			want: &SecretTransformationOption{
+				KeyTemplate: "{{ .Name }}.json",
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "trans-refs-key-template",
+			obj: newSecretObj(t,
+				secretsv1beta1.Transformation{
+					TransformationRefs: []secretsv1beta1.TransformationRef{
+						{
+							Namespace: "default",
+							Name:      "templates",
+						},
+					},
+				}),
+			secretTransObjs: []*secretsv1beta1.SecretTransformation{
+				newTransObj(t,
+					defaultTransObjMeta,
+					secretsv1beta1.SecretTransformationSpec{
+						KeyTemplate: "{{ .Name }}.json",
+					},
+					nil,
+				),
+			},
+			want: &SecretTransformationOption{
+				KeyTemplate: "{{ .Name }}.json",
 			},
 			wantErr: assert.NoError,
 		},

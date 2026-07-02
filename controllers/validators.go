@@ -22,6 +22,12 @@ func ValidateSecretTransformation(_ context.Context, o client.Object) error {
 	case *v1beta1.SecretTransformation:
 		stmpl := template.NewSecretTemplate(t.Name)
 		objKey := client.ObjectKeyFromObject(o)
+		if t.Spec.KeyTemplate != "" {
+			if err := stmpl.Parse(fmt.Sprintf("%s/keyTemplate", objKey), t.Spec.KeyTemplate); err != nil {
+				errs = errors.Join(errs, err)
+			}
+		}
+
 		for idx, tmpl := range t.Spec.SourceTemplates {
 			var name string
 			if tmpl.Name == "" {
