@@ -918,6 +918,89 @@ func Test_defaultClient_Close(t *testing.T) {
 	}
 }
 
+func Test_defaultClient_GetMountType(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cache hit on second call", func(t *testing.T) {
+		t.Parallel()
+
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path != "/v1/sys/mounts/prod-ldap" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			requestCount++
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":{"type":"ldap"}}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		client, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: client}
+		mt, err := c.GetMountType(context.Background(), "prod-ldap")
+		require.NoError(t, err)
+		assert.Equal(t, "ldap", mt)
+
+		mt, err = c.GetMountType(context.Background(), "prod-ldap")
+		require.NoError(t, err)
+		assert.Equal(t, "ldap", mt)
+		assert.Equal(t, 1, requestCount)
+	})
+
+	t.Run("forbidden returns error", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"errors":["permission denied"]}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		client, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: client}
+		_, err = c.GetMountType(context.Background(), "database")
+		require.Error(t, err)
+	})
+
+	t.Run("missing type field returns error", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		client, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: client}
+		_, err = c.GetMountType(context.Background(), "database")
+		require.Error(t, err)
+	})
+}
+
+func Test_defaultClient_Close_ClearsMountTypeCache(t *testing.T) {
+	t.Parallel()
+
+	c := &defaultClient{
+		mountTypeCache: map[string]string{"database": "database"},
+	}
+	c.Close(false)
+	assert.Nil(t, c.mountTypeCache)
+}
+
 func Test_defaultClient_hashAccessor(t *testing.T) {
 	t.Parallel()
 
