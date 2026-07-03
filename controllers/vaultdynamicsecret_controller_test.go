@@ -2213,26 +2213,34 @@ func Test_buildLeaseEventKey(t *testing.T) {
 		want string
 	}{
 		{
-			name: "with lease ID",
+			name: "standard database path",
 			o: &secretsv1beta1.VaultDynamicSecret{
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1beta1.VaultSecretLease{
-						ID: "database/creds/my-role/abc123",
-					},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "database",
+					Path:  "creds/my-role",
 				},
 			},
-			want: "database/creds/my-role/abc123",
+			want: "database/creds/my-role",
 		},
 		{
-			name: "empty lease ID",
+			name: "custom mount",
 			o: &secretsv1beta1.VaultDynamicSecret{
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1beta1.VaultSecretLease{
-						ID: "",
-					},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "vso-db",
+					Path:  "creds/dev-postgres",
 				},
 			},
-			want: "",
+			want: "vso-db/creds/dev-postgres",
+		},
+		{
+			name: "empty mount and path",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "",
+					Path:  "",
+				},
+			},
+			want: "/",
 		},
 	}
 	for _, tt := range tests {

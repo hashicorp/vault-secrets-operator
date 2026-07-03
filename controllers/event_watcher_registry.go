@@ -16,10 +16,6 @@ type eventWatcherMeta struct {
 	// LastClientID - vault client ID for the last successful subscription, used
 	// to detect if the Vault client has changed since the subscription started
 	LastClientID string
-	// LastLeaseID tracks the lease ID that was subscribed to for lease events.
-	// This allows detecting when the lease changes (e.g. after credential rotation)
-	// so the old subscription can be cleaned up and a new one created.
-	LastLeaseID string
 }
 
 // eventWatcherRegistry - registry for keeping track of running event watcher
