@@ -430,6 +430,12 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.ensureEventWatcher(ctx, o, vClient); err != nil {
 			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
 				"Failed to watch events: %s", err)
+			// Shorten the requeue horizon so we retry event watcher setup sooner
+			// (e.g. after sys/mounts permissions are fixed) rather than waiting
+			// for the full scheduled sync cycle.
+			if retryHorizon := computeHorizonWithJitter(requeueDurationOnError); horizon == 0 || retryHorizon < horizon {
+				horizon = retryHorizon
+			}
 		}
 	} else {
 		r.unWatchEvents(o, vClient)
@@ -1080,6 +1086,9 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 				"Ensure the VaultAuth policy grants read on sys/mounts/*. "+
 				"Engine-event subscription skipped; will retry next reconcile.",
 			o.Spec.Mount, mountTypeErr)
+
+		resultErr := fmt.Errorf("failed to resolve mount type for %q: %w", o.Spec.Mount, mountTypeErr)
+
 		// Lease events are mount-type-independent; still subscribe if applicable.
 		if !o.Spec.AllowStaticCreds && currentLeaseID != "" {
 			if !(hasMeta && meta.LastLeaseID == currentLeaseID && meta.LastClientID == c.ID()) {
@@ -1091,11 +1100,25 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 					PendingVaultIndex: &r.pendingVaultIndex,
 				}
 				if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
-					logger.V(consts.LogLevelWarning).Info("Failed to subscribe to lease events", "error", err)
+					// Surface this too, instead of only logging it, so a compound
+					// failure (mount type AND lease subscribe both broken) is visible.
+					resultErr = errors.Join(resultErr, fmt.Errorf("failed to subscribe to lease events: %w", err))
+				} else {
+					// Record what we did establish so the next reconcile can detect
+					// "lease-only subscription already active" and skip re-subscribing
+					// on every cycle while the mount-type lookup keeps failing.
+					// LastEventType is left empty so Step 2's staleness check still
+					// forces a full re-subscribe once GetMountType succeeds.
+					r.eventWatcherRegistry.Register(name, &eventWatcherMeta{
+						LastClientID:   c.ID(),
+						LastGeneration: o.GetGeneration(),
+						LastLeaseID:    currentLeaseID,
+						LastEventType:  "",
+					})
 				}
 			}
 		}
-		return fmt.Errorf("failed to resolve mount type for %q: %w", o.Spec.Mount, mountTypeErr)
+		return resultErr
 	}
 
 	// Step 2: check whether the existing subscription is still valid.
