@@ -1514,9 +1514,8 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 
 // TestVaultDynamicSecret_InstantUpdates validates that a VaultDynamicSecret with
 // SyncConfig.InstantUpdates=true receives near-instant credential updates driven
-// by WebSocket events rather than polling. It covers both static role credentials
-// (database* events) and dynamic credentials (lease* events) in parallel subtests
-// that share the same Terraform infrastructure.
+// by WebSocket events rather than polling. It covers static role credentials
+// (database* events) via a forced role rotation.
 func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	if testInParallel {
 		t.Parallel()
@@ -1724,13 +1723,10 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
 
-	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
-	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
-
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
 
-	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 120)
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 600)
 
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
@@ -1834,8 +1830,10 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	require.NoError(t, vClient.Sys().Revoke(vdsBefore.Status.SecretLease.ID),
 		"failed to revoke lease %s", vdsBefore.Status.SecretLease.ID)
 
-	// Assert the VDS is updated quickly (within ~60s) via the event-driven path,
-	// NOT the 1h RefreshAfter polling cadence. The lease ID must change, confirming
+	// Assert the VDS is updated quickly (within ~30s) via the event-driven path,
+	// NOT the 1h RefreshAfter polling cadence, and well before the ~400s natural
+	// lease-renewal-failure horizon (600s TTL * 67% RenewalPercent) that would
+	// otherwise mask a broken event path. The lease ID must change, confirming
 	// new credentials were fetched from Vault.
 	require.NoError(t, backoff.Retry(func() error {
 		var vdsAfter secretsv1beta1.VaultDynamicSecret
@@ -1846,8 +1844,8 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 		}
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)),
-		"VDS %s was not updated via instant updates within 120s after lease revocation", objKey,
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
+		"VDS %s was not updated via instant updates within 30s after lease revocation", objKey,
 	)
 
 	// Assert no EventWatcherError warning was emitted with websocket EOF
@@ -1893,9 +1891,6 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
-
-	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
-	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
 
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
@@ -1973,7 +1968,12 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 
 	objKey := ctrlclient.ObjectKeyFromObject(vdsObj)
 
-	// Capture the VDS status before the VaultAuth change so we can detect rotation later.
+	// Capture the VDS status before the VaultAuth change. Used solely as the
+	// baseline for the VaultClientMeta.ID comparison below (proving the Vault
+	// client actually changed) -- NOT as the baseline for detecting the forced
+	// rotation, since the static role's rotation_period (30s, see postgres.tf)
+	// could fire in the background during the VaultAuth-update/watcher-restart
+	// wait and make this snapshot stale before the force-rotate even happens.
 	var vdsBefore secretsv1beta1.VaultDynamicSecret
 	require.NoError(t, backoff.Retry(func() error {
 		if err := crdClient.Get(ctx, objKey, &vdsBefore); err != nil {
@@ -1984,6 +1984,9 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 		}
 		if vdsBefore.Status.SecretMAC == "" {
 			return fmt.Errorf("waiting for SecretMAC to be set on %s", objKey)
+		}
+		if vdsBefore.Status.VaultClientMeta.ID == "" {
+			return fmt.Errorf("waiting for VaultClientMeta.ID to be set on %s", objKey)
 		}
 		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
@@ -2061,6 +2064,20 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 		"timed out waiting for second EventWatcherStarted on %s after VaultAuth update", objKey,
 	)
 
+	// Re-fetch the VDS now that the watcher is confirmed re-subscribed. Use THIS
+	// as the rotation baseline — capturing it immediately before the force-rotate
+	// minimises the window in which the static role's own 30s rotation_period
+	// could fire in the background and produce a false pass.
+	var vdsBeforeRotate secretsv1beta1.VaultDynamicSecret
+	require.NoError(t, crdClient.Get(ctx, objKey, &vdsBeforeRotate))
+
+	// Prove that ensureEventWatcher actually re-subscribed on a new Vault client,
+	// not merely that a second EventWatcherStarted event was recorded.
+	assert.NotEmpty(t, vdsBeforeRotate.Status.VaultClientMeta.ID,
+		"expected VaultClientMeta.ID to be set on %s after VaultAuth update", objKey)
+	assert.NotEqual(t, vdsBefore.Status.VaultClientMeta.ID, vdsBeforeRotate.Status.VaultClientMeta.ID,
+		"expected VaultClientMeta.ID to change on %s after VaultAuth update", objKey)
+
 	// Force-rotate the static database role. The re-established watcher must
 	// deliver this event and trigger an immediate reconciliation.
 	vClient := getVaultClient(t, outputs.Namespace)
@@ -2068,8 +2085,11 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 	_, err := vClient.Logical().WriteWithContext(ctx, rotatePath, nil)
 	require.NoError(t, err, "failed to force-rotate static role %s", outputs.DBRoleStatic)
 
-	// Assert the K8s secret is updated within ~30s via the event-driven path,
-	// NOT the 1h RefreshAfter polling cadence.
+	// Assert the K8s secret is updated within ~20s via the event-driven path, NOT
+	// the 1h RefreshAfter polling cadence. 20s is intentionally below the static
+	// role's 30s rotation_period, so a broken event path fails here instead of
+	// being masked by Vault's own next scheduled rotation, while still giving a
+	// freshly re-established WebSocket connection realistic headroom.
 	require.NoError(t, backoff.Retry(func() error {
 		var vdsAfter secretsv1beta1.VaultDynamicSecret
 		if err := crdClient.Get(ctx, objKey, &vdsAfter); err != nil {
@@ -2077,21 +2097,21 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 		}
 
 		var errs error
-		if vdsAfter.Status.StaticCredsMetaData.LastVaultRotation == vdsBefore.Status.StaticCredsMetaData.LastVaultRotation {
+		if vdsAfter.Status.StaticCredsMetaData.LastVaultRotation == vdsBeforeRotate.Status.StaticCredsMetaData.LastVaultRotation {
 			errs = errors.Join(errs, fmt.Errorf(
 				"LastVaultRotation not updated: before=%d, after=%d",
-				vdsBefore.Status.StaticCredsMetaData.LastVaultRotation,
+				vdsBeforeRotate.Status.StaticCredsMetaData.LastVaultRotation,
 				vdsAfter.Status.StaticCredsMetaData.LastVaultRotation,
 			))
 		}
-		if vdsAfter.Status.SecretMAC == vdsBefore.Status.SecretMAC {
+		if vdsAfter.Status.SecretMAC == vdsBeforeRotate.Status.SecretMAC {
 			errs = errors.Join(errs, fmt.Errorf(
-				"SecretMAC not updated: still %s", vdsBefore.Status.SecretMAC,
+				"SecretMAC not updated: still %s", vdsBeforeRotate.Status.SecretMAC,
 			))
 		}
 		return errs
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
-		"VDS %s was not updated via instant updates within 30s after forced rotation post-VaultAuth-change", objKey,
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 20)),
+		"VDS %s was not updated via instant updates within 20s after forced rotation post-VaultAuth-change", objKey,
 	)
 
 	// Assert no websocket EOF errors were emitted throughout the test.
