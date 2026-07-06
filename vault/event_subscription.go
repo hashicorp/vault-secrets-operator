@@ -338,27 +338,32 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 				"operation", op)
 			return
 		}
-		// Vault does NOT populate metadata.path for lease* events; only
-		// metadata.lease_id is reliable. Derive the mount+path subscriber key by:
-		//   1. stripping the UUID suffix (last "/" segment)
-		//   2. stripping the Vault namespace prefix (Vault Enterprise only)
-		// The result (e.g. "mount/creds/role") matches buildLeaseEventKey which
-		// returns Spec.Mount + "/" + Spec.Path.
-		leaseID := msg.Data.Event.Metadata.LeaseID
-		if leaseID == "" {
-			return
-		}
-		idx := strings.LastIndex(leaseID, "/")
-		if idx < 0 {
-			return
-		}
-		leasePath := leaseID[:idx] // strip UUID suffix → e.g. "ns1/mount/creds/role"
-		if vaultNS != "" {
-			// Strip Enterprise namespace prefix (e.g. "ns1/mount/creds/role" → "mount/creds/role")
-			leasePath = strings.TrimPrefix(leasePath, vaultNS+"/")
-		}
-		if leasePath == "" {
-			return
+		// Vault's sendLeaseEvent populates metadata.path from le.Path (the original
+		// request path, namespace-agnostic, e.g. "database/creds/my-role"). Use it
+		// directly when present — it already matches buildLeaseEventKey.
+		// Fall back to deriving the path from metadata.lease_id by stripping the UUID
+		// suffix (last "/" segment) then any Vault Enterprise namespace prefix
+		// (from msg.Data.Namespace) to recover the same "mount/creds/role" key.
+		var leasePath string
+		if p := msg.Data.Event.Metadata.Path; p != "" {
+			leasePath = p
+		} else {
+			leaseID := msg.Data.Event.Metadata.LeaseID
+			if leaseID == "" {
+				return
+			}
+			idx := strings.LastIndex(leaseID, "/")
+			if idx < 0 {
+				return
+			}
+			leasePath = leaseID[:idx] // strip UUID suffix → e.g. "ns1/mount/creds/role"
+			if vaultNS != "" {
+				// Strip Enterprise namespace prefix (e.g. "ns1/mount/creds/role" → "mount/creds/role")
+				leasePath = strings.TrimPrefix(leasePath, vaultNS+"/")
+			}
+			if leasePath == "" {
+				return
+			}
 		}
 		lookupKey = SubscriptionKey{
 			VaultPath: leasePath,

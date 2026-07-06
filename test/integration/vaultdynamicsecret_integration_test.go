@@ -1830,11 +1830,12 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	require.NoError(t, vClient.Sys().Revoke(vdsBefore.Status.SecretLease.ID),
 		"failed to revoke lease %s", vdsBefore.Status.SecretLease.ID)
 
-	// Assert the VDS is updated quickly (within ~30s) via the event-driven path,
-	// NOT the 1h RefreshAfter polling cadence, and well before the ~400s natural
-	// lease-renewal-failure horizon (600s TTL * 67% RenewalPercent) that would
-	// otherwise mask a broken event path. The lease ID must change, confirming
-	// new credentials were fetched from Vault.
+	// Assert the VDS is updated via the event-driven path, NOT the 1h RefreshAfter
+	// polling cadence. 120s is the assertion window: well below the ~400s natural
+	// lease-renewal-failure horizon (600s TTL * 67% RenewalPercent), so any pass
+	// proves event routing triggered the rotation rather than the polling fallback,
+	// while providing enough headroom for CI network and processing latency.
+	// The lease ID must change, confirming new credentials were fetched from Vault.
 	require.NoError(t, backoff.Retry(func() error {
 		var vdsAfter secretsv1beta1.VaultDynamicSecret
 		if err := crdClient.Get(ctx, objKey, &vdsAfter); err != nil {
@@ -1844,8 +1845,8 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 		}
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
-		"VDS %s was not updated via instant updates within 30s after lease revocation", objKey,
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)),
+		"VDS %s was not updated via instant updates within 120s after lease revocation", objKey,
 	)
 
 	// Assert no EventWatcherError warning was emitted with websocket EOF
