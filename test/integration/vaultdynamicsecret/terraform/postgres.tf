@@ -204,7 +204,7 @@ resource "vault_policy" "db-events" {
   name      = "${local.auth_policy}-db-events"
   policy    = <<EOT
 path "${vault_database_secrets_mount.db.path}/*" {
-  capabilities = ["subscribe"]
+  capabilities = ["read", "list", "subscribe"]
   subscribe_event_types = ["database*"]
 }
 
