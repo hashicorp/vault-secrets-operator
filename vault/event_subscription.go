@@ -287,18 +287,20 @@ func (ws *SharedWebSocket) reconnect() error {
 
 // routeEvent matches the event to subscribers and triggers reconciliation
 func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
-	modified, err := parseutil.ParseBool(msg.Data.Event.Metadata.Modified)
-	if err != nil {
-		ws.logger.V(consts.LogLevelDebug).Info("Failed to parse modified field",
-			"error", err,
-			"value", msg.Data.Event.Metadata.Modified)
-		return
-	}
-
-	// Lease events bypass the modified check: lease/expired carries modified="false"
-	// but must still trigger reconciliation.
-	if !modified && ws.eventType != EventTypeLease {
-		return
+	// Lease events are routed purely by operation + lease_id; the modified field
+	// is unreliable for lease events (empty, "false" for expire, etc.).
+	// Skip the modified check entirely for lease events.
+	if ws.eventType != EventTypeLease {
+		modified, err := parseutil.ParseBool(msg.Data.Event.Metadata.Modified)
+		if err != nil {
+			ws.logger.V(consts.LogLevelDebug).Info("Failed to parse modified field",
+				"error", err,
+				"value", msg.Data.Event.Metadata.Modified)
+			return
+		}
+		if !modified {
+			return
+		}
 	}
 
 	vaultNS := strings.Trim(msg.Data.Namespace, "/")
@@ -336,11 +338,25 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 				"operation", op)
 			return
 		}
-		// Route by metadata.path (e.g. "mount/creds/role"), not by lease_id.
-		// On Vault Enterprise the lease_id includes a namespace prefix that
-		// does not appear in the subscriber key registered by buildLeaseEventKey,
-		// causing a mismatch. metadata.path is namespace-agnostic and stable.
-		leasePath := msg.Data.Event.Metadata.Path
+		// Vault does NOT populate metadata.path for lease* events; only
+		// metadata.lease_id is reliable. Derive the mount+path subscriber key by:
+		//   1. stripping the UUID suffix (last "/" segment)
+		//   2. stripping the Vault namespace prefix (Vault Enterprise only)
+		// The result (e.g. "mount/creds/role") matches buildLeaseEventKey which
+		// returns Spec.Mount + "/" + Spec.Path.
+		leaseID := msg.Data.Event.Metadata.LeaseID
+		if leaseID == "" {
+			return
+		}
+		idx := strings.LastIndex(leaseID, "/")
+		if idx < 0 {
+			return
+		}
+		leasePath := leaseID[:idx] // strip UUID suffix → e.g. "ns1/mount/creds/role"
+		if vaultNS != "" {
+			// Strip Enterprise namespace prefix (e.g. "ns1/mount/creds/role" → "mount/creds/role")
+			leasePath = strings.TrimPrefix(leasePath, vaultNS+"/")
+		}
 		if leasePath == "" {
 			return
 		}

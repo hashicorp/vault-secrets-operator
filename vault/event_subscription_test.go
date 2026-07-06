@@ -869,14 +869,14 @@ func TestSharedWebSocket_RouteEvent_LDAP_RoleMismatch(t *testing.T) {
 
 // --- Lease event routing tests ---
 // Subscribers register with VaultPath = Spec.Mount + "/" + Spec.Path
-// (e.g. "database/creds/my-role"). Events are routed by metadata.path,
-// which Vault emits without a UUID suffix or namespace prefix, making
-// routing work correctly on both CE and Enterprise.
+// (e.g. "database/creds/my-role"). Events are routed by deriving the path
+// from metadata.lease_id: strip UUID suffix then strip Enterprise namespace
+// prefix. Vault does NOT populate metadata.path for lease* events.
 
-// TestSharedWebSocket_RouteEvent_Lease_ByPath verifies the core path-based
-// routing: a lease/revoked event whose metadata.path matches the subscriber
+// TestSharedWebSocket_RouteEvent_Lease_ByLeaseID verifies the core routing:
+// a lease/revoked event whose lease_id (UUID stripped) matches the subscriber
 // key triggers reconciliation.
-func TestSharedWebSocket_RouteEvent_Lease_ByPath(t *testing.T) {
+func TestSharedWebSocket_RouteEvent_Lease_ByLeaseID(t *testing.T) {
 	ws := newTestSharedWebSocket(EventTypeLease)
 	defer ws.cancel()
 
@@ -890,8 +890,7 @@ func TestSharedWebSocket_RouteEvent_Lease_ByPath(t *testing.T) {
 	require.NoError(t, ws.Subscribe(sub))
 
 	msg := &EventMessage{}
-	msg.Data.Event.Metadata.Modified = "true"
-	msg.Data.Event.Metadata.Path = "database/creds/my-role"
+	msg.Data.Event.Metadata.LeaseID = "database/creds/my-role/UUID123"
 	msg.Data.Event.Metadata.Operation = "revoke"
 	msg.Data.EventType = "lease/revoked"
 
@@ -921,7 +920,7 @@ func TestSharedWebSocket_RouteEvent_Lease_ExpiredRouted(t *testing.T) {
 	// lease/expired carries modified="false" but must still be routed
 	msg := &EventMessage{}
 	msg.Data.Event.Metadata.Modified = "false"
-	msg.Data.Event.Metadata.Path = "database/creds/my-role"
+	msg.Data.Event.Metadata.LeaseID = "database/creds/my-role/UUID456"
 	msg.Data.Event.Metadata.Operation = "expire"
 	msg.Data.EventType = "lease/expired"
 
@@ -930,8 +929,8 @@ func TestSharedWebSocket_RouteEvent_Lease_ExpiredRouted(t *testing.T) {
 	require.Len(t, ch, 1, "lease/expired with modified=false must still trigger reconciliation")
 }
 
-// TestSharedWebSocket_RouteEvent_Lease_IssueDropped verifies that
-// lease/issue events (operation other than revoke/expire) are dropped.
+// TestSharedWebSocket_RouteEvent_Lease_IssueDropped verifies that operations
+// other than revoke/expire are dropped.
 func TestSharedWebSocket_RouteEvent_Lease_IssueDropped(t *testing.T) {
 	ws := newTestSharedWebSocket(EventTypeLease)
 	defer ws.cancel()
@@ -947,8 +946,7 @@ func TestSharedWebSocket_RouteEvent_Lease_IssueDropped(t *testing.T) {
 
 	for _, op := range []string{"issue", "renew", ""} {
 		msg := &EventMessage{}
-		msg.Data.Event.Metadata.Modified = "true"
-		msg.Data.Event.Metadata.Path = "database/creds/my-role"
+		msg.Data.Event.Metadata.LeaseID = "database/creds/my-role/UUID123"
 		msg.Data.Event.Metadata.Operation = op
 		ws.routeEvent(msg)
 	}
@@ -956,9 +954,9 @@ func TestSharedWebSocket_RouteEvent_Lease_IssueDropped(t *testing.T) {
 	assert.Len(t, ch, 0, "non-revoke/expire operations must be dropped")
 }
 
-// TestSharedWebSocket_RouteEvent_Lease_PathMismatchDropped verifies that an
-// event whose metadata.path does not match the subscriber key is dropped.
-func TestSharedWebSocket_RouteEvent_Lease_PathMismatchDropped(t *testing.T) {
+// TestSharedWebSocket_RouteEvent_Lease_MismatchDropped verifies that a
+// lease_id whose path (UUID stripped) does not match the subscriber key is dropped.
+func TestSharedWebSocket_RouteEvent_Lease_MismatchDropped(t *testing.T) {
 	ws := newTestSharedWebSocket(EventTypeLease)
 	defer ws.cancel()
 
@@ -972,18 +970,17 @@ func TestSharedWebSocket_RouteEvent_Lease_PathMismatchDropped(t *testing.T) {
 	require.NoError(t, ws.Subscribe(sub))
 
 	msg := &EventMessage{}
-	msg.Data.Event.Metadata.Modified = "true"
-	msg.Data.Event.Metadata.Path = "database/creds/other-role"
+	msg.Data.Event.Metadata.LeaseID = "database/creds/other-role/UUID123"
 	msg.Data.Event.Metadata.Operation = "revoke"
 
 	ws.routeEvent(msg)
 
-	assert.Len(t, ch, 0, "path mismatch should not route")
+	assert.Len(t, ch, 0, "lease_id path mismatch should not route")
 }
 
-// TestSharedWebSocket_RouteEvent_Lease_EmptyPathDropped verifies that a
-// lease event with an empty metadata.path is silently dropped.
-func TestSharedWebSocket_RouteEvent_Lease_EmptyPathDropped(t *testing.T) {
+// TestSharedWebSocket_RouteEvent_Lease_EmptyLeaseIDDropped verifies that a
+// lease event with an empty metadata.lease_id is silently dropped.
+func TestSharedWebSocket_RouteEvent_Lease_EmptyLeaseIDDropped(t *testing.T) {
 	ws := newTestSharedWebSocket(EventTypeLease)
 	defer ws.cancel()
 
@@ -997,19 +994,18 @@ func TestSharedWebSocket_RouteEvent_Lease_EmptyPathDropped(t *testing.T) {
 	require.NoError(t, ws.Subscribe(sub))
 
 	msg := &EventMessage{}
-	msg.Data.Event.Metadata.Modified = "true"
-	msg.Data.Event.Metadata.Path = ""
+	msg.Data.Event.Metadata.LeaseID = ""
 	msg.Data.Event.Metadata.Operation = "revoke"
 
 	ws.routeEvent(msg)
 
-	assert.Len(t, ch, 0, "empty path should be dropped")
+	assert.Len(t, ch, 0, "empty lease_id should be dropped")
 }
 
 // TestSharedWebSocket_RouteEvent_Lease_EnterpriseNamespacePrefix verifies
 // that routing works on Vault Enterprise, where metadata.lease_id carries a
-// namespace prefix (e.g. "ns1/database/creds/role/UUID") but metadata.path
-// does not (e.g. "database/creds/role").
+// namespace prefix (e.g. "ns1/mount/creds/role/UUID"). The prefix must be
+// stripped so the derived path matches the subscriber key.
 func TestSharedWebSocket_RouteEvent_Lease_EnterpriseNamespacePrefix(t *testing.T) {
 	ws := newTestSharedWebSocket(EventTypeLease)
 	defer ws.cancel()
@@ -1023,12 +1019,11 @@ func TestSharedWebSocket_RouteEvent_Lease_EnterpriseNamespacePrefix(t *testing.T
 	}
 	require.NoError(t, ws.Subscribe(sub))
 
-	// Vault Enterprise emits a namespace-prefixed lease_id, but metadata.path
-	// remains namespace-agnostic and must be used for routing.
+	// Simulate a Vault Enterprise event: namespace "ns1" in the Data.Namespace
+	// field and a namespace-prefixed lease_id.
 	msg := &EventMessage{}
-	msg.Data.Event.Metadata.Modified = "true"
-	msg.Data.Event.Metadata.LeaseID = "ns1/database/creds/my-role/UUID123" // would mismatch old routing
-	msg.Data.Event.Metadata.Path = "database/creds/my-role"                // correct routing key
+	msg.Data.Namespace = "ns1/"
+	msg.Data.Event.Metadata.LeaseID = "ns1/database/creds/my-role/UUID123"
 	msg.Data.Event.Metadata.Operation = "revoke"
 	msg.Data.EventType = "lease/revoked"
 
