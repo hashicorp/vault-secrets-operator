@@ -503,7 +503,6 @@ func (r *VaultDynamicSecretReconciler) checkStaticCredsHMAC(
 	o *secretsv1beta1.VaultDynamicSecret,
 	data map[string][]byte,
 	staticCredsMeta *secretsv1beta1.VaultStaticCredsMetaData,
-	logPrefix string,
 ) (bool, error) {
 	logger := log.FromContext(ctx).WithName("checkStaticCredsHMAC")
 
@@ -566,12 +565,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 	// Use HMAC-based drift detection for static credentials
 	if isStaticCredsSecret {
-		logPrefix := "Dynamic static-creds"
-		if !o.Spec.AllowStaticCreds {
-			logPrefix = "Dynamic non-static-creds"
-		}
-
-		macsEqual, err := r.checkStaticCredsHMAC(ctx, o, data, staticCredsMeta, logPrefix)
+		macsEqual, err := r.checkStaticCredsHMAC(ctx, o, data, staticCredsMeta)
 		if err != nil {
 			return nil, false, err
 		}
