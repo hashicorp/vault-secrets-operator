@@ -104,7 +104,9 @@ controller:
     minAvailable: "0"
 
   rbac:
+    disabled: false
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
+
     clusterRoleAggregation:
       # viewerRoles is a list of roles that will be aggregated into the viewer ClusterRole.
       # The role name must be that of any VSO resource type. E.g. "VaultAuth", "HCPAuth".

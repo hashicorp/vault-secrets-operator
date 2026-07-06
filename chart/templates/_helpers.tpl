@@ -245,7 +245,7 @@ aggregateRoleMatchLabelsViewer generates the matchLabels for the viewer cluster 
 */}}
 {{- define "vso.aggregateRoleMatchLabelsViewer" -}}
 {{- $ret := list }}
-{{- with .Values.controller.rbac.clusterRoleAggregation.viewerRoles -}}
+{{- with and (not .Values.controller.rbac.disabled) .Values.controller.rbac.clusterRoleAggregation.viewerRoles -}}
 {{- if eq "*" (. | first) -}}
 {{- $labels := dict "vso.hashicorp.com/aggregate-to-viewer" "true" -}}
 {{- $ret = append $ret (dict "matchLabels" $labels) }}
@@ -265,7 +265,7 @@ aggregateRoleMatchLabelsEditor generates the matchLabels for the editor cluster 
 */}}
 {{- define "vso.aggregateRoleMatchLabelsEditor" -}}
 {{- $ret := list }}
-{{- with .Values.controller.rbac.clusterRoleAggregation.editorRoles -}}
+{{- with and (not .Values.controller.rbac.disabled) .Values.controller.rbac.clusterRoleAggregation.editorRoles -}}
 {{- if eq "*" (. | first) -}}
 {{- $labels := dict "vso.hashicorp.com/aggregate-to-editor" "true" -}}
 {{- $ret = append $ret (dict "matchLabels" $labels) }}
