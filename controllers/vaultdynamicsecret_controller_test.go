@@ -846,7 +846,13 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	// LastVaultRotation is unchanged: no rotation occurred, only the TTL decreased
 	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation)
 
-	// Verify pendingVaultIndex one-time consumption (LoadAndDelete semantics):
+	// Verify pendingVaultIndex one-time consumption on the static-creds path
+	// (LoadAndDelete semantics):
+	//   1. A vault_index stored in pendingVaultIndex (as routeEvent() would do
+	//      on an instant-update event) is forwarded as X-Vault-Index on the
+	//      first Vault request of the reconcile.
+	//   2. The entry is consumed exactly once — the map is empty afterwards.
+	//   3. A subsequent reconcile without a stored index sends no X-Vault-Index.
 	// Pre-populate as routeEvent() would when a Vault event arrives.
 	r.pendingVaultIndex.Store(objKey, "vault-idx-42")
 
@@ -875,6 +881,102 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	vClient.MockRecordingVaultClient.ReadResponses = map[string][]vault.Response{
 		"database/static-creds/app": {f.freshResponse, f.freshResponse},
 	}
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	secondReq := vClient.MockRecordingVaultClient.Requests[0]
+	if secondReq.Headers != nil {
+		assert.Empty(t, secondReq.Headers[vsoconsts.HeaderVaultIndex],
+			"X-Vault-Index must not be sent when no pending index is stored")
+	}
+}
+
+// TestVaultDynamicSecretReconciler_Reconcile_vaultIndex verifies the full
+// vault_index lifecycle at the Reconcile level for a leased (non-static-creds)
+// VaultDynamicSecret:
+//  1. A vault_index stored in pendingVaultIndex (as routeEvent() would do on an
+//     instant-update event) is forwarded as X-Vault-Index on the Vault read.
+//  2. LoadAndDelete consumes the entry exactly once — the map is empty after
+//     the reconcile.
+//  3. A subsequent reconcile without a stored index sends no X-Vault-Index.
+func TestVaultDynamicSecretReconciler_Reconcile_vaultIndex(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	obj := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "app",
+			Namespace:  "default",
+			UID:        types.UID("vds-leased"),
+			Generation: 1,
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+			Destination: secretsv1beta1.Destination{
+				Name:   "app",
+				Create: true,
+			},
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			// LastGeneration: 0 triggers initial sync on the first Reconcile.
+			VaultClientMeta: secretsv1beta1.VaultClientMeta{
+				CacheKey: "cache-key",
+				ID:       "client-1",
+			},
+		},
+	}
+
+	secretClient := testutils.NewFakeClientBuilder().
+		WithStatusSubresource(obj).
+		WithObjects(obj).
+		Build()
+
+	vClient := &reconcileTestVaultClient{
+		MockRecordingVaultClient: &vault.MockRecordingVaultClient{
+			Id: "client-1",
+		},
+		cacheKey: "cache-key",
+	}
+
+	syncRegistry := NewSyncRegistry()
+	objKey := client.ObjectKeyFromObject(obj)
+
+	r := &VaultDynamicSecretReconciler{
+		Client:                      secretClient,
+		SecretsClient:               secretClient,
+		ClientFactory:               &reconcileTestClientFactory{client: vClient},
+		Recorder:                    record.NewFakeRecorder(10),
+		SyncRegistry:                syncRegistry,
+		BackOffRegistry:             NewBackOffRegistry(),
+		referenceCache:              NewResourceReferenceCache(),
+		GlobalTransformationOptions: &helpers.GlobalTransformationOptions{},
+	}
+
+	// ── Reconcile 1: vault_index stored → X-Vault-Index forwarded ──────────
+	// Simulate what routeEvent() does when a Vault event arrives.
+	r.pendingVaultIndex.Store(objKey, "vault-idx-leased")
+
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	// The Vault read must have received the X-Vault-Index header.
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests,
+		"expected at least one Vault request")
+	firstReq := vClient.MockRecordingVaultClient.Requests[0]
+	require.NotNil(t, firstReq.Headers, "expected X-Vault-Index header on Vault read")
+	assert.Equal(t, []string{"vault-idx-leased"}, firstReq.Headers[vsoconsts.HeaderVaultIndex])
+
+	// Entry must be consumed — LoadAndDelete cleared it.
+	_, stillPresent := r.pendingVaultIndex.Load(objKey)
+	assert.False(t, stillPresent, "pendingVaultIndex entry must be deleted after use")
+
+	// ── Reconcile 2: no stored index → no X-Vault-Index header ─────────────
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
 
 	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
 	require.NoError(t, err)

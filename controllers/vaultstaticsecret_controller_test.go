@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
-	"github.com/hashicorp/vault-secrets-operator/consts"
 	vsoconsts "github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
@@ -25,7 +24,7 @@ import (
 )
 
 func Test_newKVRequest(t *testing.T) {
-	vaultIndexHeader := http.Header{consts.HeaderVaultIndex: []string{"42"}}
+	vaultIndexHeader := http.Header{vsoconsts.HeaderVaultIndex: []string{"42"}}
 
 	tests := []struct {
 		name        string
@@ -39,7 +38,7 @@ func Test_newKVRequest(t *testing.T) {
 			name: "kv-v1 nil headers",
 			spec: secretsv1beta1.VaultStaticSecretSpec{
 				VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-					Type:  consts.KVSecretTypeV1,
+					Type:  vsoconsts.KVSecretTypeV1,
 					Mount: "secret",
 					Path:  "app/config",
 				},
@@ -53,7 +52,7 @@ func Test_newKVRequest(t *testing.T) {
 			name: "kv-v2 nil headers",
 			spec: secretsv1beta1.VaultStaticSecretSpec{
 				VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-					Type:  consts.KVSecretTypeV2,
+					Type:  vsoconsts.KVSecretTypeV2,
 					Mount: "secret",
 					Path:  "app/config",
 				},
@@ -67,7 +66,7 @@ func Test_newKVRequest(t *testing.T) {
 			name: "kv-v1 with X-Vault-Index header",
 			spec: secretsv1beta1.VaultStaticSecretSpec{
 				VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-					Type:  consts.KVSecretTypeV1,
+					Type:  vsoconsts.KVSecretTypeV1,
 					Mount: "secret",
 					Path:  "app/config",
 				},
@@ -81,7 +80,7 @@ func Test_newKVRequest(t *testing.T) {
 			name: "kv-v2 with X-Vault-Index header",
 			spec: secretsv1beta1.VaultStaticSecretSpec{
 				VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-					Type:    consts.KVSecretTypeV2,
+					Type:    vsoconsts.KVSecretTypeV2,
 					Mount:   "secret",
 					Path:    "app/config",
 					Version: 3,
@@ -143,7 +142,7 @@ func TestVaultStaticSecretReconciler_Reconcile_vaultIndex(t *testing.T) {
 		},
 		Spec: secretsv1beta1.VaultStaticSecretSpec{
 			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
-				Type:  consts.KVSecretTypeV1,
+				Type:  vsoconsts.KVSecretTypeV1,
 				Mount: "secret",
 				Path:  "app/config",
 			},
