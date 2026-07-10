@@ -1053,7 +1053,14 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 		return fmt.Errorf("failed to subscribe to %s events: %w", eventType, err)
 	}
 
-	// For dynamic leases, also subscribe to lease lifecycle events
+	// For dynamic leases, also subscribe to lease lifecycle events. Vault
+	// publishes lease events in the lease's own namespace, so the primary client
+	// (already scoped to the resource's Vault namespace) is used here.
+	//
+	// NOTE: the lease subscriber intentionally does NOT set VaultNS. Lease events
+	// are routed by lease ID alone (see routeEvent/EventTypeLease and
+	// unWatchEventsWithLeaseID), so setting VaultNS here would key the subscriber
+	// as "<namespace>/<leaseID>" and never match the "<leaseID>" lookup.
 	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
 		leaseSubscriber := &vault.Subscriber{
 			ResourceKey:  name,
@@ -1062,9 +1069,13 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 			ReconcileCh:  r.SourceCh,
 		}
 		if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
-			// Non-fatal: lease events are supplementary
+			// Non-fatal: the database/LDAP subscription above still provides
+			// event-driven updates. Surface the failure as a warning event so
+			// it is visible rather than silently swallowed.
 			logger.V(consts.LogLevelWarning).Info("Failed to subscribe to lease events",
 				"error", err)
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+				"Failed to subscribe to lease events: %s", err)
 		}
 	}
 

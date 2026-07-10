@@ -1730,7 +1730,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	ctx := context.Background()
 	crdClient := getCRDClient(t)
 
-	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 120)
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 600)
 
 	vaultAuthName := outputs.NamePrefix + "-default"
 	vaultAuth := &secretsv1beta1.VaultAuth{
@@ -1846,8 +1846,8 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			return fmt.Errorf("SecretLease.ID not updated: still %s", vdsBefore.Status.SecretLease.ID)
 		}
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 120)),
-		"VDS %s was not updated via instant updates within 120s after lease revocation", objKey,
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)),
+		"VDS %s was not updated via instant updates within 60s after lease revocation", objKey,
 	)
 
 	// Assert no EventWatcherError warning was emitted with websocket EOF
@@ -2090,7 +2090,7 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 			))
 		}
 		return errs
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 30)),
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 20)),
 		"VDS %s was not updated via instant updates within 30s after forced rotation post-VaultAuth-change", objKey,
 	)
 
