@@ -1723,6 +1723,11 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
+	// lease* WebSocket events (required for dynamic credential instant updates)
+	// were introduced in Vault Enterprise 2.0.
+	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "2.0.0") {
+		t.Skip("Skipping because lease* WebSocket events require Vault Enterprise >= 2.0")
+	}
 
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	require.NotEmpty(t, operatorNS, "OPERATOR_NAMESPACE is not set")
