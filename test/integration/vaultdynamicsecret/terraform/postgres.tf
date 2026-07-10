@@ -136,7 +136,7 @@ resource "vault_database_secret_backend_static_role" "postgres-delayed" {
   name                = local.db_role_static_delayed
   db_name             = vault_database_secrets_mount.db.postgresql[0].name
   username            = local.db_role_static_user
-  rotation_statements = ["SELECT pg_sleep(10); ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
+  rotation_statements = ["SELECT pg_sleep(3); ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';"]
   rotation_period     = 30
   depends_on = [
     null_resource.create-pg-user,
@@ -179,8 +179,14 @@ resource "vault_policy" "db-with-events" {
   namespace = local.namespace
   name      = "${local.auth_policy}-db"
   policy    = <<EOT
+# The dynamic creds path is both read (to fetch credentials) and subscribed to
+# (for lease* events). Because Vault ACLs use the most-specific matching path
+# with no capability merge across path patterns, this exact-path rule must grant
+# "subscribe" with lease* itself, otherwise it shadows the "${vault_database_secrets_mount.db.path}/*"
+# glob subscribe grant below and lease events are never delivered.
 path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_backend_role.postgres.name}" {
-  capabilities = ["read"]
+  capabilities = ["read", "subscribe"]
+  subscribe_event_types = ["lease*"]
 }
 path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
   capabilities = ["read"]
@@ -190,7 +196,7 @@ path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secr
 }
 path "${vault_database_secrets_mount.db.path}/*" {
   capabilities = ["subscribe"]
-  subscribe_event_types = ["database*"]
+  subscribe_event_types = ["database*", "lease*"]
 }
 
 path "sys/events/subscribe/database*" {
