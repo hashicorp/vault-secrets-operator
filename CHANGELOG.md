@@ -1,3 +1,10 @@
+## Unreleased
+
+Breaking Changes:
+* `VaultAuth`/`VaultAuthGlobal` AppRole `spec.appRole.secretIDPath` has been removed. Use
+  `spec.appRole.secretRef` instead, which references a Kubernetes Secret containing the AppRole
+  Secret ID.
+
 ## 1.4.1 (June 30th, 2026)
 
 Build:
