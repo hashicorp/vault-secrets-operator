@@ -106,14 +106,7 @@ func subscriberKey(sub *Subscriber) string {
 
 // getEventPath returns the Vault event subscription path for the given event type
 func getEventPath(eventType EventType) string {
-	paths := map[EventType]string{
-		EventTypeKV:       "/v1/sys/events/subscribe/kv*",
-		EventTypeDatabase: "/v1/sys/events/subscribe/database*",
-		EventTypePKI:      "/v1/sys/events/subscribe/pki*",
-		EventTypeLDAP:     "/v1/sys/events/subscribe/ldap*",
-		EventTypeLease:    "/v1/sys/events/subscribe/lease*",
-	}
-	return paths[eventType]
+	return "/v1/sys/events/subscribe/" + string(eventType) + "*"
 }
 
 // extractMountAndRole parses a database/LDAP event path like

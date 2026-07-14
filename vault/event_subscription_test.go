@@ -120,6 +120,11 @@ func TestGetEventPath(t *testing.T) {
 			eventType: EventTypeLease,
 			want:      "/v1/sys/events/subscribe/lease*",
 		},
+		{
+			name:      "custom plugin",
+			eventType: EventType("custom-plugin"),
+			want:      "/v1/sys/events/subscribe/custom-plugin*",
+		},
 	}
 
 	for _, tt := range tests {
@@ -948,6 +953,56 @@ func TestSharedWebSocket_RouteEvent_Database_DynamicRoleUpdate(t *testing.T) {
 	ws.routeEvent(msg)
 
 	require.Len(t, ch, 1)
+}
+
+func TestSharedWebSocket_RouteEvent_CustomPlugin_DefaultMountRoleRouting(t *testing.T) {
+	ws := newTestSharedWebSocket(EventType("custom-plugin"))
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "custom-os-1/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "custom-os-1/rotate-role/my-role"
+	msg.Data.Event.Metadata.Modified = "true"
+	msg.Data.Event.Metadata.Name = "my-role"
+	msg.Data.PluginInfo.MountPath = "custom-os-1/"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+}
+
+func TestSharedWebSocket_RouteEvent_CustomPlugin_MissingRole_Dropped(t *testing.T) {
+	ws := newTestSharedWebSocket(EventType("custom-plugin"))
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
+		VaultNS:      "",
+		VaultPath:    "custom-os-1/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = ""
+	msg.Data.Event.Metadata.Path = "custom-os-1"
+	msg.Data.Event.Metadata.Modified = "true"
+
+	ws.routeEvent(msg)
+
+	assert.Len(t, ch, 0)
 }
 
 // --- LDAP event routing tests ---
