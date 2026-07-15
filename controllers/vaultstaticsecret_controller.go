@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -52,6 +54,11 @@ type VaultStaticSecretReconciler struct {
 	// This channel should be closed when the controller is stopped.
 	SourceCh             chan event.GenericEvent
 	eventWatcherRegistry *eventWatcherRegistry
+	// pendingVaultIndex stores the vault_index value extracted from the Vault
+	// WebSocket event that triggered the last reconcile for each resource.
+	// The reconciler consumes it once via LoadAndDelete to attach X-Vault-Index
+	// to the KV read, then clears it.
+	pendingVaultIndex sync.Map
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultstaticsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -154,7 +161,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}, nil
 	}
 
-	kvReq, err := newKVRequest(o.Spec)
+	var kvHeaders http.Header
+	if idx, ok := r.pendingVaultIndex.LoadAndDelete(req.NamespacedName); ok {
+		kvHeaders = http.Header{consts.HeaderVaultIndex: []string{idx.(string)}}
+	}
+	kvReq, err := newKVRequest(o.Spec, kvHeaders)
 	if err != nil {
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
 		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
@@ -294,6 +305,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	} else {
 		// ensure event watcher is not running
 		r.unWatchEvents(o, c)
+		r.pendingVaultIndex.Delete(req.NamespacedName)
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
@@ -339,6 +351,7 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 	} else {
 		r.unWatchEvents(vss, c)
 	}
+	r.pendingVaultIndex.Delete(objKey)
 
 	if controllerutil.ContainsFinalizer(o, vaultStaticSecretFinalizer) {
 		logger.Info("Removing finalizer")
@@ -377,11 +390,12 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 
 	// Subscribe to events using the vault client
 	subscriber := &vault.Subscriber{
-		ResourceKey:  name,
-		VaultNS:      o.Spec.Namespace,
-		VaultPath:    vaultPath,
-		ResourceType: "VaultStaticSecret",
-		ReconcileCh:  r.SourceCh,
+		ResourceKey:       name,
+		VaultNS:           o.Spec.Namespace,
+		VaultPath:         vaultPath,
+		ResourceType:      "VaultStaticSecret",
+		ReconcileCh:       r.SourceCh,
+		PendingVaultIndex: &r.pendingVaultIndex,
 	}
 
 	if err := c.SubscribeToEvents(ctx, vault.EventTypeKV, subscriber); err != nil {
@@ -540,13 +554,13 @@ func (r *VaultStaticSecretReconciler) vaultClientCallback(ctx context.Context, c
 	}
 }
 
-func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec) (vault.ReadRequest, error) {
+func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec, headers http.Header) (vault.ReadRequest, error) {
 	var kvReq vault.ReadRequest
 	switch s.Type {
 	case consts.KVSecretTypeV1:
-		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path, nil)
+		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path, headers)
 	case consts.KVSecretTypeV2:
-		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version, nil)
+		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version, headers)
 	default:
 		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
 	}

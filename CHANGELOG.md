@@ -1,3 +1,9 @@
+## Unreleased
+
+Enhancements:
+* VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
+* VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
+
 ## 1.4.0 (May 5th, 2026)
 
 Fix:
