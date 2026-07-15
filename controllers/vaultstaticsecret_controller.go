@@ -296,6 +296,11 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
 	}
 
+	o.Status.LastGeneration = o.GetGeneration()
+	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
 		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
 		// ensure event watcher is running
@@ -306,11 +311,6 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// ensure event watcher is not running
 		r.unWatchEvents(o, c)
 		r.pendingVaultIndex.Delete(req.NamespacedName)
-	}
-
-	o.Status.LastGeneration = o.GetGeneration()
-	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
-		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{

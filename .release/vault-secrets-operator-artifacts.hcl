@@ -16,5 +16,6 @@ artifacts {
     "vault-secrets-operator_release-ubi_linux_s390x_${version}_${commit_sha}.docker.redhat.tar",
     "vault-secrets-operator_release-ubi_linux_amd64_${version}_${commit_sha}.docker.tar",
     "vault-secrets-operator_release-ubi_linux_arm64_${version}_${commit_sha}.docker.tar",
+    "vault-secrets-operator_release-ubi_linux_s390x_${version}_${commit_sha}.docker.tar",
   ]
 }
