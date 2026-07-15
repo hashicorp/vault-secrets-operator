@@ -1514,9 +1514,8 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 
 // TestVaultDynamicSecret_InstantUpdates validates that a VaultDynamicSecret with
 // SyncConfig.InstantUpdates=true receives near-instant credential updates driven
-// by WebSocket events rather than polling. It covers both static role credentials
-// (database* events) and dynamic credentials (lease* events) in parallel subtests
-// that share the same Terraform infrastructure.
+// by WebSocket events rather than polling. It covers static role credentials
+// (database* events)
 func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	if testInParallel {
 		t.Parallel()
