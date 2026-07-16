@@ -1,9 +1,19 @@
-## Unreleased
+## 1.5.0 (July 16th, 2026)
 
-Breaking Changes:
+BREAKING CHANGES:
 * `VaultAuth`/`VaultAuthGlobal` AppRole `spec.appRole.secretIDPath` has been removed. Use
   `spec.appRole.secretRef` instead, which references a Kubernetes Secret containing the AppRole
   Secret ID.
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 2 updates: ([#1302](https://github.com/hashicorp/vault-secrets-operator/pull/1302))
+
+Build:
+* Build with Go 1.26.5
+* Test with Vault 2.0.3, 1.21.8, 1.20.13, 1.19.19
+* Test with Kind v0.32.0
+* Test with K8s 1.36.1, 1.35.5, 1.34.8, 1.33.12, 1.32.11
+
 
 ## 1.4.1 (June 30th, 2026)
 
