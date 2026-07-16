@@ -69,12 +69,10 @@ func (r *HCPAuthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	logger.Info("HCPAuth is deprecated and will be removed in a future release of " +
 		"the Vault Secrets Operator; migrate off HCP Vault Secrets before upgrading " +
 		"to the removal release")
-	if r.Recorder != nil {
-		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonDeprecated,
-			"HCPAuth is deprecated and will be removed in a future release of the "+
-				"Vault Secrets Operator; migrate off HCP Vault Secrets before upgrading "+
-				"to the removal release")
-	}
+	r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonDeprecated,
+		"HCPAuth is deprecated and will be removed in a future release of the "+
+			"Vault Secrets Operator; migrate off HCP Vault Secrets before upgrading "+
+			"to the removal release")
 
 	// perform a rudimentary health check on the HCP host on port 443.
 	conn, err := net.DialTimeout("tcp",

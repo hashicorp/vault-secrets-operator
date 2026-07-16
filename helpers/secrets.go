@@ -30,7 +30,13 @@ import (
 )
 
 const (
-	SecretDataKeyRaw      = "_raw"
+	SecretDataKeyRaw = "_raw"
+
+	// HVSSecretTypeKV, HVSSecretTypeRotating, and HVSSecretTypeDynamic are the
+	// HVS secret type identifiers.
+	//
+	// Deprecated: HCP Vault Secrets support is deprecated and will be removed in
+	// a future release of the Vault Secrets Operator.
 	HVSSecretTypeKV       = "kv"
 	HVSSecretTypeRotating = "rotating"
 	HVSSecretTypeDynamic  = "dynamic"
@@ -535,6 +541,9 @@ func marshalJSON(value any) ([]byte, error) {
 
 // WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App. This
 // method must always return a non-nil data map to avoid HMAC calculation issues.
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretTransformationOption) (map[string][]byte, error) {
 	if opt == nil {
 		opt = &SecretTransformationOption{}
@@ -711,6 +720,9 @@ func NewSecretsDataBuilder() *SecretDataBuilder {
 
 // MakeHVSShadowSecretData converts a list of HVS OpenSecrets to k8s secret
 // data. Only dynamic secrets are included.
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 func MakeHVSShadowSecretData(secrets []*models.Secrets20231128OpenSecret) (map[string][]byte, error) {
 	data := make(map[string][]byte)
 	for _, v := range secrets {
@@ -728,6 +740,9 @@ func MakeHVSShadowSecretData(secrets []*models.Secrets20231128OpenSecret) (map[s
 }
 
 // FromHVSShadowSecret converts a k8s secret data entry to an HVS OpenSecret.
+//
+// Deprecated: HCP Vault Secrets support is deprecated and will be removed in a
+// future release of the Vault Secrets Operator.
 func FromHVSShadowSecret(data []byte) (*models.Secrets20231128OpenSecret, error) {
 	secret := &models.Secrets20231128OpenSecret{}
 	if err := secret.UnmarshalBinary(data); err != nil {

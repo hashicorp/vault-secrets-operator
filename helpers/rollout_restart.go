@@ -25,7 +25,8 @@ import (
 const AnnotationRestartedAt = "vso.secrets.hashicorp.com/restartedAt"
 
 // HandleRolloutRestarts for all v1beta1.RolloutRestartTarget(s) configured for obj.
-// Supported objs are: v1beta1.VaultDynamicSecret, v1beta1.VaultStaticSecret, v1beta1.VaultPKISecret
+// Supported objs are: v1beta1.VaultDynamicSecret, v1beta1.VaultStaticSecret,
+// v1beta1.VaultPKISecret, v1beta1.HCPVaultSecretsApp (deprecated)
 // Please note the following:
 // - a rollout-restart will be triggered for each configured v1beta1.RolloutRestartTarget
 // - the rollout-restart action has no support for roll-back
