@@ -179,8 +179,14 @@ resource "vault_policy" "db-with-events" {
   namespace = local.namespace
   name      = "${local.auth_policy}-db"
   policy    = <<EOT
+# The dynamic creds path is both read (to fetch credentials) and subscribed to
+# (for lease* events). Because Vault ACLs use the most-specific matching path
+# with no capability merge across path patterns, this exact-path rule must grant
+# "subscribe" with lease* itself, otherwise it shadows the "${vault_database_secrets_mount.db.path}/*"
+# glob subscribe grant below and lease events are never delivered.
 path "${vault_database_secrets_mount.db.path}/creds/${vault_database_secret_backend_role.postgres.name}" {
-  capabilities = ["read"]
+  capabilities = ["read", "subscribe"]
+  subscribe_event_types = ["lease*"]
 }
 path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secret_backend_static_role.postgres.name}" {
   capabilities = ["read"]
@@ -190,10 +196,40 @@ path "${vault_database_secrets_mount.db.path}/static-creds/${vault_database_secr
 }
 path "${vault_database_secrets_mount.db.path}/*" {
   capabilities = ["subscribe"]
-  subscribe_event_types = ["database*"]
+  subscribe_event_types = ["database*", "lease*"]
 }
 
 path "sys/events/subscribe/database*" {
+  capabilities = ["read"]
+}
+EOT
+}
+
+resource "vault_policy" "db-events" {
+  namespace = local.namespace
+  name      = "${local.auth_policy}-db-events"
+  policy    = <<EOT
+path "${vault_database_secrets_mount.db.path}/*" {
+  capabilities = ["read", "list", "subscribe"]
+  subscribe_event_types = ["database*", "lease*"]
+}
+
+path "sys/events/subscribe/database*" {
+  capabilities = ["read"]
+}
+
+path "sys/leases/*" {
+  capabilities = ["subscribe"]
+  subscribe_event_types = ["lease*"]
+}
+
+path "sys/events/subscribe/lease*" {
+  capabilities = ["read"]
+}
+
+# Required for GetMountType: resolves the Vault plugin type for a mount path
+# so that the operator subscribes to the correct event stream.
+path "sys/mounts/*" {
   capabilities = ["read"]
 }
 EOT

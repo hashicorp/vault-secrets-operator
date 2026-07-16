@@ -69,7 +69,11 @@ type VaultStaticSecretCollectable struct {
 // SyncConfig configures sync behavior from Vault to VSO
 type SyncConfig struct {
 	// InstantUpdates is a flag to indicate that event-driven updates are
-	// enabled for this secret
+	// enabled for this secret. When enabled, VSO subscribes to Vault's event
+	// streaming API and reconciles immediately when a change is detected.
+	// On event-triggered reconciles, VSO automatically attaches the
+	// X-Vault-Index header to Vault requests to prevent stale reads on Vault
+	// Performance Standbys. Requires Vault 1.20+ for X-Vault-Index support.
 	InstantUpdates bool `json:"instantUpdates,omitempty"`
 }
 
