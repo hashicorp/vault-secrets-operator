@@ -5,6 +5,7 @@ package vault
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -21,6 +22,10 @@ const (
 	EventTypeDatabase EventType = "database"
 	// EventTypePKI represents PKI secret engine events
 	EventTypePKI EventType = "pki"
+	// EventTypeLDAP represents LDAP secret engine events
+	EventTypeLDAP EventType = "ldap"
+	// EventTypeLease represents lease lifecycle events
+	EventTypeLease EventType = "lease"
 )
 
 // String returns the string representation of the EventType
@@ -33,11 +38,20 @@ type EventMessage struct {
 	Data struct {
 		Event struct {
 			Metadata struct {
-				Path     string `json:"path"`
-				Modified string `json:"modified"`
+				Path       string `json:"path"`
+				Modified   string `json:"modified"`
+				Name       string `json:"name"`
+				Operation  string `json:"operation"`
+				LeaseID    string `json:"lease_id"`
+				VaultIndex string `json:"vault_index"`
 			} `json:"metadata"`
 		} `json:"event"`
-		Namespace string `json:"namespace"`
+		EventType  string `json:"event_type"`
+		Namespace  string `json:"namespace"`
+		PluginInfo struct {
+			MountPath string `json:"mount_path"`
+			Plugin    string `json:"plugin"`
+		} `json:"plugin_info"`
 	} `json:"data"`
 }
 
@@ -63,6 +77,11 @@ type Subscriber struct {
 	ResourceType string
 	// ReconcileCh is the channel to send reconciliation events to
 	ReconcileCh chan event.GenericEvent
+	// PendingVaultIndex is used to carry the vault_index value from the event
+	// that triggered this reconciliation so the read request can include it as
+	// X-Vault-Index, ensuring the read is served from a node that has replicated
+	// the write. A nil value disables this feature for the subscriber.
+	PendingVaultIndex *sync.Map
 }
 
 // SubscriptionKey uniquely identifies a subscription based on Vault namespace and path
@@ -87,10 +106,16 @@ func subscriberKey(sub *Subscriber) string {
 
 // getEventPath returns the Vault event subscription path for the given event type
 func getEventPath(eventType EventType) string {
-	paths := map[EventType]string{
-		EventTypeKV:       "/v1/sys/events/subscribe/kv*",
-		EventTypeDatabase: "/v1/sys/events/subscribe/database*",
-		EventTypePKI:      "/v1/sys/events/subscribe/pki*",
+	return "/v1/sys/events/subscribe/" + string(eventType) + "*"
+}
+
+// extractMountAndRole parses a database/LDAP event path like
+// "database/rotate-role/my-role" into (mount, roleName).
+// Returns ("", "") if the path cannot be parsed.
+func extractMountAndRole(path string) (string, string) {
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 3 {
+		return "", ""
 	}
-	return paths[eventType]
+	return parts[0], parts[2]
 }

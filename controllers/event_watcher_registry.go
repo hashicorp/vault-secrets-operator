@@ -6,6 +6,8 @@ package controllers
 import (
 	gocache "github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
 // eventWatcherMeta - metadata for tracking event subscriptions
@@ -16,6 +18,13 @@ type eventWatcherMeta struct {
 	// LastClientID - vault client ID for the last successful subscription, used
 	// to detect if the Vault client has changed since the subscription started
 	LastClientID string
+	// LastLeaseID tracks the lease ID that was subscribed to for lease events.
+	// This allows detecting when the lease changes (e.g. after credential rotation)
+	// so the old subscription can be cleaned up and a new one created.
+	LastLeaseID string
+	// LastEventType is the resolved event type used when subscribing.
+	// This ensures unwatch can target the same websocket key used for subscribe.
+	LastEventType vault.EventType
 }
 
 // eventWatcherRegistry - registry for keeping track of running event watcher
