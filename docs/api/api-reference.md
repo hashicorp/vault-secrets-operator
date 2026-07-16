@@ -703,8 +703,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretIDPath` _string_ | SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the<br />AppRole Role to use for authenticating to Vault.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
 
 
 #### VaultAuthConfigGCP
@@ -830,8 +829,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretIDPath` _string_ | SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the<br />AppRole Role to use for authenticating to Vault.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
 | `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
 | `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
