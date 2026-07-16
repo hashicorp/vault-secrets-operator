@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,11 +25,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
@@ -462,6 +465,15 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 
 	r.SourceCh = make(chan event.GenericEvent)
 	r.eventWatcherRegistry = newEventWatcherRegistry()
+	ctrlmetrics.Registry.MustRegister(prometheus.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace: metrics.Namespace,
+			Subsystem: "vaultstaticsecret",
+			Name:      "active_event_watchers",
+			Help:      "Number of active VaultStaticSecret event-subscription websocket connections",
+		},
+		func() float64 { return float64(r.eventWatcherRegistry.ItemCount()) },
+	))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultStaticSecret{}).
