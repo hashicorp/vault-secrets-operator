@@ -13,5 +13,4 @@ spec:
       - name: manager
         args:
         - "-client-cache-persistence-model=direct-encrypted"
-        - "-min-refresh-after-hvsa=3s"
         - "-zap-log-level=6"

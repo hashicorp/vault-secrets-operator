@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	hvsclient "github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/client/secret_service"
-	"github.com/hashicorp/hcp-sdk-go/clients/cloud-vault-secrets/preview/2023-11-28/models"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,10 +28,7 @@ import (
 )
 
 const (
-	SecretDataKeyRaw      = "_raw"
-	HVSSecretTypeKV       = "kv"
-	HVSSecretTypeRotating = "rotating"
-	HVSSecretTypeDynamic  = "dynamic"
+	SecretDataKeyRaw = "_raw"
 
 	ManagedByLabel = "app.kubernetes.io/managed-by"
 	AppNameLabel   = "app.kubernetes.io/name"
@@ -533,133 +528,6 @@ func marshalJSON(value any) ([]byte, error) {
 	return b, nil
 }
 
-// WithHVSAppSecrets returns the K8s Secret data from HCP Vault Secrets App. This
-// method must always return a non-nil data map to avoid HMAC calculation issues.
-func (s *SecretDataBuilder) WithHVSAppSecrets(resp *hvsclient.OpenAppSecretsOK, opt *SecretTransformationOption) (map[string][]byte, error) {
-	if opt == nil {
-		opt = &SecretTransformationOption{}
-	}
-
-	p := resp.GetPayload()
-	raw, err := p.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	// secrets for SecretInput
-	secrets := make(map[string]any)
-	// metadata for SecretInput
-	metadata := make(map[string]any)
-	// secret data returned to the caller
-	data := make(map[string][]byte)
-	hasTemplates := len(opt.KeyedTemplates) > 0
-	for _, v := range p.Secrets {
-		if v.StaticVersion == nil && v.RotatingVersion == nil && v.DynamicInstance == nil {
-			continue
-		}
-
-		switch v.Type {
-		case HVSSecretTypeKV:
-			secrets[v.Name] = v.StaticVersion.Value
-		case HVSSecretTypeRotating:
-			if v.RotatingVersion == nil {
-				return nil, fmt.Errorf("rotating secret %s has no RotatingVersion", v.Name)
-			}
-			// Since rotating secrets have multiple values, prefix each key with
-			// the secret name to avoid collisions.
-			for rotatingKey, rotatingValue := range v.RotatingVersion.Values {
-				prefixedKey := fmt.Sprintf("%s_%s", v.Name, rotatingKey)
-				secrets[prefixedKey] = rotatingValue
-			}
-
-			vals := make(map[string]any, len(v.RotatingVersion.Values))
-			for k, v := range v.RotatingVersion.Values {
-				vals[k] = v
-			}
-			secrets[v.Name] = vals
-		case HVSSecretTypeDynamic:
-			if v.DynamicInstance == nil {
-				return nil, fmt.Errorf("dynamic secret %s has no DynamicInstance", v.Name)
-			}
-			// Since dynamic secrets have multiple values, prefix each key with
-			// the secret name to avoid collisions.
-			for dynamicKey, dynamicValue := range v.DynamicInstance.Values {
-				prefixedKey := fmt.Sprintf("%s_%s", v.Name, dynamicKey)
-				secrets[prefixedKey] = dynamicValue
-			}
-
-			vals := make(map[string]any, len(v.DynamicInstance.Values))
-			for k, v := range v.DynamicInstance.Values {
-				vals[k] = v
-			}
-			secrets[v.Name] = vals
-		default:
-			continue
-		}
-
-		if hasTemplates {
-			// we only need the Secret's metadata if we have templates to render.
-			m, err := s.makeHVSMetadata(v)
-			if err != nil {
-				return nil, err
-			}
-
-			// maps secret name to its secret metadata
-			metadata[v.Name] = m
-		}
-	}
-
-	if hasTemplates {
-		data, err = renderTemplates(opt, NewSecretInput(secrets, nil, metadata, opt.Annotations, opt.Labels))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return makeK8sData(secrets, data, raw, opt)
-}
-
-func (s *SecretDataBuilder) makeHVSMetadata(v *models.Secrets20231128OpenSecret) (map[string]any, error) {
-	b, err := v.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	// unmarshal to non-open secret, which should/must not contain any
-	// secret/confidential data.
-	//
-	// Note: In API 2023-11-28, this conversion will lose the CreatedByID
-	// field from OpenSecret{}, since it doesn't correspond to CreatedBy in
-	// Secret{}
-	// https://github.com/hashicorp/hcp-sdk-go/blob/v0.106.0/clients/cloud-vault-secrets/preview/2023-11-28/models/secrets20231128_open_secret.go#L27
-	// https://github.com/hashicorp/hcp-sdk-go/blob/v0.106.0/clients/cloud-vault-secrets/preview/2023-11-28/models/secrets20231128_secret.go#L27
-	var ss models.Secrets20231128Secret
-	if err := json.Unmarshal(b, &ss); err != nil {
-		return nil, err
-	}
-
-	if v.Type == HVSSecretTypeDynamic {
-		// open dynamic secrets do not share the same fields as the non-open secrets, so
-		// we need to convert them here.
-		if ss.DynamicConfig == nil {
-			ss.DynamicConfig = &models.Secrets20231128SecretDynamicConfig{}
-		}
-		ss.DynamicConfig.TTL = v.DynamicInstance.TTL
-	}
-
-	sv, err := ss.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	var m map[string]any
-	if err := json.Unmarshal(sv, &m); err != nil {
-		return nil, err
-	}
-
-	return m, nil
-}
-
 // makeK8sData returns the filtered data for the destination K8s Secret. It
 // always adds the _raw data bytes, which is typically a secret source's entire
 // response. Any extraData will always be included in the result data. Returns a
@@ -707,34 +575,6 @@ func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
 
 func NewSecretsDataBuilder() *SecretDataBuilder {
 	return &SecretDataBuilder{}
-}
-
-// MakeHVSShadowSecretData converts a list of HVS OpenSecrets to k8s secret
-// data. Only dynamic secrets are included.
-func MakeHVSShadowSecretData(secrets []*models.Secrets20231128OpenSecret) (map[string][]byte, error) {
-	data := make(map[string][]byte)
-	for _, v := range secrets {
-		if v.DynamicInstance == nil {
-			continue
-		}
-		secretData, err := v.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		data[v.Name] = secretData
-	}
-
-	return data, nil
-}
-
-// FromHVSShadowSecret converts a k8s secret data entry to an HVS OpenSecret.
-func FromHVSShadowSecret(data []byte) (*models.Secrets20231128OpenSecret, error) {
-	secret := &models.Secrets20231128OpenSecret{}
-	if err := secret.UnmarshalBinary(data); err != nil {
-		return nil, err
-	}
-
-	return secret, nil
 }
 
 // HashString returns the first eight + last four characters of the sha256 sum

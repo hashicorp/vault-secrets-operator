@@ -119,7 +119,7 @@ controller:
     # clusterRoleAggregation defines the roles included in the aggregated ClusterRole.
     clusterRoleAggregation:
       # viewerRoles is a list of roles that will be aggregated into the viewer ClusterRole.
-      # The role name must be that of any VSO resource type. E.g. "VaultAuth", "HCPAuth".
+      # The role name must be that of any VSO resource type. E.g. "VaultAuth".
       # All values are case-insensitive.
       # Specifying '*' as the first element will include all roles in the aggregation.
       #
@@ -130,12 +130,11 @@ controller:
       # - '*'
       # individually specified roles:
       # - "VaultAuth"
-      # - "HCPAuth"
       # @type: array<string>
       viewerRoles: []
 
       # editorRoles is a list of roles that will be aggregated into the editor ClusterRole.
-      # The role name must be that of any VSO resource type. E.g. "VaultAuth", "HCPAuth".
+      # The role name must be that of any VSO resource type. E.g. "VaultAuth".
       # All values are case-insensitive.
       # Specifying '*' as the first element will include all roles in the aggregation.
       #
@@ -146,7 +145,6 @@ controller:
       # - '*'
       # individually specified roles:
       # - "VaultAuth"
-      # - "HCPAuth"
       # @type: array<string>
       editorRoles: []
 

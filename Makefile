@@ -259,7 +259,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t $(IMG) . --target=dev \
+	docker build -t $(IMG) . --target=dev --load \
 	--build-arg GOOS=$(GOOS) \
 	--build-arg GOARCH=$(GOARCH) \
 	--build-arg GO_VERSION=$(shell cat .go-version) \
@@ -317,7 +317,7 @@ set-image: kustomize copy-config ## Set the controller image in CONFIG_MANAGER_D
 	cd $(CONFIG_MANAGER_DIR) && $(KUSTOMIZE) edit set image controller=$(IMG)
 
 .PHONY: set-image integration-test
-integration-test: set-image setup-vault ## Run integration tests for Vault Community
+integration-test: set-image load-docker-image setup-vault ## Run integration tests for Vault Community
 	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
 	VAULT_OIDC_DISC_URL=$(VAULT_OIDC_DISC_URL) VAULT_OIDC_CA=$(VAULT_OIDC_CA) \
