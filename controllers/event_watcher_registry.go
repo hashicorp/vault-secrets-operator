@@ -59,3 +59,11 @@ func (r *eventWatcherRegistry) Get(key types.NamespacedName) (*eventWatcherMeta,
 func (r *eventWatcherRegistry) Delete(key types.NamespacedName) {
 	r.registry.Delete(key.String())
 }
+
+// ItemCount returns the number of event watchers currently registered. This
+// corresponds to the number of active Vault event-subscription websocket
+// connections held open by this controller, and is used to expose a
+// Prometheus gauge for monitoring purposes.
+func (r *eventWatcherRegistry) ItemCount() int {
+	return r.registry.ItemCount()
+}

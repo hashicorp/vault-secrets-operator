@@ -198,6 +198,14 @@ type Client interface {
 	Renewable() bool
 	SubscribeToEvents(context.Context, EventType, *Subscriber) error
 	UnsubscribeFromEvents(EventType, SubscriptionKey, string) error
+	// GetWebSocketCount returns the number of real, active WebSocket
+	// connections this client currently holds open to Vault (at most one per
+	// EventType, shared across all subscribers of that event type).
+	GetWebSocketCount() int
+	// GetWebSocketSubscriberCount returns the total number of subscribers
+	// (e.g. individual CRs) multiplexed across this client's active
+	// WebSocket connections.
+	GetWebSocketSubscriberCount() int
 	GetMountType(context.Context, string) (string, error)
 }
 
