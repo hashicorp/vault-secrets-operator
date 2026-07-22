@@ -4,8 +4,6 @@
 package v1beta1
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,10 +11,6 @@ import (
 )
 
 func TestVaultAuthConfigAppRole_Validate(t *testing.T) {
-	tmpDir := t.TempDir()
-	validFilePath := filepath.Join(tmpDir, "test-secretid")
-	require.NoError(t, os.WriteFile(validFilePath, []byte("test-secret-id"), 0o600))
-
 	tests := []struct {
 		name      string
 		appRole   *VaultAuthConfigAppRole
@@ -32,30 +26,12 @@ func TestVaultAuthConfigAppRole_Validate(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name: "valid-with-secretidpath",
-			appRole: &VaultAuthConfigAppRole{
-				RoleID:       "test-role",
-				SecretIDPath: validFilePath,
-			},
-			wantError: false,
-		},
-		{
-			name: "invalid-both-secretref-and-secretidpath",
-			appRole: &VaultAuthConfigAppRole{
-				RoleID:       "test-role",
-				SecretRef:    "test-secret",
-				SecretIDPath: validFilePath,
-			},
-			wantError: true,
-			errorMsg:  "mutually exclusive",
-		},
-		{
-			name: "invalid-missing-both",
+			name: "invalid-missing-secretref",
 			appRole: &VaultAuthConfigAppRole{
 				RoleID: "test-role",
 			},
 			wantError: true,
-			errorMsg:  "either secretRef or secretIDPath must be specified",
+			errorMsg:  "secretRef must be specified",
 		},
 		{
 			name: "invalid-missing-roleid",
@@ -142,7 +118,6 @@ func TestVaultAuthConfigAppRole_Merge(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tt.want.RoleID, got.RoleID)
 				assert.Equal(t, tt.want.SecretRef, got.SecretRef)
-				assert.Equal(t, tt.want.SecretIDPath, got.SecretIDPath)
 			}
 		})
 	}
