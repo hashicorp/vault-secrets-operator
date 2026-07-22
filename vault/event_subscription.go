@@ -278,20 +278,23 @@ func (ws *SharedWebSocket) notifySubscribersOfStop() {
 
 			// Call OnStop callback for cleanup
 			if sub.OnStop != nil {
-				ws.logger.V(consts.LogLevelDebug).Info("Calling OnStop callback",
-					"subscriber", subKey)
+				ws.logger.Info("WebSocket stopped, cleaning up registry entry",
+					"subscriber", subKey,
+					"resourceType", sub.ResourceType)
 				sub.OnStop()
 			}
 
-			// Send requeue event to trigger reconciliation
+			// Send requeue event to trigger reconciliation.
+			// NewObject may be nil for subscribers created before this field was
+			// introduced; skip the requeue rather than panic in that case.
+			if sub.NewObject == nil {
+				ws.logger.V(consts.LogLevelDebug).Info("Skipping requeue: NewObject not set",
+					"subscriber", subKey)
+				continue
+			}
 			select {
 			case sub.ReconcileCh <- event.GenericEvent{
-				Object: &secretsv1beta1.VaultStaticSecret{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      sub.ResourceKey.Name,
-						Namespace: sub.ResourceKey.Namespace,
-					},
-				},
+				Object: sub.NewObject(),
 			}:
 				ws.logger.Info("Sent requeue event for reconciliation",
 					"subscriber", subKey)

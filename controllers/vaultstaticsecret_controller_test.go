@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -216,4 +218,266 @@ func TestVaultStaticSecretReconciler_Reconcile_vaultIndex(t *testing.T) {
 		assert.Empty(t, secondReq.Headers[vsoconsts.HeaderVaultIndex],
 			"X-Vault-Index must not be sent when no pending index is stored")
 	}
+}
+
+// mockVSSClient is a minimal vault.Client stub for VaultStaticSecret
+// ensureEventWatcher tests. It covers only the four methods that VSS
+// ensureEventWatcher actually calls — GetWebSocket, ID, SubscribeToEvents, and
+// UnsubscribeFromEvents. GetMountType is intentionally absent: VSS never resolves
+// a mount type (it always subscribes to vault.EventTypeKV directly).
+type mockVSSClient struct {
+	vault.Client
+	subscribed []vault.EventType
+	seen       []vault.EventType // recorded by UnsubscribeFromEvents
+	// webSocket is returned by GetWebSocket; nil simulates no live connection.
+	webSocket *vault.SharedWebSocket
+	// subscribeErr, when non-nil, is returned by SubscribeToEvents.
+	subscribeErr error
+	// onSubscribe is an optional hook called on every SubscribeToEvents call,
+	// allowing tests to capture Subscriber fields such as OnStop or NewObject.
+	onSubscribe func(vault.EventType, *vault.Subscriber)
+}
+
+func (m *mockVSSClient) ID() string { return "test-vss-client" }
+
+func (m *mockVSSClient) GetWebSocket(_ vault.EventType) *vault.SharedWebSocket {
+	return m.webSocket
+}
+
+func (m *mockVSSClient) SubscribeToEvents(_ context.Context, et vault.EventType, sub *vault.Subscriber) error {
+	m.subscribed = append(m.subscribed, et)
+	if m.onSubscribe != nil {
+		m.onSubscribe(et, sub)
+	}
+	return m.subscribeErr
+}
+
+func (m *mockVSSClient) UnsubscribeFromEvents(et vault.EventType, _ vault.SubscriptionKey, _ string) error {
+	m.seen = append(m.seen, et)
+	return nil
+}
+
+// Test_VSS_ensureEventWatcher_FreshSubscribe verifies that when no registry entry
+// exists the watcher subscribes to KV events and registers metadata.
+func Test_VSS_ensureEventWatcher_FreshSubscribe(t *testing.T) {
+	t.Parallel()
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 1},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV2,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	m := &mockVSSClient{} // webSocket == nil; no registry entry
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.NoError(t, err)
+	require.Contains(t, m.subscribed, vault.EventTypeKV, "must subscribe to KV events on first call")
+
+	meta, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have entry after subscribe")
+	assert.Equal(t, "test-vss-client", meta.LastClientID)
+	assert.Equal(t, int64(1), meta.LastGeneration)
+}
+
+// Test_VSS_ensureEventWatcher_OrphanedEntry_NilWebSocket verifies that when the
+// registry has a matching entry but GetWebSocket returns nil (e.g. after an
+// operator restart), ensureEventWatcher detects the orphaned entry, clears it,
+// and re-subscribes rather than returning nil early.
+func Test_VSS_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
+	t.Parallel()
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "kv-secret", Generation: 1},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV1,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// Pre-populate registry with fully-matching metadata — the only thing that
+	// should trigger re-subscribe is the nil WebSocket (orphaned entry).
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-vss-client",
+		LastGeneration: 1,
+	})
+
+	// GetWebSocket returns nil — simulates operator restart with no live WebSocket.
+	m := &mockVSSClient{webSocket: nil}
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.NoError(t, err)
+	assert.Contains(t, m.subscribed, vault.EventTypeKV,
+		"must re-subscribe when WebSocket is nil (orphaned entry)")
+
+	// Registry must be refreshed after re-subscription.
+	meta, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have entry after re-subscription")
+	assert.Equal(t, "test-vss-client", meta.LastClientID)
+}
+
+// Test_VSS_ensureEventWatcher_OnStop_CleansRegistry verifies that the OnStop
+// callback set on the VSS Subscriber deletes the registry entry when invoked,
+// so the next reconcile falls through to re-subscribe instead of returning early
+// because it sees a stale registry entry with matching metadata.
+func Test_VSS_ensureEventWatcher_OnStop_CleansRegistry(t *testing.T) {
+	t.Parallel()
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "kv-secret", Generation: 1},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV2,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	var capturedOnStop func()
+	m := &mockVSSClient{
+		onSubscribe: func(_ vault.EventType, sub *vault.Subscriber) {
+			if capturedOnStop == nil && sub.OnStop != nil {
+				capturedOnStop = sub.OnStop
+			}
+		},
+	}
+
+	err := r.ensureEventWatcher(context.Background(), o, m)
+	require.NoError(t, err)
+
+	_, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have entry after ensureEventWatcher")
+
+	// Simulate WebSocket death by invoking the captured OnStop callback.
+	require.NotNil(t, capturedOnStop, "OnStop must be set on the KV subscriber")
+	capturedOnStop()
+
+	// Registry entry must be gone — next reconcile will re-subscribe.
+	_, ok = r.eventWatcherRegistry.Get(key)
+	assert.False(t, ok, "registry entry must be deleted after OnStop fires")
+}
+
+// Test_VSS_unWatchEvents_UnsubscribesAndClearsRegistry verifies that
+// unWatchEvents calls UnsubscribeFromEvents for KV and removes the registry entry.
+func Test_VSS_unWatchEvents_UnsubscribesAndClearsRegistry(t *testing.T) {
+	t.Parallel()
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "kv-secret"},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV1,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-vss-client",
+		LastGeneration: 1,
+	})
+
+	m := &mockVSSClient{}
+	r.unWatchEvents(o, m)
+
+	require.Len(t, m.seen, 1, "exactly one unsubscribe call expected (KV only)")
+	assert.Equal(t, vault.EventTypeKV, m.seen[0])
+
+	_, ok := r.eventWatcherRegistry.Get(key)
+	assert.False(t, ok, "registry entry must be deleted after unWatchEvents")
+}
+
+// Test_VSS_unWatchEvents_NoOpWhenNoRegistryEntry verifies that unWatchEvents
+// does nothing (no panic, no unsubscribe) when the object is not in the registry.
+func Test_VSS_unWatchEvents_NoOpWhenNoRegistryEntry(t *testing.T) {
+	t.Parallel()
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "unknown"},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV1,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+
+	m := &mockVSSClient{}
+	// Must not panic and must not call UnsubscribeFromEvents.
+	r.unWatchEvents(o, m)
+
+	assert.Empty(t, m.seen, "no unsubscribe should be called when object not in registry")
+}
+
+// Test_VSS_ensureEventWatcher_SubscribeError verifies that when SubscribeToEvents
+// returns an error, ensureEventWatcher propagates it and does NOT register a
+// registry entry (so the next reconcile retries from scratch).
+func Test_VSS_ensureEventWatcher_SubscribeError(t *testing.T) {
+	t.Parallel()
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 1},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV1,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	m := &mockVSSClient{subscribeErr: fmt.Errorf("websocket dial: connection refused")}
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.Error(t, err, "must propagate SubscribeToEvents error to caller")
+	assert.Contains(t, err.Error(), "connection refused")
+
+	// Registry must stay empty — no successful subscription was made.
+	_, ok := r.eventWatcherRegistry.Get(key)
+	assert.False(t, ok, "registry must not have an entry when subscribe failed")
 }

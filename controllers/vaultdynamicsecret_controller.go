@@ -1110,6 +1110,22 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 					ResourceType:      "VaultDynamicSecret",
 					ReconcileCh:       r.SourceCh,
 					PendingVaultIndex: &r.pendingVaultIndex,
+					// OnStop callback cleans up registry when WebSocket dies.
+					// The log for this event is emitted by notifySubscribersOfStop
+					// using ws.logger, which is always valid (unlike the
+					// reconcile-context logger captured here, which goes stale
+					// after Reconcile returns).
+					OnStop: func() {
+						r.eventWatcherRegistry.Delete(name)
+					},
+					NewObject: func() client.Object {
+						return &secretsv1beta1.VaultDynamicSecret{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: name.Namespace,
+								Name:      name.Name,
+							},
+						}
+					},
 				}
 				if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
 					// Surface this too, instead of only logging it, so a compound
@@ -1141,9 +1157,20 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 		meta.LastClientID == c.ID() &&
 		meta.LastLeaseID == currentLeaseID &&
 		meta.LastEventType == eventType {
-		logger.V(consts.LogLevelDebug).Info("Event subscription already active",
+		// Orphaned entry detection: verify the WebSocket is actually alive.
+		// This is a safety net for cases where OnStop did not fire (e.g. operator
+		// restart) or there was a race between WebSocket death and OnStop cleanup.
+		ws := c.GetWebSocket(eventType)
+		if ws != nil && ws.IsHealthy() {
+			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
+				"namespace", o.Namespace, "name", o.Name)
+			return nil
+		}
+		// WebSocket is dead or missing — orphaned registry entry detected.
+		logger.Info("Detected orphaned registry entry (WebSocket is dead), cleaning up",
 			"namespace", o.Namespace, "name", o.Name)
-		return nil
+		r.eventWatcherRegistry.Delete(name)
+		hasMeta = false
 	}
 
 	// Step 3: tear down the stale subscription now that we have a valid type.
@@ -1162,6 +1189,22 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 		ResourceType:      "VaultDynamicSecret",
 		ReconcileCh:       r.SourceCh,
 		PendingVaultIndex: &r.pendingVaultIndex,
+		// OnStop callback cleans up registry when WebSocket dies.
+		// The log for this event is emitted by notifySubscribersOfStop
+		// using ws.logger, which is always valid (unlike the
+		// reconcile-context logger captured here, which goes stale
+		// after Reconcile returns).
+		OnStop: func() {
+			r.eventWatcherRegistry.Delete(name)
+		},
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: name.Namespace,
+					Name:      name.Name,
+				},
+			}
+		},
 	}
 	if err := c.SubscribeToEvents(ctx, eventType, subscriber); err != nil {
 		return fmt.Errorf("failed to subscribe to %s events: %w", eventType, err)
@@ -1182,6 +1225,22 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 			ResourceType:      "VaultDynamicSecret",
 			ReconcileCh:       r.SourceCh,
 			PendingVaultIndex: &r.pendingVaultIndex,
+			// OnStop callback cleans up registry when WebSocket dies.
+			// The log for this event is emitted by notifySubscribersOfStop
+			// using ws.logger, which is always valid (unlike the
+			// reconcile-context logger captured here, which goes stale
+			// after Reconcile returns).
+			OnStop: func() {
+				r.eventWatcherRegistry.Delete(name)
+			},
+			NewObject: func() client.Object {
+				return &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: name.Namespace,
+						Name:      name.Name,
+					},
+				}
+			},
 		}
 		if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
 			// Non-fatal: the database/LDAP subscription above still provides

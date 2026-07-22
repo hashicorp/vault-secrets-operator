@@ -2443,14 +2443,22 @@ type mockEnsureClient struct {
 	mountTypeErr    error
 	subscribed      []vault.EventType
 	seen            []vault.EventType // from UnsubscribeFromEvents
+	// webSocket is returned by GetWebSocket; nil means no active WebSocket.
+	webSocket *vault.SharedWebSocket
+	// onSubscribe is an optional hook called on every SubscribeToEvents call,
+	// allowing tests to capture Subscriber fields such as OnStop.
+	onSubscribe func(vault.EventType, *vault.Subscriber)
 }
 
 func (m *mockEnsureClient) GetMountType(_ context.Context, _ string) (string, error) {
 	return m.mountTypeResult, m.mountTypeErr
 }
 
-func (m *mockEnsureClient) SubscribeToEvents(_ context.Context, et vault.EventType, _ *vault.Subscriber) error {
+func (m *mockEnsureClient) SubscribeToEvents(_ context.Context, et vault.EventType, sub *vault.Subscriber) error {
 	m.subscribed = append(m.subscribed, et)
+	if m.onSubscribe != nil {
+		m.onSubscribe(et, sub)
+	}
 	return nil
 }
 
@@ -2460,6 +2468,10 @@ func (m *mockEnsureClient) UnsubscribeFromEvents(et vault.EventType, _ vault.Sub
 }
 
 func (m *mockEnsureClient) ID() string { return "test-client" }
+
+func (m *mockEnsureClient) GetWebSocket(_ vault.EventType) *vault.SharedWebSocket {
+	return m.webSocket
+}
 
 // Test_ensureEventWatcher_GetMountTypeError_ReusesPriorEventType verifies
 // that when GetMountType fails but a prior LastEventType is stored, that prior
@@ -2693,4 +2705,101 @@ func TestVaultDynamicSecretReconciler_syncSecret_vaultIndex(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test_ensureEventWatcher_OrphanedEntry_NilWebSocket verifies that when the
+// registry has a matching entry but GetWebSocket returns nil (e.g. after an
+// operator restart), ensureEventWatcher detects the orphaned entry, clears it,
+// and re-subscribes rather than returning nil.
+func Test_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "db-secret", Generation: 1},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// Pre-populate registry with fully-matching metadata so the staleness check
+	// would normally return nil — the only thing that should trigger re-subscribe
+	// is the nil WebSocket.
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-client",
+		LastGeneration: 1,
+		LastLeaseID:    "",
+		LastEventType:  vault.EventTypeDatabase,
+	})
+
+	// GetWebSocket returns nil — simulates operator restart with no live WebSocket.
+	m := &mockEnsureClient{
+		mountTypeResult: "database",
+		webSocket:       nil,
+	}
+
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.NoError(t, err)
+	assert.Contains(t, m.subscribed, vault.EventTypeDatabase,
+		"must re-subscribe when WebSocket is nil (orphaned entry)")
+
+	// Registry must be refreshed with new metadata after re-subscription.
+	meta, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have an entry after re-subscription")
+	assert.Equal(t, vault.EventTypeDatabase, meta.LastEventType)
+}
+
+// Test_ensureEventWatcher_OnStop_CleansRegistry verifies that the OnStop
+// callback set on the VDS engine-events Subscriber deletes the registry entry
+// when invoked, so the next reconcile falls through to re-subscribe instead of
+// returning early because it sees a stale registry entry with matching metadata.
+func Test_ensureEventWatcher_OnStop_CleansRegistry(t *testing.T) {
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "db-secret", Generation: 1},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// captureOnStop intercepts the first OnStop set on any SubscribeToEvents call.
+	var capturedOnStop func()
+	m := &mockEnsureClient{
+		mountTypeResult: "database",
+		onSubscribe: func(_ vault.EventType, sub *vault.Subscriber) {
+			if capturedOnStop == nil && sub.OnStop != nil {
+				capturedOnStop = sub.OnStop
+			}
+		},
+	}
+
+	err := r.ensureEventWatcher(context.Background(), o, m)
+	require.NoError(t, err)
+
+	// Registry must have an entry after subscription.
+	_, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have entry after ensureEventWatcher")
+
+	// Simulate WebSocket death by invoking the captured OnStop callback.
+	require.NotNil(t, capturedOnStop, "OnStop must be set on the engine-events subscriber")
+	capturedOnStop()
+
+	// Registry entry must be gone — next reconcile will re-subscribe.
+	_, ok = r.eventWatcherRegistry.Get(key)
+	assert.False(t, ok, "registry entry must be deleted after OnStop fires")
 }

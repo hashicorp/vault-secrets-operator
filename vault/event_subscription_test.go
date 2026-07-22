@@ -12,8 +12,12 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 func TestSubscriptionKey_String(t *testing.T) {
@@ -515,6 +519,14 @@ func TestSharedWebSocket_NotifySubscribersOfStop_CallsOnStopAndRequeues(t *testi
 		OnStop: func() {
 			onStopCalled = true
 		},
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-secret",
+				},
+			}
+		},
 	}
 	require.NoError(t, ws.Subscribe(sub))
 
@@ -545,6 +557,14 @@ func TestSharedWebSocket_NotifySubscribersOfStop_FullChannelStillCallsOnStop(t *
 		OnStop: func() {
 			onStopCalled = true
 		},
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-secret",
+				},
+			}
+		},
 	}
 	require.NoError(t, ws.Subscribe(sub))
 
@@ -552,6 +572,95 @@ func TestSharedWebSocket_NotifySubscribersOfStop_FullChannelStillCallsOnStop(t *
 
 	assert.True(t, onStopCalled)
 	assert.Len(t, reconcileCh, 1)
+}
+
+// TestSharedWebSocket_OnStop_DeletesFromRegistry verifies that when the
+// WebSocket stops, the OnStop callback fires and removes the subscriber's key
+// from the registry map.
+func TestSharedWebSocket_OnStop_DeletesFromRegistry(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	// registry stands in for eventWatcherRegistry
+	var registry sync.Map
+	resourceKey := types.NamespacedName{Namespace: "default", Name: "test-secret"}
+	registry.Store(resourceKey, struct{}{})
+
+	// confirm the key is present before stop
+	_, exists := registry.Load(resourceKey)
+	require.True(t, exists, "key must be in registry before stop")
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	sub := &Subscriber{
+		ResourceKey:  resourceKey,
+		VaultPath:    "kv/data/app/config",
+		ResourceType: "VaultStaticSecret",
+		ReconcileCh:  reconcileCh,
+		OnStop:       func() { registry.Delete(resourceKey) },
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: resourceKey.Namespace,
+					Name:      resourceKey.Name,
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	// registry entry must be gone
+	_, stillExists := registry.Load(resourceKey)
+	assert.False(t, stillExists, "OnStop must delete the key from the registry")
+
+	// requeue event must also have been sent
+	require.Len(t, reconcileCh, 1)
+	evt := <-reconcileCh
+	assert.Equal(t, resourceKey.Name, evt.Object.GetName())
+	assert.Equal(t, resourceKey.Namespace, evt.Object.GetNamespace())
+}
+
+// TestSharedWebSocket_EventLoop_ThresholdHit_CleansRegistry drives the full
+// eventLoop threshold path:  notifyOnStop is set → eventLoop defer fires →
+// notifySubscribersOfStop runs → OnStop deletes from registry.
+func TestSharedWebSocket_EventLoop_ThresholdHit_CleansRegistry(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+
+	var registry sync.Map
+	resourceKey := types.NamespacedName{Namespace: "tenant-1", Name: "vds-instant"}
+	registry.Store(resourceKey, struct{}{})
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	sub := &Subscriber{
+		ResourceKey:  resourceKey,
+		VaultPath:    "database/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  reconcileCh,
+		OnStop:       func() { registry.Delete(resourceKey) },
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: resourceKey.Namespace,
+					Name:      resourceKey.Name,
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Simulate the threshold being reached: set notifyOnStop then trigger the
+	// deferred cleanup directly — same path the eventLoop defer takes.
+	ws.notifyOnStop = true
+	ws.stopped = true
+	ws.notifySubscribersOfStop()
+
+	// registry entry must be gone
+	_, stillExists := registry.Load(resourceKey)
+	assert.False(t, stillExists, "registry must be cleaned up after threshold-hit exit")
+
+	// requeue event must have been sent so the controller reconciles
+	require.Len(t, reconcileCh, 1, "reconcile requeue must be sent after registry cleanup")
 }
 
 // TestSharedWebSocket_IsHealthy_StoppedReturnsFalse verifies that a websocket
@@ -567,6 +676,67 @@ func TestSharedWebSocket_IsHealthy_StoppedReturnsFalse(t *testing.T) {
 // Placeholder for future integration tests
 func TestSharedWebSocket_Integration(t *testing.T) {
 	t.Skip("Integration tests will be added in Phase 4")
+}
+
+// TestSharedWebSocket_NotifySubscribersOfStop_VDSObjectType verifies that when
+// a VaultDynamicSecret subscriber has NewObject set, the requeue event carries
+// a *VaultDynamicSecret.
+func TestSharedWebSocket_NotifySubscribersOfStop_VDSObjectType(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-db-secret"},
+		VaultPath:    "database/creds/my-role",
+		ResourceType: "VaultDynamicSecret",
+		ReconcileCh:  reconcileCh,
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "my-db-secret",
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	require.Len(t, reconcileCh, 1)
+	evt := <-reconcileCh
+	assert.Equal(t, "my-db-secret", evt.Object.GetName())
+	assert.Equal(t, "default", evt.Object.GetNamespace())
+	_, isVDS := evt.Object.(*secretsv1beta1.VaultDynamicSecret)
+	assert.True(t, isVDS, "requeue event must carry *VaultDynamicSecret")
+}
+
+// TestSharedWebSocket_NotifySubscribersOfStop_NilNewObject_SkipsRequeue verifies
+// that a subscriber without NewObject set does not panic and is silently skipped.
+func TestSharedWebSocket_NotifySubscribersOfStop_NilNewObject_SkipsRequeue(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	onStopCalled := false
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "legacy-secret"},
+		VaultPath:    "kv/data/app",
+		ResourceType: "VaultStaticSecret",
+		ReconcileCh:  reconcileCh,
+		OnStop:       func() { onStopCalled = true },
+		// NewObject intentionally not set
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Must not panic
+	assert.NotPanics(t, func() { ws.notifySubscribersOfStop() })
+
+	// OnStop must still fire
+	assert.True(t, onStopCalled)
+	// No requeue event sent
+	assert.Len(t, reconcileCh, 0, "no requeue event expected when NewObject is nil")
 }
 
 // TestRouteEvent_VaultIndex_Stored verifies that vault_index is stored in

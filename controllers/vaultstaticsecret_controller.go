@@ -413,10 +413,15 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 		PendingVaultIndex: &r.pendingVaultIndex,
 		// OnStop callback cleans up registry when WebSocket dies
 		OnStop: func() {
-			logger.Info("WebSocket stopped, cleaning up registry entry",
-				"namespace", name.Namespace,
-				"name", name.Name)
 			r.eventWatcherRegistry.Delete(name)
+		},
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: name.Namespace,
+					Name:      name.Name,
+				},
+			}
 		},
 	}
 
