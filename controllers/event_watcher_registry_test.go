@@ -121,10 +121,10 @@ func TestEventWatcherRegistry(t *testing.T) {
 	verifyResourceNotExists(t, registry, itemName)
 }
 
-// TestEventWatcherRegistry_RequeueOnEventLoopExit tests that when an event loop
-// exits (OnStop callback is triggered), the registry is cleaned up and a requeue
+// TestEventWatcherRegistry_RequeueOnEventLoopExit_VSS tests that when an event loop
+// exits for a VaultStaticSecret (OnStop callback is triggered), the registry is cleaned up and a requeue
 // event is sent to trigger reconciliation.
-func TestEventWatcherRegistry_RequeueOnEventLoopExit(t *testing.T) {
+func TestEventWatcherRegistry_RequeueOnEventLoopExit_VSS(t *testing.T) {
 	registry := createTestRegistry()
 	reconcileCh := make(chan event.GenericEvent, 10)
 
@@ -134,8 +134,7 @@ func TestEventWatcherRegistry_RequeueOnEventLoopExit(t *testing.T) {
 	registerResource(registry, objKey, 1, "client-123")
 	verifyRegistryCount(t, registry, 1, "resource should be registered")
 
-	// Simulate OnStop callback being called when event loop exits
-	// This mimics the behavior in vaultstaticsecret_controller.go:398-403
+	// Simulate OnStop callback being called when event loop exits.
 	onStopCallback := func() {
 		// Clean up registry entry
 		registry.Delete(objKey)
@@ -172,6 +171,57 @@ func TestEventWatcherRegistry_RequeueOnEventLoopExit(t *testing.T) {
 		assert.Equal(t, objKey.Namespace, vss.Namespace)
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for requeue event - requeue was not triggered")
+	}
+}
+
+// TestEventWatcherRegistry_RequeueOnEventLoopExit_VDS verifies that when the
+// event loop exits for a VaultDynamicSecret, the OnStop callback cleans the
+// registry and sends a requeue event carrying a *VaultDynamicSecret object so
+// the VDS controller's WatchesRawSource handles it.
+func TestEventWatcherRegistry_RequeueOnEventLoopExit_VDS(t *testing.T) {
+	registry := createTestRegistry()
+	reconcileCh := make(chan event.GenericEvent, 10)
+
+	objKey := createTestNamespacedName("test-vds", "default")
+
+	// Register the resource (simulates active event watcher)
+	registerResource(registry, objKey, 1, "client-123")
+	verifyRegistryCount(t, registry, 1, "resource should be registered")
+
+	// Simulate OnStop callback for a VaultDynamicSecret subscriber
+	onStopCallback := func() {
+		registry.Delete(objKey)
+
+		select {
+		case reconcileCh <- event.GenericEvent{
+			Object: &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      objKey.Name,
+					Namespace: objKey.Namespace,
+				},
+			},
+		}:
+		default:
+			t.Error("Failed to send requeue event - channel full")
+		}
+	}
+
+	onStopCallback()
+
+	// Registry must be cleaned up
+	verifyRegistryCount(t, registry, 0, "registry should be cleaned up after event loop exit")
+	verifyResourceNotExists(t, registry, objKey)
+
+	// Requeue event must carry a *VaultDynamicSecret, not *VaultStaticSecret
+	select {
+	case evt := <-reconcileCh:
+		assert.NotNil(t, evt.Object, "requeue event should contain object")
+		vds, ok := evt.Object.(*secretsv1beta1.VaultDynamicSecret)
+		require.True(t, ok, "requeue event object must be *VaultDynamicSecret so the VDS controller handles it")
+		assert.Equal(t, objKey.Name, vds.Name)
+		assert.Equal(t, objKey.Namespace, vds.Namespace)
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for requeue event")
 	}
 }
 
