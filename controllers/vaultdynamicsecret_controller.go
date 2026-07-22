@@ -315,11 +315,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	reason := consts.ReasonSecretSynced
-	if o.Status.LastGeneration > 0 {
-		reason = consts.ReasonSecretRotated
-	}
-
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
@@ -375,9 +370,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	o.Status.LastGeneration = o.GetGeneration()
 
 	horizon := r.computePostSyncHorizon(ctx, o)
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
-		secretLease.ID, horizon, syncReason)
+	if syncReason != "" || updated {
+		reason := consts.ReasonSecretSynced
+		if o.Status.LastGeneration > 0 {
+			reason = consts.ReasonSecretRotated
+		}
+		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
+			"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
+			secretLease.ID, horizon, syncReason)
+	}
 
 	conditions = append(
 		conditions,
