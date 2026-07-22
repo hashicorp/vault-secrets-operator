@@ -433,7 +433,7 @@ func (r *VaultPKISecretReconciler) revokeCertificate(ctx context.Context, l logr
 func (r *VaultPKISecretReconciler) getPath(spec secretsv1beta1.VaultPKISecretSpec) string {
 	parts := []string{spec.Mount}
 	if spec.IssuerRef != "" {
-		parts = append(parts, "issuer", spec.IssuerRef)
+		parts = append(parts, "issuer", spec.IssuerRef, "issue")
 	} else {
 		parts = append(parts, "issue")
 	}
