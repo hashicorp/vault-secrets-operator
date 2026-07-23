@@ -1519,9 +1519,9 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 //
 // Infrastructure is provisioned ONCE in the parent test (one Terraform apply,
 // one postgres pod, one Vault DB mount) and shared across all N parallel
-// subtests — mirroring the VSS events-both scale test pattern. This eliminates
-// the thundering-herd of N concurrent terraform applies that previously
-// saturated the kubectl port-forward (N×9 connections) and the EKS API server.
+// subtests. This eliminates the thundering-herd of N concurrent terraform
+// applies that previously saturated the kubectl port-forward
+// (N×9 connections) and the EKS API server.
 //
 // Each subtest creates its own VaultDynamicSecret CR (uniquely named) inside
 // the shared K8s/Vault namespace, all pointing at the same Vault static role.
@@ -1747,10 +1747,20 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 // near-instant credential rotation when a lease is revoked, driven by WebSocket lease
 // events rather than polling.
 //
-// When VDS_EVENTS_DYNAMIC_CREATE is set (or VDS_CREATE_COUNT as a fallback), N
-// parallel subtests are run — each with its own isolated Terraform stack — to
-// exercise the shared-WebSocket lease subscriber multiplexing under load. When
-// neither env var is set the test behaves exactly as before: a single subtest.
+// Infrastructure is provisioned ONCE in the parent test (one Terraform apply, one
+// postgres pod, one Vault DB mount) and shared across all N parallel subtests.
+// This eliminates the thundering-herd of N concurrent terraform applies that
+// previously saturated the kubectl port-forward and the EKS API server.
+//
+// Each subtest creates its own VaultDynamicSecret CR (uniquely named) pointing at
+// the same shared dynamic DB role. Every VDS gets its own independent lease from
+// Vault; each subtest revokes only its own lease, which triggers a lease* WebSocket
+// event that the SharedWebSocket fans out to all N subscribers — exactly the lease
+// event multiplexing behaviour being tested.
+//
+// The count of parallel subtests is controlled by VDS_EVENTS_DYNAMIC_CREATE
+// (or VDS_CREATE_COUNT as a fallback). When neither is set, a single subtest
+// runs, preserving the original non-scale behaviour.
 func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	if testInParallel {
 		t.Parallel()
@@ -1785,6 +1795,41 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 		count = v
 	}
 
+	// Provision infrastructure ONCE in the parent — one terraform apply for all
+	// subtests. Cleanup is registered on the parent t so it runs after all
+	// subtests finish (Go t.Cleanup is LIFO within the same *testing.T).
+	tfOptions, outputs := setupInstantUpdatesInfra(t, "vds-events-dynamic", 600)
+
+	ctx := context.Background()
+	crdClient := getCRDClient(t)
+
+	// One shared VaultAuth for all subtests. Registered for cleanup on the
+	// parent t so it is deleted before terraform destroy (LIFO order ensures
+	// subtest CR cleanups run first, then this, then terraform destroy).
+	vaultAuthName := outputs.NamePrefix + "-default"
+	vaultAuth := &secretsv1beta1.VaultAuth{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      vaultAuthName,
+			Namespace: outputs.K8sNamespace,
+		},
+		Spec: secretsv1beta1.VaultAuthSpec{
+			Namespace: outputs.Namespace,
+			Method:    "kubernetes",
+			Mount:     outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+		},
+	}
+	require.NoError(t, crdClient.Create(ctx, vaultAuth))
+	t.Cleanup(func() {
+		if os.Getenv("SKIP_CLEANUP") == "" {
+			assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
+		}
+	})
+
 	for i := 0; i < count; i++ {
 		i := i
 		t.Run(fmt.Sprintf("dynamic-%d", i), func(t *testing.T) {
@@ -1793,32 +1838,10 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			ctx := context.Background()
 			crdClient := getCRDClient(t)
 
-			tfOptions, outputs := setupInstantUpdatesInfra(t, fmt.Sprintf("vds-events-dynamic-%d", i), 600)
-
-			vaultAuthName := outputs.NamePrefix + "-default"
-			vaultAuth := &secretsv1beta1.VaultAuth{
-				ObjectMeta: v1.ObjectMeta{
-					Name:      vaultAuthName,
-					Namespace: outputs.K8sNamespace,
-				},
-				Spec: secretsv1beta1.VaultAuthSpec{
-					Namespace: outputs.Namespace,
-					Method:    "kubernetes",
-					Mount:     outputs.AuthMount,
-					Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-						Role:           outputs.AuthRole,
-						ServiceAccount: "default",
-						TokenAudiences: []string{"vault"},
-					},
-				},
-			}
-			require.NoError(t, crdClient.Create(ctx, vaultAuth))
-			t.Cleanup(func() {
-				if os.Getenv("SKIP_CLEANUP") == "" {
-					assert.NoError(t, crdClient.Delete(ctx, vaultAuth))
-				}
-			})
-
+			// Each subtest gets a uniquely named VDS CR pointing at the same
+			// shared dynamic DB role. Vault issues a distinct lease per CR;
+			// each subtest revokes only its own lease, which emits a lease*
+			// event that the SharedWebSocket fans out to all N subscribers.
 			destName := fmt.Sprintf("vds-instant-updates-dynamic-%d", i)
 			vdsObj := &secretsv1beta1.VaultDynamicSecret{
 				ObjectMeta: v1.ObjectMeta{
@@ -1891,8 +1914,9 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 				return nil
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-			// Revoke the active lease. Vault emits a lease* event, which the WebSocket
-			// subscription should pick up and trigger an immediate reconciliation.
+			// Revoke this VDS's own lease. Vault emits a lease* event for that
+			// specific lease ID, which the WebSocket subscription picks up and
+			// triggers an immediate reconciliation for this CR only.
 			vClient := getVaultClient(t, outputs.Namespace)
 			require.NoError(t, vClient.Sys().Revoke(vdsBefore.Status.SecretLease.ID),
 				"failed to revoke lease %s", vdsBefore.Status.SecretLease.ID)
