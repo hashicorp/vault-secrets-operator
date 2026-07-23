@@ -19,6 +19,11 @@ binary {
                 // The required functionality was inadvertently dropped from
                 // github.com/hashicorp/go-secure-stdlib/awsutil during the migration to aws-sdk-go-v2.
                 "GO-2022-0635",
+                // GO-2026-5932 flags the golang.org/x/crypto/openpgp subpackage as unmaintained/unsafe.
+                // VSO does not import or call openpgp anywhere; confirmed via `go mod why` (package not
+                // needed by the main module) and `govulncheck -mode=binary`, which found the symbol
+                // unreachable in the built binary. False positive from module-level (non-symbol) matching.
+                "GO-2026-5932",
             ]
         }
     }
