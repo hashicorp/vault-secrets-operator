@@ -295,11 +295,11 @@ ci-build: ci-build-scripts-dir ## Build operator binary (without generating asse
 
 .PHONY: ci-docker-build
 ci-docker-build: ## Build docker image with the operator (without generating assets)
-	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) --load . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG) --platform $(GOOS)/$(GOARCH) . --target release-default --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-docker-build-ubi
 ci-docker-build-ubi: ## Build docker ubi image with the operator (without generating assets)
-	docker build -t $(IMG)-ubi --platform $(GOOS)/$(GOARCH) --load . --target release-ubi --build-arg GO_VERSION=$(shell cat .go-version)
+	docker build -t $(IMG)-ubi --platform $(GOOS)/$(GOARCH) . --target release-ubi --build-arg GO_VERSION=$(shell cat .go-version)
 
 .PHONY: ci-test
 ci-test: vet envtest ## Run tests in CI (without generating assets)
