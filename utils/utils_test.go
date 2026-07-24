@@ -91,14 +91,14 @@ func TestUpgradeCRDs(t *testing.T) {
 		`apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: hcpauths.secrets.hashicorp.com
+  name: testcrds.secrets.hashicorp.com
 spec:
   group: secrets.hashicorp.com
   names:
-    kind: HCPAuth
-    listKind: HCPAuthList
-    plural: hcpauths
-    singular: hcpauth
+    kind: TestCRD
+    listKind: TestCRDList
+    plural: testcrds
+    singular: testcrd
   scope: Namespaced
   versions:
   - name: v1beta1
@@ -109,14 +109,14 @@ spec:
 		`apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: hcpauths.secrets.hashicorp.com
+  name: testcrds.secrets.hashicorp.com
 spec:
   group: secrets.hashicorp.com
   names:
-    kind: HCPAuth
-    listKind: HCPAuthList
-    plural: hcpauths
-    singular: hcpauth
+    kind: TestCRD
+    listKind: TestCRDList
+    plural: testcrds
+    singular: testcrd
   scope: Cluster
   versions:
   - name: v1beta2
@@ -137,15 +137,15 @@ metadata:
 			Kind:       "CustomResourceDefinition",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hcpauths.secrets.hashicorp.com",
+			Name: "testcrds.secrets.hashicorp.com",
 		},
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: "secrets.hashicorp.com",
 			Names: apiextensionsv1.CustomResourceDefinitionNames{
-				Kind:     "HCPAuth",
-				ListKind: "HCPAuthList",
-				Plural:   "hcpauths",
-				Singular: "hcpauth",
+				Kind:     "TestCRD",
+				ListKind: "TestCRDList",
+				Plural:   "testcrds",
+				Singular: "testcrd",
 			},
 			Scope: "Namespaced",
 			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{

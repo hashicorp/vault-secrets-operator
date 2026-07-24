@@ -69,7 +69,7 @@ type defaultCredentialProviderFactory struct {
 }
 
 // New returns a new provider.CredentialProviderBase instance for the given
-// object. It supports objects of type VaultAuth and HCPAuth.
+// object. It supports objects of type VaultAuth.
 func (f *defaultCredentialProviderFactory) New(ctx context.Context, c client.Client, obj client.Object, providerNamespace string) (provider.CredentialProviderBase, error) {
 	return f.factoryFunc(ctx, c, obj, providerNamespace)
 }

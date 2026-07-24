@@ -52,7 +52,6 @@ const (
 	VaultDynamicSecret
 	VaultStaticSecret
 	VaultPKISecret
-	HCPVaultSecretsApp
 	VaultAuth
 	VaultAuthGlobal
 	CSISecrets
@@ -69,8 +68,6 @@ func (k ResourceKind) String() string {
 		return "VaultStaticSecret"
 	case VaultPKISecret:
 		return "VaultPKISecret"
-	case HCPVaultSecretsApp:
-		return "HCPVaultSecretsApp"
 	case VaultAuth:
 		return "VaultAuth"
 	case VaultAuthGlobal:
