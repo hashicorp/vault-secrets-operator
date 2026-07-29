@@ -1162,6 +1162,25 @@ func (c *defaultClient) getOrCreateWebSocket(
 		return nil, fmt.Errorf("failed to create shared websocket: %w", err)
 	}
 	// Remove this websocket from the client registry when its event loop stops.
+	//
+	// onStop is called in two distinct situations, and both must be handled:
+	//
+	//   1. Normal stop (primary cleanup path): the event loop exits on its own,
+	//      e.g. because the reconnect threshold was exceeded. In this case onStop
+	//      is the only thing that removes the registry entry — without it the
+	//      dead socket would stay in the map forever.
+	//
+	//   2. Double cleanup after dead-socket replacement: when a caller finds a
+	//      dead socket above (lines 1142-1157), it eagerly calls ws.Close() and
+	//      delete(c.websockets, eventType) before creating this new socket.
+	//      ws.Close() cancels the old socket's context, but its event loop
+	//      goroutine is still running and will eventually exit — at which point
+	//      it fires onStop() a second time, after the registry entry was already
+	//      removed. The `current == ws` pointer identity check makes this
+	//      redundant invocation a safe no-op: if a new socket was created for
+	//      the same eventType, current != ws (current points to the new socket,
+	//      ws to the old one), so the delete is skipped and the new socket is
+	//      left untouched in the registry.
 	ws.onStop = func() {
 		c.websocketMu.Lock()
 		defer c.websocketMu.Unlock()
