@@ -1515,6 +1515,53 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 // TestVaultDynamicSecret_InstantUpdates validates that a VaultDynamicSecret with
 // SyncConfig.InstantUpdates=true receives near-instant credential updates driven
 // by WebSocket events rather than polling. It covers static role credentials
+
+// awaitEventWatcherStarted polls until a ReasonEventWatcherStarted k8s event is
+// recorded for vdsObj, confirming the WebSocket subscription is active.
+func awaitEventWatcherStarted(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, vdsObj *secretsv1beta1.VaultDynamicSecret) {
+	t.Helper()
+	require.NoError(t, backoff.Retry(func() error {
+		objEvents := corev1.EventList{}
+		err := crdClient.List(ctx, &objEvents,
+			ctrlclient.InNamespace(vdsObj.Namespace),
+			ctrlclient.MatchingFields{
+				"involvedObject.name": vdsObj.Name,
+				"reason":              consts.ReasonEventWatcherStarted,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if len(objEvents.Items) == 0 {
+			return fmt.Errorf("no EventWatcherStarted event for %s", vdsObj.Name)
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
+}
+
+// assertNoWebsocketEOFEvents asserts that no EventWatcherError warning events
+// with websocket EOF signatures were emitted for vdsObj during the test.
+func assertNoWebsocketEOFEvents(t *testing.T, ctx context.Context, crdClient ctrlclient.Client, vdsObj *secretsv1beta1.VaultDynamicSecret) {
+	t.Helper()
+	objEvents := corev1.EventList{}
+	require.NoError(t, crdClient.List(ctx, &objEvents,
+		ctrlclient.InNamespace(vdsObj.Namespace),
+		ctrlclient.MatchingFields{
+			"involvedObject.name": vdsObj.Name,
+			"reason":              consts.ReasonEventWatcherError,
+		},
+	))
+	for _, event := range objEvents.Items {
+		if event.Type != corev1.EventTypeWarning {
+			continue
+		}
+		if strings.Contains(event.Message, "failed to read frame header: EOF") ||
+			strings.Contains(event.Message, "failed to read from websocket") {
+			t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
+		}
+	}
+}
+
 // (database* events).
 //
 // When VDS_EVENTS_STATIC_CREATE is set (or VDS_CREATE_COUNT as a fallback), N
@@ -1549,9 +1596,12 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	} else if v, exists := getEnvInt(t, "VDS_CREATE_COUNT"); exists {
 		count = v
 	}
+	if count < 1 {
+		t.Logf("count resolved to %d (< 1); clamping to 1 to ensure at least one subtest runs", count)
+		count = 1
+	}
 
 	for i := 0; i < count; i++ {
-		i := i
 		t.Run(fmt.Sprintf("static-%d", i), func(t *testing.T) {
 			t.Parallel()
 
@@ -1643,26 +1693,6 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				return nil
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
-			// Wait for the EventWatcherStarted event, confirming the WebSocket
-			// subscription is active.
-			require.NoError(t, backoff.Retry(func() error {
-				objEvents := corev1.EventList{}
-				err := crdClient.List(ctx, &objEvents,
-					ctrlclient.InNamespace(vdsObj.Namespace),
-					ctrlclient.MatchingFields{
-						"involvedObject.name": vdsObj.Name,
-						"reason":              consts.ReasonEventWatcherStarted,
-					},
-				)
-				if err != nil {
-					return err
-				}
-				if len(objEvents.Items) == 0 {
-					return fmt.Errorf("no EventWatcherStarted event for %s", vdsObj.Name)
-				}
-				return nil
-			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
-
 			// Force-rotate the static database role in Vault. This emits a database*
 			// event that the WebSocket subscription should pick up immediately.
 			vClient := getVaultClient(t, outputs.Namespace)
@@ -1698,23 +1728,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 
 			// Assert no EventWatcherError warning was emitted with websocket EOF
 			// signatures during the test.
-			objEvents := corev1.EventList{}
-			require.NoError(t, crdClient.List(ctx, &objEvents,
-				ctrlclient.InNamespace(vdsObj.Namespace),
-				ctrlclient.MatchingFields{
-					"involvedObject.name": vdsObj.Name,
-					"reason":              consts.ReasonEventWatcherError,
-				},
-			))
-			for _, event := range objEvents.Items {
-				if event.Type != corev1.EventTypeWarning {
-					continue
-				}
-				if strings.Contains(event.Message, "failed to read frame header: EOF") ||
-					strings.Contains(event.Message, "failed to read from websocket") {
-					t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
-				}
-			}
+			assertNoWebsocketEOFEvents(t, ctx, crdClient, vdsObj)
 		})
 	}
 }
@@ -1761,9 +1775,12 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	} else if v, exists := getEnvInt(t, "VDS_CREATE_COUNT"); exists {
 		count = v
 	}
+	if count < 1 {
+		t.Logf("count resolved to %d (< 1); clamping to 1 to ensure at least one subtest runs", count)
+		count = 1
+	}
 
 	for i := 0; i < count; i++ {
-		i := i
 		t.Run(fmt.Sprintf("dynamic-%d", i), func(t *testing.T) {
 			t.Parallel()
 
@@ -1850,23 +1867,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 
 			// Wait for the EventWatcherStarted event, confirming the WebSocket
 			// subscription is active (both database* and lease* subscriptions attempted).
-			require.NoError(t, backoff.Retry(func() error {
-				objEvents := corev1.EventList{}
-				err := crdClient.List(ctx, &objEvents,
-					ctrlclient.InNamespace(vdsObj.Namespace),
-					ctrlclient.MatchingFields{
-						"involvedObject.name": vdsObj.Name,
-						"reason":              consts.ReasonEventWatcherStarted,
-					},
-				)
-				if err != nil {
-					return err
-				}
-				if len(objEvents.Items) == 0 {
-					return fmt.Errorf("no EventWatcherStarted event for %s", vdsObj.Name)
-				}
-				return nil
-			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
+			awaitEventWatcherStarted(t, ctx, crdClient, vdsObj)
 
 			// Revoke the active lease. Vault emits a lease* event, which the WebSocket
 			// subscription should pick up and trigger an immediate reconciliation.
@@ -1892,23 +1893,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 
 			// Assert no EventWatcherError warning was emitted with websocket EOF
 			// signatures during the test.
-			objEvents := corev1.EventList{}
-			require.NoError(t, crdClient.List(ctx, &objEvents,
-				ctrlclient.InNamespace(vdsObj.Namespace),
-				ctrlclient.MatchingFields{
-					"involvedObject.name": vdsObj.Name,
-					"reason":              consts.ReasonEventWatcherError,
-				},
-			))
-			for _, event := range objEvents.Items {
-				if event.Type != corev1.EventTypeWarning {
-					continue
-				}
-				if strings.Contains(event.Message, "failed to read frame header: EOF") ||
-					strings.Contains(event.Message, "failed to read from websocket") {
-					t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
-				}
-			}
+			assertNoWebsocketEOFEvents(t, ctx, crdClient, vdsObj)
 		})
 	}
 }
@@ -2133,25 +2118,9 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 		}
 		return errs
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 20)),
-		"VDS %s was not updated via instant updates within 30s after forced rotation post-VaultAuth-change", objKey,
+		"VDS %s was not updated via instant updates within 20s after forced rotation post-VaultAuth-change", objKey,
 	)
 
 	// Assert no websocket EOF errors were emitted throughout the test.
-	eofEvents := corev1.EventList{}
-	require.NoError(t, crdClient.List(ctx, &eofEvents,
-		ctrlclient.InNamespace(vdsObj.Namespace),
-		ctrlclient.MatchingFields{
-			"involvedObject.name": vdsObj.Name,
-			"reason":              consts.ReasonEventWatcherError,
-		},
-	))
-	for _, event := range eofEvents.Items {
-		if event.Type != corev1.EventTypeWarning {
-			continue
-		}
-		if strings.Contains(event.Message, "failed to read frame header: EOF") ||
-			strings.Contains(event.Message, "failed to read from websocket") {
-			t.Fatalf("unexpected websocket EOF event for %s: %s", vdsObj.Name, event.Message)
-		}
-	}
+	assertNoWebsocketEOFEvents(t, ctx, crdClient, vdsObj)
 }
