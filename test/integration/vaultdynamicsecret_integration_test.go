@@ -1693,6 +1693,10 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				return nil
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
 
+			// Wait for the EventWatcherStarted event, confirming the WebSocket
+			// subscription is active before triggering the rotation.
+			awaitEventWatcherStarted(t, ctx, crdClient, vdsObj)
+
 			// Force-rotate the static database role in Vault. This emits a database*
 			// event that the WebSocket subscription should pick up immediately.
 			vClient := getVaultClient(t, outputs.Namespace)
