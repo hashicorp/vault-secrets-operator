@@ -2443,8 +2443,8 @@ type mockEnsureClient struct {
 	mountTypeErr    error
 	subscribed      []vault.EventType
 	seen            []vault.EventType // from UnsubscribeFromEvents
-	// webSocket is returned by GetWebSocket; nil means no active WebSocket.
-	webSocket *vault.SharedWebSocket
+	// webSocketHealthy is returned by IsWebSocketHealthy.
+	webSocketHealthy bool
 	// onSubscribe is an optional hook called on every SubscribeToEvents call,
 	// allowing tests to capture Subscriber fields such as OnStop.
 	onSubscribe func(vault.EventType, *vault.Subscriber)
@@ -2469,8 +2469,8 @@ func (m *mockEnsureClient) UnsubscribeFromEvents(et vault.EventType, _ vault.Sub
 
 func (m *mockEnsureClient) ID() string { return "test-client" }
 
-func (m *mockEnsureClient) GetWebSocket(_ vault.EventType) *vault.SharedWebSocket {
-	return m.webSocket
+func (m *mockEnsureClient) IsWebSocketHealthy(_ vault.EventType) bool {
+	return m.webSocketHealthy
 }
 
 // Test_ensureEventWatcher_GetMountTypeError_ReusesPriorEventType verifies
@@ -2708,8 +2708,8 @@ func TestVaultDynamicSecretReconciler_syncSecret_vaultIndex(t *testing.T) {
 }
 
 // Test_ensureEventWatcher_OrphanedEntry_NilWebSocket verifies that when the
-// registry has a matching entry but GetWebSocket returns nil (e.g. after an
-// operator restart), ensureEventWatcher detects the orphaned entry, clears it,
+// registry has a matching entry but IsWebSocketHealthy returns false (e.g. after
+// an operator restart), ensureEventWatcher detects the orphaned entry, clears it,
 // and re-subscribes rather than returning nil.
 func Test_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
 	ch := make(chan event.GenericEvent, 10)
@@ -2738,10 +2738,10 @@ func Test_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
 		LastEventType:  vault.EventTypeDatabase,
 	})
 
-	// GetWebSocket returns nil — simulates operator restart with no live WebSocket.
+	// IsWebSocketHealthy returns false — simulates operator restart with no live WebSocket.
 	m := &mockEnsureClient{
-		mountTypeResult: "database",
-		webSocket:       nil,
+		mountTypeResult:  "database",
+		webSocketHealthy: false,
 	}
 
 	err := r.ensureEventWatcher(context.Background(), o, m)
@@ -2756,11 +2756,11 @@ func Test_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
 	assert.Equal(t, vault.EventTypeDatabase, meta.LastEventType)
 }
 
-// Test_ensureEventWatcher_OnStop_CleansRegistry verifies that the OnStop
+// Test_VDS_ensureEventWatcher_OnStop_CleansRegistry verifies that the OnStop
 // callback set on the VDS engine-events Subscriber deletes the registry entry
 // when invoked, so the next reconcile falls through to re-subscribe instead of
 // returning early because it sees a stale registry entry with matching metadata.
-func Test_ensureEventWatcher_OnStop_CleansRegistry(t *testing.T) {
+func Test_VDS_ensureEventWatcher_OnStop_CleansRegistry(t *testing.T) {
 	ch := make(chan event.GenericEvent, 10)
 	r := &VaultDynamicSecretReconciler{
 		eventWatcherRegistry: newEventWatcherRegistry(),

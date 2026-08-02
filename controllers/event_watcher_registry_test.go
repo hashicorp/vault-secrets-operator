@@ -4,17 +4,14 @@
 package controllers
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-
-	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 // Helper functions for event watcher registry tests
@@ -121,187 +118,95 @@ func TestEventWatcherRegistry(t *testing.T) {
 	verifyResourceNotExists(t, registry, itemName)
 }
 
-// TestEventWatcherRegistry_RequeueOnEventLoopExit_VSS tests that when an event loop
-// exits for a VaultStaticSecret (OnStop callback is triggered), the registry is cleaned up and a requeue
-// event is sent to trigger reconciliation.
-func TestEventWatcherRegistry_RequeueOnEventLoopExit_VSS(t *testing.T) {
-	registry := createTestRegistry()
-	reconcileCh := make(chan event.GenericEvent, 10)
+// TestEventWatcherRegistry_CRUDContract verifies the registry's fundamental
+// semantics: last-write-wins update, selective delete, idempotent delete, and
+// re-register after delete. Scenarios that only exercise registry.Delete
+// directly (resource deletion, reconciler error, crash recovery, orphan
+// detection by client-ID change, etc.) are folded here — the registry has no
+// knowledge of those production contexts and the CRUD contract is identical
+// in all of them.
+func TestEventWatcherRegistry_CRUDContract(t *testing.T) {
+	t.Run("last-write-wins update", func(t *testing.T) {
+		registry := createTestRegistry()
+		key := createTestNamespacedName("vss", "default")
+		registerResource(registry, key, 1, "client-1")
+		registerResource(registry, key, 2, "client-2")
+		registerResource(registry, key, 3, "client-3")
+		got := verifyResourceExists(t, registry, key)
+		assert.Equal(t, int64(3), got.LastGeneration)
+		assert.Equal(t, "client-3", got.LastClientID)
+	})
 
-	objKey := createTestNamespacedName("test-vss", "default")
+	t.Run("delete removes entry", func(t *testing.T) {
+		registry := createTestRegistry()
+		key := createTestNamespacedName("vss", "default")
+		registerResource(registry, key, 1, "client-1")
+		registry.Delete(key)
+		verifyRegistryCount(t, registry, 0)
+		verifyResourceNotExists(t, registry, key)
+	})
 
-	// Register the resource (simulates active event watcher)
-	registerResource(registry, objKey, 1, "client-123")
-	verifyRegistryCount(t, registry, 1, "resource should be registered")
+	t.Run("delete is idempotent", func(t *testing.T) {
+		registry := createTestRegistry()
+		key := createTestNamespacedName("vss", "default")
+		registry.Delete(key) // never registered — must not panic
+		verifyRegistryCount(t, registry, 0)
+	})
 
-	// Simulate OnStop callback being called when event loop exits.
-	onStopCallback := func() {
-		// Clean up registry entry
-		registry.Delete(objKey)
+	t.Run("selective delete preserves other entries", func(t *testing.T) {
+		registry := createTestRegistry()
+		keep := createTestNamespacedName("vss-keep", "default")
+		del := createTestNamespacedName("vss-del", "default")
+		registerResource(registry, keep, 1, "c")
+		registerResource(registry, del, 1, "c")
+		registry.Delete(del)
+		verifyRegistryCount(t, registry, 1)
+		verifyResourceExists(t, registry, keep)
+		verifyResourceNotExists(t, registry, del)
+	})
 
-		// Send requeue event to trigger reconciliation
-		select {
-		case reconcileCh <- event.GenericEvent{
-			Object: &secretsv1beta1.VaultStaticSecret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      objKey.Name,
-					Namespace: objKey.Namespace,
-				},
-			},
-		}:
-		default:
-			t.Error("Failed to send requeue event - channel full")
+	t.Run("re-register after delete", func(t *testing.T) {
+		registry := createTestRegistry()
+		key := createTestNamespacedName("vss", "default")
+		registerResource(registry, key, 1, "client-old")
+		registry.Delete(key)
+		registerResource(registry, key, 2, "client-new")
+		got := verifyResourceExists(t, registry, key)
+		assert.Equal(t, int64(2), got.LastGeneration)
+		assert.Equal(t, "client-new", got.LastClientID)
+	})
+
+	t.Run("delete multiple entries — all removed", func(t *testing.T) {
+		registry := createTestRegistry()
+		resources := []types.NamespacedName{
+			createTestNamespacedName("vss-1", "default"),
+			createTestNamespacedName("vss-2", "default"),
+			createTestNamespacedName("vss-3", "app-ns"),
 		}
-	}
-
-	// Trigger the OnStop callback (simulating event loop exit)
-	onStopCallback()
-
-	// Verify registry was cleaned up
-	verifyRegistryCount(t, registry, 0, "registry should be cleaned up after event loop exit")
-	verifyResourceNotExists(t, registry, objKey)
-
-	// Verify requeue event was sent
-	select {
-	case evt := <-reconcileCh:
-		assert.NotNil(t, evt.Object, "requeue event should contain object")
-		vss, ok := evt.Object.(*secretsv1beta1.VaultStaticSecret)
-		require.True(t, ok, "requeue event should be for VaultStaticSecret")
-		assert.Equal(t, objKey.Name, vss.Name)
-		assert.Equal(t, objKey.Namespace, vss.Namespace)
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for requeue event - requeue was not triggered")
-	}
+		registerMultipleResources(registry, resources, 1, "client-123")
+		verifyRegistryCount(t, registry, 3)
+		deleteMultipleResources(registry, resources)
+		verifyRegistryCount(t, registry, 0)
+		verifyMultipleResourcesNotExist(t, registry, resources)
+	})
 }
 
-// TestEventWatcherRegistry_RequeueOnEventLoopExit_VDS verifies that when the
-// event loop exits for a VaultDynamicSecret, the OnStop callback cleans the
-// registry and sends a requeue event carrying a *VaultDynamicSecret object so
-// the VDS controller's WatchesRawSource handles it.
-func TestEventWatcherRegistry_RequeueOnEventLoopExit_VDS(t *testing.T) {
-	registry := createTestRegistry()
-	reconcileCh := make(chan event.GenericEvent, 10)
-
-	objKey := createTestNamespacedName("test-vds", "default")
-
-	// Register the resource (simulates active event watcher)
-	registerResource(registry, objKey, 1, "client-123")
-	verifyRegistryCount(t, registry, 1, "resource should be registered")
-
-	// Simulate OnStop callback for a VaultDynamicSecret subscriber
-	onStopCallback := func() {
-		registry.Delete(objKey)
-
-		select {
-		case reconcileCh <- event.GenericEvent{
-			Object: &secretsv1beta1.VaultDynamicSecret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      objKey.Name,
-					Namespace: objKey.Namespace,
-				},
-			},
-		}:
-		default:
-			t.Error("Failed to send requeue event - channel full")
-		}
-	}
-
-	onStopCallback()
-
-	// Registry must be cleaned up
-	verifyRegistryCount(t, registry, 0, "registry should be cleaned up after event loop exit")
-	verifyResourceNotExists(t, registry, objKey)
-
-	// Requeue event must carry a *VaultDynamicSecret, not *VaultStaticSecret
-	select {
-	case evt := <-reconcileCh:
-		assert.NotNil(t, evt.Object, "requeue event should contain object")
-		vds, ok := evt.Object.(*secretsv1beta1.VaultDynamicSecret)
-		require.True(t, ok, "requeue event object must be *VaultDynamicSecret so the VDS controller handles it")
-		assert.Equal(t, objKey.Name, vds.Name)
-		assert.Equal(t, objKey.Namespace, vds.Namespace)
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for requeue event")
-	}
-}
-
-// TestEventWatcherRegistry_RegistryCleanup verifies that registry entries are
-// properly cleaned up when resources are deleted or event loops exit, preventing
-// resource leaks and ensuring clean state management.
-func TestEventWatcherRegistry_RegistryCleanup(t *testing.T) {
-	registry := createTestRegistry()
-
-	// Register multiple resources
-	resources := []types.NamespacedName{
-		createTestNamespacedName("vss-1", "default"),
-		createTestNamespacedName("vss-2", "default"),
-		createTestNamespacedName("vss-3", "app-ns"),
-	}
-
-	registerMultipleResources(registry, resources, 1, "client-123")
-	verifyRegistryCount(t, registry, 3, "all resources should be registered")
-
-	// Simulate cleanup when resources are deleted (OnStop callbacks)
-	deleteMultipleResources(registry, resources)
-
-	// Verify all entries are cleaned up
-	verifyRegistryCount(t, registry, 0, "all registry entries should be cleaned up")
-	verifyMultipleResourcesNotExist(t, registry, resources)
-}
-
-// TestEventWatcherRegistry_OrphanedEntryDetection verifies detection and cleanup
-// of orphaned registry entries (entries that exist but WebSocket is dead), ensuring
-// the system can recover from connection failures.
-func TestEventWatcherRegistry_OrphanedEntryDetection(t *testing.T) {
-	registry := createTestRegistry()
-
-	// Register resources
-	activeRes := createTestNamespacedName("active-vss", "default")
-	orphanedRes := createTestNamespacedName("orphaned-vss", "default")
-
-	registerResource(registry, activeRes, 1, "client-1")
-	registerResource(registry, orphanedRes, 1, "client-2")
-
-	verifyRegistryCount(t, registry, 2)
-
-	// Simulate orphan detection and cleanup
-	verifyResourceExists(t, registry, orphanedRes)
-
-	// Clean up the orphaned entry
-	registry.Delete(orphanedRes)
-
-	// Verify orphaned entry is removed
-	verifyRegistryCount(t, registry, 1)
-	verifyResourceNotExists(t, registry, orphanedRes)
-
-	// Active entry should remain
-	got := verifyResourceExists(t, registry, activeRes)
-	assert.Equal(t, "client-1", got.LastClientID)
-}
-
-// TestEventWatcherRegistry_ConcurrentCleanup tests that concurrent cleanup
-// operations (multiple event loops exiting simultaneously) are handled safely.
+// TestEventWatcherRegistry_ConcurrentCleanup tests that concurrent Delete calls
+// (e.g. multiple event loops exiting simultaneously) are handled safely.
 func TestEventWatcherRegistry_ConcurrentCleanup(t *testing.T) {
 	registry := newEventWatcherRegistry()
 
-	// Register multiple resources
 	numResources := 50
 	resources := make([]types.NamespacedName, numResources)
 	for i := 0; i < numResources; i++ {
-		resources[i] = types.NamespacedName{
-			Name:      "vss-" + string(rune(i)),
-			Namespace: "default",
-		}
-		meta := &eventWatcherMeta{
+		resources[i] = createTestNamespacedName(fmt.Sprintf("vss-%d", i), "default")
+		registry.Register(resources[i], &eventWatcherMeta{
 			LastGeneration: int64(i),
-			LastClientID:   "client-" + string(rune(i)),
-		}
-		registry.Register(resources[i], meta)
+			LastClientID:   fmt.Sprintf("client-%d", i),
+		})
 	}
-
 	assert.Equal(t, numResources, registry.registry.ItemCount())
 
-	// Simulate concurrent event loop exits
 	var wg sync.WaitGroup
 	for _, res := range resources {
 		wg.Add(1)
@@ -310,73 +215,10 @@ func TestEventWatcherRegistry_ConcurrentCleanup(t *testing.T) {
 			registry.Delete(objKey)
 		}(res)
 	}
-
 	wg.Wait()
 
-	// Verify all registry entries are cleaned up
 	assert.Equal(t, 0, registry.registry.ItemCount(),
-		"all registry entries should be cleaned up after concurrent exits")
-}
-
-// TestEventWatcherRegistry_CleanupOnResourceDeletion verifies that when a
-// Kubernetes resource is deleted, its registry entry is properly removed,
-// ensuring clean resource lifecycle management.
-func TestEventWatcherRegistry_CleanupOnResourceDeletion(t *testing.T) {
-	registry := newEventWatcherRegistry()
-
-	// Register a resource
-	objKey := types.NamespacedName{Name: "vss-to-delete", Namespace: "default"}
-	meta := &eventWatcherMeta{
-		LastGeneration: 1,
-		LastClientID:   "client-123",
-	}
-	registry.Register(objKey, meta)
-	assert.Equal(t, 1, registry.registry.ItemCount())
-
-	// Simulate resource deletion (finalizer cleanup triggers OnStop callback)
-	// In real code: vaultstaticsecret_controller.go:330-354 (finalize method)
-	registry.Delete(objKey)
-
-	// Verify registry entry is removed
-	assert.Equal(t, 0, registry.registry.ItemCount(), "registry should be cleaned up after resource deletion")
-	_, ok := registry.Get(objKey)
-	assert.False(t, ok, "deleted resource should not be in registry")
-}
-
-// TestEventWatcherRegistry_CleanupOnReconcilerError verifies that registry
-// cleanup happens even when reconciler encounters errors, ensuring robust
-// error handling and preventing resource leaks during failures.
-func TestEventWatcherRegistry_CleanupOnReconcilerError(t *testing.T) {
-	registry := newEventWatcherRegistry()
-
-	objKey := types.NamespacedName{Name: "vss-error", Namespace: "default"}
-	meta := &eventWatcherMeta{
-		LastGeneration: 1,
-		LastClientID:   "client-123",
-	}
-
-	// Register resource
-	registry.Register(objKey, meta)
-	assert.Equal(t, 1, registry.registry.ItemCount())
-
-	// Simulate reconciler error scenario
-	// Even if reconciler fails, OnStop callback should still clean up registry
-	// This happens when: Vault connection fails, auth fails, etc.
-	simulateReconcilerError := func() error {
-		// Simulate error during reconciliation
-		// In real code: vaultstaticsecret_controller.go:334-341
-		// Even with error, cleanup should happen
-		registry.Delete(objKey)
-		return assert.AnError // Simulated error
-	}
-
-	err := simulateReconcilerError()
-	assert.Error(t, err, "reconciler should return error")
-
-	// Verify cleanup happened despite error
-	assert.Equal(t, 0, registry.registry.ItemCount(), "registry should be cleaned up even on reconciler error")
-	_, ok := registry.Get(objKey)
-	assert.False(t, ok, "resource should be removed from registry despite error")
+		"all entries must be gone after concurrent deletes")
 }
 
 // TestEventWatcherRegistry_CleanupOnNamespaceDeletion verifies that when a
@@ -424,8 +266,8 @@ func TestEventWatcherRegistry_NoMemoryLeak(t *testing.T) {
 	resourceNames := 10 // Reuse 10 resource names
 
 	for i := 0; i < iterations; i++ {
-		res := createTestNamespacedName("vss-"+string(rune(i%resourceNames)), "default")
-		registerResource(registry, res, int64(i), "client-"+string(rune(i)))
+		res := createTestNamespacedName(fmt.Sprintf("vss-%d", i%resourceNames), "default")
+		registerResource(registry, res, int64(i), fmt.Sprintf("client-%d", i))
 		registry.Delete(res)
 	}
 
@@ -434,7 +276,7 @@ func TestEventWatcherRegistry_NoMemoryLeak(t *testing.T) {
 
 	// Verify no entries remain
 	for i := 0; i < resourceNames; i++ {
-		res := createTestNamespacedName("vss-"+string(rune(i)), "default")
+		res := createTestNamespacedName(fmt.Sprintf("vss-%d", i), "default")
 		verifyResourceNotExists(t, registry, res)
 	}
 }
@@ -453,8 +295,8 @@ func TestEventWatcherRegistry_CleanupWithHighChurn(t *testing.T) {
 		// Create batch of resources
 		resources := make([]types.NamespacedName, resourcesPerCycle)
 		for i := 0; i < resourcesPerCycle; i++ {
-			resources[i] = createTestNamespacedName("vss-"+string(rune(cycle*resourcesPerCycle+i)), "default")
-			registerResource(registry, resources[i], int64(cycle), "client-"+string(rune(cycle)))
+			resources[i] = createTestNamespacedName(fmt.Sprintf("vss-%d", cycle*resourcesPerCycle+i), "default")
+			registerResource(registry, resources[i], int64(cycle), fmt.Sprintf("client-%d", cycle))
 		}
 
 		// Verify registration
@@ -469,65 +311,6 @@ func TestEventWatcherRegistry_CleanupWithHighChurn(t *testing.T) {
 
 	// Final verification - no memory leak after high churn
 	verifyRegistryCount(t, registry, 0, "registry should be empty after high churn - no memory leak")
-}
-
-// TestEventWatcherRegistry_OrphanDetectionAfterCrash verifies detection of orphaned
-// entries that remain after operator crash (OnStop callback never ran), ensuring
-// graceful recovery from unexpected failures.
-func TestEventWatcherRegistry_OrphanDetectionAfterCrash(t *testing.T) {
-	registry := createTestRegistry()
-
-	// Simulate resources registered before crash
-	crashedResources := []types.NamespacedName{
-		createTestNamespacedName("vss-crashed-1", "default"),
-		createTestNamespacedName("vss-crashed-2", "default"),
-	}
-
-	registerMultipleResources(registry, crashedResources, 1, "client-before-crash")
-	verifyRegistryCount(t, registry, 2, "resources registered before crash")
-
-	// Detect and clean up orphaned entries
-	for _, res := range crashedResources {
-		if _, exists := registry.Get(res); exists {
-			registry.Delete(res)
-		}
-	}
-
-	// Verify all orphaned entries are cleaned up
-	verifyRegistryCount(t, registry, 0, "all orphaned entries should be cleaned up")
-	verifyMultipleResourcesNotExist(t, registry, crashedResources)
-}
-
-// TestEventWatcherRegistry_OrphanDetectionWithMixedState verifies orphan detection
-// when some entries are healthy and some are orphaned, ensuring selective cleanup
-// that preserves healthy connections while removing stale ones.
-func TestEventWatcherRegistry_OrphanDetectionWithMixedState(t *testing.T) {
-	registry := createTestRegistry()
-
-	// Register healthy resources (WebSocket active)
-	healthyResources := []types.NamespacedName{
-		createTestNamespacedName("vss-healthy-1", "default"),
-		createTestNamespacedName("vss-healthy-2", "default"),
-	}
-
-	// Register orphaned resources (WebSocket dead)
-	orphanedResources := []types.NamespacedName{
-		createTestNamespacedName("vss-orphaned-1", "default"),
-		createTestNamespacedName("vss-orphaned-2", "default"),
-		createTestNamespacedName("vss-orphaned-3", "default"),
-	}
-
-	// Register all resources
-	registerMultipleResources(registry, append(healthyResources, orphanedResources...), 1, "client-123")
-	verifyRegistryCount(t, registry, 5, "all resources registered")
-
-	// Simulate orphan detection logic
-	deleteMultipleResources(registry, orphanedResources)
-
-	// Verify only orphaned entries are cleaned up
-	verifyRegistryCount(t, registry, 2, "only healthy resources should remain")
-	verifyMultipleResourcesNotExist(t, registry, orphanedResources)
-	verifyMultipleResourcesExist(t, registry, healthyResources)
 }
 
 // TestEventWatcherRegistry_OrphanDetectionRaceCondition verifies orphan detection
@@ -575,65 +358,6 @@ func TestEventWatcherRegistry_OrphanDetectionRaceCondition(t *testing.T) {
 		// Could be either generation depending on race outcome
 		assert.NotNil(t, got)
 	}
-}
-
-// TestEventWatcherRegistry_AutomaticOrphanCleanup verifies that orphan cleanup
-// happens automatically during reconciliation, ensuring self-healing behavior
-// without manual intervention.
-func TestEventWatcherRegistry_AutomaticOrphanCleanup(t *testing.T) {
-	registry := createTestRegistry()
-
-	// Simulate orphaned entries from previous operator run
-	orphanedEntries := []types.NamespacedName{
-		createTestNamespacedName("vss-old-1", "default"),
-		createTestNamespacedName("vss-old-2", "app-ns"),
-		createTestNamespacedName("vss-old-3", "default"),
-	}
-
-	registerMultipleResources(registry, orphanedEntries, 1, "client-old")
-	verifyRegistryCount(t, registry, 3, "orphaned entries exist")
-
-	// Simulate automatic orphan detection during reconciliation
-	cleanupOrphans := func() {
-		for _, res := range orphanedEntries {
-			if _, exists := registry.Get(res); exists {
-				registry.Delete(res)
-			}
-		}
-	}
-
-	// Run automatic cleanup
-	cleanupOrphans()
-
-	// Verify all orphans are automatically cleaned up
-	verifyRegistryCount(t, registry, 0, "all orphans should be automatically cleaned up")
-	verifyMultipleResourcesNotExist(t, registry, orphanedEntries)
-}
-
-// TestEventWatcherRegistry_OrphanDetectionMultipleGenerations verifies orphan
-// detection when resource has been updated multiple times, ensuring proper
-// generation tracking and cleanup of stale entries.
-func TestEventWatcherRegistry_OrphanDetectionMultipleGenerations(t *testing.T) {
-	registry := createTestRegistry()
-
-	objKey := createTestNamespacedName("vss-multi-gen", "default")
-
-	// Register with generation 1, then update to 2, then 3
-	registerResource(registry, objKey, 1, "client-1")
-	registerResource(registry, objKey, 2, "client-2")
-	registerResource(registry, objKey, 3, "client-3")
-
-	// Verify latest generation is stored
-	got := verifyResourceExists(t, registry, objKey)
-	assert.Equal(t, int64(3), got.LastGeneration)
-	assert.Equal(t, "client-3", got.LastClientID)
-
-	// Simulate orphan detection - WebSocket for generation 3 is dead
-	registry.Delete(objKey)
-
-	// Verify orphaned entry is cleaned up
-	verifyRegistryCount(t, registry, 0)
-	verifyResourceNotExists(t, registry, objKey)
 }
 
 // TestEventWatcherRegistry_OrphanDetectionClientIDChange verifies orphan detection

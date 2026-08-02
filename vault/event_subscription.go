@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -40,8 +41,10 @@ type SharedWebSocket struct {
 	// conn is the underlying WebSocket connection
 	conn *websocket.Conn
 	// stopped indicates that the event loop has exited and this websocket should
-	// no longer be considered healthy or reusable.
-	stopped bool
+	// no longer be considered healthy or reusable. Written by the event-loop
+	// goroutine and read from reconciler goroutines via IsHealthy(), so it must
+	// be accessed atomically to avoid a data race.
+	stopped atomic.Bool
 	// notifyOnStop indicates that subscribers should be requeued because the
 	// event loop is exiting due to reconnect failure exhaustion.
 	notifyOnStop bool
@@ -182,14 +185,14 @@ func (ws *SharedWebSocket) GetSubscriberCount() int {
 // requeued so reconciliation can create a fresh SharedWebSocket instance.
 func (ws *SharedWebSocket) eventLoop() {
 	defer func() {
-		ws.stopped = true
-		if ws.onStop != nil {
-			ws.onStop()
-		}
+		ws.stopped.Store(true)
 		ws.logger.Info("Event loop exiting", "subscribers", ws.GetSubscriberCount())
 		if ws.notifyOnStop {
 			// Notify all subscribers that the WebSocket is stopping due to failure.
 			ws.notifySubscribersOfStop()
+		}
+		if ws.onStop != nil {
+			ws.onStop()
 		}
 	}()
 
@@ -292,14 +295,21 @@ func (ws *SharedWebSocket) notifySubscribersOfStop() {
 					"subscriber", subKey)
 				continue
 			}
+			evt := event.GenericEvent{Object: sub.NewObject()}
 			select {
-			case sub.ReconcileCh <- event.GenericEvent{
-				Object: sub.NewObject(),
-			}:
+			case sub.ReconcileCh <- evt:
 				ws.logger.Info("Sent requeue event for reconciliation",
 					"subscriber", subKey)
 			default:
-				ws.logger.V(consts.LogLevelDebug).Info("ReconcileCh full, skipping requeue",
+				// Channel is full. For normal events a drop is fine because
+				// another event will follow, but this is the only signal that
+				// wakes the reconciler after a WebSocket dies — dropping it
+				// would leave the resource unsubscribed until the next periodic
+				// resync. Spawn a goroutine to block-send so delivery is
+				// guaranteed without holding the subscriber lock.
+				ch := sub.ReconcileCh
+				go func() { ch <- evt }()
+				ws.logger.V(consts.LogLevelDebug).Info("ReconcileCh full, scheduled async requeue",
 					"subscriber", subKey)
 			}
 		}
@@ -450,14 +460,14 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 	for _, sub := range subsCopy {
 		var obj client.Object
 		switch sub.ResourceType {
-		case "VaultStaticSecret":
+		case ResourceTypeVaultStaticSecret:
 			obj = &secretsv1beta1.VaultStaticSecret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: sub.ResourceKey.Namespace,
 					Name:      sub.ResourceKey.Name,
 				},
 			}
-		case "VaultDynamicSecret":
+		case ResourceTypeVaultDynamicSecret:
 			obj = &secretsv1beta1.VaultDynamicSecret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: sub.ResourceKey.Namespace,
@@ -510,7 +520,7 @@ func (ws *SharedWebSocket) Close() error {
 
 // IsHealthy checks if the WebSocket is still healthy
 func (ws *SharedWebSocket) IsHealthy() bool {
-	if ws.stopped {
+	if ws.stopped.Load() {
 		return false
 	}
 	select {

@@ -373,12 +373,27 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
 	name := client.ObjectKeyFromObject(o)
 
+	// onStop is shared across all Subscriber structs for this resource so that
+	// only the first OnStop call deletes the registry entry. A single subscriber
+	// is registered today, but the Once guard makes the pattern consistent with
+	// VaultDynamicSecret and safe if additional subscribers are added in future.
+	var onStopOnce sync.Once
+	onStop := func() {
+		onStopOnce.Do(func() {
+			r.eventWatcherRegistry.Delete(name)
+		})
+	}
+
+	// vssEventType is the single event type VSS subscribes to. Declaring it once
+	// here keeps the orphan check and the subscribe call in sync — a future change
+	// to the VSS event type only needs to be made in one place.
+	const vssEventType = vault.EventTypeKV
+
 	meta, ok := r.eventWatcherRegistry.Get(name)
 	if ok {
 		// Check if the WebSocket is actually healthy (Orphaned Entry Detection)
 		// This is a safety net in case OnStop callback didn't run or there was a race condition
-		ws := c.GetWebSocket(vault.EventTypeKV)
-		if ws != nil && ws.IsHealthy() {
+		if c.IsWebSocketHealthy(vssEventType) {
 			// WebSocket is healthy, check if metadata matches
 			if meta.LastGeneration == o.GetGeneration() && meta.LastClientID == c.ID() {
 				// The subscription is active, and if the VSS object has not been updated,
@@ -408,13 +423,11 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 		ResourceKey:       name,
 		VaultNS:           o.Spec.Namespace,
 		VaultPath:         vaultPath,
-		ResourceType:      "VaultStaticSecret",
+		ResourceType:      vault.ResourceTypeVaultStaticSecret,
 		ReconcileCh:       r.SourceCh,
 		PendingVaultIndex: &r.pendingVaultIndex,
 		// OnStop callback cleans up registry when WebSocket dies
-		OnStop: func() {
-			r.eventWatcherRegistry.Delete(name)
-		},
+		OnStop: onStop,
 		NewObject: func() client.Object {
 			return &secretsv1beta1.VaultStaticSecret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -425,7 +438,7 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 		},
 	}
 
-	if err := c.SubscribeToEvents(ctx, vault.EventTypeKV, subscriber); err != nil {
+	if err := c.SubscribeToEvents(ctx, vssEventType, subscriber); err != nil {
 		return fmt.Errorf("failed to subscribe to events: %w", err)
 	}
 

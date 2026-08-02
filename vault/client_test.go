@@ -1203,14 +1203,14 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-1"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		sub2 := &Subscriber{
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-2"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		require.NoError(t, ws.Subscribe(sub1))
@@ -1232,14 +1232,14 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-1"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		sub2 := &Subscriber{
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-2"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		require.NoError(t, kvWS.Subscribe(sub1))
@@ -1252,7 +1252,7 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "db-secret"},
 			VaultNS:      "",
 			VaultPath:    "database/creds/readonly",
-			ResourceType: "VaultDynamicSecret",
+			ResourceType: ResourceTypeVaultDynamicSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		require.NoError(t, dbWS.Subscribe(sub3))
@@ -1355,7 +1355,7 @@ func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 			},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 
@@ -1393,7 +1393,7 @@ func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 			},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		err := c.SubscribeToEvents(ctx, EventTypeKV, kvSub)
@@ -1407,7 +1407,7 @@ func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 			},
 			VaultNS:      "",
 			VaultPath:    "database/creds/readonly",
-			ResourceType: "VaultDynamicSecret",
+			ResourceType: ResourceTypeVaultDynamicSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		err = c.SubscribeToEvents(ctx, EventTypeDatabase, dbSub)

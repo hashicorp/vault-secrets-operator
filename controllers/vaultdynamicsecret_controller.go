@@ -1065,6 +1065,49 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
 	name := client.ObjectKeyFromObject(o)
 
+	// onStop is shared across all Subscriber structs for this resource so that
+	// only the first OnStop call deletes the registry entry. Without this, a
+	// second or third independent closure could delete the entry that a
+	// reconciler already re-created after the first OnStop fired.
+	var onStopOnce sync.Once
+	onStop := func() {
+		onStopOnce.Do(func() {
+			r.eventWatcherRegistry.Delete(name)
+		})
+	}
+
+	// newDVSSubscriber is a local factory that stamps out a *vault.Subscriber
+	// with all fields common to every subscription for this resource. Only
+	// vaultNS and vaultPath vary between the engine-events subscriber (Step 4)
+	// and the lease-events subscribers (Steps 1 and 5).
+	//
+	// NOTE: lease subscribers intentionally pass vaultNS="" — lease events are
+	// routed by lease ID alone, so setting a namespace would produce a
+	// "<namespace>/<leaseID>" key that never matches the "<leaseID>" lookup.
+	newDVSSubscriber := func(vaultNS, vaultPath string) *vault.Subscriber {
+		return &vault.Subscriber{
+			ResourceKey:       name,
+			VaultNS:           vaultNS,
+			VaultPath:         vaultPath,
+			ResourceType:      vault.ResourceTypeVaultDynamicSecret,
+			ReconcileCh:       r.SourceCh,
+			PendingVaultIndex: &r.pendingVaultIndex,
+			// OnStop cleans up the registry entry when the WebSocket dies.
+			// The log is emitted by notifySubscribersOfStop via ws.logger,
+			// which is always valid (unlike the reconcile-context logger
+			// captured here, which goes stale after Reconcile returns).
+			OnStop: onStop,
+			NewObject: func() client.Object {
+				return &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: name.Namespace,
+						Name:      name.Name,
+					},
+				}
+			},
+		}
+	}
+
 	currentLeaseID := o.Status.SecretLease.ID
 	meta, hasMeta := r.eventWatcherRegistry.Get(name)
 
@@ -1103,47 +1146,40 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 
 		// Lease events are mount-type-independent; still subscribe if applicable.
 		if !o.Spec.AllowStaticCreds && currentLeaseID != "" {
-			if !(hasMeta && meta.LastLeaseID == currentLeaseID && meta.LastClientID == c.ID()) {
-				leaseSubscriber := &vault.Subscriber{
-					ResourceKey:       name,
-					VaultPath:         currentLeaseID,
-					ResourceType:      "VaultDynamicSecret",
-					ReconcileCh:       r.SourceCh,
-					PendingVaultIndex: &r.pendingVaultIndex,
-					// OnStop callback cleans up registry when WebSocket dies.
-					// The log for this event is emitted by notifySubscribersOfStop
-					// using ws.logger, which is always valid (unlike the
-					// reconcile-context logger captured here, which goes stale
-					// after Reconcile returns).
-					OnStop: func() {
-						r.eventWatcherRegistry.Delete(name)
-					},
-					NewObject: func() client.Object {
-						return &secretsv1beta1.VaultDynamicSecret{
-							ObjectMeta: metav1.ObjectMeta{
-								Namespace: name.Namespace,
-								Name:      name.Name,
-							},
-						}
-					},
-				}
-				if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
-					// Surface this too, instead of only logging it, so a compound
-					// failure (mount type AND lease subscribe both broken) is visible.
-					resultErr = errors.Join(resultErr, fmt.Errorf("failed to subscribe to lease events: %w", err))
-				} else {
-					// Record what we did establish so the next reconcile can detect
-					// "lease-only subscription already active" and skip re-subscribing
-					// on every cycle while the mount-type lookup keeps failing.
-					// LastEventType is left empty so Step 2's staleness check still
-					// forces a full re-subscribe once GetMountType succeeds.
-					r.eventWatcherRegistry.Register(name, &eventWatcherMeta{
-						LastClientID:   c.ID(),
-						LastGeneration: o.GetGeneration(),
-						LastLeaseID:    currentLeaseID,
-						LastEventType:  "",
-					})
-				}
+			// Skip re-subscription only when the existing lease watcher is
+			// confirmed alive. A metadata-only match is not sufficient: if the
+			// lease WebSocket died (e.g. reconnect threshold exceeded) but
+			// OnStop has not yet cleaned the registry, the entry looks valid
+			// but the resource is actually unsubscribed. The liveness check
+			// catches this orphaned state and falls through to re-subscribe.
+			leaseAlive := hasMeta &&
+				meta.LastLeaseID == currentLeaseID &&
+				meta.LastClientID == c.ID() &&
+				c.IsWebSocketHealthy(vault.EventTypeLease)
+			if leaseAlive {
+				return resultErr
+			}
+			// Dead or missing — clear any stale entry before re-subscribing.
+			if hasMeta {
+				r.eventWatcherRegistry.Delete(name)
+			}
+			leaseSubscriber := newDVSSubscriber("", currentLeaseID)
+			if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
+				// Surface this too, instead of only logging it, so a compound
+				// failure (mount type AND lease subscribe both broken) is visible.
+				resultErr = errors.Join(resultErr, fmt.Errorf("failed to subscribe to lease events: %w", err))
+			} else {
+				// Record what we did establish so the next reconcile can detect
+				// "lease-only subscription already active" and skip re-subscribing
+				// on every cycle while the mount-type lookup keeps failing.
+				// LastEventType is left empty so Step 2's staleness check still
+				// forces a full re-subscribe once GetMountType succeeds.
+				r.eventWatcherRegistry.Register(name, &eventWatcherMeta{
+					LastClientID:   c.ID(),
+					LastGeneration: o.GetGeneration(),
+					LastLeaseID:    currentLeaseID,
+					LastEventType:  "",
+				})
 			}
 		}
 		return resultErr
@@ -1160,14 +1196,13 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 		// Orphaned entry detection: verify the WebSocket is actually alive.
 		// This is a safety net for cases where OnStop did not fire (e.g. operator
 		// restart) or there was a race between WebSocket death and OnStop cleanup.
-		ws := c.GetWebSocket(eventType)
-		if ws != nil && ws.IsHealthy() {
+		if c.IsWebSocketHealthy(eventType) {
 			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
 				"namespace", o.Namespace, "name", o.Name)
 			return nil
 		}
 		// WebSocket is dead or missing — orphaned registry entry detected.
-		logger.Info("Detected orphaned registry entry (WebSocket is dead), cleaning up",
+		logger.Info("Detected orphaned registry entry (WebSocket is dead or missing), cleaning up",
 			"namespace", o.Namespace, "name", o.Name)
 		r.eventWatcherRegistry.Delete(name)
 		hasMeta = false
@@ -1182,30 +1217,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 
 	// Step 4: subscribe to engine events.
 	vaultPath := buildVaultEventKey(o)
-	subscriber := &vault.Subscriber{
-		ResourceKey:       name,
-		VaultNS:           o.Spec.Namespace,
-		VaultPath:         vaultPath,
-		ResourceType:      "VaultDynamicSecret",
-		ReconcileCh:       r.SourceCh,
-		PendingVaultIndex: &r.pendingVaultIndex,
-		// OnStop callback cleans up registry when WebSocket dies.
-		// The log for this event is emitted by notifySubscribersOfStop
-		// using ws.logger, which is always valid (unlike the
-		// reconcile-context logger captured here, which goes stale
-		// after Reconcile returns).
-		OnStop: func() {
-			r.eventWatcherRegistry.Delete(name)
-		},
-		NewObject: func() client.Object {
-			return &secretsv1beta1.VaultDynamicSecret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: name.Namespace,
-					Name:      name.Name,
-				},
-			}
-		},
-	}
+	subscriber := newDVSSubscriber(o.Spec.Namespace, vaultPath)
 	if err := c.SubscribeToEvents(ctx, eventType, subscriber); err != nil {
 		return fmt.Errorf("failed to subscribe to %s events: %w", eventType, err)
 	}
@@ -1219,29 +1231,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	// unWatchEventsWithLeaseID), so setting VaultNS here would key the subscriber
 	// as "<namespace>/<leaseID>" and never match the "<leaseID>" lookup.
 	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
-		leaseSubscriber := &vault.Subscriber{
-			ResourceKey:       name,
-			VaultPath:         currentLeaseID,
-			ResourceType:      "VaultDynamicSecret",
-			ReconcileCh:       r.SourceCh,
-			PendingVaultIndex: &r.pendingVaultIndex,
-			// OnStop callback cleans up registry when WebSocket dies.
-			// The log for this event is emitted by notifySubscribersOfStop
-			// using ws.logger, which is always valid (unlike the
-			// reconcile-context logger captured here, which goes stale
-			// after Reconcile returns).
-			OnStop: func() {
-				r.eventWatcherRegistry.Delete(name)
-			},
-			NewObject: func() client.Object {
-				return &secretsv1beta1.VaultDynamicSecret{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: name.Namespace,
-						Name:      name.Name,
-					},
-				}
-			},
-		}
+		leaseSubscriber := newDVSSubscriber("", currentLeaseID)
 		if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
 			// Non-fatal: the database/LDAP subscription above still provides
 			// event-driven updates. Surface the failure as a warning event so

@@ -229,10 +229,12 @@ type mockVSSClient struct {
 	vault.Client
 	subscribed []vault.EventType
 	seen       []vault.EventType // recorded by UnsubscribeFromEvents
-	// webSocket is returned by GetWebSocket; nil simulates no live connection.
-	webSocket *vault.SharedWebSocket
+	// webSocketHealthy is returned by IsWebSocketHealthy.
+	webSocketHealthy bool
 	// subscribeErr, when non-nil, is returned by SubscribeToEvents.
 	subscribeErr error
+	// unsubscribeErr, when non-nil, is returned by UnsubscribeFromEvents.
+	unsubscribeErr error
 	// onSubscribe is an optional hook called on every SubscribeToEvents call,
 	// allowing tests to capture Subscriber fields such as OnStop or NewObject.
 	onSubscribe func(vault.EventType, *vault.Subscriber)
@@ -240,8 +242,8 @@ type mockVSSClient struct {
 
 func (m *mockVSSClient) ID() string { return "test-vss-client" }
 
-func (m *mockVSSClient) GetWebSocket(_ vault.EventType) *vault.SharedWebSocket {
-	return m.webSocket
+func (m *mockVSSClient) IsWebSocketHealthy(_ vault.EventType) bool {
+	return m.webSocketHealthy
 }
 
 func (m *mockVSSClient) SubscribeToEvents(_ context.Context, et vault.EventType, sub *vault.Subscriber) error {
@@ -254,7 +256,7 @@ func (m *mockVSSClient) SubscribeToEvents(_ context.Context, et vault.EventType,
 
 func (m *mockVSSClient) UnsubscribeFromEvents(et vault.EventType, _ vault.SubscriptionKey, _ string) error {
 	m.seen = append(m.seen, et)
-	return nil
+	return m.unsubscribeErr
 }
 
 // Test_VSS_ensureEventWatcher_FreshSubscribe verifies that when no registry entry
@@ -293,8 +295,8 @@ func Test_VSS_ensureEventWatcher_FreshSubscribe(t *testing.T) {
 }
 
 // Test_VSS_ensureEventWatcher_OrphanedEntry_NilWebSocket verifies that when the
-// registry has a matching entry but GetWebSocket returns nil (e.g. after an
-// operator restart), ensureEventWatcher detects the orphaned entry, clears it,
+// registry has a matching entry but IsWebSocketHealthy returns false (e.g. after
+// an operator restart), ensureEventWatcher detects the orphaned entry, clears it,
 // and re-subscribes rather than returning nil early.
 func Test_VSS_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
 	t.Parallel()
@@ -324,8 +326,8 @@ func Test_VSS_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
 		LastGeneration: 1,
 	})
 
-	// GetWebSocket returns nil — simulates operator restart with no live WebSocket.
-	m := &mockVSSClient{webSocket: nil}
+	// IsWebSocketHealthy returns false — simulates operator restart with no live WebSocket.
+	m := &mockVSSClient{webSocketHealthy: false}
 	err := r.ensureEventWatcher(context.Background(), o, m)
 
 	require.NoError(t, err)
@@ -445,6 +447,43 @@ func Test_VSS_unWatchEvents_NoOpWhenNoRegistryEntry(t *testing.T) {
 	r.unWatchEvents(o, m)
 
 	assert.Empty(t, m.seen, "no unsubscribe should be called when object not in registry")
+}
+
+// Test_VSS_unWatchEvents_UnsubscribeError verifies that when UnsubscribeFromEvents
+// returns an error, unWatchEvents still removes the registry entry — the error is
+// treated as "already cleaned up" and must not block cleanup.
+func Test_VSS_unWatchEvents_UnsubscribeError(t *testing.T) {
+	t.Parallel()
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "kv-secret"},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV1,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-vss-client",
+		LastGeneration: 1,
+	})
+
+	m := &mockVSSClient{unsubscribeErr: fmt.Errorf("websocket already closed")}
+	r.unWatchEvents(o, m)
+
+	// UnsubscribeFromEvents was still attempted.
+	require.Len(t, m.seen, 1, "exactly one unsubscribe call expected even on error")
+	assert.Equal(t, vault.EventTypeKV, m.seen[0])
+
+	// Registry entry must be removed regardless of the unsubscribe error.
+	_, ok := r.eventWatcherRegistry.Get(key)
+	assert.False(t, ok, "registry entry must be deleted even when UnsubscribeFromEvents errors")
 }
 
 // Test_VSS_ensureEventWatcher_SubscribeError verifies that when SubscribeToEvents

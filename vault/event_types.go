@@ -29,6 +29,14 @@ const (
 	EventTypeLease EventType = "lease"
 )
 
+// ResourceType constants identify the Kubernetes resource kind associated with
+// a Subscriber. Using constants rather than raw string literals prevents silent
+// typos that would cause events to be silently dropped in routeEvent's switch.
+const (
+	ResourceTypeVaultStaticSecret  = "VaultStaticSecret"
+	ResourceTypeVaultDynamicSecret = "VaultDynamicSecret"
+)
+
 // String returns the string representation of the EventType
 func (e EventType) String() string {
 	return string(e)

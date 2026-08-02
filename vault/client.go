@@ -207,7 +207,11 @@ type Client interface {
 	// WebSocket connections.
 	GetWebSocketSubscriberCount() int
 	GetMountType(context.Context, string) (string, error)
-	GetWebSocket(EventType) *SharedWebSocket
+	// IsWebSocketHealthy reports whether a live, healthy SharedWebSocket exists
+	// for the given EventType. Callers that only need to check liveness should
+	// use this rather than obtaining the concrete *SharedWebSocket, which would
+	// couple them to the internal type.
+	IsWebSocketHealthy(EventType) bool
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -1243,9 +1247,11 @@ func (c *defaultClient) GetWebSocketSubscriberCount() int {
 	return total
 }
 
-// GetWebSocket returns the SharedWebSocket for the given event type, or nil if not found
-func (c *defaultClient) GetWebSocket(eventType EventType) *SharedWebSocket {
+// IsWebSocketHealthy reports whether a live, healthy SharedWebSocket exists
+// for the given event type.
+func (c *defaultClient) IsWebSocketHealthy(eventType EventType) bool {
 	c.websocketMu.RLock()
 	defer c.websocketMu.RUnlock()
-	return c.websockets[eventType]
+	ws, exists := c.websockets[eventType]
+	return exists && ws.IsHealthy()
 }
