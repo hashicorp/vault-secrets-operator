@@ -233,21 +233,8 @@ jobs:
             docker.io/hashicorp/${{env.repo}}:${{env.image_tag}}
             public.ecr.aws/hashicorp/${{env.repo}}:${{env.image_tag}}
             icr.io/cpopen/ibm-vault/${{env.repo}}:${{env.image_tag}}
-      - name: Docker Build (Action) s390x
-        if: ${{ matrix.arch == 's390x' }}
-        uses: hashicorp/actions-docker-build@v2
-        env:
-          VERSION: ${{ needs.get-product-version.outputs.product-version }}
-          GO_VERSION: ${{ needs.build-pre-checks.outputs.go-version }}
-        with:
-          version: ${{env.version}}
-          target: release-ubi
-          arch: ${{matrix.arch}}
-          redhat_tag: quay.io/redhat-isv-containers/64b072322e2773c28d30d988:${{env.image_tag}}
-          tags: |
-            icr.io/cpopen/ibm-vault/${{env.repo}}:${{env.image_tag}}
-      - name: Docker Build (Action) ppc64le
-        if: ${{ matrix.arch == 'ppc64le' }}
+      - name: Docker Build (Action) s390x/ppc64le
+        if: ${{ matrix.arch == 's390x' || matrix.arch == 'ppc64le' }}
         uses: hashicorp/actions-docker-build@v2
         env:
           VERSION: ${{ needs.get-product-version.outputs.product-version }}
