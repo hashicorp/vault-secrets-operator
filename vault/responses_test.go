@@ -99,6 +99,46 @@ func Test_defaultResponse_Data(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "auth-fallback-nil-data",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Auth: &api.SecretAuth{
+					ClientToken: "s.abc123",
+					Accessor:    "accessor-xyz",
+					Policies:    []string{"default", "prometheus"},
+					Renewable:   true,
+				},
+			},
+			want: map[string]interface{}{
+				"client_token":      "s.abc123",
+				"accessor":          "accessor-xyz",
+				"policies":          []interface{}{"default", "prometheus"},
+				"renewable":         true,
+				"lease_duration":    float64(0),
+				"token_policies":    interface{}(nil),
+				"identity_policies": interface{}(nil),
+				"metadata":          interface{}(nil),
+				"entity_id":         "",
+				"orphan":            false,
+				"mfa_requirement":   interface{}(nil),
+			},
+		},
+		{
+			name:     "data-takes-precedence-over-auth",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Data: map[string]interface{}{
+					"key": "from-data",
+				},
+				Auth: &api.SecretAuth{
+					ClientToken: "s.abc123",
+				},
+			},
+			want: map[string]interface{}{
+				"key": "from-data",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -228,6 +268,68 @@ func Test_defaultResponse_SecretK8sData(t *testing.T) {
 			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
 				return assert.EqualError(t, err, "json: unsupported type: chan int")
 			},
+		},
+		{
+			name:     "auth-fallback-token-create",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Auth: &api.SecretAuth{
+					ClientToken: "s.abc123",
+					Accessor:    "accessor-xyz",
+					Renewable:   true,
+				},
+			},
+			want: map[string][]byte{
+				"client_token":      []byte("s.abc123"),
+				"accessor":          []byte("accessor-xyz"),
+				"renewable":         []byte("true"),
+				"orphan":            []byte("false"),
+				"lease_duration":    []byte("0"),
+				"entity_id":         []byte(""),
+				"policies":          []byte(`null`),
+				"token_policies":    []byte(`null`),
+				"identity_policies": []byte(`null`),
+				"metadata":          []byte(`null`),
+				"mfa_requirement":   []byte(`null`),
+				helpers.SecretDataKeyRaw: []byte(`{"accessor":"accessor-xyz","client_token":"s.abc123","entity_id":"","identity_policies":null,"lease_duration":0,"metadata":null,"mfa_requirement":null,"orphan":false,"policies":null,"renewable":true,"token_policies":null}`),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:     "auth-fallback-with-template",
+			respFunc: respFunc,
+			secret: &api.Secret{
+				Auth: &api.SecretAuth{
+					ClientToken: "s.abc123",
+				},
+			},
+			opt: &helpers.SecretTransformationOption{
+				KeyedTemplates: []*helpers.KeyedTemplate{
+					{
+						Key: "token",
+						Template: secretsv1beta1.Template{
+							Name: "tmpl1",
+							Text: `{{ get .Secrets "client_token" }}`,
+						},
+					},
+				},
+			},
+			want: map[string][]byte{
+				"client_token":      []byte("s.abc123"),
+				"accessor":          []byte(""),
+				"renewable":         []byte("false"),
+				"orphan":            []byte("false"),
+				"lease_duration":    []byte("0"),
+				"entity_id":         []byte(""),
+				"policies":          []byte(`null`),
+				"token_policies":    []byte(`null`),
+				"identity_policies": []byte(`null`),
+				"metadata":          []byte(`null`),
+				"mfa_requirement":   []byte(`null`),
+				"token":             []byte("s.abc123"),
+				helpers.SecretDataKeyRaw: []byte(`{"accessor":"","client_token":"s.abc123","entity_id":"","identity_policies":null,"lease_duration":0,"metadata":null,"mfa_requirement":null,"orphan":false,"policies":null,"renewable":false,"token_policies":null}`),
+			},
+			wantErr: assert.NoError,
 		},
 	}
 	for _, tt := range tests {
