@@ -19,6 +19,7 @@ const (
 	ReasonSecretSync                    = "SecretSync"
 	ReasonSecretSyncError               = "SecretSyncError"
 	ReasonSecretSynced                  = "SecretSynced"
+	ReasonSecretUpToDate                = "SecretUpToDate"
 	ReasonStatusUpdateError             = "StatusUpdateError"
 	ReasonUnrecoverable                 = "Unrecoverable"
 	ReasonVaultClientConfigError        = "VaultClientConfigError"

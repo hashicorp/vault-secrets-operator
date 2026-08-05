@@ -90,6 +90,31 @@ func newVSSReconciler(t *testing.T, factory vault.ClientFactory, obj *secretsv1b
 	}
 }
 
+// newVSSReconcilerWithHMAC is like newVSSReconciler but pre-seeds an HMAC key
+// secret in the fake client and wires the reconciler's HMACValidator to use it.
+func newVSSReconcilerWithHMAC(t *testing.T, factory vault.ClientFactory, obj *secretsv1beta1.VaultStaticSecret, hmacKey client.ObjectKey) *VaultStaticSecretReconciler {
+	t.Helper()
+	c := testutils.NewFakeClientBuilder().
+		WithStatusSubresource(obj).
+		WithObjects(obj).
+		Build()
+	require.NoError(t, c.Status().Update(context.Background(), obj))
+	_, err := helpers.CreateHMACKeySecret(context.Background(), c, hmacKey)
+	require.NoError(t, err, "failed to create HMAC key secret")
+	return &VaultStaticSecretReconciler{
+		Client:                      c,
+		SecretsClient:               c,
+		ClientFactory:               factory,
+		SecretDataBuilder:           helpers.NewSecretsDataBuilder(),
+		HMACValidator:               helpers.NewHMACValidator(hmacKey),
+		Recorder:                    record.NewFakeRecorder(10),
+		BackOffRegistry:             NewBackOffRegistry(),
+		referenceCache:              NewResourceReferenceCache(),
+		GlobalTransformationOptions: &helpers.GlobalTransformationOptions{},
+		eventWatcherRegistry:        newEventWatcherRegistry(),
+	}
+}
+
 // newMinimalVSS returns a VaultStaticSecret with the minimum fields needed for
 // reconciliation: kv-v1, destination.create=true so the dest-exists check is
 // bypassed.
@@ -171,9 +196,9 @@ func TestVaultStaticSecretReconciler_Reconcile_vaultClientError(t *testing.T) {
 }
 
 // TestVaultStaticSecretReconciler_Reconcile_recoveryClears_SecretSynced verifies
-// that once Vault becomes healthy again the SecretSynced condition flips back
-// to True, clearing the stale False left by a prior HA failure — without
-// requiring a manual spec-touch on the VaultStaticSecret.
+// that once Vault becomes healthy again and actually syncs data, the
+// SecretSynced condition flips back to True with Reason=Synced, clearing the
+// stale False left by a prior HA failure — without requiring a manual spec-touch.
 func TestVaultStaticSecretReconciler_Reconcile_recoveryClears_SecretSynced(t *testing.T) {
 	t.Parallel()
 
@@ -206,6 +231,56 @@ func TestVaultStaticSecretReconciler_Reconcile_recoveryClears_SecretSynced(t *te
 	require.NotNil(t, cond, "SecretSynced condition must be present after recovery")
 	assert.Equal(t, metav1.ConditionTrue, cond.Status,
 		"SecretSynced must be True after a successful Vault read — no spec-touch required")
+	assert.Equal(t, "Synced", cond.Reason,
+		"sync path must use Reason=Synced")
+}
+
+// TestVaultStaticSecretReconciler_Reconcile_noopUsesUpToDateReason verifies
+// that when HMAC detects no data change (doSync=false), the SecretSynced
+// condition carries Reason=SecretUpToDate — not Reason=Synced — so observers
+// can distinguish "data written now" from "verified up-to-date, no write needed".
+func TestVaultStaticSecretReconciler_Reconcile_noopUsesUpToDateReason(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	obj := newMinimalVSS("app", "default")
+	hmacTrue := true
+	obj.Spec.HMACSecretData = &hmacTrue
+	// Set LastGeneration equal to generation so the no-op condition is triggered
+	// when MACs are equal.
+	obj.Generation = 1
+	obj.Status.LastGeneration = 1
+
+	// Build a reconciler with a real HMAC validator backed by a pre-seeded key secret.
+	hmacKey := client.ObjectKey{Name: "hmac-key", Namespace: "default"}
+	r := newVSSReconcilerWithHMAC(t, &reconcileTestClientFactory{client: &okReadVaultClient{cacheKey: "k8s-test"}}, obj, hmacKey)
+	objKey := client.ObjectKeyFromObject(obj)
+
+	// First reconcile: no existing MAC → doSync=true; stores the initial MAC.
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	// Read back the stored MAC so the second reconcile sees matching MACs.
+	first := &secretsv1beta1.VaultStaticSecret{}
+	require.NoError(t, r.Client.Get(ctx, objKey, first))
+	require.NotEmpty(t, first.Status.SecretMAC, "SecretMAC must be set after first reconcile")
+
+	// Keep generation stable so doSync = !macsEqual = false on second reconcile.
+	first.Generation = 1
+	require.NoError(t, r.Client.Update(ctx, first))
+
+	// Second reconcile: MACs match → no-op path → SecretUpToDate reason.
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	updated := &secretsv1beta1.VaultStaticSecret{}
+	require.NoError(t, r.Client.Get(ctx, objKey, updated))
+
+	cond := findVSSCondition(updated.Status.Conditions, consts.TypeSecretSynced)
+	require.NotNil(t, cond, "SecretSynced condition must be present")
+	assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	assert.Equal(t, consts.ReasonSecretUpToDate, cond.Reason,
+		"no-op reconcile must use SecretUpToDate reason, not Synced")
 }
 
 // findVSSCondition returns the first condition with the given type, or nil.
