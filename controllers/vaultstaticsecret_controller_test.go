@@ -45,9 +45,9 @@ type errReadVaultClient struct {
 func (c *errReadVaultClient) Read(_ context.Context, _ vault.ReadRequest) (vault.Response, error) {
 	return nil, c.err
 }
-func (c *errReadVaultClient) ID() string                              { return "err-read-client" }
+func (c *errReadVaultClient) ID() string                                 { return "err-read-client" }
 func (c *errReadVaultClient) GetCacheKey() (vault.ClientCacheKey, error) { return c.cacheKey, nil }
-func (c *errReadVaultClient) Taint()                                  {}
+func (c *errReadVaultClient) Taint()                                     {}
 
 // okReadVaultClient is a vault.Client whose Read always succeeds with empty data.
 type okReadVaultClient struct {
@@ -61,9 +61,9 @@ func (c *okReadVaultClient) Read(_ context.Context, _ vault.ReadRequest) (vault.
 		data:   map[string]interface{}{},
 	}, nil
 }
-func (c *okReadVaultClient) ID() string                              { return "ok-read-client" }
+func (c *okReadVaultClient) ID() string                                 { return "ok-read-client" }
 func (c *okReadVaultClient) GetCacheKey() (vault.ClientCacheKey, error) { return c.cacheKey, nil }
-func (c *okReadVaultClient) Taint()                                  {}
+func (c *okReadVaultClient) Taint()                                     {}
 
 // newVSSReconciler builds a minimal VaultStaticSecretReconciler backed by a
 // fake client pre-seeded with obj (including its Status).
