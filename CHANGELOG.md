@@ -4,10 +4,29 @@ Enhancements:
 * VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
 * VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
 
-Breaking Changes:
+Build:
+* Add `ppc64le` (IBM Power) architecture support: build and publish UBI-based images to `icr.io/cpopen/ibm-vault` and `quay.io/redhat-isv-containers` ([#1325](https://github.com/hashicorp/vault-secrets-operator/pull/1325))
+
+## 1.5.0 (July 23rd, 2026)
+
+BREAKING CHANGES:
 * `VaultAuth`/`VaultAuthGlobal` AppRole `spec.appRole.secretIDPath` has been removed. Use
   `spec.appRole.secretRef` instead, which references a Kubernetes Secret containing the AppRole
   Secret ID.
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 2 updates: ([#1302](https://github.com/hashicorp/vault-secrets-operator/pull/1302))
+* Bump the gomod-backward-compatible group across 1 directory with 5 updates (#1308)
+* Bump github.com/go-openapi/runtime from 0.32.5 to 0.32.6 in the gomod-backward-compatible group ([#1310](https://github.com/hashicorp/vault-secrets-operator/pull/1310)
+* Bump google.golang.org/grpc from 1.82.0 to 1.82.1 ([#1311](https://github.com/hashicorp/vault-secrets-operator/pull/1311)
+* Bump google.golang.org/api from 0.289.0 to 0.290.0 in the gomod-backward-compatible group across 1 directory ([#1313](https://github.com/hashicorp/vault-secrets-operator/pull/1313)
+
+Build:
+* Build with Go 1.26.5
+* Test with Vault 2.0.3, 1.21.8, 1.20.13, 1.19.19
+* Test with Kind v0.32.0
+* Test with K8s 1.36.1, 1.35.5, 1.34.8, 1.33.12, 1.32.11
+
 
 ## 1.4.1 (June 30th, 2026)
 
