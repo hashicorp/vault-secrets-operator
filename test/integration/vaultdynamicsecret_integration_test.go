@@ -1699,8 +1699,15 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				"ttl",
 			)
 
-			// Capture the VDS status before rotation so we can detect changes.
+			// Confirm the WebSocket subscription is active before snapshotting
+			// vdsBefore, so the baseline is taken as close to our own
+			// rotate-role call as possible.
 			objKey := ctrlclient.ObjectKeyFromObject(vdsObj)
+			awaitEventWatcherStarted(t, ctx, crdClient, vdsObj)
+
+			// Snapshot immediately before rotation to minimise the window where
+			// a concurrent subtest's rotate-role could have already updated
+			// LastVaultRotation and staled this baseline.
 			var vdsBefore secretsv1beta1.VaultDynamicSecret
 			require.NoError(t, backoff.Retry(func() error {
 				if err := crdClient.Get(ctx, objKey, &vdsBefore); err != nil {
@@ -1714,10 +1721,6 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 				}
 				return nil
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 60)))
-
-			// Wait for the EventWatcherStarted event, confirming the WebSocket
-			// subscription is active before triggering the rotation.
-			awaitEventWatcherStarted(t, ctx, crdClient, vdsObj)
 
 			// Force-rotate the static database role in Vault. This emits a
 			// database* event that the SharedWebSocket fans out to all N
