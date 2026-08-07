@@ -1203,14 +1203,14 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-1"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		sub2 := &Subscriber{
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-2"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		require.NoError(t, ws.Subscribe(sub1))
@@ -1232,14 +1232,14 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-1"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		sub2 := &Subscriber{
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-2"},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		require.NoError(t, kvWS.Subscribe(sub1))
@@ -1252,7 +1252,7 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "db-secret"},
 			VaultNS:      "",
 			VaultPath:    "database/creds/readonly",
-			ResourceType: "VaultDynamicSecret",
+			ResourceType: ResourceTypeVaultDynamicSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		require.NoError(t, dbWS.Subscribe(sub3))
@@ -1289,6 +1289,54 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 	})
 }
 
+// Test_defaultClient_WebSocketOnStop_RemovesCurrentWebSocket verifies that the
+// websocket onStop callback removes the same websocket instance from the
+// client's registry when the event loop exits.
+func Test_defaultClient_WebSocketOnStop_RemovesCurrentWebSocket(t *testing.T) {
+	c := &defaultClient{
+		id:         "test-client-id",
+		websockets: make(map[EventType]*SharedWebSocket),
+	}
+	ws := newTestSharedWebSocket(EventTypeKV)
+	c.websockets[EventTypeKV] = ws
+	ws.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[EventTypeKV]; exists && current == ws {
+			delete(c.websockets, EventTypeKV)
+		}
+	}
+
+	ws.onStop()
+
+	assert.Equal(t, 0, c.GetWebSocketCount())
+}
+
+// Test_defaultClient_WebSocketOnStop_DoesNotRemoveReplacementWebSocket ensures
+// that a stopping websocket does not delete a newer replacement websocket that
+// is already registered for the same event type.
+func Test_defaultClient_WebSocketOnStop_DoesNotRemoveReplacementWebSocket(t *testing.T) {
+	c := &defaultClient{
+		id:         "test-client-id",
+		websockets: make(map[EventType]*SharedWebSocket),
+	}
+	oldWS := newTestSharedWebSocket(EventTypeKV)
+	newWS := newTestSharedWebSocket(EventTypeKV)
+	c.websockets[EventTypeKV] = newWS
+	oldWS.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[EventTypeKV]; exists && current == oldWS {
+			delete(c.websockets, EventTypeKV)
+		}
+	}
+
+	oldWS.onStop()
+
+	require.Same(t, newWS, c.websockets[EventTypeKV])
+	assert.Equal(t, 1, c.GetWebSocketCount())
+}
+
 func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -1307,7 +1355,7 @@ func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 			},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 
@@ -1345,7 +1393,7 @@ func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 			},
 			VaultNS:      "",
 			VaultPath:    "kv/data/app/config",
-			ResourceType: "VaultStaticSecret",
+			ResourceType: ResourceTypeVaultStaticSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		err := c.SubscribeToEvents(ctx, EventTypeKV, kvSub)
@@ -1359,7 +1407,7 @@ func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 			},
 			VaultNS:      "",
 			VaultPath:    "database/creds/readonly",
-			ResourceType: "VaultDynamicSecret",
+			ResourceType: ResourceTypeVaultDynamicSecret,
 			ReconcileCh:  make(chan event.GenericEvent, 1),
 		}
 		err = c.SubscribeToEvents(ctx, EventTypeDatabase, dbSub)

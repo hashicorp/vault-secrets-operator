@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
@@ -26,6 +27,14 @@ const (
 	EventTypeLDAP EventType = "ldap"
 	// EventTypeLease represents lease lifecycle events
 	EventTypeLease EventType = "lease"
+)
+
+// ResourceType constants identify the Kubernetes resource kind associated with
+// a Subscriber. Using constants rather than raw string literals prevents silent
+// typos that would cause events to be silently dropped in routeEvent's switch.
+const (
+	ResourceTypeVaultStaticSecret  = "VaultStaticSecret"
+	ResourceTypeVaultDynamicSecret = "VaultDynamicSecret"
 )
 
 // String returns the string representation of the EventType
@@ -77,6 +86,13 @@ type Subscriber struct {
 	ResourceType string
 	// ReconcileCh is the channel to send reconciliation events to
 	ReconcileCh chan event.GenericEvent
+	// OnStop is called when the WebSocket event loop stops
+	OnStop func()
+	// NewObject returns a fresh zero-value client.Object of the subscribing
+	// resource's concrete type (e.g. *VaultStaticSecret or *VaultDynamicSecret).
+	// Used by notifySubscribersOfStop to build a correctly-typed GenericEvent
+	// so the right controller's WatchesRawSource handles the requeue.
+	NewObject func() client.Object
 	// PendingVaultIndex is used to carry the vault_index value from the event
 	// that triggered this reconciliation so the read request can include it as
 	// X-Vault-Index, ensuring the read is served from a node that has replicated

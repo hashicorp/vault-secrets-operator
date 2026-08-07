@@ -207,6 +207,11 @@ type Client interface {
 	// WebSocket connections.
 	GetWebSocketSubscriberCount() int
 	GetMountType(context.Context, string) (string, error)
+	// IsWebSocketHealthy reports whether a live, healthy SharedWebSocket exists
+	// for the given EventType. Callers that only need to check liveness should
+	// use this rather than obtaining the concrete *SharedWebSocket, which would
+	// couple them to the internal type.
+	IsWebSocketHealthy(EventType) bool
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -1125,9 +1130,9 @@ func (c *defaultClient) getOrCreateWebSocket(
 	ctx context.Context,
 	eventType EventType,
 ) (*SharedWebSocket, error) {
-	// Check if WebSocket already exists (read lock)
+	// Check if WebSocket already exists and is healthy (read lock)
 	c.websocketMu.RLock()
-	if ws, exists := c.websockets[eventType]; exists {
+	if ws, exists := c.websockets[eventType]; exists && ws.IsHealthy() {
 		c.websocketMu.RUnlock()
 		return ws, nil
 	}
@@ -1139,13 +1144,53 @@ func (c *defaultClient) getOrCreateWebSocket(
 
 	// Double-check after acquiring write lock
 	if ws, exists := c.websockets[eventType]; exists {
-		return ws, nil
+		// Check if it's healthy
+		if ws.IsHealthy() {
+			return ws, nil
+		}
+		// WebSocket exists but is dead, close it properly before removing from map
+		logger := log.FromContext(ctx).WithValues(
+			"clientID", c.id,
+			"eventType", eventType,
+		)
+		logger.Info("Closing dead WebSocket before creating new one")
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close dead WebSocket")
+		}
+		delete(c.websockets, eventType)
 	}
 
 	// Create new SharedWebSocket
 	ws, err := NewSharedWebSocket(ctx, c, eventType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shared websocket: %w", err)
+	}
+	// Remove this websocket from the client registry when its event loop stops.
+	//
+	// onStop is called in two distinct situations, and both must be handled:
+	//
+	//   1. Normal stop (primary cleanup path): the event loop exits on its own,
+	//      e.g. because the reconnect threshold was exceeded. In this case onStop
+	//      is the only thing that removes the registry entry — without it the
+	//      dead socket would stay in the map forever.
+	//
+	//   2. Double cleanup after dead-socket replacement: when a caller finds a
+	//      dead socket above (lines 1142-1157), it eagerly calls ws.Close() and
+	//      delete(c.websockets, eventType) before creating this new socket.
+	//      ws.Close() cancels the old socket's context, but its event loop
+	//      goroutine is still running and will eventually exit — at which point
+	//      it fires onStop() a second time, after the registry entry was already
+	//      removed. The `current == ws` pointer identity check makes this
+	//      redundant invocation a safe no-op: if a new socket was created for
+	//      the same eventType, current != ws (current points to the new socket,
+	//      ws to the old one), so the delete is skipped and the new socket is
+	//      left untouched in the registry.
+	ws.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[eventType]; exists && current == ws {
+			delete(c.websockets, eventType)
+		}
 	}
 
 	// Initialize map if needed
@@ -1200,4 +1245,13 @@ func (c *defaultClient) GetWebSocketSubscriberCount() int {
 		total += ws.GetSubscriberCount()
 	}
 	return total
+}
+
+// IsWebSocketHealthy reports whether a live, healthy SharedWebSocket exists
+// for the given event type.
+func (c *defaultClient) IsWebSocketHealthy(eventType EventType) bool {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+	ws, exists := c.websockets[eventType]
+	return exists && ws.IsHealthy()
 }

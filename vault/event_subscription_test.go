@@ -8,12 +8,17 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+
+	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 )
 
 func TestSubscriptionKey_String(t *testing.T) {
@@ -161,7 +166,7 @@ func TestSharedWebSocket_Subscribe(t *testing.T) {
 		},
 		VaultNS:      "prod",
 		VaultPath:    "kv/data/app1/config",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  reconcileCh,
 	}
 
@@ -190,14 +195,14 @@ func TestSharedWebSocket_MultipleSubscribers_SamePath(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "ns1", Name: "secret-a"},
 		VaultNS:      "prod",
 		VaultPath:    "kv/data/shared/config",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch1,
 	}
 	sub2 := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "ns2", Name: "secret-b"},
 		VaultNS:      "prod",
 		VaultPath:    "kv/data/shared/config",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch2,
 	}
 
@@ -227,14 +232,14 @@ func TestSharedWebSocket_Unsubscribe_DifferentPaths(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "s1"},
 		VaultNS:      "",
 		VaultPath:    "kv/data/path1",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch,
 	}
 	sub2 := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "s2"},
 		VaultNS:      "",
 		VaultPath:    "kv/data/path2",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch,
 	}
 
@@ -261,7 +266,7 @@ func TestSharedWebSocket_RouteEvent_SingleSubscriber(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vss"},
 		VaultNS:      "prod",
 		VaultPath:    "kv/data/app1/config",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -290,14 +295,14 @@ func TestSharedWebSocket_RouteEvent_MultipleSubscribers(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "ns1", Name: "vss-1"},
 		VaultNS:      "",
 		VaultPath:    "kv/data/shared",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch1,
 	}
 	sub2 := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "ns2", Name: "vss-2"},
 		VaultNS:      "",
 		VaultPath:    "kv/data/shared",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch2,
 	}
 
@@ -324,7 +329,7 @@ func TestSharedWebSocket_RouteEvent_NonModified_Dropped(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "vss"},
 		VaultNS:      "",
 		VaultPath:    "kv/data/secret",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -347,7 +352,7 @@ func TestSharedWebSocket_RouteEvent_NoMatch_Dropped(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "vss"},
 		VaultNS:      "",
 		VaultPath:    "kv/data/my-secret",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -487,7 +492,7 @@ func TestSharedWebSocket_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 				ResourceKey:  types.NamespacedName{Namespace: "default", Name: types.NamespacedName{Namespace: "default", Name: "vss"}.Name + string(rune('a'+i%26))},
 				VaultNS:      "",
 				VaultPath:    "kv/data/path",
-				ResourceType: "VaultStaticSecret",
+				ResourceType: ResourceTypeVaultStaticSecret,
 				ReconcileCh:  make(chan event.GenericEvent, 1),
 			}
 			_ = ws.Subscribe(sub)
@@ -498,9 +503,255 @@ func TestSharedWebSocket_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 	assert.Greater(t, ws.GetSubscriberCount(), 0)
 }
 
+// TestSharedWebSocket_NotifySubscribersOfStop_CallsOnStopAndRequeues verifies
+// that stop notification invokes the subscriber cleanup callback and enqueues a
+// reconciliation event for the subscribed resource.
+func TestSharedWebSocket_NotifySubscribersOfStop_CallsOnStopAndRequeues(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	onStopCalled := false
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "test-secret"},
+		VaultPath:    "kv/data/app1/config",
+		ResourceType: ResourceTypeVaultStaticSecret,
+		ReconcileCh:  reconcileCh,
+		OnStop: func() {
+			onStopCalled = true
+		},
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-secret",
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	assert.True(t, onStopCalled)
+	require.Len(t, reconcileCh, 1)
+	evt := <-reconcileCh
+	assert.Equal(t, "test-secret", evt.Object.GetName())
+	assert.Equal(t, "default", evt.Object.GetNamespace())
+}
+
+// TestSharedWebSocket_NotifySubscribersOfStop_FullChannelStillCallsOnStop
+// verifies that stop notification still runs subscriber cleanup even when the
+// reconciliation channel is already full, and that the requeue event is
+// eventually delivered (not dropped) via the async goroutine fallback.
+func TestSharedWebSocket_NotifySubscribersOfStop_FullChannelStillCallsOnStop(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	// Pre-fill the channel so the fast-path send falls through to the goroutine.
+	reconcileCh := make(chan event.GenericEvent, 1)
+	reconcileCh <- event.GenericEvent{}
+	onStopCalled := false
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "test-secret"},
+		VaultPath:    "kv/data/app1/config",
+		ResourceType: ResourceTypeVaultStaticSecret,
+		ReconcileCh:  reconcileCh,
+		OnStop: func() {
+			onStopCalled = true
+		},
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-secret",
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	// OnStop must have fired synchronously.
+	assert.True(t, onStopCalled)
+
+	// Drain the pre-filled event so the async goroutine can deliver its event.
+	<-reconcileCh
+
+	// The async requeue must arrive within a short deadline — it is a simple
+	// channel send and should complete in microseconds.
+	select {
+	case evt := <-reconcileCh:
+		assert.NotNil(t, evt.Object, "requeue event must carry a non-nil object")
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async requeue event — stop requeue was not delivered")
+	}
+}
+
+// TestSharedWebSocket_OnStop_DeletesFromRegistry verifies that when the
+// WebSocket stops, the OnStop callback fires and removes the subscriber's key
+// from the registry map.
+func TestSharedWebSocket_OnStop_DeletesFromRegistry(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	// registry stands in for eventWatcherRegistry
+	var registry sync.Map
+	resourceKey := types.NamespacedName{Namespace: "default", Name: "test-secret"}
+	registry.Store(resourceKey, struct{}{})
+
+	// confirm the key is present before stop
+	_, exists := registry.Load(resourceKey)
+	require.True(t, exists, "key must be in registry before stop")
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	sub := &Subscriber{
+		ResourceKey:  resourceKey,
+		VaultPath:    "kv/data/app/config",
+		ResourceType: ResourceTypeVaultStaticSecret,
+		ReconcileCh:  reconcileCh,
+		OnStop:       func() { registry.Delete(resourceKey) },
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: resourceKey.Namespace,
+					Name:      resourceKey.Name,
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	// registry entry must be gone
+	_, stillExists := registry.Load(resourceKey)
+	assert.False(t, stillExists, "OnStop must delete the key from the registry")
+
+	// requeue event must also have been sent
+	require.Len(t, reconcileCh, 1)
+	evt := <-reconcileCh
+	assert.Equal(t, resourceKey.Name, evt.Object.GetName())
+	assert.Equal(t, resourceKey.Namespace, evt.Object.GetNamespace())
+}
+
+// TestSharedWebSocket_EventLoop_ThresholdHit_CleansRegistry drives the full
+// eventLoop threshold path:  notifyOnStop is set → eventLoop defer fires →
+// notifySubscribersOfStop runs → OnStop deletes from registry.
+func TestSharedWebSocket_EventLoop_ThresholdHit_CleansRegistry(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+
+	var registry sync.Map
+	resourceKey := types.NamespacedName{Namespace: "tenant-1", Name: "vds-instant"}
+	registry.Store(resourceKey, struct{}{})
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	sub := &Subscriber{
+		ResourceKey:  resourceKey,
+		VaultPath:    "database/my-role",
+		ResourceType: ResourceTypeVaultDynamicSecret,
+		ReconcileCh:  reconcileCh,
+		OnStop:       func() { registry.Delete(resourceKey) },
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: resourceKey.Namespace,
+					Name:      resourceKey.Name,
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Simulate the threshold being reached: set notifyOnStop then trigger the
+	// deferred cleanup directly — same path the eventLoop defer takes.
+	ws.notifyOnStop = true
+	ws.stopped.Store(true)
+	ws.notifySubscribersOfStop()
+
+	// registry entry must be gone
+	_, stillExists := registry.Load(resourceKey)
+	assert.False(t, stillExists, "registry must be cleaned up after threshold-hit exit")
+
+	// requeue event must have been sent so the controller reconciles
+	require.Len(t, reconcileCh, 1, "reconcile requeue must be sent after registry cleanup")
+}
+
+// TestSharedWebSocket_IsHealthy_StoppedReturnsFalse verifies that a websocket
+// marked as stopped is no longer considered healthy.
+func TestSharedWebSocket_IsHealthy_StoppedReturnsFalse(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	ws.stopped.Store(true)
+	assert.False(t, ws.IsHealthy())
+}
+
 // Placeholder for future integration tests
 func TestSharedWebSocket_Integration(t *testing.T) {
 	t.Skip("Integration tests will be added in Phase 4")
+}
+
+// TestSharedWebSocket_NotifySubscribersOfStop_VDSObjectType verifies that when
+// a VaultDynamicSecret subscriber has NewObject set, the requeue event carries
+// a *VaultDynamicSecret.
+func TestSharedWebSocket_NotifySubscribersOfStop_VDSObjectType(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeDatabase)
+	defer ws.cancel()
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-db-secret"},
+		VaultPath:    "database/creds/my-role",
+		ResourceType: ResourceTypeVaultDynamicSecret,
+		ReconcileCh:  reconcileCh,
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "my-db-secret",
+				},
+			}
+		},
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	ws.notifySubscribersOfStop()
+
+	require.Len(t, reconcileCh, 1)
+	evt := <-reconcileCh
+	assert.Equal(t, "my-db-secret", evt.Object.GetName())
+	assert.Equal(t, "default", evt.Object.GetNamespace())
+	_, isVDS := evt.Object.(*secretsv1beta1.VaultDynamicSecret)
+	assert.True(t, isVDS, "requeue event must carry *VaultDynamicSecret")
+}
+
+// TestSharedWebSocket_NotifySubscribersOfStop_NilNewObject_SkipsRequeue verifies
+// that a subscriber without NewObject set does not panic and is silently skipped.
+func TestSharedWebSocket_NotifySubscribersOfStop_NilNewObject_SkipsRequeue(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	reconcileCh := make(chan event.GenericEvent, 1)
+	onStopCalled := false
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "legacy-secret"},
+		VaultPath:    "kv/data/app",
+		ResourceType: ResourceTypeVaultStaticSecret,
+		ReconcileCh:  reconcileCh,
+		OnStop:       func() { onStopCalled = true },
+		// NewObject intentionally not set
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Must not panic
+	assert.NotPanics(t, func() { ws.notifySubscribersOfStop() })
+
+	// OnStop must still fire
+	assert.True(t, onStopCalled)
+	// No requeue event sent
+	assert.Len(t, reconcileCh, 0, "no requeue event expected when NewObject is nil")
 }
 
 // TestRouteEvent_VaultIndex_Stored verifies that vault_index is stored in
@@ -517,7 +768,7 @@ func TestRouteEvent_VaultIndex_Stored(t *testing.T) {
 		ResourceKey:       resourceKey,
 		VaultNS:           "prod",
 		VaultPath:         "kv/data/app1/config",
-		ResourceType:      "VaultStaticSecret",
+		ResourceType:      ResourceTypeVaultStaticSecret,
 		ReconcileCh:       ch,
 		PendingVaultIndex: &pendingIdx,
 	}
@@ -552,7 +803,7 @@ func TestRouteEvent_VaultIndex_Empty_NotStored(t *testing.T) {
 		ResourceKey:       resourceKey,
 		VaultNS:           "",
 		VaultPath:         "kv/data/secret",
-		ResourceType:      "VaultStaticSecret",
+		ResourceType:      ResourceTypeVaultStaticSecret,
 		ReconcileCh:       ch,
 		PendingVaultIndex: &pendingIdx,
 	}
@@ -586,7 +837,7 @@ func TestRouteEvent_VaultIndex_Whitespace_NotStored(t *testing.T) {
 		ResourceKey:       resourceKey,
 		VaultNS:           "",
 		VaultPath:         "kv/data/secret",
-		ResourceType:      "VaultStaticSecret",
+		ResourceType:      ResourceTypeVaultStaticSecret,
 		ReconcileCh:       ch,
 		PendingVaultIndex: &pendingIdx,
 	}
@@ -618,7 +869,7 @@ func TestRouteEvent_VaultIndex_NilPendingVaultIndex_NoPanic(t *testing.T) {
 		ResourceKey:       types.NamespacedName{Namespace: "default", Name: "my-vss"},
 		VaultNS:           "",
 		VaultPath:         "kv/data/secret",
-		ResourceType:      "VaultStaticSecret",
+		ResourceType:      ResourceTypeVaultStaticSecret,
 		ReconcileCh:       ch,
 		PendingVaultIndex: nil, // feature disabled
 	}
@@ -648,7 +899,7 @@ func TestRouteEvent_VaultIndex_NoPathMatch_NotStored(t *testing.T) {
 		ResourceKey:       resourceKey,
 		VaultNS:           "",
 		VaultPath:         "kv/data/my-secret",
-		ResourceType:      "VaultStaticSecret",
+		ResourceType:      ResourceTypeVaultStaticSecret,
 		ReconcileCh:       ch,
 		PendingVaultIndex: &pendingIdx,
 	}
@@ -679,7 +930,7 @@ func TestSharedWebSocket_RouteEvent_Database_WithPluginInfo(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -710,7 +961,7 @@ func TestSharedWebSocket_RouteEvent_Database_FallbackFromPath(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -738,7 +989,7 @@ func TestSharedWebSocket_RouteEvent_Database_WithNamespace(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "prod",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -764,7 +1015,7 @@ func TestSharedWebSocket_RouteEvent_Database_NamespaceMismatch(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "prod",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -791,7 +1042,7 @@ func TestSharedWebSocket_RouteEvent_Database_RoleMismatch(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -817,7 +1068,7 @@ func TestSharedWebSocket_RouteEvent_Database_EmptyName_EmptyPath(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -842,7 +1093,7 @@ func TestSharedWebSocket_RouteEvent_Database_CustomMount(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "my-db/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -872,14 +1123,14 @@ func TestSharedWebSocket_RouteEvent_Database_MultipleSubscribers(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "ns1", Name: "vds-1"},
 		VaultNS:      "",
 		VaultPath:    "database/shared-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch1,
 	}
 	sub2 := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "ns2", Name: "vds-2"},
 		VaultNS:      "",
 		VaultPath:    "database/shared-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch2,
 	}
 
@@ -908,7 +1159,7 @@ func TestSharedWebSocket_RouteEvent_Database_StaticRoleUpdate(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -936,7 +1187,7 @@ func TestSharedWebSocket_RouteEvent_Database_DynamicRoleUpdate(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -964,7 +1215,7 @@ func TestSharedWebSocket_RouteEvent_CustomPlugin_DefaultMountRoleRouting(t *test
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "custom-os-1/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -990,7 +1241,7 @@ func TestSharedWebSocket_RouteEvent_CustomPlugin_MissingRole_Dropped(t *testing.
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "custom-os-1/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1016,7 +1267,7 @@ func TestSharedWebSocket_RouteEvent_LDAP_Rotate(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "ldap/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1045,7 +1296,7 @@ func TestSharedWebSocket_RouteEvent_LDAP_FallbackFromPath(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "ldap/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1070,7 +1321,7 @@ func TestSharedWebSocket_RouteEvent_LDAP_RoleMismatch(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "ldap/my-role",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1099,7 +1350,7 @@ func TestSharedWebSocket_RouteEvent_Lease_ByLeaseID(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    leaseID,
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1126,7 +1377,7 @@ func TestSharedWebSocket_RouteEvent_Lease_MismatchedLeaseID(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/creds/my-role/abc123",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1151,7 +1402,7 @@ func TestSharedWebSocket_RouteEvent_Lease_EmptyLeaseID(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultNS:      "",
 		VaultPath:    "database/creds/my-role/abc123",
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1178,7 +1429,7 @@ func TestSharedWebSocket_RouteEvent_Lease_WithNamespace(t *testing.T) {
 	sub := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultPath:    leaseID,
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1208,7 +1459,7 @@ func TestSharedWebSocket_RouteEvent_Lease_IgnoresNamespace(t *testing.T) {
 	sub := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultPath:    leaseID,
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1237,7 +1488,7 @@ func TestSharedWebSocket_RouteEvent_Lease_IgnoresRenewals(t *testing.T) {
 	sub := &Subscriber{
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vds"},
 		VaultPath:    leaseID,
-		ResourceType: "VaultDynamicSecret",
+		ResourceType: ResourceTypeVaultDynamicSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
@@ -1342,7 +1593,7 @@ func TestSharedWebSocket_RouteEvent_KV_StillWorksWithBranching(t *testing.T) {
 		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vss"},
 		VaultNS:      "",
 		VaultPath:    "kv/data/app1/config",
-		ResourceType: "VaultStaticSecret",
+		ResourceType: ResourceTypeVaultStaticSecret,
 		ReconcileCh:  ch,
 	}
 	require.NoError(t, ws.Subscribe(sub))
