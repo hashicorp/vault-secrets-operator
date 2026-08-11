@@ -3,6 +3,7 @@
 Build:
 * Add `ppc64le` (IBM Power) architecture support: build and publish UBI-based images to `icr.io/cpopen/ibm-vault` and `quay.io/redhat-isv-containers` ([#1325](https://github.com/hashicorp/vault-secrets-operator/pull/1325))
 * Update `chart-upgrade-tests` matrix to cover the last 6 chart versions (`1.1.0`–`1.5.0`); drop stale entries `0.2.0`–`1.0.1`
+* Test with Vault 2.0.4, 1.21.9, 1.20.14, 1.19.20
 
 Dependency Updates:
 * Bump the gomod-backward-compatible group across 1 directory with 7 updates ([#1324](https://github.com/hashicorp/vault-secrets-operator/pull/1324))
