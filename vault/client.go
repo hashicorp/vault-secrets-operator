@@ -197,7 +197,7 @@ type Client interface {
 	WebsocketClient(string) (*WebsocketClient, error)
 	Renewable() bool
 	SubscribeToEvents(context.Context, EventType, *Subscriber) error
-	UnsubscribeFromEvents(EventType, SubscriptionKey, string) error
+	UnsubscribeFromEvents(context.Context, EventType, SubscriptionKey, string) error
 	// GetWebSocketCount returns the number of real, active WebSocket
 	// connections this client currently holds open to Vault (at most one per
 	// EventType, shared across all subscribers of that event type).
@@ -524,23 +524,29 @@ func (c *defaultClient) Close(revoke bool) {
 
 // GetMountType returns the Vault plugin type for a mount path.
 // Results are cached per-client to avoid repeated sys/mounts lookups.
+//
+// A single write-lock is held for the entire cache-miss path (including the
+// Vault read) so that concurrent reconciles for the same mount only produce one
+// outbound request. c.Read does not acquire c.mu, so there is no self-deadlock.
 func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (string, error) {
 	mountPath = strings.Trim(mountPath, "/")
 	if mountPath == "" {
 		return "", fmt.Errorf("mount path cannot be empty")
 	}
 
-	c.mu.RLock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.closed {
-		c.mu.RUnlock()
 		return "", fmt.Errorf("client instance is closed")
 	}
 	if t, ok := c.mountTypeCache[mountPath]; ok {
-		c.mu.RUnlock()
 		return t, nil
 	}
-	c.mu.RUnlock()
 
+	// Cache miss — call Vault while holding the lock so that a second goroutine
+	// that also misses the cache waits here and then hits the cache on its next
+	// iteration, rather than issuing a duplicate sys/mounts request.
 	resp, err := c.Read(ctx, NewReadRequest("sys/mounts/"+mountPath, nil, nil))
 	if err != nil {
 		return "", fmt.Errorf("failed to read mount info for %q: %w", mountPath, err)
@@ -551,12 +557,10 @@ func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (str
 		return "", fmt.Errorf("missing or empty type field in sys/mounts/%s response", mountPath)
 	}
 
-	c.mu.Lock()
 	if c.mountTypeCache == nil {
 		c.mountTypeCache = make(map[string]string)
 	}
 	c.mountTypeCache[mountPath] = mountType
-	c.mu.Unlock()
 
 	return mountType, nil
 }
@@ -1094,11 +1098,12 @@ func (c *defaultClient) SubscribeToEvents(
 // UnsubscribeFromEvents removes a subscription from this client's WebSocket.
 // pathKey identifies the Vault path, resourceKey identifies the specific CR subscriber.
 func (c *defaultClient) UnsubscribeFromEvents(
+	ctx context.Context,
 	eventType EventType,
 	pathKey SubscriptionKey,
 	resourceKey string,
 ) error {
-	logger := log.FromContext(context.TODO()).WithValues(
+	logger := log.FromContext(ctx).WithValues(
 		"clientID", c.id,
 		"eventType", eventType,
 		"pathKey", pathKey.String(),
@@ -1119,7 +1124,7 @@ func (c *defaultClient) UnsubscribeFromEvents(
 
 	// Close WebSocket if no more subscribers
 	if lastSubscriber {
-		c.closeWebSocket(eventType)
+		c.closeWebSocket(ctx, eventType)
 	}
 
 	return nil
@@ -1210,12 +1215,12 @@ func (c *defaultClient) getOrCreateWebSocket(
 }
 
 // closeWebSocket closes a specific WebSocket
-func (c *defaultClient) closeWebSocket(eventType EventType) {
+func (c *defaultClient) closeWebSocket(ctx context.Context, eventType EventType) {
 	c.websocketMu.Lock()
 	defer c.websocketMu.Unlock()
 
 	if ws, exists := c.websockets[eventType]; exists {
-		logger := log.FromContext(context.TODO()).WithValues(
+		logger := log.FromContext(ctx).WithValues(
 			"clientID", c.id,
 			"eventType", eventType,
 		)
