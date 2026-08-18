@@ -498,7 +498,9 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 }
 
 // checkStaticCredsHMAC performs HMAC-based drift detection for static credentials.
-// Returns true if sync should be skipped (credentials unchanged), false if sync needed.
+// It always updates o.Status.StaticCredsMetaData and o.Status.SecretMAC regardless
+// of the result. Returns (macsEqual, error): macsEqual is true when credential data
+// is unchanged since the last sync; the caller should skip writing to Kubernetes.
 func (r *VaultDynamicSecretReconciler) checkStaticCredsHMAC(
 	ctx context.Context,
 	o *secretsv1beta1.VaultDynamicSecret,

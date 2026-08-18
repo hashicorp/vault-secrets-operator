@@ -932,13 +932,11 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 
 // Regression test for the rollout-restart-on-every-reconcile bug.
 //
-// Scenario: allowStaticCreds=false, RolloutRestartTargets configured, credentials
-// are unchanged between reconciles (HMAC matches). On a periodic reconcile
-// (no ForceSync, no generation change, no lease to renew) the doRolloutRestart
-// decision evaluates to:
-//
-//	isStaticCreds=false  →  (doSync && LastGeneration>1) || updated
-//	                     →  (false && ...) || false  →  false
+// Scenario: allowStaticCreds=false but Vault returns static-creds metadata
+// (last_vault_rotation + rotation_period=600). syncSecret detects this from
+// the response, calls checkStaticCredsHMAC (HMAC matches → updated=false),
+// and writes StaticCredsMetaData into status. When doRolloutRestart is evaluated,
+// isStaticCreds=true → static-creds branch → doRolloutRestart = updated = false.
 //
 // The Deployment must NOT have the restart annotation patched onto it.
 func TestVaultDynamicSecretReconciler_Reconcile_noRolloutRestartOnUnchangedCreds(t *testing.T) {
@@ -977,9 +975,11 @@ func TestVaultDynamicSecretReconciler_Reconcile_noRolloutRestartOnUnchangedCreds
 				CacheKey: "cache-key",
 				ID:       "client-1",
 			},
-			// StaticCredsMetaData is zero: isStaticCreds() returns false for
-			// allowStaticCreds=false, keeping the rollout-restart on the non-static
-			// branch: (doSync && LastGeneration>1) || updated.
+			// StaticCredsMetaData starts as zero here, but syncSecret's
+			// checkStaticCredsHMAC will populate it from the Vault response
+			// (which carries last_vault_rotation + rotation_period). After
+			// reconcile, isStaticCreds() returns true and
+			// doRolloutRestart = updated (false — HMAC matched).
 		},
 	}
 
