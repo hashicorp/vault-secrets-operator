@@ -500,7 +500,7 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 		},
 	)
 
-	r.SourceCh = make(chan event.GenericEvent)
+	r.SourceCh = make(chan event.GenericEvent, 4)
 	r.eventWatcherRegistry = newEventWatcherRegistry()
 	ctrlmetrics.Registry.MustRegister(prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
