@@ -241,3 +241,87 @@ func Test_convertToK8sTLSSecretData(t *testing.T) {
 		})
 	}
 }
+
+func Test_getPath(t *testing.T) {
+	t.Parallel()
+
+	r := &VaultPKISecretReconciler{}
+
+	tests := []struct {
+		name string
+		spec secretsv1beta1.VaultPKISecretSpec
+		want string
+	}{
+		{
+			name: "without-issuer-ref",
+			spec: secretsv1beta1.VaultPKISecretSpec{
+				Mount: "pki",
+				Role:  "default",
+			},
+			want: "pki/issue/default",
+		},
+		{
+			name: "with-issuer-ref",
+			spec: secretsv1beta1.VaultPKISecretSpec{
+				Mount:     "pki",
+				IssuerRef: "MyCA",
+				Role:      "default",
+			},
+			want: "pki/issuer/MyCA/issue/default",
+		},
+		{
+			name: "with-issuer-ref-custom-mount",
+			spec: secretsv1beta1.VaultPKISecretSpec{
+				Mount:     "pki-int",
+				IssuerRef: "MyCA",
+				Role:      "my-role",
+			},
+			want: "pki-int/issuer/MyCA/issue/my-role",
+		},
+		{
+			name: "without-issuer-ref-custom-mount",
+			spec: secretsv1beta1.VaultPKISecretSpec{
+				Mount: "pki-int",
+				Role:  "my-role",
+			},
+			want: "pki-int/issue/my-role",
+		},
+		{
+			// IssuerRef supports the literal string "default" to refer to the
+			// mount's currently configured default issuer.
+			name: "with-issuer-ref-literal-default",
+			spec: secretsv1beta1.VaultPKISecretSpec{
+				Mount:     "pki",
+				IssuerRef: "default",
+				Role:      "my-role",
+			},
+			want: "pki/issuer/default/issue/my-role",
+		},
+		{
+			// IssuerRef also accepts a Vault-generated UUID directly.
+			name: "with-issuer-ref-uuid",
+			spec: secretsv1beta1.VaultPKISecretSpec{
+				Mount:     "pki",
+				IssuerRef: "2eb1671b-33d7-6f0b-6545-5c7702807d74",
+				Role:      "default",
+			},
+			want: "pki/issuer/2eb1671b-33d7-6f0b-6545-5c7702807d74/issue/default",
+		},
+		{
+			// An explicit empty IssuerRef must behave identically to omitting it.
+			name: "with-empty-issuer-ref",
+			spec: secretsv1beta1.VaultPKISecretSpec{
+				Mount:     "pki",
+				IssuerRef: "",
+				Role:      "default",
+			},
+			want: "pki/issue/default",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, r.getPath(tt.spec))
+		})
+	}
+}
