@@ -1,3 +1,60 @@
+## 1.5.1 (August 11th, 2026)
+
+Build:
+* Add `ppc64le` (IBM Power) architecture support: build and publish UBI-based images to `icr.io/cpopen/ibm-vault` and `quay.io/redhat-isv-containers` ([#1325](https://github.com/hashicorp/vault-secrets-operator/pull/1325))
+* Update `chart-upgrade-tests` matrix to cover the last 6 chart versions (`1.1.0`–`1.5.0`); drop stale entries `0.2.0`–`1.0.1`
+* Test with Vault 2.0.4, 1.21.9, 1.20.14, 1.19.20
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 7 updates ([#1324](https://github.com/hashicorp/vault-secrets-operator/pull/1324))
+  * Updates github.com/go-openapi/runtime from 0.32.6 to 0.33.0
+  * Updates github.com/prometheus/client_golang from 1.24.0 to 1.24.1
+  * Updates google.golang.org/api from 0.290.0 to 0.291.0
+  * Updates k8s.io/api from 0.36.2 to 0.36.3
+  * Updates k8s.io/apiextensions-apiserver from 0.36.2 to 0.36.3
+  * Updates k8s.io/apimachinery from 0.36.2 to 0.36.3
+  * Updates k8s.io/client-go from 0.36.2 to 0.36.3
+* Bump `google.golang.org/api` from `0.291.0` to `0.292.0` in the gomod-backward-compatible group ([#1330](https://github.com/hashicorp/vault-secrets-operator/pull/1330))
+* Bump `actions/setup-node` from `v6.4.0` to `v7.0.0` in `.github/workflows/build.yaml`
+
+## 1.5.0 (July 23rd, 2026)
+
+BREAKING CHANGES:
+* `VaultAuth`/`VaultAuthGlobal` AppRole `spec.appRole.secretIDPath` has been removed. Use
+  `spec.appRole.secretRef` instead, which references a Kubernetes Secret containing the AppRole
+  Secret ID.
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group across 1 directory with 2 updates: ([#1302](https://github.com/hashicorp/vault-secrets-operator/pull/1302))
+* Bump the gomod-backward-compatible group across 1 directory with 5 updates (#1308)
+* Bump github.com/go-openapi/runtime from 0.32.5 to 0.32.6 in the gomod-backward-compatible group ([#1310](https://github.com/hashicorp/vault-secrets-operator/pull/1310)
+* Bump google.golang.org/grpc from 1.82.0 to 1.82.1 ([#1311](https://github.com/hashicorp/vault-secrets-operator/pull/1311)
+* Bump google.golang.org/api from 0.289.0 to 0.290.0 in the gomod-backward-compatible group across 1 directory ([#1313](https://github.com/hashicorp/vault-secrets-operator/pull/1313)
+
+Build:
+* Build with Go 1.26.5
+* Test with Vault 2.0.3, 1.21.8, 1.20.13, 1.19.19
+* Test with Kind v0.32.0
+* Test with K8s 1.36.1, 1.35.5, 1.34.8, 1.33.12, 1.32.11
+
+
+## 1.4.1 (June 30th, 2026)
+
+Build:
+* Building with Go 1.26.4
+* Test with Vault 2.0.3, 1.21.8, 1.20.13, 1.19.19
+* Test with Kind v0.32.0
+* Test with K8s 1.36.1, 1.35.5, 1.34.8, 1.33.12, 1.32.11
+
+Dependency Updates:
+* Bump the gomod-backward-compatible group with 4 updates: ([#1294](https://github.com/hashicorp/vault-secrets-operator/pull/1294))
+* Bump the gomod-backward-compatible group with 9 updates: ([#1290](https://github.com/hashicorp/vault-secrets-operator/pull/1290))
+* Bump github.com/gruntwork-io/terratest from 0.56.0 to 1.0.0 in the gomod-breaking group across 1 directory: ([#1289](https://github.com/hashicorp/vault-secrets-operator/pull/1289))
+* Bump ubi10/ubi-minimal from 10.1 to 10.2: ([#1275](https://github.com/hashicorp/vault-secrets-operator/pull/1275))
+* Bump ubi10/ubi-micro from 10.1 to 10.2: ([#1274](https://github.com/hashicorp/vault-secrets-operator/pull/1274))
+* Bump the gomod-backward-compatible group across 1 directory with 10 updates: ([#1273](https://github.com/hashicorp/vault-secrets-operator/pull/1273))
+
+
 ## 1.4.0 (May 5th, 2026)
 
 Fix:
