@@ -1270,7 +1270,7 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 			VaultNamespace: "",
 			VaultPath:      "kv/data/app/config",
 		}
-		err := c.UnsubscribeFromEvents(EventTypeKV, pathKey, "default/test-secret")
+		err := c.UnsubscribeFromEvents(context.Background(), EventTypeKV, pathKey, "default/test-secret")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "websocket not found")
 	})
@@ -1284,7 +1284,7 @@ func Test_defaultClient_WebSocketManagement(t *testing.T) {
 		c.websockets[EventTypeKV] = ws
 
 		assert.Equal(t, 1, c.GetWebSocketCount())
-		c.closeWebSocket(EventTypeKV)
+		c.closeWebSocket(context.Background(), EventTypeKV)
 		assert.Equal(t, 0, c.GetWebSocketCount())
 	})
 }
@@ -1370,7 +1370,7 @@ func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
 			VaultNamespace: sub.VaultNS,
 			VaultPath:      sub.VaultPath,
 		}
-		err = c.UnsubscribeFromEvents(EventTypeKV, pathKey, sub.ResourceKey.String())
+		err = c.UnsubscribeFromEvents(context.Background(), EventTypeKV, pathKey, sub.ResourceKey.String())
 		require.NoError(t, err)
 		assert.Equal(t, 0, c.GetWebSocketCount())
 		assert.Equal(t, 0, c.GetWebSocketSubscriberCount())

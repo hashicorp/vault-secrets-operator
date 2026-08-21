@@ -1569,7 +1569,11 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client:       testutils.NewFakeClient(),
 				SyncRegistry: syncRegistry,
-				SourceCh:     make(chan event.GenericEvent),
+				// Buffer large enough to hold all events for this test case
+				// without requiring the consumer goroutine to be ready first.
+				// In production, controller-runtime's source.Channel reads
+				// continuously; in tests the goroutine start may race the send.
+				SourceCh: make(chan event.GenericEvent, len(tt.instances)+1),
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -2250,7 +2254,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := &VaultDynamicSecretReconciler{}
-			got, got1, err := r.awaitVaultSecretRotation(ctx, tt.o, tt.c, tt.initialResponse)
+			got, got1, err := r.awaitVaultSecretRotation(ctx, tt.o, tt.c, tt.initialResponse, nil)
 			if !tt.wantErr(t, err, fmt.Sprintf("awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)) {
 				return
 			}
@@ -2356,49 +2360,13 @@ func Test_buildVaultEventKey(t *testing.T) {
 	}
 }
 
-func Test_buildLeaseEventKey(t *testing.T) {
-	tests := []struct {
-		name string
-		o    *secretsv1beta1.VaultDynamicSecret
-		want string
-	}{
-		{
-			name: "with lease ID",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1beta1.VaultSecretLease{
-						ID: "database/creds/my-role/abc123",
-					},
-				},
-			},
-			want: "database/creds/my-role/abc123",
-		},
-		{
-			name: "empty lease ID",
-			o: &secretsv1beta1.VaultDynamicSecret{
-				Status: secretsv1beta1.VaultDynamicSecretStatus{
-					SecretLease: secretsv1beta1.VaultSecretLease{
-						ID: "",
-					},
-				},
-			},
-			want: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := buildLeaseEventKey(tt.o)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 type watchUnsubscribeClient struct {
 	vault.Client
 	seen []vault.EventType
 }
 
 func (m *watchUnsubscribeClient) UnsubscribeFromEvents(
+	_ context.Context,
 	eventType vault.EventType,
 	_ vault.SubscriptionKey,
 	_ string,
@@ -2428,7 +2396,7 @@ func Test_unWatchEvents_UsesStoredEventType(t *testing.T) {
 	})
 
 	m := &watchUnsubscribeClient{}
-	r.unWatchEvents(o, m)
+	r.unWatchEvents(o, m, context.Background())
 
 	require.Len(t, m.seen, 2)
 	assert.Equal(t, vault.EventTypeLDAP, m.seen[0])
@@ -2462,7 +2430,7 @@ func (m *mockEnsureClient) SubscribeToEvents(_ context.Context, et vault.EventTy
 	return nil
 }
 
-func (m *mockEnsureClient) UnsubscribeFromEvents(et vault.EventType, _ vault.SubscriptionKey, _ string) error {
+func (m *mockEnsureClient) UnsubscribeFromEvents(_ context.Context, et vault.EventType, _ vault.SubscriptionKey, _ string) error {
 	m.seen = append(m.seen, et)
 	return nil
 }
@@ -2618,7 +2586,7 @@ func Test_unWatchEventsWithLeaseID_EmptyEventType_SkipsEngineUnsubscribe(t *test
 
 	m := &watchUnsubscribeClient{}
 	// Call with empty eventType — only the lease unsubscribe should fire.
-	r.unWatchEventsWithLeaseID(o, m, "database/creds/my-role/abc123", "")
+	r.unWatchEventsWithLeaseID(o, m, "database/creds/my-role/abc123", "", context.Background())
 
 	require.Len(t, m.seen, 1, "only the lease unsubscribe should be called")
 	assert.Equal(t, vault.EventTypeLease, m.seen[0])

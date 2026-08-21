@@ -441,7 +441,7 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 		}
 	} else {
-		r.unWatchEvents(o, vClient)
+		r.unWatchEvents(o, vClient, ctx)
 		r.pendingVaultIndex.Delete(req.NamespacedName)
 	}
 
@@ -544,7 +544,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	var data map[string][]byte
 	secretLease := r.getVaultSecretLease(resp.Secret())
 	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
-		staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+		staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp, headers)
 		if err != nil {
 			return nil, false, err
 		}
@@ -595,8 +595,13 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 // awaitVaultSecretRotation waits for the Vault secret to be rotated. This is
 // necessary for the case where the Vault secret is a static-creds secret and includes
 // a rotation schedule.
+//
+// headers should be the same headers passed to the initial doVault call in
+// syncSecret (e.g. X-Vault-Index on event-triggered reconciles) so that retry
+// reads on Performance Standbys are served from a node that has replicated the
+// write, preserving the freshness guarantee end-to-end.
 func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret,
-	c vault.ClientBase, lastResponse vault.Response) (*secretsv1beta1.VaultStaticCredsMetaData,
+	c vault.ClientBase, lastResponse vault.Response, headers http.Header) (*secretsv1beta1.VaultStaticCredsMetaData,
 	vault.Response,
 	error,
 ) {
@@ -651,7 +656,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		backoff.WithMaxInterval(time.Second*2))
 	if err := backoff.Retry(
 		func() error {
-			resp, err = r.doVault(ctx, c, o, nil)
+			resp, err = r.doVault(ctx, c, o, headers)
 			if err != nil {
 				return err
 			}
@@ -791,7 +796,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 			Namespace: metrics.Namespace,
 			Subsystem: "vaultdynamicsecret",
 			Name:      "active_event_watchers",
-			Help:      "Number of active VaultDynamicSecret event-subscription websocket connections",
+			Help:      "Number of active VaultDynamicSecret event subscriptions (one per watched resource)",
 		},
 		func() float64 { return float64(r.eventWatcherRegistry.ItemCount()) },
 	))
@@ -866,7 +871,7 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 				"error", err)
 			r.eventWatcherRegistry.Delete(objKey)
 		} else {
-			r.unWatchEvents(o, c)
+			r.unWatchEvents(o, c, ctx)
 		}
 	}
 	r.pendingVaultIndex.Delete(objKey)
@@ -1036,7 +1041,12 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 				r.SyncRegistry.Add(objKey)
 				logger.V(consts.LogLevelDebug).Info(
 					"Sending GenericEvent to the SourceCh", "evt", evt)
-				r.SourceCh <- evt
+				select {
+				case r.SourceCh <- evt:
+				default:
+					logger.V(consts.LogLevelWarning).Info(
+						"SourceCh full, dropping client-callback event", "objKey", objKey)
+				}
 			}
 		} else if err != nil {
 			logger.V(consts.LogLevelWarning).Info(
@@ -1212,7 +1222,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 	if hasMeta {
 		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata, client, or lease change",
 			"namespace", o.Namespace, "name", o.Name)
-		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType)
+		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType, ctx)
 	}
 
 	// Step 4: subscribe to engine events.
@@ -1265,6 +1275,7 @@ func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
 func (r *VaultDynamicSecretReconciler) unWatchEvents(
 	o *secretsv1beta1.VaultDynamicSecret,
 	c vault.Client,
+	ctx context.Context,
 ) {
 	if r.eventWatcherRegistry == nil {
 		return
@@ -1278,7 +1289,7 @@ func (r *VaultDynamicSecretReconciler) unWatchEvents(
 
 	// Pass LastEventType directly — if it is empty, unWatchEventsWithLeaseID
 	// will skip the engine-event unsubscribe rather than targeting the wrong stream.
-	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType)
+	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType, ctx)
 }
 
 // unWatchEventsWithLeaseID performs the actual unsubscription using the provided
@@ -1288,6 +1299,7 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 	c vault.Client,
 	leaseID string,
 	eventType vault.EventType,
+	ctx context.Context,
 ) {
 	if r.eventWatcherRegistry == nil {
 		return
@@ -1304,8 +1316,8 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 			VaultNamespace: o.Spec.Namespace,
 			VaultPath:      vaultPath,
 		}
-		if err := c.UnsubscribeFromEvents(eventType, pathKey, name.String()); err != nil {
-			log.FromContext(context.Background()).V(consts.LogLevelDebug).Info(
+		if err := c.UnsubscribeFromEvents(ctx, eventType, pathKey, name.String()); err != nil {
+			log.FromContext(ctx).V(consts.LogLevelDebug).Info(
 				"Failed to unsubscribe from events (may already be cleaned up)",
 				"namespace", o.Namespace, "name", o.Name, "error", err)
 		}
@@ -1316,7 +1328,7 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 		leaseKey := vault.SubscriptionKey{
 			VaultPath: leaseID,
 		}
-		_ = c.UnsubscribeFromEvents(vault.EventTypeLease, leaseKey, name.String())
+		_ = c.UnsubscribeFromEvents(ctx, vault.EventTypeLease, leaseKey, name.String())
 	}
 
 	r.eventWatcherRegistry.Delete(name)
@@ -1328,12 +1340,6 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 func buildVaultEventKey(o *secretsv1beta1.VaultDynamicSecret) string {
 	roleName := extractRoleName(o.Spec.Path)
 	return o.Spec.Mount + "/" + roleName
-}
-
-// buildLeaseEventKey returns the subscription key for lease lifecycle events.
-// The key is the lease ID from the VDS status.
-func buildLeaseEventKey(o *secretsv1beta1.VaultDynamicSecret) string {
-	return o.Status.SecretLease.ID
 }
 
 // extractRoleName extracts the role name from a VDS spec path.

@@ -38,8 +38,16 @@ const (
 
 // SharedWebSocket manages a single WebSocket connection with multiple subscribers
 type SharedWebSocket struct {
-	// conn is the underlying WebSocket connection
-	conn *websocket.Conn
+	// conn is the underlying WebSocket connection.
+	// Writes (reconnect, Close) and reads from IsHealthy/Close may happen on
+	// different goroutines, so all cross-goroutine accesses must hold connMu.
+	// Accesses inside the event-loop goroutine itself (readAndRoute, eventLoop
+	// done-handler) are inherently sequential with reconnect and do NOT lock,
+	// to avoid a self-deadlock where reconnect holds connMu while calling
+	// wsClient.Connect, and readAndRoute tries to lock connMu on the same
+	// goroutine.
+	conn   *websocket.Conn
+	connMu sync.RWMutex
 	// stopped indicates that the event loop has exited and this websocket should
 	// no longer be considered healthy or reusable. Written by the event-loop
 	// goroutine and read from reconciler goroutines via IsHealthy(), so it must
@@ -87,8 +95,10 @@ func NewSharedWebSocket(
 		return nil, fmt.Errorf("failed to create websocket client: %w", err)
 	}
 
-	// Create cancellable context
-	wsCtx, cancel := context.WithCancel(context.Background())
+	// Create cancellable context derived from the caller's context so that
+	// the event-loop goroutine is cancelled when the parent (manager) context
+	// is cancelled on operator shutdown.
+	wsCtx, cancel := context.WithCancel(ctx)
 
 	ws := &SharedWebSocket{
 		eventType:   eventType,
@@ -357,11 +367,20 @@ func (ws *SharedWebSocket) readAndRoute() error {
 	return nil
 }
 
-// reconnect creates a new WebSocket connection, replacing the old one
+// reconnect creates a new WebSocket connection, replacing the old one.
+// Called exclusively from the event-loop goroutine; connMu is held only around
+// the conn pointer swap so that IsHealthy (which runs on reconciler goroutines)
+// never observes a torn read.
 func (ws *SharedWebSocket) reconnect() error {
-	// Close old connection if still open
-	if ws.conn != nil {
-		ws.conn.Close(websocket.StatusNormalClosure, "reconnecting")
+	// Snapshot and clear the old conn under write lock, then close it without
+	// holding the lock (Close can block briefly).
+	ws.connMu.Lock()
+	old := ws.conn
+	ws.conn = nil
+	ws.connMu.Unlock()
+
+	if old != nil {
+		old.Close(websocket.StatusNormalClosure, "reconnecting")
 	}
 
 	wsClient, err := ws.vaultClient.WebsocketClient(getEventPath(ws.eventType))
@@ -373,7 +392,10 @@ func (ws *SharedWebSocket) reconnect() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect websocket: %w", err)
 	}
+
+	ws.connMu.Lock()
 	ws.conn = conn
+	ws.connMu.Unlock()
 	return nil
 }
 
@@ -498,17 +520,23 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 	}
 }
 
-// Close gracefully shuts down the WebSocket
+// Close gracefully shuts down the WebSocket.
+// May be called from any goroutine (reconciler, manager shutdown).
 func (ws *SharedWebSocket) Close() error {
 	ws.logger.Info("Closing SharedWebSocket", "subscribers", ws.GetSubscriberCount())
 
 	// Cancel context to stop event loop
 	ws.cancel()
 
-	// Close WebSocket connection
-	if ws.conn != nil {
-		err := ws.conn.Close(websocket.StatusNormalClosure, "closing shared websocket")
-		if err != nil {
+	// Snapshot and clear conn under write lock so that a concurrent IsHealthy
+	// call never reads a partially-closed connection.
+	ws.connMu.Lock()
+	conn := ws.conn
+	ws.conn = nil
+	ws.connMu.Unlock()
+
+	if conn != nil {
+		if err := conn.Close(websocket.StatusNormalClosure, "closing shared websocket"); err != nil {
 			ws.logger.Error(err, "Error closing websocket connection")
 			return err
 		}
@@ -518,7 +546,8 @@ func (ws *SharedWebSocket) Close() error {
 	return nil
 }
 
-// IsHealthy checks if the WebSocket is still healthy
+// IsHealthy checks if the WebSocket is still healthy.
+// May be called from any goroutine; uses connMu to safely read ws.conn.
 func (ws *SharedWebSocket) IsHealthy() bool {
 	if ws.stopped.Load() {
 		return false
@@ -527,7 +556,10 @@ func (ws *SharedWebSocket) IsHealthy() bool {
 	case <-ws.ctx.Done():
 		return false
 	default:
-		return ws.conn != nil
+		ws.connMu.RLock()
+		healthy := ws.conn != nil
+		ws.connMu.RUnlock()
+		return healthy
 	}
 }
 

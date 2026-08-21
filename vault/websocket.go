@@ -64,6 +64,11 @@ func (w *WebsocketClient) Connect(ctx context.Context) (*websocket.Conn, error) 
 	var resp *http.Response
 	var err error
 
+	// Track visited URLs to detect redirect cycles (e.g. A→B→A) that would
+	// otherwise silently exhaust all attempts and return a generic error.
+	visited := make(map[string]bool)
+	visited[w.URL] = true
+
 	for attempt := 0; attempt < 10; attempt++ {
 		conn, resp, err = websocket.Dial(ctx, w.URL, &websocket.DialOptions{
 			HTTPClient: w.HTTPClient,
@@ -76,7 +81,12 @@ func (w *WebsocketClient) Connect(ctx context.Context) (*websocket.Conn, error) 
 		if resp == nil {
 			break
 		} else if resp.StatusCode == http.StatusTemporaryRedirect {
-			w.URL = resp.Header.Get("Location")
+			loc := resp.Header.Get("Location")
+			if visited[loc] {
+				return nil, fmt.Errorf("redirect cycle detected when establishing websocket connection: %s has already been visited", loc)
+			}
+			visited[loc] = true
+			w.URL = loc
 			continue
 		} else {
 			break

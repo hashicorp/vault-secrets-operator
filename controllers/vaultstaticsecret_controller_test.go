@@ -254,7 +254,7 @@ func (m *mockVSSClient) SubscribeToEvents(_ context.Context, et vault.EventType,
 	return m.subscribeErr
 }
 
-func (m *mockVSSClient) UnsubscribeFromEvents(et vault.EventType, _ vault.SubscriptionKey, _ string) error {
+func (m *mockVSSClient) UnsubscribeFromEvents(_ context.Context, et vault.EventType, _ vault.SubscriptionKey, _ string) error {
 	m.seen = append(m.seen, et)
 	return m.unsubscribeErr
 }
@@ -414,7 +414,7 @@ func Test_VSS_unWatchEvents_UnsubscribesAndClearsRegistry(t *testing.T) {
 	})
 
 	m := &mockVSSClient{}
-	r.unWatchEvents(o, m)
+	r.unWatchEvents(o, m, context.Background())
 
 	require.Len(t, m.seen, 1, "exactly one unsubscribe call expected (KV only)")
 	assert.Equal(t, vault.EventTypeKV, m.seen[0])
@@ -444,7 +444,7 @@ func Test_VSS_unWatchEvents_NoOpWhenNoRegistryEntry(t *testing.T) {
 
 	m := &mockVSSClient{}
 	// Must not panic and must not call UnsubscribeFromEvents.
-	r.unWatchEvents(o, m)
+	r.unWatchEvents(o, m, context.Background())
 
 	assert.Empty(t, m.seen, "no unsubscribe should be called when object not in registry")
 }
@@ -475,7 +475,7 @@ func Test_VSS_unWatchEvents_UnsubscribeError(t *testing.T) {
 	})
 
 	m := &mockVSSClient{unsubscribeErr: fmt.Errorf("websocket already closed")}
-	r.unWatchEvents(o, m)
+	r.unWatchEvents(o, m, context.Background())
 
 	// UnsubscribeFromEvents was still attempted.
 	require.Len(t, m.seen, 1, "exactly one unsubscribe call expected even on error")

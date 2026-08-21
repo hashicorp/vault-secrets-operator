@@ -312,7 +312,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	} else {
 		// ensure event watcher is not running
-		r.unWatchEvents(o, c)
+		r.unWatchEvents(o, c, ctx)
 		r.pendingVaultIndex.Delete(req.NamespacedName)
 	}
 
@@ -352,7 +352,7 @@ func (r *VaultStaticSecretReconciler) handleDeletion(ctx context.Context, o clie
 			"error", err)
 		r.eventWatcherRegistry.Delete(objKey)
 	} else {
-		r.unWatchEvents(vss, c)
+		r.unWatchEvents(vss, c, ctx)
 	}
 	r.pendingVaultIndex.Delete(objKey)
 
@@ -405,7 +405,7 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 			// The subscription exists but metadata or vault client has changed, unsubscribe first
 			logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata or client change",
 				"namespace", o.Namespace, "name", o.Name)
-			r.unWatchEvents(o, c)
+			r.unWatchEvents(o, c, ctx)
 		} else {
 			// WebSocket is dead or missing - orphaned registry entry detected
 			logger.Info("Detected orphaned registry entry (WebSocket is dead or missing), cleaning up",
@@ -456,7 +456,7 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 }
 
 // unWatchEvents unsubscribes the VSS from events and removes it from the registry
-func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStaticSecret, c vault.Client) {
+func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStaticSecret, c vault.Client, ctx context.Context) {
 	name := client.ObjectKeyFromObject(o)
 	_, ok := r.eventWatcherRegistry.Get(name)
 	if !ok {
@@ -469,8 +469,8 @@ func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStati
 		VaultPath:      vaultPath,
 	}
 
-	if err := c.UnsubscribeFromEvents(vault.EventTypeKV, pathKey, name.String()); err != nil {
-		log.FromContext(context.Background()).V(consts.LogLevelDebug).Info(
+	if err := c.UnsubscribeFromEvents(ctx, vault.EventTypeKV, pathKey, name.String()); err != nil {
+		log.FromContext(ctx).V(consts.LogLevelDebug).Info(
 			"Failed to unsubscribe from events (may already be cleaned up)",
 			"namespace", o.Namespace, "name", o.Name, "error", err)
 	}
@@ -500,14 +500,14 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 		},
 	)
 
-	r.SourceCh = make(chan event.GenericEvent)
+	r.SourceCh = make(chan event.GenericEvent, 4)
 	r.eventWatcherRegistry = newEventWatcherRegistry()
 	ctrlmetrics.Registry.MustRegister(prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Namespace: metrics.Namespace,
 			Subsystem: "vaultstaticsecret",
 			Name:      "active_event_watchers",
-			Help:      "Number of active VaultStaticSecret event-subscription websocket connections",
+			Help:      "Number of active VaultStaticSecret event subscriptions (one per watched resource)",
 		},
 		func() float64 { return float64(r.eventWatcherRegistry.ItemCount()) },
 	))
@@ -594,7 +594,12 @@ func (r *VaultStaticSecretReconciler) vaultClientCallback(ctx context.Context, c
 					"objKey", objKey)
 				logger.V(consts.LogLevelDebug).Info(
 					"Sending GenericEvent to the SourceCh", "evt", evt)
-				r.SourceCh <- evt
+				select {
+				case r.SourceCh <- evt:
+				default:
+					logger.V(consts.LogLevelWarning).Info(
+						"SourceCh full, dropping client-callback event", "objKey", objKey)
+				}
 			}
 		} else if err != nil {
 			logger.V(consts.LogLevelWarning).Info(
