@@ -550,7 +550,6 @@ func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (str
 	// client never returns a stale cached value.
 	c.mu.RLock()
 	if c.closed {
-		c.mu.RUnlock()
 		return "", fmt.Errorf("client instance is closed")
 	}
 	c.mountTypeMu.RLock()
