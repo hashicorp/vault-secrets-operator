@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -678,76 +679,159 @@ func newStaticCredsFixture(t *testing.T) *staticCredsFixture {
 	}
 }
 
-// Regression test: on ForceSync (VaultAuth token expiry), syncSecret must
-// refresh StaticCredsMetaData.TTL even when the HMAC matches (no rotation).
-// Exercises syncSecret in isolation.
-//
-// Status before: TTL=600  |  Vault response: TTL=540 (same LastVaultRotation)
-func TestVaultDynamicSecretReconciler_syncSecret_staticCredsRefreshesStatusOnMatchingHMAC(t *testing.T) {
+// Table-driven test for static credentials metadata changes.
+// Tests that metadata field changes don't trigger sync when credentials haven't changed,
+// for both allowStaticCreds=true and allowStaticCreds=false.
+// This is a regression test for the rolling restart bug where configuration changes
+// to rotation settings would unnecessarily restart pods.
+func TestVaultDynamicSecretReconciler_syncSecret_staticCreds_metadataChanges(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	f := newStaticCredsFixture(t)
-
-	vClient := &vault.MockRecordingVaultClient{
-		ReadResponses: map[string][]vault.Response{
-			// Two reads: initial doVault + one inside the awaitVaultSecretRotation
-			// backoff loop (triggered because inLastSyncRotation=true).
-			"database/static-creds/app": {f.freshResponse, f.freshResponse},
+	tests := []struct {
+		name              string
+		allowStaticCreds  bool
+		vaultResponses    []vault.Response
+		initialTTL        int64
+		initialRotPeriod  int64
+		expectedTTL       int64
+		expectedRotPeriod int64
+		expectedRequests  int
+		description       string
+	}{
+		{
+			name:             "allowStaticCreds=true refreshes status on matching HMAC",
+			allowStaticCreds: true,
+			vaultResponses: func() []vault.Response {
+				f := newStaticCredsFixture(t)
+				// Two reads: initial doVault + one inside awaitVaultSecretRotation backoff loop
+				return []vault.Response{f.freshResponse, f.freshResponse}
+			}(),
+			initialTTL:        600,
+			initialRotPeriod:  600,
+			expectedTTL:       540,
+			expectedRotPeriod: 600,
+			expectedRequests:  2,
+			description:       "On ForceSync (VaultAuth token expiry), syncSecret must refresh StaticCredsMetaData.TTL even when HMAC matches",
 		},
-	}
-
-	secretClient := testutils.NewFakeClientBuilder().WithObjects(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app",
-			Namespace: "default",
-		},
-		Data: f.secretData,
-	}, f.hmacKeySecret).Build()
-
-	obj := &secretsv1beta1.VaultDynamicSecret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app",
-			Namespace: "default",
-		},
-		Spec: secretsv1beta1.VaultDynamicSecretSpec{
-			Mount:            "database",
-			Path:             "static-creds/app",
-			AllowStaticCreds: true,
-			Destination: secretsv1beta1.Destination{
-				Name:   "app",
-				Create: true,
+		{
+			name:             "allowStaticCreds=false metadata changes do not trigger sync",
+			allowStaticCreds: false,
+			vaultResponses: []vault.Response{
+				&vaultResponse{
+					secret: &api.Secret{},
+					data: map[string]any{
+						"last_vault_rotation": "2026-04-21T12:00:00Z",
+						"rotation_period":     1200,                   // Changed from 600
+						"rotation_policy":     "custom-policy",        // New field
+						"next_vault_rotation": "2026-04-22T00:00:00Z", // New field
+						"rotation_window":     7200,                   // New field
+						"ttl":                 540,
+						"username":            "db-user",
+						"password":            "db-pass", // Same credentials
+					},
+					k8s: map[string][]byte{
+						"username": []byte("db-user"),
+						"password": []byte("db-pass"),
+					},
+				},
+				&vaultResponse{
+					secret: &api.Secret{},
+					data: map[string]any{
+						"last_vault_rotation": "2026-04-21T12:00:00Z",
+						"rotation_period":     1200,
+						"rotation_policy":     "custom-policy",
+						"next_vault_rotation": "2026-04-22T00:00:00Z",
+						"rotation_window":     7200,
+						"ttl":                 540,
+						"username":            "db-user",
+						"password":            "db-pass",
+					},
+					k8s: map[string][]byte{
+						"username": []byte("db-user"),
+						"password": []byte("db-pass"),
+					},
+				},
 			},
-		},
-		Status: secretsv1beta1.VaultDynamicSecretStatus{
-			SecretMAC: f.secretMAC,
-			StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
-				LastVaultRotation: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(),
-				RotationPeriod:    600,
-				TTL:               600,
-			},
+			initialTTL:        600,
+			initialRotPeriod:  600,
+			expectedTTL:       540,
+			expectedRotPeriod: 1200, // Metadata updated
+			expectedRequests:  2,
+			description:       "Metadata changes (rotation_period, rotation_policy, etc.) should not trigger sync when credentials unchanged",
 		},
 	}
 
-	r := &VaultDynamicSecretReconciler{
-		Client:        secretClient,
-		SecretsClient: secretClient,
-		HMACValidator: f.validator,
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	lease, updated, err := r.syncSecret(ctx, vClient, obj, nil)
-	require.NoError(t, err)
-	assert.False(t, updated)
-	assert.Equal(t, f.secretMAC, obj.Status.SecretMAC)
-	assert.Equal(t, &secretsv1beta1.VaultSecretLease{
-		LeaseDuration: 0,
-		Renewable:     false,
-	}, lease)
-	assert.Equal(t, int64(540), obj.Status.StaticCredsMetaData.TTL)
-	assert.Equal(t, int64(600), obj.Status.StaticCredsMetaData.RotationPeriod)
-	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), obj.Status.StaticCredsMetaData.LastVaultRotation)
-	// Two requests: initial doVault + one backoff-loop doVault (inLastSyncRotation=true)
-	assert.Len(t, vClient.Requests, 2)
+			ctx := context.Background()
+			f := newStaticCredsFixture(t)
+
+			vClient := &vault.MockRecordingVaultClient{
+				ReadResponses: map[string][]vault.Response{
+					"database/static-creds/app": tt.vaultResponses,
+				},
+			}
+
+			secretClient := testutils.NewFakeClientBuilder().WithObjects(&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "app",
+					Namespace: "default",
+				},
+				Data: f.secretData,
+			}, f.hmacKeySecret).Build()
+
+			obj := &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "app",
+					Namespace: "default",
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount:            "database",
+					Path:             "static-creds/app",
+					AllowStaticCreds: tt.allowStaticCreds,
+					Destination: secretsv1beta1.Destination{
+						Name:   "app",
+						Create: true,
+					},
+				},
+				Status: secretsv1beta1.VaultDynamicSecretStatus{
+					SecretMAC: f.secretMAC,
+					StaticCredsMetaData: secretsv1beta1.VaultStaticCredsMetaData{
+						LastVaultRotation: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(),
+						RotationPeriod:    tt.initialRotPeriod,
+						TTL:               tt.initialTTL,
+					},
+				},
+			}
+
+			r := &VaultDynamicSecretReconciler{
+				Client:        secretClient,
+				SecretsClient: secretClient,
+				HMACValidator: f.validator,
+			}
+
+			lease, updated, err := r.syncSecret(ctx, vClient, obj, nil)
+			require.NoError(t, err, tt.description)
+
+			// Common assertions
+			assert.False(t, updated, "sync should be skipped when only metadata changes")
+			assert.Equal(t, f.secretMAC, obj.Status.SecretMAC, "HMAC should remain unchanged")
+			assert.Equal(t, &secretsv1beta1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			}, lease)
+
+			// Verify metadata was updated in status
+			assert.Equal(t, tt.expectedTTL, obj.Status.StaticCredsMetaData.TTL, "TTL should be updated")
+			assert.Equal(t, tt.expectedRotPeriod, obj.Status.StaticCredsMetaData.RotationPeriod, "rotation_period should be updated")
+			assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), obj.Status.StaticCredsMetaData.LastVaultRotation)
+
+			// Verify expected number of Vault requests
+			assert.Len(t, vClient.Requests, tt.expectedRequests, "unexpected number of Vault requests")
+		})
+	}
 }
 
 // Regression test: on ForceSync (VaultAuth token expiry), Reconcile must
@@ -850,6 +934,139 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	assert.Equal(t, f.secretMAC, updated.Status.SecretMAC)
 	// LastVaultRotation is unchanged: no rotation occurred, only the TTL decreased
 	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation)
+}
+
+// Regression test for the rollout-restart-on-every-reconcile bug.
+//
+// Scenario: allowStaticCreds=false but Vault returns static-creds metadata
+// (last_vault_rotation + rotation_period=600). syncSecret detects this from
+// the response, calls checkStaticCredsHMAC (HMAC matches → updated=false),
+// and writes StaticCredsMetaData into status. When doRolloutRestart is evaluated,
+// isStaticCreds=true → static-creds branch → doRolloutRestart = updated = false.
+//
+// The Deployment must NOT have the restart annotation patched onto it.
+func TestVaultDynamicSecretReconciler_Reconcile_noRolloutRestartOnUnchangedCreds(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	f := newStaticCredsFixture(t)
+
+	// The VDS object: allowStaticCreds=false, already synced (LastGeneration matches
+	// Generation=3), stable VaultClientMeta so no cache-key / client-ID change
+	// triggers doSync.
+	obj := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "app",
+			Namespace:  "default",
+			UID:        types.UID("vds-app"),
+			Generation: 3,
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount:            "database",
+			Path:             "static-creds/app",
+			AllowStaticCreds: false,
+			Destination: secretsv1beta1.Destination{
+				Name:   "app",
+				Create: true,
+			},
+			RolloutRestartTargets: []secretsv1beta1.RolloutRestartTarget{
+				{Kind: "Deployment", Name: "app"},
+			},
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			// LastGeneration == Generation: no resource-update sync reason.
+			LastGeneration: 3,
+			SecretMAC:      f.secretMAC,
+			VaultClientMeta: secretsv1beta1.VaultClientMeta{
+				CacheKey: "cache-key",
+				ID:       "client-1",
+			},
+			// StaticCredsMetaData starts as zero here, but syncSecret's
+			// checkStaticCredsHMAC will populate it from the Vault response
+			// (which carries last_vault_rotation + rotation_period). After
+			// reconcile, isStaticCreds() returns true and
+			// doRolloutRestart = updated (false — HMAC matched).
+		},
+	}
+
+	// The destination K8s secret already holds the same credentials as the
+	// fixture's pre-computed HMAC, so syncSecret will see an HMAC match and
+	// return updated=false.
+	destSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Data: f.secretData,
+	}
+
+	// The Deployment that is targeted by RolloutRestartTargets. We register it
+	// in the fake client so that HandleRolloutRestarts can Get() it. After
+	// reconcile we assert that its restart annotation is still absent.
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "app"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "app"},
+				},
+			},
+		},
+	}
+
+	secretClient := testutils.NewFakeClientBuilder().
+		WithStatusSubresource(obj).
+		WithObjects(obj, destSecret, f.hmacKeySecret, deployment).
+		Build()
+
+	// Vault returns the same credentials as the fixture — HMAC will match.
+	vClient := &reconcileTestVaultClient{
+		MockRecordingVaultClient: &vault.MockRecordingVaultClient{
+			Id: "client-1",
+			ReadResponses: map[string][]vault.Response{
+				"database/static-creds/app": {f.freshResponse},
+			},
+		},
+		// cacheKey matches Status.VaultClientMeta.CacheKey → no VaultClientConfigChanged.
+		cacheKey: "cache-key",
+	}
+
+	r := &VaultDynamicSecretReconciler{
+		Client:                      secretClient,
+		SecretsClient:               secretClient,
+		ClientFactory:               &reconcileTestClientFactory{client: vClient},
+		HMACValidator:               f.validator,
+		Recorder:                    record.NewFakeRecorder(10),
+		SyncRegistry:                NewSyncRegistry(),
+		BackOffRegistry:             NewBackOffRegistry(),
+		referenceCache:              NewResourceReferenceCache(),
+		GlobalTransformationOptions: &helpers.GlobalTransformationOptions{},
+	}
+
+	objKey := client.ObjectKeyFromObject(obj)
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	// The Deployment must not have been patched with a restart annotation.
+	updatedDeployment := &appsv1.Deployment{}
+	require.NoError(t, secretClient.Get(ctx, client.ObjectKeyFromObject(deployment), updatedDeployment))
+	assert.Empty(t,
+		updatedDeployment.Spec.Template.ObjectMeta.Annotations[helpers.AnnotationRestartedAt],
+		"rollout restart must not be triggered when credentials are unchanged on a periodic reconcile",
+	)
+
+	// The VDS status must still carry the same HMAC — no spurious secret write.
+	updatedVDS := &secretsv1beta1.VaultDynamicSecret{}
+	require.NoError(t, secretClient.Get(ctx, objKey, updatedVDS))
+	assert.Equal(t, f.secretMAC, updatedVDS.Status.SecretMAC,
+		"SecretMAC must be unchanged when credentials did not rotate",
+	)
 }
 
 // TestVaultDynamicSecretReconciler_isStaticCreds tests that we can appropriately
