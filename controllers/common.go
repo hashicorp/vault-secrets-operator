@@ -353,13 +353,6 @@ func newSyncCondition(o client.Object, status metav1.ConditionStatus, msgFmt str
 	return newConditionNow(o, consts.TypeSecretSynced, "Synced", status, msgFmt, msgArgs...)
 }
 
-// newUpToDateCondition returns a SecretSynced=True condition with a distinct
-// Reason ("SecretUpToDate") to clearly distinguish "verified up-to-date, no
-// write needed" from "data changed and was written to Kubernetes".
-func newUpToDateCondition(o client.Object, msgFmt string, msgArgs ...any) metav1.Condition {
-	return newConditionNow(o, consts.TypeSecretSynced, consts.ReasonSecretUpToDate, metav1.ConditionTrue, msgFmt, msgArgs...)
-}
-
 func newHealthyCondition(o client.Object, healthy bool, objType string) metav1.Condition {
 	var reason string
 	var conditionStatus metav1.ConditionStatus

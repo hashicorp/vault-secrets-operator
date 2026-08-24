@@ -576,9 +576,15 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 
 type reconcileTestClientFactory struct {
 	client vault.Client
+	// err, if non-nil, is returned by Get instead of client. Used to simulate
+	// Vault being unreachable (e.g. HA failover, 500 from a non-leader node).
+	err error
 }
 
 func (f *reconcileTestClientFactory) Get(context.Context, client.Client, client.Object) (vault.Client, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.client, nil
 }
 

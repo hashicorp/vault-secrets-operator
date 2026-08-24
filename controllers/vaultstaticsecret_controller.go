@@ -286,12 +286,10 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
-		// Secret data is unchanged; use a distinct Reason so observers can
-		// tell the difference between "data written now" and "verified up-to-date".
-		// This also overwrites any previous SecretSynced=False error condition
-		// because updateConditions deduplicates on Type, replacing the old entry.
+		// Secret data is unchanged; write SecretSynced=True/Synced to clear any
+		// stale False condition left by a prior Vault HA failure.
 		conditions = append(conditions,
-			newUpToDateCondition(o,
+			newSyncCondition(o, metav1.ConditionTrue,
 				"Secret up to date, no sync required, horizon=%s", requeueAfter),
 		)
 	}
