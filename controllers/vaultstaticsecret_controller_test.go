@@ -113,8 +113,8 @@ func TestVaultStaticSecretReconciler_Reconcile(t *testing.T) {
 			// must still be written as True/Synced to clear any stale False entry.
 			// Two reconciles are needed: the first stores the HMAC MAC, the second
 			// sees a matching MAC and exercises the doSync=false branch.
-			name:                "HMAC no-op reconcile writes True/Synced condition",
-			hmacEnabled:         true,
+			name:        "HMAC no-op reconcile writes True/Synced condition",
+			hmacEnabled: true,
 			factory: &reconcileTestClientFactory{
 				client: &reconcileTestVaultClient{
 					MockRecordingVaultClient: &vault.MockRecordingVaultClient{},
