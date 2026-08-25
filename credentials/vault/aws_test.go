@@ -125,7 +125,7 @@ func Test_resolveSTSSigningEndpoint(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			ep, err := resolveSTSSigningEndpoint(tc.region, tc.endpointURL)
+			ep, err := resolveSTSSigningEndpoint(context.Background(), tc.region, tc.endpointURL)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				return

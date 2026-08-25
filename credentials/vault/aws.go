@@ -34,6 +34,10 @@ import (
 	"github.com/hashicorp/vault-secrets-operator/helpers"
 )
 
+// stsNativeResolver is the AWS SDK v2 default endpoint resolver for STS,
+// used to derive the correct regional endpoint without hardcoding URL patterns.
+var stsNativeResolver = sts.NewDefaultEndpointResolverV2()
+
 const (
 	iamServerIDHeader        = "X-Vault-AWS-IAM-Server-ID"
 	stsGetCallerIdentityBody = "Action=GetCallerIdentity&Version=2011-06-15"
@@ -92,7 +96,7 @@ func generateLoginData(ctx context.Context, awsConfig *aws.Config, headerValue, 
 		region = awsutil.DefaultRegion
 	}
 
-	endpoint, err := resolveSTSSigningEndpoint(region, stsEndpoint)
+	endpoint, err := resolveSTSSigningEndpoint(ctx, region, stsEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -122,10 +126,10 @@ func generateLoginData(ctx context.Context, awsConfig *aws.Config, headerValue, 
 }
 
 // resolveSTSSigningEndpoint returns the STS URL and signing metadata for the given region.
-// When a custom endpoint is provided it is used directly; otherwise a regional
-// endpoint of the form https://sts.<region>.amazonaws.com is used, ensuring
-// the signed Host header always matches the target region.
-func resolveSTSSigningEndpoint(region, endpointURL string) (stsSigningEndpoint, error) {
+// When a custom endpoint is provided it is used directly; otherwise the AWS SDK
+// v2 default endpoint resolver is used to derive the correct regional endpoint,
+// which correctly handles non-standard partitions (GovCloud, China, etc.).
+func resolveSTSSigningEndpoint(ctx context.Context, region, endpointURL string) (stsSigningEndpoint, error) {
 	if endpointURL != "" {
 		uri, err := url.Parse(endpointURL)
 		if err != nil {
@@ -140,8 +144,17 @@ func resolveSTSSigningEndpoint(region, endpointURL string) (stsSigningEndpoint, 
 			signingRegion: region,
 		}, nil
 	}
+	// Use the SDK v2 native resolver so that partition-specific DNS suffixes
+	// (e.g. amazonaws.com.cn for cn-*, us-gov-*.amazonaws.com for GovCloud)
+	// are derived correctly rather than hardcoded.
+	resolved, err := stsNativeResolver.ResolveEndpoint(ctx, sts.EndpointParameters{
+		Region: aws.String(region),
+	})
+	if err != nil {
+		return stsSigningEndpoint{}, fmt.Errorf("failed to resolve STS endpoint for region %q: %w", region, err)
+	}
 	return stsSigningEndpoint{
-		requestURL:    fmt.Sprintf("https://sts.%s.amazonaws.com", region),
+		requestURL:    resolved.URI.String(),
 		signingName:   stsSigningName,
 		signingRegion: region,
 	}, nil
@@ -308,6 +321,10 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	config.Logger.SetLevel(hclog.Debug)
 
 	// GenerateCredentialChain returns *aws.Config (SDK v2).
+	// Note: the awsutil v0 option WithSkipWebIdentityValidity(true) has no
+	// equivalent in v2. The SDK v2 stscreds.WebIdentityRoleProvider retrieves
+	// the token lazily at signing time via GetIdentityToken(), so there is no
+	// upfront validity window to bypass.
 	awsCfg, err := config.GenerateCredentialChain(ctx)
 	if err != nil {
 		return nil, err
