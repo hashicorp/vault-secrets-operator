@@ -13,10 +13,15 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -840,5 +845,260 @@ func assertEnqueueOnDeletionRequestHandler(t *testing.T, ctx context.Context,
 				assert.LessOrEqual(t, d.Seconds(), float64(m))
 			}
 		}
+	}
+}
+
+// drainQueue drains and returns every item currently in q without blocking.
+// It is used to assert on items added via q.Add() (as opposed to
+// q.AddAfter(), which DelegatingQueue tracks directly).
+func drainQueue(q workqueue.TypedRateLimitingInterface[reconcile.Request]) []reconcile.Request {
+	var reqs []reconcile.Request
+	for q.Len() > 0 {
+		item, _ := q.Get()
+		reqs = append(reqs, item)
+		q.Done(item)
+	}
+	return reqs
+}
+
+func newEnqueueOnDataChangeTestScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+	s := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(s))
+	require.NoError(t, secretsv1beta1.AddToScheme(s))
+	return s
+}
+
+func Test_enqueueOnDataChangeRequestHandler_Update(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	vssGVK := secretsv1beta1.GroupVersion.WithKind(VaultStaticSecret.String())
+	vdsGVK := secretsv1beta1.GroupVersion.WithKind(VaultDynamicSecret.String())
+
+	vssOwnerRef := func(name string) metav1.OwnerReference {
+		return metav1.OwnerReference{
+			APIVersion: vssGVK.GroupVersion().String(),
+			Kind:       vssGVK.Kind,
+			Name:       name,
+		}
+	}
+	vdsOwnerRef := func(name string) metav1.OwnerReference {
+		return metav1.OwnerReference{
+			APIVersion: vdsGVK.GroupVersion().String(),
+			Kind:       vdsGVK.Kind,
+			Name:       name,
+		}
+	}
+	unsupportedOwnerRef := metav1.OwnerReference{
+		APIVersion: "v1",
+		Kind:       "Unknown",
+		Name:       "other",
+	}
+
+	secretEvent := func(refs ...metav1.OwnerReference) event.UpdateEvent {
+		return event.UpdateEvent{
+			ObjectOld: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "dest"},
+				Data:       map[string][]byte{"foo": []byte("old")},
+			},
+			ObjectNew: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       "default",
+					Name:            "dest",
+					OwnerReferences: refs,
+				},
+				Data: map[string][]byte{"foo": []byte("new")},
+			},
+		}
+	}
+
+	tests := []struct {
+		name        string
+		gvk         schema.GroupVersionKind
+		newOwner    func() client.Object
+		optIn       func(client.Object) bool
+		objects     []client.Object
+		evt         event.UpdateEvent
+		wantEnqueue []reconcile.Request
+	}{
+		{
+			name: "vss-hmac-enabled-enqueued",
+			gvk:  vssGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultStaticSecret{}
+			},
+			optIn: func(o client.Object) bool {
+				vss := o.(*secretsv1beta1.VaultStaticSecret)
+				return vss.Spec.HMACSecretData != nil && *vss.Spec.HMACSecretData
+			},
+			objects: []client.Object{
+				&secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "vss1"},
+					Spec:       secretsv1beta1.VaultStaticSecretSpec{HMACSecretData: ptr.To(true)},
+				},
+			},
+			evt: secretEvent(vssOwnerRef("vss1")),
+			wantEnqueue: []reconcile.Request{
+				{NamespacedName: client.ObjectKey{Namespace: "default", Name: "vss1"}},
+			},
+		},
+		{
+			name: "vss-hmac-disabled-not-enqueued",
+			gvk:  vssGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultStaticSecret{}
+			},
+			optIn: func(o client.Object) bool {
+				vss := o.(*secretsv1beta1.VaultStaticSecret)
+				return vss.Spec.HMACSecretData != nil && *vss.Spec.HMACSecretData
+			},
+			objects: []client.Object{
+				&secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "vss1"},
+					Spec:       secretsv1beta1.VaultStaticSecretSpec{HMACSecretData: ptr.To(false)},
+				},
+			},
+			evt:         secretEvent(vssOwnerRef("vss1")),
+			wantEnqueue: nil,
+		},
+		{
+			name: "vss-hmac-unset-not-enqueued",
+			gvk:  vssGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultStaticSecret{}
+			},
+			optIn: func(o client.Object) bool {
+				vss := o.(*secretsv1beta1.VaultStaticSecret)
+				return vss.Spec.HMACSecretData != nil && *vss.Spec.HMACSecretData
+			},
+			objects: []client.Object{
+				&secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "vss1"},
+				},
+			},
+			evt:         secretEvent(vssOwnerRef("vss1")),
+			wantEnqueue: nil,
+		},
+		{
+			name: "vds-allow-static-creds-enabled-enqueued",
+			gvk:  vdsGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultDynamicSecret{}
+			},
+			optIn: func(o client.Object) bool {
+				vds := o.(*secretsv1beta1.VaultDynamicSecret)
+				return vds.Spec.AllowStaticCreds
+			},
+			objects: []client.Object{
+				&secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "vds1"},
+					Spec:       secretsv1beta1.VaultDynamicSecretSpec{AllowStaticCreds: true},
+				},
+			},
+			evt: secretEvent(vdsOwnerRef("vds1")),
+			wantEnqueue: []reconcile.Request{
+				{NamespacedName: client.ObjectKey{Namespace: "default", Name: "vds1"}},
+			},
+		},
+		{
+			name: "vds-allow-static-creds-disabled-not-enqueued",
+			gvk:  vdsGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultDynamicSecret{}
+			},
+			optIn: func(o client.Object) bool {
+				vds := o.(*secretsv1beta1.VaultDynamicSecret)
+				return vds.Spec.AllowStaticCreds
+			},
+			objects: []client.Object{
+				&secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "vds1"},
+					Spec:       secretsv1beta1.VaultDynamicSecretSpec{AllowStaticCreds: false},
+				},
+			},
+			evt:         secretEvent(vdsOwnerRef("vds1")),
+			wantEnqueue: nil,
+		},
+		{
+			name: "unmatched-owner-gvk-not-enqueued",
+			gvk:  vssGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultStaticSecret{}
+			},
+			optIn: func(client.Object) bool {
+				return true
+			},
+			objects:     nil,
+			evt:         secretEvent(unsupportedOwnerRef),
+			wantEnqueue: nil,
+		},
+		{
+			name: "owner-not-found-not-enqueued",
+			gvk:  vssGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultStaticSecret{}
+			},
+			optIn: func(client.Object) bool {
+				return true
+			},
+			objects:     nil,
+			evt:         secretEvent(vssOwnerRef("does-not-exist")),
+			wantEnqueue: nil,
+		},
+		{
+			name: "mixed-owner-refs-only-matching-gvk-enqueued",
+			gvk:  vssGVK,
+			newOwner: func() client.Object {
+				return &secretsv1beta1.VaultStaticSecret{}
+			},
+			optIn: func(o client.Object) bool {
+				vss := o.(*secretsv1beta1.VaultStaticSecret)
+				return vss.Spec.HMACSecretData != nil && *vss.Spec.HMACSecretData
+			},
+			objects: []client.Object{
+				&secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "vss1"},
+					Spec:       secretsv1beta1.VaultStaticSecretSpec{HMACSecretData: ptr.To(true)},
+				},
+			},
+			evt: secretEvent(unsupportedOwnerRef, vssOwnerRef("vss1")),
+			wantEnqueue: []reconcile.Request{
+				{NamespacedName: client.ObjectKey{Namespace: "default", Name: "vss1"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := fake.NewClientBuilder().
+				WithScheme(newEnqueueOnDataChangeTestScheme(t)).
+				WithObjects(tt.objects...).
+				Build()
+
+			e := &enqueueOnDataChangeRequestHandler{
+				gvk:      tt.gvk,
+				client:   c,
+				newOwner: tt.newOwner,
+				optIn:    tt.optIn,
+			}
+
+			q := &DelegatingQueue{
+				TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueue[reconcile.Request](nil),
+			}
+
+			e.Update(ctx, tt.evt, q)
+
+			assert.ElementsMatch(t, tt.wantEnqueue, drainQueue(q))
+
+			// Create/Delete/Generic are no-ops; assert they never panic or enqueue.
+			e.Create(ctx, event.CreateEvent{}, q)
+			e.Delete(ctx, event.DeleteEvent{}, q)
+			e.Generic(ctx, event.GenericEvent{}, q)
+			assert.Empty(t, drainQueue(q))
+		})
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -436,6 +437,22 @@ func main() {
 				// the operator.
 				DisableFor: []client.Object{
 					&corev1.Secret{},
+				},
+			},
+		},
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				// The VaultStaticSecret/VaultDynamicSecret controllers watch
+				// destination Secrets for out-of-band data changes, to repair
+				// drift faster than the next poll/requeue. That watch requires
+				// a full-object (not metadata-only) informer for Secrets, which
+				// would otherwise cache every Secret in the cluster. Scope it
+				// down to only the Secrets VSO manages, identified by the
+				// owner labels it always sets on them (see helpers.OwnerLabels),
+				// so this does not reintroduce the OOM risk that DisableFor
+				// above was added to avoid.
+				&corev1.Secret{}: {
+					Label: labels.SelectorFromSet(helpers.OwnerLabels),
 				},
 			},
 		},

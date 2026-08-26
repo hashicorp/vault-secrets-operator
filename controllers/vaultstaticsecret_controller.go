@@ -639,6 +639,28 @@ func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts co
 			},
 			builder.WithPredicates(&secretsPredicate{}),
 		).
+		// Watch destination Secrets for out-of-band .Data changes so that
+		// hmacSecretData drift can be repaired within seconds instead of
+		// waiting for the next poll/requeue. This is a full-object watch
+		// (unlike the metadata-only watch above) since we need to see
+		// .Data, but it is bounded to VSO-owned Secrets by the manager's
+		// Cache.ByObject label selector (see main.go), so it does not
+		// reintroduce cluster-wide Secret caching.
+		Watches(
+			&corev1.Secret{},
+			&enqueueOnDataChangeRequestHandler{
+				gvk:    secretsv1beta1.GroupVersion.WithKind(VaultStaticSecret.String()),
+				client: mgr.GetClient(),
+				newOwner: func() client.Object {
+					return &secretsv1beta1.VaultStaticSecret{}
+				},
+				optIn: func(owner client.Object) bool {
+					vss, ok := owner.(*secretsv1beta1.VaultStaticSecret)
+					return ok && vss.Spec.HMACSecretData != nil && *vss.Spec.HMACSecretData
+				},
+			},
+			builder.WithPredicates(&secretDataChangedPredicate{}),
+		).
 		WatchesRawSource(
 			source.Channel(r.SourceCh,
 				&enqueueDelayingSyncEventHandler{

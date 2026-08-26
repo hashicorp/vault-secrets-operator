@@ -812,6 +812,31 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 			},
 			builder.WithPredicates(&secretsPredicate{}),
 		).
+		// Watch destination Secrets for out-of-band .Data changes so that
+		// static-creds drift (allowStaticCreds=true) can be repaired within
+		// seconds instead of waiting for the next poll/requeue. This is a
+		// full-object watch (unlike the metadata-only watch above) since we
+		// need to see .Data, but it is bounded to VSO-owned Secrets by the
+		// manager's Cache.ByObject label selector (see main.go), so it does
+		// not reintroduce the cluster-wide Secret caching that
+		// Client.Cache.DisableFor was added to avoid. Normal leased dynamic
+		// secrets (allowStaticCreds=false) are unaffected: optIn below only
+		// enqueues static-creds VaultDynamicSecrets.
+		Watches(
+			&corev1.Secret{},
+			&enqueueOnDataChangeRequestHandler{
+				gvk:    secretsv1beta1.GroupVersion.WithKind(VaultDynamicSecret.String()),
+				client: mgr.GetClient(),
+				newOwner: func() client.Object {
+					return &secretsv1beta1.VaultDynamicSecret{}
+				},
+				optIn: func(owner client.Object) bool {
+					vds, ok := owner.(*secretsv1beta1.VaultDynamicSecret)
+					return ok && vds.Spec.AllowStaticCreds
+				},
+			},
+			builder.WithPredicates(&secretDataChangedPredicate{}),
+		).
 		WatchesRawSource(
 			source.Channel(r.SourceCh,
 				&enqueueDelayingSyncEventHandler{
