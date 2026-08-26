@@ -52,6 +52,7 @@ type VaultStaticSecretCommon struct {
 	Path string `json:"path"`
 	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
 	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
+	// This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates.
 	// +kubebuilder:validation:Minimum=0
 	Version int `json:"version,omitempty"`
 	// Type of the Vault static secret
