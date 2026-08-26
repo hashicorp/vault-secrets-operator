@@ -1,7 +1,7 @@
 ## Unreleased 
 
 Fix:
-* VaultPKISecret: correct Vault API path when issuerRef is set; path was rendered as `pki/issuer/<name>/<role>` instead of the correct `pki/issuer/<name>/issue/<role>`, causing Vault to return 404 for all cert issuance requests when issuerRef was specified ([#1136](https://github.com/hashicorp/vault-secrets-operator/pull/1336))
+* VaultPKISecret: correct Vault API path when issuerRef is set; path was rendered as `pki/issuer/<name>/<role>` instead of the correct `pki/issuer/<name>/issue/<role>`, causing Vault to return 404 for all cert issuance requests when issuerRef was specified ([#1336](https://github.com/hashicorp/vault-secrets-operator/pull/1336))
 
 ## 1.5.1 (August 11th, 2026)
 
