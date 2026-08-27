@@ -79,6 +79,54 @@ rbac_templates=(
     [ "${actual}" = "false" ]
 }
 
+@test "rbac/enabled: controller ServiceAccount, Deployment, and pre-delete hook Job still render when disabled" {
+    cd "$(chart_dir)"
+    local output
+    output=$(helm template \
+        -s templates/deployment.yaml \
+        --set 'controller.rbac.enabled=false' \
+        . | tee /dev/stderr)
+
+    local actual
+    actual=$(echo "${output}" | yq ea '[select(.kind == "ServiceAccount")] | length > 0' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+
+    actual=$(echo "${output}" | yq ea '[select(.kind == "Deployment")] | length > 0' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+
+    actual=$(echo "${output}" | yq ea '[select(.kind == "Job")] | length > 0' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+}
+
+@test "rbac/enabled: upgrade hook ServiceAccount and Job still render when disabled" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        -s templates/hook-upgrade-crds.yaml \
+        --set 'controller.rbac.enabled=false' \
+        . | tee /dev/stderr |
+    yq ea '[select(.kind == "ServiceAccount")] | length > 0' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+
+    actual=$(helm template \
+        -s templates/hook-upgrade-crds.yaml \
+        --set 'controller.rbac.enabled=false' \
+        . | tee /dev/stderr |
+    yq ea '[select(.kind == "Job")] | length > 0' | tee /dev/stderr)
+    [ "${actual}" = "true" ]
+}
+
+@test "rbac/enabled: upgrade hook ClusterRole and ClusterRoleBinding not rendered when disabled" {
+    cd "$(chart_dir)"
+    local actual
+    actual=$(helm template \
+        -s templates/hook-upgrade-crds.yaml \
+        --set 'controller.rbac.enabled=false' \
+        . | tee /dev/stderr |
+    yq ea '[select(.kind == "ClusterRole" or .kind == "ClusterRoleBinding")] | length > 0' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+}
+
 @test "rbac/enabled: CSI RBAC resources not rendered when disabled" {
     cd "$(chart_dir)"
     local csi_rbac_templates=(

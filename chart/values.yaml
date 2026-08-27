@@ -104,11 +104,15 @@ controller:
     minAvailable: "0"
 
   rbac:
-    # enabled controls whether the chart creates the RBAC resources required by the
-    # operator (ClusterRole, ClusterRoleBinding, Role, RoleBinding). Set this to false
-    # when installing into a cluster where the deploying user lacks permissions to
-    # create RBAC resources, in which case a cluster administrator is expected to
-    # pre-provision the equivalent RBAC resources out-of-band.
+    # enabled controls whether the chart creates the RBAC authorization resources
+    # (ClusterRole, ClusterRoleBinding, Role, RoleBinding) required by the operator.
+    # When set to false:
+    #   - RBAC authorization resources are not created by the chart.
+    #   - Non-RBAC resources (ServiceAccounts, Deployment, hook Jobs) are still
+    #     created and require equivalent RBAC to be pre-provisioned out-of-band by
+    #     a cluster administrator before running helm install/upgrade.
+    #   - Resource names are derived from the Helm release name (or fullnameOverride),
+    #     so the cluster admin must use the same name when pre-provisioning RBAC.
     # @type: boolean
     enabled: true
 
