@@ -655,6 +655,60 @@ func TestSecretDataBuilder_WithVaultData(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name: "key-template",
+			opt: &SecretTransformationOption{
+				KeyTemplate: "{{ .Name }}.json",
+			},
+			data: map[string]interface{}{
+				"auth":  "auth-value",
+				"db":    "db-value",
+				"redis": "redis-value",
+			},
+			raw: map[string]interface{}{
+				"auth":  "auth-value",
+				"db":    "db-value",
+				"redis": "redis-value",
+			},
+			want: map[string][]byte{
+				"auth.json":  []byte("auth-value"),
+				"db.json":    []byte("db-value"),
+				"redis.json": []byte("redis-value"),
+				SecretDataKeyRaw: marshalRaw(t, map[string]any{
+					"auth":  "auth-value",
+					"db":    "db-value",
+					"redis": "redis-value",
+				}),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "filters-before-key-template",
+			opt: &SecretTransformationOption{
+				Includes:    []string{"^(auth|db)$"},
+				KeyTemplate: "{{ .Name }}.json",
+			},
+			data: map[string]interface{}{
+				"auth":  "auth-value",
+				"db":    "db-value",
+				"redis": "redis-value",
+			},
+			raw: map[string]interface{}{
+				"auth":  "auth-value",
+				"db":    "db-value",
+				"redis": "redis-value",
+			},
+			want: map[string][]byte{
+				"auth.json": []byte("auth-value"),
+				"db.json":   []byte("db-value"),
+				SecretDataKeyRaw: marshalRaw(t, map[string]any{
+					"auth":  "auth-value",
+					"db":    "db-value",
+					"redis": "redis-value",
+				}),
+			},
+			wantErr: assert.NoError,
+		},
+		{
 			name:    "result-is-never-nil",
 			want:    map[string][]byte{},
 			wantErr: assert.NoError,

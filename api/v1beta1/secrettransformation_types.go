@@ -34,6 +34,11 @@ type SecretTransformation struct {
 
 // SecretTransformationSpec defines the desired state of SecretTransformation
 type SecretTransformationSpec struct {
+	// KeyTemplate is a Go text template used to transform each included source
+	// secret data key before writing it to the destination Secret. The template is
+	// executed once per source key with .Name set to the original source key. For
+	// example, "{{ .Name }}.json" renders a source key named "db" as "db.json".
+	KeyTemplate string `json:"keyTemplate,omitempty"`
 	// Templates maps a template name to its Template. Templates are always included
 	// in the rendered secret with the specified key.
 	Templates map[string]Template `json:"templates,omitempty"`

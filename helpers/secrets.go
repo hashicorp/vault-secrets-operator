@@ -691,8 +691,13 @@ func makeK8sData[V any](secretData map[string]V, extraData map[string][]byte,
 		return nil, err
 	}
 
-	// include the filtered fields that are not already in data
-	for k, v := range filtered {
+	transformed, err := TransformDataKeys(opt, filtered)
+	if err != nil {
+		return nil, err
+	}
+
+	// include the transformed fields that are not already in data
+	for k, v := range transformed {
 		if _, ok := data[k]; !ok {
 			bv, err := marshalJSON(v)
 			if err != nil {
