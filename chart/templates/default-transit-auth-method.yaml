@@ -17,7 +17,9 @@ metadata:
   {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
   vaultConnectionRef: {{ .Values.controller.manager.clientCache.storageEncryption.vaultConnectionRef }}
-  namespace: {{ .Values.controller.manager.clientCache.storageEncryption.namespace }}
+  {{- with .Values.controller.manager.clientCache.storageEncryption.namespace }}
+  namespace: {{ . | quote }}
+  {{- end }}
   method: {{ .Values.controller.manager.clientCache.storageEncryption.method }}
   mount: {{ .Values.controller.manager.clientCache.storageEncryption.mount }}
   {{- $kubeServiceAccount := .Values.controller.manager.clientCache.storageEncryption.kubernetes.serviceAccount | default (printf "%s-controller-manager" (include "vso.chart.fullname" .)) -}}
