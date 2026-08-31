@@ -101,14 +101,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			"Failed to get Vault auth login: %s", err)
 
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
-		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
-			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
-			return ctrl.Result{}, err
+		if statusErr := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
+			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)); statusErr != nil {
+			return ctrl.Result{}, statusErr
 		}
 
-		return ctrl.Result{
-			RequeueAfter: horizon,
-		}, nil
+		return ctrl.Result{RequeueAfter: horizon}, err
 	}
 
 	destExists, _ := helpers.CheckSecretExists(ctx, r.Client, o)
@@ -188,17 +186,16 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 
 		entry, _ := r.BackOffRegistry.Get(req.NamespacedName)
+		horizon := entry.NextBackOff()
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonVaultClientError,
 			"Failed to read Vault secret: %s", err)
 
-		horizon := entry.NextBackOff()
-		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
-			return ctrl.Result{}, err
+		if statusErr := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse,
+			"Failed to sync the secret, horizon=%s, err=%s", horizon, err)); statusErr != nil {
+			return ctrl.Result{}, statusErr
 		}
 
-		return ctrl.Result{
-			RequeueAfter: horizon,
-		}, nil
+		return ctrl.Result{RequeueAfter: horizon}, err
 	} else {
 		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
@@ -297,6 +294,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	} else {
 		logger.V(consts.LogLevelDebug).Info("Secret sync not required")
+		// Secret data is unchanged; write SecretSynced=True/Synced to clear any
+		// stale False condition left by a prior Vault HA failure.
+		conditions = append(conditions,
+			newSyncCondition(o, metav1.ConditionTrue,
+				"Secret up to date, no sync required, horizon=%s", requeueAfter),
+		)
 	}
 
 	o.Status.LastGeneration = o.GetGeneration()
