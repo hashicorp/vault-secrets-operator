@@ -703,8 +703,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretIDPath` _string_ | SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the<br />AppRole Role to use for authenticating to Vault.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
 
 
 #### VaultAuthConfigGCP
@@ -830,8 +829,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `roleId` _string_ | RoleID of the AppRole Role to use for authenticating to Vault. |  |  |
-| `secretIDPath` _string_ | SecretIDPath is a file system path pointing to a file containing the plaintext Secret ID for the<br />AppRole Role to use for authenticating to Vault.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID.<br />SecretIDPath and SecretRef are mutually exclusive, and only one should be specified. |  |  |
+| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's (VDS/VSS/PKI) namespace which<br />provides the AppRole Role's SecretID. The secret must have a key named `id` which holds the<br />AppRole Role's secretID. |  |  |
 | `namespace` _string_ | Namespace to auth to in Vault |  |  |
 | `mount` _string_ | Mount to use when authenticating to auth method. |  |  |
 | `params` _object (keys:string, values:string)_ | Params to use when authenticating to Vault |  |  |
@@ -1338,7 +1336,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
-| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 | `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before<br />it is stored in the CSI volume. |  |  |
 
@@ -1359,7 +1357,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
-| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
 
@@ -1403,7 +1401,7 @@ _Appears in:_
 | `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
-| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
 
