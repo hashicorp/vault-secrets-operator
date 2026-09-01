@@ -52,7 +52,9 @@ var (
 	staticTransOpt           = &helpers.SecretTransformationOption{
 		Excludes: []string{
 			fmt.Sprintf("^%s$", strings.Join([]string{
-				"ttl", "rotation_schedule", "rotation_period", "last_vault_rotation", helpers.SecretDataKeyRaw,
+				"ttl", "rotation_schedule", "rotation_period", "rotation_policy",
+				"last_vault_rotation", "next_vault_rotation", "rotation_window",
+				helpers.SecretDataKeyRaw,
 			}, "|")),
 		},
 	}
@@ -313,11 +315,6 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	reason := consts.ReasonSecretSynced
-	if o.Status.LastGeneration > 0 {
-		reason = consts.ReasonSecretRotated
-	}
-
 	transOption, err := helpers.NewSecretTransformationOption(ctx, r.Client, o, r.GlobalTransformationOptions)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonTransformationError,
@@ -373,9 +370,15 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	o.Status.LastGeneration = o.GetGeneration()
 
 	horizon := r.computePostSyncHorizon(ctx, o)
-	r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
-		"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
-		secretLease.ID, horizon, syncReason)
+	if syncReason != "" || updated {
+		reason := consts.ReasonSecretSynced
+		if o.Status.LastGeneration > 0 {
+			reason = consts.ReasonSecretRotated
+		}
+		r.Recorder.Eventf(o, corev1.EventTypeNormal, reason,
+			"Secret synced, lease_id=%q, horizon=%s, sync_reason=%q",
+			secretLease.ID, horizon, syncReason)
+	}
 
 	conditions = append(
 		conditions,
@@ -494,6 +497,43 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	return resp, nil
 }
 
+// checkStaticCredsHMAC performs HMAC-based drift detection for static credentials.
+// It always updates o.Status.StaticCredsMetaData and o.Status.SecretMAC regardless
+// of the result. Returns (macsEqual, error): macsEqual is true when credential data
+// is unchanged since the last sync; the caller should skip writing to Kubernetes.
+func (r *VaultDynamicSecretReconciler) checkStaticCredsHMAC(
+	ctx context.Context,
+	o *secretsv1beta1.VaultDynamicSecret,
+	data map[string][]byte,
+	staticCredsMeta *secretsv1beta1.VaultStaticCredsMetaData,
+) (bool, error) {
+	logger := log.FromContext(ctx).WithName("checkStaticCredsHMAC")
+
+	// Filter data to exclude metadata fields (ttl, rotation_schedule, rotation_policy, etc.)
+	// HMAC is calculated only on credentials (username, password)
+	dataToMAC, err := helpers.FilterData(staticTransOpt, data)
+	if err != nil {
+		return false, err
+	}
+
+	macsEqual, messageMAC, err := helpers.HandleSecretHMACWithTransOpt(
+		ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC, staticTransOpt)
+	if err != nil {
+		return false, err
+	}
+
+	logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
+
+	// Always update StaticCredsMetaData before the macsEqual check so that a
+	// refreshed TTL (e.g. from a ForceSync on VaultAuth token expiry) is
+	// persisted even when the secret data has not changed.
+	o.Status.StaticCredsMetaData = *staticCredsMeta
+	o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
+	logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
+
+	return macsEqual, nil
+}
+
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
 	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
@@ -510,44 +550,31 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 
 	var data map[string][]byte
 	secretLease := r.getVaultSecretLease(resp.Secret())
-	if !r.isRenewableLease(secretLease, o, true) && o.Spec.AllowStaticCreds {
-		staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+
+	// Extract static credentials metadata
+	staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+	if err != nil {
+		return nil, false, err
+	}
+
+	resp = rotatedResponse
+	data, err = resp.SecretK8sData(opt)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Determine if this is a static credentials secret
+	isStaticCredsSecret := r.isStaticCreds(staticCredsMeta)
+
+	// Use HMAC-based drift detection for static credentials
+	if isStaticCredsSecret {
+		macsEqual, err := r.checkStaticCredsHMAC(ctx, o, data, staticCredsMeta)
 		if err != nil {
 			return nil, false, err
 		}
-
-		resp = rotatedResponse
-		data, err = resp.SecretK8sData(opt)
-		if err != nil {
-			return nil, false, err
-		}
-
-		dataToMAC, err := helpers.FilterData(staticTransOpt, data)
-		if err != nil {
-			return nil, false, err
-		}
-
-		macsEqual, messageMAC, err := helpers.HandleSecretHMACWithTransOpt(ctx, r.SecretsClient, r.HMACValidator, o, dataToMAC, staticTransOpt)
-		if err != nil {
-			return nil, false, err
-		}
-
-		logger.V(consts.LogLevelTrace).Info("Secret HMAC", "macsEqual", macsEqual)
-
-		// Always update StaticCredsMetaData before the macsEqual check so that a
-		// refreshed TTL (e.g. from a ForceSync on VaultAuth token expiry) is
-		// persisted even when the secret data has not changed.
-		o.Status.StaticCredsMetaData = *staticCredsMeta
-		o.Status.SecretMAC = base64.StdEncoding.EncodeToString(messageMAC)
-		logger.V(consts.LogLevelDebug).Info("Static creds", "status", o.Status)
 
 		if macsEqual {
 			return secretLease, false, nil
-		}
-	} else {
-		data, err = resp.SecretK8sData(opt)
-		if err != nil {
-			return nil, false, err
 		}
 	}
 
