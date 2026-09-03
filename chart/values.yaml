@@ -185,6 +185,10 @@ controller:
         cpu: 5m
         memory: 64Mi
 
+  # Additional annotations for the controller ServiceAccount. This should be formatted as a YAML object (map).
+  serviceAccount:
+    annotations: {}
+
   # Image pull secret to use for private container registry authentication which will be applied to the controllers
   # service account. Alternatively, the value may be specified as an array of strings.
   # Example:
