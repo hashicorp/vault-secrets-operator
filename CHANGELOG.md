@@ -1,4 +1,7 @@
-## Unreleased 
+## Unreleased
+
+Enhancements:
+* Helm: add `controller.rbac.enabled` flag to allow skipping RBAC resource creation (ClusterRole, ClusterRoleBinding, Role, RoleBinding). When set to `false`, the chart still creates ServiceAccounts, the controller Deployment, and hook Jobs — equivalent RBAC must be pre-provisioned out-of-band by a cluster administrator using the same Helm release name (or `fullnameOverride`) before running `helm install`/`helm upgrade`.
 
 Fix:
 * VaultPKISecret: correct Vault API path when issuerRef is set; path was rendered as `pki/issuer/<name>/<role>` instead of the correct `pki/issuer/<name>/issue/<role>`, causing Vault to return 404 for all cert issuance requests when issuerRef was specified ([#1336](https://github.com/hashicorp/vault-secrets-operator/pull/1336))
