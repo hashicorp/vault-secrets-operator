@@ -174,7 +174,7 @@ func getHMACObjsMap(t *testing.T, tt hmacSecretTestCase) map[string]client.Objec
 		return m
 	}
 
-	for _, objKind := range []string{"vds", "vps", "vss", "hcpvs"} {
+	for _, objKind := range []string{"vds", "vps", "vss"} {
 		d := tt.destination.DeepCopy()
 		if tt.destination.Name != "" {
 			d.Name = d.Name + "_" + objKind
@@ -205,16 +205,6 @@ func getHMACObjsMap(t *testing.T, tt hmacSecretTestCase) map[string]client.Objec
 					Destination: *d,
 				},
 				Status: secretsv1beta1.VaultStaticSecretStatus{
-					SecretMAC: tt.secretMAC,
-				},
-			}
-		case "hcpvs":
-			m[objKind] = &secretsv1beta1.HCPVaultSecretsApp{
-				ObjectMeta: tt.objMeta,
-				Spec: secretsv1beta1.HCPVaultSecretsAppSpec{
-					Destination: *d,
-				},
-				Status: secretsv1beta1.HCPVaultSecretsAppStatus{
 					SecretMAC: tt.secretMAC,
 				},
 			}

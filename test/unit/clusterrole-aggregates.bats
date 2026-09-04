@@ -67,7 +67,7 @@ load _helpers
     local object=$(helm template \
         -s templates/clusterrole-aggregated-viewer.yaml \
         --debug \
-        --set 'controller.rbac.clusterRoleAggregation.viewerRoles={HCPAuth,vaultAuth}' \
+        --set 'controller.rbac.clusterRoleAggregation.viewerRoles={vaultStaticSecret,vaultAuth}' \
         . | tee /dev/stderr |
     yq '.aggregationRule.clusterRoleSelectors' | tee /dev/stderr)
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
@@ -76,7 +76,7 @@ load _helpers
    [ "${actual}" = "1" ]
    local actual=$(echo "$object" | \
      yq '.[0].matchLabels["vso.hashicorp.com/role-instance"]' | tee /dev/stderr)
-   [ "${actual}" = "hcpauth-viewer-role" ]
+   [ "${actual}" = "vaultstaticsecret-viewer-role" ]
    local actual=$(echo "$object" | yq '.[1].matchLabels | length' | tee /dev/stderr)
    [ "${actual}" = "1" ]
    local actual=$(echo "$object" | \
@@ -142,7 +142,7 @@ load _helpers
     cd `chart_dir`
     local object=$(helm template \
         -s templates/clusterrole-aggregated-editor.yaml \
-        --set 'controller.rbac.clusterRoleAggregation.editorRoles={HCPAuth,vaultAuth}' \
+        --set 'controller.rbac.clusterRoleAggregation.editorRoles={vaultStaticSecret,vaultAuth}' \
         . | tee /dev/stderr |
     yq '.aggregationRule.clusterRoleSelectors' | tee /dev/stderr)
    local actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
@@ -151,7 +151,7 @@ load _helpers
    [ "${actual}" = "1" ]
    local actual=$(echo "$object" | \
      yq '.[0].matchLabels["vso.hashicorp.com/role-instance"]' | tee /dev/stderr)
-   [ "${actual}" = "hcpauth-editor-role" ]
+   [ "${actual}" = "vaultstaticsecret-editor-role" ]
    local actual=$(echo "$object" | yq '.[1].matchLabels | length' | tee /dev/stderr)
    [ "${actual}" = "1" ]
    local actual=$(echo "$object" | \

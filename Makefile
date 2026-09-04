@@ -58,7 +58,6 @@ SKIP_CLEANUP ?=
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
 SKIP_GCP_TESTS ?= true
-SKIP_HCPVSAPPS_TESTS ?= false
 
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
@@ -259,7 +258,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t $(IMG) . --target=dev \
+	docker build -t $(IMG) . --target=dev --load \
 	--build-arg GOOS=$(GOOS) \
 	--build-arg GOARCH=$(GOARCH) \
 	--build-arg GO_VERSION=$(shell cat .go-version) \

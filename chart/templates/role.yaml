@@ -79,8 +79,6 @@ rules:
     - secrets.hashicorp.com
   resources:
     - csisecrets
-    - hcpauths
-    - hcpvaultsecretsapps
     - secrettransformations
     - vaultauthglobals
     - vaultauths
@@ -100,8 +98,6 @@ rules:
     - secrets.hashicorp.com
   resources:
     - csisecrets/finalizers
-    - hcpauths/finalizers
-    - hcpvaultsecretsapps/finalizers
     - secrettransformations/finalizers
     - vaultauthglobals/finalizers
     - vaultauths/finalizers
@@ -115,8 +111,6 @@ rules:
     - secrets.hashicorp.com
   resources:
     - csisecrets/status
-    - hcpauths/status
-    - hcpvaultsecretsapps/status
     - secrettransformations/status
     - vaultauthglobals/status
     - vaultauths/status

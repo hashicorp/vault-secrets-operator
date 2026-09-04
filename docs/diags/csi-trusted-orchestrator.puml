@@ -172,7 +172,6 @@ AddRelTag("deployer_sp", $lineColor="red", $lineStyle=BoldLine(), $lineThickness
 AddRelTag("deployer_app", $lineColor="#118bda", $lineStyle=BoldLine(), $lineThickness=3)
 AddRelTag("vso", $lineColor="#d33716", $lineStyle=BoldLine(), $lineThickness=3)
 AddElementTag("vso", $bgColor="#444444")
-AddElementTag("hvs", $bgColor="#444444")
 
 LAYOUT_TOP_DOWN()
 HIDE_STEREOTYPE()
