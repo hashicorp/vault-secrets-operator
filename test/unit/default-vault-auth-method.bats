@@ -54,6 +54,20 @@ load _helpers
     [ "${actual}" = "default" ]
 }
 
+@test "defaultAuthMethod/CR: spec.namespace is omitted when defaultAuthMethod.namespace is not set" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-vault-auth-method.yaml  \
+        --set 'defaultAuthMethod.enabled=true' \
+        --set 'defaultAuthMethod.kubernetes.role=vso' \
+        --set 'defaultAuthMethod.kubernetes.serviceAccount=vso-vault-auth-sa' \
+        . | tee /dev/stderr)
+
+    # spec.namespace must be absent entirely — not empty — to satisfy CRD validation
+    local actual=$(echo "$object" | yq '.spec | has("namespace")' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+}
+
 @test "defaultAuthMethod/CR: allowedNamespaces" {
     cd `chart_dir`
     local object=$(helm template \
