@@ -236,6 +236,10 @@ type defaultClient struct {
 	mu                 sync.RWMutex
 	id                 string
 	mountTypeCache     map[string]string
+	// mountTypeMu guards mountTypeCache only, keeping cache reads/writes
+	// independent of c.mu so that a slow sys/mounts network call never blocks
+	// token renewal, Close, or other c.mu users.
+	mountTypeMu sync.RWMutex
 	// websockets stores SharedWebSocket instances per event type
 	websockets  map[EventType]*SharedWebSocket
 	websocketMu sync.RWMutex
@@ -517,36 +521,47 @@ func (c *defaultClient) Close(revoke bool) {
 				"Failed to revoke Vault client token", "err", err)
 		}
 	}
-	c.mountTypeCache = nil
 	c.id = ""
 	c.closed = true
+
+	// Clear the mount-type cache under its own lock (not c.mu) because
+	// mountTypeMu is the sole owner of mountTypeCache after M2 fix.
+	c.mountTypeMu.Lock()
+	c.mountTypeCache = nil
+	c.mountTypeMu.Unlock()
 }
 
 // GetMountType returns the Vault plugin type for a mount path.
 // Results are cached per-client to avoid repeated sys/mounts lookups.
 //
-// A single write-lock is held for the entire cache-miss path (including the
-// Vault read) so that concurrent reconciles for the same mount only produce one
-// outbound request. c.Read does not acquire c.mu, so there is no self-deadlock.
+// mountTypeMu (not c.mu) guards the cache so that a slow sys/mounts network
+// call on a cache miss never blocks token renewal, Close, or other c.mu users.
+// A double-check after the write-lock handles concurrent cache misses: both
+// goroutines issue a Vault read, but only one stores the result.
 func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (string, error) {
 	mountPath = strings.Trim(mountPath, "/")
 	if mountPath == "" {
 		return "", fmt.Errorf("mount path cannot be empty")
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
-		return "", fmt.Errorf("client instance is closed")
-	}
-	if t, ok := c.mountTypeCache[mountPath]; ok {
+	// Fast path: cache hit under read lock.
+	c.mountTypeMu.RLock()
+	t, ok := c.mountTypeCache[mountPath]
+	c.mountTypeMu.RUnlock()
+	if ok {
 		return t, nil
 	}
 
-	// Cache miss — call Vault while holding the lock so that a second goroutine
-	// that also misses the cache waits here and then hits the cache on its next
-	// iteration, rather than issuing a duplicate sys/mounts request.
+	// Point-in-time closed check; c.Read will fail independently if the client
+	// is closed between here and the network call.
+	c.mu.RLock()
+	closed := c.closed
+	c.mu.RUnlock()
+	if closed {
+		return "", fmt.Errorf("client instance is closed")
+	}
+
+	// Cache miss — call Vault with no lock held so c.mu users are not blocked.
 	resp, err := c.Read(ctx, NewReadRequest("sys/mounts/"+mountPath, nil, nil))
 	if err != nil {
 		return "", fmt.Errorf("failed to read mount info for %q: %w", mountPath, err)
@@ -557,10 +572,16 @@ func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (str
 		return "", fmt.Errorf("missing or empty type field in sys/mounts/%s response", mountPath)
 	}
 
+	// Populate cache under write lock with double-check so that two concurrent
+	// misses for the same path store identical results without conflicting.
+	c.mountTypeMu.Lock()
 	if c.mountTypeCache == nil {
 		c.mountTypeCache = make(map[string]string)
 	}
-	c.mountTypeCache[mountPath] = mountType
+	if _, exists := c.mountTypeCache[mountPath]; !exists {
+		c.mountTypeCache[mountPath] = mountType
+	}
+	c.mountTypeMu.Unlock()
 
 	return mountType, nil
 }

@@ -839,7 +839,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	)
 
 	// TODO: close this channel when the controller is stopped.
-	r.SourceCh = make(chan event.GenericEvent)
+	r.SourceCh = make(chan event.GenericEvent, 4)
 	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
