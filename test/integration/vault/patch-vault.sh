@@ -25,6 +25,14 @@ function waitVaultPod() {
         sleep .5
     done
     echo "failed waiting for the vault become Ready" >&2
+    echo "=== kubectl get pods -n ${K8S_VAULT_NAMESPACE} ===" >&2
+    kubectl get pods --namespace=${K8S_VAULT_NAMESPACE} >&2 || true
+    echo "=== kubectl describe pod vault-0 -n ${K8S_VAULT_NAMESPACE} ===" >&2
+    kubectl describe pod --namespace=${K8S_VAULT_NAMESPACE} vault-0 >&2 || true
+    echo "=== vault-0 container logs ===" >&2
+    kubectl logs --namespace=${K8S_VAULT_NAMESPACE} vault-0 --all-containers=true >&2 || true
+    echo "=== vault-0 previous container logs (if restarted) ===" >&2
+    kubectl logs --namespace=${K8S_VAULT_NAMESPACE} vault-0 --all-containers=true --previous >&2 || true
 }
 
 waitVaultPod || exit 1

@@ -29,18 +29,6 @@ inputs:
     required: true
   vault-license-ci:
     description: 'Vault license to use for enterprise tests'
-  hcp-organization-id:
-    description: 'HCP organization ID'
-    required: true
-  hcp-project-id:
-    description: 'HCP project ID'
-    required: true
-  hcp-client-id:
-    description: 'HCP client ID'
-    required: true
-  hcp-client-secret:
-    description: 'HCP client secret'
-    required: true
   github-token:
     description: 'GitHub token'
     required: true
@@ -97,11 +85,6 @@ runs:
         INTEGRATION_TESTS: "true"
         VAULT_IMAGE_TAG: ${{ inputs.vault-version }}
         VAULT_LICENSE_CI: ${{ inputs.vault-license-ci }}
-        HCP_ORGANIZATION_ID: ${{ inputs.hcp-organization-id }}
-        HCP_PROJECT_ID: ${{ inputs.hcp-project-id }}
-        HCP_CLIENT_ID: ${{ inputs.hcp-client-id }}
-        HCP_CLIENT_SECRET: ${{ inputs.hcp-client-secret }}
-        SKIP_HCPVSAPPS_TESTS: "true"
         GITHUB_TOKEN: ${{ inputs.github-token }}
         # used by scripts that fetch build tools from GH
         GH_GET_RETRIES: 5

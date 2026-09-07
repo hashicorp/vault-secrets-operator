@@ -139,7 +139,6 @@ func main() {
 	var outputFormat string
 	var uninstall bool
 	var preDeleteHookTimeoutSeconds int
-	var minRefreshAfterHVSA time.Duration
 	var globalTransformationOpts string
 	var globalVaultAuthOpts string
 	var backoffInitialInterval time.Duration
@@ -182,8 +181,6 @@ func main() {
 	flag.BoolVar(&uninstall, "uninstall", false, "Run in uninstall mode")
 	flag.IntVar(&preDeleteHookTimeoutSeconds, "pre-delete-hook-timeout-seconds", 60,
 		"Pre-delete hook timeout in seconds")
-	flag.DurationVar(&minRefreshAfterHVSA, "min-refresh-after-hvsa", time.Second*30,
-		"Minimum duration between HCPVaultSecretsApp resource reconciliation.")
 	flag.StringVar(&globalTransformationOpts, "global-transformation-options", "",
 		fmt.Sprintf("Set global secret transformation options as a comma delimited string. "+
 			"Also set from environment variable VSO_GLOBAL_TRANSFORMATION_OPTIONS. "+
@@ -600,27 +597,6 @@ func main() {
 		}
 	}()
 
-	if err = (&controllers.HCPAuthReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "HCPAuth")
-		os.Exit(1)
-	}
-	if err = (&controllers.HCPVaultSecretsAppReconciler{
-		Client:                      mgr.GetClient(),
-		Scheme:                      mgr.GetScheme(),
-		Recorder:                    mgr.GetEventRecorderFor("HCPVaultSecretsApp"),
-		SecretDataBuilder:           secretDataBuilder,
-		SecretsClient:               secretsClient,
-		HMACValidator:               hmacValidator,
-		MinRefreshAfter:             minRefreshAfterHVSA,
-		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
-		GlobalTransformationOptions: globalTransOptions,
-	}).SetupWithManager(mgr, controllerOptions); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "HCPVaultSecretsApp")
-		os.Exit(1)
-	}
 	if err = (&controllers.SecretTransformationReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),

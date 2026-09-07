@@ -70,6 +70,19 @@ load _helpers
     [ "${actual}" = "release-name-vault-secrets-operator-controller-manager" ]
 }
 
+@test "defaultTransitAuthMethod/CR: spec.namespace is omitted when storageEncryption.namespace is not set" {
+    cd `chart_dir`
+    local object=$(helm template \
+        -s templates/default-transit-auth-method.yaml  \
+        --set 'controller.manager.clientCache.persistenceModel=direct-encrypted' \
+        --set 'controller.manager.clientCache.storageEncryption.enabled=true' \
+        . | tee /dev/stderr)
+
+    # spec.namespace must be absent entirely — not empty — to satisfy CRD validation
+    local actual=$(echo "$object" | yq '.spec | has("namespace")' | tee /dev/stderr)
+    [ "${actual}" = "false" ]
+}
+
 @test "defaultTransitAuthMethod/CR: settings can be modified for kubernetes auth method" {
     cd `chart_dir`
     local object=$(helm template \

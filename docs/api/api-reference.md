@@ -11,10 +11,6 @@ Package v1beta1 contains API Schema definitions for the secrets v1beta1 API grou
 ### Resource Types
 - [CSISecrets](#csisecrets)
 - [CSISecretsList](#csisecretslist)
-- [HCPAuth](#hcpauth)
-- [HCPAuthList](#hcpauthlist)
-- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
-- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
 - [SecretTransformation](#secrettransformation)
 - [SecretTransformationList](#secrettransformationlist)
 - [VaultAuth](#vaultauth)
@@ -157,7 +153,6 @@ destination Kubernetes Secret during a Vault Secret -> K8s Secret sync.
 
 
 _Appears in:_
-- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
@@ -171,194 +166,6 @@ _Appears in:_
 | `annotations` _object (keys:string, values:string)_ | Annotations to apply to the Secret. Requires Create to be set to true. |  |  |
 | `type` _[SecretType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#secrettype-v1-core)_ | Type of Kubernetes Secret. Requires Create to be set to true.<br />Defaults to Opaque. |  |  |
 | `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before<br />it is stored in the Destination. |  |  |
-
-
-#### HCPAuth
-
-
-
-HCPAuth is the Schema for the hcpauths API
-
-
-
-_Appears in:_
-- [HCPAuthList](#hcpauthlist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
-| `kind` _string_ | `HCPAuth` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[HCPAuthSpec](#hcpauthspec)_ |  |  |  |
-
-
-#### HCPAuthList
-
-
-
-HCPAuthList contains a list of HCPAuth
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
-| `kind` _string_ | `HCPAuthList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[HCPAuth](#hcpauth) array_ |  |  |  |
-
-
-#### HCPAuthServicePrincipal
-
-
-
-HCPAuthServicePrincipal provides HCPAuth configuration options needed for
-authenticating to HCP using a service principal configured in SecretRef.
-
-
-
-_Appears in:_
-- [HCPAuthSpec](#hcpauthspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `secretRef` _string_ | SecretRef is the name of a Kubernetes secret in the consumer's<br />(VDS/VSS/PKI/HCP) namespace which provides the HCP ServicePrincipal clientID,<br />and clientSecret.<br />The secret data must have the following structure \{<br />  "clientID": "clientID",<br />  "clientSecret": "clientSecret",<br />\} |  |  |
-
-
-#### HCPAuthSpec
-
-
-
-HCPAuthSpec defines the desired state of HCPAuth
-
-
-
-_Appears in:_
-- [HCPAuth](#hcpauth)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `organizationID` _string_ | OrganizationID of the HCP organization. |  |  |
-| `projectID` _string_ | ProjectID of the HCP project. |  |  |
-| `allowedNamespaces` _string array_ | AllowedNamespaces Kubernetes Namespaces which are allow-listed for use with this AuthMethod.<br />This field allows administrators to customize which Kubernetes namespaces are authorized to<br />use with this AuthMethod. While Vault will still enforce its own rules, this has the added<br />configurability of restricting which HCPAuthMethods can be used by which namespaces.<br />Accepted values:<br />[]\{"*"\} - wildcard, all namespaces.<br />[]\{"a", "b"\} - list of namespaces.<br />unset - disallow all namespaces except the Operator's the HCPAuthMethod's namespace, this<br />is the default behavior. |  |  |
-| `method` _string_ | Method to use when authenticating to Vault. | servicePrincipal | Enum: [servicePrincipal] <br /> |
-| `servicePrincipal` _[HCPAuthServicePrincipal](#hcpauthserviceprincipal)_ | ServicePrincipal provides the necessary configuration for authenticating to<br />HCP using a service principal. For security reasons, only project-level<br />service principals should ever be used. |  |  |
-
-
-
-
-#### HCPVaultSecretsApp
-
-
-
-HCPVaultSecretsApp is the Schema for the hcpvaultsecretsapps API
-
-
-
-_Appears in:_
-- [HCPVaultSecretsAppList](#hcpvaultsecretsapplist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
-| `kind` _string_ | `HCPVaultSecretsApp` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)_ |  |  |  |
-
-
-#### HCPVaultSecretsAppList
-
-
-
-HCPVaultSecretsAppList contains a list of HCPVaultSecretsApp
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `secrets.hashicorp.com/v1beta1` | | |
-| `kind` _string_ | `HCPVaultSecretsAppList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[HCPVaultSecretsApp](#hcpvaultsecretsapp) array_ |  |  |  |
-
-
-#### HCPVaultSecretsAppSpec
-
-
-
-HCPVaultSecretsAppSpec defines the desired state of HCPVaultSecretsApp
-
-
-
-_Appears in:_
-- [HCPVaultSecretsApp](#hcpvaultsecretsapp)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `appName` _string_ | AppName of the Vault Secrets Application that is to be synced. |  |  |
-| `hcpAuthRef` _string_ | HCPAuthRef to the HCPAuth resource, can be prefixed with a namespace, eg:<br />`namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default<br />to the namespace of the HCPAuth CR. If no value is specified for HCPAuthRef the<br />Operator will default to the `default` HCPAuth, configured in the operator's<br />namespace. |  |  |
-| `refreshAfter` _string_ | RefreshAfter a period of time, in duration notation e.g. 30s, 1m, 24h | 600s | Pattern: `^([0-9]+(\.[0-9]+)?(s\|m\|h))$` <br />Type: string <br /> |
-| `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s)<br />consuming the HCP Vault Secrets App does not support dynamically reloading a<br />rotated secret. In that case one, or more RolloutRestartTarget(s) can be<br />configured here. The Operator will trigger a "rollout-restart" for each target<br />whenever the Vault secret changes between reconciliation events. See<br />RolloutRestartTarget for more details. |  |  |
-| `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the HCP Vault<br />Application secrets to Kubernetes. |  |  |
-| `syncConfig` _[HVSSyncConfig](#hvssyncconfig)_ | SyncConfig configures sync behavior from HVS to VSO |  |  |
-
-
-
-
-#### HVSDynamicStatus
-
-
-
-HVSDynamicStatus defines the observed state of a dynamic secret within an HCP
-Vault Secrets App
-
-
-
-_Appears in:_
-- [HCPVaultSecretsAppStatus](#hcpvaultsecretsappstatus)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `name` _string_ | Name of the dynamic secret |  |  |
-| `createdAt` _string_ | CreatedAt is the timestamp string of when the dynamic secret was created |  |  |
-| `expiresAt` _string_ | ExpiresAt is the timestamp string of when the dynamic secret will expire |  |  |
-| `ttl` _string_ | TTL is the time-to-live of the dynamic secret in seconds |  |  |
-
-
-#### HVSDynamicSyncConfig
-
-
-
-HVSDynamicSyncConfig configures sync behavior for HVS dynamic secrets.
-
-
-
-_Appears in:_
-- [HVSSyncConfig](#hvssyncconfig)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `renewalPercent` _integer_ | RenewalPercent is the percent out of 100 of a dynamic secret's TTL when<br />new secrets are generated. Defaults to 67 percent plus up to 10% jitter. | 67 | Maximum: 90 <br />Minimum: 0 <br /> |
-
-
-#### HVSSyncConfig
-
-
-
-HVSSyncConfig configures sync behavior from HVS to VSO
-
-
-
-_Appears in:_
-- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `dynamic` _[HVSDynamicSyncConfig](#hvsdynamicsyncconfig)_ | Dynamic configures sync behavior for dynamic secrets. |  |  |
 
 
 #### MergeStrategy
@@ -396,7 +203,6 @@ Supported resources: Deployment, DaemonSet, StatefulSet, argo.Rollout
 
 
 _Appears in:_
-- [HCPVaultSecretsAppSpec](#hcpvaultsecretsappspec)
 - [VaultDynamicSecretSpec](#vaultdynamicsecretspec)
 - [VaultPKISecretSpec](#vaultpkisecretspec)
 - [VaultStaticSecretSpec](#vaultstaticsecretspec)
@@ -1336,7 +1142,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
-| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 | `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before<br />it is stored in the CSI volume. |  |  |
 
@@ -1357,7 +1163,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
-| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
 
@@ -1401,7 +1207,7 @@ _Appears in:_
 | `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
 | `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
-| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version |  | Minimum: 0 <br /> |
+| `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
 
