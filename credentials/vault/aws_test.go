@@ -145,7 +145,6 @@ func Test_buildSignedGetCallerIdentityRequest(t *testing.T) {
 	creds := aws.Credentials{
 		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
 		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		SessionToken:    "",
 		Source:          "test",
 	}
 
@@ -156,7 +155,7 @@ func Test_buildSignedGetCallerIdentityRequest(t *testing.T) {
 	}
 
 	t.Run("produces correct method and body", func(t *testing.T) {
-		req, body, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "us-east-1", "")
+		req, body, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
 		require.NoError(t, err)
 		assert.Equal(t, http.MethodPost, req.Method)
 		assert.Equal(t, stsGetCallerIdentityBody, body)
@@ -164,28 +163,43 @@ func Test_buildSignedGetCallerIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("sets X-Vault-AWS-IAM-Server-ID header when provided", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "us-east-1", "vault.example.com")
+		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "vault.example.com")
 		require.NoError(t, err)
 		assert.Equal(t, "vault.example.com", req.Header.Get(iamServerIDHeader))
 	})
 
 	t.Run("does not set X-Vault-AWS-IAM-Server-ID when empty", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "us-east-1", "")
+		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
 		require.NoError(t, err)
 		assert.Empty(t, req.Header.Get(iamServerIDHeader))
 	})
 
 	t.Run("request is signed (Authorization header present)", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "us-east-1", "")
+		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
 		require.NoError(t, err)
 		assert.NotEmpty(t, req.Header.Get("Authorization"), "signed request must have Authorization header")
 		assert.Contains(t, req.Header.Get("Authorization"), "AWS4-HMAC-SHA256")
 	})
 
 	t.Run("request URL matches endpoint", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "us-east-1", "")
+		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
 		require.NoError(t, err)
 		assert.Equal(t, "https://sts.us-east-1.amazonaws.com", req.URL.String())
+	})
+
+	t.Run("temporary credentials with SessionToken produce X-Amz-Security-Token header", func(t *testing.T) {
+		tempCreds := aws.Credentials{
+			AccessKeyID:     "ASIAIOSFODNN7EXAMPLE",
+			SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+			SessionToken:    "AQoXnyc4lcK4w=",
+			Source:          "test",
+		}
+		req, _, err := buildSignedGetCallerIdentityRequest(ctx, tempCreds, endpoint, "")
+		require.NoError(t, err)
+		// AWS SDK v4 signer writes the session token as X-Amz-Security-Token.
+		assert.NotEmpty(t, req.Header.Get("X-Amz-Security-Token"),
+			"signed request with SessionToken must include X-Amz-Security-Token header")
+		assert.Equal(t, "AQoXnyc4lcK4w=", req.Header.Get("X-Amz-Security-Token"))
 	})
 }
 
@@ -210,6 +224,37 @@ func Test_generateLoginData(t *testing.T) {
 	t.Run("config with nil Credentials returns error", func(t *testing.T) {
 		_, err := generateLoginData(ctx, &aws.Config{}, "", "")
 		require.ErrorContains(t, err, "AWS credentials are not configured")
+	})
+
+	t.Run("empty credentials return error", func(t *testing.T) {
+		emptyCfg := &aws.Config{
+			Region:      "us-east-1",
+			Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: aws.Credentials{}}),
+		}
+		_, err := generateLoginData(ctx, emptyCfg, "", "")
+		require.ErrorContains(t, err, "retrieved AWS credentials are empty")
+	})
+
+	t.Run("temporary credentials with SessionToken include X-Amz-Security-Token in headers", func(t *testing.T) {
+		tempCreds := aws.Credentials{
+			AccessKeyID:     "ASIAIOSFODNN7EXAMPLE",
+			SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+			SessionToken:    "AQoXnyc4lcK4w=",
+			Source:          "test",
+		}
+		tempCfg := &aws.Config{
+			Region:      "us-east-1",
+			Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: tempCreds}),
+		}
+		loginData, err := generateLoginData(ctx, tempCfg, "", "")
+		require.NoError(t, err)
+		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
+		require.NoError(t, err)
+		var headers map[string][]string
+		require.NoError(t, json.Unmarshal(decoded, &headers))
+		vals, ok := headers["X-Amz-Security-Token"]
+		require.True(t, ok, "X-Amz-Security-Token must be present for temporary credentials")
+		assert.Equal(t, "AQoXnyc4lcK4w=", vals[0])
 	})
 
 	t.Run("produces all required login data keys", func(t *testing.T) {

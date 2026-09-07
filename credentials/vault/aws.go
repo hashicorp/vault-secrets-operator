@@ -90,6 +90,9 @@ func generateLoginData(ctx context.Context, awsConfig *aws.Config, headerValue, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve AWS credentials: %w", err)
 	}
+	if !credentials.HasKeys() {
+		return nil, fmt.Errorf("retrieved AWS credentials are empty")
+	}
 
 	region := awsConfig.Region
 	if region == "" {
@@ -101,7 +104,7 @@ func generateLoginData(ctx context.Context, awsConfig *aws.Config, headerValue, 
 		return nil, err
 	}
 
-	req, body, err := buildSignedGetCallerIdentityRequest(ctx, credentials, endpoint, region, headerValue)
+	req, body, err := buildSignedGetCallerIdentityRequest(ctx, credentials, endpoint, headerValue)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +163,7 @@ func resolveSTSSigningEndpoint(ctx context.Context, region, endpointURL string) 
 	}, nil
 }
 
-func buildSignedGetCallerIdentityRequest(ctx context.Context, credentials aws.Credentials, endpoint stsSigningEndpoint, region, headerValue string) (*http.Request, string, error) {
+func buildSignedGetCallerIdentityRequest(ctx context.Context, credentials aws.Credentials, endpoint stsSigningEndpoint, headerValue string) (*http.Request, string, error) {
 	body := stsGetCallerIdentityBody
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.requestURL, strings.NewReader(body))
 	if err != nil {
@@ -172,21 +175,11 @@ func buildSignedGetCallerIdentityRequest(ctx context.Context, credentials aws.Cr
 		req.Header.Set(iamServerIDHeader, headerValue)
 	}
 
-	signingRegion := endpoint.signingRegion
-	if signingRegion == "" {
-		signingRegion = region
-	}
-	if signingRegion == "" {
-		signingRegion = awsutil.DefaultRegion
-	}
-	signingName := endpoint.signingName
-	if signingName == "" {
-		signingName = stsSigningName
-	}
-
+	// resolveSTSSigningEndpoint and generateLoginData guarantee non-empty
+	// signingRegion and signingName before reaching here.
 	payloadHash := sha256.Sum256([]byte(body))
 	signer := v4.NewSigner()
-	if err := signer.SignHTTP(ctx, credentials, req, hex.EncodeToString(payloadHash[:]), signingName, signingRegion, time.Now().UTC()); err != nil {
+	if err := signer.SignHTTP(ctx, credentials, req, hex.EncodeToString(payloadHash[:]), endpoint.signingName, endpoint.signingRegion, time.Now().UTC()); err != nil {
 		return nil, "", fmt.Errorf("failed to sign GetCallerIdentity request: %w", err)
 	}
 
