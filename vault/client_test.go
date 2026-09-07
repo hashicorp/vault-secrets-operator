@@ -1739,3 +1739,81 @@ func TestClient_UserAgentHeader(t *testing.T) {
 		})
 	}
 }
+
+// Test_defaultClient_GetMountType_ErrorAfterClose verifies two closed-client
+// cache regression scenarios fixed by the c.mu-before-mountTypeMu ordering:
+//
+//  1. A cached entry must not be served after Close() — the closed check now
+//     runs first (under c.mu.RLock) so the fast-path cache read is skipped.
+//
+//  2. A slow in-flight call that completes its network round-trip after Close()
+//     must not repopulate the cache — the write-path re-checks c.closed while
+//     holding both c.mu.RLock and mountTypeMu.Lock before storing.
+func Test_defaultClient_GetMountType_ErrorAfterClose(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cached entry returns error after Close", func(t *testing.T) {
+		t.Parallel()
+
+		// Construct a client that is already closed and already has a warm cache.
+		c := &defaultClient{
+			mountTypeCache: map[string]string{"database": "database"},
+			closed:         true,
+		}
+
+		_, err := c.GetMountType(context.Background(), "database")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "client instance is closed",
+			"GetMountType must fail when client is closed even if mount type is cached")
+	})
+
+	t.Run("slow in-flight call cannot repopulate cache after Close", func(t *testing.T) {
+		t.Parallel()
+
+		// Set up a server that hangs until we release it, simulating the window
+		// between "network call dispatched" and "write lock acquired".
+		release := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			<-release // block until the test closes the client
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":{"type":"database"}}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		apiClient, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: apiClient}
+
+		// Start the GetMountType call in a goroutine; it will block in the HTTP
+		// server handler until we release it.
+		done := make(chan error, 1)
+		go func() {
+			_, err := c.GetMountType(context.Background(), "database")
+			done <- err
+		}()
+
+		// Close the client while the network call is in-flight.
+		// Small sleep gives the goroutine time to reach the HTTP handler.
+		time.Sleep(20 * time.Millisecond)
+		c.Close(false)
+
+		// Unblock the server so the goroutine can attempt to write to the cache.
+		close(release)
+
+		// The in-flight call must return either a network/context error (if the
+		// http client is torn down) or "client instance is closed" (if it managed
+		// to get a response but was rejected at the write-lock closed recheck).
+		// Either way, the cache must not be repopulated.
+		<-done
+		c.mu.RLock()
+		c.mountTypeMu.RLock()
+		cacheNil := c.mountTypeCache == nil
+		c.mountTypeMu.RUnlock()
+		c.mu.RUnlock()
+		assert.True(t, cacheNil,
+			"mountTypeCache must remain nil after Close even if an in-flight call returned a result")
+	})
+}

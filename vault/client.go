@@ -544,21 +544,21 @@ func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (str
 		return "", fmt.Errorf("mount path cannot be empty")
 	}
 
-	// Fast path: cache hit under read lock.
+	// Check closed first, then cache. Holding c.mu.RLock while reading the
+	// cache ensures that Close() (which holds c.mu.Lock before mountTypeMu)
+	// cannot sneak between the closed check and the cache read, so a closed
+	// client never returns a stale cached value.
+	c.mu.RLock()
+	if c.closed {
+		c.mu.RUnlock()
+		return "", fmt.Errorf("client instance is closed")
+	}
 	c.mountTypeMu.RLock()
 	t, ok := c.mountTypeCache[mountPath]
 	c.mountTypeMu.RUnlock()
+	c.mu.RUnlock()
 	if ok {
 		return t, nil
-	}
-
-	// Point-in-time closed check; c.Read will fail independently if the client
-	// is closed between here and the network call.
-	c.mu.RLock()
-	closed := c.closed
-	c.mu.RUnlock()
-	if closed {
-		return "", fmt.Errorf("client instance is closed")
 	}
 
 	// Cache miss — call Vault with no lock held so c.mu users are not blocked.
@@ -572,16 +572,23 @@ func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (str
 		return "", fmt.Errorf("missing or empty type field in sys/mounts/%s response", mountPath)
 	}
 
-	// Populate cache under write lock with double-check so that two concurrent
-	// misses for the same path store identical results without conflicting.
+	// Populate cache under both locks (c.mu before mountTypeMu, matching the
+	// order Close() uses) so that a slow in-flight call cannot repopulate the
+	// cache after Close() has cleared it.
+	c.mu.RLock()
 	c.mountTypeMu.Lock()
+	defer c.mountTypeMu.Unlock()
+	defer c.mu.RUnlock()
+
+	if c.closed {
+		return "", fmt.Errorf("client instance is closed")
+	}
 	if c.mountTypeCache == nil {
 		c.mountTypeCache = make(map[string]string)
 	}
 	if _, exists := c.mountTypeCache[mountPath]; !exists {
 		c.mountTypeCache[mountPath] = mountType
 	}
-	c.mountTypeMu.Unlock()
 
 	return mountType, nil
 }

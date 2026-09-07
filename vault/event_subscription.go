@@ -257,6 +257,11 @@ func (ws *SharedWebSocket) eventLoop() {
 						if conn != nil {
 							conn.Close(websocket.StatusNormalClosure, "reconnect threshold reached")
 						}
+						// Notify subscribers before canceling the context so that the
+						// async fallback goroutine in notifySubscribersOfStop can still
+						// send on ReconcileCh without racing against ctx.Done().
+						ws.notifySubscribersOfStop()
+						ws.notifyOnStop = false // already notified; skip the deferred call
 						ws.cancel()
 						return
 					}
