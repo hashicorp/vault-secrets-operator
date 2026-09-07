@@ -442,6 +442,7 @@ jobs:
           vault-license-ci: ${{ secrets.VAULT_LICENSE_CI }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           log-prefix: "latest-k8s-"
+          publish-swagger: "true"
 
   # This job is used as a requirement for the repo's branch protection setup.
   build-done:
