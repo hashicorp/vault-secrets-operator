@@ -35,8 +35,9 @@ function waitVaultPod() {
     kubectl logs --namespace=${K8S_VAULT_NAMESPACE} vault-0 --all-containers=true --previous >&2 || true
 }
 
+waitVaultPod || exit 1
+
 # Apply patches first, before waiting for the pod
-# This ensures critical patches (like IPC_LOCK) are applied before the pod starts
 root="${0%/*}"
 pushd ${root}/patches > /dev/null
 for f in *.yaml
@@ -58,9 +59,8 @@ popd > /dev/null
 
 # Delete the pod so it gets recreated with the patches
 echo "Deleting vault-0 pod to apply patches..."
-kubectl delete --wait --timeout=30s --namespace=${K8S_VAULT_NAMESPACE} pod vault-0 2>/dev/null || true
+kubectl delete --wait --timeout=30s --namespace=${K8S_VAULT_NAMESPACE} pod vault-0
 
-# Now wait for the patched pod to become ready
 waitVaultPod || exit 1
 
 exit 0
