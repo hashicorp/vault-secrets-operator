@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	vsoconsts "github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/credentials/vault/consts"
 
@@ -565,12 +566,12 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client: tt.fields.Client,
 			}
-			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o, nil)
-			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)) {
+			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)
+			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)
-			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil)
+			assert.Equalf(t, tt.want, got, "syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)
+			assert.Equalf(t, tt.expectRequests, tt.args.vClient.Requests, "syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)
 		})
 	}
 }
@@ -619,6 +620,13 @@ func (c *reconcileTestVaultClient) Taint() {
 
 func (c *reconcileTestVaultClient) GetCacheKey() (vault.ClientCacheKey, error) {
 	return c.cacheKey, nil
+}
+
+func (c *reconcileTestVaultClient) GetMountType(_ context.Context, mountPath string) (string, error) {
+	if mountPath == "" {
+		return "", fmt.Errorf("mount path cannot be empty")
+	}
+	return mountPath, nil
 }
 
 // staticCredsFixture holds the common test objects for the stale-TTL regression
@@ -812,7 +820,7 @@ func TestVaultDynamicSecretReconciler_syncSecret_staticCreds_metadataChanges(t *
 				HMACValidator: f.validator,
 			}
 
-			lease, updated, err := r.syncSecret(ctx, vClient, obj, nil)
+			lease, updated, err := r.syncSecret(ctx, vClient, obj, nil, nil)
 			require.NoError(t, err, tt.description)
 
 			// Common assertions
@@ -934,6 +942,148 @@ func TestVaultDynamicSecretReconciler_Reconcile_forceSyncStaticCredsUsesRefreshe
 	assert.Equal(t, f.secretMAC, updated.Status.SecretMAC)
 	// LastVaultRotation is unchanged: no rotation occurred, only the TTL decreased
 	assert.Equal(t, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC).Unix(), updated.Status.StaticCredsMetaData.LastVaultRotation)
+
+	// Verify pendingVaultIndex one-time consumption on the static-creds path
+	// (LoadAndDelete semantics):
+	//   1. A vault_index stored in pendingVaultIndex (as routeEvent() would do
+	//      on an instant-update event) is forwarded as X-Vault-Index on the
+	//      first Vault request of the reconcile.
+	//   2. The entry is consumed exactly once — the map is empty afterwards.
+	//   3. A subsequent reconcile without a stored index sends no X-Vault-Index.
+	// Pre-populate as routeEvent() would when a Vault event arrives.
+	r.pendingVaultIndex.Store(objKey, "vault-idx-42")
+
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
+	vClient.MockRecordingVaultClient.ReadResponses = map[string][]vault.Response{
+		"database/static-creds/app": {f.freshResponse, f.freshResponse},
+	}
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	// The first Vault request of this reconcile must carry X-Vault-Index.
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	firstReq := vClient.MockRecordingVaultClient.Requests[0]
+	require.NotNil(t, firstReq.Headers, "expected X-Vault-Index header on first request after event")
+	assert.Equal(t, []string{"vault-idx-42"}, firstReq.Headers[vsoconsts.HeaderVaultIndex])
+
+	// Entry must be consumed — map must be empty after LoadAndDelete.
+	_, stillPresent := r.pendingVaultIndex.Load(objKey)
+	assert.False(t, stillPresent, "pendingVaultIndex entry must be deleted after use")
+
+	// Third reconcile without pre-population must NOT carry the header.
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
+	vClient.MockRecordingVaultClient.ReadResponses = map[string][]vault.Response{
+		"database/static-creds/app": {f.freshResponse, f.freshResponse},
+	}
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	secondReq := vClient.MockRecordingVaultClient.Requests[0]
+	if secondReq.Headers != nil {
+		assert.Empty(t, secondReq.Headers[vsoconsts.HeaderVaultIndex],
+			"X-Vault-Index must not be sent when no pending index is stored")
+	}
+}
+
+// TestVaultDynamicSecretReconciler_Reconcile_vaultIndex verifies the full
+// vault_index lifecycle at the Reconcile level for a leased (non-static-creds)
+// VaultDynamicSecret:
+//  1. A vault_index stored in pendingVaultIndex (as routeEvent() would do on an
+//     instant-update event) is forwarded as X-Vault-Index on the Vault read.
+//  2. LoadAndDelete consumes the entry exactly once — the map is empty after
+//     the reconcile.
+//  3. A subsequent reconcile without a stored index sends no X-Vault-Index.
+func TestVaultDynamicSecretReconciler_Reconcile_vaultIndex(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	obj := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "app",
+			Namespace:  "default",
+			UID:        types.UID("vds-leased"),
+			Generation: 1,
+		},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+			Destination: secretsv1beta1.Destination{
+				Name:   "app",
+				Create: true,
+			},
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			// LastGeneration: 0 triggers initial sync on the first Reconcile.
+			VaultClientMeta: secretsv1beta1.VaultClientMeta{
+				CacheKey: "cache-key",
+				ID:       "client-1",
+			},
+		},
+	}
+
+	secretClient := testutils.NewFakeClientBuilder().
+		WithStatusSubresource(obj).
+		WithObjects(obj).
+		Build()
+
+	vClient := &reconcileTestVaultClient{
+		MockRecordingVaultClient: &vault.MockRecordingVaultClient{
+			Id: "client-1",
+		},
+		cacheKey: "cache-key",
+	}
+
+	syncRegistry := NewSyncRegistry()
+	objKey := client.ObjectKeyFromObject(obj)
+
+	r := &VaultDynamicSecretReconciler{
+		Client:                      secretClient,
+		SecretsClient:               secretClient,
+		ClientFactory:               &reconcileTestClientFactory{client: vClient},
+		Recorder:                    record.NewFakeRecorder(10),
+		SyncRegistry:                syncRegistry,
+		BackOffRegistry:             NewBackOffRegistry(),
+		referenceCache:              NewResourceReferenceCache(),
+		GlobalTransformationOptions: &helpers.GlobalTransformationOptions{},
+	}
+
+	// ── Reconcile 1: vault_index stored → X-Vault-Index forwarded ──────────
+	// Simulate what routeEvent() does when a Vault event arrives.
+	r.pendingVaultIndex.Store(objKey, "vault-idx-leased")
+
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	// The Vault read must have received the X-Vault-Index header.
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests,
+		"expected at least one Vault request")
+	firstReq := vClient.MockRecordingVaultClient.Requests[0]
+	require.NotNil(t, firstReq.Headers, "expected X-Vault-Index header on Vault read")
+	assert.Equal(t, []string{"vault-idx-leased"}, firstReq.Headers[vsoconsts.HeaderVaultIndex])
+
+	// Entry must be consumed — LoadAndDelete cleared it.
+	_, stillPresent := r.pendingVaultIndex.Load(objKey)
+	assert.False(t, stillPresent, "pendingVaultIndex entry must be deleted after use")
+
+	// ── Reconcile 2: no stored index → no X-Vault-Index header ─────────────
+	vClient.MockRecordingVaultClient.Requests = nil
+	syncRegistry.Add(objKey)
+
+	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: objKey})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, vClient.MockRecordingVaultClient.Requests)
+	secondReq := vClient.MockRecordingVaultClient.Requests[0]
+	if secondReq.Headers != nil {
+		assert.Empty(t, secondReq.Headers[vsoconsts.HeaderVaultIndex],
+			"X-Vault-Index must not be sent when no pending index is stored")
+	}
 }
 
 // Regression test for the rollout-restart-on-every-reconcile bug.
@@ -1642,7 +1792,11 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback(t *testing.T) {
 			r := &VaultDynamicSecretReconciler{
 				Client:       testutils.NewFakeClient(),
 				SyncRegistry: syncRegistry,
-				SourceCh:     make(chan event.GenericEvent),
+				// Buffer large enough to hold all events for this test case
+				// without requiring the consumer goroutine to be ready first.
+				// In production, controller-runtime's source.Channel reads
+				// continuously; in tests the goroutine start may race the send.
+				SourceCh: make(chan event.GenericEvent, len(tt.instances)+1),
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -2323,7 +2477,7 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := &VaultDynamicSecretReconciler{}
-			got, got1, err := r.awaitVaultSecretRotation(ctx, tt.o, tt.c, tt.initialResponse)
+			got, got1, err := r.awaitVaultSecretRotation(ctx, tt.o, tt.c, tt.initialResponse, nil)
 			if !tt.wantErr(t, err, fmt.Sprintf("awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)) {
 				return
 			}
@@ -2332,4 +2486,600 @@ func TestVaultDynamicSecretReconciler_awaitRotation(t *testing.T) {
 			assert.Equalf(t, tt.wantRequestCount, len(tt.c.Requests), "awaitVaultSecretRotation(%v, %v, %v, %v)", ctx, tt.o, tt.c, tt.initialResponse)
 		})
 	}
+}
+
+func Test_extractRoleName(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "static-creds path",
+			path: "static-creds/my-role",
+			want: "my-role",
+		},
+		{
+			name: "creds path",
+			path: "creds/my-role",
+			want: "my-role",
+		},
+		{
+			name: "simple role name",
+			path: "my-role",
+			want: "my-role",
+		},
+		{
+			name: "nested path",
+			path: "some/deep/path/my-role",
+			want: "my-role",
+		},
+		{
+			name: "empty path",
+			path: "",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractRoleName(tt.path)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_buildVaultEventKey(t *testing.T) {
+	tests := []struct {
+		name string
+		o    *secretsv1beta1.VaultDynamicSecret
+		want string
+	}{
+		{
+			name: "database static-creds",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "database",
+					Path:  "static-creds/my-role",
+				},
+			},
+			want: "database/my-role",
+		},
+		{
+			name: "database dynamic creds",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "database",
+					Path:  "creds/my-role",
+				},
+			},
+			want: "database/my-role",
+		},
+		{
+			name: "custom mount",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "my-db",
+					Path:  "static-creds/prod-role",
+				},
+			},
+			want: "my-db/prod-role",
+		},
+		{
+			name: "ldap mount",
+			o: &secretsv1beta1.VaultDynamicSecret{
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount: "ldap",
+					Path:  "static-creds/ldap-role",
+				},
+			},
+			want: "ldap/ldap-role",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildVaultEventKey(tt.o)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+type watchUnsubscribeClient struct {
+	vault.Client
+	seen []vault.EventType
+}
+
+func (m *watchUnsubscribeClient) UnsubscribeFromEvents(
+	_ context.Context,
+	eventType vault.EventType,
+	_ vault.SubscriptionKey,
+	_ string,
+) error {
+	m.seen = append(m.seen, eventType)
+	return nil
+}
+
+func Test_unWatchEvents_UsesStoredEventType(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app"},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Namespace: "",
+			Mount:     "database",
+			Path:      "static-creds/my-role",
+		},
+	}
+
+	key := client.ObjectKeyFromObject(o)
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastLeaseID:   "database/creds/my-role/abc123",
+		LastEventType: vault.EventTypeLDAP,
+	})
+
+	m := &watchUnsubscribeClient{}
+	r.unWatchEvents(o, m, context.Background())
+
+	require.Len(t, m.seen, 2)
+	assert.Equal(t, vault.EventTypeLDAP, m.seen[0])
+	assert.Equal(t, vault.EventTypeLease, m.seen[1])
+}
+
+// mockEnsureClient is a minimal vault.Client stub used by ensureEventWatcher
+// tests. It lets each test case control GetMountType and records Subscribe calls.
+type mockEnsureClient struct {
+	vault.Client
+	mountTypeResult string
+	mountTypeErr    error
+	subscribed      []vault.EventType
+	seen            []vault.EventType // from UnsubscribeFromEvents
+	// webSocketHealthy is returned by IsWebSocketHealthy.
+	webSocketHealthy bool
+	// onSubscribe is an optional hook called on every SubscribeToEvents call,
+	// allowing tests to capture Subscriber fields such as OnStop.
+	onSubscribe func(vault.EventType, *vault.Subscriber)
+}
+
+func (m *mockEnsureClient) GetMountType(_ context.Context, _ string) (string, error) {
+	return m.mountTypeResult, m.mountTypeErr
+}
+
+func (m *mockEnsureClient) SubscribeToEvents(_ context.Context, et vault.EventType, sub *vault.Subscriber) error {
+	m.subscribed = append(m.subscribed, et)
+	if m.onSubscribe != nil {
+		m.onSubscribe(et, sub)
+	}
+	return nil
+}
+
+func (m *mockEnsureClient) UnsubscribeFromEvents(_ context.Context, et vault.EventType, _ vault.SubscriptionKey, _ string) error {
+	m.seen = append(m.seen, et)
+	return nil
+}
+
+func (m *mockEnsureClient) ID() string { return "test-client" }
+
+func (m *mockEnsureClient) IsWebSocketHealthy(_ vault.EventType) bool {
+	return m.webSocketHealthy
+}
+
+// Test_ensureEventWatcher_GetMountTypeError_ReusesPriorEventType verifies
+// that when GetMountType fails but a prior LastEventType is stored, that prior
+// type is reused — keeping the subscription on the correct event stream instead
+// of defaulting to database.
+func Test_ensureEventWatcher_GetMountTypeError_ReusesPriorEventType(t *testing.T) {
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 2},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "prod-ldap",
+			Path:  "static-creds/my-role",
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// Registry has a prior subscription using ldap but with a stale generation.
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-client",
+		LastGeneration: 1,
+		LastEventType:  vault.EventTypeLDAP,
+	})
+
+	m := &mockEnsureClient{mountTypeErr: fmt.Errorf("permission denied")}
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.NoError(t, err, "should succeed by reusing prior event type")
+	require.Contains(t, m.subscribed, vault.EventTypeLDAP,
+		"must subscribe with prior ldap type, not database")
+	assert.NotContains(t, m.subscribed, vault.EventTypeDatabase,
+		"must not fall back to database when prior type is known")
+
+	meta, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok)
+	assert.Equal(t, vault.EventTypeLDAP, meta.LastEventType)
+}
+
+// Test_ensureEventWatcher_GetMountTypeError_NoPriorType verifies that when
+// GetMountType fails and no prior event type exists, ensureEventWatcher returns
+// an error and does NOT subscribe to any engine-event stream (only lease events).
+func Test_ensureEventWatcher_GetMountTypeError_NoPriorType(t *testing.T) {
+	ch := make(chan event.GenericEvent, 10)
+	fakeRec := record.NewFakeRecorder(10)
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             fakeRec,
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 1},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount:            "custom-engine",
+			Path:             "creds/my-role",
+			AllowStaticCreds: false,
+		},
+		Status: secretsv1beta1.VaultDynamicSecretStatus{
+			SecretLease: secretsv1beta1.VaultSecretLease{ID: "custom-engine/creds/my-role/abc"},
+		},
+	}
+
+	m := &mockEnsureClient{mountTypeErr: fmt.Errorf("403 permission denied")}
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.Error(t, err, "should return error so next reconcile retries")
+	assert.NotContains(t, m.subscribed, vault.EventTypeDatabase,
+		"must not subscribe to database when mount type is unknown")
+	assert.Contains(t, m.subscribed, vault.EventTypeLease,
+		"should still subscribe to lease events even when mount type is unknown")
+
+	// A warning event must have been emitted.
+	select {
+	case evt := <-fakeRec.Events:
+		assert.Contains(t, evt, "EventWatcherError")
+		assert.Contains(t, evt, "sys/mounts/*")
+	default:
+		t.Fatal("expected a warning event to be recorded")
+	}
+}
+
+// Test_ensureEventWatcher_PreservesCorrectTypeOnMountTypeError verifies that
+// when GetMountType fails transiently and a prior type is known, the old watcher
+// is torn down with the correct type and a new one is created with the same type.
+func Test_ensureEventWatcher_PreservesCorrectTypeOnMountTypeError(t *testing.T) {
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 3},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "prod-ldap",
+			Path:  "static-creds/my-role",
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// Existing watcher has same client but stale generation → must be replaced.
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-client",
+		LastGeneration: 2,
+		LastLeaseID:    "",
+		LastEventType:  vault.EventTypeLDAP,
+	})
+
+	m := &mockEnsureClient{mountTypeErr: fmt.Errorf("503 unavailable")}
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.NoError(t, err)
+	// Old watcher must be torn down with the correct type (ldap), not database.
+	assert.Contains(t, m.seen, vault.EventTypeLDAP,
+		"old watcher must be torn down with the correct type")
+	// Re-subscription must also use ldap.
+	assert.Contains(t, m.subscribed, vault.EventTypeLDAP)
+	assert.NotContains(t, m.subscribed, vault.EventTypeDatabase)
+}
+
+// Test_unWatchEventsWithLeaseID_EmptyEventType_SkipsEngineUnsubscribe verifies
+// that passing an empty eventType does not attempt an engine-event unsubscribe
+// (which would target the wrong WebSocket).
+func Test_unWatchEventsWithLeaseID_EmptyEventType_SkipsEngineUnsubscribe(t *testing.T) {
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app"},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "static-creds/my-role",
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{})
+
+	m := &watchUnsubscribeClient{}
+	// Call with empty eventType — only the lease unsubscribe should fire.
+	r.unWatchEventsWithLeaseID(o, m, "database/creds/my-role/abc123", "", context.Background())
+
+	require.Len(t, m.seen, 1, "only the lease unsubscribe should be called")
+	assert.Equal(t, vault.EventTypeLease, m.seen[0])
+}
+
+// TestVaultDynamicSecretReconciler_syncSecret_vaultIndex verifies that when an
+// X-Vault-Index header is passed to syncSecret it is forwarded to the initial
+// Vault request (GET or PUT), ensuring stale-read protection on instant updates.
+func TestVaultDynamicSecretReconciler_syncSecret_vaultIndex(t *testing.T) {
+	vaultIndexHeader := http.Header{vsoconsts.HeaderVaultIndex: []string{"42"}}
+
+	tests := []struct {
+		name            string
+		method          string
+		params          map[string]string
+		headers         http.Header
+		wantHeaderInReq bool
+	}{
+		{
+			name:            "GET request receives X-Vault-Index header",
+			method:          http.MethodGet,
+			params:          nil,
+			headers:         vaultIndexHeader,
+			wantHeaderInReq: true,
+		},
+		{
+			name:            "PUT request receives X-Vault-Index header",
+			method:          http.MethodPut,
+			params:          map[string]string{"role": "my-role"},
+			headers:         vaultIndexHeader,
+			wantHeaderInReq: true,
+		},
+		{
+			name:            "nil headers — no X-Vault-Index forwarded",
+			method:          http.MethodGet,
+			params:          nil,
+			headers:         nil,
+			wantHeaderInReq: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var params map[string]string
+			if tt.params != nil {
+				params = tt.params
+			}
+
+			vClient := &vault.MockRecordingVaultClient{}
+			o := &secretsv1beta1.VaultDynamicSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-vds",
+					Namespace: "default",
+				},
+				Spec: secretsv1beta1.VaultDynamicSecretSpec{
+					Mount:             "database",
+					Path:              "creds/my-role",
+					RequestHTTPMethod: tt.method,
+					Params:            params,
+					Destination: secretsv1beta1.Destination{
+						Name:   "dest-secret",
+						Create: true,
+					},
+				},
+			}
+
+			r := &VaultDynamicSecretReconciler{
+				Client: fake.NewClientBuilder().Build(),
+			}
+			_, _, err := r.syncSecret(context.Background(), vClient, o, nil, tt.headers)
+			require.NoError(t, err)
+			require.Len(t, vClient.Requests, 1)
+
+			req := vClient.Requests[0]
+			if tt.wantHeaderInReq {
+				require.NotNil(t, req.Headers, "expected X-Vault-Index header on request")
+				assert.Equal(t, []string{"42"}, req.Headers[vsoconsts.HeaderVaultIndex])
+			} else {
+				if req.Headers != nil {
+					assert.Empty(t, req.Headers[vsoconsts.HeaderVaultIndex])
+				}
+			}
+		})
+	}
+}
+
+// Test_ensureEventWatcher_OrphanedEntry_NilWebSocket verifies that when the
+// registry has a matching entry but IsWebSocketHealthy returns false (e.g. after
+// an operator restart), ensureEventWatcher detects the orphaned entry, clears it,
+// and re-subscribes rather than returning nil.
+func Test_ensureEventWatcher_OrphanedEntry_NilWebSocket(t *testing.T) {
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "db-secret", Generation: 1},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// Pre-populate registry with fully-matching metadata so the staleness check
+	// would normally return nil — the only thing that should trigger re-subscribe
+	// is the nil WebSocket.
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-client",
+		LastGeneration: 1,
+		LastLeaseID:    "",
+		LastEventType:  vault.EventTypeDatabase,
+	})
+
+	// IsWebSocketHealthy returns false — simulates operator restart with no live WebSocket.
+	m := &mockEnsureClient{
+		mountTypeResult:  "database",
+		webSocketHealthy: false,
+	}
+
+	err := r.ensureEventWatcher(context.Background(), o, m)
+
+	require.NoError(t, err)
+	assert.Contains(t, m.subscribed, vault.EventTypeDatabase,
+		"must re-subscribe when WebSocket is nil (orphaned entry)")
+
+	// Registry must be refreshed with new metadata after re-subscription.
+	meta, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have an entry after re-subscription")
+	assert.Equal(t, vault.EventTypeDatabase, meta.LastEventType)
+}
+
+// Test_VDS_ensureEventWatcher_OnStop_CleansRegistry verifies that the OnStop
+// callback set on the VDS engine-events Subscriber deletes the registry entry
+// when invoked, so the next reconcile falls through to re-subscribe instead of
+// returning early because it sees a stale registry entry with matching metadata.
+func Test_VDS_ensureEventWatcher_OnStop_CleansRegistry(t *testing.T) {
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultDynamicSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultDynamicSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "db-secret", Generation: 1},
+		Spec: secretsv1beta1.VaultDynamicSecretSpec{
+			Mount: "database",
+			Path:  "creds/my-role",
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// captureOnStop intercepts the first OnStop set on any SubscribeToEvents call.
+	var capturedOnStop func()
+	m := &mockEnsureClient{
+		mountTypeResult: "database",
+		onSubscribe: func(_ vault.EventType, sub *vault.Subscriber) {
+			if capturedOnStop == nil && sub.OnStop != nil {
+				capturedOnStop = sub.OnStop
+			}
+		},
+	}
+
+	err := r.ensureEventWatcher(context.Background(), o, m)
+	require.NoError(t, err)
+
+	// Registry must have an entry after subscription.
+	_, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have entry after ensureEventWatcher")
+
+	// Simulate WebSocket death by invoking the captured OnStop callback.
+	require.NotNil(t, capturedOnStop, "OnStop must be set on the engine-events subscriber")
+	capturedOnStop()
+
+	// Registry entry must be gone — next reconcile will re-subscribe.
+	_, ok = r.eventWatcherRegistry.Get(key)
+	assert.False(t, ok, "registry entry must be deleted after OnStop fires")
+}
+
+// TestVaultDynamicSecretReconciler_vaultClientCallback_BlocksOnFullSourceCh
+// verifies that vaultClientCallback delivers events to ALL matching CRs even
+// when SourceCh has a smaller buffer than the number of matching instances.
+func TestVaultDynamicSecretReconciler_vaultClientCallback_BlocksOnFullSourceCh(t *testing.T) {
+	t.Parallel()
+
+	// Key must match the cacheKeyRe pattern: [provider]-[22 hex chars].
+	cacheKey := vault.ClientCacheKey(fmt.Sprintf("%s-%s", consts.ProviderMethodKubernetes, "aabbccddee1122334455aa"))
+
+	// Create 6 matching VaultDynamicSecret instances — more than any reasonable
+	// small buffer — all sharing the same client cache key.
+	const instanceCount = 6
+	instances := make([]*secretsv1beta1.VaultDynamicSecret, instanceCount)
+	for i := range instances {
+		instances[i] = &secretsv1beta1.VaultDynamicSecret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      fmt.Sprintf("vds-%d", i),
+			},
+			Status: secretsv1beta1.VaultDynamicSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: string(cacheKey),
+				},
+			},
+		}
+	}
+
+	// SourceCh is intentionally smaller than instanceCount to force the blocking
+	// send path. A buffer of 1 means only the first send completes immediately;
+	// all subsequent sends must block until the consumer reads.
+	sourceCh := make(chan event.GenericEvent, 1)
+	r := &VaultDynamicSecretReconciler{
+		Client:       testutils.NewFakeClient(),
+		SyncRegistry: NewSyncRegistry(),
+		SourceCh:     sourceCh,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for _, o := range instances {
+		require.NoError(t, r.Create(ctx, o))
+	}
+
+	c := &stubVaultClient{
+		cacheKey:           cacheKey,
+		credentialProvider: &stubCredentialProvider{namespace: "default"},
+	}
+
+	// Run vaultClientCallback in its own goroutine (mirrors production: it is
+	// always spawned by callClientCallbacks, never called on the hot path).
+	callbackDone := make(chan struct{})
+	go func() {
+		defer close(callbackDone)
+		r.vaultClientCallback(ctx, c)
+	}()
+
+	require.Eventually(t, func() bool {
+		return len(sourceCh) == cap(sourceCh)
+	}, time.Second, time.Millisecond, "callback must fill SourceCh before blocking")
+	select {
+	case <-callbackDone:
+		t.Fatal("callback returned while SourceCh was full; events may have been dropped")
+	default:
+	}
+
+	// Consume all instanceCount events from the channel. Each read unblocks the
+	// next blocking send in the callback goroutine.
+	received := 0
+	for received < instanceCount {
+		select {
+		case <-sourceCh:
+			received++
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out after receiving %d/%d events; blocking send did not unblock", received, instanceCount)
+		}
+	}
+
+	// Callback goroutine must finish now that all sends have completed.
+	select {
+	case <-callbackDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("vaultClientCallback goroutine did not finish after all events were consumed")
+	}
+
+	assert.Equal(t, instanceCount, received,
+		"all %d matching CRs must be reconciled even with a small SourceCh buffer", instanceCount)
 }

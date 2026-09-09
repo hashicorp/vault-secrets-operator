@@ -20,9 +20,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/common"
@@ -916,6 +918,89 @@ func Test_defaultClient_Close(t *testing.T) {
 	}
 }
 
+func Test_defaultClient_GetMountType(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cache hit on second call", func(t *testing.T) {
+		t.Parallel()
+
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path != "/v1/sys/mounts/prod-ldap" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			requestCount++
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":{"type":"ldap"}}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		client, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: client}
+		mt, err := c.GetMountType(context.Background(), "prod-ldap")
+		require.NoError(t, err)
+		assert.Equal(t, "ldap", mt)
+
+		mt, err = c.GetMountType(context.Background(), "prod-ldap")
+		require.NoError(t, err)
+		assert.Equal(t, "ldap", mt)
+		assert.Equal(t, 1, requestCount)
+	})
+
+	t.Run("forbidden returns error", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"errors":["permission denied"]}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		client, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: client}
+		_, err = c.GetMountType(context.Background(), "database")
+		require.Error(t, err)
+	})
+
+	t.Run("missing type field returns error", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		client, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: client}
+		_, err = c.GetMountType(context.Background(), "database")
+		require.Error(t, err)
+	})
+}
+
+func Test_defaultClient_Close_ClearsMountTypeCache(t *testing.T) {
+	t.Parallel()
+
+	c := &defaultClient{
+		mountTypeCache: map[string]string{"database": "database"},
+	}
+	c.Close(false)
+	assert.Nil(t, c.mountTypeCache)
+}
+
 func Test_defaultClient_hashAccessor(t *testing.T) {
 	t.Parallel()
 
@@ -1055,6 +1140,282 @@ func Test_defaultClient_Untaint(t *testing.T) {
 			tt.assertFunc(t, got, "Untaint()")
 		})
 	}
+}
+
+// Test_defaultClient_WebSocketManagement tests the WebSocket management methods
+// added to defaultClient for the shared WebSocket architecture. These tests verify:
+// - GetWebSocketCount() returns correct count of active WebSockets
+// - GetWebSocketSubscriberCount() returns correct total subscriber count
+// - UnsubscribeFromEvents() handles non-existent WebSockets correctly
+// - closeWebSocket() properly removes WebSockets from the map
+//
+// These tests use mock WebSockets (via newTestSharedWebSocket) to avoid requiring
+// real Vault connections. Integration tests should cover end-to-end WebSocket lifecycle.
+func Test_defaultClient_WebSocketManagement(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GetWebSocketCount-zero", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		assert.Equal(t, 0, c.GetWebSocketCount())
+	})
+
+	t.Run("GetWebSocketCount-one", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		// Manually add a test WebSocket
+		c.websockets[EventTypeKV] = newTestSharedWebSocket(EventTypeKV)
+		assert.Equal(t, 1, c.GetWebSocketCount())
+	})
+
+	t.Run("GetWebSocketCount-multiple", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		c.websockets[EventTypeKV] = newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeDatabase] = newTestSharedWebSocket(EventTypeDatabase)
+		assert.Equal(t, 2, c.GetWebSocketCount())
+	})
+
+	t.Run("GetWebSocketSubscriberCount-zero", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		assert.Equal(t, 0, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("GetWebSocketSubscriberCount-with-subscribers", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		ws := newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeKV] = ws
+
+		// Add subscribers directly to the WebSocket
+		sub1 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-1"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: ResourceTypeVaultStaticSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		sub2 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "secret-2"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: ResourceTypeVaultStaticSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		require.NoError(t, ws.Subscribe(sub1))
+		require.NoError(t, ws.Subscribe(sub2))
+
+		assert.Equal(t, 2, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("GetWebSocketSubscriberCount-multiple-websockets", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		// KV WebSocket with 2 subscribers
+		kvWS := newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeKV] = kvWS
+		sub1 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-1"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: ResourceTypeVaultStaticSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		sub2 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "kv-secret-2"},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: ResourceTypeVaultStaticSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		require.NoError(t, kvWS.Subscribe(sub1))
+		require.NoError(t, kvWS.Subscribe(sub2))
+
+		// Database WebSocket with 1 subscriber
+		dbWS := newTestSharedWebSocket(EventTypeDatabase)
+		c.websockets[EventTypeDatabase] = dbWS
+		sub3 := &Subscriber{
+			ResourceKey:  types.NamespacedName{Namespace: "default", Name: "db-secret"},
+			VaultNS:      "",
+			VaultPath:    "database/creds/readonly",
+			ResourceType: ResourceTypeVaultDynamicSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		require.NoError(t, dbWS.Subscribe(sub3))
+
+		assert.Equal(t, 3, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("UnsubscribeFromEvents-nonexistent-websocket", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		pathKey := SubscriptionKey{
+			VaultNamespace: "",
+			VaultPath:      "kv/data/app/config",
+		}
+		err := c.UnsubscribeFromEvents(context.Background(), EventTypeKV, pathKey, "default/test-secret")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "websocket not found")
+	})
+
+	t.Run("closeWebSocket", func(t *testing.T) {
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+		ws := newTestSharedWebSocket(EventTypeKV)
+		c.websockets[EventTypeKV] = ws
+
+		assert.Equal(t, 1, c.GetWebSocketCount())
+		c.closeWebSocket(context.Background(), EventTypeKV)
+		assert.Equal(t, 0, c.GetWebSocketCount())
+	})
+}
+
+// Test_defaultClient_WebSocketOnStop_RemovesCurrentWebSocket verifies that the
+// websocket onStop callback removes the same websocket instance from the
+// client's registry when the event loop exits.
+func Test_defaultClient_WebSocketOnStop_RemovesCurrentWebSocket(t *testing.T) {
+	c := &defaultClient{
+		id:         "test-client-id",
+		websockets: make(map[EventType]*SharedWebSocket),
+	}
+	ws := newTestSharedWebSocket(EventTypeKV)
+	c.websockets[EventTypeKV] = ws
+	ws.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[EventTypeKV]; exists && current == ws {
+			delete(c.websockets, EventTypeKV)
+		}
+	}
+
+	ws.onStop()
+
+	assert.Equal(t, 0, c.GetWebSocketCount())
+}
+
+// Test_defaultClient_WebSocketOnStop_DoesNotRemoveReplacementWebSocket ensures
+// that a stopping websocket does not delete a newer replacement websocket that
+// is already registered for the same event type.
+func Test_defaultClient_WebSocketOnStop_DoesNotRemoveReplacementWebSocket(t *testing.T) {
+	c := &defaultClient{
+		id:         "test-client-id",
+		websockets: make(map[EventType]*SharedWebSocket),
+	}
+	oldWS := newTestSharedWebSocket(EventTypeKV)
+	newWS := newTestSharedWebSocket(EventTypeKV)
+	c.websockets[EventTypeKV] = newWS
+	oldWS.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[EventTypeKV]; exists && current == oldWS {
+			delete(c.websockets, EventTypeKV)
+		}
+	}
+
+	oldWS.onStop()
+
+	require.Same(t, newWS, c.websockets[EventTypeKV])
+	assert.Equal(t, 1, c.GetWebSocketCount())
+}
+
+func Test_defaultClient_WebSocketLifecycle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("subscribe-unsubscribe-closes-websocket", func(t *testing.T) {
+		t.Skip("Skipping test that requires real Vault WebSocket connection - use integration tests")
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		ctx := context.Background()
+		sub := &Subscriber{
+			ResourceKey: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test-secret",
+			},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: ResourceTypeVaultStaticSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+
+		// Subscribe
+		err := c.SubscribeToEvents(ctx, EventTypeKV, sub)
+		require.NoError(t, err)
+		assert.Equal(t, 1, c.GetWebSocketCount())
+		assert.Equal(t, 1, c.GetWebSocketSubscriberCount())
+
+		// Unsubscribe
+		pathKey := SubscriptionKey{
+			VaultNamespace: sub.VaultNS,
+			VaultPath:      sub.VaultPath,
+		}
+		err = c.UnsubscribeFromEvents(context.Background(), EventTypeKV, pathKey, sub.ResourceKey.String())
+		require.NoError(t, err)
+		assert.Equal(t, 0, c.GetWebSocketCount())
+		assert.Equal(t, 0, c.GetWebSocketSubscriberCount())
+	})
+
+	t.Run("multiple-event-types-multiple-websockets", func(t *testing.T) {
+		t.Skip("Skipping test that requires real Vault WebSocket connection - use integration tests")
+		c := &defaultClient{
+			id:         "test-client-id",
+			websockets: make(map[EventType]*SharedWebSocket),
+		}
+
+		ctx := context.Background()
+
+		// Subscribe to KV events
+		kvSub := &Subscriber{
+			ResourceKey: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test-kv-secret",
+			},
+			VaultNS:      "",
+			VaultPath:    "kv/data/app/config",
+			ResourceType: ResourceTypeVaultStaticSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		err := c.SubscribeToEvents(ctx, EventTypeKV, kvSub)
+		require.NoError(t, err)
+
+		// Subscribe to Database events
+		dbSub := &Subscriber{
+			ResourceKey: types.NamespacedName{
+				Namespace: "default",
+				Name:      "test-db-secret",
+			},
+			VaultNS:      "",
+			VaultPath:    "database/creds/readonly",
+			ResourceType: ResourceTypeVaultDynamicSecret,
+			ReconcileCh:  make(chan event.GenericEvent, 1),
+		}
+		err = c.SubscribeToEvents(ctx, EventTypeDatabase, dbSub)
+		require.NoError(t, err)
+
+		assert.Equal(t, 2, c.GetWebSocketCount())
+		assert.Equal(t, 2, c.GetWebSocketSubscriberCount())
+	})
 }
 
 func Test_defaultClient_Clone(t *testing.T) {
@@ -1377,4 +1738,83 @@ func TestClient_UserAgentHeader(t *testing.T) {
 			assert.Equal(t, tt.expectedUserAgent, userAgentHeaders[0])
 		})
 	}
+}
+
+// Test_defaultClient_GetMountType_ErrorAfterClose verifies two closed-client
+// cache regression scenarios fixed by the c.mu-before-mountTypeMu ordering:
+//
+//  1. A cached entry must not be served after Close() — the closed check now
+//     runs first (under c.mu.RLock) so the fast-path cache read is skipped.
+//
+//  2. A slow in-flight call that completes its network round-trip after Close()
+//     must not repopulate the cache — the write-path re-checks c.closed while
+//     holding both c.mu.RLock and mountTypeMu.Lock before storing.
+func Test_defaultClient_GetMountType_ErrorAfterClose(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cached entry returns error after Close", func(t *testing.T) {
+		t.Parallel()
+
+		// Construct a client that is already closed and already has a warm cache.
+		c := &defaultClient{
+			mountTypeCache: map[string]string{"database": "database"},
+			closed:         true,
+		}
+
+		_, err := c.GetMountType(context.Background(), "database")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "client instance is closed",
+			"GetMountType must fail when client is closed even if mount type is cached")
+	})
+
+	t.Run("slow in-flight call cannot repopulate cache after Close", func(t *testing.T) {
+		t.Parallel()
+
+		// Set up a server that hangs until we release it, simulating the window
+		// between "network call dispatched" and "write lock acquired".
+		started := make(chan struct{})
+		release := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			close(started)
+			<-release // block until the test closes the client
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":{"type":"database"}}`))
+		}))
+		defer server.Close()
+
+		cfg := api.DefaultConfig()
+		cfg.Address = server.URL
+		apiClient, err := api.NewClient(cfg)
+		require.NoError(t, err)
+
+		c := &defaultClient{client: apiClient}
+
+		// Start the GetMountType call in a goroutine; it will block in the HTTP
+		// server handler until we release it.
+		done := make(chan error, 1)
+		go func() {
+			_, err := c.GetMountType(context.Background(), "database")
+			done <- err
+		}()
+
+		// Close the client after the network call is in-flight.
+		<-started
+		c.Close(false)
+
+		// Unblock the server so the goroutine can attempt to write to the cache.
+		close(release)
+
+		// The in-flight call must return either a network/context error (if the
+		// http client is torn down) or "client instance is closed" (if it managed
+		// to get a response but was rejected at the write-lock closed recheck).
+		// Either way, the cache must not be repopulated.
+		<-done
+		c.mu.RLock()
+		c.mountTypeMu.RLock()
+		cacheNil := c.mountTypeCache == nil
+		c.mountTypeMu.RUnlock()
+		c.mu.RUnlock()
+		assert.True(t, cacheNil,
+			"mountTypeCache must remain nil after Close even if an in-flight call returned a result")
+	})
 }

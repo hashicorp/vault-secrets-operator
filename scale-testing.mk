@@ -3,11 +3,11 @@
 
 # AWS variables for cloud hosted k8s testing
 AWS_REGION ?= us-east-2
-EKS_K8S_VERSION ?= 1.30
+EKS_K8S_VERSION ?= 1.36
 
 # testing dev instances is currently not supported
 # TODO: create the docker registry (e.g. ECR) to enable dev builds
-VERSION ?= 0.10.0
+VERSION ?= 1.4.1
 INTEGRATION_TESTS_PARALLEL ?= true
 
 # directories for cloud hosted k8s infrastructure for running tests

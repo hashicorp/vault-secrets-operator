@@ -4,25 +4,27 @@
 package controllers
 
 import (
-	"context"
-
 	gocache "github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/hashicorp/vault-secrets-operator/vault"
 )
 
-// eventWatcherMeta - metadata for managing an event watcher goroutine
+// eventWatcherMeta - metadata for tracking event subscriptions
 type eventWatcherMeta struct {
-	// Cancel will close the watcher's context (and stop the watcher goroutine)
-	Cancel context.CancelFunc `json:"-"`
-	// StoppedCh lets the watcher goroutine signal the caller that it has
-	// stopped (and removed itself from the registry)
-	StoppedCh chan struct{} `json:"-"`
-	// LastGeneration is the generation of the VaultStaticSecret resource, used
-	// to detect if the event watcher needs to be recreated
+	// LastGeneration is the generation of the resource, used
+	// to detect if the event subscription needs to be recreated
 	LastGeneration int64
-	// LastClientID - vault client ID for the last successful connection, used
-	// to detect if the Vault client has changed since the event watcher started
+	// LastClientID - vault client ID for the last successful subscription, used
+	// to detect if the Vault client has changed since the subscription started
 	LastClientID string
+	// LastLeaseID tracks the lease ID that was subscribed to for lease events.
+	// This allows detecting when the lease changes (e.g. after credential rotation)
+	// so the old subscription can be cleaned up and a new one created.
+	LastLeaseID string
+	// LastEventType is the resolved event type used when subscribing.
+	// This ensures unwatch can target the same websocket key used for subscribe.
+	LastEventType vault.EventType
 }
 
 // eventWatcherRegistry - registry for keeping track of running event watcher
@@ -56,4 +58,12 @@ func (r *eventWatcherRegistry) Get(key types.NamespacedName) (*eventWatcherMeta,
 // Delete - remove event metadata from the registry for a given object
 func (r *eventWatcherRegistry) Delete(key types.NamespacedName) {
 	r.registry.Delete(key.String())
+}
+
+// ItemCount returns the number of event watchers currently registered. This
+// corresponds to the number of active Vault event-subscription websocket
+// connections held open by this controller, and is used to expose a
+// Prometheus gauge for monitoring purposes.
+func (r *eventWatcherRegistry) ItemCount() int {
+	return r.registry.ItemCount()
 }

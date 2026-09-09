@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/vault/api"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,12 +32,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	"github.com/hashicorp/vault-secrets-operator/consts"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
+	"github.com/hashicorp/vault-secrets-operator/internal/metrics"
 
 	"github.com/hashicorp/vault-secrets-operator/vault"
 )
@@ -80,8 +84,14 @@ type VaultDynamicSecretReconciler struct {
 	// runtimePodUID should always be set when updating resource's Status.
 	// This is done via the downwardAPI. We get the current Pod's UID from either the
 	// OPERATOR_POD_UID environment variable, or the /var/run/podinfo/uid file; in that order.
-	runtimePodUID types.UID
-	SecretsClient client.Client
+	runtimePodUID        types.UID
+	SecretsClient        client.Client
+	eventWatcherRegistry *eventWatcherRegistry
+	// pendingVaultIndex stores the vault_index value extracted from the Vault
+	// WebSocket event that triggered the last reconcile for each resource.
+	// The reconciler consumes it once via LoadAndDelete to attach X-Vault-Index
+	// to the Vault read/write, then clears it.
+	pendingVaultIndex sync.Map
 }
 
 // +kubebuilder:rbac:groups=secrets.hashicorp.com,resources=vaultdynamicsecrets,verbs=get;list;watch;create;update;patch;delete
@@ -323,7 +333,11 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// sync the secret
-	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption)
+	var vaultHeaders http.Header
+	if idx, ok := r.pendingVaultIndex.LoadAndDelete(req.NamespacedName); ok {
+		vaultHeaders = http.Header{consts.HeaderVaultIndex: []string{idx.(string)}}
+	}
+	secretLease, updated, err := r.syncSecret(ctx, vClient, o, transOption, vaultHeaders)
 	if err != nil {
 		r.SyncRegistry.Add(req.NamespacedName)
 		if vault.IsForbiddenError(err) {
@@ -416,6 +430,24 @@ func (r *VaultDynamicSecretReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"obj", req.NamespacedName)
 	}
 
+	// Manage event watcher lifecycle based on SyncConfig
+	if o.Spec.SyncConfig != nil && o.Spec.SyncConfig.InstantUpdates {
+		logger.V(consts.LogLevelDebug).Info("Event watcher enabled")
+		if err := r.ensureEventWatcher(ctx, o, vClient); err != nil {
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+				"Failed to watch events: %s", err)
+			// Shorten the requeue horizon so we retry event watcher setup sooner
+			// (e.g. after sys/mounts permissions are fixed) rather than waiting
+			// for the full scheduled sync cycle.
+			if retryHorizon := computeHorizonWithJitter(requeueDurationOnError); horizon == 0 || retryHorizon < horizon {
+				horizon = retryHorizon
+			}
+		}
+	} else {
+		r.unWatchEvents(o, vClient, ctx)
+		r.pendingVaultIndex.Delete(req.NamespacedName)
+	}
+
 	if err := r.updateStatus(ctx, o, true, conditions...); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -448,7 +480,7 @@ func (r *VaultDynamicSecretReconciler) isStaticCreds(meta *secretsv1beta1.VaultS
 }
 
 // doVault performs a Vault request based on the VaultDynamicSecret's spec.
-func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret) (vault.Response, error) {
+func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.ClientBase, o *secretsv1beta1.VaultDynamicSecret, headers http.Header) (vault.Response, error) {
 	path := vault.JoinPath(o.Spec.Mount, o.Spec.Path)
 	var err error
 	var resp vault.Response
@@ -478,9 +510,9 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	logger = logger.WithValues("path", path, "method", method)
 	switch method {
 	case http.MethodPut, http.MethodPost:
-		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, nil))
+		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, headers))
 	case http.MethodGet:
-		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, nil))
+		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, headers))
 	default:
 		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
@@ -536,10 +568,11 @@ func (r *VaultDynamicSecretReconciler) checkStaticCredsHMAC(
 
 func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.ClientBase,
 	o *secretsv1beta1.VaultDynamicSecret, opt *helpers.SecretTransformationOption,
+	headers http.Header,
 ) (*secretsv1beta1.VaultSecretLease, bool, error) {
 	logger := log.FromContext(ctx).WithName("syncSecret")
 
-	resp, err := r.doVault(ctx, c, o)
+	resp, err := r.doVault(ctx, c, o, headers)
 	if err != nil {
 		return nil, false, err
 	}
@@ -552,7 +585,7 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 	secretLease := r.getVaultSecretLease(resp.Secret())
 
 	// Extract static credentials metadata
-	staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp)
+	staticCredsMeta, rotatedResponse, err := r.awaitVaultSecretRotation(ctx, o, c, resp, headers)
 	if err != nil {
 		return nil, false, err
 	}
@@ -589,8 +622,13 @@ func (r *VaultDynamicSecretReconciler) syncSecret(ctx context.Context, c vault.C
 // awaitVaultSecretRotation waits for the Vault secret to be rotated. This is
 // necessary for the case where the Vault secret is a static-creds secret and includes
 // a rotation schedule.
+//
+// headers should be the same headers passed to the initial doVault call in
+// syncSecret (e.g. X-Vault-Index on event-triggered reconciles) so that retry
+// reads on Performance Standbys are served from a node that has replicated the
+// write, preserving the freshness guarantee end-to-end.
 func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Context, o *secretsv1beta1.VaultDynamicSecret,
-	c vault.ClientBase, lastResponse vault.Response) (*secretsv1beta1.VaultStaticCredsMetaData,
+	c vault.ClientBase, lastResponse vault.Response, headers http.Header) (*secretsv1beta1.VaultStaticCredsMetaData,
 	vault.Response,
 	error,
 ) {
@@ -645,7 +683,7 @@ func (r *VaultDynamicSecretReconciler) awaitVaultSecretRotation(ctx context.Cont
 		backoff.WithMaxInterval(time.Second*2))
 	if err := backoff.Retry(
 		func() error {
-			resp, err = r.doVault(ctx, c, o)
+			resp, err = r.doVault(ctx, c, o, headers)
 			if err != nil {
 				return err
 			}
@@ -779,6 +817,16 @@ func (r *VaultDynamicSecretReconciler) renewLease(
 // SetupWithManager sets up the controller with the Manager.
 func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
 	r.referenceCache = NewResourceReferenceCache()
+	r.eventWatcherRegistry = newEventWatcherRegistry()
+	ctrlmetrics.Registry.MustRegister(prometheus.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace: metrics.Namespace,
+			Subsystem: "vaultdynamicsecret",
+			Name:      "active_event_watchers",
+			Help:      "Number of active VaultDynamicSecret event subscriptions (one per watched resource)",
+		},
+		func() float64 { return float64(r.eventWatcherRegistry.ItemCount()) },
+	))
 	if r.BackOffRegistry == nil {
 		r.BackOffRegistry = NewBackOffRegistry()
 	}
@@ -791,7 +839,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	)
 
 	// TODO: close this channel when the controller is stopped.
-	r.SourceCh = make(chan event.GenericEvent)
+	r.SourceCh = make(chan event.GenericEvent, 4)
 	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
@@ -840,6 +888,21 @@ func (r *VaultDynamicSecretReconciler) handleDeletion(ctx context.Context, o *se
 	r.SyncRegistry.Delete(objKey)
 	r.BackOffRegistry.Delete(objKey)
 	r.referenceCache.Remove(SecretTransformation, objKey)
+
+	// Clean up event subscription
+	if r.eventWatcherRegistry != nil {
+		c, err := r.ClientFactory.Get(ctx, r.Client, o)
+		if err != nil {
+			logger.V(consts.LogLevelDebug).Info(
+				"Client unavailable during deletion, removing from registry only",
+				"error", err)
+			r.eventWatcherRegistry.Delete(objKey)
+		} else {
+			r.unWatchEvents(o, c, ctx)
+		}
+	}
+	r.pendingVaultIndex.Delete(objKey)
+
 	if controllerutil.ContainsFinalizer(o, vaultDynamicSecretFinalizer) {
 		logger.Info("Removing finalizer")
 		if controllerutil.RemoveFinalizer(o, vaultDynamicSecretFinalizer) {
@@ -1012,6 +1075,305 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 				"Skipping, cacheKey error", "error", err)
 		}
 	}
+}
+
+// ensureEventWatcher subscribes the VDS to Vault events for instant updates.
+// For static creds, subscribes to secret engine events (database/LDAP/custom).
+// For dynamic leases, additionally subscribes to lease lifecycle events.
+//
+// Mount type resolution strategy (in priority order):
+//  1. GetMountType succeeds → use the resolved plugin type.
+//  2. GetMountType fails but a prior LastEventType is stored → reuse it; the
+//     mount engine is unlikely to have changed without a spec update.
+//  3. GetMountType fails and no prior type exists → skip engine-event
+//     subscription this cycle to avoid subscribing to the wrong event stream;
+//     lease events are still set up if applicable; error returned so next
+//     reconcile retries.
+func (r *VaultDynamicSecretReconciler) ensureEventWatcher(
+	ctx context.Context,
+	o *secretsv1beta1.VaultDynamicSecret,
+	c vault.Client,
+) error {
+	logger := log.FromContext(ctx).WithName("ensureEventWatcher")
+	name := client.ObjectKeyFromObject(o)
+
+	// onStop is shared across all Subscriber structs for this resource so that
+	// only the first OnStop call deletes the registry entry. Without this, a
+	// second or third independent closure could delete the entry that a
+	// reconciler already re-created after the first OnStop fired.
+	var onStopOnce sync.Once
+	onStop := func() {
+		onStopOnce.Do(func() {
+			r.eventWatcherRegistry.Delete(name)
+		})
+	}
+
+	// newDVSSubscriber is a local factory that stamps out a *vault.Subscriber
+	// with all fields common to every subscription for this resource. Only
+	// vaultNS and vaultPath vary between the engine-events subscriber (Step 4)
+	// and the lease-events subscribers (Steps 1 and 5).
+	//
+	// NOTE: lease subscribers intentionally pass vaultNS="" — lease events are
+	// routed by lease ID alone, so setting a namespace would produce a
+	// "<namespace>/<leaseID>" key that never matches the "<leaseID>" lookup.
+	newDVSSubscriber := func(vaultNS, vaultPath string) *vault.Subscriber {
+		return &vault.Subscriber{
+			ResourceKey:       name,
+			VaultNS:           vaultNS,
+			VaultPath:         vaultPath,
+			ResourceType:      vault.ResourceTypeVaultDynamicSecret,
+			ReconcileCh:       r.SourceCh,
+			PendingVaultIndex: &r.pendingVaultIndex,
+			// OnStop cleans up the registry entry when the WebSocket dies.
+			// The log is emitted by notifySubscribersOfStop via ws.logger,
+			// which is always valid (unlike the reconcile-context logger
+			// captured here, which goes stale after Reconcile returns).
+			OnStop: onStop,
+			NewObject: func() client.Object {
+				return &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: name.Namespace,
+						Name:      name.Name,
+					},
+				}
+			},
+		}
+	}
+
+	currentLeaseID := o.Status.SecretLease.ID
+	meta, hasMeta := r.eventWatcherRegistry.Get(name)
+
+	// Step 1: resolve mount type BEFORE touching any existing subscription so
+	// that a transient lookup failure does not first tear down a working watcher.
+	pluginType, mountTypeErr := c.GetMountType(ctx, o.Spec.Mount)
+
+	var eventType vault.EventType
+	switch {
+	case mountTypeErr == nil:
+		// Happy path: authoritative type from Vault.
+		eventType = vault.EventType(pluginType)
+
+	case hasMeta && meta.LastEventType != "":
+		// Transient failure — reuse the last known correct type rather than
+		// silently defaulting to an arbitrary engine type.
+		logger.V(consts.LogLevelWarning).Info(
+			"Failed to resolve mount type; reusing last known event type",
+			"mount", o.Spec.Mount,
+			"lastEventType", meta.LastEventType,
+			"error", mountTypeErr,
+		)
+		eventType = meta.LastEventType
+
+	default:
+		// No prior type and lookup failed — subscribing without knowing the
+		// type would target the wrong WebSocket and silently miss events.
+		// Emit a clear, actionable warning and skip engine-event subscription.
+		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+			"Cannot determine Vault mount type for %q: %s. "+
+				"Ensure the VaultAuth policy grants read on sys/mounts/*. "+
+				"Engine-event subscription skipped; will retry next reconcile.",
+			o.Spec.Mount, mountTypeErr)
+
+		resultErr := fmt.Errorf("failed to resolve mount type for %q: %w", o.Spec.Mount, mountTypeErr)
+
+		// Lease events are mount-type-independent; still subscribe if applicable.
+		if !o.Spec.AllowStaticCreds && currentLeaseID != "" {
+			// Skip re-subscription only when the existing lease watcher is
+			// confirmed alive. A metadata-only match is not sufficient: if the
+			// lease WebSocket died (e.g. reconnect threshold exceeded) but
+			// OnStop has not yet cleaned the registry, the entry looks valid
+			// but the resource is actually unsubscribed. The liveness check
+			// catches this orphaned state and falls through to re-subscribe.
+			leaseAlive := hasMeta &&
+				meta.LastLeaseID == currentLeaseID &&
+				meta.LastClientID == c.ID() &&
+				c.IsWebSocketHealthy(vault.EventTypeLease)
+			if leaseAlive {
+				return resultErr
+			}
+			// Dead or missing — clear any stale entry before re-subscribing.
+			if hasMeta {
+				r.eventWatcherRegistry.Delete(name)
+			}
+			leaseSubscriber := newDVSSubscriber("", currentLeaseID)
+			if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
+				// Surface this too, instead of only logging it, so a compound
+				// failure (mount type AND lease subscribe both broken) is visible.
+				resultErr = errors.Join(resultErr, fmt.Errorf("failed to subscribe to lease events: %w", err))
+			} else {
+				// Record what we did establish so the next reconcile can detect
+				// "lease-only subscription already active" and skip re-subscribing
+				// on every cycle while the mount-type lookup keeps failing.
+				// LastEventType is left empty so Step 2's staleness check still
+				// forces a full re-subscribe once GetMountType succeeds.
+				r.eventWatcherRegistry.Register(name, &eventWatcherMeta{
+					LastClientID:   c.ID(),
+					LastGeneration: o.GetGeneration(),
+					LastLeaseID:    currentLeaseID,
+					LastEventType:  "",
+				})
+			}
+		}
+		return resultErr
+	}
+
+	// Step 2: check whether the existing subscription is still valid.
+	// Include eventType in the staleness check: if a prior cycle used a cached
+	// fallback type and this cycle resolved the correct type, we must re-subscribe.
+	if hasMeta &&
+		meta.LastGeneration == o.GetGeneration() &&
+		meta.LastClientID == c.ID() &&
+		meta.LastLeaseID == currentLeaseID &&
+		meta.LastEventType == eventType {
+		// Orphaned entry detection: verify the WebSocket is actually alive.
+		// This is a safety net for cases where OnStop did not fire (e.g. operator
+		// restart) or there was a race between WebSocket death and OnStop cleanup.
+		if c.IsWebSocketHealthy(eventType) {
+			logger.V(consts.LogLevelDebug).Info("Event subscription already active",
+				"namespace", o.Namespace, "name", o.Name)
+			return nil
+		}
+		// WebSocket is dead or missing — orphaned registry entry detected.
+		logger.Info("Detected orphaned registry entry (WebSocket is dead or missing), cleaning up",
+			"namespace", o.Namespace, "name", o.Name)
+		r.eventWatcherRegistry.Delete(name)
+		hasMeta = false
+	}
+
+	// Step 3: tear down the stale subscription now that we have a valid type.
+	if hasMeta {
+		logger.V(consts.LogLevelDebug).Info("Unsubscribing due to metadata, client, or lease change",
+			"namespace", o.Namespace, "name", o.Name)
+		r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType, ctx)
+	}
+
+	// Step 4: subscribe to engine events.
+	vaultPath := buildVaultEventKey(o)
+	subscriber := newDVSSubscriber(o.Spec.Namespace, vaultPath)
+	if err := c.SubscribeToEvents(ctx, eventType, subscriber); err != nil {
+		return fmt.Errorf("failed to subscribe to %s events: %w", eventType, err)
+	}
+
+	// Step 5: For dynamic leases, also subscribe to lease lifecycle events. Vault
+	// publishes lease events in the lease's own namespace, so the primary client
+	// (already scoped to the resource's Vault namespace) is used here.
+	//
+	// NOTE: the lease subscriber intentionally does NOT set VaultNS. Lease events
+	// are routed by lease ID alone (see routeEvent/EventTypeLease and
+	// unWatchEventsWithLeaseID), so setting VaultNS here would key the subscriber
+	// as "<namespace>/<leaseID>" and never match the "<leaseID>" lookup.
+	if !o.Spec.AllowStaticCreds && o.Status.SecretLease.ID != "" {
+		leaseSubscriber := newDVSSubscriber("", currentLeaseID)
+		if err := c.SubscribeToEvents(ctx, vault.EventTypeLease, leaseSubscriber); err != nil {
+			// Non-fatal: the database/LDAP subscription above still provides
+			// event-driven updates. Surface the failure as a warning event so
+			// it is visible rather than silently swallowed.
+			logger.V(consts.LogLevelWarning).Info("Failed to subscribe to lease events",
+				"error", err)
+			r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonEventWatcherError,
+				"Failed to subscribe to lease events: %s", err)
+		}
+	}
+
+	updatedMeta := &eventWatcherMeta{
+		LastClientID:   c.ID(),
+		LastGeneration: o.GetGeneration(),
+		LastLeaseID:    currentLeaseID,
+		LastEventType:  eventType,
+	}
+	r.eventWatcherRegistry.Register(name, updatedMeta)
+
+	logger.V(consts.LogLevelDebug).Info("Event subscription active",
+		"eventType", eventType, "vaultPath", vaultPath, "meta", updatedMeta)
+	r.Recorder.Eventf(o, corev1.EventTypeNormal, consts.ReasonEventWatcherStarted,
+		"Started watching %s events", eventType)
+
+	return nil
+}
+
+// unWatchEvents unsubscribes the VDS from events and removes it from the registry.
+// It uses the lease ID from the registry metadata to ensure the correct (previously
+// subscribed) lease is cleaned up, not the potentially-updated status lease ID.
+func (r *VaultDynamicSecretReconciler) unWatchEvents(
+	o *secretsv1beta1.VaultDynamicSecret,
+	c vault.Client,
+	ctx context.Context,
+) {
+	if r.eventWatcherRegistry == nil {
+		return
+	}
+
+	name := client.ObjectKeyFromObject(o)
+	meta, ok := r.eventWatcherRegistry.Get(name)
+	if !ok {
+		return
+	}
+
+	// Pass LastEventType directly — if it is empty, unWatchEventsWithLeaseID
+	// will skip the engine-event unsubscribe rather than targeting the wrong stream.
+	r.unWatchEventsWithLeaseID(o, c, meta.LastLeaseID, meta.LastEventType, ctx)
+}
+
+// unWatchEventsWithLeaseID performs the actual unsubscription using the provided
+// lease ID rather than the current status, which may have already been updated.
+func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
+	o *secretsv1beta1.VaultDynamicSecret,
+	c vault.Client,
+	leaseID string,
+	eventType vault.EventType,
+	ctx context.Context,
+) {
+	if r.eventWatcherRegistry == nil {
+		return
+	}
+
+	name := client.ObjectKeyFromObject(o)
+
+	// Only unsubscribe from engine events when we know the exact type that was
+	// used at subscribe time. Guessing a type targets the wrong SharedWebSocket
+	// and leaves the real subscription dangling instead of cleaning it up.
+	if eventType != "" {
+		vaultPath := buildVaultEventKey(o)
+		pathKey := vault.SubscriptionKey{
+			VaultNamespace: o.Spec.Namespace,
+			VaultPath:      vaultPath,
+		}
+		if err := c.UnsubscribeFromEvents(ctx, eventType, pathKey, name.String()); err != nil {
+			log.FromContext(ctx).V(consts.LogLevelDebug).Info(
+				"Failed to unsubscribe from events (may already be cleaned up)",
+				"namespace", o.Namespace, "name", o.Name, "error", err)
+		}
+	}
+
+	// Lease subscriptions are keyed by lease ID only, independent of engine type.
+	if leaseID != "" {
+		leaseKey := vault.SubscriptionKey{
+			VaultPath: leaseID,
+		}
+		_ = c.UnsubscribeFromEvents(ctx, vault.EventTypeLease, leaseKey, name.String())
+	}
+
+	r.eventWatcherRegistry.Delete(name)
+}
+
+// buildVaultEventKey constructs the subscription key for a VaultDynamicSecret.
+// Unlike KV events (matched by full path), database/LDAP events are matched by
+// mount + role name, since the event path differs from the read path.
+func buildVaultEventKey(o *secretsv1beta1.VaultDynamicSecret) string {
+	roleName := extractRoleName(o.Spec.Path)
+	return o.Spec.Mount + "/" + roleName
+}
+
+// extractRoleName extracts the role name from a VDS spec path.
+// e.g., "static-creds/my-role" → "my-role"
+//
+//	"creds/my-role"        → "my-role"
+func extractRoleName(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return path
+	}
+	return parts[len(parts)-1]
 }
 
 func computeRotationTime(o *secretsv1beta1.VaultDynamicSecret) time.Time {

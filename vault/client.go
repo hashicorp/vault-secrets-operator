@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -195,6 +196,22 @@ type Client interface {
 	Untaint() bool
 	WebsocketClient(string) (*WebsocketClient, error)
 	Renewable() bool
+	SubscribeToEvents(context.Context, EventType, *Subscriber) error
+	UnsubscribeFromEvents(context.Context, EventType, SubscriptionKey, string) error
+	// GetWebSocketCount returns the number of real, active WebSocket
+	// connections this client currently holds open to Vault (at most one per
+	// EventType, shared across all subscribers of that event type).
+	GetWebSocketCount() int
+	// GetWebSocketSubscriberCount returns the total number of subscribers
+	// (e.g. individual CRs) multiplexed across this client's active
+	// WebSocket connections.
+	GetWebSocketSubscriberCount() int
+	GetMountType(context.Context, string) (string, error)
+	// IsWebSocketHealthy reports whether a live, healthy SharedWebSocket exists
+	// for the given EventType. Callers that only need to check liveness should
+	// use this rather than obtaining the concrete *SharedWebSocket, which would
+	// couple them to the internal type.
+	IsWebSocketHealthy(EventType) bool
 }
 
 var _ Client = (*defaultClient)(nil)
@@ -218,6 +235,14 @@ type defaultClient struct {
 	once               sync.Once
 	mu                 sync.RWMutex
 	id                 string
+	mountTypeCache     map[string]string
+	// mountTypeMu guards mountTypeCache only, keeping cache reads/writes
+	// independent of c.mu so that a slow sys/mounts network call never blocks
+	// token renewal, Close, or other c.mu users.
+	mountTypeMu sync.RWMutex
+	// websockets stores SharedWebSocket instances per event type
+	websockets  map[EventType]*SharedWebSocket
+	websocketMu sync.RWMutex
 }
 
 // Renewable returns true if the Vault auth token is renewable.
@@ -474,6 +499,18 @@ func (c *defaultClient) Close(revoke bool) {
 	c.inClosing = true
 	logger := log.FromContext(nil).WithValues("id", c.id)
 	logger.Info("Close() called")
+
+	// Close all WebSocket connections
+	c.websocketMu.Lock()
+	for eventType, ws := range c.websockets {
+		logger.V(consts.LogLevelDebug).Info("Closing WebSocket", "eventType", eventType)
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close WebSocket", "eventType", eventType)
+		}
+		delete(c.websockets, eventType)
+	}
+	c.websocketMu.Unlock()
+
 	if c.watcher != nil {
 		c.watcher.Stop()
 	}
@@ -486,6 +523,74 @@ func (c *defaultClient) Close(revoke bool) {
 	}
 	c.id = ""
 	c.closed = true
+
+	// Clear the mount-type cache under its own lock (not c.mu) because
+	// mountTypeMu is the sole owner of mountTypeCache after M2 fix.
+	c.mountTypeMu.Lock()
+	c.mountTypeCache = nil
+	c.mountTypeMu.Unlock()
+}
+
+// GetMountType returns the Vault plugin type for a mount path.
+// Results are cached per-client to avoid repeated sys/mounts lookups.
+//
+// mountTypeMu (not c.mu) guards the cache so that a slow sys/mounts network
+// call on a cache miss never blocks token renewal, Close, or other c.mu users.
+// A double-check after the write-lock handles concurrent cache misses: both
+// goroutines issue a Vault read, but only one stores the result.
+func (c *defaultClient) GetMountType(ctx context.Context, mountPath string) (string, error) {
+	mountPath = strings.Trim(mountPath, "/")
+	if mountPath == "" {
+		return "", fmt.Errorf("mount path cannot be empty")
+	}
+
+	// Check closed first, then cache. Holding c.mu.RLock while reading the
+	// cache ensures that Close() (which holds c.mu.Lock before mountTypeMu)
+	// cannot sneak between the closed check and the cache read, so a closed
+	// client never returns a stale cached value.
+	c.mu.RLock()
+	if c.closed {
+		c.mu.RUnlock()
+		return "", fmt.Errorf("client instance is closed")
+	}
+	c.mountTypeMu.RLock()
+	t, ok := c.mountTypeCache[mountPath]
+	c.mountTypeMu.RUnlock()
+	c.mu.RUnlock()
+	if ok {
+		return t, nil
+	}
+
+	// Cache miss — call Vault with no lock held so c.mu users are not blocked.
+	resp, err := c.Read(ctx, NewReadRequest("sys/mounts/"+mountPath, nil, nil))
+	if err != nil {
+		return "", fmt.Errorf("failed to read mount info for %q: %w", mountPath, err)
+	}
+
+	mountType, ok := resp.Data()["type"].(string)
+	if !ok || mountType == "" {
+		return "", fmt.Errorf("missing or empty type field in sys/mounts/%s response", mountPath)
+	}
+
+	// Populate cache under both locks (c.mu before mountTypeMu, matching the
+	// order Close() uses) so that a slow in-flight call cannot repopulate the
+	// cache after Close() has cleared it.
+	c.mu.RLock()
+	c.mountTypeMu.Lock()
+	defer c.mountTypeMu.Unlock()
+	defer c.mu.RUnlock()
+
+	if c.closed {
+		return "", fmt.Errorf("client instance is closed")
+	}
+	if c.mountTypeCache == nil {
+		c.mountTypeCache = make(map[string]string)
+	}
+	if _, exists := c.mountTypeCache[mountPath]; !exists {
+		c.mountTypeCache[mountPath] = mountType
+	}
+
+	return mountType, nil
 }
 
 // startLifetimeWatcher starts an api.LifetimeWatcher in a Go routine for this Client.
@@ -861,9 +966,10 @@ func (c *defaultClient) incrementOperationCounter(operation string, err error) {
 }
 
 type MockRequest struct {
-	Method string
-	Path   string
-	Params map[string]any
+	Method  string
+	Path    string
+	Params  map[string]any
+	Headers http.Header
 }
 
 var _ ClientBase = (*MockRecordingVaultClient)(nil)
@@ -904,10 +1010,10 @@ func (m *MockRecordingVaultClient) Taint() {}
 
 func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {
 	m.Requests = append(m.Requests, &MockRequest{
-		Method: http.MethodGet,
-
-		Path:   s.Path(),
-		Params: nil,
+		Method:  http.MethodGet,
+		Path:    s.Path(),
+		Params:  nil,
+		Headers: s.Headers(),
 	})
 
 	resps, ok := m.ReadResponses[s.Path()]
@@ -931,9 +1037,10 @@ func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Respo
 
 func (m *MockRecordingVaultClient) Write(_ context.Context, s WriteRequest) (Response, error) {
 	m.Requests = append(m.Requests, &MockRequest{
-		Method: http.MethodPut,
-		Path:   s.Path(),
-		Params: s.Data(),
+		Method:  http.MethodPut,
+		Path:    s.Path(),
+		Params:  s.Data(),
+		Headers: s.Headers(),
 	})
 
 	resps, ok := m.WriteResponses[s.Path()]
@@ -987,4 +1094,197 @@ func NewClientConfigFromConnObj(connObj *secretsv1beta1.VaultConnection, vaultNS
 		cfg.Timeout = &d
 	}
 	return cfg, nil
+}
+
+// SubscribeToEvents subscribes a resource to Vault events via this client's WebSocket
+func (c *defaultClient) SubscribeToEvents(
+	ctx context.Context,
+	eventType EventType,
+	sub *Subscriber,
+) error {
+	logger := log.FromContext(ctx).WithValues(
+		"clientID", c.id,
+		"eventType", eventType,
+		"resource", sub.ResourceKey,
+	)
+
+	ws, err := c.getOrCreateWebSocket(ctx, eventType)
+	if err != nil {
+		logger.Error(err, "Failed to get or create WebSocket")
+		return err
+	}
+
+	if err := ws.Subscribe(sub); err != nil {
+		logger.Error(err, "Failed to subscribe to WebSocket")
+		return err
+	}
+
+	logger.V(consts.LogLevelDebug).Info("Successfully subscribed to events")
+	return nil
+}
+
+// UnsubscribeFromEvents removes a subscription from this client's WebSocket.
+// pathKey identifies the Vault path, resourceKey identifies the specific CR subscriber.
+func (c *defaultClient) UnsubscribeFromEvents(
+	ctx context.Context,
+	eventType EventType,
+	pathKey SubscriptionKey,
+	resourceKey string,
+) error {
+	logger := log.FromContext(ctx).WithValues(
+		"clientID", c.id,
+		"eventType", eventType,
+		"pathKey", pathKey.String(),
+		"resource", resourceKey,
+	)
+
+	c.websocketMu.RLock()
+	ws, exists := c.websockets[eventType]
+	c.websocketMu.RUnlock()
+
+	if !exists {
+		logger.V(consts.LogLevelDebug).Info("WebSocket not found for event type")
+		return fmt.Errorf("websocket not found for event type %s", eventType)
+	}
+
+	lastSubscriber := ws.Unsubscribe(pathKey, resourceKey)
+	logger.V(consts.LogLevelDebug).Info("Unsubscribed from events", "lastSubscriber", lastSubscriber)
+
+	// Close WebSocket if no more subscribers
+	if lastSubscriber {
+		c.closeWebSocket(ctx, eventType)
+	}
+
+	return nil
+}
+
+// getOrCreateWebSocket gets an existing WebSocket or creates a new one
+func (c *defaultClient) getOrCreateWebSocket(
+	ctx context.Context,
+	eventType EventType,
+) (*SharedWebSocket, error) {
+	// Check if WebSocket already exists and is healthy (read lock)
+	c.websocketMu.RLock()
+	if ws, exists := c.websockets[eventType]; exists && ws.IsHealthy() {
+		c.websocketMu.RUnlock()
+		return ws, nil
+	}
+	c.websocketMu.RUnlock()
+
+	// Create new WebSocket (write lock)
+	c.websocketMu.Lock()
+	defer c.websocketMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if ws, exists := c.websockets[eventType]; exists {
+		// Check if it's healthy
+		if ws.IsHealthy() {
+			return ws, nil
+		}
+		// WebSocket exists but is dead, close it properly before removing from map
+		logger := log.FromContext(ctx).WithValues(
+			"clientID", c.id,
+			"eventType", eventType,
+		)
+		logger.Info("Closing dead WebSocket before creating new one")
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close dead WebSocket")
+		}
+		delete(c.websockets, eventType)
+	}
+
+	// Create new SharedWebSocket
+	ws, err := NewSharedWebSocket(ctx, c, eventType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shared websocket: %w", err)
+	}
+	// Remove this websocket from the client registry when its event loop stops.
+	//
+	// onStop is called in two distinct situations, and both must be handled:
+	//
+	//   1. Normal stop (primary cleanup path): the event loop exits on its own,
+	//      e.g. because the reconnect threshold was exceeded. In this case onStop
+	//      is the only thing that removes the registry entry — without it the
+	//      dead socket would stay in the map forever.
+	//
+	//   2. Double cleanup after dead-socket replacement: when a caller finds a
+	//      dead socket above (lines 1142-1157), it eagerly calls ws.Close() and
+	//      delete(c.websockets, eventType) before creating this new socket.
+	//      ws.Close() cancels the old socket's context, but its event loop
+	//      goroutine is still running and will eventually exit — at which point
+	//      it fires onStop() a second time, after the registry entry was already
+	//      removed. The `current == ws` pointer identity check makes this
+	//      redundant invocation a safe no-op: if a new socket was created for
+	//      the same eventType, current != ws (current points to the new socket,
+	//      ws to the old one), so the delete is skipped and the new socket is
+	//      left untouched in the registry.
+	ws.onStop = func() {
+		c.websocketMu.Lock()
+		defer c.websocketMu.Unlock()
+		if current, exists := c.websockets[eventType]; exists && current == ws {
+			delete(c.websockets, eventType)
+		}
+	}
+
+	// Initialize map if needed
+	if c.websockets == nil {
+		c.websockets = make(map[EventType]*SharedWebSocket)
+	}
+
+	c.websockets[eventType] = ws
+
+	logger := log.FromContext(ctx).WithValues(
+		"clientID", c.id,
+		"eventType", eventType,
+	)
+	logger.Info("Created new SharedWebSocket")
+
+	return ws, nil
+}
+
+// closeWebSocket closes a specific WebSocket
+func (c *defaultClient) closeWebSocket(ctx context.Context, eventType EventType) {
+	c.websocketMu.Lock()
+	defer c.websocketMu.Unlock()
+
+	if ws, exists := c.websockets[eventType]; exists {
+		logger := log.FromContext(ctx).WithValues(
+			"clientID", c.id,
+			"eventType", eventType,
+		)
+		logger.Info("Closing WebSocket (no more subscribers)")
+
+		if err := ws.Close(); err != nil {
+			logger.Error(err, "Failed to close WebSocket")
+		}
+		delete(c.websockets, eventType)
+	}
+}
+
+// GetWebSocketCount returns the number of active WebSocket connections
+func (c *defaultClient) GetWebSocketCount() int {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+	return len(c.websockets)
+}
+
+// GetWebSocketSubscriberCount returns the total number of subscribers across all WebSockets
+func (c *defaultClient) GetWebSocketSubscriberCount() int {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+
+	total := 0
+	for _, ws := range c.websockets {
+		total += ws.GetSubscriberCount()
+	}
+	return total
+}
+
+// IsWebSocketHealthy reports whether a live, healthy SharedWebSocket exists
+// for the given event type.
+func (c *defaultClient) IsWebSocketHealthy(eventType EventType) bool {
+	c.websocketMu.RLock()
+	defer c.websocketMu.RUnlock()
+	ws, exists := c.websockets[eventType]
+	return exists && ws.IsHealthy()
 }
