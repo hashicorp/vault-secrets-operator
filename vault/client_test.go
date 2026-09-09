@@ -1772,8 +1772,10 @@ func Test_defaultClient_GetMountType_ErrorAfterClose(t *testing.T) {
 
 		// Set up a server that hangs until we release it, simulating the window
 		// between "network call dispatched" and "write lock acquired".
+		started := make(chan struct{})
 		release := make(chan struct{})
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			close(started)
 			<-release // block until the test closes the client
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"data":{"type":"database"}}`))
@@ -1795,9 +1797,8 @@ func Test_defaultClient_GetMountType_ErrorAfterClose(t *testing.T) {
 			done <- err
 		}()
 
-		// Close the client while the network call is in-flight.
-		// Small sleep gives the goroutine time to reach the HTTP handler.
-		time.Sleep(20 * time.Millisecond)
+		// Close the client after the network call is in-flight.
+		<-started
 		c.Close(false)
 
 		// Unblock the server so the goroutine can attempt to write to the cache.

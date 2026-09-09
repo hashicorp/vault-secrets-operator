@@ -3052,6 +3052,15 @@ func TestVaultDynamicSecretReconciler_vaultClientCallback_BlocksOnFullSourceCh(t
 		r.vaultClientCallback(ctx, c)
 	}()
 
+	require.Eventually(t, func() bool {
+		return len(sourceCh) == cap(sourceCh)
+	}, time.Second, time.Millisecond, "callback must fill SourceCh before blocking")
+	select {
+	case <-callbackDone:
+		t.Fatal("callback returned while SourceCh was full; events may have been dropped")
+	default:
+	}
+
 	// Consume all instanceCount events from the channel. Each read unblocks the
 	// next blocking send in the callback goroutine.
 	received := 0
