@@ -31,7 +31,6 @@ module "vso-helm" {
     }
   }
   manager_extra_args = [
-    "-min-refresh-after-hvsa=30s",
     "-zap-log-level=6"
   ]
 }

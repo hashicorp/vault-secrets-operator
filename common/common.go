@@ -166,7 +166,7 @@ func vaultAuthGlobalResourceRef(o *secretsv1beta1.VaultAuth) (types.NamespacedNa
 }
 
 // isAllowedNamespace computes whether a targetNamespace is allowed based on the AllowedNamespaces
-// field of the VaultAuth or HCPAuth objects.
+// field of the VaultAuth objects.
 //
 // isAllowedNamespace behaves as follows:
 //
@@ -603,41 +603,6 @@ func GetVaultAuthWithRetry(ctx context.Context, c client.Client, key types.Names
 	return &obj, nil
 }
 
-// GetHCPAuthForObj returns the corresponding secretsv1beta1.HCPAuth for obj.
-// Supported client.Object: secretsv1beta1.HCPVaultSecretsApp
-func GetHCPAuthForObj(ctx context.Context, c client.Client, obj client.Object) (*secretsv1beta1.HCPAuth, error) {
-	authRef, err := getAuthRefNamespacedName(obj)
-	if err != nil {
-		return nil, err
-	}
-
-	authObj, err := GetHCPAuthWithRetry(ctx, c, authRef, defaultRetryDuration, defaultMaxRetries)
-	if err != nil {
-		return nil, err
-	}
-
-	if !isAllowedNamespace(authObj, obj.GetNamespace(), authObj.Spec.AllowedNamespaces...) {
-		return nil, &NamespaceNotAllowedError{
-			TargetNS: obj.GetNamespace(),
-			ObjRef:   authRef,
-			RefKind:  "HCPAuth",
-		}
-	}
-
-	return authObj, nil
-}
-
-func GetHCPAuthWithRetry(ctx context.Context, c client.Client, key types.NamespacedName,
-	delay time.Duration, max uint64,
-) (*secretsv1beta1.HCPAuth, error) {
-	var obj secretsv1beta1.HCPAuth
-	if err := getWithRetry(ctx, c, key, &obj, delay, max); err != nil {
-		return nil, err
-	}
-
-	return &obj, nil
-}
-
 func GetSecretTransformation(ctx context.Context, c client.Client, key types.NamespacedName) (*secretsv1beta1.SecretTransformation, error) {
 	var obj secretsv1beta1.SecretTransformation
 	if err := c.Get(ctx, key, &obj); err != nil {
@@ -903,11 +868,6 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 		meta.APIVersion = t.APIVersion
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.VaultAuthRef
-	case *secretsv1beta1.HCPVaultSecretsApp:
-		meta.Destination = t.Spec.Destination.DeepCopy()
-		meta.APIVersion = t.APIVersion
-		meta.Kind = t.Kind
-		meta.AuthRef = t.Spec.HCPAuthRef
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}
@@ -918,7 +878,7 @@ func NewSyncableSecretMetaData(obj ctrlclient.Object) (*SyncableSecretMetaData, 
 // NewSyncableSecretMetaDataI returns SyncableSecretMetaData if obj is a supported type.
 // An error will be returned of obj is not a supported type.
 //
-// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret. VaultPKISecret
+// Supported types for obj are: VaultDynamicSecret, VaultStaticSecret, VaultPKISecret
 func NewSyncableSecretMetaDataI(obj ctrlclient.Object) (SyncableSecretMetaDataI, error) {
 	// If obj already implements SyncableSecretMetaDataI, return it directly.
 	// This allows external consumers to provide custom types
@@ -951,11 +911,6 @@ func NewSyncableSecretMetaDataI(obj ctrlclient.Object) (SyncableSecretMetaDataI,
 		meta.Kind = t.Kind
 		meta.AuthRef = t.Spec.VaultAuthRef
 		meta.VaultNamespace = t.Spec.Namespace
-	case *secretsv1beta1.HCPVaultSecretsApp:
-		meta.Destination = t.Spec.Destination.DeepCopy()
-		meta.APIVersion = t.APIVersion
-		meta.Kind = t.Kind
-		meta.AuthRef = t.Spec.HCPAuthRef
 	case *secretsv1beta1.CSISecrets:
 		meta.Kind = t.Kind
 		meta.APIVersion = t.APIVersion

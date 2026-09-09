@@ -1,7 +1,13 @@
-## Unreleased 
+## Unreleased
+
+Enhancements:
+* Helm: add `controller.rbac.enabled` flag to allow skipping RBAC resource creation (ClusterRole, ClusterRoleBinding, Role, RoleBinding). When set to `false`, the chart still creates ServiceAccounts, the controller Deployment, and hook Jobs — equivalent RBAC must be pre-provisioned out-of-band by a cluster administrator using the same Helm release name (or `fullnameOverride`) before running `helm install`/`helm upgrade`.
 
 Fix:
 * VaultPKISecret: correct Vault API path when issuerRef is set; path was rendered as `pki/issuer/<name>/<role>` instead of the correct `pki/issuer/<name>/issue/<role>`, causing Vault to return 404 for all cert issuance requests when issuerRef was specified ([#1336](https://github.com/hashicorp/vault-secrets-operator/pull/1336))
+
+BREAKING CHANGES:
+* Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
 
 ## 1.5.1 (August 11th, 2026)
 

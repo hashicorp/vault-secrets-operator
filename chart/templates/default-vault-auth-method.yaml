@@ -15,7 +15,9 @@ metadata:
     app.kubernetes.io/component: controller-manager
   {{- include "vso.chart.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.defaultAuthMethod.namespace }}
   namespace: {{ .Values.defaultAuthMethod.namespace }}
+  {{- end }}
   {{- if .Values.defaultAuthMethod.allowedNamespaces }}
   allowedNamespaces:
   {{- toYaml .Values.defaultAuthMethod.allowedNamespaces | nindent 4 }}

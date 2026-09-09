@@ -407,10 +407,6 @@ jobs:
           installation-method: ${{ matrix.installation-method }}
           operator-image-archive: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
           vault-license-ci: ${{ secrets.VAULT_LICENSE_CI }}
-          hcp-organization-id: ${{ secrets.HCP_ORGANIZATION_ID }}
-          hcp-project-id: ${{ secrets.HCP_PROJECT_ID }}
-          hcp-client-id: ${{ secrets.HCP_CLIENT_ID }}
-          hcp-client-secret: ${{ secrets.HCP_CLIENT_SECRET }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           log-prefix: "latest-vault-"
   latest-k8s:
@@ -444,10 +440,6 @@ jobs:
           installation-method: ${{ matrix.installation-method }}
           operator-image-archive: ${{ github.event.repository.name }}_release-default_linux_amd64_${{ needs.get-product-version.outputs.product-version }}_${{ github.sha }}.docker.tar
           vault-license-ci: ${{ secrets.VAULT_LICENSE_CI }}
-          hcp-organization-id: ${{ secrets.HCP_ORGANIZATION_ID }}
-          hcp-project-id: ${{ secrets.HCP_PROJECT_ID }}
-          hcp-client-id: ${{ secrets.HCP_CLIENT_ID }}
-          hcp-client-secret: ${{ secrets.HCP_CLIENT_SECRET }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           log-prefix: "latest-k8s-"
 

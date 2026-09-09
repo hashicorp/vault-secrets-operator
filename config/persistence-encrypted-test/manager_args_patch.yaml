@@ -1,4 +1,4 @@
-# Copyright (c) HashiCorp, Inc.
+# Copyright IBM Corp. 2024, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
 apiVersion: apps/v1
@@ -13,5 +13,4 @@ spec:
       - name: manager
         args:
         - "-client-cache-persistence-model=direct-encrypted"
-        - "-min-refresh-after-hvsa=3s"
         - "-zap-log-level=6"

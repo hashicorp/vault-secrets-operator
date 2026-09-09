@@ -261,7 +261,33 @@ func TestChart_upgradeCRDs(t *testing.T) {
 	if expectCRDUpgrade {
 		assert.NotEqual(t, currentCRDs.Items, updatedCRDs.Items)
 	}
-	assert.Equal(t, len(wantCRDs), len(updatedCRDs.Items), "CRD count mismatch")
+
+	// Build a lookup of what the new chart declares so we can check counts and
+	// detect orphans separately.
+	wantCRDNames := map[string]struct{}{}
+	for _, w := range wantCRDs {
+		wantCRDNames[w.Name] = struct{}{}
+	}
+
+	// Count only the CRDs that belong to the new chart (Helm never deletes CRDs
+	// during upgrade, so CRDs removed from the chart remain as orphans).
+	var newChartCRDCount int
+	for _, crd := range updatedCRDs.Items {
+		if _, ok := wantCRDNames[crd.Name]; ok {
+			newChartCRDCount++
+		} else {
+			// Any cluster CRD not in the new chart is an orphan left by Helm.
+			// Verify it came from the old install and was not accidentally
+			// introduced by the upgrade.
+			_, wasInstalled := installedCRDsMap[crd.Name]
+			assert.True(t, wasInstalled,
+				"CRD %q is present after upgrade but was not installed by the old chart and is not in the new chart",
+				crd.Name,
+			)
+			t.Logf("Orphaned CRD %q retained after upgrade (Helm never deletes CRDs)", crd.Name)
+		}
+	}
+	assert.Equal(t, len(wantCRDs), newChartCRDCount, "CRD count mismatch: not all new chart CRDs are present in the cluster")
 
 	for _, wantCRD := range wantCRDs {
 		var updatedCRD apiextensionsv1.CustomResourceDefinition

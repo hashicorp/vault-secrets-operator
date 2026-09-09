@@ -36,7 +36,7 @@ EXPORT_KIND_LOGS_ROOT ?=
 
 TERRAFORM_VERSION ?= 1.3.7
 GOFUMPT_VERSION ?= v0.4.0
-COPYWRITE_VERSION ?= 0.18.0
+COPYWRITE_VERSION ?= 0.25.3
 OPERATOR_SDK_VERSION ?= v1.33.0
 YQ_VERSION ?= v4.43.1
 CRD_REF_DOCS_VERSION ?= v0.2.0
@@ -58,7 +58,6 @@ SKIP_CLEANUP ?=
 SKIP_AWS_TESTS ?= true
 SKIP_AWS_STATIC_CREDS_TEST ?= true
 SKIP_GCP_TESTS ?= true
-SKIP_HCPVSAPPS_TESTS ?= false
 
 # filter bats unit tests to run.
 BATS_TESTS_FILTER ?= .\*
@@ -259,7 +258,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t $(IMG) . --target=dev \
+	docker build -t $(IMG) . --target=dev --load \
 	--build-arg GOOS=$(GOOS) \
 	--build-arg GOARCH=$(GOARCH) \
 	--build-arg GO_VERSION=$(shell cat .go-version) \
