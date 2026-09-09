@@ -1,6 +1,8 @@
 ## Unreleased
 
 Enhancements:
+* VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
+* VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
 * Helm: add `controller.rbac.enabled` flag to allow skipping RBAC resource creation (ClusterRole, ClusterRoleBinding, Role, RoleBinding). When set to `false`, the chart still creates ServiceAccounts, the controller Deployment, and hook Jobs — equivalent RBAC must be pre-provisioned out-of-band by a cluster administrator using the same Helm release name (or `fullnameOverride`) before running `helm install`/`helm upgrade`.
 
 Fix:
@@ -10,10 +12,6 @@ BREAKING CHANGES:
 * Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
 
 ## 1.5.1 (August 11th, 2026)
-
-Enhancements:
-* VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
-* VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
 
 Build:
 * Add `ppc64le` (IBM Power) architecture support: build and publish UBI-based images to `icr.io/cpopen/ibm-vault` and `quay.io/redhat-isv-containers` ([#1325](https://github.com/hashicorp/vault-secrets-operator/pull/1325))
