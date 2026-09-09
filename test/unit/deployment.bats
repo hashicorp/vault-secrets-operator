@@ -34,48 +34,6 @@ load _helpers
 #--------------------------------------------------------------------
 # resources
 
-@test "controller/Deployment: default resources for kubeRbacProxy" {
-  cd `chart_dir`
-  local object
-  object=$(helm template \
-  -s templates/deployment.yaml  \
-  . | tee /dev/stderr |
-  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .resources' | tee /dev/stderr)
-
-  local actual
-  actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
-  [ "${actual}" = "5m" ]
-  actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
-  [ "${actual}" = "64Mi" ]
-  actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
-  [ "${actual}" = "500m" ]
-  actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
-  [ "${actual}" = "128Mi" ]
-}
-
-@test "controller/Deployment: can set resources for kubeRbacProxy" {
-  cd `chart_dir`
-  local object
-  object=$(helm template \
-  -s templates/deployment.yaml  \
-  --set 'controller.kubeRbacProxy.resources.requests.memory=100Mi' \
-  --set 'controller.kubeRbacProxy.resources.requests.cpu=100m' \
-  --set 'controller.kubeRbacProxy.resources.limits.memory=200Mi' \
-  --set 'controller.kubeRbacProxy.resources.limits.cpu=200m' \
-  . | tee /dev/stderr |
-  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .resources' | tee /dev/stderr)
-
-  local actual
-  actual=$(echo "$object" | yq '.requests.cpu' | tee /dev/stderr)
-  [ "${actual}" = "100m" ]
-  actual=$(echo "$object" | yq '.requests.memory' | tee /dev/stderr)
-  [ "${actual}" = "100Mi" ]
-  actual=$(echo "$object" | yq '.limits.cpu' | tee /dev/stderr)
-  [ "${actual}" = "200m" ]
-  actual=$(echo "$object" | yq '.limits.memory' | tee /dev/stderr)
-  [ "${actual}" = "200Mi" ]
-}
-
 @test "controller/Deployment: default resources for controller and job" {
   cd `chart_dir`
   local object
@@ -311,7 +269,7 @@ load _helpers
 }
 
 # securityContext
-@test "controller/Deployment: controller.{manager,kube-rbac-proxy}.securityContext set by default" {
+@test "controller/Deployment: controller.manager.securityContext set by default" {
   cd `chart_dir`
   local object
   object=$(helm template \
@@ -323,15 +281,12 @@ load _helpers
   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
   [ "${actual}" = "false" ]
 
-  actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
-  [ "${actual}" = "false" ]
-
   local actual
   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
   [ "${actual}" = "false" ]
 }
 
-@test "controller/Deployment: controller.{manager,kube-rbac-proxy}.securityContext can be set" {
+@test "controller/Deployment: controller.manager.securityContext can be set" {
   cd `chart_dir`
   local object
   object=$(helm template \
@@ -343,11 +298,7 @@ load _helpers
   local actual
   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext | length' | tee /dev/stderr)
   [ "${actual}" = "1" ]
-  actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext | length' | tee /dev/stderr)
-  [ "${actual}" = "1" ]
   actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[0].securityContext.allowPrivilegeEscalation' | tee /dev/stderr)
-  [ "${actual}" = 'true' ]
-  actual=$(echo "$object" | yq 'select(documentIndex == 1) | .containers[1].securityContext.allowPrivilegeEscalation'| tee /dev/stderr)
   [ "${actual}" = 'true' ]
 
   actual=$(echo "$object" | yq 'select(documentIndex == 2) | .containers[0].securityContext | length' | tee /dev/stderr)
@@ -368,9 +319,6 @@ load _helpers
   local actual
   actual=$(echo "$object" | yq '.containers[0].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
   [ "${actual}" = "cluster.local" ]
-
-  actual=$(echo "$object" | yq '.containers[1].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
-  [ "${actual}" = "cluster.local" ]
 }
 
 @test "controller/Deployment: controller.kubernetesClusterDomain can be set" {
@@ -384,9 +332,6 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '.containers[0].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
-  [ "${actual}" = "foo.bar" ]
-
-  actual=$(echo "$object" | yq '.containers[1].env | map(select(.name == "KUBERNETES_CLUSTER_DOMAIN")) | .[] .value' | tee /dev/stderr)
   [ "${actual}" = "foo.bar" ]
 }
 
@@ -671,7 +616,7 @@ load _helpers
   object=$(helm template  \
   -s templates/deployment.yaml  \
   . | tee /dev/stderr |  \
-  yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+  yq '.spec.template.spec.containers[0].env | select(documentIndex == 1)' |  \
   tee /dev/stderr)
 
   local actual
@@ -687,7 +632,7 @@ load _helpers
   --set 'controller.manager.extraEnv[0].name=HTTP_PROXY'  \
   --set 'controller.manager.extraEnv[0].value=http://proxy.example.com/'  \
   . | tee /dev/stderr |  \
-  yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+  yq '.spec.template.spec.containers[0].env | select(documentIndex == 1)' |  \
   tee /dev/stderr)
 
   local actual
@@ -707,7 +652,7 @@ load _helpers
   --set 'controller.manager.extraEnv[0].name=RANDOM_PORT'  \
   --set 'controller.manager.extraEnv[0].value=42'  \
   . | tee /dev/stderr |  \
-  yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+  yq '.spec.template.spec.containers[0].env | select(documentIndex == 1)' |  \
   tee /dev/stderr)
 
   local actual
@@ -726,7 +671,7 @@ load _helpers
   'controller: {manager: {extraEnv: [{name: QUOTED_ENV, value: "noquotesneeded"}]}}\n' |  \
   helm template -s templates/deployment.yaml --values /dev/stdin . |   \
   tee /dev/stderr |  \
-  yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+  yq '.spec.template.spec.containers[0].env | select(documentIndex == 1)' |  \
   tee /dev/stderr)
 
   local actual
@@ -746,7 +691,7 @@ load _helpers
   --set 'controller.manager.extraEnv[0].name=WHITESPACE_WORKS'  \
   --set 'controller.manager.extraEnv[0].value=Hello World!'  \
   . | tee /dev/stderr |  \
-  yq '.spec.template.spec.containers[1].env | select(documentIndex == 1)' |  \
+  yq '.spec.template.spec.containers[0].env | select(documentIndex == 1)' |  \
   tee /dev/stderr)
 
   local actual
@@ -806,7 +751,7 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
+  [ "${actual}" = "13" ]
 }
 
 #
@@ -822,13 +767,13 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "14" ]
+  [ "${actual}" = "15" ]
 
   local actual
-  actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
   [ "${actual}" = "--foo=baz" ]
   local actual
-  actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
+  actual=$(echo "$object" | yq '.[14]' | tee /dev/stderr)
   [ "${actual}" = "--bar=qux" ]
 }
 
@@ -898,7 +843,7 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
+  [ "${actual}" = "13" ]
 }
 
 @test "controller/Deployment: with globalTransformationOptions.excludeRaw" {
@@ -912,8 +857,8 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "13" ]
-  actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+  [ "${actual}" = "14" ]
+  actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
   [ "${actual}" = "--global-transformation-options=exclude-raw" ]
 }
 
@@ -929,12 +874,12 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "15" ]
-  actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+  [ "${actual}" = "16" ]
+  actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
   [ "${actual}" = "--global-transformation-options=exclude-raw" ]
-  actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
-  [ "${actual}" = "--foo=baz" ]
   actual=$(echo "$object" | yq '.[14]' | tee /dev/stderr)
+  [ "${actual}" = "--foo=baz" ]
+  actual=$(echo "$object" | yq '.[15]' | tee /dev/stderr)
   [ "${actual}" = "--bar=qux" ]
 }
 
@@ -951,8 +896,8 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
-  actual=$(echo "$object" | yq '.[3]' | tee /dev/stderr)
+  [ "${actual}" = "13" ]
+  actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
   [ "${actual}" = "--global-vault-auth-options=allow-default-globals" ]
 }
 
@@ -967,7 +912,7 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "11" ]
+  [ "${actual}" = "12" ]
 }
 
 @test "controller/Deployment: with backoffOnSecretSourceError defaults" {
@@ -980,18 +925,18 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
-  actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-initial-interval=5s" ]
+  [ "${actual}" = "13" ]
   actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-max-interval=60s" ]
+  [ "${actual}" = "--backoff-initial-interval=5s" ]
   actual=$(echo "$object" | yq '.[6]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-max-elapsed-time=0s" ]
+  [ "${actual}" = "--backoff-max-interval=60s" ]
   actual=$(echo "$object" | yq '.[7]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-multiplier=1.50" ]
+  [ "${actual}" = "--backoff-max-elapsed-time=0s" ]
   actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-randomization-factor=0.50" ]
+  [ "${actual}" = "--backoff-multiplier=1.50" ]
   actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
+  [ "${actual}" = "--backoff-randomization-factor=0.50" ]
+  actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
 }
 
 @test "controller/Deployment: with backoffOnSecretSourceError set" {
@@ -1009,16 +954,16 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
-  actual=$(echo "$object" | yq '.[4]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-initial-interval=30s" ]
+  [ "${actual}" = "13" ]
   actual=$(echo "$object" | yq '.[5]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-max-interval=300s" ]
+  [ "${actual}" = "--backoff-initial-interval=30s" ]
   actual=$(echo "$object" | yq '.[6]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-max-elapsed-time=24h" ]
+  [ "${actual}" = "--backoff-max-interval=300s" ]
   actual=$(echo "$object" | yq '.[7]' | tee /dev/stderr)
-  [ "${actual}" = "--backoff-multiplier=2.50" ]
+  [ "${actual}" = "--backoff-max-elapsed-time=24h" ]
   actual=$(echo "$object" | yq '.[8]' | tee /dev/stderr)
+  [ "${actual}" = "--backoff-multiplier=2.50" ]
+  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
   [ "${actual}" = "--backoff-randomization-factor=3.74" ]
 }
 
@@ -1035,12 +980,12 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=info" ]
+  [ "${actual}" = "13" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  [ "${actual}" = "--zap-log-level=info" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
   [ "${actual}" = "--zap-stacktrace-level=panic" ]
 }
 
@@ -1057,12 +1002,12 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=debug" ]
+  [ "${actual}" = "13" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-time-encoding=nanos" ]
+  [ "${actual}" = "--zap-log-level=debug" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+  [ "${actual}" = "--zap-time-encoding=nanos" ]
+  actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
   [ "${actual}" = "--zap-stacktrace-level=error" ]
 }
 
@@ -1077,12 +1022,12 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=5" ]
+  [ "${actual}" = "13" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  [ "${actual}" = "--zap-log-level=5" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
   [ "${actual}" = "--zap-stacktrace-level=panic" ]
 }
 
@@ -1097,12 +1042,12 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "12" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=6" ]
+  [ "${actual}" = "13" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  [ "${actual}" = "--zap-log-level=6" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
+  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
   [ "${actual}" = "--zap-stacktrace-level=panic" ]
 }
 
@@ -1117,14 +1062,14 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "13" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  [ "${actual}" = "14" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-stacktrace-level=panic" ]
+  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=extra" ]
+  [ "${actual}" = "--zap-stacktrace-level=panic" ]
   actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
+  [ "${actual}" = "--zap-log-level=extra" ]
+  actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
   [ "${actual}" = "--bar=qux" ]
 }
 
@@ -1139,14 +1084,14 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "13" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=info" ]
+  [ "${actual}" = "14" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-stacktrace-level=panic" ]
+  [ "${actual}" = "--zap-log-level=info" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-time-encoding=extra" ]
+  [ "${actual}" = "--zap-stacktrace-level=panic" ]
   actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
+  [ "${actual}" = "--zap-time-encoding=extra" ]
+  actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
   [ "${actual}" = "--bar=qux" ]
 }
 
@@ -1161,14 +1106,14 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "13" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=info" ]
+  [ "${actual}" = "14" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
+  [ "${actual}" = "--zap-log-level=info" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-stacktrace-level=extra" ]
+  [ "${actual}" = "--zap-time-encoding=rfc3339" ]
   actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
+  [ "${actual}" = "--zap-stacktrace-level=extra" ]
+  actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
   [ "${actual}" = "--bar=qux" ]
 }
 
@@ -1184,14 +1129,14 @@ load _helpers
 
   local actual
   actual=$(echo "$object" | yq '. | length' | tee /dev/stderr)
-  [ "${actual}" = "13" ]
-  actual=$(echo "$object" | yq '.[9]' | tee /dev/stderr)
-  [ "${actual}" = "--zap-log-level=extra" ]
+  [ "${actual}" = "14" ]
   actual=$(echo "$object" | yq '.[10]' | tee /dev/stderr)
-  [ "${actual}" = "-zap-time-encoding=extra" ]
+  [ "${actual}" = "--zap-log-level=extra" ]
   actual=$(echo "$object" | yq '.[11]' | tee /dev/stderr)
-  [ "${actual}" = "-zap-stacktrace-level=extra" ]
+  [ "${actual}" = "-zap-time-encoding=extra" ]
   actual=$(echo "$object" | yq '.[12]' | tee /dev/stderr)
+  [ "${actual}" = "-zap-stacktrace-level=extra" ]
+  actual=$(echo "$object" | yq '.[13]' | tee /dev/stderr)
   [ "${actual}" = "--bar=qux" ]
 }
 
@@ -1207,9 +1152,6 @@ load _helpers
   local actual
   actual=$(echo "${deployment}" | yq '.spec.template.spec.containers[] | select(.name == "manager") | .imagePullPolicy' | tee /dev/stderr)
   [ "${actual}" = "IfNotPresent" ]
-
-  actual=$(echo "${deployment}" | yq '.spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .imagePullPolicy' | tee /dev/stderr)
-  [ "${actual}" = "IfNotPresent" ]
 }
 
 @test "controller/Deployment: imagePullPolicy updated" {
@@ -1222,14 +1164,6 @@ load _helpers
   yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .imagePullPolicy' | tee /dev/stderr)
 
   [ "${actual}" = "Always" ]
-
-  actual=$(helm template \
-  -s templates/deployment.yaml  \
-  --set 'controller.kubeRbacProxy.image.pullPolicy=Never' \
-  . | tee /dev/stderr |
-  yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy") | .imagePullPolicy' | tee /dev/stderr)
-
-  [ "${actual}" = "Never" ]
 }
 
 #--------------------------------------------------------------------
