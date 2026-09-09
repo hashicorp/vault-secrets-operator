@@ -39,13 +39,10 @@ const (
 // SharedWebSocket manages a single WebSocket connection with multiple subscribers
 type SharedWebSocket struct {
 	// conn is the underlying WebSocket connection.
-	// Writes (reconnect, Close) and reads from IsHealthy/Close may happen on
-	// different goroutines, so all cross-goroutine accesses must hold connMu.
-	// Accesses inside the event-loop goroutine itself (readAndRoute, eventLoop
-	// done-handler) are inherently sequential with reconnect and do NOT lock,
-	// to avoid a self-deadlock where reconnect holds connMu while calling
-	// wsClient.Connect, and readAndRoute tries to lock connMu on the same
-	// goroutine.
+	// All cross-goroutine accesses snapshot the pointer under connMu.RLock for
+	// just the load, then release before calling any method on the connection.
+	// This protects the pointer against a concurrent Close() zeroing it while
+	// never holding connMu across a blocking network call.
 	conn   *websocket.Conn
 	connMu sync.RWMutex
 	// stopped indicates that the event loop has exited and this websocket should
@@ -219,8 +216,11 @@ func (ws *SharedWebSocket) eventLoop() {
 		select {
 		case <-ws.ctx.Done():
 			ws.logger.V(consts.LogLevelDebug).Info("Context cancelled, stopping event loop")
-			if ws.conn != nil {
-				ws.conn.Close(websocket.StatusNormalClosure, "context cancelled")
+			ws.connMu.RLock()
+			conn := ws.conn
+			ws.connMu.RUnlock()
+			if conn != nil {
+				conn.Close(websocket.StatusNormalClosure, "context cancelled")
 			}
 			return
 		default:
@@ -251,9 +251,17 @@ func (ws *SharedWebSocket) eventLoop() {
 						ws.logger.Error(reconnErr, "Too many reconnect failures, stopping event loop",
 							"errorCount", errorCount, "threshold", maxReconnectErrorThreshold)
 						ws.notifyOnStop = true
-						if ws.conn != nil {
-							ws.conn.Close(websocket.StatusNormalClosure, "reconnect threshold reached")
+						ws.connMu.RLock()
+						conn := ws.conn
+						ws.connMu.RUnlock()
+						if conn != nil {
+							conn.Close(websocket.StatusNormalClosure, "reconnect threshold reached")
 						}
+						// Notify subscribers before canceling the context so that the
+						// async fallback goroutine in notifySubscribersOfStop can still
+						// send on ReconcileCh without racing against ctx.Done().
+						ws.notifySubscribersOfStop()
+						ws.notifyOnStop = false // already notified; skip the deferred call
 						ws.cancel()
 						return
 					}
@@ -318,7 +326,13 @@ func (ws *SharedWebSocket) notifySubscribersOfStop() {
 				// resync. Spawn a goroutine to block-send so delivery is
 				// guaranteed without holding the subscriber lock.
 				ch := sub.ReconcileCh
-				go func() { ch <- evt }()
+				ctx := ws.ctx
+				go func() {
+					select {
+					case ch <- evt:
+					case <-ctx.Done():
+					}
+				}()
 				ws.logger.V(consts.LogLevelDebug).Info("ReconcileCh full, scheduled async requeue",
 					"subscriber", subKey)
 			}
@@ -329,7 +343,13 @@ func (ws *SharedWebSocket) notifySubscribersOfStop() {
 // readAndRoute reads a single message from the WebSocket and routes it.
 // Uses sync.Pool to reduce GC pressure for unmatched events.
 func (ws *SharedWebSocket) readAndRoute() error {
-	msgType, message, err := ws.conn.Read(ws.ctx)
+	ws.connMu.RLock()
+	conn := ws.conn
+	ws.connMu.RUnlock()
+	if conn == nil {
+		return fmt.Errorf("connection is nil")
+	}
+	msgType, message, err := conn.Read(ws.ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read from websocket: %w", err)
 	}

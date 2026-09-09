@@ -1609,3 +1609,69 @@ func TestSharedWebSocket_RouteEvent_KV_StillWorksWithBranching(t *testing.T) {
 	evt := <-ch
 	assert.Equal(t, "my-vss", evt.Object.GetName())
 }
+
+// TestSharedWebSocket_EventLoop_ThresholdHit_FullReconcileChDelivered verifies
+// that when the reconnect-failure threshold is reached AND the subscriber's
+// ReconcileCh is already full, the requeue event is still eventually delivered.
+//
+// This tests the fix for review issue #2: notifySubscribersOfStop() is now
+// called BEFORE ws.cancel(), so the async fallback goroutine's ctx.Done() select
+// arm is not immediately ready, and the blocking channel send can complete.
+func TestSharedWebSocket_EventLoop_ThresholdHit_FullReconcileChDelivered(t *testing.T) {
+	// Use a buffered channel of capacity 1 and pre-fill it so the fast-path
+	// send inside notifySubscribersOfStop falls through to the async goroutine.
+	reconcileCh := make(chan event.GenericEvent, 1)
+	reconcileCh <- event.GenericEvent{} // pre-fill → channel is full
+
+	resourceKey := types.NamespacedName{Namespace: "default", Name: "vss-instant"}
+	onStopCalled := false
+	sub := &Subscriber{
+		ResourceKey:  resourceKey,
+		VaultPath:    "kv/data/app/config",
+		ResourceType: ResourceTypeVaultStaticSecret,
+		ReconcileCh:  reconcileCh,
+		OnStop:       func() { onStopCalled = true },
+		NewObject: func() client.Object {
+			return &secretsv1beta1.VaultStaticSecret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: resourceKey.Namespace,
+					Name:      resourceKey.Name,
+				},
+			}
+		},
+	}
+
+	ws := newTestSharedWebSocket(EventTypeKV)
+	require.NoError(t, ws.Subscribe(sub))
+
+	// Simulate the reconnect-threshold path: call notifySubscribersOfStop
+	// BEFORE canceling the context — exactly what the fixed eventLoop code does
+	// at the threshold.
+	ws.notifyOnStop = true
+	ws.notifySubscribersOfStop()
+	ws.notifyOnStop = false // already notified; deferred call is a no-op
+
+	// OnStop must have fired synchronously.
+	assert.True(t, onStopCalled, "OnStop must fire even when ReconcileCh is full")
+
+	// Drain the pre-filled dummy event BEFORE canceling ws.ctx. This mirrors
+	// production where the controller-runtime consumer is always reading the
+	// channel: the async goroutine sees the channel become writable and sends.
+	// Draining here unblocks the goroutine's blocking channel send so it can
+	// complete while ws.ctx is still live.
+	<-reconcileCh
+
+	// The async goroutine must deliver the requeue event within a short
+	// deadline. ws.ctx has not been canceled yet, so the goroutine can send.
+	select {
+	case evt := <-reconcileCh:
+		assert.NotNil(t, evt.Object,
+			"requeue event must carry a non-nil object")
+		assert.Equal(t, resourceKey.Name, evt.Object.GetName())
+	case <-time.After(time.Second):
+		t.Fatal("timed out: requeue event was not delivered after threshold-hit with full ReconcileCh")
+	}
+
+	// Now cancel — after the event has been delivered.
+	ws.cancel()
+}

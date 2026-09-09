@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,7 @@ import (
 
 	secretsv1beta1 "github.com/hashicorp/vault-secrets-operator/api/v1beta1"
 	vsoconsts "github.com/hashicorp/vault-secrets-operator/consts"
+	"github.com/hashicorp/vault-secrets-operator/credentials/provider"
 	"github.com/hashicorp/vault-secrets-operator/helpers"
 	"github.com/hashicorp/vault-secrets-operator/internal/testutils"
 	"github.com/hashicorp/vault-secrets-operator/vault"
@@ -732,3 +734,111 @@ func Test_VSS_ensureEventWatcher_SubscribeError(t *testing.T) {
 	_, ok := r.eventWatcherRegistry.Get(key)
 	assert.False(t, ok, "registry must not have an entry when subscribe failed")
 }
+
+// TestVaultStaticSecretReconciler_vaultClientCallback_BlocksOnFullSourceCh
+// verifies that vaultClientCallback delivers events to ALL matching CRs even
+// when SourceCh has a smaller buffer than the number of matching instances.
+func TestVaultStaticSecretReconciler_vaultClientCallback_BlocksOnFullSourceCh(t *testing.T) {
+	t.Parallel()
+
+	// Key must match the cacheKeyRe pattern: [provider]-[22 hex chars].
+	cacheKey := fmt.Sprintf("%s-%s", "kubernetes", "aabbccddee1122334455bb")
+
+	// Create 6 matching VaultStaticSecret instances — more than any reasonable
+	// small buffer — all sharing the same client cache key.
+	const instanceCount = 6
+	instances := make([]*secretsv1beta1.VaultStaticSecret, instanceCount)
+	for i := range instances {
+		instances[i] = &secretsv1beta1.VaultStaticSecret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      fmt.Sprintf("vss-%d", i),
+			},
+			Status: secretsv1beta1.VaultStaticSecretStatus{
+				VaultClientMeta: secretsv1beta1.VaultClientMeta{
+					CacheKey: cacheKey,
+				},
+			},
+		}
+	}
+
+	// SourceCh is intentionally smaller than instanceCount to force the blocking
+	// send path. A buffer of 1 means only the first send completes immediately;
+	// all subsequent sends must block until the consumer reads.
+	sourceCh := make(chan event.GenericEvent, 1)
+	fakeClient := testutils.NewFakeClient()
+	r := &VaultStaticSecretReconciler{
+		Client:   fakeClient,
+		SourceCh: sourceCh,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for _, o := range instances {
+		require.NoError(t, r.Create(ctx, o))
+	}
+
+	c := &stubVSSClient{
+		cacheKey:  vault.ClientCacheKey(cacheKey),
+		namespace: "default",
+	}
+
+	// Run vaultClientCallback in its own goroutine (mirrors production: it is
+	// always spawned by callClientCallbacks, never called on the hot path).
+	callbackDone := make(chan struct{})
+	go func() {
+		defer close(callbackDone)
+		r.vaultClientCallback(ctx, c)
+	}()
+
+	require.Eventually(t, func() bool {
+		return len(sourceCh) == cap(sourceCh)
+	}, time.Second, time.Millisecond, "callback must fill SourceCh before blocking")
+	select {
+	case <-callbackDone:
+		t.Fatal("callback returned while SourceCh was full; events may have been dropped")
+	default:
+	}
+
+	// Consume all instanceCount events from the channel. Each read unblocks the
+	// next blocking send in the callback goroutine.
+	received := 0
+	for received < instanceCount {
+		select {
+		case <-sourceCh:
+			received++
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out after receiving %d/%d events; blocking send did not unblock", received, instanceCount)
+		}
+	}
+
+	// Callback goroutine must finish now that all sends have completed.
+	select {
+	case <-callbackDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("vaultClientCallback goroutine did not finish after all events were consumed")
+	}
+
+	assert.Equal(t, instanceCount, received,
+		"all %d matching CRs must be reconciled even with a small SourceCh buffer", instanceCount)
+}
+
+// stubVSSClient is a minimal vault.Client stub for vaultClientCallback tests.
+type stubVSSClient struct {
+	vault.Client
+	cacheKey  vault.ClientCacheKey
+	namespace string
+}
+
+func (c *stubVSSClient) GetCacheKey() (vault.ClientCacheKey, error) { return c.cacheKey, nil }
+func (c *stubVSSClient) GetCredentialProvider() provider.CredentialProviderBase {
+	return &stubVSSCredentialProvider{namespace: c.namespace}
+}
+
+type stubVSSCredentialProvider struct {
+	provider.CredentialProviderBase
+	namespace string
+}
+
+func (p *stubVSSCredentialProvider) GetNamespace() string { return p.namespace }

@@ -597,12 +597,7 @@ func (r *VaultStaticSecretReconciler) vaultClientCallback(ctx context.Context, c
 					"objKey", objKey)
 				logger.V(consts.LogLevelDebug).Info(
 					"Sending GenericEvent to the SourceCh", "evt", evt)
-				select {
-				case r.SourceCh <- evt:
-				default:
-					logger.V(consts.LogLevelWarning).Info(
-						"SourceCh full, dropping client-callback event", "objKey", objKey)
-				}
+				r.SourceCh <- evt
 			}
 		} else if err != nil {
 			logger.V(consts.LogLevelWarning).Info(

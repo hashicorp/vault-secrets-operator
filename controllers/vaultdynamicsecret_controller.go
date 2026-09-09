@@ -839,7 +839,7 @@ func (r *VaultDynamicSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts c
 	)
 
 	// TODO: close this channel when the controller is stopped.
-	r.SourceCh = make(chan event.GenericEvent)
+	r.SourceCh = make(chan event.GenericEvent, 4)
 	m := ctrl.NewControllerManagedBy(mgr).
 		For(&secretsv1beta1.VaultDynamicSecret{}).
 		WithOptions(opts).
@@ -1068,12 +1068,7 @@ func (r *VaultDynamicSecretReconciler) vaultClientCallback(ctx context.Context, 
 				r.SyncRegistry.Add(objKey)
 				logger.V(consts.LogLevelDebug).Info(
 					"Sending GenericEvent to the SourceCh", "evt", evt)
-				select {
-				case r.SourceCh <- evt:
-				default:
-					logger.V(consts.LogLevelWarning).Info(
-						"SourceCh full, dropping client-callback event", "objKey", objKey)
-				}
+				r.SourceCh <- evt
 			}
 		} else if err != nil {
 			logger.V(consts.LogLevelWarning).Info(
