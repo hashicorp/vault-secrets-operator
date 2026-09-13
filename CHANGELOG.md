@@ -1,6 +1,8 @@
 ## Unreleased
 
 Enhancements:
+* VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
+* VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
 * Helm: add `controller.rbac.enabled` flag to allow skipping RBAC resource creation (ClusterRole, ClusterRoleBinding, Role, RoleBinding). When set to `false`, the chart still creates ServiceAccounts, the controller Deployment, and hook Jobs — equivalent RBAC must be pre-provisioned out-of-band by a cluster administrator using the same Helm release name (or `fullnameOverride`) before running `helm install`/`helm upgrade`.
 
 Fix:

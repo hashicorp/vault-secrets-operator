@@ -37,6 +37,7 @@ function waitVaultPod() {
 
 waitVaultPod || exit 1
 
+# Apply patches first, before waiting for the pod
 root="${0%/*}"
 pushd ${root}/patches > /dev/null
 for f in *.yaml
@@ -51,10 +52,13 @@ do
         continue
         ;;
     esac
+    echo "Applying patch: ${f}"
     kubectl patch --namespace=${K8S_VAULT_NAMESPACE} ${type} vault --patch-file ${f}
 done
 popd > /dev/null
 
+# Delete the pod so it gets recreated with the patches
+echo "Deleting vault-0 pod to apply patches..."
 kubectl delete --wait --timeout=30s --namespace=${K8S_VAULT_NAMESPACE} pod vault-0
 
 waitVaultPod || exit 1

@@ -990,6 +990,7 @@ func NewCachingClientFactory(ctx context.Context, client ctrlclient.Client, cach
 
 	if config.CollectClientCacheMetrics {
 		ctrlmetrics.Registry.MustRegister(newClientCacheCollector(cache, config.ClientCacheSize))
+		ctrlmetrics.Registry.MustRegister(newWebsocketCollector(cache))
 	}
 
 	factory.cache = cache

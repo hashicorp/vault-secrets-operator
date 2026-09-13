@@ -83,3 +83,9 @@ variable "create_namespace" {
   type    = bool
   default = true
 }
+
+variable "aws_region" {
+  description = "AWS region for the EKS cluster"
+  type        = string
+  default     = "us-east-2"
+}

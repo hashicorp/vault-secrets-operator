@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/coder/websocket"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"nhooyr.io/websocket"
 )
 
 func TestWebSocketClient(t *testing.T) {
@@ -43,6 +43,7 @@ func TestWebSocketClient(t *testing.T) {
 				require.NoError(t, err)
 				client.SetToken("foo")
 				client.SetNamespace("bar")
+				client.SetAddress("https://127.0.0.1:8200")
 				return &defaultClient{client: client}
 			}(),
 			eventSubscribePath: "some-path*",
