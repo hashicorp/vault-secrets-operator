@@ -484,6 +484,8 @@ func (ws *SharedWebSocket) routeEvent(msg *EventMessage) {
 	subs, exists := ws.subscribers[lookupKey]
 	if !exists {
 		ws.subscriberMu.RUnlock()
+		ws.logger.V(consts.LogLevelDebug).Info("No subscribers matched event; discarding",
+			"key", lookupKey)
 		return
 	}
 	// Copy subscriber list under read lock to avoid holding it during channel sends

@@ -43,6 +43,45 @@ func TestSubscriptionKey_String(t *testing.T) {
 			},
 			want: "kv/data/app1/config",
 		},
+		{
+			// a trailing and leading slash on the namespace must not produce
+			// a different key than the canonical (trimmed) namespace, since
+			// routeEvent always looks up using a trimmed namespace derived
+			// from the Vault event payload.
+			name: "trailing slash namespace",
+			key: SubscriptionKey{
+				VaultNamespace: "vso-e2e/",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "vso-e2e/kv/data/app1/config",
+		},
+		{
+			name: "leading slash namespace",
+			key: SubscriptionKey{
+				VaultNamespace: "/vso-e2e",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "vso-e2e/kv/data/app1/config",
+		},
+		{
+			name: "leading and trailing slash namespace",
+			key: SubscriptionKey{
+				VaultNamespace: "/vso-e2e/",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "vso-e2e/kv/data/app1/config",
+		},
+		{
+			// A namespace of only slashes should be treated the same as no
+			// namespace at all, matching strings.Trim(msg.Data.Namespace, "/")
+			// in routeEvent when Vault sends "/" for the root namespace.
+			name: "namespace of only slashes",
+			key: SubscriptionKey{
+				VaultNamespace: "/",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "kv/data/app1/config",
+		},
 	}
 
 	for _, tt := range tests {
@@ -257,31 +296,52 @@ func TestSharedWebSocket_Unsubscribe_DifferentPaths(t *testing.T) {
 	assert.True(t, isEmpty)
 }
 
+// TestSharedWebSocket_RouteEvent_SingleSubscriber covers the base routing
+// case, plus (via subtests) the leading/trailing-slash namespace scenarios:
+// a subscriber registered with a non-canonical VaultNS (e.g. "vso-e2e/" or
+// "/vso-e2e") must still be routed an incoming event whose namespace is
+// already canonical, since Subscribe and routeEvent must agree on the same
+// normalized SubscriptionKey.
 func TestSharedWebSocket_RouteEvent_SingleSubscriber(t *testing.T) {
-	ws := newTestSharedWebSocket(EventTypeKV)
-	defer ws.cancel()
-
-	ch := make(chan event.GenericEvent, 10)
-	sub := &Subscriber{
-		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vss"},
-		VaultNS:      "prod",
-		VaultPath:    "kv/data/app1/config",
-		ResourceType: ResourceTypeVaultStaticSecret,
-		ReconcileCh:  ch,
+	tests := []struct {
+		name       string
+		subVaultNS string
+		eventNS    string
+	}{
+		{name: "matching namespace", subVaultNS: "prod", eventNS: "prod"},
+		{name: "trailing slash on subscriber namespace", subVaultNS: "vso-e2e/", eventNS: "vso-e2e"},
+		{name: "leading slash on subscriber namespace", subVaultNS: "/vso-e2e", eventNS: "vso-e2e"},
+		{name: "leading and trailing slash on subscriber namespace", subVaultNS: "/vso-e2e/", eventNS: "vso-e2e"},
 	}
-	require.NoError(t, ws.Subscribe(sub))
 
-	msg := &EventMessage{}
-	msg.Data.Namespace = "prod"
-	msg.Data.Event.Metadata.Path = "kv/data/app1/config"
-	msg.Data.Event.Metadata.Modified = "true"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := newTestSharedWebSocket(EventTypeKV)
+			defer ws.cancel()
 
-	ws.routeEvent(msg)
+			ch := make(chan event.GenericEvent, 10)
+			sub := &Subscriber{
+				ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vss"},
+				VaultNS:      tt.subVaultNS,
+				VaultPath:    "kv/data/app1/config",
+				ResourceType: ResourceTypeVaultStaticSecret,
+				ReconcileCh:  ch,
+			}
+			require.NoError(t, ws.Subscribe(sub))
 
-	require.Len(t, ch, 1)
-	evt := <-ch
-	assert.Equal(t, "my-vss", evt.Object.GetName())
-	assert.Equal(t, "default", evt.Object.GetNamespace())
+			msg := &EventMessage{}
+			msg.Data.Namespace = tt.eventNS
+			msg.Data.Event.Metadata.Path = "kv/data/app1/config"
+			msg.Data.Event.Metadata.Modified = "true"
+
+			ws.routeEvent(msg)
+
+			require.Len(t, ch, 1)
+			evt := <-ch
+			assert.Equal(t, "my-vss", evt.Object.GetName())
+			assert.Equal(t, "default", evt.Object.GetNamespace())
+		})
+	}
 }
 
 func TestSharedWebSocket_RouteEvent_MultipleSubscribers(t *testing.T) {
