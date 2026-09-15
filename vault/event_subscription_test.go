@@ -43,6 +43,45 @@ func TestSubscriptionKey_String(t *testing.T) {
 			},
 			want: "kv/data/app1/config",
 		},
+		{
+			// a trailing and leading slash on the namespace must not produce
+			// a different key than the canonical (trimmed) namespace, since
+			// routeEvent always looks up using a trimmed namespace derived
+			// from the Vault event payload.
+			name: "trailing slash namespace",
+			key: SubscriptionKey{
+				VaultNamespace: "vso-e2e/",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "vso-e2e/kv/data/app1/config",
+		},
+		{
+			name: "leading slash namespace",
+			key: SubscriptionKey{
+				VaultNamespace: "/vso-e2e",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "vso-e2e/kv/data/app1/config",
+		},
+		{
+			name: "leading and trailing slash namespace",
+			key: SubscriptionKey{
+				VaultNamespace: "/vso-e2e/",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "vso-e2e/kv/data/app1/config",
+		},
+		{
+			// A namespace of only slashes should be treated the same as no
+			// namespace at all, matching strings.Trim(msg.Data.Namespace, "/")
+			// in routeEvent when Vault sends "/" for the root namespace.
+			name: "namespace of only slashes",
+			key: SubscriptionKey{
+				VaultNamespace: "/",
+				VaultPath:      "kv/data/app1/config",
+			},
+			want: "kv/data/app1/config",
+		},
 	}
 
 	for _, tt := range tests {
@@ -51,6 +90,82 @@ func TestSubscriptionKey_String(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestSubscriptionKey_String_CanonicalAndNonCanonicalMatch guards against a
+// scenario where a non-canonical namespace (e.g. one with a
+// trailing slash) stored at Subscribe time produced a SubscriptionKey that no
+// longer matched the canonical, trimmed namespace looked up in routeEvent,
+// silently dropping all instant-update events.
+func TestSubscriptionKey_String_CanonicalAndNonCanonicalMatch(t *testing.T) {
+	canonical := SubscriptionKey{VaultNamespace: "vso-e2e", VaultPath: "kv/data/app1/config"}
+	nonCanonical := SubscriptionKey{VaultNamespace: "vso-e2e/", VaultPath: "kv/data/app1/config"}
+
+	assert.Equal(t, canonical.String(), nonCanonical.String())
+}
+
+// TestSharedWebSocket_RouteEvent_TrailingSlashNamespace reproduces the
+// scenario where a VaultStaticSecret subscribes using a
+// namespace with a trailing slash (as VSO would if a user specified
+// `namespace: "vso-e2e/"`), and an incoming Vault event with the canonical
+// (trimmed) namespace must still be routed to that subscriber.
+func TestSharedWebSocket_RouteEvent_TrailingSlashNamespace(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vss"},
+		VaultNS:      "vso-e2e/",
+		VaultPath:    "kv/data/app1/config",
+		ResourceType: ResourceTypeVaultStaticSecret,
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = "vso-e2e"
+	msg.Data.Event.Metadata.Path = "kv/data/app1/config"
+	msg.Data.Event.Metadata.Modified = "true"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vss", evt.Object.GetName())
+	assert.Equal(t, "default", evt.Object.GetNamespace())
+}
+
+// TestSharedWebSocket_RouteEvent_LeadingSlashNamespace mirrors
+// TestSharedWebSocket_RouteEvent_TrailingSlashNamespace but reproduces the
+// scenario with a leading slash instead (e.g.
+// `namespace: "/vso-e2e"`), confirming that code in SubscriptionKey.String()
+// normalizes both directions symmetrically.
+func TestSharedWebSocket_RouteEvent_LeadingSlashNamespace(t *testing.T) {
+	ws := newTestSharedWebSocket(EventTypeKV)
+	defer ws.cancel()
+
+	ch := make(chan event.GenericEvent, 10)
+	sub := &Subscriber{
+		ResourceKey:  types.NamespacedName{Namespace: "default", Name: "my-vss"},
+		VaultNS:      "/vso-e2e",
+		VaultPath:    "kv/data/app1/config",
+		ResourceType: ResourceTypeVaultStaticSecret,
+		ReconcileCh:  ch,
+	}
+	require.NoError(t, ws.Subscribe(sub))
+
+	msg := &EventMessage{}
+	msg.Data.Namespace = "vso-e2e"
+	msg.Data.Event.Metadata.Path = "kv/data/app1/config"
+	msg.Data.Event.Metadata.Modified = "true"
+
+	ws.routeEvent(msg)
+
+	require.Len(t, ch, 1)
+	evt := <-ch
+	assert.Equal(t, "my-vss", evt.Object.GetName())
+	assert.Equal(t, "default", evt.Object.GetNamespace())
 }
 
 func TestEventType_String(t *testing.T) {
