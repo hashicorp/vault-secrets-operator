@@ -20,6 +20,19 @@ type CSISecretsSpec struct {
 	SyncConfig CSISyncConfig `json:"syncConfig,omitempty"`
 	// VaultAuthRef is the reference to the VaultAuth resource.
 	VaultAuthRef *VaultAuthRef `json:"vaultAuthRef,omitempty"`
+	// DefaultMode is an optional file mode, specified as an octal value between
+	// 0000 and 0777 or a decimal value between 0 and 511, used to set the
+	// permissions on the secret files written to the mounted volume. This follows
+	// the same convention as the defaultMode field of Kubernetes Secret and
+	// ConfigMap volume sources. If not specified, a restrictive default of 0440 is
+	// used, which is readable only by the owner and group. Setting a more
+	// permissive mode (for example 0444) allows non-root application containers to
+	// read the mounted secret files.
+	//
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=511
+	DefaultMode *int32 `json:"defaultMode,omitempty"`
 }
 
 type SecretCollection struct {
