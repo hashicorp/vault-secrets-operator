@@ -106,6 +106,7 @@ _Appears in:_
 | `secrets` _[SecretCollection](#secretcollection)_ | Secrets that will be synced with the CSI driver. |  |  |
 | `syncConfig` _[CSISyncConfig](#csisyncconfig)_ | SyncConfig provides configuration for syncing the secret data with the CSI driver. |  |  |
 | `vaultAuthRef` _[VaultAuthRef](#vaultauthref)_ | VaultAuthRef is the reference to the VaultAuth resource. |  |  |
+| `defaultMode` _integer_ | DefaultMode is an optional file mode, specified as an octal value between<br />0000 and 0777 or a decimal value between 0 and 511, used to set the<br />permissions on the secret files written to the mounted volume. This follows<br />the same convention as the defaultMode field of Kubernetes Secret and<br />ConfigMap volume sources. If not specified, a restrictive default of 0440 is<br />used, which is readable only by the owner and group. Setting a more<br />permissive mode (for example 0444) allows non-root application containers to<br />read the mounted secret files. |  | Maximum: 511 <br />Minimum: 0 <br /> |
 
 
 
