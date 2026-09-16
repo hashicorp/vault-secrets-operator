@@ -13,34 +13,9 @@ Use these links to navigate to a particular top-level stanza.
 ### controller ((#h-controller))
 
 - `controller` ((#v-controller)) - Top level configuration for the vault secrets operator deployment.
-  This is comprised of a controller and a kube rbac proxy container.
+  This is comprised of the controller manager container.
 
   - `replicas` ((#v-controller-replicas)) (`integer: 1`) - Set the number of replicas for the operator.
-
-  - `kubeRbacProxy` ((#v-controller-kuberbacproxy)) - Settings related to the kubeRbacProxy container. This container is an HTTP proxy for the
-    controller manager which performs RBAC authorization against the Kubernetes API using SubjectAccessReviews.
-
-    - `image` ((#v-controller-kuberbacproxy-image)) - Image sets the repo and tag of the kube-rbac-proxy image to use for the controller.
-
-      - `repository` ((#v-controller-kuberbacproxy-image-repository)) (`string: gcr.io/kubebuilder/kube-rbac-proxy`)
-
-      - `tag` ((#v-controller-kuberbacproxy-image-tag)) (`string: v0.11.0`)
-
-    - `resources` ((#v-controller-kuberbacproxy-resources)) (`map`) - Configures the default resources for the kube rbac proxy container.
-      For more information on configuring resources, see the K8s documentation:
-      https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-
-      - `limits` ((#v-controller-kuberbacproxy-resources-limits))
-
-        - `cpu` ((#v-controller-kuberbacproxy-resources-limits-cpu)) (`string: 500m`)
-
-        - `memory` ((#v-controller-kuberbacproxy-resources-limits-memory)) (`string: 128Mi`)
-
-      - `requests` ((#v-controller-kuberbacproxy-resources-requests))
-
-        - `cpu` ((#v-controller-kuberbacproxy-resources-requests-cpu)) (`string: 5m`)
-
-        - `memory` ((#v-controller-kuberbacproxy-resources-requests-memory)) (`string: 64Mi`)
 
   - `manager` ((#v-controller-manager)) - Settings related to the vault-secrets-operator container.
 

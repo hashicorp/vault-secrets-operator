@@ -1,9 +1,12 @@
 # Copyright IBM Corp. 2024, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
-# This patch injects a UBI-based version of a sidecar container which is an HTTP
-# proxy for the controller manager, it performs RBAC authorization against the
-# Kubernetes API using SubjectAccessReviews.
+# This patch sets OpenShift-specific configuration for the controller manager.
+#
+# NOTE: The kube-rbac-proxy sidecar (previously pinned here to a UBI-based
+# registry.redhat.io image) has been removed. The metrics endpoint is now
+# protected in-process by controller-runtime's
+# filters.WithAuthenticationAndAuthorization, so no proxy image is required.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,5 +16,4 @@ spec:
   template:
     spec:
       containers:
-      - name: kube-rbac-proxy
-        image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.15.0
+      - name: manager
