@@ -18,7 +18,7 @@ resource "kubernetes_service_account" "operator" {
 
 # transit setup for vso client cache encryption
 resource "vault_mount" "transit" {
-  path        = "transit"
+  path        = var.use_hvd ? "transit-hvd-vso-${random_string.approle_suffix[0].result}" : "transit"
   type        = "transit"
   description = "VSO Client Cache"
 }
@@ -61,13 +61,28 @@ resource "kubernetes_manifest" "vault-auth-operator" {
         cacheStorageEncryption = "true"
       }
     }
-    spec = {
-      method             = "kubernetes"
-      namespace          = vault_kubernetes_auth_backend_role.operator.namespace
-      mount              = vault_auth_backend.default.path
+    spec = var.use_hvd ? {
+      method             = "appRole"
+      namespace          = var.vault_namespace
+      mount              = vault_auth_backend.approle[0].path
       vaultConnectionRef = one(kubernetes_manifest.vault-connection-default[*].manifest.metadata.name)
+      appRole = {
+        roleId    = vault_approle_auth_backend_role.operator[0].role_id
+        secretRef = kubernetes_secret.operator_approle_secretid[0].metadata[0].name
+      }
+      kubernetes = null
+      storageEncryption = {
+        mount   = vault_transit_secret_backend_key.cache.backend
+        keyName = vault_transit_secret_backend_key.cache.name
+      }
+      } : {
+      method             = "kubernetes"
+      namespace          = vault_kubernetes_auth_backend_role.operator[0].namespace
+      mount              = vault_auth_backend.default[0].path
+      vaultConnectionRef = one(kubernetes_manifest.vault-connection-default[*].manifest.metadata.name)
+      appRole            = null
       kubernetes = {
-        role           = vault_kubernetes_auth_backend_role.operator.role_name
+        role           = vault_kubernetes_auth_backend_role.operator[0].role_name
         serviceAccount = kubernetes_service_account.operator.metadata[0].name
         audiences      = ["vault"]
       }
@@ -80,8 +95,9 @@ resource "kubernetes_manifest" "vault-auth-operator" {
 }
 
 resource "vault_kubernetes_auth_backend_role" "operator" {
-  namespace                        = vault_auth_backend.default.namespace
-  backend                          = vault_kubernetes_auth_backend_config.operator.backend
+  count                            = var.use_hvd ? 0 : 1
+  namespace                        = vault_auth_backend.default[0].namespace
+  backend                          = vault_kubernetes_auth_backend_config.operator[0].backend
   role_name                        = local.auth_role_operator
   bound_service_account_names      = [local.operator_service_account_name]
   bound_service_account_namespaces = [var.operator_namespace]

@@ -449,6 +449,33 @@ func TestClientCacheKey_SameParent(t *testing.T) {
 			want:    false,
 			wantErr: require.Error,
 		},
+		{
+			// regression test: consts.ProviderMethodAppRole is "appRole"
+			// (mixed-case), but computeClientCacheKey() always lower-cases
+			// the method when building the key. cacheKeyRe must therefore
+			// match the lower-cased form too, otherwise SameParent() would
+			// erroneously fail for AppRole-derived cache keys.
+			name: "same-parent-equal-approle",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s",
+				strings.ToLower(consts.ProviderMethodAppRole), computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s",
+				strings.ToLower(consts.ProviderMethodAppRole), computedHash),
+			),
+			want:    true,
+			wantErr: require.NoError,
+		},
+		{
+			name: "same-parent-clone-approle",
+			key: ClientCacheKey(fmt.Sprintf("%s-%s-/ns1/ns2",
+				strings.ToLower(consts.ProviderMethodAppRole), computedHash),
+			),
+			other: ClientCacheKey(fmt.Sprintf("%s-%s-/ns3/ns4",
+				strings.ToLower(consts.ProviderMethodAppRole), computedHash),
+			),
+			want:    true,
+			wantErr: require.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

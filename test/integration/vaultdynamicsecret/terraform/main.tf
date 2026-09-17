@@ -15,13 +15,44 @@ terraform {
       source  = "hashicorp/vault"
       version = "4.2.0"
     }
+    # aws + tls are only used when use_hvd=true, to provision an EC2 instance
+    # that hosts Postgres for HVD (which cannot reach in-cluster Postgres).
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+    # http is only used when use_hvd=true and ssh_ingress_cidr is left empty,
+    # to auto-detect the test runner's current public IP.
+    http = {
+      source  = "hashicorp/http"
+      version = "~> 3.4"
+    }
   }
 }
 
 provider "vault" {
-  # Configuration options
+  # address and token are picked up from VAULT_ADDR/VAULT_TOKEN env vars set
+  # by the test runner before invoking go test (var.vault_address/vault_token
+  # are effectively unused today — kept only for potential explicit overrides).
+  # Do NOT set namespace here — the vault provider concatenates the provider
+  # block namespace with the VAULT_NAMESPACE env var (also set by the test
+  # runner for HVD), producing "admin/admin". Namespacing for HVD is instead
+  # handled per-resource via local.namespace (see locals.tf), which resolves
+  # to null under HVD so resources rely on the env-var-derived root context.
   address = var.vault_address
   token   = var.vault_token
+}
+
+provider "aws" {
+  region = local.aws_region
 }
 
 provider "helm" {
@@ -52,26 +83,30 @@ resource "random_string" "prefix" {
 }
 
 resource "vault_namespace" "test" {
-  count = var.vault_enterprise ? 1 : 0
+  count = (var.vault_enterprise && !var.use_hvd) ? 1 : 0
   path  = "${local.name_prefix}-ns"
 }
 
-# kubernetes auth config
+# kubernetes auth config (kind/EKS only — HVD cannot reach the kind cluster's
+# private API server to validate service account JWTs)
 resource "vault_auth_backend" "default" {
+  count     = var.use_hvd ? 0 : 1
   namespace = local.namespace
   path      = local.auth_mount
   type      = "kubernetes"
 }
 
 resource "vault_kubernetes_auth_backend_config" "dev" {
-  namespace              = vault_auth_backend.default.namespace
-  backend                = vault_auth_backend.default.path
+  count                  = var.use_hvd ? 0 : 1
+  namespace              = vault_auth_backend.default[0].namespace
+  backend                = vault_auth_backend.default[0].path
   kubernetes_host        = var.k8s_host
   disable_iss_validation = true
 }
 resource "vault_kubernetes_auth_backend_role" "dev" {
-  namespace         = vault_auth_backend.default.namespace
-  backend           = vault_kubernetes_auth_backend_config.dev.backend
+  count             = var.use_hvd ? 0 : 1
+  namespace         = vault_auth_backend.default[0].namespace
+  backend           = vault_kubernetes_auth_backend_config.dev[0].backend
   role_name         = local.auth_role
   alias_name_source = "serviceaccount_name"
   bound_service_account_names = [
@@ -85,6 +120,44 @@ resource "vault_kubernetes_auth_backend_role" "dev" {
   token_period                     = var.vault_token_period
   token_policies                   = local.dev_token_policies
   audience                         = "vault"
+}
+
+# ── AppRole auth backend (HVD only) ───────────────────────────────────────
+resource "vault_auth_backend" "approle" {
+  count     = var.use_hvd ? 1 : 0
+  namespace = local.namespace
+  path      = "${local.auth_mount}-approle"
+  type      = "approle"
+}
+
+resource "vault_approle_auth_backend_role" "dev" {
+  count          = var.use_hvd ? 1 : 0
+  namespace      = local.namespace
+  backend        = vault_auth_backend.approle[0].path
+  role_name      = local.auth_role
+  token_period   = var.vault_token_period
+  token_policies = local.dev_token_policies
+}
+
+resource "vault_approle_auth_backend_role_secret_id" "dev" {
+  count     = var.use_hvd ? 1 : 0
+  namespace = local.namespace
+  backend   = vault_auth_backend.approle[0].path
+  role_name = vault_approle_auth_backend_role.dev[0].role_name
+}
+
+# Writes secret_id into a k8s Secret in the dev namespace.
+# VSO reads this locally — no outbound call from HVD required.
+# The key MUST be named "id" — required by VSO's AppRole credential provider.
+resource "kubernetes_secret" "approle_secret_id" {
+  count = var.use_hvd ? 1 : 0
+  metadata {
+    name      = "${local.name_prefix}-approle-secret-id"
+    namespace = kubernetes_namespace.dev.metadata[0].name
+  }
+  data = {
+    id = vault_approle_auth_backend_role_secret_id.dev[0].secret_id
+  }
 }
 
 resource "vault_policy" "revocation" {

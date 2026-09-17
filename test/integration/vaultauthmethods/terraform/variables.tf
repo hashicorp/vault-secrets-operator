@@ -63,6 +63,21 @@ variable "vault_enterprise" {
   default = false
 }
 
+# HVD: skip deploying local kind-only Vault resources (Kubernetes/JWT auth
+# backends, which require Vault to reach the kind cluster's private API
+# server / OIDC discovery endpoint) and reuse an existing Vault namespace
+# instead of creating a child one.
+variable "use_hvd" {
+  type    = bool
+  default = false
+}
+
+variable "vault_namespace" {
+  description = "Vault namespace to use on HVD (e.g. \"admin\"). Empty = create/use the vault_test_namespace child namespace instead (kind path)."
+  type        = string
+  default     = ""
+}
+
 # The path to the local helm chart in our repository, this is used by helm to find the Chart.yaml
 variable "operator_helm_chart_path" {
   default = "../../../../chart"

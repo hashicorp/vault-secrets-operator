@@ -62,6 +62,10 @@ type dynamicK8SOutputs struct {
 	XnsVaultNS         string   `json:"xns_vault_ns"`
 	WithXns            bool     `json:"with_xns"`
 	XnsMemberEntityIDs []string `json:"xns_member_entity_ids"`
+	UseHVD             bool     `json:"use_hvd"`
+	AppRoleMount       string   `json:"approle_mount,omitempty"`
+	AppRoleRoleID      string   `json:"approle_role_id,omitempty"`
+	AppRoleSecretRef   string   `json:"approle_secret_ref,omitempty"`
 }
 
 var (
@@ -79,6 +83,37 @@ func init() {
 				withStaticRoleScheduled = false
 			}
 		}
+	}
+}
+
+// makeVDSAuthSpec returns the correct VaultAuthSpec for kind (kubernetes auth)
+// or HVD (appRole), based on outputs.UseHVD. vaultConnRef is optional — pass
+// "" to omit it (defaults to the operator's default VaultConnection).
+// serviceAccount is only used for the kubernetes path; AppRole has no
+// per-object service account equivalent, so it's ignored on HVD.
+func makeVDSAuthSpec(outputs dynamicK8SOutputs, vaultConnRef, serviceAccount string) secretsv1beta1.VaultAuthSpec {
+	if outputs.UseHVD {
+		return secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: vaultConnRef,
+			Namespace:          outputs.Namespace,
+			Method:             "appRole",
+			Mount:              outputs.AppRoleMount,
+			AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+				RoleID:    outputs.AppRoleRoleID,
+				SecretRef: outputs.AppRoleSecretRef,
+			},
+		}
+	}
+	return secretsv1beta1.VaultAuthSpec{
+		VaultConnectionRef: vaultConnRef,
+		Namespace:          outputs.Namespace,
+		Method:             "kubernetes",
+		Mount:              outputs.AuthMount,
+		Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+			Role:           outputs.AuthRole,
+			ServiceAccount: serviceAccount,
+			TokenAudiences: []string{"vault"},
+		},
 	}
 }
 
@@ -154,6 +189,16 @@ func TestVaultDynamicSecret(t *testing.T) {
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
+	if isHVDTest {
+		tfOptions.Vars["use_hvd"] = true
+		tfOptions.Vars["vault_namespace"] = hvdVaultNamespace
+		tfOptions.Vars["aws_region"] = os.Getenv("AWS_REGION")
+		tfOptions.Vars["ec2_ami_id"] = os.Getenv("EC2_AMI_ID")
+		tfOptions.Vars["ec2_instance_type"] = os.Getenv("EC2_INSTANCE_TYPE")
+		tfOptions.Vars["ec2_postgres_password"] = os.Getenv("EC2_POSTGRES_PASSWORD")
+		tfOptions.Vars["hvd_egress_cidr"] = os.Getenv("HVD_EGRESS_CIDR")
+		tfOptions.Vars["ssh_ingress_cidr"] = os.Getenv("SSH_INGRESS_CIDR")
+	}
 
 	tfOptions = setCommonTFOptions(t, tfOptions)
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
@@ -179,7 +224,9 @@ func TestVaultDynamicSecret(t *testing.T) {
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
+	t.Log("[step] running terraform init+apply")
 	terraform.InitAndApply(t, tfOptions)
+	t.Log("[step] terraform apply complete, parsing outputs")
 
 	if skipCleanup {
 		// save vars to re-run terraform, useful when SKIP_CLEANUP is set.
@@ -198,26 +245,19 @@ func TestVaultDynamicSecret(t *testing.T) {
 
 	var outputs dynamicK8SOutputs
 	require.NoError(t, json.Unmarshal(b, &outputs))
+	t.Logf("[step] outputs parsed: use_hvd=%v namespace=%s", outputs.UseHVD, outputs.Namespace)
 
 	// Set the secrets in vault to be synced to kubernetes
 	// vClient := getVaultClient(t, testVaultNamespace)
 	// Create a VaultConnection CR
+	t.Log("[step] creating VaultAuth/VaultConnection CRs")
 	var auths []*secretsv1beta1.VaultAuth
 	auths = append(auths, &secretsv1beta1.VaultAuth{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      consts.NameDefault,
 			Namespace: operatorNS,
 		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Namespace: outputs.Namespace,
-			Method:    "kubernetes",
-			Mount:     outputs.AuthMount,
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-		},
+		Spec: makeVDSAuthSpec(outputs, "", "default"),
 	})
 
 	create := func(o ctrlclient.Object) {
@@ -231,6 +271,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 	for _, o := range auths {
 		create(o)
 	}
+	t.Log("[step] VaultAuth/VaultConnection CRs created")
 
 	type testCase struct {
 		name                    string
@@ -273,8 +314,17 @@ func TestVaultDynamicSecret(t *testing.T) {
 			create:              mixedCount,
 			createStatic:        2,
 			createStaticDelayed: 2,
-			createNonRenewable:  2,
-			existing:            2,
+			// create-non-renewable exercises Vault's Kubernetes secrets engine,
+			// which requires Vault to reach the kind cluster's API server to
+			// mint service account tokens. HVD cannot reach that private
+			// address, so this sub-case is skipped under HVD.
+			createNonRenewable: func() int {
+				if isHVDTest {
+					return 0
+				}
+				return 2
+			}(),
+			existing: 2,
 			expected: map[string]int{
 				helpers.SecretDataKeyRaw: 100,
 				"username":               51,
@@ -310,10 +360,16 @@ func TestVaultDynamicSecret(t *testing.T) {
 				"username":        24,
 			},
 		},
-		{
+	}
+
+	// create-non-renewable exercises Vault's Kubernetes secrets engine, which
+	// HVD cannot reach (see comment above) — skip this sub-test entirely
+	// under HVD rather than running it with a zeroed-out count.
+	if !isHVDTest {
+		tests = append(tests, testCase{
 			name:               "create-non-renewable",
 			createNonRenewable: 2,
-		},
+		})
 	}
 
 	if withStaticRoleScheduled {
@@ -333,6 +389,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		)
 	}
 
+	t.Log("[step] creating VaultDynamicSecret CRs and waiting for sync")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var objsCreated []*secretsv1beta1.VaultDynamicSecret
@@ -701,11 +758,7 @@ func TestVaultDynamicSecret(t *testing.T) {
 		})
 	}
 	// Get a Vault client, so we can validate that all leases have been removed.
-	cfg := api.DefaultConfig()
-	cfg.Address = vaultAddr
-	c, err := api.NewClient(cfg)
-	assert.NoError(t, err)
-	c.SetToken(vaultToken)
+	c := getVaultClient(t, outputs.Namespace)
 	if !skipCleanup {
 		// Ensure that all leases have been revoked.
 		retry.DoWithRetry(t, "waitForAllLeasesToBeRevoked", 30, time.Second, func() (string, error) {
@@ -792,6 +845,16 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
+	if isHVDTest {
+		tfOptions.Vars["use_hvd"] = true
+		tfOptions.Vars["vault_namespace"] = hvdVaultNamespace
+		tfOptions.Vars["aws_region"] = os.Getenv("AWS_REGION")
+		tfOptions.Vars["ec2_ami_id"] = os.Getenv("EC2_AMI_ID")
+		tfOptions.Vars["ec2_instance_type"] = os.Getenv("EC2_INSTANCE_TYPE")
+		tfOptions.Vars["ec2_postgres_password"] = os.Getenv("EC2_POSTGRES_PASSWORD")
+		tfOptions.Vars["hvd_egress_cidr"] = os.Getenv("HVD_EGRESS_CIDR")
+		tfOptions.Vars["ssh_ingress_cidr"] = os.Getenv("SSH_INGRESS_CIDR")
+	}
 
 	var created []ctrlclient.Object
 	tfOptions = setCommonTFOptions(t, tfOptions)
@@ -818,7 +881,9 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 	})
 
 	// Run "terraform init" and "terraform apply". Fail the test if there are any errors.
+	t.Log("[step] running terraform init+apply")
 	terraform.InitAndApply(t, tfOptions)
+	t.Log("[step] terraform apply complete, parsing outputs")
 
 	if skipCleanup {
 		// save vars to re-run terraform, useful when SKIP_CLEANUP is set.
@@ -837,6 +902,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 
 	var outputs dynamicK8SOutputs
 	require.NoError(t, json.Unmarshal(b, &outputs))
+	t.Logf("[step] outputs parsed: use_hvd=%v namespace=%s", outputs.UseHVD, outputs.Namespace)
 
 	createObj := func(o ctrlclient.Object) {
 		require.NoError(t, crdClient.Create(ctx, o))
@@ -856,15 +922,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			create: len(outputs.XnsK8sSAs),
 			triggerFunc: func(t *testing.T, _ []*secretsv1beta1.VaultDynamicSecret) {
 				t.Helper()
-				cfg := api.DefaultConfig()
-				cfg.Address = vaultAddr
-				vc, err := api.NewClient(cfg)
-				assert.NoError(t, err)
-				vc.SetToken(vaultToken)
-				if outputs.Namespace != "" {
-					vc.SetNamespace(outputs.Namespace)
-				}
-
+				vc := getVaultClient(t, outputs.Namespace)
 				revokeTokenForEntityIDs(t, vc, ctx, outputs.XnsMemberEntityIDs)
 			},
 		},
@@ -873,16 +931,16 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 			create: 25,
 			triggerFunc: func(t *testing.T, _ []*secretsv1beta1.VaultDynamicSecret) {
 				t.Helper()
-				cfg := api.DefaultConfig()
-				cfg.Address = vaultAddr
-				vc, err := api.NewClient(cfg)
-				assert.NoError(t, err)
-				vc.SetToken(vaultToken)
-				if outputs.Namespace != "" {
-					vc.SetNamespace(outputs.Namespace)
+				vc := getVaultClient(t, outputs.Namespace)
+				if outputs.UseHVD {
+					// Kubernetes-auth aliases carry service_account_*
+					// metadata that AppRole aliases don't have; under HVD
+					// all objects share a single AppRole-backed entity, so
+					// match on mount_type instead.
+					deleteEntitiesByMountType(t, vc, ctx, "approle")
+				} else {
+					deleteEntitiesBySAPrefix(t, vc, ctx, outputs.K8sNamespace, "sa-create-only-test-vcc")
 				}
-
-				deleteEntitiesBySAPrefix(t, vc, ctx, outputs.K8sNamespace, "sa-create-only-test-vcc")
 			},
 		},
 		{
@@ -902,7 +960,16 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 							return false
 						}
 
-						authObj.Spec.Kubernetes.TokenAudiences = []string{"vault", "test"}
+						// Mutate a field to force a spec-hash change, so the operator
+						// picks up a new Vault client. Under kind, Spec.Kubernetes is
+						// set (Spec.AppRole is nil); under HVD, Spec.AppRole is set
+						// (Spec.Kubernetes is nil) — so the field mutated must match
+						// the auth method in use, or this panics on a nil pointer.
+						if outputs.UseHVD {
+							authObj.Spec.Headers = map[string]string{"X-test-it": "true"}
+						} else {
+							authObj.Spec.Kubernetes.TokenAudiences = []string{"vault", "test"}
+						}
 						if err := crdClient.Update(ctx, authObj); err != nil {
 							updateErr = err
 							return false
@@ -955,6 +1022,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 		},
 	}
 
+	t.Log("[step] creating VaultDynamicSecret CRs (vaultClientCallback subtests)")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// if tt.xns {
@@ -1008,17 +1076,7 @@ func TestVaultDynamicSecret_vaultClientCallback(t *testing.T) {
 						Namespace: outputs.K8sNamespace,
 						Name:      fmt.Sprintf("va-%s", nameSuffix),
 					},
-					Spec: secretsv1beta1.VaultAuthSpec{
-						Namespace:          outputs.Namespace,
-						Method:             "kubernetes",
-						Mount:              outputs.AuthMount,
-						VaultConnectionRef: connObj.GetName(),
-						Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-							Role:           outputs.AuthRole,
-							ServiceAccount: saName,
-							TokenAudiences: []string{"vault"},
-						},
-					},
+					Spec: makeVDSAuthSpec(outputs, connObj.GetName(), saName),
 				}
 				createObj(authObj)
 
@@ -1340,7 +1398,83 @@ func deleteEntitiesBySAPrefix(t *testing.T, vc *api.Client, ctx context.Context,
 	wg.Wait()
 }
 
+// deleteEntitiesByMountType is the AppRole/HVD-compatible equivalent of
+// deleteEntitiesBySAPrefix. Kubernetes auth aliases carry
+// service_account_namespace/service_account_name metadata that AppRole
+// aliases don't have, so under HVD entities must instead be matched by their
+// alias's mount_type (e.g. "approle"). All VaultDynamicSecret objects created
+// via a single shared AppRole role/mount log in as the same Vault entity, so
+// deleting that entity revokes the tokens for all of them at once, exercising
+// the same concurrent-revocation/ClientFactory-callback path as the
+// Kubernetes-auth case (which deletes one entity per service account).
+func deleteEntitiesByMountType(t *testing.T, vc *api.Client, ctx context.Context, mountType string) {
+	t.Helper()
+
+	resp, err := vc.Logical().ListWithContext(ctx, "identity/entity/id")
+	if !assert.NoError(t, err, "failed to list identity entities") {
+		return
+	}
+
+	if !assert.NotNil(t, resp, "response is nil") {
+		return
+	}
+
+	ids, ok := resp.Data["keys"].([]interface{})
+	if !assert.True(t, ok, "keys not found in response") {
+		return
+	}
+
+	var result []string
+	for _, v := range ids {
+		id := v.(string)
+		resp, err := vc.Logical().ReadWithContext(ctx, "identity/entity/id/"+id)
+		if !assert.NoErrorf(t, err, "failed to lookup entity id %s", id) {
+			return
+		}
+
+		aliases, ok := resp.Data["aliases"].([]interface{})
+		if !assert.True(t, ok, "aliases not found in response") {
+			return
+		}
+		for _, alias := range aliases {
+			aliasMap := alias.(map[string]interface{})
+			if v, ok := aliasMap["mount_type"]; ok && v.(string) == mountType {
+				result = append(result, id)
+				break
+			}
+		}
+	}
+
+	if !assert.Greaterf(t, len(result), 0,
+		"no entity_id found for mount_type %q", mountType) {
+		return
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(result))
+	for _, id := range result {
+		go func(id string) {
+			defer wg.Done()
+			_, err := vc.Logical().DeleteWithContext(ctx, "identity/entity/id/"+id)
+			assert.NoErrorf(t, err, "failed to delete entity %s", id)
+		}(id)
+	}
+	wg.Wait()
+}
+
 func awaitDynamicSecretReconciled(t *testing.T, ctx context.Context, client ctrlclient.Client, objKey ctrlclient.ObjectKey) (*secretsv1beta1.VaultDynamicSecret, bool) {
+	// HVD reconciliation legitimately takes longer than kind's near-zero
+	// latency baseline, especially with many objects reconciling
+	// concurrently against a real network round trip to HVD + EC2-hosted
+	// Postgres. Confirmed via operator logs: reconciles that kind completes
+	// in a couple seconds can take 30+ seconds under HVD.
+	maxRetries := 60
+	delay := 500 * time.Millisecond
+	if isHVDTest {
+		maxRetries = 90
+		delay = time.Second
+	}
+
 	var vdsObjFinal secretsv1beta1.VaultDynamicSecret
 	valid := assert.NoError(t, backoff.Retry(
 		func() error {
@@ -1366,7 +1500,7 @@ func awaitDynamicSecretReconciled(t *testing.T, ctx context.Context, client ctrl
 			vdsObjFinal = vdsObj
 			return nil
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 60),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(delay), uint64(maxRetries)),
 	))
 	return &vdsObjFinal, valid
 }
@@ -1486,6 +1620,16 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
 	}
+	if isHVDTest {
+		tfOptions.Vars["use_hvd"] = true
+		tfOptions.Vars["vault_namespace"] = hvdVaultNamespace
+		tfOptions.Vars["aws_region"] = os.Getenv("AWS_REGION")
+		tfOptions.Vars["ec2_ami_id"] = os.Getenv("EC2_AMI_ID")
+		tfOptions.Vars["ec2_instance_type"] = os.Getenv("EC2_INSTANCE_TYPE")
+		tfOptions.Vars["ec2_postgres_password"] = os.Getenv("EC2_POSTGRES_PASSWORD")
+		tfOptions.Vars["hvd_egress_cidr"] = os.Getenv("HVD_EGRESS_CIDR")
+		tfOptions.Vars["ssh_ingress_cidr"] = os.Getenv("SSH_INGRESS_CIDR")
+	}
 
 	tfOptions = setCommonTFOptions(t, tfOptions)
 	skipCleanup := os.Getenv("SKIP_CLEANUP") != ""
@@ -1501,13 +1645,16 @@ func setupInstantUpdatesInfra(t *testing.T, namePrefix string, dbLeaseTTL int) (
 		}
 	})
 
+	t.Logf("[step] (%s) running terraform init+apply", namePrefix)
 	terraform.InitAndApply(t, tfOptions)
+	t.Logf("[step] (%s) terraform apply complete, parsing outputs", namePrefix)
 
 	b, err := json.Marshal(terraform.OutputAll(t, tfOptions))
 	require.NoError(t, err)
 
 	var outputs dynamicK8SOutputs
 	require.NoError(t, json.Unmarshal(b, &outputs))
+	t.Logf("[step] (%s) outputs parsed: use_hvd=%v namespace=%s", namePrefix, outputs.UseHVD, outputs.Namespace)
 
 	return tfOptions, outputs
 }
@@ -1593,6 +1740,12 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 	}
 
 	rootVaultClient := getVaultClient(t, "")
+	if isHVDTest {
+		// For HVD, sys/health must be called at the root level — VAULT_NAMESPACE
+		// env var would otherwise inject the admin namespace and cause a 404.
+		rootVaultClient.ClearNamespace()
+	}
+	t.Log("[step] checking Vault Enterprise version gate (>= 1.16.3)")
 	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
@@ -1628,16 +1781,7 @@ func TestVaultDynamicSecret_InstantUpdates(t *testing.T) {
 			Name:      vaultAuthName,
 			Namespace: outputs.K8sNamespace,
 		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Namespace: outputs.Namespace,
-			Method:    "kubernetes",
-			Mount:     outputs.AuthMount,
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-		},
+		Spec: makeVDSAuthSpec(outputs, "", "default"),
 	}
 	require.NoError(t, crdClient.Create(ctx, vaultAuth))
 	t.Cleanup(func() {
@@ -1797,6 +1941,12 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 	}
 
 	rootVaultClient := getVaultClient(t, "")
+	if isHVDTest {
+		// For HVD, sys/health must be called at the root level — VAULT_NAMESPACE
+		// env var would otherwise inject the admin namespace and cause a 404.
+		rootVaultClient.ClearNamespace()
+	}
+	t.Log("[step] checking Vault Enterprise version gate (>= 1.16.3, >= 2.0.0)")
 	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
@@ -1837,16 +1987,7 @@ func TestVaultDynamicSecret_InstantUpdates_DynamicCreds(t *testing.T) {
 			Name:      vaultAuthName,
 			Namespace: outputs.K8sNamespace,
 		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Namespace: outputs.Namespace,
-			Method:    "kubernetes",
-			Mount:     outputs.AuthMount,
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-		},
+		Spec: makeVDSAuthSpec(outputs, "", "default"),
 	}
 	require.NoError(t, crdClient.Create(ctx, vaultAuth))
 	t.Cleanup(func() {
@@ -1971,6 +2112,12 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 	}
 
 	rootVaultClient := getVaultClient(t, "")
+	if isHVDTest {
+		// For HVD, sys/health must be called at the root level — VAULT_NAMESPACE
+		// env var would otherwise inject the admin namespace and cause a 404.
+		rootVaultClient.ClearNamespace()
+	}
+	t.Log("[step] checking Vault Enterprise version gate (>= 1.16.3)")
 	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
@@ -1991,16 +2138,7 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 			Name:      vaultAuthName,
 			Namespace: outputs.K8sNamespace,
 		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			Namespace: outputs.Namespace,
-			Method:    "kubernetes",
-			Mount:     outputs.AuthMount,
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-		},
+		Spec: makeVDSAuthSpec(outputs, "", "default"),
 	}
 	require.NoError(t, crdClient.Create(ctx, vaultAuth))
 	t.Cleanup(func() {
@@ -2095,16 +2233,23 @@ func TestVaultDynamicSecret_InstantUpdates_WatcherRestartsOnVaultAuthChange(t *t
 	)
 	t.Logf("Initial EventWatcherStarted count: %d", initialEventCount)
 
-	// Update the VaultAuth TokenAudiences. This invalidates the existing Vault
-	// client token, forcing the operator to obtain a new client with a new
-	// ClientID, which must trigger a watcher re-subscription.
+	// Update the VaultAuth to invalidate the existing Vault client token,
+	// forcing the operator to obtain a new client with a new ClientID, which
+	// must trigger a watcher re-subscription. Under kind, Spec.Kubernetes is
+	// set (Spec.AppRole is nil); under HVD, Spec.AppRole is set
+	// (Spec.Kubernetes is nil) — so the field mutated must match the auth
+	// method in use, or this panics on a nil pointer.
 	authKey := ctrlclient.ObjectKey{Namespace: outputs.K8sNamespace, Name: vaultAuthName}
 	require.NoError(t, backoff.RetryNotify(func() error {
 		var authObj secretsv1beta1.VaultAuth
 		if err := crdClient.Get(ctx, authKey, &authObj); err != nil {
 			return backoff.Permanent(err)
 		}
-		authObj.Spec.Kubernetes.TokenAudiences = []string{"vault", "test-watcher-restart"}
+		if outputs.UseHVD {
+			authObj.Spec.Headers = map[string]string{"X-test-watcher-restart": "true"}
+		} else {
+			authObj.Spec.Kubernetes.TokenAudiences = []string{"vault", "test-watcher-restart"}
+		}
 		return crdClient.Update(ctx, &authObj)
 	},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond*500), 10),
