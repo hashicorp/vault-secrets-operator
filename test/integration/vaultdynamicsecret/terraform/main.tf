@@ -52,7 +52,23 @@ provider "vault" {
 }
 
 provider "aws" {
-  region = local.aws_region
+  # Terraform provider blocks can't be count-guarded, so this provider is
+  # always configured even under kind (use_hvd=false), where no aws_* resource
+  # is ever actually created (all are count-guarded to use_hvd ? 1 : 0) and no
+  # real AWS credentials are available (e.g. in the standard kind-only CI
+  # matrix). Without the overrides below, Configure() fails outright with
+  # "No valid credential sources found" before Terraform ever evaluates any
+  # resource's count. Static dummy credentials + skipping all validation lets
+  # the provider configure as a no-op under kind; it's never used to make a
+  # real AWS API call in that mode. Under HVD, real credentials/validation
+  # behavior are fully preserved (all overrides become no-ops/false).
+  region                      = local.aws_region
+  access_key                  = var.use_hvd ? null : "test"
+  secret_key                  = var.use_hvd ? null : "test"
+  skip_credentials_validation = !var.use_hvd
+  skip_requesting_account_id  = !var.use_hvd
+  skip_metadata_api_check     = !var.use_hvd
+  skip_region_validation      = !var.use_hvd
 }
 
 provider "helm" {
