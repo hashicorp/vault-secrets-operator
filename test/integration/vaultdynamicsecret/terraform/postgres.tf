@@ -305,10 +305,9 @@ locals {
 # is left empty. special=false avoids characters (', ", $, \) that would
 # need extra escaping inside the psql/shell commands below.
 resource "random_password" "postgres" {
-  count            = (var.use_hvd && var.ec2_postgres_password == "") ? 1 : 0
-  length           = 24
-  special          = false
-  override_special = ""
+  count   = (var.use_hvd && var.ec2_postgres_password == "") ? 1 : 0
+  length  = 24
+  special = false
 }
 
 locals {
