@@ -70,3 +70,15 @@ variable "create_namespace" {
   type    = bool
   default = true
 }
+
+variable "use_hvd" {
+  description = "Switch auth method from kubernetes to appRole for HVD testing."
+  type        = bool
+  default     = false
+}
+
+variable "vault_namespace" {
+  description = "Vault namespace for HVD. Empty = root."
+  type        = string
+  default     = ""
+}

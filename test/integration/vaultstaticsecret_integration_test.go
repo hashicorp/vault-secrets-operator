@@ -46,6 +46,9 @@ type vssK8SOutputs struct {
 	AppK8sNamespace   string `json:"app_k8s_namespace"`
 	AppVaultNamespace string `json:"app_vault_namespace,omitempty"`
 	AdminK8sNamespace string `json:"admin_k8s_namespace"`
+	AppRoleMount      string `json:"approle_mount,omitempty"`
+	AppRoleRoleID     string `json:"approle_role_id,omitempty"`
+	AppRoleSecretRef  string `json:"approle_secret_ref,omitempty"`
 }
 
 func TestVaultStaticSecret(t *testing.T) {
@@ -81,8 +84,13 @@ func TestVaultStaticSecret(t *testing.T) {
 
 	// The events tests require Vault Enterprise >= 1.16.3, and since that
 	// changes the app policy required we need to set a flag in the test
-	// terraform
+	// terraform.
+	// For HVD, sys/health must be called at the root level — VAULT_NAMESPACE
+	// env var would otherwise inject the admin namespace and cause a 404.
 	rootVaultClient := getVaultClient(t, "")
+	if isHVDTest {
+		rootVaultClient.ClearNamespace()
+	}
 	atLeast_v1_16_3 := vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3")
 
 	tempDir, err := os.MkdirTemp(os.TempDir(), t.Name())
@@ -103,6 +111,10 @@ func TestVaultStaticSecret(t *testing.T) {
 		Vars: map[string]interface{}{
 			"k8s_config_context": k8sConfigContext,
 		},
+	}
+	if isHVDTest {
+		tfOptions.Vars["use_hvd"] = true
+		tfOptions.Vars["vault_namespace"] = hvdVaultNamespace
 	}
 	if entTests {
 		tfOptions.Vars["vault_enterprise"] = true
@@ -173,6 +185,35 @@ func TestVaultStaticSecret(t *testing.T) {
 		},
 	}
 
+	// makeAuthSpec returns the correct VaultAuthSpec for kind (kubernetes) or HVD (appRole).
+	makeAuthSpec := func(vaultConnRef, ns string) secretsv1beta1.VaultAuthSpec {
+		if isHVDTest {
+			return secretsv1beta1.VaultAuthSpec{
+				VaultConnectionRef: vaultConnRef,
+				Namespace:          ns,
+				Method:             "appRole",
+				Mount:              outputs.AppRoleMount,
+				AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+					RoleID:    outputs.AppRoleRoleID,
+					SecretRef: outputs.AppRoleSecretRef,
+				},
+				AllowedNamespaces: []string{outputs.AppK8sNamespace},
+			}
+		}
+		return secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: vaultConnRef,
+			Namespace:          ns,
+			Method:             "kubernetes",
+			Mount:              outputs.AuthMount,
+			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+				Role:           outputs.AuthRole,
+				ServiceAccount: "default",
+				TokenAudiences: []string{"vault"},
+			},
+			AllowedNamespaces: []string{outputs.AppK8sNamespace},
+		}
+	}
+
 	auths := []*secretsv1beta1.VaultAuth{
 		// Create a non-default VaultAuth CR
 		{
@@ -180,19 +221,10 @@ func TestVaultStaticSecret(t *testing.T) {
 				Name:      outputs.NamePrefix + "-admin",
 				Namespace: outputs.AppK8sNamespace,
 			},
-			Spec: secretsv1beta1.VaultAuthSpec{
-				// This VaultAuth references a VaultConnection in an external namespace.
-				VaultConnectionRef: ctrlclient.ObjectKeyFromObject(conns[0]).String(),
-				Namespace:          outputs.AppK8sNamespace,
-				Method:             "kubernetes",
-				Mount:              outputs.AuthMount,
-				Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-					Role:           outputs.AuthRole,
-					ServiceAccount: "default",
-					TokenAudiences: []string{"vault"},
-				},
-				AllowedNamespaces: []string{outputs.AppK8sNamespace},
-			},
+			Spec: makeAuthSpec(
+				ctrlclient.ObjectKeyFromObject(conns[0]).String(),
+				outputs.AppVaultNamespace,
+			),
 		},
 	}
 	// Create the default VaultAuth CR in the Operator's namespace
@@ -201,18 +233,7 @@ func TestVaultStaticSecret(t *testing.T) {
 			Name:      outputs.NamePrefix + "-default",
 			Namespace: operatorNS,
 		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			VaultConnectionRef: consts.NameDefault,
-			Namespace:          outputs.AppK8sNamespace,
-			Method:             "kubernetes",
-			Mount:              outputs.AuthMount,
-			AllowedNamespaces:  []string{outputs.AppK8sNamespace},
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-		},
+		Spec: makeAuthSpec(consts.NameDefault, outputs.AppVaultNamespace),
 	}
 
 	auths = append(auths, defaultVaultAuth)
@@ -269,7 +290,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				Spec: secretsv1beta1.VaultStaticSecretSpec{
 					// This Secret references the default Auth Method.
 					VaultAuthRef: ctrlclient.ObjectKeyFromObject(defaultVaultAuth).String(),
-					Namespace:    outputs.AppK8sNamespace,
+					Namespace:    outputs.AppVaultNamespace,
 					VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
 						Mount: outputs.KVV2Mount,
 						Type:  consts.KVSecretTypeV2,
@@ -404,6 +425,21 @@ func TestVaultStaticSecret(t *testing.T) {
 		}
 	}
 
+	// secretSyncRetries/secretSyncDelay bound how long assertSync() waits for
+	// the operator to sync a k8s Secret after a Vault KV write. Against a
+	// local kind Vault the round trip is sub-second, but HVD is a real
+	// network hop away, so the same 15s budget (30 * 500ms) that's reliable
+	// on kind is occasionally too tight on HVD, especially for the
+	// events-both sub-tests which run several in parallel. Use the same
+	// generous 90s budget (90 * 1s) already proven reliable by
+	// TestVaultStaticSecretEventWatcherShortTTLNoEOF for HVD runs.
+	secretSyncRetries := 30
+	secretSyncDelay := 500 * time.Millisecond
+	if isHVDTest {
+		secretSyncRetries = 90
+		secretSyncDelay = time.Second
+	}
+
 	assertSync := func(t *testing.T, obj *secretsv1beta1.VaultStaticSecret, expected expectedData, expectInitial bool) {
 		var data map[string]interface{}
 		if expectInitial {
@@ -435,7 +471,7 @@ func TestVaultStaticSecret(t *testing.T) {
 			}
 		}
 
-		secret, err := waitForSecretData(t, ctx, crdClient, 30, time.Millisecond*500, obj.Spec.Destination.Name,
+		secret, err := waitForSecretData(t, ctx, crdClient, secretSyncRetries, secretSyncDelay, obj.Spec.Destination.Name,
 			obj.ObjectMeta.Namespace, data)
 		if assert.NoError(t, err) {
 			assertSyncableSecret(t, crdClient, obj, secret)
@@ -450,7 +486,7 @@ func TestVaultStaticSecret(t *testing.T) {
 				if assert.NoError(t, err) {
 					// ensure that a Secret deleted out-of-band is properly restored
 					if assert.NoError(t, crdClient.Delete(ctx, sec)) {
-						_, err := waitForSecretData(t, ctx, crdClient, 30, time.Millisecond*500, obj.Spec.Destination.Name,
+						_, err := waitForSecretData(t, ctx, crdClient, secretSyncRetries, secretSyncDelay, obj.Spec.Destination.Name,
 							obj.ObjectMeta.Namespace, data)
 						assert.NoError(t, err)
 					}
@@ -618,6 +654,9 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 	}
 
 	rootVaultClient := getVaultClient(t, "")
+	if isHVDTest {
+		rootVaultClient.ClearNamespace()
+	}
 	if !vaultVersionGreaterThanOrEqual(t, rootVaultClient, "1.16.3") {
 		t.Skip("Skipping because this test requires Vault Enterprise >= 1.16.3")
 	}
@@ -633,13 +672,18 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 		k8sConfigContext = "kind-" + clusterName
 	}
 
+	tfVars := map[string]interface{}{
+		"k8s_config_context": k8sConfigContext,
+		"vault_enterprise":   true,
+		"use_events":         true,
+	}
+	if isHVDTest {
+		tfVars["use_hvd"] = true
+		tfVars["vault_namespace"] = hvdVaultNamespace
+	}
 	tfOptions := setCommonTFOptions(t, &terraform.Options{
 		TerraformDir: tfDir,
-		Vars: map[string]interface{}{
-			"k8s_config_context": k8sConfigContext,
-			"vault_enterprise":   true,
-			"use_events":         true,
-		},
+		Vars:         tfVars,
 	})
 
 	ctx := context.Background()
@@ -668,30 +712,42 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 
 	authClient := getVaultClient(t, outputs.AppVaultNamespace)
 
-	// Reproduce the reported short-lived Kubernetes auth token scenario by
-	// setting both the auth mount and auth role TTLs to 1 minute.
-	tunePath := fmt.Sprintf("sys/auth/%s/tune", outputs.AuthMount)
-	_, err = authClient.Logical().Write(tunePath, map[string]interface{}{
-		"default_lease_ttl": "1m",
-		"max_lease_ttl":     "1m",
-	})
-	require.NoError(t, err)
+	// Reproduce the short-lived token scenario: force token_ttl=token_max_ttl=1m
+	// so the token is non-renewable and VSO must fully re-authenticate every minute.
+	if !isHVDTest {
+		// kind: tune the mount cap AND update the kubernetes role.
+		tunePath := fmt.Sprintf("sys/auth/%s/tune", outputs.AuthMount)
+		_, err = authClient.Logical().Write(tunePath, map[string]interface{}{
+			"default_lease_ttl": "1m",
+			"max_lease_ttl":     "1m",
+		})
+		require.NoError(t, err)
 
-	rolePath := fmt.Sprintf("auth/%s/role/%s", outputs.AuthMount, outputs.AuthRole)
-	roleConfig, err := authClient.Logical().Read(rolePath)
-	require.NoError(t, err)
-	require.NotNil(t, roleConfig)
-	require.NotNil(t, roleConfig.Data)
+		rolePath := fmt.Sprintf("auth/%s/role/%s", outputs.AuthMount, outputs.AuthRole)
+		roleConfig, err := authClient.Logical().Read(rolePath)
+		require.NoError(t, err)
+		require.NotNil(t, roleConfig)
+		require.NotNil(t, roleConfig.Data)
 
-	_, err = authClient.Logical().Write(rolePath, map[string]interface{}{
-		"bound_service_account_names":      roleConfig.Data["bound_service_account_names"],
-		"bound_service_account_namespaces": roleConfig.Data["bound_service_account_namespaces"],
-		"token_policies":                   roleConfig.Data["token_policies"],
-		"audience":                         roleConfig.Data["audience"],
-		"token_ttl":                        "1m",
-		"token_max_ttl":                    "1m",
-	})
-	require.NoError(t, err)
+		_, err = authClient.Logical().Write(rolePath, map[string]interface{}{
+			"bound_service_account_names":      roleConfig.Data["bound_service_account_names"],
+			"bound_service_account_namespaces": roleConfig.Data["bound_service_account_namespaces"],
+			"token_policies":                   roleConfig.Data["token_policies"],
+			"audience":                         roleConfig.Data["audience"],
+			"token_ttl":                        "1m",
+			"token_max_ttl":                    "1m",
+		})
+		require.NoError(t, err)
+	} else {
+		// HVD: sys/auth tune is restricted — update the AppRole role TTLs directly.
+		// Role-level token_max_ttl=1m is sufficient to make tokens non-renewable.
+		rolePath := fmt.Sprintf("auth/%s/role/%s", outputs.AppRoleMount, outputs.AuthRole)
+		_, err = authClient.Logical().Write(rolePath, map[string]interface{}{
+			"token_ttl":     "1m",
+			"token_max_ttl": "1m",
+		})
+		require.NoError(t, err)
+	}
 
 	vaultConn := &secretsv1beta1.VaultConnection{
 		ObjectMeta: v1.ObjectMeta{
@@ -709,23 +765,37 @@ func TestVaultStaticSecretEventWatcherShortTTLNoEOF(t *testing.T) {
 		})
 	}
 
+	vaultAuthSpec := secretsv1beta1.VaultAuthSpec{
+		VaultConnectionRef: ctrlclient.ObjectKeyFromObject(vaultConn).String(),
+		Namespace:          outputs.AppVaultNamespace,
+		Method:             "kubernetes",
+		Mount:              outputs.AuthMount,
+		Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
+			Role:           outputs.AuthRole,
+			ServiceAccount: "default",
+			TokenAudiences: []string{"vault"},
+		},
+		AllowedNamespaces: []string{outputs.AppK8sNamespace},
+	}
+	if isHVDTest {
+		vaultAuthSpec = secretsv1beta1.VaultAuthSpec{
+			VaultConnectionRef: ctrlclient.ObjectKeyFromObject(vaultConn).String(),
+			Namespace:          outputs.AppVaultNamespace,
+			Method:             "appRole",
+			Mount:              outputs.AppRoleMount,
+			AppRole: &secretsv1beta1.VaultAuthConfigAppRole{
+				RoleID:    outputs.AppRoleRoleID,
+				SecretRef: outputs.AppRoleSecretRef,
+			},
+			AllowedNamespaces: []string{outputs.AppK8sNamespace},
+		}
+	}
 	vaultAuth := &secretsv1beta1.VaultAuth{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      "vaultauth-short-ttl-events",
 			Namespace: outputs.AppK8sNamespace,
 		},
-		Spec: secretsv1beta1.VaultAuthSpec{
-			VaultConnectionRef: ctrlclient.ObjectKeyFromObject(vaultConn).String(),
-			Namespace:          outputs.AppK8sNamespace,
-			Method:             "kubernetes",
-			Mount:              outputs.AuthMount,
-			Kubernetes: &secretsv1beta1.VaultAuthConfigKubernetes{
-				Role:           outputs.AuthRole,
-				ServiceAccount: "default",
-				TokenAudiences: []string{"vault"},
-			},
-			AllowedNamespaces: []string{outputs.AppK8sNamespace},
-		},
+		Spec: vaultAuthSpec,
 	}
 	require.NoError(t, crdClient.Create(ctx, vaultAuth))
 	if !skipCleanup {

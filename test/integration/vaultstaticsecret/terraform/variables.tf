@@ -76,3 +76,21 @@ variable "use_events" {
   type    = bool
   default = false
 }
+
+variable "use_hvd" {
+  description = "Switch auth from kubernetes to appRole for HVD."
+  type        = bool
+  default     = false
+}
+
+variable "vault_namespace" {
+  description = "Vault namespace to use on HVD. Empty = root (kind)."
+  type        = string
+  default     = ""
+}
+
+variable "approle_role_id" {
+  description = "AppRole role_id. HVD only."
+  type        = string
+  default     = ""
+}

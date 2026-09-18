@@ -1,17 +1,58 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-# kubernetes auth config
+# kubernetes auth config (kind/EKS only)
 resource "vault_auth_backend" "default" {
-  path = "operator"
-  type = "kubernetes"
+  count = var.use_hvd ? 0 : 1
+  path  = "operator"
+  type  = "kubernetes"
 }
 
 resource "vault_kubernetes_auth_backend_config" "operator" {
-  namespace              = vault_auth_backend.default.namespace
-  backend                = vault_auth_backend.default.path
+  count                  = var.use_hvd ? 0 : 1
+  namespace              = vault_auth_backend.default[0].namespace
+  backend                = vault_auth_backend.default[0].path
   kubernetes_host        = var.k8s_host
   disable_iss_validation = true
+}
+
+# approle auth config (HVD only)
+resource "random_string" "approle_suffix" {
+  count   = var.use_hvd ? 1 : 0
+  length  = 4
+  special = false
+  upper   = false
+}
+
+resource "vault_auth_backend" "approle" {
+  count = var.use_hvd ? 1 : 0
+  path  = "operator-approle-${random_string.approle_suffix[0].result}"
+  type  = "approle"
+}
+
+resource "vault_approle_auth_backend_role" "operator" {
+  count          = var.use_hvd ? 1 : 0
+  backend        = vault_auth_backend.approle[0].path
+  role_name      = local.auth_role_operator
+  token_policies = [vault_policy.operator.name]
+  token_period   = 120
+}
+
+resource "vault_approle_auth_backend_role_secret_id" "operator" {
+  count     = var.use_hvd ? 1 : 0
+  backend   = vault_auth_backend.approle[0].path
+  role_name = vault_approle_auth_backend_role.operator[0].role_name
+}
+
+resource "kubernetes_secret" "operator_approle_secretid" {
+  count = var.use_hvd ? 1 : 0
+  metadata {
+    name      = "operator-approle-secretid"
+    namespace = local.operator_namespace
+  }
+  data = {
+    id = vault_approle_auth_backend_role_secret_id.operator[0].secret_id
+  }
 }
 
 resource "vault_policy" "revocation" {
@@ -62,13 +103,13 @@ module "vso-helm" {
       enabled                         = true
       vault_connection_ref            = ""
       namespace                       = ""
-      method                          = vault_auth_backend.default.type
-      mount                           = vault_auth_backend.default.path
+      method                          = var.use_hvd ? vault_auth_backend.approle[0].type : vault_auth_backend.default[0].type
+      mount                           = var.use_hvd ? vault_auth_backend.approle[0].path : vault_auth_backend.default[0].path
       transit_mount                   = vault_transit_secret_cache_config.cache.backend
       key_name                        = vault_transit_secret_backend_key.cache.name
-      kubernetes_auth_role            = vault_kubernetes_auth_backend_role.operator.role_name
-      kubernetes_auth_service_account = local.operator_service_account_name
-      kubernetes_auth_token_audiences = "{${vault_kubernetes_auth_backend_role.operator.audience}}"
+      kubernetes_auth_role            = var.use_hvd ? "" : vault_kubernetes_auth_backend_role.operator[0].role_name
+      kubernetes_auth_service_account = var.use_hvd ? "" : local.operator_service_account_name
+      kubernetes_auth_token_audiences = var.use_hvd ? "" : "{${vault_kubernetes_auth_backend_role.operator[0].audience}}"
     }
   }
   manager_extra_args = [

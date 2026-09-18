@@ -93,10 +93,61 @@ variable "with_xns" {
 }
 
 variable "chart_postgres" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "use_events" {
   type    = bool
   default = false
+}
+
+# --- HVD (HCP Vault Dedicated) support ---
+# use_hvd switches Postgres from an in-cluster Helm release to an EC2 instance
+# that HVD can reach over the public internet. Default false = existing
+# kind behavior is completely unaffected.
+variable "use_hvd" {
+  type    = bool
+  default = false
+}
+
+variable "vault_namespace" {
+  description = "Vault namespace for HVD. Empty = root (kind)."
+  type        = string
+  default     = ""
+}
+
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
+
+variable "ec2_ami_id" {
+  description = "AMI ID for the EC2 Postgres instance (HVD only). Must be an EDR-compliant hc-base AMI in aws_region. If empty (default), the latest available hc-base-al2023-x86_64-* AMI is looked up automatically."
+  type        = string
+  default     = ""
+}
+
+variable "ec2_instance_type" {
+  type    = string
+  default = "t3.small"
+}
+
+variable "ec2_postgres_password" {
+  description = "Password to set for the EC2 Postgres superuser (HVD only). If empty (default), a random password is generated."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "hvd_egress_cidr" {
+  description = "CIDR block allowed to reach the EC2 Postgres instance on port 5432 (HVD's outbound egress range). Defaults to unrestricted since this is short-lived test infra torn down at the end of each run; tighten for any longer-lived use."
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
+variable "ssh_ingress_cidr" {
+  description = "CIDR block allowed to SSH into the EC2 Postgres instance (the test runner's IP). If empty (default), the runner's current public IP is looked up automatically."
+  type        = string
+  default     = ""
 }

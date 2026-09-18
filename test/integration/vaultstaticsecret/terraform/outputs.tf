@@ -20,8 +20,23 @@ output "app_k8s_namespace" {
   value = local.app_k8s_namespace
 }
 output "app_vault_namespace" {
-  value = local.namespace
+  # For HVD: return var.vault_namespace (e.g. "admin") so the Go test can set the
+  # Vault client namespace correctly. local.namespace is null for HVD since
+  # the provider handles it via VAULT_NAMESPACE env var.
+  value = var.vault_namespace != "" ? var.vault_namespace : local.namespace
 }
 output "admin_k8s_namespace" {
   value = local.admin_k8s_namespace
+}
+
+output "approle_mount" {
+  value = var.use_hvd ? vault_auth_backend.approle[0].path : ""
+}
+
+output "approle_role_id" {
+  value = var.use_hvd ? vault_approle_auth_backend_role.default[0].role_id : ""
+}
+
+output "approle_secret_ref" {
+  value = var.use_hvd ? kubernetes_secret.approle_secretid[0].metadata[0].name : ""
 }
