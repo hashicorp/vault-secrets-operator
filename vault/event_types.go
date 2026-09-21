@@ -106,12 +106,19 @@ type SubscriptionKey struct {
 	VaultPath      string
 }
 
-// String returns the string representation of the SubscriptionKey
+// String returns the string representation of the SubscriptionKey.
+// VaultNamespace is normalized (leading/trailing slashes trimmed) so that
+// callers using non-canonical namespace strings (e.g. "vso-e2e/") still
+// produce a key that matches the one derived from Vault event data, which is
+// normalized the same way in routeEvent. Without this, subscriptions stored
+// with a non-canonical namespace would never match incoming events and
+// instant updates would be silently dropped.
 func (k SubscriptionKey) String() string {
-	if k.VaultNamespace == "" {
+	ns := strings.Trim(k.VaultNamespace, "/")
+	if ns == "" {
 		return k.VaultPath
 	}
-	return fmt.Sprintf("%s/%s", k.VaultNamespace, k.VaultPath)
+	return fmt.Sprintf("%s/%s", ns, k.VaultPath)
 }
 
 // subscriberKey uniquely identifies a single subscriber within a path.
