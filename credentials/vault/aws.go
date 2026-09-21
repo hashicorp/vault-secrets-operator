@@ -12,14 +12,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
 	"github.com/hashicorp/go-hclog"
 	awsutil "github.com/hashicorp/go-secure-stdlib/awsutil/v2"
@@ -322,6 +325,7 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	if err != nil {
 		return nil, err
 	}
+	applyCredentialsOverride(awsCfg, config)
 
 	headerValue := l.authObj.Spec.AWS.HeaderValue
 
@@ -373,6 +377,110 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 	}
 
 	return config, nil
+}
+
+// applyCredentialsOverride replaces awsCfg.Credentials with a role-assumption
+// provider built directly from credsConfig, using an STS client that honors a
+// custom STSEndpointResolver when one is configured. It is a no-op unless
+// credsConfig specifies a RoleARN.
+//
+// Two shapes are supported, matching what awsutil itself intends:
+//
+//   - RoleARN plus a web identity token (or token file): the IRSA flow, served
+//     by a stscreds.WebIdentityRoleProvider.
+//   - RoleARN alone: the ec2-instance/node role flow, served by a
+//     stscreds.AssumeRoleProvider that uses the credentials the chain already
+//     resolved (typically EC2 IMDS) as its source credentials.
+//
+// This works around two related awsutil / aws-sdk-go-v2 limitations:
+//
+//  1. aws-sdk-go-v2/config's resolveCredentialChain only builds a
+//     WebIdentityRoleProvider when AWS_WEB_IDENTITY_TOKEN_FILE (or an
+//     equivalent shared-config value) is present in the process environment,
+//     and only chains an AssumeRoleProvider when the shared config file
+//     supplies role_arn. VSO supplies neither: the IRSA token's raw content
+//     comes from the Kubernetes TokenRequest API, and the role ARN comes from
+//     CredentialsConfig. awsutil passes both through
+//     config.WithWebIdentityRoleCredentialOptions /
+//     config.WithAssumeRoleCredentialOptions, which merely *customize* a
+//     provider the SDK has already decided to build - so without this override
+//     they are silently discarded and GenerateCredentialChain falls through to
+//     the EC2 IMDS role provider. IRSA logins would never call
+//     sts:AssumeRoleWithWebIdentity, and node-role logins would authenticate
+//     with the raw instance credentials instead of the assumed role.
+//  2. Even when those providers are built, CredentialsConfig's
+//     STSEndpointResolver is never propagated into them: awsutil only applies
+//     STSEndpointResolver in its own STSClient()/IAMClient() helpers
+//     (clients.go), not in GenerateCredentialChain. So credential retrieval
+//     would always contact the default AWS STS endpoint even when a custom
+//     stsEndpoint is configured, while only the final, separately-built
+//     GetCallerIdentity login request honored it.
+//
+// Note on failure behavior: the returned provider resolves lazily, so a failed
+// role assumption surfaces as an error from GetCreds rather than silently
+// falling back to the source credentials. This differs from awsutil v0 (AWS SDK
+// v1), which logged a warning and continued with the unassumed credentials.
+// Failing loudly is deliberate - a silent fallback would authenticate to Vault
+// under an unexpected identity.
+func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.CredentialsConfig) {
+	if credsConfig.RoleARN == "" {
+		return
+	}
+
+	var stsOpts []func(*sts.Options)
+	if credsConfig.STSEndpointResolver != nil {
+		stsOpts = append(stsOpts, sts.WithEndpointResolverV2(credsConfig.STSEndpointResolver))
+	}
+	// Built before awsCfg.Credentials is replaced below, so that the
+	// assume-role flow signs its sts:AssumeRole call with the credentials the
+	// chain already resolved (e.g. the EC2 instance profile).
+	stsClient := sts.NewFromConfig(*awsCfg, stsOpts...)
+
+	var tokenRetriever stscreds.IdentityTokenRetriever
+	switch {
+	case credsConfig.WebIdentityTokenFile != "":
+		tokenRetriever = stscreds.IdentityTokenFile(credsConfig.WebIdentityTokenFile)
+	case credsConfig.WebIdentityToken != "":
+		tokenRetriever = awsutil.FetchTokenContents(credsConfig.WebIdentityToken)
+	}
+
+	var provider aws.CredentialsProvider
+	if tokenRetriever != nil {
+		provider = stscreds.NewWebIdentityRoleProvider(stsClient, credsConfig.RoleARN, tokenRetriever,
+			func(o *stscreds.WebIdentityRoleOptions) {
+				if credsConfig.RoleSessionName != "" {
+					o.RoleSessionName = credsConfig.RoleSessionName
+				}
+			})
+	} else {
+		provider = stscreds.NewAssumeRoleProvider(stsClient, credsConfig.RoleARN,
+			func(o *stscreds.AssumeRoleOptions) {
+				if credsConfig.RoleSessionName != "" {
+					o.RoleSessionName = credsConfig.RoleSessionName
+				}
+				if credsConfig.RoleExternalId != "" {
+					o.ExternalID = aws.String(credsConfig.RoleExternalId)
+				}
+				// Sorted for a deterministic request shape.
+				for _, k := range sortedKeys(credsConfig.RoleTags) {
+					o.Tags = append(o.Tags, ststypes.Tag{
+						Key:   aws.String(k),
+						Value: aws.String(credsConfig.RoleTags[k]),
+					})
+				}
+			})
+	}
+
+	awsCfg.Credentials = aws.NewCredentialsCache(provider)
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // IRSAConfig - supported annotations on an IRSA-enabled service account
