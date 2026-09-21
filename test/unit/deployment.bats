@@ -1683,3 +1683,102 @@ load _helpers
   actual=$(echo "$mounts" | yq '.[0].mountPath' | tee /dev/stderr)
   [ "${actual}" = "/var/run/podinfo" ]
 }
+
+#--------------------------------------------------------------------
+# removed kubeRbacProxy values
+
+@test "controller/Deployment: fails if controller.kubeRbacProxy.image is set" {
+  cd `chart_dir`
+  run helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.kubeRbacProxy.image.repository=quay.io/brancz/kube-rbac-proxy' \
+    --set 'controller.kubeRbacProxy.image.tag=v0.18.1' \
+    .
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"controller.kubeRbacProxy.* is no longer supported"* ]]
+}
+
+@test "controller/Deployment: fails if controller.kubeRbacProxy.resources is set" {
+  cd `chart_dir`
+  run helm template \
+    -s templates/deployment.yaml \
+    --set 'controller.kubeRbacProxy.resources.limits.cpu=500m' \
+    .
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"controller.kubeRbacProxy.* is no longer supported"* ]]
+}
+
+@test "controller/Deployment: guard does not fire when controller.kubeRbacProxy is absent" {
+  cd `chart_dir`
+  run helm template \
+    -s templates/deployment.yaml \
+    .
+  [ "$status" -eq 0 ]
+}
+
+#--------------------------------------------------------------------
+# metrics endpoint protection
+#
+# These assert on values rather than argument positions, so they still catch a
+# regression if the argument order changes or a flag is dropped.
+
+@test "controller/Deployment: metrics endpoint is served securely by default" {
+  cd `chart_dir`
+  local args
+  args=$(helm template \
+    -s templates/deployment.yaml \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .args' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$args" | yq 'contains(["--metrics-secure=true"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+  actual=$(echo "$args" | yq 'contains(["--metrics-bind-address=:8443"])' | tee /dev/stderr)
+  [ "${actual}" = "true" ]
+}
+
+@test "controller/Deployment: manager exposes the named https metrics port" {
+  cd `chart_dir`
+  local ports
+  ports=$(helm template \
+    -s templates/deployment.yaml \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .ports' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$ports" | yq 'map(select(.name == "https" and .containerPort == 8443)) | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+}
+
+@test "controller/Deployment: metrics Service targetPort resolves to the manager's named port" {
+  cd `chart_dir`
+  local manifests
+  manifests=$(helm template . | tee /dev/stderr)
+
+  # The Service targets a *named* port. If the manager stops declaring that name
+  # the Service silently resolves to no endpoints, so assert the two agree.
+  local target
+  target=$(echo "$manifests" | \
+    yq 'select(.kind == "Service" and (.metadata.name | test("metrics-service$"))) | .spec.ports[0].targetPort' | tee /dev/stderr)
+
+  local declared
+  declared=$(echo "$manifests" | \
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers[] | select(.name == "manager") | .ports[] | select(.name == "'"${target}"'") | .name' | tee /dev/stderr)
+
+  [ "${declared}" = "${target}" ]
+}
+
+@test "controller/Deployment: manager is the only container, no kube-rbac-proxy sidecar" {
+  cd `chart_dir`
+  local containers
+  containers=$(helm template \
+    -s templates/deployment.yaml \
+    . | tee /dev/stderr |
+    yq 'select(.kind == "Deployment" and .metadata.labels."control-plane" == "controller-manager") | .spec.template.spec.containers' | tee /dev/stderr)
+
+  local actual
+  actual=$(echo "$containers" | yq '. | length' | tee /dev/stderr)
+  [ "${actual}" = "1" ]
+  actual=$(echo "$containers" | yq '.[0].name' | tee /dev/stderr)
+  [ "${actual}" = "manager" ]
+}

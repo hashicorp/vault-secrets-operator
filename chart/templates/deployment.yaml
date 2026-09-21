@@ -3,6 +3,19 @@
 # SPDX-License-Identifier: BUSL-1.1
 */}}
 
+{{/*
+Fail if controller.kubeRbacProxy.* is still set. The sidecar has been removed, and
+Helm silently ignores unknown values, so without this guard a stale setting would
+appear to apply but have no effect.
+*/}}
+{{- if hasKey .Values.controller "kubeRbacProxy" }}
+{{- fail (printf "\n%s\n%s\n%s"
+  "controller.kubeRbacProxy.* is no longer supported."
+  "The sidecar was removed; the manager now serves metrics over HTTPS with built-in authn/authz."
+  "Remove it from your values; use controller.manager.resources to tune resources.")
+}}
+{{- end }}
+
 apiVersion: v1
 kind: ServiceAccount
 metadata:

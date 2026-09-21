@@ -236,8 +236,9 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--create-namespace",
 		"--namespace", vsoNamespace,
 		"--version", startChartVersion,
-		// Only applies to the older chart being installed here; current charts
-		// ignore these values since the sidecar has been removed.
+		// These apply only to the older chart being installed here, which still
+		// deploys the sidecar. Do not pass them to the upgrade below: the current
+		// chart rejects controller.kubeRbacProxy.* with a template error.
 		"--set", fmt.Sprintf("controller.kubeRbacProxy.image.repository=%s", kubeRBACProxyRepository),
 		"--set", fmt.Sprintf("controller.kubeRbacProxy.image.tag=%s", kubeRBACProxyVersion),
 		releaseName,
