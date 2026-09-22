@@ -5,3 +5,8 @@
 chart_dir() {
     echo ${BATS_TEST_DIRNAME}/../../chart/
 }
+
+# config_dir returns the directory for the kustomize configs
+config_dir() {
+    echo ${BATS_TEST_DIRNAME}/../../config/
+}
