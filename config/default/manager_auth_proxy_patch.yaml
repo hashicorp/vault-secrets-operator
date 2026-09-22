@@ -6,6 +6,15 @@
 # SubjectAccessReview) performed in-process by controller-runtime's
 # filters.WithAuthenticationAndAuthorization. This replaces the kube-rbac-proxy
 # sidecar that previously fronted the metrics endpoint.
+#
+# --metrics-secure decides the mode. To serve /metrics without authn/authz, set
+# it to false here, change the bind address to a plain-HTTP one, and also
+# comment out the auth_proxy_* resources in config/rbac/kustomization.yaml.
+# Changing only one of the two leaves the deployment inconsistent.
+#
+# The "https" port name below is referenced by the metrics Service
+# (config/rbac/auth_proxy_service.yaml) via targetPort. If it is removed or
+# renamed the Service resolves to no endpoints and metrics silently break.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
