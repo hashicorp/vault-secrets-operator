@@ -19,6 +19,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -325,7 +326,7 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	if err != nil {
 		return nil, err
 	}
-	applyCredentialsOverride(awsCfg, config)
+	applyCredentialsOverride(awsCfg, config, irsaConfig, irsaToken)
 
 	headerValue := l.authObj.Spec.AWS.HeaderValue
 
@@ -392,6 +393,17 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 //     stscreds.AssumeRoleProvider that uses the credentials the chain already
 //     resolved (typically EC2 IMDS) as its source credentials.
 //
+// Credential precedence is preserved. A RoleARN is not necessarily a request
+// from the VaultAuth: awsutil.NewCredentialsConfig() seeds
+// CredentialsConfig.RoleARN from the operator pod's own AWS_ROLE_ARN, which is
+// set whenever VSO itself runs under IRSA. Static credentials - supplied via
+// secretRef, the environment, or a shared profile - outrank role assumption in
+// the AWS credential chain, so when the chain has already settled on them this
+// override stands down rather than authenticating to Vault under the
+// operator's identity instead of the one the VaultAuth configured. An
+// irsaServiceAccount named on the VaultAuth is an explicit request for role
+// assumption and therefore still takes precedence.
+//
 // This works around two related awsutil / aws-sdk-go-v2 limitations:
 //
 //  1. aws-sdk-go-v2/config's resolveCredentialChain only builds a
@@ -422,8 +434,20 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 // v1), which logged a warning and continued with the unassumed credentials.
 // Failing loudly is deliberate - a silent fallback would authenticate to Vault
 // under an unexpected identity.
-func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.CredentialsConfig) {
+func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.CredentialsConfig, irsaConfig *IRSAConfig, irsaToken string) {
 	if credsConfig.RoleARN == "" {
+		return
+	}
+
+	// An irsaServiceAccount on the VaultAuth is an explicit request to assume
+	// that role using a freshly requested ServiceAccount token, so it outranks
+	// whatever the ambient credential chain resolved.
+	explicitIRSA := irsaConfig != nil && irsaConfig.RoleARN != "" && irsaToken != ""
+
+	// Otherwise the RoleARN may have been inherited from the operator pod's
+	// environment. Defer to the chain when it selected static credentials,
+	// which outrank role assumption.
+	if !explicitIRSA && resolvedStaticCredentials(awsCfg.Credentials) {
 		return
 	}
 
@@ -438,6 +462,10 @@ func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.Credentia
 
 	var tokenRetriever stscreds.IdentityTokenRetriever
 	switch {
+	case explicitIRSA:
+		// Use the VaultAuth's ServiceAccount token rather than any token file
+		// the operator pod happens to have mounted for its own identity.
+		tokenRetriever = awsutil.FetchTokenContents(irsaToken)
 	case credsConfig.WebIdentityTokenFile != "":
 		tokenRetriever = stscreds.IdentityTokenFile(credsConfig.WebIdentityTokenFile)
 	case credsConfig.WebIdentityToken != "":
@@ -472,6 +500,15 @@ func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.Credentia
 	}
 
 	awsCfg.Credentials = aws.NewCredentialsCache(provider)
+}
+
+// resolvedStaticCredentials reports whether the credential chain settled on
+// static credentials. These come from secretRef, the environment, or a shared
+// profile, and all of them outrank role assumption in the AWS credential
+// chain. The check is a type inspection, so it does not trigger credential
+// retrieval.
+func resolvedStaticCredentials(provider aws.CredentialsProvider) bool {
+	return aws.IsCredentialsProvider(provider, credentials.StaticCredentialsProvider{})
 }
 
 func sortedKeys(m map[string]string) []string {
