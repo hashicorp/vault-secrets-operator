@@ -1539,3 +1539,290 @@ func Test_applyCredentialsOverride_ExplicitIRSAPrefersInlineToken(t *testing.T) 
 	assert.Equal(t, "vso-session", calls[0].Get("RoleSessionName"),
 		"sessionName from the VaultAuth spec must be propagated")
 }
+
+// ─── region precedence ───
+
+// Test_getCredentialsConfig_RegionPrecedence pins the full region resolution
+// hierarchy: explicit spec > AWS_REGION > AWS_DEFAULT_REGION > us-east-1.
+//
+// The tiers come from two places that have to agree: awsutil.NewCredentialsConfig
+// resolves the environment tiers and the us-east-1 default, then
+// getCredentialsConfig overlays spec.aws.region on top. A regression in either
+// half silently signs the Vault login for the wrong region, which STS rejects.
+func Test_getCredentialsConfig_RegionPrecedence(t *testing.T) {
+	tests := map[string]struct {
+		specRegion       string
+		awsRegion        string
+		awsDefaultRegion string
+		expected         string
+	}{
+		"explicit spec region outranks both environment variables": {
+			specRegion: "eu-west-1", awsRegion: "us-west-2", awsDefaultRegion: "ap-south-1",
+			expected: "eu-west-1",
+		},
+		"explicit spec region is used when no environment is set": {
+			specRegion: "eu-west-1",
+			expected:   "eu-west-1",
+		},
+		"AWS_REGION is used when the spec omits a region": {
+			awsRegion: "us-west-2", awsDefaultRegion: "ap-south-1",
+			expected: "us-west-2",
+		},
+		"AWS_DEFAULT_REGION is used when AWS_REGION is unset": {
+			awsDefaultRegion: "ap-south-1",
+			expected:         "ap-south-1",
+		},
+		"falls back to us-east-1 when nothing is configured": {
+			expected: awsutil.DefaultRegion,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			isolateAWSEnvironment(t)
+			t.Setenv("AWS_REGION", tt.awsRegion)
+			t.Setenv("AWS_DEFAULT_REGION", tt.awsDefaultRegion)
+
+			p := &AWSCredentialProvider{
+				authObj: &secretsv1beta1.VaultAuth{
+					Spec: secretsv1beta1.VaultAuthSpec{
+						AWS: &secretsv1beta1.VaultAuthConfigAWS{Role: "r", Region: tt.specRegion},
+					},
+				},
+			}
+
+			cfg, err := p.getCredentialsConfig(&corev1.Secret{}, nil, "")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.Region)
+		})
+	}
+
+	// The resolved region is only meaningful if it reaches the SigV4 credential
+	// scope of the login request, so assert on the signature itself rather than
+	// trusting the config field alone.
+	t.Run("resolved region reaches the SigV4 signing scope", func(t *testing.T) {
+		isolateAWSEnvironment(t)
+		t.Setenv("AWS_REGION", "us-west-2")
+		t.Setenv("AWS_DEFAULT_REGION", "ap-south-1")
+
+		p := &AWSCredentialProvider{
+			authObj: &secretsv1beta1.VaultAuth{
+				Spec: secretsv1beta1.VaultAuthSpec{
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{Role: "r", Region: "eu-west-1"},
+				},
+			},
+		}
+		cfg, err := p.getCredentialsConfig(&corev1.Secret{}, nil, "")
+		require.NoError(t, err)
+
+		awsCfg := &aws.Config{
+			Region: cfg.Region,
+			Credentials: staticCredentialsProvider{creds: aws.Credentials{
+				AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+				SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+			}},
+		}
+		loginData, err := generateLoginData(context.Background(), awsCfg, "", "")
+		require.NoError(t, err)
+
+		rawHeaders, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
+		require.NoError(t, err)
+		var headers map[string][]string
+		require.NoError(t, json.Unmarshal(rawHeaders, &headers))
+		require.NotEmpty(t, headers["Authorization"])
+
+		assert.Contains(t, headers["Authorization"][0], "/eu-west-1/sts/aws4_request",
+			"the spec region must win and appear in the SigV4 credential scope")
+		assert.NotContains(t, headers["Authorization"][0], "us-west-2")
+	})
+}
+
+// ─── STS failure propagation ───
+
+// stsErrorResponse renders an STS query-protocol error document.
+func stsErrorResponse(code, message string) string {
+	return `<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <Error>
+    <Type>Sender</Type>
+    <Code>` + code + `</Code>
+    <Message>` + message + `</Message>
+  </Error>
+  <RequestId>00000000-0000-0000-0000-000000000000</RequestId>
+</ErrorResponse>`
+}
+
+// newIRSAFakeClient builds a fake client holding an IRSA-annotated
+// ServiceAccount whose TokenRequest subresource mints the supplied token.
+func newIRSAFakeClient(t *testing.T, namespace, saName, roleARN, token string) ctrlclient.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, secretsv1beta1.AddToScheme(scheme))
+
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        saName,
+			Namespace:   namespace,
+			UID:         "sa-uid",
+			Annotations: map[string]string{AWSAnnotationRole: roleARN},
+		},
+	}
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(sa).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj ctrlclient.Object, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
+				tr, ok := subResource.(*authenticationv1.TokenRequest)
+				if !ok || subResourceName != "token" {
+					return c.SubResource(subResourceName).Create(ctx, obj, subResource, opts...)
+				}
+				tr.Status.Token = token
+				return nil
+			},
+		}).
+		Build()
+}
+
+// newNodeRoleFakeClient builds a fake client containing the kube-root-ca.crt
+// ConfigMap that Init requires on the node-role/instance-profile path.
+func newNodeRoleFakeClient(t *testing.T) ctrlclient.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, secretsv1beta1.AddToScheme(scheme))
+
+	rootCA := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      K8sRootCA,
+			Namespace: common.OperatorNamespace,
+			UID:       "root-ca-uid",
+		},
+	}
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(rootCA).Build()
+}
+
+// Test_GetCreds_STSErrorPropagates asserts that an STS failure during credential
+// retrieval surfaces as a non-nil error from GetCreds on both the IRSA and
+// node-role paths.
+//
+// This is the guard against a silent fallback. Both paths replace the credential
+// chain with a role provider that resolves lazily, so a rejected AssumeRole or
+// AssumeRoleWithWebIdentity must abort the login rather than quietly signing it
+// with whatever credentials the chain resolved earlier (node credentials, or an
+// ambient identity). Returning login data here would authenticate to Vault as
+// the wrong principal.
+func Test_GetCreds_STSErrorPropagates(t *testing.T) {
+	stsErrors := map[string]struct{ code, message string }{
+		"AccessDenied": {
+			code:    "AccessDenied",
+			message: "User is not authorized to perform sts:AssumeRole on the requested resource",
+		},
+		"ExpiredToken": {
+			code:    "ExpiredToken",
+			message: "The security token included in the request is expired",
+		},
+	}
+
+	// newFailingSTS serves the given STS error and counts the requests it saw.
+	newFailingSTS := func(t *testing.T, code, message string, calls *int32) *httptest.Server {
+		t.Helper()
+		var mu sync.Mutex
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			*calls++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "text/xml")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(stsErrorResponse(code, message)))
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	for name, stsErr := range stsErrors {
+		t.Run("IRSA path returns an error on "+name, func(t *testing.T) {
+			isolateAWSEnvironment(t)
+			// Keep the SDK from burning retries on a deterministic failure.
+			t.Setenv("AWS_MAX_ATTEMPTS", "1")
+			t.Setenv("AWS_REGION", "us-east-1")
+
+			const namespace = "vso-test-ns"
+			var stsCalls int32
+			stsServer := newFailingSTS(t, stsErr.code, stsErr.message, &stsCalls)
+
+			client := newIRSAFakeClient(t, namespace, "vso-irsa-sa",
+				"arn:aws:iam::123456789012:role/vso-irsa-role", "irsa-sa-token")
+
+			authObj := &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: namespace},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "aws",
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
+						Role:               "vso-vault-role",
+						Region:             "us-east-1",
+						STSEndpoint:        stsServer.URL,
+						IRSAServiceAccount: "vso-irsa-sa",
+					},
+				},
+			}
+
+			ctx := context.Background()
+			provider := &AWSCredentialProvider{}
+			require.NoError(t, provider.Init(ctx, client, authObj, namespace))
+
+			loginData, err := provider.GetCreds(ctx, client)
+			require.Error(t, err, "a rejected AssumeRoleWithWebIdentity must fail the login")
+			assert.Nil(t, loginData, "no login data may be returned when credentials could not be retrieved")
+			assert.Contains(t, err.Error(), stsErr.code,
+				"the underlying STS error code should reach the caller")
+			assert.Positive(t, stsCalls, "expected the IRSA path to actually call STS")
+		})
+
+		t.Run("node role path returns an error on "+name, func(t *testing.T) {
+			isolateAWSEnvironment(t)
+			t.Setenv("AWS_MAX_ATTEMPTS", "1")
+			t.Setenv("AWS_REGION", "us-east-1")
+
+			imds := &fakeIMDS{}
+			imdsServer := imds.start(t)
+			t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imdsServer.URL)
+			// Picked up by awsutil.NewCredentialsConfig; VSO has no spec field
+			// for the assumed role on this path.
+			t.Setenv("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/vso-target-role")
+
+			var stsCalls int32
+			stsServer := newFailingSTS(t, stsErr.code, stsErr.message, &stsCalls)
+
+			client := newNodeRoleFakeClient(t)
+
+			authObj := &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: "vso-test-ns"},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "aws",
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
+						Role:        "vso-vault-role",
+						Region:      "us-east-1",
+						STSEndpoint: stsServer.URL,
+					},
+				},
+			}
+
+			ctx := context.Background()
+			provider := &AWSCredentialProvider{}
+			require.NoError(t, provider.Init(ctx, client, authObj, "vso-test-ns"))
+
+			loginData, err := provider.GetCreds(ctx, client)
+			require.Error(t, err, "a rejected AssumeRole must fail the login rather than "+
+				"silently falling back to the node credentials")
+			assert.Nil(t, loginData, "no login data may be returned when credentials could not be retrieved")
+			assert.Contains(t, err.Error(), stsErr.code,
+				"the underlying STS error code should reach the caller")
+			assert.Positive(t, stsCalls, "expected the node-role path to actually call STS")
+			assert.NotContains(t, err.Error(), nodeAccessKeyID,
+				"node credentials must not be used to sign the login request")
+		})
+	}
+}
