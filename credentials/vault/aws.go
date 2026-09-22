@@ -435,18 +435,26 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 // Failing loudly is deliberate - a silent fallback would authenticate to Vault
 // under an unexpected identity.
 func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.CredentialsConfig, irsaConfig *IRSAConfig, irsaToken string) {
-	if credsConfig.RoleARN == "" {
-		return
-	}
-
 	// An irsaServiceAccount on the VaultAuth is an explicit request to assume
 	// that role using a freshly requested ServiceAccount token, so it outranks
 	// whatever the ambient credential chain resolved.
 	explicitIRSA := irsaConfig != nil && irsaConfig.RoleARN != "" && irsaToken != ""
 
-	// Otherwise the RoleARN may have been inherited from the operator pod's
-	// environment. Defer to the chain when it selected static credentials,
-	// which outrank role assumption.
+	// Assume the role that was actually validated above. credsConfig.RoleARN
+	// holds the same value on the IRSA path today, but it is also the field
+	// awsutil seeds from the operator pod's own AWS_ROLE_ARN, so keying off the
+	// validated value keeps the decision and the action on the same input.
+	roleARN := credsConfig.RoleARN
+	if explicitIRSA {
+		roleARN = irsaConfig.RoleARN
+	}
+	if roleARN == "" {
+		return
+	}
+
+	// Outside the explicit IRSA case the role may have been inherited from the
+	// operator pod's environment. Defer to the chain when it selected static
+	// credentials, which outrank role assumption.
 	if !explicitIRSA && resolvedStaticCredentials(awsCfg.Credentials) {
 		return
 	}
@@ -474,14 +482,14 @@ func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.Credentia
 
 	var provider aws.CredentialsProvider
 	if tokenRetriever != nil {
-		provider = stscreds.NewWebIdentityRoleProvider(stsClient, credsConfig.RoleARN, tokenRetriever,
+		provider = stscreds.NewWebIdentityRoleProvider(stsClient, roleARN, tokenRetriever,
 			func(o *stscreds.WebIdentityRoleOptions) {
 				if credsConfig.RoleSessionName != "" {
 					o.RoleSessionName = credsConfig.RoleSessionName
 				}
 			})
 	} else {
-		provider = stscreds.NewAssumeRoleProvider(stsClient, credsConfig.RoleARN,
+		provider = stscreds.NewAssumeRoleProvider(stsClient, roleARN,
 			func(o *stscreds.AssumeRoleOptions) {
 				if credsConfig.RoleSessionName != "" {
 					o.RoleSessionName = credsConfig.RoleSessionName
