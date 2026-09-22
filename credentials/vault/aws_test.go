@@ -564,7 +564,7 @@ func Test_GetCreds_IRSAOnly_UsesAssumeRoleWithWebIdentity(t *testing.T) {
 		WithInterceptorFuncs(interceptor.Funcs{
 			// Mint a recognizable token so the STS request body can be tied
 			// back to the TokenRequest, and record what VSO asked for.
-			SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj ctrlclient.Object, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
+			SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
 				tr, ok := subResource.(*authenticationv1.TokenRequest)
 				if !ok || subResourceName != "token" {
 					return c.SubResource(subResourceName).Create(ctx, obj, subResource, opts...)
@@ -700,7 +700,7 @@ func Test_GetCreds_IRSAOnly_DefaultAudienceAndExpiration(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(sa).
 		WithInterceptorFuncs(interceptor.Funcs{
-			SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj ctrlclient.Object, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
+			SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
 				tr, ok := subResource.(*authenticationv1.TokenRequest)
 				if !ok || subResourceName != "token" {
 					return c.SubResource(subResourceName).Create(ctx, obj, subResource, opts...)
