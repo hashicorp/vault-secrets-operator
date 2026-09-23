@@ -5,10 +5,13 @@
 Enhancements:
 * VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
 * VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
-* Helm: add `controller.rbac.enabled` flag to allow skipping RBAC resource creation (ClusterRole, ClusterRoleBinding, Role, RoleBinding). When set to `false`, the chart still creates ServiceAccounts, the controller Deployment, and hook Jobs — equivalent RBAC must be pre-provisioned out-of-band by a cluster administrator using the same Helm release name (or `fullnameOverride`) before running `helm install`/`helm upgrade`.
+* Helm: add `controller.rbac.enabled` flag to allow skipping RBAC resource creation (ClusterRole, ClusterRoleBinding, Role, RoleBinding). When set to `false`, the chart still creates ServiceAccounts, the controller Deployment, and hook Jobs — equivalent RBAC must be pre-provisioned out-of-band by a cluster administrator using the same Helm release name (or `fullnameOverride`) before running `helm install`/`helm upgrade`. ([#1291](https://github.com/hashicorp/vault-secrets-operator/pull/1291))
 
 Fix:
 * VaultPKISecret: correct Vault API path when issuerRef is set; path was rendered as `pki/issuer/<name>/<role>` instead of the correct `pki/issuer/<name>/issue/<role>`, causing Vault to return 404 for all cert issuance requests when issuerRef was specified ([#1336](https://github.com/hashicorp/vault-secrets-operator/pull/1336))
+* VDS: fix `rolloutRestartTargets` being triggered on every reconcile for static roles consumed with `allowStaticCreds: false`; static-creds detection now uses Vault response metadata instead of `spec.allowStaticCreds`, so restarts only occur when the HMAC-compared credentials actually change ([#1299](https://github.com/hashicorp/vault-secrets-operator/pull/1299))
+* Helm: omit `spec.namespace` from the default `VaultAuth` and transit `VaultAuth` resources when no Vault namespace is configured, instead of rendering an empty `namespace:` key. Server-side apply deserialized the empty key as `null`, which failed CRD schema validation and blocked installs where Vault namespaces are not in use ([#1319](https://github.com/hashicorp/vault-secrets-operator/pull/1319))
+* VaultStaticSecret: return the non-nil error alongside `RequeueAfter` on Vault failures so resources are re-queued with backoff instead of being silently dropped after a transient Vault HA event ([#1323](https://github.com/hashicorp/vault-secrets-operator/pull/1323))
 
 BREAKING CHANGES:
 * Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
@@ -39,6 +42,18 @@ Dependency Updates:
   * Updates github.com/felixge/httpsnoop from 1.0.4 to 1.1.0
   * Updates github.com/fatih/color from 1.18.0 to 1.19.0
   * Updates github.com/spf13/cast from 1.7.0 to 1.7.1
+  * Updates cloud.google.com/go/compute/metadata from 0.9.0 to 0.9.1
+  * Updates github.com/coder/websocket from 1.8.14 to 1.8.15
+  * Updates github.com/onsi/gomega from 1.42.1 to 1.43.1
+  * Updates github.com/prometheus/client_model from 0.6.2 to 0.6.3
+  * Updates github.com/stretchr/testify from 1.12.0 to 1.12.1
+  * Updates golang.org/x/crypto from 0.55.0 to 0.57.0
+  * Updates google.golang.org/api from 0.293.0 to 0.298.0
+  * Updates k8s.io/apiextensions-apiserver from 0.36.3 to 0.37.0
+  * Updates k8s.io/apimachinery from 0.36.3 to 0.37.0
+  * Updates k8s.io/client-go from 0.36.3 to 0.37.0
+  * Updates k8s.io/utils from 0.0.0-20260210185600-b8788abfbbc2 to 0.0.0-20260626114624-be93311217bd
+  * Updates sigs.k8s.io/controller-runtime from 0.24.1 to 0.25.1
 
 ## 1.5.1 (August 11th, 2026)
 
