@@ -1820,16 +1820,14 @@ func Test_applyCredentialsOverride_AssumeRole(t *testing.T) {
 	}
 }
 
-// Test_GetCreds_STSErrorPropagates asserts that an STS failure during
-// credential retrieval surfaces as a non-nil error from GetCreds on both the
-// IRSA and node-role paths.
+// Test_GetCreds_STSFailure covers what happens when STS rejects the role
+// assumption during credential retrieval, on both the IRSA and node-role paths.
 //
-// This guards against a silent fallback. Both paths replace the credential
-// chain with a lazily-resolving role provider, so a rejected AssumeRole or
-// AssumeRoleWithWebIdentity must abort the login rather than quietly signing it
-// with whatever the chain resolved earlier - which would authenticate to Vault
-// as the wrong principal.
-func Test_GetCreds_STSErrorPropagates(t *testing.T) {
+// The behavior matches awsutil v0: the chain falls back to the credentials it
+// had already resolved, and only errors when there is nothing to fall back to.
+// Both halves matter - the fallback keeps the SDK migration behavior-preserving,
+// and the error path guarantees an STS rejection is never swallowed silently.
+func Test_GetCreds_STSFailure(t *testing.T) {
 	const namespace = "vso-test-ns"
 
 	stsErrors := map[string]struct{ code, message string }{
@@ -1843,16 +1841,44 @@ func Test_GetCreds_STSErrorPropagates(t *testing.T) {
 		},
 	}
 
-	paths := map[string]struct {
+	cases := map[string]struct {
 		irsa bool
+		// nodeCredentials makes EC2 instance metadata serve credentials, which
+		// the chain can fall back to. Without it there is no source to fall
+		// back to and the failure must surface.
+		nodeCredentials bool
+		expectFallback  bool
+		// expectSTSCall is false where the flow cannot even reach STS.
+		expectSTSCall bool
 	}{
-		"IRSA path":      {irsa: true},
-		"node role path": {},
+		"IRSA path falls back to node credentials": {
+			irsa:            true,
+			nodeCredentials: true,
+			expectFallback:  true,
+			expectSTSCall:   true,
+		},
+		"IRSA path errors when no credentials remain": {
+			irsa: true,
+			// The web identity token is itself the credential, so
+			// AssumeRoleWithWebIdentity is still attempted and rejected.
+			expectSTSCall: true,
+		},
+		"node role path falls back to the unassumed node credentials": {
+			nodeCredentials: true,
+			expectFallback:  true,
+			expectSTSCall:   true,
+		},
+		"node role path errors when no credentials remain": {
+			// AssumeRole must be signed with the source credentials, so with
+			// none available the call is never made and the chain simply has
+			// nothing to offer.
+			expectSTSCall: false,
+		},
 	}
 
 	for errName, stsErr := range stsErrors {
-		for pathName, path := range paths {
-			t.Run(pathName+" returns an error on "+errName, func(t *testing.T) {
+		for caseName, tc := range cases {
+			t.Run(caseName+" on "+errName, func(t *testing.T) {
 				isolateAWSEnvironment(t)
 				// Keep the SDK from burning retries on a deterministic failure.
 				t.Setenv("AWS_MAX_ATTEMPTS", "1")
@@ -1861,6 +1887,14 @@ func Test_GetCreds_STSErrorPropagates(t *testing.T) {
 				stsRec := newSTSRecorder(t, http.StatusForbidden,
 					stsErrorResponse(stsErr.code, stsErr.message))
 
+				if tc.nodeCredentials {
+					imds := &fakeIMDS{}
+					t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imds.start(t).URL)
+				} else {
+					// No instance metadata service at all.
+					newRejectingIMDS(t)
+				}
+
 				spec := &secretsv1beta1.VaultAuthConfigAWS{
 					Role:        "vso-vault-role",
 					Region:      "us-east-1",
@@ -1868,14 +1902,12 @@ func Test_GetCreds_STSErrorPropagates(t *testing.T) {
 				}
 
 				var client ctrlclient.Client
-				if path.irsa {
+				if tc.irsa {
 					spec.IRSAServiceAccount = "vso-irsa-sa"
 					sa := newIRSAServiceAccount("vso-irsa-sa", namespace,
 						"arn:aws:iam::123456789012:role/vso-irsa-role", nil)
 					client = withTokenRequests(newFakeClient(t, sa), "irsa-sa-token", nil, nil).Build()
 				} else {
-					imds := &fakeIMDS{}
-					t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imds.start(t).URL)
 					// Picked up by awsutil.NewCredentialsConfig; VSO has no
 					// spec field for the assumed role on this path.
 					t.Setenv("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/vso-target-role")
@@ -1892,18 +1924,31 @@ func Test_GetCreds_STSErrorPropagates(t *testing.T) {
 				require.NoError(t, provider.Init(ctx, client, authObj, namespace))
 
 				loginData, err := provider.GetCreds(ctx, client)
+
+				if tc.expectSTSCall {
+					assert.NotEmpty(t, stsRec.Calls(), "expected the flow to actually call STS")
+				} else {
+					assert.Empty(t, stsRec.Calls(),
+						"AssumeRole cannot be signed without source credentials, so STS is never reached")
+				}
+
+				if tc.expectFallback {
+					require.NoError(t, err,
+						"a rejected role assumption must fall back to the credentials "+
+							"the chain already resolved, as awsutil v0 did")
+					require.NotNil(t, loginData)
+					assert.Contains(t, loginAuthorization(t, loginData), nodeAccessKeyID,
+						"the login must be signed with the unassumed source credentials")
+					return
+				}
+
 				require.Error(t, err,
-					"a rejected STS call must fail the login rather than silently "+
-						"falling back to the source credentials")
+					"with no credentials to fall back to, the failure must surface")
 				assert.Nil(t, loginData,
 					"no login data may be returned when credentials could not be retrieved")
-				assert.Contains(t, err.Error(), stsErr.code,
-					"the underlying STS error code should reach the caller")
-				assert.NotEmpty(t, stsRec.Calls(), "expected the flow to actually call STS")
-
-				if !path.irsa {
-					assert.NotContains(t, err.Error(), nodeAccessKeyID,
-						"node credentials must not be used to sign the login request")
+				if tc.expectSTSCall {
+					assert.Contains(t, err.Error(), stsErr.code,
+						"the underlying STS error code should reach the caller")
 				}
 			})
 		}

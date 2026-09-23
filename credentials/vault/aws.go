@@ -438,10 +438,9 @@ func envStaticCredentialsSet() bool {
 //     acting on an inherited role would authenticate as the operator rather
 //     than the configured identity. An irsaServiceAccount on the VaultAuth is
 //     an explicit request and still wins.
-//   - The provider resolves lazily, so a failed role assumption surfaces as an
-//     error from GetCreds. awsutil v0 logged a warning and continued with the
-//     unassumed credentials; failing loudly is deliberate, since a silent
-//     fallback would authenticate under an unexpected identity.
+//   - A failed role assumption falls back to the credentials the chain already
+//     resolved, matching awsutil v0. The fallback is logged, since it means the
+//     Vault login proceeds under a different identity than was configured.
 func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.CredentialsConfig, irsaConfig *IRSAConfig, irsaToken string) {
 	// An irsaServiceAccount on the VaultAuth is an explicit request to assume
 	// that role using a freshly requested ServiceAccount token, so it outranks
@@ -515,7 +514,46 @@ func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.Credentia
 			})
 	}
 
-	awsCfg.Credentials = aws.NewCredentialsCache(provider)
+	awsCfg.Credentials = &roleProviderWithFallback{
+		role:     aws.NewCredentialsCache(provider),
+		fallback: awsCfg.Credentials,
+		roleARN:  roleARN,
+	}
+}
+
+// roleProviderWithFallback assumes a role, falling back to the credentials the
+// chain already resolved when the assumption fails.
+//
+// This preserves awsutil v0 behavior, which logged a warning and left the
+// unassumed credentials in the chain. The fallback means the Vault login is
+// signed by a different identity than was configured, so it is logged at error
+// level: the login usually fails afterwards at Vault, and the assumption
+// failure is the more useful diagnostic.
+type roleProviderWithFallback struct {
+	role     aws.CredentialsProvider
+	fallback aws.CredentialsProvider
+	roleARN  string
+}
+
+func (p *roleProviderWithFallback) Retrieve(ctx context.Context) (aws.Credentials, error) {
+	creds, err := p.role.Retrieve(ctx)
+	if err == nil {
+		return creds, nil
+	}
+	if p.fallback == nil {
+		return aws.Credentials{}, err
+	}
+
+	log.FromContext(ctx).Error(err,
+		"Failed to assume role, falling back to the source credentials",
+		"roleARN", p.roleARN)
+
+	fallbackCreds, fallbackErr := p.fallback.Retrieve(ctx)
+	if fallbackErr != nil {
+		// Surface the assumption failure: it is the actionable one.
+		return aws.Credentials{}, err
+	}
+	return fallbackCreds, nil
 }
 
 // resolvedStaticCredentials reports whether the credential chain settled on
