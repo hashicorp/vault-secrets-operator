@@ -11,6 +11,33 @@ Fix:
 BREAKING CHANGES:
 * Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
 
+Build:
+* Build with Go 1.27.1
+* Test with Vault 2.1.1, 2.0.4, 1.21.11, 1.20.16
+* Test with Kind v0.33.0
+* Test with K8s 1.37.0, 1.36.4, 1.35.8, 1.34.11, 1.33.12, 1.32.11
+
+Dependency Updates:
+* Bump go.mod dependencies:
+  * Updates github.com/hashicorp/vault/api from 1.20.1-0.20250822193320-eff87a134a94 to 1.23.0
+  * Updates github.com/hashicorp/vault/sdk from 0.18.1-0.20250822193320-eff87a134a94 to 0.25.1
+  * Updates github.com/argoproj/argo-rollouts from 1.8.3 to 1.10.0
+  * Updates google.golang.org/grpc from 1.83.2 to 1.84.0
+  * Updates google.golang.org/api from 0.298.0 to 0.299.0
+  * Updates google.golang.org/genproto/googleapis/rpc from 0.0.0-20260819154853-08b0e4226688 to 0.0.0-20260921155816-b14227669459
+  * Updates k8s.io/utils from 0.0.0-20260626114624-be93311217bd to 0.0.0-20260707023825-cf1189d6abe3
+  * Updates golang.org/x/net from 0.58.0 to 0.59.0
+  * Updates golang.org/x/oauth2 from 0.36.0 to 0.37.0
+  * Updates golang.org/x/time from 0.15.0 to 0.16.0
+  * Updates cloud.google.com/go/auth from 0.23.2 to 0.23.3
+  * Updates github.com/googleapis/enterprise-certificate-proxy from 0.3.20 to 0.3.22
+  * Updates github.com/googleapis/gax-go/v2 from 2.24.0 to 2.24.1
+  * Updates github.com/google/s2a-go from 0.1.9 to 0.1.10
+  * Updates github.com/aws/aws-sdk-go from 1.44.122 to 1.55.8
+  * Updates github.com/felixge/httpsnoop from 1.0.4 to 1.1.0
+  * Updates github.com/fatih/color from 1.18.0 to 1.19.0
+  * Updates github.com/spf13/cast from 1.7.0 to 1.7.1
+
 ## 1.5.1 (August 11th, 2026)
 
 Build:
