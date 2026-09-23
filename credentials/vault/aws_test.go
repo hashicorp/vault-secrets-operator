@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -157,228 +158,6 @@ func Test_resolveSTSSigningEndpoint(t *testing.T) {
 	}
 }
 
-func Test_buildSignedGetCallerIdentityRequest(t *testing.T) {
-	ctx := context.Background()
-
-	// Minimal fake credentials — just need to be structurally valid for signing.
-	creds := aws.Credentials{
-		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
-		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		Source:          "test",
-	}
-
-	endpoint := stsSigningEndpoint{
-		requestURL:    "https://sts.us-east-1.amazonaws.com",
-		signingName:   stsSigningName,
-		signingRegion: "us-east-1",
-	}
-
-	t.Run("produces correct method and body", func(t *testing.T) {
-		req, body, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
-		require.NoError(t, err)
-		assert.Equal(t, http.MethodPost, req.Method)
-		assert.Equal(t, stsGetCallerIdentityBody, body)
-		assert.Equal(t, stsContentType, req.Header.Get("Content-Type"))
-	})
-
-	t.Run("sets X-Vault-AWS-IAM-Server-ID header when provided", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "vault.example.com")
-		require.NoError(t, err)
-		assert.Equal(t, "vault.example.com", req.Header.Get(iamServerIDHeader))
-	})
-
-	t.Run("does not set X-Vault-AWS-IAM-Server-ID when empty", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
-		require.NoError(t, err)
-		assert.Empty(t, req.Header.Get(iamServerIDHeader))
-	})
-
-	t.Run("request is signed (Authorization header present)", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
-		require.NoError(t, err)
-		assert.NotEmpty(t, req.Header.Get("Authorization"), "signed request must have Authorization header")
-		assert.Contains(t, req.Header.Get("Authorization"), "AWS4-HMAC-SHA256")
-	})
-
-	t.Run("request URL matches endpoint", func(t *testing.T) {
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, creds, endpoint, "")
-		require.NoError(t, err)
-		assert.Equal(t, "https://sts.us-east-1.amazonaws.com", req.URL.String())
-	})
-
-	t.Run("temporary credentials with SessionToken produce X-Amz-Security-Token header", func(t *testing.T) {
-		tempCreds := aws.Credentials{
-			AccessKeyID:     "ASIAIOSFODNN7EXAMPLE",
-			SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-			SessionToken:    "AQoXnyc4lcK4w=",
-			Source:          "test",
-		}
-		req, _, err := buildSignedGetCallerIdentityRequest(ctx, tempCreds, endpoint, "")
-		require.NoError(t, err)
-		// AWS SDK v4 signer writes the session token as X-Amz-Security-Token.
-		assert.NotEmpty(t, req.Header.Get("X-Amz-Security-Token"),
-			"signed request with SessionToken must include X-Amz-Security-Token header")
-		assert.Equal(t, "AQoXnyc4lcK4w=", req.Header.Get("X-Amz-Security-Token"))
-	})
-}
-
-func Test_generateLoginData(t *testing.T) {
-	ctx := context.Background()
-
-	staticCreds := aws.Credentials{
-		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
-		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		Source:          "test",
-	}
-	awsCfg := &aws.Config{
-		Region:      "us-east-1",
-		Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: staticCreds}),
-	}
-
-	t.Run("nil config returns error", func(t *testing.T) {
-		_, err := generateLoginData(ctx, nil, "", "")
-		require.ErrorContains(t, err, "AWS credentials are not configured")
-	})
-
-	t.Run("config with nil Credentials returns error", func(t *testing.T) {
-		_, err := generateLoginData(ctx, &aws.Config{}, "", "")
-		require.ErrorContains(t, err, "AWS credentials are not configured")
-	})
-
-	t.Run("empty credentials return error", func(t *testing.T) {
-		emptyCfg := &aws.Config{
-			Region:      "us-east-1",
-			Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: aws.Credentials{}}),
-		}
-		_, err := generateLoginData(ctx, emptyCfg, "", "")
-		require.ErrorContains(t, err, "retrieved AWS credentials are empty")
-	})
-
-	t.Run("temporary credentials with SessionToken include X-Amz-Security-Token in headers", func(t *testing.T) {
-		tempCreds := aws.Credentials{
-			AccessKeyID:     "ASIAIOSFODNN7EXAMPLE",
-			SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-			SessionToken:    "AQoXnyc4lcK4w=",
-			Source:          "test",
-		}
-		tempCfg := &aws.Config{
-			Region:      "us-east-1",
-			Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: tempCreds}),
-		}
-		loginData, err := generateLoginData(ctx, tempCfg, "", "")
-		require.NoError(t, err)
-		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
-		require.NoError(t, err)
-		var headers map[string][]string
-		require.NoError(t, json.Unmarshal(decoded, &headers))
-		vals, ok := headers["X-Amz-Security-Token"]
-		require.True(t, ok, "X-Amz-Security-Token must be present for temporary credentials")
-		assert.Equal(t, "AQoXnyc4lcK4w=", vals[0])
-	})
-
-	t.Run("produces all required login data keys", func(t *testing.T) {
-		loginData, err := generateLoginData(ctx, awsCfg, "", "")
-		require.NoError(t, err)
-
-		for _, key := range []string{
-			"iam_http_request_method",
-			"iam_request_url",
-			"iam_request_headers",
-			"iam_request_body",
-		} {
-			assert.Contains(t, loginData, key, "missing key: %s", key)
-		}
-	})
-
-	t.Run("iam_http_request_method is POST", func(t *testing.T) {
-		loginData, err := generateLoginData(ctx, awsCfg, "", "")
-		require.NoError(t, err)
-		assert.Equal(t, http.MethodPost, loginData["iam_http_request_method"])
-	})
-
-	t.Run("iam_request_url is base64 encoded STS URL", func(t *testing.T) {
-		loginData, err := generateLoginData(ctx, awsCfg, "", "")
-		require.NoError(t, err)
-		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_url"].(string))
-		require.NoError(t, err)
-		assert.Contains(t, string(decoded), "sts.us-east-1.amazonaws.com")
-	})
-
-	t.Run("iam_request_body is base64 encoded GetCallerIdentity body", func(t *testing.T) {
-		loginData, err := generateLoginData(ctx, awsCfg, "", "")
-		require.NoError(t, err)
-		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_body"].(string))
-		require.NoError(t, err)
-		assert.Equal(t, stsGetCallerIdentityBody, string(decoded))
-	})
-
-	t.Run("iam_request_headers is valid base64 JSON with Authorization", func(t *testing.T) {
-		loginData, err := generateLoginData(ctx, awsCfg, "", "")
-		require.NoError(t, err)
-		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
-		require.NoError(t, err)
-		var headers map[string]interface{}
-		require.NoError(t, json.Unmarshal(decoded, &headers))
-		_, hasAuth := headers["Authorization"]
-		assert.True(t, hasAuth, "headers should contain Authorization")
-	})
-
-	t.Run("header value is included in headers", func(t *testing.T) {
-		loginData, err := generateLoginData(ctx, awsCfg, "vault.example.com", "")
-		require.NoError(t, err)
-		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
-		require.NoError(t, err)
-		var headers map[string][]string
-		require.NoError(t, json.Unmarshal(decoded, &headers))
-		// http.Header canonicalizes keys: "X-Vault-AWS-IAM-Server-ID" → "X-Vault-Aws-Iam-Server-Id"
-		canonicalKey := http.CanonicalHeaderKey(iamServerIDHeader)
-		vals, ok := headers[canonicalKey]
-		require.True(t, ok, "header %q should be present (canonical: %q)", iamServerIDHeader, canonicalKey)
-		assert.Equal(t, "vault.example.com", vals[0])
-	})
-
-	t.Run("custom STS endpoint is used when provided", func(t *testing.T) {
-		loginData, err := generateLoginData(ctx, awsCfg, "", "https://localstack:4566")
-		require.NoError(t, err)
-		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_url"].(string))
-		require.NoError(t, err)
-		assert.Contains(t, string(decoded), "localstack:4566")
-	})
-
-	t.Run("falls back to DefaultRegion when config region is empty", func(t *testing.T) {
-		noRegionCfg := &aws.Config{
-			Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: staticCreds}),
-		}
-		loginData, err := generateLoginData(ctx, noRegionCfg, "", "")
-		require.NoError(t, err)
-		decoded, err := base64.StdEncoding.DecodeString(loginData["iam_request_url"].(string))
-		require.NoError(t, err)
-		assert.Contains(t, string(decoded), awsutil.DefaultRegion)
-	})
-
-	t.Run("config region determines the SigV4 credential scope", func(t *testing.T) {
-		// The region only matters if it reaches the signature. A login signed
-		// under the wrong regional scope is rejected by STS, so assert on the
-		// Authorization header rather than on the request URL alone.
-		regionalCfg := &aws.Config{
-			Region:      "eu-west-1",
-			Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: staticCreds}),
-		}
-		loginData, err := generateLoginData(ctx, regionalCfg, "", "")
-		require.NoError(t, err)
-
-		rawHeaders, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
-		require.NoError(t, err)
-		var headers map[string][]string
-		require.NoError(t, json.Unmarshal(rawHeaders, &headers))
-		require.NotEmpty(t, headers["Authorization"])
-
-		assert.Contains(t, headers["Authorization"][0], "/eu-west-1/sts/aws4_request",
-			"the configured region must appear in the SigV4 credential scope")
-		assert.NotContains(t, headers["Authorization"][0], awsutil.DefaultRegion)
-	})
-}
-
 // staticCredentialsProvider is a minimal aws.CredentialsProvider for tests that
 // returns a fixed set of credentials without making any network calls.
 type staticCredentialsProvider struct {
@@ -424,6 +203,203 @@ func isolateAWSEnvironment(t *testing.T) {
 	} {
 		t.Setenv(key, "")
 	}
+}
+
+// ─── shared test helpers ───
+//
+// These cover the three pieces of setup that nearly every AWS auth test needs:
+// a fake Kubernetes client, a fake STS endpoint that records the calls VSO
+// makes, and decoding of the Vault login payload.
+
+// stsRecorder is a fake AWS STS endpoint. It records the form-encoded body of
+// every request it receives so tests can assert on the exact API call VSO made
+// - which action, which role, which token - rather than only on the outcome.
+type stsRecorder struct {
+	// URL is the endpoint to hand to spec.aws.stsEndpoint or an
+	// STSEndpointResolver.
+	URL string
+
+	mu    sync.Mutex
+	calls []url.Values
+}
+
+// Calls returns a copy of the recorded requests, safe to read from the test
+// goroutine while the server is still running.
+func (s *stsRecorder) Calls() []url.Values {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]url.Values(nil), s.calls...)
+}
+
+// Resolver returns an sts.EndpointResolverV2 pointing at this server, for the
+// unit-level tests that configure a CredentialsConfig directly rather than
+// going through spec.aws.stsEndpoint.
+func (s *stsRecorder) Resolver(t *testing.T) sts.EndpointResolverV2 {
+	t.Helper()
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+	return stsEndpointResolverFunc(func(_ context.Context, _ sts.EndpointParameters) (smithyendpoints.Endpoint, error) {
+		return smithyendpoints.Endpoint{URI: *u}, nil
+	})
+}
+
+// newSTSRecorder starts a fake STS endpoint that answers every request with the
+// given status and body. The server is closed when the test finishes.
+func newSTSRecorder(t *testing.T, status int, body string) *stsRecorder {
+	t.Helper()
+
+	rec := &stsRecorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		rec.mu.Lock()
+		rec.calls = append(rec.calls, r.PostForm)
+		rec.mu.Unlock()
+
+		w.Header().Set("Content-Type", "text/xml")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	rec.URL = srv.URL
+	return rec
+}
+
+// newFakeClient builds a controller-runtime fake client with the schemes VSO
+// needs, seeded with the given objects.
+func newFakeClient(t *testing.T, objs ...ctrlclient.Object) *fake.ClientBuilder {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, secretsv1beta1.AddToScheme(scheme))
+
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...)
+}
+
+// newIRSAServiceAccount builds an IRSA-annotated ServiceAccount. Passing nil
+// annotations yields just the required role-arn annotation.
+func newIRSAServiceAccount(name, namespace, roleARN string, annotations map[string]string) *corev1.ServiceAccount {
+	if annotations == nil {
+		annotations = map[string]string{AWSAnnotationRole: roleARN}
+	}
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			UID:         "sa-uid",
+			Annotations: annotations,
+		},
+	}
+}
+
+// withTokenRequests makes the fake client's TokenRequest subresource mint the
+// supplied token, and records every TokenRequest spec VSO asked for so tests
+// can assert on the requested audience and expiration.
+func withTokenRequests(b *fake.ClientBuilder, token string, recorded *[]authenticationv1.TokenRequestSpec, mu *sync.Mutex) *fake.ClientBuilder {
+	return b.WithInterceptorFuncs(interceptor.Funcs{
+		SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
+			tr, ok := subResource.(*authenticationv1.TokenRequest)
+			if !ok || subResourceName != "token" {
+				return c.SubResource(subResourceName).Create(ctx, obj, subResource, opts...)
+			}
+			if recorded != nil {
+				mu.Lock()
+				*recorded = append(*recorded, tr.Spec)
+				mu.Unlock()
+			}
+			tr.Status.Token = token
+			return nil
+		},
+	})
+}
+
+// kubeRootCAConfigMap is the ConfigMap Init falls back to for its cache
+// identity when neither secretRef nor irsaServiceAccount is configured.
+func kubeRootCAConfigMap() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      K8sRootCA,
+			Namespace: common.OperatorNamespace,
+			UID:       "root-ca-uid",
+		},
+	}
+}
+
+// decodeLoginField base64-decodes one of the Vault login payload's encoded
+// fields (iam_request_url, iam_request_body, iam_request_headers).
+func decodeLoginField(t *testing.T, loginData map[string]interface{}, key string) string {
+	t.Helper()
+
+	raw, ok := loginData[key].(string)
+	require.Truef(t, ok, "login payload is missing string field %q", key)
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	require.NoError(t, err)
+	return string(decoded)
+}
+
+// decodeLoginHeaders returns the signed headers carried in the Vault login
+// payload. http.Header canonicalizes keys, so look them up with
+// http.CanonicalHeaderKey.
+func decodeLoginHeaders(t *testing.T, loginData map[string]interface{}) map[string][]string {
+	t.Helper()
+
+	var headers map[string][]string
+	require.NoError(t, json.Unmarshal([]byte(decodeLoginField(t, loginData, "iam_request_headers")), &headers))
+	return headers
+}
+
+// loginAuthorization returns the SigV4 Authorization header from the login
+// payload. It carries the signing identity's access key ID and the credential
+// scope, so it is the authoritative answer to "which credentials signed this?".
+func loginAuthorization(t *testing.T, loginData map[string]interface{}) string {
+	t.Helper()
+
+	headers := decodeLoginHeaders(t, loginData)
+	require.NotEmpty(t, headers["Authorization"],
+		"the login request must carry a SigV4 Authorization header")
+	return headers["Authorization"][0]
+}
+
+// staticAWSConfig builds an aws.Config that resolves to fixed credentials
+// without any network access.
+func staticAWSConfig(region string, creds aws.Credentials) *aws.Config {
+	return &aws.Config{
+		Region:      region,
+		Credentials: aws.NewCredentialsCache(staticCredentialsProvider{creds: creds}),
+	}
+}
+
+// imdsRejector stands in for the EC2 instance metadata service, recording every
+// attempt to reach it and refusing to supply credentials. Tests use it to prove
+// VSO did not silently fall back to node credentials.
+type imdsRejector struct {
+	mu   sync.Mutex
+	hits []string
+}
+
+func (f *imdsRejector) Hits() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.hits...)
+}
+
+// newRejectingIMDS starts the fake metadata service and points the SDK at it.
+func newRejectingIMDS(t *testing.T) *imdsRejector {
+	t.Helper()
+
+	rej := &imdsRejector{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rej.mu.Lock()
+		rej.hits = append(rej.hits, r.URL.Path)
+		rej.mu.Unlock()
+		http.Error(w, "no instance role available", http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", srv.URL)
+	return rej
 }
 
 const (
@@ -495,229 +471,6 @@ func (f *fakeIMDS) start(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// Test_applyCredentialsOverride_AssumeRoleForNodeRoleFlow isolates the override
-// on the node-role path: with RoleARN set and no web identity token it must
-// install an assume-role provider that sources its credentials from the
-// existing chain (EC2 IMDS) and calls sts:AssumeRole through the configured
-// STSEndpointResolver.
-func Test_applyCredentialsOverride_AssumeRoleForNodeRoleFlow(t *testing.T) {
-	isolateAWSEnvironment(t)
-
-	imds := &fakeIMDS{}
-	imdsServer := imds.start(t)
-	t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imdsServer.URL)
-	t.Setenv("AWS_REGION", "us-east-1")
-
-	var mu sync.Mutex
-	var stsCalls []url.Values
-	stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		mu.Lock()
-		stsCalls = append(stsCalls, r.PostForm)
-		mu.Unlock()
-
-		w.Header().Set("Content-Type", "text/xml")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(assumeRoleResponse))
-	}))
-	defer stsServer.Close()
-
-	stsURL, err := url.Parse(stsServer.URL)
-	require.NoError(t, err)
-
-	cfg, err := awsutil.NewCredentialsConfig()
-	require.NoError(t, err)
-	cfg.Region = "us-east-1"
-	cfg.RoleARN = "arn:aws:iam::123456789012:role/vso-target-role"
-	cfg.RoleExternalId = "external-id-123"
-	cfg.RoleTags = map[string]string{"team": "vso", "env": "test"}
-	cfg.STSEndpointResolver = stsEndpointResolverFunc(func(_ context.Context, _ sts.EndpointParameters) (smithyendpoints.Endpoint, error) {
-		return smithyendpoints.Endpoint{URI: *stsURL}, nil
-	})
-	// Deliberately no WebIdentityToken / WebIdentityTokenFile.
-
-	awsCfg, err := cfg.GenerateCredentialChain(context.Background())
-	require.NoError(t, err)
-
-	before := awsCfg.Credentials
-	applyCredentialsOverride(awsCfg, cfg, nil, "")
-	assert.NotSame(t, before, awsCfg.Credentials,
-		"override must install an assume-role provider on the node-role path")
-
-	creds, err := awsCfg.Credentials.Retrieve(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, "AKIAASSUMEDROLE", creds.AccessKeyID,
-		"the chain must resolve to assumed-role credentials, not node credentials")
-
-	mu.Lock()
-	calls := append([]url.Values(nil), stsCalls...)
-	mu.Unlock()
-
-	require.Len(t, calls, 1)
-	assert.Equal(t, "AssumeRole", calls[0].Get("Action"))
-	assert.Equal(t, "external-id-123", calls[0].Get("ExternalId"),
-		"RoleExternalId must be propagated")
-	// Tags are sorted by key: env, team.
-	assert.Equal(t, "env", calls[0].Get("Tags.member.1.Key"))
-	assert.Equal(t, "test", calls[0].Get("Tags.member.1.Value"))
-	assert.Equal(t, "team", calls[0].Get("Tags.member.2.Key"))
-	assert.Equal(t, "vso", calls[0].Get("Tags.member.2.Value"))
-}
-
-// Test_applyCredentialsOverride_PreservesCredentialPrecedence asserts that the
-// role-assumption override never outranks credentials the AWS credential chain
-// legitimately selected.
-//
-// When VSO itself runs on EKS under IRSA, the operator pod carries AWS_ROLE_ARN
-// and AWS_WEB_IDENTITY_TOKEN_FILE. awsutil.NewCredentialsConfig() seeds
-// CredentialsConfig.RoleARN from AWS_ROLE_ARN, so a VaultAuth that never asked
-// for role assumption can still present a non-empty RoleARN inherited from the
-// operator's own environment. Acting on that inherited value would sign the
-// Vault login request as the operator's role instead of the identity the
-// VaultAuth configured.
-//
-// Each case asserts *which* credentials would sign the login request, by access
-// key ID, rather than merely that credential resolution succeeded.
-func Test_applyCredentialsOverride_PreservesCredentialPrecedence(t *testing.T) {
-	const (
-		operatorRoleARN  = "arn:aws:iam::123456789012:role/operator-irsa-role"
-		secretAccessKey  = "AKIAFROMSECRET"
-		envAccessKeyID   = "AKIAFROMENV"
-		sharedAccessKeyI = "AKIAFROMPROFILE"
-	)
-
-	makeProvider := func(spec *secretsv1beta1.VaultAuthConfigAWS) *AWSCredentialProvider {
-		return &AWSCredentialProvider{
-			authObj: &secretsv1beta1.VaultAuth{
-				Spec: secretsv1beta1.VaultAuthSpec{AWS: spec},
-			},
-		}
-	}
-
-	// simulateOperatorIRSAPod sets the environment variables present in an
-	// IRSA-enabled operator pod.
-	simulateOperatorIRSAPod := func(t *testing.T) {
-		t.Helper()
-		tokenFile := filepath.Join(t.TempDir(), "token")
-		require.NoError(t, os.WriteFile(tokenFile, []byte("operator-pod-jwt"), 0o600))
-		t.Setenv("AWS_ROLE_ARN", operatorRoleARN)
-		t.Setenv("AWS_WEB_IDENTITY_TOKEN_FILE", tokenFile)
-	}
-
-	t.Run("secretRef credentials survive an inherited AWS_ROLE_ARN", func(t *testing.T) {
-		isolateAWSEnvironment(t)
-		simulateOperatorIRSAPod(t)
-
-		p := makeProvider(&secretsv1beta1.VaultAuthConfigAWS{Role: "r", Region: "us-east-1"})
-		credsSecret := &corev1.Secret{
-			Data: map[string][]byte{
-				consts.AWSAccessKeyID:     []byte(secretAccessKey),
-				consts.AWSSecretAccessKey: []byte("secretFromK8sSecret"),
-			},
-		}
-		// secretRef flow: GetCreds supplies the Secret and no IRSA config.
-		cfg, err := p.getCredentialsConfig(credsSecret, nil, "")
-		require.NoError(t, err)
-		require.Equal(t, operatorRoleARN, cfg.RoleARN,
-			"precondition: awsutil seeds RoleARN from the operator pod's environment")
-
-		awsCfg, err := cfg.GenerateCredentialChain(context.Background())
-		require.NoError(t, err)
-
-		before, err := awsCfg.Credentials.Retrieve(context.Background())
-		require.NoError(t, err)
-		require.Equal(t, secretAccessKey, before.AccessKeyID,
-			"precondition: the chain selects the Secret's static credentials")
-
-		applyCredentialsOverride(awsCfg, cfg, nil, "")
-
-		after, err := awsCfg.Credentials.Retrieve(context.Background())
-		require.NoError(t, err, "override must not break credential retrieval")
-		assert.Equal(t, secretAccessKey, after.AccessKeyID,
-			"the Vault login request must still be signed with the secretRef credentials, "+
-				"not the operator's inherited IRSA role")
-	})
-
-	t.Run("environment credentials survive an inherited AWS_ROLE_ARN", func(t *testing.T) {
-		isolateAWSEnvironment(t)
-		simulateOperatorIRSAPod(t)
-		t.Setenv("AWS_ACCESS_KEY_ID", envAccessKeyID)
-		t.Setenv("AWS_SECRET_ACCESS_KEY", "secretFromEnv")
-
-		p := makeProvider(&secretsv1beta1.VaultAuthConfigAWS{Role: "r", Region: "us-east-1"})
-		cfg, err := p.getCredentialsConfig(&corev1.Secret{}, nil, "")
-		require.NoError(t, err)
-
-		awsCfg, err := cfg.GenerateCredentialChain(context.Background())
-		require.NoError(t, err)
-
-		applyCredentialsOverride(awsCfg, cfg, nil, "")
-
-		after, err := awsCfg.Credentials.Retrieve(context.Background())
-		require.NoError(t, err, "override must not break credential retrieval")
-		assert.Equal(t, envAccessKeyID, after.AccessKeyID,
-			"the Vault login request must still be signed with the environment credentials")
-	})
-
-	t.Run("override stands down whenever the chain resolved static credentials", func(t *testing.T) {
-		isolateAWSEnvironment(t)
-		simulateOperatorIRSAPod(t)
-
-		p := makeProvider(&secretsv1beta1.VaultAuthConfigAWS{Role: "r", Region: "us-east-1"})
-		cfg, err := p.getCredentialsConfig(&corev1.Secret{}, nil, "")
-		require.NoError(t, err)
-
-		awsCfg, err := cfg.GenerateCredentialChain(context.Background())
-		require.NoError(t, err)
-
-		// Stand in for any static-credential source the chain may settle on -
-		// secretRef, the environment, or a shared profile all resolve to a
-		// credentials.StaticCredentialsProvider.
-		awsCfg.Credentials = aws.NewCredentialsCache(
-			credentials.NewStaticCredentialsProvider(sharedAccessKeyI, "secretFromProfile", ""))
-		require.True(t, resolvedStaticCredentials(awsCfg.Credentials),
-			"precondition: the guard recognizes static credentials")
-
-		before := awsCfg.Credentials
-		applyCredentialsOverride(awsCfg, cfg, nil, "")
-		assert.Same(t, before, awsCfg.Credentials,
-			"override must leave static credentials untouched")
-
-		after, err := awsCfg.Credentials.Retrieve(context.Background())
-		require.NoError(t, err)
-		assert.Equal(t, sharedAccessKeyI, after.AccessKeyID)
-	})
-
-	t.Run("explicit irsaServiceAccount outranks ambient static credentials", func(t *testing.T) {
-		isolateAWSEnvironment(t)
-		// Ambient static credentials that must NOT win, because the VaultAuth
-		// explicitly named an irsaServiceAccount.
-		t.Setenv("AWS_ACCESS_KEY_ID", envAccessKeyID)
-		t.Setenv("AWS_SECRET_ACCESS_KEY", "secretFromEnv")
-
-		p := makeProvider(&secretsv1beta1.VaultAuthConfigAWS{
-			Role:               "r",
-			Region:             "us-east-1",
-			IRSAServiceAccount: "irsa-sa",
-		})
-		irsa := &IRSAConfig{RoleARN: "arn:aws:iam::123456789012:role/vaultauth-irsa-role"}
-		cfg, err := p.getCredentialsConfig(&corev1.Secret{}, irsa, "vaultauth-sa-jwt")
-		require.NoError(t, err)
-
-		awsCfg, err := cfg.GenerateCredentialChain(context.Background())
-		require.NoError(t, err)
-
-		applyCredentialsOverride(awsCfg, cfg, irsa, "vaultauth-sa-jwt")
-
-		assert.False(t, resolvedStaticCredentials(awsCfg.Credentials),
-			"an explicit irsaServiceAccount must install a role provider, "+
-				"not fall back to ambient static credentials")
-	})
-}
-
 // stsEndpointResolverFunc adapts a function to sts.EndpointResolverV2 so tests
 // can point the SDK at a local httptest server.
 type stsEndpointResolverFunc func(context.Context, sts.EndpointParameters) (smithyendpoints.Endpoint, error)
@@ -727,88 +480,6 @@ func (f stsEndpointResolverFunc) ResolveEndpoint(ctx context.Context, params sts
 }
 
 // ─── endpoint resolvers, helpers ───
-
-// Test_customSTSEndpointResolver covers the resolver installed by
-// getCredentialsConfig when spec.aws.stsEndpoint is set, including the
-// malformed-URL path.
-func Test_customSTSEndpointResolver(t *testing.T) {
-	t.Run("resolves the configured endpoint", func(t *testing.T) {
-		r := &customSTSEndpointResolver{endpointURL: "https://sts.example.internal:8443/path"}
-		ep, err := r.ResolveEndpoint(context.Background(), sts.EndpointParameters{})
-		require.NoError(t, err)
-		assert.Equal(t, "https://sts.example.internal:8443/path", ep.URI.String())
-	})
-
-	t.Run("ignores the region when a custom endpoint is configured", func(t *testing.T) {
-		r := &customSTSEndpointResolver{endpointURL: "https://sts.example.internal"}
-		ep, err := r.ResolveEndpoint(context.Background(), sts.EndpointParameters{
-			Region: aws.String("eu-west-1"),
-		})
-		require.NoError(t, err)
-		assert.Equal(t, "https://sts.example.internal", ep.URI.String())
-	})
-
-	t.Run("returns an error for a malformed URL", func(t *testing.T) {
-		r := &customSTSEndpointResolver{endpointURL: "http://[::1]:namedport"}
-		_, err := r.ResolveEndpoint(context.Background(), sts.EndpointParameters{})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse custom STS endpoint URL")
-	})
-}
-
-// Test_customIAMEndpointResolver covers the resolver installed by
-// getCredentialsConfig when spec.aws.iamEndpoint is set.
-func Test_customIAMEndpointResolver(t *testing.T) {
-	t.Run("resolves the configured endpoint", func(t *testing.T) {
-		r := &customIAMEndpointResolver{endpointURL: "https://iam.example.internal"}
-		ep, err := r.ResolveEndpoint(context.Background(), iam.EndpointParameters{})
-		require.NoError(t, err)
-		assert.Equal(t, "https://iam.example.internal", ep.URI.String())
-	})
-
-	t.Run("returns an error for a malformed URL", func(t *testing.T) {
-		r := &customIAMEndpointResolver{endpointURL: "http://[::1]:namedport"}
-		_, err := r.ResolveEndpoint(context.Background(), iam.EndpointParameters{})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse custom IAM endpoint URL")
-	})
-}
-
-// Test_sortedKeys guards the deterministic ordering that applyCredentialsOverride
-// relies on when translating RoleTags into sts:AssumeRole Tags.member.N entries.
-func Test_sortedKeys(t *testing.T) {
-	assert.Equal(t, []string{"a", "b", "z"}, sortedKeys(map[string]string{"z": "1", "a": "2", "b": "3"}))
-	assert.Empty(t, sortedKeys(map[string]string{}))
-	assert.Empty(t, sortedKeys(nil))
-}
-
-// Test_resolvedStaticCredentials covers the guard that keeps
-// applyCredentialsOverride from outranking credentials the AWS credential chain
-// already selected.
-func Test_resolvedStaticCredentials(t *testing.T) {
-	t.Run("true for a cached static provider", func(t *testing.T) {
-		provider := aws.NewCredentialsCache(
-			credentials.NewStaticCredentialsProvider("AKIA", "secret", ""))
-		assert.True(t, resolvedStaticCredentials(provider))
-	})
-
-	t.Run("true for a bare static provider", func(t *testing.T) {
-		assert.True(t, resolvedStaticCredentials(
-			credentials.NewStaticCredentialsProvider("AKIA", "secret", "")))
-	})
-
-	t.Run("false for a non-static provider", func(t *testing.T) {
-		provider := aws.NewCredentialsCache(staticCredentialsProvider{
-			creds: aws.Credentials{AccessKeyID: "AKIA", SecretAccessKey: "secret"},
-		})
-		assert.False(t, resolvedStaticCredentials(provider),
-			"only credentials.StaticCredentialsProvider should be treated as static")
-	})
-
-	t.Run("false for nil", func(t *testing.T) {
-		assert.False(t, resolvedStaticCredentials(nil))
-	})
-}
 
 // ─── region precedence ───
 
@@ -824,245 +495,6 @@ func stsErrorResponse(code, message string) string {
   </Error>
   <RequestId>00000000-0000-0000-0000-000000000000</RequestId>
 </ErrorResponse>`
-}
-
-// newIRSAFakeClient builds a fake client holding an IRSA-annotated
-// ServiceAccount whose TokenRequest subresource mints the supplied token.
-func newIRSAFakeClient(t *testing.T, namespace, saName, roleARN, token string) ctrlclient.Client {
-	t.Helper()
-
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, secretsv1beta1.AddToScheme(scheme))
-
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        saName,
-			Namespace:   namespace,
-			UID:         "sa-uid",
-			Annotations: map[string]string{AWSAnnotationRole: roleARN},
-		},
-	}
-
-	return fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(sa).
-		WithInterceptorFuncs(interceptor.Funcs{
-			SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj ctrlclient.Object, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
-				tr, ok := subResource.(*authenticationv1.TokenRequest)
-				if !ok || subResourceName != "token" {
-					return c.SubResource(subResourceName).Create(ctx, obj, subResource, opts...)
-				}
-				tr.Status.Token = token
-				return nil
-			},
-		}).
-		Build()
-}
-
-// newNodeRoleFakeClient builds a fake client containing the kube-root-ca.crt
-// ConfigMap that Init requires on the node-role/instance-profile path.
-func newNodeRoleFakeClient(t *testing.T) ctrlclient.Client {
-	t.Helper()
-
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	require.NoError(t, secretsv1beta1.AddToScheme(scheme))
-
-	rootCA := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      K8sRootCA,
-			Namespace: common.OperatorNamespace,
-			UID:       "root-ca-uid",
-		},
-	}
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(rootCA).Build()
-}
-
-// Test_GetCreds_STSErrorPropagates asserts that an STS failure during credential
-// retrieval surfaces as a non-nil error from GetCreds on both the IRSA and
-// node-role paths.
-//
-// This is the guard against a silent fallback. Both paths replace the credential
-// chain with a role provider that resolves lazily, so a rejected AssumeRole or
-// AssumeRoleWithWebIdentity must abort the login rather than quietly signing it
-// with whatever credentials the chain resolved earlier (node credentials, or an
-// ambient identity). Returning login data here would authenticate to Vault as
-// the wrong principal.
-func Test_GetCreds_STSErrorPropagates(t *testing.T) {
-	stsErrors := map[string]struct{ code, message string }{
-		"AccessDenied": {
-			code:    "AccessDenied",
-			message: "User is not authorized to perform sts:AssumeRole on the requested resource",
-		},
-		"ExpiredToken": {
-			code:    "ExpiredToken",
-			message: "The security token included in the request is expired",
-		},
-	}
-
-	// newFailingSTS serves the given STS error and counts the requests it saw.
-	newFailingSTS := func(t *testing.T, code, message string, calls *int32) *httptest.Server {
-		t.Helper()
-		var mu sync.Mutex
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			mu.Lock()
-			*calls++
-			mu.Unlock()
-			w.Header().Set("Content-Type", "text/xml")
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(stsErrorResponse(code, message)))
-		}))
-		t.Cleanup(srv.Close)
-		return srv
-	}
-
-	for name, stsErr := range stsErrors {
-		t.Run("IRSA path returns an error on "+name, func(t *testing.T) {
-			isolateAWSEnvironment(t)
-			// Keep the SDK from burning retries on a deterministic failure.
-			t.Setenv("AWS_MAX_ATTEMPTS", "1")
-			t.Setenv("AWS_REGION", "us-east-1")
-
-			const namespace = "vso-test-ns"
-			var stsCalls int32
-			stsServer := newFailingSTS(t, stsErr.code, stsErr.message, &stsCalls)
-
-			client := newIRSAFakeClient(t, namespace, "vso-irsa-sa",
-				"arn:aws:iam::123456789012:role/vso-irsa-role", "irsa-sa-token")
-
-			authObj := &secretsv1beta1.VaultAuth{
-				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: namespace},
-				Spec: secretsv1beta1.VaultAuthSpec{
-					Method: "aws",
-					AWS: &secretsv1beta1.VaultAuthConfigAWS{
-						Role:               "vso-vault-role",
-						Region:             "us-east-1",
-						STSEndpoint:        stsServer.URL,
-						IRSAServiceAccount: "vso-irsa-sa",
-					},
-				},
-			}
-
-			ctx := context.Background()
-			provider := &AWSCredentialProvider{}
-			require.NoError(t, provider.Init(ctx, client, authObj, namespace))
-
-			loginData, err := provider.GetCreds(ctx, client)
-			require.Error(t, err, "a rejected AssumeRoleWithWebIdentity must fail the login")
-			assert.Nil(t, loginData, "no login data may be returned when credentials could not be retrieved")
-			assert.Contains(t, err.Error(), stsErr.code,
-				"the underlying STS error code should reach the caller")
-			assert.Positive(t, stsCalls, "expected the IRSA path to actually call STS")
-		})
-
-		t.Run("node role path returns an error on "+name, func(t *testing.T) {
-			isolateAWSEnvironment(t)
-			t.Setenv("AWS_MAX_ATTEMPTS", "1")
-			t.Setenv("AWS_REGION", "us-east-1")
-
-			imds := &fakeIMDS{}
-			imdsServer := imds.start(t)
-			t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imdsServer.URL)
-			// Picked up by awsutil.NewCredentialsConfig; VSO has no spec field
-			// for the assumed role on this path.
-			t.Setenv("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/vso-target-role")
-
-			var stsCalls int32
-			stsServer := newFailingSTS(t, stsErr.code, stsErr.message, &stsCalls)
-
-			client := newNodeRoleFakeClient(t)
-
-			authObj := &secretsv1beta1.VaultAuth{
-				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: "vso-test-ns"},
-				Spec: secretsv1beta1.VaultAuthSpec{
-					Method: "aws",
-					AWS: &secretsv1beta1.VaultAuthConfigAWS{
-						Role:        "vso-vault-role",
-						Region:      "us-east-1",
-						STSEndpoint: stsServer.URL,
-					},
-				},
-			}
-
-			ctx := context.Background()
-			provider := &AWSCredentialProvider{}
-			require.NoError(t, provider.Init(ctx, client, authObj, "vso-test-ns"))
-
-			loginData, err := provider.GetCreds(ctx, client)
-			require.Error(t, err, "a rejected AssumeRole must fail the login rather than "+
-				"silently falling back to the node credentials")
-			assert.Nil(t, loginData, "no login data may be returned when credentials could not be retrieved")
-			assert.Contains(t, err.Error(), stsErr.code,
-				"the underlying STS error code should reach the caller")
-			assert.Positive(t, stsCalls, "expected the node-role path to actually call STS")
-			assert.NotContains(t, err.Error(), nodeAccessKeyID,
-				"node credentials must not be used to sign the login request")
-		})
-	}
-}
-
-// Test_applyCredentialsOverride_AssumesTheValidatedRole guards against the
-// decision and the action drifting apart.
-//
-// applyCredentialsOverride decides that an explicit IRSA request is in play by
-// inspecting irsaConfig.RoleARN, but the role it assumes must be that same
-// value. credsConfig.RoleARN normally carries it too, yet that field is also
-// what awsutil seeds from the operator pod's own AWS_ROLE_ARN. If the two ever
-// diverge, assuming the credsConfig value would authenticate to Vault as a role
-// the VaultAuth never asked for.
-func Test_applyCredentialsOverride_AssumesTheValidatedRole(t *testing.T) {
-	isolateAWSEnvironment(t)
-	t.Setenv("AWS_REGION", "us-east-1")
-
-	const (
-		vaultAuthRoleARN = "arn:aws:iam::123456789012:role/vaultauth-requested-role"
-		operatorRoleARN  = "arn:aws:iam::999999999999:role/operator-inherited-role"
-		irsaToken        = "vaultauth-sa-jwt"
-	)
-
-	var mu sync.Mutex
-	var stsCalls []url.Values
-	stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, r.ParseForm())
-		mu.Lock()
-		stsCalls = append(stsCalls, r.PostForm)
-		mu.Unlock()
-		w.Header().Set("Content-Type", "text/xml")
-		_, _ = w.Write([]byte(assumeRoleWithWebIdentityResponse))
-	}))
-	defer stsServer.Close()
-	stsURL, err := url.Parse(stsServer.URL)
-	require.NoError(t, err)
-
-	cfg, err := awsutil.NewCredentialsConfig()
-	require.NoError(t, err)
-	cfg.Region = "us-east-1"
-	// Simulate the two sources disagreeing: credsConfig holds the operator's
-	// inherited role while the VaultAuth asked for a different one.
-	cfg.RoleARN = operatorRoleARN
-	cfg.WebIdentityToken = irsaToken
-	cfg.STSEndpointResolver = stsEndpointResolverFunc(
-		func(_ context.Context, _ sts.EndpointParameters) (smithyendpoints.Endpoint, error) {
-			return smithyendpoints.Endpoint{URI: *stsURL}, nil
-		})
-
-	awsCfg, err := cfg.GenerateCredentialChain(context.Background())
-	require.NoError(t, err)
-
-	applyCredentialsOverride(awsCfg, cfg, &IRSAConfig{RoleARN: vaultAuthRoleARN}, irsaToken)
-
-	_, err = awsCfg.Credentials.Retrieve(context.Background())
-	require.NoError(t, err)
-
-	mu.Lock()
-	calls := append([]url.Values(nil), stsCalls...)
-	mu.Unlock()
-
-	require.Len(t, calls, 1)
-	assert.Equal(t, vaultAuthRoleARN, calls[0].Get("RoleArn"),
-		"must assume the role the VaultAuth asked for, not the one inherited from the operator environment")
-	assert.NotEqual(t, operatorRoleARN, calls[0].Get("RoleArn"))
 }
 
 // ─── consolidated suites ───
@@ -1084,7 +516,11 @@ func Test_getCredentialsConfig(t *testing.T) {
 		irsaToken  string
 		awsRegion  string
 		awsDefault string
-		check      func(t *testing.T, cfg *awsutil.CredentialsConfig)
+		// sharedCredsFile sets AWS_SHARED_CREDENTIALS_FILE; unsetSharedCreds
+		// clears it so the SDK default path applies.
+		sharedCredsFile  string
+		unsetSharedCreds bool
+		check            func(t *testing.T, cfg *awsutil.CredentialsConfig)
 	}{
 		"explicit spec region outranks both environment variables": {
 			spec:       &secretsv1beta1.VaultAuthConfigAWS{Role: "r", Region: "eu-west-1"},
@@ -1113,6 +549,22 @@ func Test_getCredentialsConfig(t *testing.T) {
 			spec: &secretsv1beta1.VaultAuthConfigAWS{Role: "r"},
 			check: func(t *testing.T, cfg *awsutil.CredentialsConfig) {
 				assert.Equal(t, awsutil.DefaultRegion, cfg.Region)
+			},
+		},
+		"uses AWS_SHARED_CREDENTIALS_FILE as the shared credentials path": {
+			spec:            &secretsv1beta1.VaultAuthConfigAWS{Role: "r"},
+			sharedCredsFile: "/tmp/vso-test-credentials",
+			check: func(t *testing.T, cfg *awsutil.CredentialsConfig) {
+				assert.Equal(t, "/tmp/vso-test-credentials", cfg.Filename,
+					"awsutil passes Filename to WithSharedCredentialsFiles, so it must point at the configured file")
+			},
+		},
+		"falls back to the SDK default shared credentials path when unset": {
+			spec:             &secretsv1beta1.VaultAuthConfigAWS{Role: "r"},
+			unsetSharedCreds: true,
+			check: func(t *testing.T, cfg *awsutil.CredentialsConfig) {
+				assert.Equal(t, awsconfig.DefaultSharedCredentialsFilename(), cfg.Filename,
+					"an empty Filename would override the SDK's normal lookup with an empty path")
 			},
 		},
 		"sets RoleSessionName from spec": {
@@ -1174,6 +626,12 @@ func Test_getCredentialsConfig(t *testing.T) {
 			isolateAWSEnvironment(t)
 			t.Setenv("AWS_REGION", tt.awsRegion)
 			t.Setenv("AWS_DEFAULT_REGION", tt.awsDefault)
+			if tt.sharedCredsFile != "" {
+				t.Setenv("AWS_SHARED_CREDENTIALS_FILE", tt.sharedCredsFile)
+			}
+			if tt.unsetSharedCreds {
+				t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "")
+			}
 
 			p := &AWSCredentialProvider{
 				authObj: &secretsv1beta1.VaultAuth{
@@ -1273,60 +731,13 @@ func Test_GetCreds_IRSA(t *testing.T) {
 			}
 
 			var mu sync.Mutex
-			var imdsHits []string
-			imds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				mu.Lock()
-				imdsHits = append(imdsHits, r.URL.Path)
-				mu.Unlock()
-				http.Error(w, "no instance role available", http.StatusNotFound)
-			}))
-			defer imds.Close()
-			t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imds.URL)
+			imds := newRejectingIMDS(t)
+			stsRec := newSTSRecorder(t, http.StatusOK, assumeRoleWithWebIdentityResponse)
 
-			var stsCalls []url.Values
-			stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := r.ParseForm(); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				mu.Lock()
-				stsCalls = append(stsCalls, r.PostForm)
-				mu.Unlock()
-				w.Header().Set("Content-Type", "text/xml")
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(assumeRoleWithWebIdentityResponse))
-			}))
-			defer stsServer.Close()
-
-			sa := &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: saName, Namespace: namespace, UID: "sa-uid",
-					Annotations: tt.annotations,
-				},
-			}
-
-			scheme := runtime.NewScheme()
-			require.NoError(t, clientgoscheme.AddToScheme(scheme))
-			require.NoError(t, secretsv1beta1.AddToScheme(scheme))
+			sa := newIRSAServiceAccount(saName, namespace, roleARN, tt.annotations)
 
 			var tokenRequests []authenticationv1.TokenRequestSpec
-			client := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(sa).
-				WithInterceptorFuncs(interceptor.Funcs{
-					SubResourceCreate: func(ctx context.Context, c ctrlclient.Client, subResourceName string, obj, subResource ctrlclient.Object, opts ...ctrlclient.SubResourceCreateOption) error {
-						tr, ok := subResource.(*authenticationv1.TokenRequest)
-						if !ok || subResourceName != "token" {
-							return c.SubResource(subResourceName).Create(ctx, obj, subResource, opts...)
-						}
-						mu.Lock()
-						tokenRequests = append(tokenRequests, tr.Spec)
-						mu.Unlock()
-						tr.Status.Token = saToken
-						return nil
-					},
-				}).
-				Build()
+			client := withTokenRequests(newFakeClient(t, sa), saToken, &tokenRequests, &mu).Build()
 
 			authObj := &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: namespace},
@@ -1336,7 +747,7 @@ func Test_GetCreds_IRSA(t *testing.T) {
 						Role:               vaultRole,
 						Region:             "us-east-1",
 						SessionName:        tt.sessionName,
-						STSEndpoint:        stsServer.URL,
+						STSEndpoint:        stsRec.URL,
 						IRSAServiceAccount: saName,
 					},
 				},
@@ -1352,7 +763,7 @@ func Test_GetCreds_IRSA(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 
-			require.Empty(t, imdsHits,
+			require.Empty(t, imds.Hits(),
 				"VSO must not fall back to EC2 instance metadata / node credentials when irsaServiceAccount is configured")
 
 			// The ServiceAccount token was requested with the annotation-derived
@@ -1364,8 +775,9 @@ func Test_GetCreds_IRSA(t *testing.T) {
 
 			// Credential retrieval went through the configured stsEndpoint and
 			// presented the VaultAuth's own token and role.
-			require.Len(t, stsCalls, 1, "expected exactly one STS call")
-			call := stsCalls[0]
+			calls := stsRec.Calls()
+			require.Len(t, calls, 1, "expected exactly one STS call")
+			call := calls[0]
 			assert.Equal(t, "AssumeRoleWithWebIdentity", call.Get("Action"))
 			assert.Equal(t, tt.expectedWebIDToken, call.Get("WebIdentityToken"),
 				"the requested ServiceAccount token must be the one presented to STS")
@@ -1379,23 +791,17 @@ func Test_GetCreds_IRSA(t *testing.T) {
 			// with the assumed-role identity.
 			assert.Equal(t, vaultRole, loginData["role"])
 
-			rawURL, err := base64.StdEncoding.DecodeString(loginData["iam_request_url"].(string))
+			loginURL, err := url.Parse(decodeLoginField(t, loginData, "iam_request_url"))
 			require.NoError(t, err)
-			loginURL, err := url.Parse(string(rawURL))
-			require.NoError(t, err)
-			stsURL, err := url.Parse(stsServer.URL)
+			stsURL, err := url.Parse(stsRec.URL)
 			require.NoError(t, err)
 			assert.Equal(t, stsURL.Host, loginURL.Host,
 				"login request must target the configured STS endpoint")
 
-			rawHeaders, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
-			require.NoError(t, err)
-			var headers map[string][]string
-			require.NoError(t, json.Unmarshal(rawHeaders, &headers))
-			require.NotEmpty(t, headers["Authorization"])
-			assert.Contains(t, headers["Authorization"][0], assumedKeyID,
+			assert.Contains(t, loginAuthorization(t, loginData), assumedKeyID,
 				"login request must be signed with the web identity credentials")
-			assert.Equal(t, []string{assumedToken}, headers["X-Amz-Security-Token"])
+			assert.Equal(t, []string{assumedToken},
+				decodeLoginHeaders(t, loginData)["X-Amz-Security-Token"])
 		})
 	}
 }
@@ -1450,23 +856,9 @@ func Test_GetCreds_NodeCredentials(t *testing.T) {
 				t.Setenv("AWS_ROLE_ARN", tt.roleARN)
 			}
 
-			var mu sync.Mutex
-			var stsCalls []url.Values
-			stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := r.ParseForm(); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				mu.Lock()
-				stsCalls = append(stsCalls, r.PostForm)
-				mu.Unlock()
-				w.Header().Set("Content-Type", "text/xml")
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(assumeRoleResponse))
-			}))
-			defer stsServer.Close()
+			stsRec := newSTSRecorder(t, http.StatusOK, assumeRoleResponse)
 
-			client := newNodeRoleFakeClient(t)
+			client := newFakeClient(t, kubeRootCAConfigMap()).Build()
 
 			authObj := &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: "vso-test-ns"},
@@ -1476,7 +868,7 @@ func Test_GetCreds_NodeCredentials(t *testing.T) {
 						Role:        "vso-vault-role",
 						Region:      "us-east-1",
 						SessionName: sessionName,
-						STSEndpoint: stsServer.URL,
+						STSEndpoint: stsRec.URL,
 					},
 				},
 			}
@@ -1491,9 +883,7 @@ func Test_GetCreds_NodeCredentials(t *testing.T) {
 			assert.Contains(t, imds.paths(), "/latest/meta-data/iam/security-credentials/",
 				"expected the EC2 role provider to supply the node credentials")
 
-			mu.Lock()
-			calls := append([]url.Values(nil), stsCalls...)
-			mu.Unlock()
+			calls := stsRec.Calls()
 
 			if tt.expectSTSCall {
 				require.Len(t, calls, 1, "expected exactly one STS call")
@@ -1506,12 +896,8 @@ func Test_GetCreds_NodeCredentials(t *testing.T) {
 					"no role is configured, so nothing may be assumed")
 			}
 
-			rawHeaders, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
-			require.NoError(t, err)
-			var headers map[string][]string
-			require.NoError(t, json.Unmarshal(rawHeaders, &headers))
-			require.NotEmpty(t, headers["Authorization"])
-			authHeader := headers["Authorization"][0]
+			headers := decodeLoginHeaders(t, loginData)
+			authHeader := loginAuthorization(t, loginData)
 
 			assert.Contains(t, authHeader, tt.expectedSigningKeyID,
 				"Vault login must be signed with the expected identity")
@@ -1585,18 +971,8 @@ func Test_applyCredentialsOverride_AmbientWebIdentity(t *testing.T) {
 			isolateAWSEnvironment(t)
 			t.Setenv("AWS_REGION", "us-east-1")
 
-			var mu sync.Mutex
-			var stsCalls []url.Values
-			stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				require.NoError(t, r.ParseForm())
-				mu.Lock()
-				stsCalls = append(stsCalls, r.PostForm)
-				mu.Unlock()
-				w.Header().Set("Content-Type", "text/xml")
-				_, _ = w.Write([]byte(assumeRoleWithWebIdentityResponse))
-			}))
-			defer stsServer.Close()
-			stsURL, err := url.Parse(stsServer.URL)
+			stsRec := newSTSRecorder(t, http.StatusOK, assumeRoleWithWebIdentityResponse)
+			stsURL, err := url.Parse(stsRec.URL)
 			require.NoError(t, err)
 
 			cfg, err := awsutil.NewCredentialsConfig()
@@ -1626,9 +1002,7 @@ func Test_applyCredentialsOverride_AmbientWebIdentity(t *testing.T) {
 			assert.Equal(t, "AKIAIRSAONLY", creds.AccessKeyID,
 				"credentials must come from AssumeRoleWithWebIdentity")
 
-			mu.Lock()
-			calls := append([]url.Values(nil), stsCalls...)
-			mu.Unlock()
+			calls := stsRec.Calls()
 
 			require.Len(t, calls, 1, "expected exactly one STS call, routed to the custom endpoint")
 			assert.Equal(t, "AssumeRoleWithWebIdentity", calls[0].Get("Action"))
@@ -1678,21 +1052,7 @@ func Test_GetCreds_SecretRef(t *testing.T) {
 
 			// Any STS traffic at all would mean VSO tried to assume a role
 			// instead of using the Secret's credentials directly.
-			var mu sync.Mutex
-			var stsCalls []url.Values
-			stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_ = r.ParseForm()
-				mu.Lock()
-				stsCalls = append(stsCalls, r.PostForm)
-				mu.Unlock()
-				w.Header().Set("Content-Type", "text/xml")
-				_, _ = w.Write([]byte(assumeRoleWithWebIdentityResponse))
-			}))
-			defer stsServer.Close()
-
-			scheme := runtime.NewScheme()
-			require.NoError(t, clientgoscheme.AddToScheme(scheme))
-			require.NoError(t, secretsv1beta1.AddToScheme(scheme))
+			stsRec := newSTSRecorder(t, http.StatusOK, assumeRoleWithWebIdentityResponse)
 
 			credsSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1704,7 +1064,7 @@ func Test_GetCreds_SecretRef(t *testing.T) {
 					consts.AWSSessionToken:    []byte(sessToken),
 				},
 			}
-			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(credsSecret).Build()
+			client := newFakeClient(t, credsSecret).Build()
 
 			authObj := &secretsv1beta1.VaultAuth{
 				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: namespace},
@@ -1713,7 +1073,7 @@ func Test_GetCreds_SecretRef(t *testing.T) {
 					AWS: &secretsv1beta1.VaultAuthConfigAWS{
 						Role:        "vso-vault-role",
 						Region:      "us-east-1",
-						STSEndpoint: stsServer.URL,
+						STSEndpoint: stsRec.URL,
 						SecretRef:   secretName,
 					},
 				},
@@ -1729,24 +1089,790 @@ func Test_GetCreds_SecretRef(t *testing.T) {
 			loginData, err := provider.GetCreds(ctx, client)
 			require.NoError(t, err)
 
-			mu.Lock()
-			calls := append([]url.Values(nil), stsCalls...)
-			mu.Unlock()
+			calls := stsRec.Calls()
 			assert.Empty(t, calls,
 				"static credentials require no STS call; any call means a role was wrongly assumed")
 
-			rawHeaders, err := base64.StdEncoding.DecodeString(loginData["iam_request_headers"].(string))
-			require.NoError(t, err)
-			var headers map[string][]string
-			require.NoError(t, json.Unmarshal(rawHeaders, &headers))
-			require.NotEmpty(t, headers["Authorization"])
+			headers := decodeLoginHeaders(t, loginData)
+			authHeader := loginAuthorization(t, loginData)
 
-			assert.Contains(t, headers["Authorization"][0], accessKey,
+			assert.Contains(t, authHeader, accessKey,
 				"the Vault login must be signed with the Secret's credentials")
-			assert.NotContains(t, headers["Authorization"][0], "AKIAIRSAONLY",
+			assert.NotContains(t, authHeader, "AKIAIRSAONLY",
 				"the Vault login must not be signed with assumed-role credentials")
 			assert.Equal(t, []string{sessToken}, headers["X-Amz-Security-Token"])
 			assert.Equal(t, "vso-vault-role", loginData["role"])
 		})
+	}
+}
+
+// Test_GetCreds_SharedCredentialsFile covers authentication via a shared AWS
+// credentials file, for both the default and a named profile.
+//
+// awsutil passes CredentialsConfig.Filename to
+// config.WithSharedCredentialsFiles unconditionally. VSO leaves Filename empty,
+// which replaced the SDK's normal file lookup with an empty path and made
+// GenerateCredentialChain fail outright with "failed to get shared config
+// profile". getCredentialsConfig now resolves the path the way the SDK does.
+//
+// Each case asserts which credentials sign the Vault login, and that no STS
+// call occurs, since shared-file credentials are static.
+func Test_GetCreds_SharedCredentialsFile(t *testing.T) {
+	const (
+		namespace = "vso-test-ns"
+		profileID = "AKIAFROMPROFILE"
+	)
+
+	tests := map[string]struct {
+		profile    string
+		awsProfile string
+	}{
+		"default profile": {
+			profile: "default",
+		},
+		"named profile selected by AWS_PROFILE": {
+			profile:    "vso-named-profile",
+			awsProfile: "vso-named-profile",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			isolateAWSEnvironment(t)
+			t.Setenv("AWS_REGION", "us-east-1")
+			t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+
+			credsFile := filepath.Join(t.TempDir(), "credentials")
+			require.NoError(t, os.WriteFile(credsFile, []byte(
+				"["+tt.profile+"]\n"+
+					"aws_access_key_id = "+profileID+"\n"+
+					"aws_secret_access_key = profile-secret-access-key\n"+
+					"aws_session_token = profile-session-token\n"), 0o600))
+			t.Setenv("AWS_SHARED_CREDENTIALS_FILE", credsFile)
+			if tt.awsProfile != "" {
+				t.Setenv("AWS_PROFILE", tt.awsProfile)
+			}
+
+			stsRec := newSTSRecorder(t, http.StatusOK, assumeRoleWithWebIdentityResponse)
+
+			client := newFakeClient(t, kubeRootCAConfigMap()).Build()
+
+			authObj := &secretsv1beta1.VaultAuth{
+				ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: namespace},
+				Spec: secretsv1beta1.VaultAuthSpec{
+					Method: "aws",
+					AWS: &secretsv1beta1.VaultAuthConfigAWS{
+						Role:        "vso-vault-role",
+						Region:      "us-east-1",
+						STSEndpoint: stsRec.URL,
+					},
+				},
+			}
+
+			ctx := context.Background()
+			provider := &AWSCredentialProvider{}
+			require.NoError(t, provider.Init(ctx, client, authObj, namespace))
+
+			loginData, err := provider.GetCreds(ctx, client)
+			require.NoError(t, err,
+				"shared-credentials-file auth must succeed; a chain error here means "+
+					"the shared file lookup was overridden with an empty path")
+
+			calls := stsRec.Calls()
+			assert.Empty(t, calls, "shared-file credentials are static and need no STS call")
+
+			headers := decodeLoginHeaders(t, loginData)
+			authHeader := loginAuthorization(t, loginData)
+
+			assert.Contains(t, authHeader, profileID,
+				"the Vault login must be signed with the shared profile's credentials")
+			assert.Equal(t, []string{"profile-session-token"}, headers["X-Amz-Security-Token"])
+		})
+	}
+}
+
+// ─── focused unit tests ───
+
+// Test_buildSignedGetCallerIdentityRequest covers construction and SigV4
+// signing of the sts:GetCallerIdentity request that becomes the Vault login
+// payload.
+func Test_buildSignedGetCallerIdentityRequest(t *testing.T) {
+	endpoint := stsSigningEndpoint{
+		requestURL:    "https://sts.us-east-1.amazonaws.com",
+		signingName:   stsSigningName,
+		signingRegion: "us-east-1",
+	}
+
+	longTermCreds := aws.Credentials{
+		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		Source:          "test",
+	}
+	temporaryCreds := aws.Credentials{
+		AccessKeyID:     "ASIAIOSFODNN7EXAMPLE",
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		SessionToken:    "AQoXnyc4lcK4w=",
+		Source:          "test",
+	}
+
+	tests := map[string]struct {
+		creds       aws.Credentials
+		headerValue string
+		check       func(t *testing.T, req *http.Request, body string)
+	}{
+		"produces the GetCallerIdentity POST and body": {
+			creds: longTermCreds,
+			check: func(t *testing.T, req *http.Request, body string) {
+				assert.Equal(t, http.MethodPost, req.Method)
+				assert.Equal(t, stsGetCallerIdentityBody, body)
+				assert.Equal(t, stsContentType, req.Header.Get("Content-Type"))
+			},
+		},
+		"targets the resolved endpoint": {
+			creds: longTermCreds,
+			check: func(t *testing.T, req *http.Request, _ string) {
+				assert.Equal(t, "https://sts.us-east-1.amazonaws.com", req.URL.String())
+			},
+		},
+		"signs the request with SigV4": {
+			creds: longTermCreds,
+			check: func(t *testing.T, req *http.Request, _ string) {
+				auth := req.Header.Get("Authorization")
+				require.NotEmpty(t, auth, "a signed request must carry an Authorization header")
+				assert.Contains(t, auth, "AWS4-HMAC-SHA256")
+			},
+		},
+		"sets the Vault server ID header when a header value is configured": {
+			creds:       longTermCreds,
+			headerValue: "vault.example.com",
+			check: func(t *testing.T, req *http.Request, _ string) {
+				assert.Equal(t, "vault.example.com", req.Header.Get(iamServerIDHeader))
+			},
+		},
+		"omits the Vault server ID header when no header value is configured": {
+			creds: longTermCreds,
+			check: func(t *testing.T, req *http.Request, _ string) {
+				assert.Empty(t, req.Header.Get(iamServerIDHeader))
+			},
+		},
+		"forwards the session token for temporary credentials": {
+			creds: temporaryCreds,
+			check: func(t *testing.T, req *http.Request, _ string) {
+				// The SDK's v4 signer emits the session token as
+				// X-Amz-Security-Token; Vault rejects the login without it.
+				assert.Equal(t, "AQoXnyc4lcK4w=", req.Header.Get("X-Amz-Security-Token"))
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			req, body, err := buildSignedGetCallerIdentityRequest(
+				context.Background(), tt.creds, endpoint, tt.headerValue)
+			require.NoError(t, err)
+			tt.check(t, req, body)
+		})
+	}
+}
+
+// Test_generateLoginData covers the Vault login payload built from a resolved
+// aws.Config: its required fields, its encoding, and the signing identity,
+// region and endpoint it ends up carrying.
+func Test_generateLoginData(t *testing.T) {
+	staticCreds := aws.Credentials{
+		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		Source:          "test",
+	}
+	temporaryCreds := aws.Credentials{
+		AccessKeyID:     "ASIAIOSFODNN7EXAMPLE",
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		SessionToken:    "AQoXnyc4lcK4w=",
+		Source:          "test",
+	}
+
+	tests := map[string]struct {
+		awsCfg      *aws.Config
+		headerValue string
+		stsEndpoint string
+		expectedErr string
+		check       func(t *testing.T, loginData map[string]interface{})
+	}{
+		"nil config is rejected": {
+			awsCfg:      nil,
+			expectedErr: "AWS credentials are not configured",
+		},
+		"config without a credentials provider is rejected": {
+			awsCfg:      &aws.Config{},
+			expectedErr: "AWS credentials are not configured",
+		},
+		"empty credentials are rejected": {
+			awsCfg:      staticAWSConfig("us-east-1", aws.Credentials{}),
+			expectedErr: "retrieved AWS credentials are empty",
+		},
+		"produces every field the Vault aws auth method requires": {
+			awsCfg: staticAWSConfig("us-east-1", staticCreds),
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				for _, key := range []string{
+					"iam_http_request_method",
+					"iam_request_url",
+					"iam_request_headers",
+					"iam_request_body",
+				} {
+					assert.Contains(t, loginData, key, "missing key: %s", key)
+				}
+				assert.Equal(t, http.MethodPost, loginData["iam_http_request_method"])
+			},
+		},
+		"encodes the STS URL": {
+			awsCfg: staticAWSConfig("us-east-1", staticCreds),
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				assert.Contains(t, decodeLoginField(t, loginData, "iam_request_url"),
+					"sts.us-east-1.amazonaws.com")
+			},
+		},
+		"encodes the GetCallerIdentity body": {
+			awsCfg: staticAWSConfig("us-east-1", staticCreds),
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				assert.Equal(t, stsGetCallerIdentityBody,
+					decodeLoginField(t, loginData, "iam_request_body"))
+			},
+		},
+		"encodes signed headers": {
+			awsCfg: staticAWSConfig("us-east-1", staticCreds),
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				assert.Contains(t, loginAuthorization(t, loginData), "AWS4-HMAC-SHA256")
+			},
+		},
+		"includes the configured Vault server ID header": {
+			awsCfg:      staticAWSConfig("us-east-1", staticCreds),
+			headerValue: "vault.example.com",
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				headers := decodeLoginHeaders(t, loginData)
+				// http.Header canonicalizes keys:
+				// "X-Vault-AWS-IAM-Server-ID" -> "X-Vault-Aws-Iam-Server-Id".
+				vals, ok := headers[http.CanonicalHeaderKey(iamServerIDHeader)]
+				require.True(t, ok, "header %q should be present", iamServerIDHeader)
+				assert.Equal(t, "vault.example.com", vals[0])
+			},
+		},
+		"forwards the session token for temporary credentials": {
+			awsCfg: staticAWSConfig("us-east-1", temporaryCreds),
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				headers := decodeLoginHeaders(t, loginData)
+				require.NotEmpty(t, headers["X-Amz-Security-Token"],
+					"X-Amz-Security-Token must be present for temporary credentials")
+				assert.Equal(t, "AQoXnyc4lcK4w=", headers["X-Amz-Security-Token"][0])
+			},
+		},
+		"honors a custom STS endpoint": {
+			awsCfg:      staticAWSConfig("us-east-1", staticCreds),
+			stsEndpoint: "https://localstack:4566",
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				assert.Contains(t, decodeLoginField(t, loginData, "iam_request_url"),
+					"localstack:4566")
+			},
+		},
+		"falls back to the default region when the config has none": {
+			awsCfg: staticAWSConfig("", staticCreds),
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				assert.Contains(t, decodeLoginField(t, loginData, "iam_request_url"),
+					awsutil.DefaultRegion)
+			},
+		},
+		"the config region determines the SigV4 credential scope": {
+			// The region only matters if it reaches the signature: a login
+			// signed under the wrong regional scope is rejected by STS, so
+			// assert on the Authorization header rather than the URL alone.
+			awsCfg: staticAWSConfig("eu-west-1", staticCreds),
+			check: func(t *testing.T, loginData map[string]interface{}) {
+				auth := loginAuthorization(t, loginData)
+				assert.Contains(t, auth, "/eu-west-1/sts/aws4_request",
+					"the configured region must appear in the SigV4 credential scope")
+				assert.NotContains(t, auth, awsutil.DefaultRegion)
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			loginData, err := generateLoginData(
+				context.Background(), tt.awsCfg, tt.headerValue, tt.stsEndpoint)
+
+			if tt.expectedErr != "" {
+				require.ErrorContains(t, err, tt.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			tt.check(t, loginData)
+		})
+	}
+}
+
+// Test_customEndpointResolvers covers the STS and IAM endpoint resolvers
+// installed by getCredentialsConfig when spec.aws.stsEndpoint or
+// spec.aws.iamEndpoint is set.
+func Test_customEndpointResolvers(t *testing.T) {
+	tests := map[string]struct {
+		endpointURL string
+		// region is passed to the STS resolver to confirm a custom endpoint
+		// wins over regional resolution. It is ignored by the IAM case.
+		region      string
+		expectedURI string
+		stsErr      string
+		iamErr      string
+	}{
+		"resolves the configured endpoint": {
+			endpointURL: "https://endpoint.example.internal:8443/path",
+			expectedURI: "https://endpoint.example.internal:8443/path",
+		},
+		"a custom endpoint outranks the region": {
+			endpointURL: "https://endpoint.example.internal",
+			region:      "eu-west-1",
+			expectedURI: "https://endpoint.example.internal",
+		},
+		"a malformed URL is reported": {
+			endpointURL: "http://[::1]:namedport",
+			stsErr:      "failed to parse custom STS endpoint URL",
+			iamErr:      "failed to parse custom IAM endpoint URL",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run("STS/"+name, func(t *testing.T) {
+			params := sts.EndpointParameters{}
+			if tt.region != "" {
+				params.Region = aws.String(tt.region)
+			}
+			r := &customSTSEndpointResolver{endpointURL: tt.endpointURL}
+			ep, err := r.ResolveEndpoint(context.Background(), params)
+			if tt.stsErr != "" {
+				require.ErrorContains(t, err, tt.stsErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedURI, ep.URI.String())
+		})
+
+		t.Run("IAM/"+name, func(t *testing.T) {
+			r := &customIAMEndpointResolver{endpointURL: tt.endpointURL}
+			ep, err := r.ResolveEndpoint(context.Background(), iam.EndpointParameters{})
+			if tt.iamErr != "" {
+				require.ErrorContains(t, err, tt.iamErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedURI, ep.URI.String())
+		})
+	}
+}
+
+// Test_sortedKeys guards the deterministic ordering applyCredentialsOverride
+// relies on when translating RoleTags into sts:AssumeRole Tags.member.N entries.
+func Test_sortedKeys(t *testing.T) {
+	tests := map[string]struct {
+		input    map[string]string
+		expected []string
+	}{
+		"sorts keys alphabetically": {
+			input:    map[string]string{"z": "1", "a": "2", "b": "3"},
+			expected: []string{"a", "b", "z"},
+		},
+		"empty map yields no keys": {
+			input:    map[string]string{},
+			expected: nil,
+		},
+		"nil map yields no keys": {
+			input:    nil,
+			expected: nil,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := sortedKeys(tt.input)
+			if len(tt.expected) == 0 {
+				assert.Empty(t, got)
+				return
+			}
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+// Test_resolvedStaticCredentials covers the guard that keeps
+// applyCredentialsOverride from outranking credentials the AWS credential chain
+// already selected.
+func Test_resolvedStaticCredentials(t *testing.T) {
+	tests := map[string]struct {
+		provider aws.CredentialsProvider
+		expected bool
+	}{
+		"cached static provider": {
+			provider: aws.NewCredentialsCache(
+				credentials.NewStaticCredentialsProvider("AKIA", "secret", "")),
+			expected: true,
+		},
+		"bare static provider": {
+			provider: credentials.NewStaticCredentialsProvider("AKIA", "secret", ""),
+			expected: true,
+		},
+		"non-static provider that merely returns fixed credentials": {
+			// Deliberately narrow: only credentials.StaticCredentialsProvider
+			// counts, so role providers are never mistaken for static ones.
+			provider: aws.NewCredentialsCache(staticCredentialsProvider{
+				creds: aws.Credentials{AccessKeyID: "AKIA", SecretAccessKey: "secret"},
+			}),
+			expected: false,
+		},
+		"nil provider": {
+			provider: nil,
+			expected: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, resolvedStaticCredentials(tt.provider))
+		})
+	}
+}
+
+// ─── credential precedence and role assumption ───
+
+// Test_applyCredentialsOverride_PreservesCredentialPrecedence asserts that the
+// role-assumption override never outranks credentials the AWS credential chain
+// legitimately selected.
+//
+// When VSO itself runs on EKS under IRSA the operator pod carries AWS_ROLE_ARN
+// and AWS_WEB_IDENTITY_TOKEN_FILE. awsutil.NewCredentialsConfig seeds
+// CredentialsConfig.RoleARN from AWS_ROLE_ARN, so a VaultAuth that never asked
+// for role assumption can still present a non-empty RoleARN inherited from the
+// operator's own environment. Acting on that inherited value would sign the
+// Vault login as the operator's role instead of the configured identity.
+//
+// Each case asserts *which* credentials would sign the login, by access key ID,
+// rather than merely that credential resolution succeeded.
+func Test_applyCredentialsOverride_PreservesCredentialPrecedence(t *testing.T) {
+	const (
+		operatorRoleARN = "arn:aws:iam::123456789012:role/operator-irsa-role"
+		secretKeyID     = "AKIAFROMSECRET"
+		envKeyID        = "AKIAFROMENV"
+		profileKeyID    = "AKIAFROMPROFILE"
+		vaultAuthRole   = "arn:aws:iam::123456789012:role/vaultauth-irsa-role"
+	)
+
+	tests := map[string]struct {
+		// operatorIRSA seeds the operator pod's own IRSA environment.
+		operatorIRSA bool
+		envCreds     bool
+		secret       *corev1.Secret
+		irsaConfig   *IRSAConfig
+		irsaToken    string
+		// preloadStatic swaps in a static provider to stand in for any
+		// static-credential source the chain may settle on.
+		preloadStatic bool
+		check         func(t *testing.T, awsCfg *aws.Config, before aws.CredentialsProvider)
+	}{
+		"secretRef credentials survive an inherited AWS_ROLE_ARN": {
+			operatorIRSA: true,
+			secret: &corev1.Secret{Data: map[string][]byte{
+				consts.AWSAccessKeyID:     []byte(secretKeyID),
+				consts.AWSSecretAccessKey: []byte("secretFromK8sSecret"),
+			}},
+			check: func(t *testing.T, awsCfg *aws.Config, _ aws.CredentialsProvider) {
+				after, err := awsCfg.Credentials.Retrieve(context.Background())
+				require.NoError(t, err, "override must not break credential retrieval")
+				assert.Equal(t, secretKeyID, after.AccessKeyID,
+					"the login must still be signed with the secretRef credentials, "+
+						"not the operator's inherited IRSA role")
+			},
+		},
+		"environment credentials survive an inherited AWS_ROLE_ARN": {
+			operatorIRSA: true,
+			envCreds:     true,
+			check: func(t *testing.T, awsCfg *aws.Config, _ aws.CredentialsProvider) {
+				after, err := awsCfg.Credentials.Retrieve(context.Background())
+				require.NoError(t, err, "override must not break credential retrieval")
+				assert.Equal(t, envKeyID, after.AccessKeyID,
+					"the login must still be signed with the environment credentials")
+			},
+		},
+		"override stands down whenever the chain resolved static credentials": {
+			operatorIRSA:  true,
+			preloadStatic: true,
+			check: func(t *testing.T, awsCfg *aws.Config, before aws.CredentialsProvider) {
+				assert.Same(t, before, awsCfg.Credentials,
+					"override must leave static credentials untouched")
+				after, err := awsCfg.Credentials.Retrieve(context.Background())
+				require.NoError(t, err)
+				assert.Equal(t, profileKeyID, after.AccessKeyID)
+			},
+		},
+		"explicit irsaServiceAccount outranks ambient static credentials": {
+			// Ambient static credentials must NOT win here, because the
+			// VaultAuth explicitly named an irsaServiceAccount.
+			envCreds:   true,
+			irsaConfig: &IRSAConfig{RoleARN: vaultAuthRole},
+			irsaToken:  "vaultauth-sa-jwt",
+			check: func(t *testing.T, awsCfg *aws.Config, _ aws.CredentialsProvider) {
+				assert.False(t, resolvedStaticCredentials(awsCfg.Credentials),
+					"an explicit irsaServiceAccount must install a role provider, "+
+						"not fall back to ambient static credentials")
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			isolateAWSEnvironment(t)
+
+			if tt.operatorIRSA {
+				tokenFile := filepath.Join(t.TempDir(), "token")
+				require.NoError(t, os.WriteFile(tokenFile, []byte("operator-pod-jwt"), 0o600))
+				t.Setenv("AWS_ROLE_ARN", operatorRoleARN)
+				t.Setenv("AWS_WEB_IDENTITY_TOKEN_FILE", tokenFile)
+			}
+			if tt.envCreds {
+				t.Setenv("AWS_ACCESS_KEY_ID", envKeyID)
+				t.Setenv("AWS_SECRET_ACCESS_KEY", "secretFromEnv")
+			}
+
+			spec := &secretsv1beta1.VaultAuthConfigAWS{Role: "r", Region: "us-east-1"}
+			if tt.irsaConfig != nil {
+				spec.IRSAServiceAccount = "irsa-sa"
+			}
+			p := &AWSCredentialProvider{
+				authObj: &secretsv1beta1.VaultAuth{
+					Spec: secretsv1beta1.VaultAuthSpec{AWS: spec},
+				},
+			}
+
+			secret := tt.secret
+			if secret == nil {
+				secret = &corev1.Secret{}
+			}
+			cfg, err := p.getCredentialsConfig(secret, tt.irsaConfig, tt.irsaToken)
+			require.NoError(t, err)
+			if tt.operatorIRSA {
+				require.Equal(t, operatorRoleARN, cfg.RoleARN,
+					"precondition: awsutil seeds RoleARN from the operator pod's environment")
+			}
+
+			awsCfg, err := cfg.GenerateCredentialChain(context.Background())
+			require.NoError(t, err)
+
+			if tt.preloadStatic {
+				awsCfg.Credentials = aws.NewCredentialsCache(
+					credentials.NewStaticCredentialsProvider(profileKeyID, "secretFromProfile", ""))
+				require.True(t, resolvedStaticCredentials(awsCfg.Credentials),
+					"precondition: the guard recognizes static credentials")
+			}
+
+			before := awsCfg.Credentials
+			applyCredentialsOverride(awsCfg, cfg, tt.irsaConfig, tt.irsaToken)
+			tt.check(t, awsCfg, before)
+		})
+	}
+}
+
+// Test_applyCredentialsOverride_AssumeRole covers the assume-role path taken
+// when a role is configured without any web identity token, including the
+// optional external ID and session tags, and the role ARN the override must
+// act on.
+func Test_applyCredentialsOverride_AssumeRole(t *testing.T) {
+	const (
+		targetRole      = "arn:aws:iam::123456789012:role/vso-target-role"
+		operatorRole    = "arn:aws:iam::999999999999:role/operator-inherited-role"
+		vaultAuthRole   = "arn:aws:iam::123456789012:role/vaultauth-requested-role"
+		irsaTokenForARN = "vaultauth-sa-jwt"
+	)
+
+	tests := map[string]struct {
+		roleARN      string
+		sessionName  string
+		externalID   string
+		roleTags     map[string]string
+		webIDToken   string
+		irsaConfig   *IRSAConfig
+		irsaToken    string
+		stsResponse  string
+		expectAction string
+		check        func(t *testing.T, call url.Values)
+	}{
+		"assumes the node role and propagates external ID and tags": {
+			roleARN:      targetRole,
+			externalID:   "external-id-123",
+			roleTags:     map[string]string{"team": "vso", "env": "test"},
+			stsResponse:  assumeRoleResponse,
+			expectAction: "AssumeRole",
+			check: func(t *testing.T, call url.Values) {
+				assert.Equal(t, targetRole, call.Get("RoleArn"))
+				assert.Equal(t, "external-id-123", call.Get("ExternalId"),
+					"RoleExternalId must be propagated")
+				// Tags are sorted by key: env, then team.
+				assert.Equal(t, "env", call.Get("Tags.member.1.Key"))
+				assert.Equal(t, "test", call.Get("Tags.member.1.Value"))
+				assert.Equal(t, "team", call.Get("Tags.member.2.Key"))
+				assert.Equal(t, "vso", call.Get("Tags.member.2.Value"))
+			},
+		},
+		"propagates the configured session name": {
+			roleARN:      targetRole,
+			sessionName:  "vso-node-session",
+			stsResponse:  assumeRoleResponse,
+			expectAction: "AssumeRole",
+			check: func(t *testing.T, call url.Values) {
+				assert.Equal(t, "vso-node-session", call.Get("RoleSessionName"))
+			},
+		},
+		"assumes the validated role, not one inherited from the environment": {
+			// applyCredentialsOverride decides an explicit IRSA request is in
+			// play from irsaConfig.RoleARN, so it must assume that same value.
+			// credsConfig.RoleARN usually carries it too, but it is also the
+			// field awsutil seeds from the operator pod's own AWS_ROLE_ARN;
+			// assuming that one would authenticate as the wrong principal.
+			roleARN:      operatorRole,
+			webIDToken:   irsaTokenForARN,
+			irsaConfig:   &IRSAConfig{RoleARN: vaultAuthRole},
+			irsaToken:    irsaTokenForARN,
+			stsResponse:  assumeRoleWithWebIdentityResponse,
+			expectAction: "AssumeRoleWithWebIdentity",
+			check: func(t *testing.T, call url.Values) {
+				assert.Equal(t, vaultAuthRole, call.Get("RoleArn"),
+					"must assume the role the VaultAuth asked for")
+				assert.NotEqual(t, operatorRole, call.Get("RoleArn"))
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			isolateAWSEnvironment(t)
+			t.Setenv("AWS_REGION", "us-east-1")
+
+			// Node credentials stand in as the assume-role source for the
+			// cases that have no web identity token.
+			imds := &fakeIMDS{}
+			t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imds.start(t).URL)
+
+			stsRec := newSTSRecorder(t, http.StatusOK, tt.stsResponse)
+
+			cfg, err := awsutil.NewCredentialsConfig()
+			require.NoError(t, err)
+			cfg.Region = "us-east-1"
+			cfg.RoleARN = tt.roleARN
+			cfg.RoleSessionName = tt.sessionName
+			cfg.RoleExternalId = tt.externalID
+			cfg.RoleTags = tt.roleTags
+			cfg.WebIdentityToken = tt.webIDToken
+			cfg.STSEndpointResolver = stsRec.Resolver(t)
+
+			awsCfg, err := cfg.GenerateCredentialChain(context.Background())
+			require.NoError(t, err)
+
+			before := awsCfg.Credentials
+			applyCredentialsOverride(awsCfg, cfg, tt.irsaConfig, tt.irsaToken)
+			assert.NotSame(t, before, awsCfg.Credentials,
+				"override must install a role provider when a role is configured")
+
+			_, err = awsCfg.Credentials.Retrieve(context.Background())
+			require.NoError(t, err)
+
+			calls := stsRec.Calls()
+			require.Len(t, calls, 1, "expected exactly one STS call")
+			assert.Equal(t, tt.expectAction, calls[0].Get("Action"))
+			tt.check(t, calls[0])
+		})
+	}
+}
+
+// Test_GetCreds_STSErrorPropagates asserts that an STS failure during
+// credential retrieval surfaces as a non-nil error from GetCreds on both the
+// IRSA and node-role paths.
+//
+// This guards against a silent fallback. Both paths replace the credential
+// chain with a lazily-resolving role provider, so a rejected AssumeRole or
+// AssumeRoleWithWebIdentity must abort the login rather than quietly signing it
+// with whatever the chain resolved earlier - which would authenticate to Vault
+// as the wrong principal.
+func Test_GetCreds_STSErrorPropagates(t *testing.T) {
+	const namespace = "vso-test-ns"
+
+	stsErrors := map[string]struct{ code, message string }{
+		"AccessDenied": {
+			code:    "AccessDenied",
+			message: "User is not authorized to perform sts:AssumeRole on the requested resource",
+		},
+		"ExpiredToken": {
+			code:    "ExpiredToken",
+			message: "The security token included in the request is expired",
+		},
+	}
+
+	paths := map[string]struct {
+		irsa bool
+	}{
+		"IRSA path":      {irsa: true},
+		"node role path": {},
+	}
+
+	for errName, stsErr := range stsErrors {
+		for pathName, path := range paths {
+			t.Run(pathName+" returns an error on "+errName, func(t *testing.T) {
+				isolateAWSEnvironment(t)
+				// Keep the SDK from burning retries on a deterministic failure.
+				t.Setenv("AWS_MAX_ATTEMPTS", "1")
+				t.Setenv("AWS_REGION", "us-east-1")
+
+				stsRec := newSTSRecorder(t, http.StatusForbidden,
+					stsErrorResponse(stsErr.code, stsErr.message))
+
+				spec := &secretsv1beta1.VaultAuthConfigAWS{
+					Role:        "vso-vault-role",
+					Region:      "us-east-1",
+					STSEndpoint: stsRec.URL,
+				}
+
+				var client ctrlclient.Client
+				if path.irsa {
+					spec.IRSAServiceAccount = "vso-irsa-sa"
+					sa := newIRSAServiceAccount("vso-irsa-sa", namespace,
+						"arn:aws:iam::123456789012:role/vso-irsa-role", nil)
+					client = withTokenRequests(newFakeClient(t, sa), "irsa-sa-token", nil, nil).Build()
+				} else {
+					imds := &fakeIMDS{}
+					t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", imds.start(t).URL)
+					// Picked up by awsutil.NewCredentialsConfig; VSO has no
+					// spec field for the assumed role on this path.
+					t.Setenv("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/vso-target-role")
+					client = newFakeClient(t, kubeRootCAConfigMap()).Build()
+				}
+
+				authObj := &secretsv1beta1.VaultAuth{
+					ObjectMeta: metav1.ObjectMeta{Name: "vault-auth", Namespace: namespace},
+					Spec:       secretsv1beta1.VaultAuthSpec{Method: "aws", AWS: spec},
+				}
+
+				ctx := context.Background()
+				provider := &AWSCredentialProvider{}
+				require.NoError(t, provider.Init(ctx, client, authObj, namespace))
+
+				loginData, err := provider.GetCreds(ctx, client)
+				require.Error(t, err,
+					"a rejected STS call must fail the login rather than silently "+
+						"falling back to the source credentials")
+				assert.Nil(t, loginData,
+					"no login data may be returned when credentials could not be retrieved")
+				assert.Contains(t, err.Error(), stsErr.code,
+					"the underlying STS error code should reach the caller")
+				assert.NotEmpty(t, stsRec.Calls(), "expected the flow to actually call STS")
+
+				if !path.irsa {
+					assert.NotContains(t, err.Error(), nodeAccessKeyID,
+						"node credentials must not be used to sign the login request")
+				}
+			})
+		}
 	}
 }

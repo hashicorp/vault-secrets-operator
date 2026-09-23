@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -355,6 +357,20 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 	}
 	if l.authObj.Spec.AWS.IAMEndpoint != "" {
 		config.IAMEndpointResolver = &customIAMEndpointResolver{endpointURL: l.authObj.Spec.AWS.IAMEndpoint}
+	}
+
+	// awsutil passes CredentialsConfig.Filename to
+	// config.WithSharedCredentialsFiles unconditionally, so leaving it empty
+	// replaces the SDK's normal shared-credentials lookup with an empty path.
+	// That breaks both AWS_SHARED_CREDENTIALS_FILE and the default
+	// ~/.aws/credentials file, for the default and named profiles alike, and
+	// surfaces as a hard "failed to get shared config profile" error from
+	// GenerateCredentialChain rather than a fallback. Resolve the path the way
+	// the SDK would so shared-credentials auth keeps working.
+	if f := os.Getenv("AWS_SHARED_CREDENTIALS_FILE"); f != "" {
+		config.Filename = f
+	} else {
+		config.Filename = awsconfig.DefaultSharedCredentialsFilename()
 	}
 
 	if credsSecret != nil {
