@@ -21,7 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
+	awscreds "github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -532,7 +532,7 @@ func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.Credentia
 // chain. The check is a type inspection, so it does not trigger credential
 // retrieval.
 func resolvedStaticCredentials(provider aws.CredentialsProvider) bool {
-	return aws.IsCredentialsProvider(provider, credentials.StaticCredentialsProvider{})
+	return aws.IsCredentialsProvider(provider, awscreds.StaticCredentialsProvider{})
 }
 
 func sortedKeys(m map[string]string) []string {
