@@ -29,10 +29,6 @@ binary {
                 // indirect dependency of its cloud client libraries and does not run a gRPC server, let
                 // alone configure xDS routing, so the vulnerable code path is unreachable.
                 "GO-2026-6443",
-                // GHSA-2v4p-qf9q-27wj is the GitHub Security Advisory ID for the same google.golang.org/grpc
-                // xDS server routing panic covered by GO-2026-6443 above. VSO only pulls in grpc as an
-                // indirect dependency of its cloud client libraries and does not run a gRPC server or
-                // configure xDS routing, so the vulnerable code path is unreachable.
                 "GHSA-2v4p-qf9q-27wj",
             ]
         }
