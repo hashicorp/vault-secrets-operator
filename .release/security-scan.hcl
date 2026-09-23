@@ -35,17 +35,16 @@ container {
 
     triage {
         suppress {
-            vulnerabilities = [
-                // Addresses a false positive from scan (our security scanner)
-                "CVE-2025-6020",
-                // ncurses-base - fix is present in UBI 10.1 changelog (backported)
-                "CVE-2025-69720",
-                // glibc - CVE not explicitly listed in UBI 10.1 changelog; no patched version available
-                "CVE-2025-15281",
-                "CVE-2026-4046",
-                // libcap - fix is present in UBI 10.1 changelog (backported)
-                "CVE-2026-4878",
-            ]
+			// The OSV scanner will trip on several packages that are included in the
+			// the UBI images. This is due to RHEL using the same base version in the
+			// package name for the life of the distro regardless of whether or not
+			// that version has been patched for security. Rather than enumate ever
+			// single CVE that the OSV scanner will find (several tens) we'll ignore
+			// the base UBI packages.
+			paths = [
+				"usr/lib/sysimage/rpm/*",
+				"var/lib/rpm/*",
+			]
         }
     }
 
