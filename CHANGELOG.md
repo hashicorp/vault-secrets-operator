@@ -15,9 +15,9 @@ BREAKING CHANGES:
 
 Build:
 * Build with Go 1.27.1
-* Test with Vault 2.1.1, 2.0.4, 1.21.11, 1.20.16
+* Test with Vault 2.1.1, 1.21.11, 1.20.16, 1.19.22
 * Test with Kind v0.33.0
-* Test with K8s 1.37.0, 1.36.4, 1.35.8, 1.34.11, 1.33.12, 1.32.11
+* Test with K8s 1.37.0, 1.36.4, 1.35.8, 1.34.11, 1.33.12
 
 Dependency Updates:
 * Bump go.mod dependencies:
