@@ -2,6 +2,9 @@
 
 ## 1.6.0 (September 23rd, 2026)
 
+BREAKING CHANGES:
+* Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
+
 Enhancements:
 * VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
 * VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
@@ -12,9 +15,6 @@ Fix:
 * VDS: fix `rolloutRestartTargets` being triggered on every reconcile for static roles consumed with `allowStaticCreds: false`; static-creds detection now uses Vault response metadata instead of `spec.allowStaticCreds`, so restarts only occur when the HMAC-compared credentials actually change ([#1299](https://github.com/hashicorp/vault-secrets-operator/pull/1299))
 * Helm: omit `spec.namespace` from the default `VaultAuth` and transit `VaultAuth` resources when no Vault namespace is configured, instead of rendering an empty `namespace:` key. Server-side apply deserialized the empty key as `null`, which failed CRD schema validation and blocked installs where Vault namespaces are not in use ([#1319](https://github.com/hashicorp/vault-secrets-operator/pull/1319))
 * VaultStaticSecret: return the non-nil error alongside `RequeueAfter` on Vault failures so resources are re-queued with backoff instead of being silently dropped after a transient Vault HA event ([#1323](https://github.com/hashicorp/vault-secrets-operator/pull/1323))
-
-BREAKING CHANGES:
-* Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
 
 Build:
 * Build with Go 1.27.1
