@@ -57,7 +57,10 @@ resource "kubernetes_secret" "secretkvv2" {
 }
 
 provider "vault" {
-  # Configuration options
+  # address, token and namespace are picked up from VAULT_ADDR, VAULT_TOKEN,
+  # and VAULT_NAMESPACE env vars set by the test runner before invoking go test.
+  # Do NOT set namespace here — the vault provider concatenates the provider
+  # block namespace with VAULT_NAMESPACE env var, producing "admin/admin".
 }
 
 resource "random_string" "prefix" {
@@ -86,32 +89,73 @@ resource "vault_mount" "kvv2" {
 }
 
 resource "vault_namespace" "test" {
-  count = var.vault_enterprise ? 1 : 0
+  count = (var.vault_enterprise && !var.use_hvd) ? 1 : 0
   path  = local.vault_namespace
 }
 
 resource "vault_auth_backend" "default" {
+  count     = var.use_hvd ? 0 : 1
   namespace = local.namespace
   path      = local.auth_mount
   type      = "kubernetes"
 }
 
 resource "vault_kubernetes_auth_backend_config" "default" {
-  namespace              = vault_auth_backend.default.namespace
-  backend                = vault_auth_backend.default.path
+  count                  = var.use_hvd ? 0 : 1
+  namespace              = vault_auth_backend.default[0].namespace
+  backend                = vault_auth_backend.default[0].path
   kubernetes_host        = var.k8s_host
   disable_iss_validation = true
 }
 
 resource "vault_kubernetes_auth_backend_role" "default" {
-  namespace                        = vault_auth_backend.default.namespace
-  backend                          = vault_kubernetes_auth_backend_config.default.backend
+  count                            = var.use_hvd ? 0 : 1
+  namespace                        = vault_auth_backend.default[0].namespace
+  backend                          = vault_kubernetes_auth_backend_config.default[0].backend
   role_name                        = local.auth_role
   bound_service_account_names      = ["default"]
   bound_service_account_namespaces = [kubernetes_namespace.app.metadata[0].name]
   token_ttl                        = 3600
   token_policies                   = var.use_events ? [vault_policy.default_with_events[0].name] : [vault_policy.default[0].name]
   audience                         = "vault"
+}
+
+# ── AppRole auth backend (HVD only) ────────────────────────────────────────
+
+resource "vault_auth_backend" "approle" {
+  count     = var.use_hvd ? 1 : 0
+  namespace = local.namespace
+  path      = "${local.auth_mount}-approle"
+  type      = "approle"
+}
+
+resource "vault_approle_auth_backend_role" "default" {
+  count          = var.use_hvd ? 1 : 0
+  namespace      = local.namespace
+  backend        = vault_auth_backend.approle[0].path
+  role_name      = local.auth_role
+  token_ttl      = 3600
+  token_policies = var.use_events ? [vault_policy.default_with_events[0].name] : [vault_policy.default[0].name]
+}
+
+resource "vault_approle_auth_backend_role_secret_id" "default" {
+  count     = var.use_hvd ? 1 : 0
+  namespace = local.namespace
+  backend   = vault_auth_backend.approle[0].path
+  role_name = vault_approle_auth_backend_role.default[0].role_name
+}
+
+# Writes secret_id into a k8s Secret in the app namespace.
+# VSO reads this locally — no outbound call from HVD required.
+resource "kubernetes_secret" "approle_secretid" {
+  count = var.use_hvd ? 1 : 0
+  metadata {
+    name      = "${local.name_prefix}-approle-secretid"
+    namespace = kubernetes_namespace.app.metadata[0].name
+  }
+  data = {
+    id = vault_approle_auth_backend_role_secret_id.default[0].secret_id
+  }
 }
 
 resource "vault_policy" "default" {
@@ -159,9 +203,9 @@ module "vso-helm" {
   enable_default_auth_method       = var.enable_default_auth_method
   enable_default_connection        = var.enable_default_connection
   operator_helm_chart_path         = var.operator_helm_chart_path
-  k8s_auth_default_mount           = vault_kubernetes_auth_backend_role.default.backend
-  k8s_auth_default_role            = vault_kubernetes_auth_backend_role.default.role_name
-  k8s_auth_default_token_audiences = [vault_kubernetes_auth_backend_role.default.audience]
+  k8s_auth_default_mount           = vault_kubernetes_auth_backend_role.default[0].backend
+  k8s_auth_default_role            = vault_kubernetes_auth_backend_role.default[0].role_name
+  k8s_auth_default_token_audiences = [vault_kubernetes_auth_backend_role.default[0].audience]
   k8s_vault_connection_address     = var.k8s_vault_connection_address
   vault_test_namespace             = local.vault_namespace
 }
