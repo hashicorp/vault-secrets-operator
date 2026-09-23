@@ -319,12 +319,10 @@ func (l *AWSCredentialProvider) GetCreds(ctx context.Context, client ctrlclient.
 	config.Logger = hclog.Default()
 	config.Logger.SetLevel(hclog.Debug)
 
-	// GenerateCredentialChain returns *aws.Config (SDK v2).
-	// Note: the awsutil v0 option WithSkipWebIdentityValidity(true) has no
-	// equivalent in v2. The SDK v2 stscreds.WebIdentityRoleProvider retrieves
-	// the token lazily at signing time via GetIdentityToken(), so there is no
-	// upfront validity window to bypass.
-	awsCfg, err := config.GenerateCredentialChain(ctx)
+	// The awsutil v0 option WithSkipWebIdentityValidity(true) has no v2
+	// equivalent: the SDK v2 WebIdentityRoleProvider reads the token lazily at
+	// signing time, so there is no upfront validity window to bypass.
+	awsCfg, err := config.GenerateCredentialChain(ctx, credentialChainOptions()...)
 	if err != nil {
 		return nil, err
 	}
@@ -359,14 +357,10 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 		config.IAMEndpointResolver = &customIAMEndpointResolver{endpointURL: l.authObj.Spec.AWS.IAMEndpoint}
 	}
 
-	// awsutil passes CredentialsConfig.Filename to
-	// config.WithSharedCredentialsFiles unconditionally, so leaving it empty
-	// replaces the SDK's normal shared-credentials lookup with an empty path.
-	// That breaks both AWS_SHARED_CREDENTIALS_FILE and the default
-	// ~/.aws/credentials file, for the default and named profiles alike, and
-	// surfaces as a hard "failed to get shared config profile" error from
-	// GenerateCredentialChain rather than a fallback. Resolve the path the way
-	// the SDK would so shared-credentials auth keeps working.
+	// awsutil passes Filename to config.WithSharedCredentialsFiles
+	// unconditionally, so an empty value replaces the SDK's normal lookup with
+	// an empty path and shared-credentials auth fails outright. Resolve the
+	// path the way the SDK would.
 	if f := os.Getenv("AWS_SHARED_CREDENTIALS_FILE"); f != "" {
 		config.Filename = f
 	} else {
@@ -396,60 +390,58 @@ func (l *AWSCredentialProvider) getCredentialsConfig(credsSecret *corev1.Secret,
 	return config, nil
 }
 
+// credentialChainOptions returns the awsutil options for
+// GenerateCredentialChain.
+//
+// Environment credentials must outrank a shared profile, as they do in the AWS
+// credential chain. awsutil selects a shared profile whenever one exists, and
+// aws-sdk-go-v2 checks for a selected profile before it checks for environment
+// credentials, so leaving shared credentials enabled would let a stray
+// ~/.aws/credentials silently take over. Disabling them when environment
+// credentials are present restores the expected order.
+func credentialChainOptions() []awsutil.Option {
+	if envStaticCredentialsSet() {
+		return []awsutil.Option{awsutil.WithSharedCredentials(false)}
+	}
+	return nil
+}
+
+// envStaticCredentialsSet reports whether the environment carries a complete
+// static credential pair, using the same variables and precedence as the SDK.
+func envStaticCredentialsSet() bool {
+	keyID := os.Getenv("AWS_ACCESS_KEY_ID")
+	if keyID == "" {
+		keyID = os.Getenv("AWS_ACCESS_KEY")
+	}
+	secret := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	if secret == "" {
+		secret = os.Getenv("AWS_SECRET_KEY")
+	}
+	return keyID != "" && secret != ""
+}
+
 // applyCredentialsOverride replaces awsCfg.Credentials with a role-assumption
-// provider built directly from credsConfig, using an STS client that honors a
-// custom STSEndpointResolver when one is configured. It is a no-op unless
-// credsConfig specifies a RoleARN.
+// provider built from credsConfig, using an STS client that honors a custom
+// STSEndpointResolver. It serves the IRSA flow (RoleARN plus a web identity
+// token) and the node-role flow (RoleARN alone, sourcing its credentials from
+// the chain, typically EC2 IMDS).
 //
-// Two shapes are supported, matching what awsutil itself intends:
+// It exists because GenerateCredentialChain builds neither provider for the way
+// VSO supplies its inputs, and never propagates STSEndpointResolver into them.
 //
-//   - RoleARN plus a web identity token (or token file): the IRSA flow, served
-//     by a stscreds.WebIdentityRoleProvider.
-//   - RoleARN alone: the ec2-instance/node role flow, served by a
-//     stscreds.AssumeRoleProvider that uses the credentials the chain already
-//     resolved (typically EC2 IMDS) as its source credentials.
+// Two constraints are load-bearing:
 //
-// Credential precedence is preserved. A RoleARN is not necessarily a request
-// from the VaultAuth: awsutil.NewCredentialsConfig() seeds
-// CredentialsConfig.RoleARN from the operator pod's own AWS_ROLE_ARN, which is
-// set whenever VSO itself runs under IRSA. Static credentials - supplied via
-// secretRef, the environment, or a shared profile - outrank role assumption in
-// the AWS credential chain, so when the chain has already settled on them this
-// override stands down rather than authenticating to Vault under the
-// operator's identity instead of the one the VaultAuth configured. An
-// irsaServiceAccount named on the VaultAuth is an explicit request for role
-// assumption and therefore still takes precedence.
-//
-// This works around two related awsutil / aws-sdk-go-v2 limitations:
-//
-//  1. aws-sdk-go-v2/config's resolveCredentialChain only builds a
-//     WebIdentityRoleProvider when AWS_WEB_IDENTITY_TOKEN_FILE (or an
-//     equivalent shared-config value) is present in the process environment,
-//     and only chains an AssumeRoleProvider when the shared config file
-//     supplies role_arn. VSO supplies neither: the IRSA token's raw content
-//     comes from the Kubernetes TokenRequest API, and the role ARN comes from
-//     CredentialsConfig. awsutil passes both through
-//     config.WithWebIdentityRoleCredentialOptions /
-//     config.WithAssumeRoleCredentialOptions, which merely *customize* a
-//     provider the SDK has already decided to build - so without this override
-//     they are silently discarded and GenerateCredentialChain falls through to
-//     the EC2 IMDS role provider. IRSA logins would never call
-//     sts:AssumeRoleWithWebIdentity, and node-role logins would authenticate
-//     with the raw instance credentials instead of the assumed role.
-//  2. Even when those providers are built, CredentialsConfig's
-//     STSEndpointResolver is never propagated into them: awsutil only applies
-//     STSEndpointResolver in its own STSClient()/IAMClient() helpers
-//     (clients.go), not in GenerateCredentialChain. So credential retrieval
-//     would always contact the default AWS STS endpoint even when a custom
-//     stsEndpoint is configured, while only the final, separately-built
-//     GetCallerIdentity login request honored it.
-//
-// Note on failure behavior: the returned provider resolves lazily, so a failed
-// role assumption surfaces as an error from GetCreds rather than silently
-// falling back to the source credentials. This differs from awsutil v0 (AWS SDK
-// v1), which logged a warning and continued with the unassumed credentials.
-// Failing loudly is deliberate - a silent fallback would authenticate to Vault
-// under an unexpected identity.
+//   - A RoleARN alone is not a request to assume it. awsutil seeds
+//     CredentialsConfig.RoleARN from the operator pod's own AWS_ROLE_ARN, set
+//     whenever VSO itself runs under IRSA, so this stands down when the chain
+//     already resolved static credentials - they outrank role assumption, and
+//     acting on an inherited role would authenticate as the operator rather
+//     than the configured identity. An irsaServiceAccount on the VaultAuth is
+//     an explicit request and still wins.
+//   - The provider resolves lazily, so a failed role assumption surfaces as an
+//     error from GetCreds. awsutil v0 logged a warning and continued with the
+//     unassumed credentials; failing loudly is deliberate, since a silent
+//     fallback would authenticate under an unexpected identity.
 func applyCredentialsOverride(awsCfg *aws.Config, credsConfig *awsutil.CredentialsConfig, irsaConfig *IRSAConfig, irsaToken string) {
 	// An irsaServiceAccount on the VaultAuth is an explicit request to assume
 	// that role using a freshly requested ServiceAccount token, so it outranks

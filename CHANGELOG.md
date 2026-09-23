@@ -1,12 +1,19 @@
 ## Unreleased
 
 Enhancements:
+* VaultAuth: AWS auth now honors `spec.aws.stsEndpoint` when retrieving AWS credentials, not just when signing the Vault login request. Previously the configured endpoint was ignored during credential retrieval, so IRSA and assumed-role flows contacted the default AWS STS endpoint. ([#1315](https://github.com/hashicorp/vault-secrets-operator/pull/1315))
 * VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
 * VSS/VDS: Attach `X-Vault-Index` header on event-triggered reconciles to prevent stale reads on Performance Standbys (Requires Vault 1.20+): ([#1285](https://github.com/hashicorp/vault-secrets-operator/pull/1285))
 * Helm: add `controller.rbac.enabled` flag to allow skipping RBAC resource creation (ClusterRole, ClusterRoleBinding, Role, RoleBinding). When set to `false`, the chart still creates ServiceAccounts, the controller Deployment, and hook Jobs — equivalent RBAC must be pre-provisioned out-of-band by a cluster administrator using the same Helm release name (or `fullnameOverride`) before running `helm install`/`helm upgrade`.
 
 Fix:
+* VaultAuth: fix AWS authentication with `spec.aws.irsaServiceAccount`. The IRSA ServiceAccount token was not used to call `sts:AssumeRoleWithWebIdentity`, so logins silently fell through to EC2 instance metadata credentials, or failed outright when none were available ([#1315](https://github.com/hashicorp/vault-secrets-operator/pull/1315))
+* VaultAuth: fix AWS authentication using a shared credentials file. `AWS_SHARED_CREDENTIALS_FILE` and the default `~/.aws/credentials` were both ignored, for the default and named profiles alike, causing credential resolution to fail ([#1315](https://github.com/hashicorp/vault-secrets-operator/pull/1315))
+* VaultAuth: preserve AWS credential precedence. Credentials from `spec.aws.secretRef`, the environment, and shared profiles are no longer displaced by a role assumed from the operator pod's own `AWS_ROLE_ARN`, and environment credentials again take precedence over a shared profile ([#1315](https://github.com/hashicorp/vault-secrets-operator/pull/1315))
 * VaultPKISecret: correct Vault API path when issuerRef is set; path was rendered as `pki/issuer/<name>/<role>` instead of the correct `pki/issuer/<name>/issue/<role>`, causing Vault to return 404 for all cert issuance requests when issuerRef was specified ([#1336](https://github.com/hashicorp/vault-secrets-operator/pull/1336))
+
+Dependency Updates:
+* Remove the `github.com/aws/aws-sdk-go` (AWS SDK for Go v1) dependency and migrate AWS authentication to AWS SDK for Go v2, bumping `github.com/hashicorp/go-secure-stdlib/awsutil` from `v0.3.0` to `v2.1.2` ([#1315](https://github.com/hashicorp/vault-secrets-operator/pull/1315))
 
 BREAKING CHANGES:
 * Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))

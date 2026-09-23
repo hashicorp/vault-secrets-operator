@@ -1121,18 +1121,42 @@ func Test_GetCreds_SharedCredentialsFile(t *testing.T) {
 	const (
 		namespace = "vso-test-ns"
 		profileID = "AKIAFROMPROFILE"
+		envID     = "AKIAFROMENV"
 	)
 
 	tests := map[string]struct {
 		profile    string
 		awsProfile string
+		// envCreds sets environment credentials alongside the profile. These
+		// must win: they outrank a shared profile in the AWS credential chain.
+		envCreds bool
+
+		expectedKeyID        string
+		expectedSessionToken string
 	}{
 		"default profile": {
-			profile: "default",
+			profile:              "default",
+			expectedKeyID:        profileID,
+			expectedSessionToken: "profile-session-token",
 		},
 		"named profile selected by AWS_PROFILE": {
-			profile:    "vso-named-profile",
-			awsProfile: "vso-named-profile",
+			profile:              "vso-named-profile",
+			awsProfile:           "vso-named-profile",
+			expectedKeyID:        profileID,
+			expectedSessionToken: "profile-session-token",
+		},
+		"environment credentials outrank a default profile": {
+			profile:              "default",
+			envCreds:             true,
+			expectedKeyID:        envID,
+			expectedSessionToken: "env-session-token",
+		},
+		"environment credentials outrank a named profile": {
+			profile:              "vso-named-profile",
+			awsProfile:           "vso-named-profile",
+			envCreds:             true,
+			expectedKeyID:        envID,
+			expectedSessionToken: "env-session-token",
 		},
 	}
 
@@ -1151,6 +1175,11 @@ func Test_GetCreds_SharedCredentialsFile(t *testing.T) {
 			t.Setenv("AWS_SHARED_CREDENTIALS_FILE", credsFile)
 			if tt.awsProfile != "" {
 				t.Setenv("AWS_PROFILE", tt.awsProfile)
+			}
+			if tt.envCreds {
+				t.Setenv("AWS_ACCESS_KEY_ID", envID)
+				t.Setenv("AWS_SECRET_ACCESS_KEY", "env-secret-access-key")
+				t.Setenv("AWS_SESSION_TOKEN", "env-session-token")
 			}
 
 			stsRec := newSTSRecorder(t, http.StatusOK, assumeRoleWithWebIdentityResponse)
@@ -1179,14 +1208,18 @@ func Test_GetCreds_SharedCredentialsFile(t *testing.T) {
 					"the shared file lookup was overridden with an empty path")
 
 			calls := stsRec.Calls()
-			assert.Empty(t, calls, "shared-file credentials are static and need no STS call")
+			assert.Empty(t, calls, "these credentials are static and need no STS call")
 
 			headers := decodeLoginHeaders(t, loginData)
 			authHeader := loginAuthorization(t, loginData)
 
-			assert.Contains(t, authHeader, profileID,
-				"the Vault login must be signed with the shared profile's credentials")
-			assert.Equal(t, []string{"profile-session-token"}, headers["X-Amz-Security-Token"])
+			assert.Contains(t, authHeader, tt.expectedKeyID,
+				"the Vault login must be signed with the expected credentials")
+			if tt.envCreds {
+				assert.NotContains(t, authHeader, profileID,
+					"a shared profile must not override environment credentials")
+			}
+			assert.Equal(t, []string{tt.expectedSessionToken}, headers["X-Amz-Security-Token"])
 		})
 	}
 }
