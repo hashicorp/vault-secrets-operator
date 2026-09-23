@@ -24,6 +24,16 @@ binary {
                 // needed by the main module) and `govulncheck -mode=binary`, which found the symbol
                 // unreachable in the built binary. False positive from module-level (non-symbol) matching.
                 "GO-2026-5932",
+                // GO-2026-6443 is a panic in google.golang.org/grpc's xDS server routing interceptor when
+                // a request is missing both the :authority and Host headers. VSO pulls in grpc only as an
+                // indirect dependency of its cloud client libraries and does not run a gRPC server, let
+                // alone configure xDS routing, so the vulnerable code path is unreachable.
+                "GO-2026-6443",
+                // GHSA-2v4p-qf9q-27wj is the GitHub Security Advisory ID for the same google.golang.org/grpc
+                // xDS server routing panic covered by GO-2026-6443 above. VSO only pulls in grpc as an
+                // indirect dependency of its cloud client libraries and does not run a gRPC server or
+                // configure xDS routing, so the vulnerable code path is unreachable.
+                "GHSA-2v4p-qf9q-27wj",
             ]
         }
     }
