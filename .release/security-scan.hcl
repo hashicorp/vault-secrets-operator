@@ -24,6 +24,12 @@ binary {
                 // needed by the main module) and `govulncheck -mode=binary`, which found the symbol
                 // unreachable in the built binary. False positive from module-level (non-symbol) matching.
                 "GO-2026-5932",
+                // grpc v1.84.0 includes the missing-authority fix via
+                // https://github.com/grpc/grpc-go/pull/9370.
+                // OSV's affected range incorrectly includes this patched release.
+                // Remove these suppressions when the advisory range is corrected.
+                "GO-2026-6443",
+                "GHSA-2v4p-qf9q-27wj",
             ]
         }
     }
