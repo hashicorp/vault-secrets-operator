@@ -1,3 +1,6 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 # Setup for cross namespace auth testing
 
 # sets the group policy application to work with with cross Vault namespace auth
