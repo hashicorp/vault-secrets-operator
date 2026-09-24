@@ -121,3 +121,35 @@ load _helpers
   [ "$(echo "$output" | yq -r '.spec.endpoints[0].port')" = "http" ]
   [ "$(echo "$output" | yq -r '.spec.endpoints[0].bearerTokenFile')" = "/foo/token" ]
 }
+
+@test "prometheus/ServiceMonitor-server: assertRelabellings default" {
+  cd `chart_dir`
+  local output=$(helm template \
+      --show-only templates/prometheus-servicemonitor.yaml \
+      --set 'telemetry.serviceMonitor.enabled=true' \
+      . | tee /dev/stderr)
+
+  [ "$(echo "$output" | yq -r '.spec.endpoints | length')" = "1" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0] | has("relabelings")')" = "false" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0] | has("metricRelabelings")')" = "false" ]
+}
+
+@test "prometheus/ServiceMonitor-server: assertRelabellings update" {
+  cd `chart_dir`
+  local output=$(helm template \
+      --show-only templates/prometheus-servicemonitor.yaml \
+      --set 'telemetry.serviceMonitor.enabled=true' \
+      --set 'telemetry.serviceMonitor.relabelings[0].sourceLabels[0]=__meta_kubernetes_endpoint_node_name' \
+      --set 'telemetry.serviceMonitor.relabelings[0].targetLabel=nodename' \
+      --set 'telemetry.serviceMonitor.metricRelabelings[0].sourceLabels[0]=__name__' \
+      --set 'telemetry.serviceMonitor.metricRelabelings[0].regex=controller_runtime_.*' \
+      --set 'telemetry.serviceMonitor.metricRelabelings[0].action=keep' \
+      . | tee /dev/stderr)
+
+  [ "$(echo "$output" | yq -r '.spec.endpoints | length')" = "1" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].relabelings[0].sourceLabels[0]')" = "__meta_kubernetes_endpoint_node_name" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].relabelings[0].targetLabel')" = "nodename" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].metricRelabelings[0].sourceLabels[0]')" = "__name__" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].metricRelabelings[0].regex')" = "controller_runtime_.*" ]
+  [ "$(echo "$output" | yq -r '.spec.endpoints[0].metricRelabelings[0].action')" = "keep" ]
+}
