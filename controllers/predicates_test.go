@@ -253,6 +253,94 @@ func assertAnnoLabelChangedOnUpdate(t *testing.T, tt testCaseAnnoLabelChanged) {
 	}
 }
 
+func Test_secretDataChangedPredicate_Update(t *testing.T) {
+	t.Parallel()
+
+	secretWithData := func(data map[string][]byte, labels map[string]string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "dest",
+				Labels:    labels,
+			},
+			Data: data,
+		}
+	}
+
+	tests := []struct {
+		name string
+		evt  event.UpdateEvent
+		want bool
+	}{
+		{
+			name: "data-changed",
+			evt: event.UpdateEvent{
+				ObjectOld: secretWithData(map[string][]byte{"foo": []byte("bar")}, helpers.OwnerLabels),
+				ObjectNew: secretWithData(map[string][]byte{"foo": []byte("baz")}, helpers.OwnerLabels),
+			},
+			want: true,
+		},
+		{
+			name: "data-unchanged-metadata-only",
+			evt: event.UpdateEvent{
+				ObjectOld: secretWithData(map[string][]byte{"foo": []byte("bar")}, helpers.OwnerLabels),
+				ObjectNew: secretWithData(map[string][]byte{"foo": []byte("bar")}, map[string]string{"buz": "baz"}),
+			},
+			want: false,
+		},
+		{
+			name: "data-added-from-nil",
+			evt: event.UpdateEvent{
+				ObjectOld: secretWithData(nil, helpers.OwnerLabels),
+				ObjectNew: secretWithData(map[string][]byte{"foo": []byte("bar")}, helpers.OwnerLabels),
+			},
+			want: true,
+		},
+		{
+			name: "identical-objects",
+			evt: func() event.UpdateEvent {
+				s := secretWithData(map[string][]byte{"foo": []byte("bar")}, helpers.OwnerLabels)
+				return event.UpdateEvent{ObjectOld: s, ObjectNew: s}
+			}(),
+			want: false,
+		},
+		{
+			name: "nil-old-object",
+			evt: event.UpdateEvent{
+				ObjectOld: nil,
+				ObjectNew: secretWithData(map[string][]byte{"foo": []byte("bar")}, helpers.OwnerLabels),
+			},
+			want: false,
+		},
+		{
+			name: "nil-new-object",
+			evt: event.UpdateEvent{
+				ObjectOld: secretWithData(map[string][]byte{"foo": []byte("bar")}, helpers.OwnerLabels),
+				ObjectNew: nil,
+			},
+			want: false,
+		},
+		{
+			name: "not-a-secret",
+			evt: event.UpdateEvent{
+				ObjectOld: &secretsv1beta1.VaultStaticSecret{},
+				ObjectNew: &secretsv1beta1.VaultStaticSecret{},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := secretDataChangedPredicate{}
+			assert.Equalf(t, tt.want, p.Update(tt.evt), "Update(%v)", tt.evt)
+			assert.False(t, p.Create(event.CreateEvent{}))
+			assert.False(t, p.Delete(event.DeleteEvent{}))
+			assert.False(t, p.Generic(event.GenericEvent{}))
+		})
+	}
+}
+
 func Test_secretsPredicate_Delete(t *testing.T) {
 	t.Parallel()
 
