@@ -1,11 +1,12 @@
 ## Unreleased
 
+BREAKING CHANGES:
+* Remove the `kube-rbac-proxy` sidecar, dropping the dependency on the discontinued `gcr.io/kubebuilder/kube-rbac-proxy` image. `/metrics` is now served by the operator itself over HTTPS on port `8443`, protected in-process by controller-runtime's `filters.WithAuthenticationAndAuthorization`, which performs the same `TokenReview`/`SubjectAccessReview` checks. The `controller.kubeRbacProxy.*` Helm values have been **removed**, and the chart now fails to render if they are still set — including via `helm upgrade --reuse-values` — so update your values before upgrading; use `controller.manager.resources` to tune manager resources. The metrics Service, its port, and the ServiceMonitor are unchanged, so existing Prometheus configuration keeps working, but unlike `kube-rbac-proxy` the filter accepts bearer tokens only and does not support client-certificate (mTLS) authentication ([#1352](https://github.com/hashicorp/vault-secrets-operator/pull/1352))
+
 ## 1.6.0 (September 23rd, 2026)
 
 BREAKING CHANGES:
 * Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
-
-* Remove the `kube-rbac-proxy` sidecar, dropping the dependency on the discontinued `gcr.io/kubebuilder/kube-rbac-proxy` image. `/metrics` is now served by the operator itself over HTTPS on port `8443`, protected in-process by controller-runtime's `filters.WithAuthenticationAndAuthorization`, which performs the same `TokenReview`/`SubjectAccessReview` checks. The `controller.kubeRbacProxy.*` Helm values have been **removed**, and the chart now fails to render if they are still set — including via `helm upgrade --reuse-values` — so update your values before upgrading; use `controller.manager.resources` to tune manager resources. The metrics Service, its port, and the ServiceMonitor are unchanged, so existing Prometheus configuration keeps working, but unlike `kube-rbac-proxy` the filter accepts bearer tokens only and does not support client-certificate (mTLS) authentication ([#1352](https://github.com/hashicorp/vault-secrets-operator/pull/1352))
 
 Enhancements:
 * VDS: Support [instant event-driven updates](https://developer.hashicorp.com/vault/docs/platform/k8s/vso/sources/vault#instant-updates) (`spec.syncConfig.instantUpdates`) for any Vault secret engine that supports Vault events, covering both static roles (`allowStaticCreds=true`) and dynamic leases: ([#1295](https://github.com/hashicorp/vault-secrets-operator/pull/1295)) 
@@ -18,8 +19,6 @@ Fix:
 * Helm: omit `spec.namespace` from the default `VaultAuth` and transit `VaultAuth` resources when no Vault namespace is configured, instead of rendering an empty `namespace:` key. Server-side apply deserialized the empty key as `null`, which failed CRD schema validation and blocked installs where Vault namespaces are not in use ([#1319](https://github.com/hashicorp/vault-secrets-operator/pull/1319))
 * VaultStaticSecret: return the non-nil error alongside `RequeueAfter` on Vault failures so resources are re-queued with backoff instead of being silently dropped after a transient Vault HA event ([#1323](https://github.com/hashicorp/vault-secrets-operator/pull/1323))
 
-BREAKING CHANGES:
-* Remove HCP Vault Secrets (HVS) support. HVS reached end-of-life on July 1, 2026. The `HCPAuth` and `HCPVaultSecretsApp` CRDs, their controllers, credentials provider, RBAC manifests, Helm chart assets, and the `github.com/hashicorp/hcp-sdk-go` dependency have all been permanently removed. **Clusters with existing `HCPVaultSecretsApp` or `HCPAuth` resources must clean up those instances before upgrading** to avoid resources becoming stuck in `Terminating` due to the finalizer `hcpvaultsecretsapp.secrets.hashicorp.com/finalizer`. ([#1307](https://github.com/hashicorp/vault-secrets-operator/pull/1307))
 Build:
 * Build with Go 1.27.1
 * Test with Vault 2.1.1, 1.21.11, 1.20.16, 1.19.22
