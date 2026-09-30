@@ -1,6 +1,10 @@
 # Copyright IBM Corp. 2024, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
+# This ClusterRole grants the controller manager permission to create
+# TokenReviews and SubjectAccessReviews, which it uses to authenticate and
+# authorize requests to its metrics endpoint via
+# filters.WithAuthenticationAndAuthorization.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

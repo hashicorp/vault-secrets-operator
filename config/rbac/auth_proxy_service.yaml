@@ -1,6 +1,8 @@
 # Copyright IBM Corp. 2024, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
+# This Service exposes the manager's metrics endpoint over HTTPS. The endpoint
+# is served directly by the manager and protected with authn/authz in-process.
 apiVersion: v1
 kind: Service
 metadata:
