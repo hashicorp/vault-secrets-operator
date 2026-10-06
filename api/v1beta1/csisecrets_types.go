@@ -28,10 +28,14 @@ type CSISecretsSpec struct {
 	// used, which is readable only by the owner and group. Setting a more
 	// permissive mode (for example 0444) allows non-root application containers to
 	// read the mounted secret files.
+	// Modes granting write permission to others (the 0002 bit) are rejected.
+	// Owner and group write permissions are allowed. Use readOnly volume mounts
+	// to prevent application writes regardless of file permissions.
 	//
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=511
+	// +kubebuilder:validation:XValidation:rule="self % 4 < 2",message="defaultMode must not grant write permission to others (0002); use a mode such as 0440 or 0444"
 	DefaultMode *int32 `json:"defaultMode,omitempty"`
 }
 
