@@ -9,12 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -111,7 +111,7 @@ func FindSecretsOwnedByObj(ctx context.Context, client ctrlclient.Client, obj ct
 
 	var result []corev1.Secret
 	for _, s := range secrets.Items {
-		if err := checkSecretIsOwnedByObj(&s, []metav1.OwnerReference{ownerRef}); err == nil {
+		if err := checkSecretIsOwnedByObj(&s, ownerRef); err == nil {
 			result = append(result, s)
 		}
 	}
@@ -207,15 +207,13 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		secretType = meta.Destination.Type
 	}
 
-	// these are the OwnerReferences that should be included in any Secret that is created/owned by
+	// this is the OwnerReference that should be included in any Secret that is created/owned by
 	// the syncable-secret
-	references := []metav1.OwnerReference{
-		{
-			APIVersion: meta.APIVersion,
-			Kind:       meta.Kind,
-			Name:       obj.GetName(),
-			UID:        obj.GetUID(),
-		},
+	reference := metav1.OwnerReference{
+		APIVersion: meta.APIVersion,
+		Kind:       meta.Kind,
+		Name:       obj.GetName(),
+		UID:        obj.GetUID(),
 	}
 	if exists {
 		logger.V(consts.LogLevelDebug).Info("Found pre-existing secret",
@@ -227,7 +225,7 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 		}
 
 		if checkOwnerShip {
-			if err := checkSecretIsOwnedByObj(dest, references); err != nil {
+			if err := checkSecretIsOwnedByObj(dest, reference); err != nil {
 				return err
 			}
 		}
@@ -267,7 +265,8 @@ func SyncSecret(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Ob
 	dest.Type = secretType
 	dest.SetAnnotations(meta.Destination.Annotations)
 	dest.SetLabels(labels)
-	dest.SetOwnerReferences(references)
+	// preserve any OwnerReferences added by other controllers, e.g. a CAPI ClusterResourceSet.
+	dest.SetOwnerReferences(setOwnerReference(dest.GetOwnerReferences(), reference))
 	logger.V(consts.LogLevelTrace).Info("ObjectMeta", "objectMeta", dest.ObjectMeta)
 	if exists {
 		// secret type is immutable, so we need to force recreate the secret when the
@@ -414,7 +413,7 @@ func CheckOwnerLabels(o ctrlclient.Object) error {
 }
 
 // checkSecretIsOwnedByObj validates the Secret is owned by obj by checking its Labels and OwnerReferences.
-func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerReference) error {
+func checkSecretIsOwnedByObj(dest *corev1.Secret, reference metav1.OwnerReference) error {
 	// checking for Secret ownership relies on first checking the Secret's labels,
 	// then verifying that its OwnerReferences match the SyncableSecret.
 
@@ -425,7 +424,7 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 	key := ctrlclient.ObjectKeyFromObject(dest)
 	// check that obj is the Secret's true Owner
 	if len(dest.OwnerReferences) > 0 {
-		if !equality.Semantic.DeepEqual(dest.OwnerReferences, references) {
+		if indexOwnerReference(dest.OwnerReferences, reference) < 0 {
 			// we are not the owner, perhaps another syncable-secret resource owns this secret?
 			errs = errors.Join(errs, fmt.Errorf("invalid ownerReferences, refs=%#v", dest.OwnerReferences))
 		}
@@ -436,6 +435,33 @@ func checkSecretIsOwnedByObj(dest *corev1.Secret, references []metav1.OwnerRefer
 		errs = errors.Join(errs, fmt.Errorf("not the owner of the destination Secret %s", key))
 	}
 	return errs
+}
+
+// indexOwnerReference returns the index of the OwnerReference in refs that
+// identifies the same owner as ref, or -1 if there is none. The optional fields
+// Controller and BlockOwnerDeletion are ignored.
+func indexOwnerReference(refs []metav1.OwnerReference, ref metav1.OwnerReference) int {
+	for i, r := range refs {
+		if r.APIVersion == ref.APIVersion &&
+			r.Kind == ref.Kind &&
+			r.Name == ref.Name &&
+			r.UID == ref.UID {
+			return i
+		}
+	}
+	return -1
+}
+
+// setOwnerReference returns a copy of refs with ref set, keeping all the other
+// OwnerReferences in place.
+func setOwnerReference(refs []metav1.OwnerReference, ref metav1.OwnerReference) []metav1.OwnerReference {
+	result := slices.Clone(refs)
+	if i := indexOwnerReference(result, ref); i >= 0 {
+		result[i] = ref
+	} else {
+		result = append(result, ref)
+	}
+	return result
 }
 
 // StoreImmutableSecret creates a k8s secret if it doesn't exist, or deletes and
