@@ -141,6 +141,7 @@ func main() {
 	var preDeleteHookTimeoutSeconds int
 	var globalTransformationOpts string
 	var globalVaultAuthOpts string
+	var globalHTTPOpts string
 	var backoffInitialInterval time.Duration
 	var backoffMaxInterval time.Duration
 	var backoffRandomizationFactor float64
@@ -189,6 +190,10 @@ func main() {
 		fmt.Sprintf("Set global vault auth options as a comma delimited string. "+
 			"Also set from environment variable VSO_GLOBAL_VAULT_AUTH_OPTIONS. "+
 			"Valid values are: %v", []string{"allow-default-globals"}))
+	flag.StringVar(&globalHTTPOpts, "global-http-options", "",
+		fmt.Sprintf("Set global HTTP options as a comma delimited string. "+
+			"Also set from environment variable VSO_GLOBAL_HTTP_OPTIONS. "+
+			"Valid values are: %v", []string{"respect-request-http-method"}))
 	flag.DurationVar(&backoffInitialInterval, "backoff-initial-interval", time.Second*5,
 		"Initial interval between retries on secret source errors. "+
 			"All errors are tried using an exponential backoff strategy. "+
@@ -238,6 +243,7 @@ func main() {
 
 	var globalTransOptsSet []string
 	var globalVaultAuthOptsSet []string
+	var globalHTTPOptsSet []string
 	// Set options from env if any are set
 	if vsoEnvOptions.OutputFormat != "" {
 		outputFormat = vsoEnvOptions.OutputFormat
@@ -284,6 +290,11 @@ func main() {
 	}
 	if vsoEnvOptions.KubeClientBurst != nil {
 		kubeClientBurst = *vsoEnvOptions.KubeClientBurst
+	}
+	if len(vsoEnvOptions.GlobalHTTPOptions) > 0 {
+		globalHTTPOptsSet = vsoEnvOptions.GlobalHTTPOptions
+	} else if globalHTTPOpts != "" {
+		globalHTTPOptsSet = strings.Split(globalHTTPOpts, ",")
 	}
 
 	// versionInfo is used when setting up the buildInfo metric below
@@ -357,6 +368,18 @@ func main() {
 	}
 	cfc.GlobalVaultAuthOptions = globalVaultAuthOptions
 
+	globalHTTPOptions := &helpers.GlobalHTTPOptions{}
+	for _, v := range globalHTTPOptsSet {
+		switch v {
+		case "respect-request-http-method":
+			globalHTTPOptions.RespectRequestHTTPMethod = true
+		default:
+			setupLog.Error(fmt.Errorf("unsupported rendering option %q", v),
+				"Invalid argument for --global-http-options")
+			os.Exit(1)
+		}
+	}
+
 	config := ctrl.GetConfigOrDie()
 	// set the Kube Client QPS and Burst config if they are set
 	if kubeClientQPS != 0 {
@@ -417,6 +440,7 @@ func main() {
 					"clientCacheSize":             strconv.Itoa(cfc.ClientCacheSize),
 					"globalTransformationOptions": globalTransformationOpts,
 					"globalVaultAuthOptions":      globalVaultAuthOpts,
+					"globalHTTPOptions":           globalHTTPOpts,
 					"maxConcurrentReconciles":     strconv.Itoa(controllerOptions.MaxConcurrentReconciles),
 				},
 			},
@@ -586,6 +610,7 @@ func main() {
 		SyncRegistry:                controllers.NewSyncRegistry(),
 		BackOffRegistry:             controllers.NewBackOffRegistry(backoffOpts...),
 		GlobalTransformationOptions: globalTransOptions,
+		GlobalHTTPOptions:           globalHTTPOptions,
 	}
 	if err = vdsReconciler.SetupWithManager(mgr, vdsOverrideOpts); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "VaultDynamicSecret")
