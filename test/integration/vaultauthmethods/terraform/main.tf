@@ -77,25 +77,30 @@ EOT
 }
 
 resource "vault_namespace" "test" {
-  count = var.vault_enterprise ? 1 : 0
+  count = (var.vault_enterprise && !var.use_hvd) ? 1 : 0
   path  = var.vault_test_namespace
 }
 
+# kubernetes auth config (kind/EKS only — HVD cannot reach the kind cluster's
+# private API server to validate service account JWTs)
 resource "vault_auth_backend" "default" {
+  count     = var.use_hvd ? 0 : 1
   namespace = local.namespace
   type      = "kubernetes"
 }
 
 resource "vault_kubernetes_auth_backend_config" "default" {
-  namespace              = vault_auth_backend.default.namespace
-  backend                = vault_auth_backend.default.path
+  count                  = var.use_hvd ? 0 : 1
+  namespace              = vault_auth_backend.default[0].namespace
+  backend                = vault_auth_backend.default[0].path
   kubernetes_host        = var.k8s_host
   disable_iss_validation = true
 }
 
 resource "vault_kubernetes_auth_backend_role" "default" {
-  namespace                        = vault_auth_backend.default.namespace
-  backend                          = vault_kubernetes_auth_backend_config.default.backend
+  count                            = var.use_hvd ? 0 : 1
+  namespace                        = vault_auth_backend.default[0].namespace
+  backend                          = vault_kubernetes_auth_backend_config.default[0].backend
   role_name                        = var.auth_role
   bound_service_account_names      = [kubernetes_default_service_account.default.metadata[0].name]
   bound_service_account_namespaces = [kubernetes_namespace.tenant-1.metadata[0].name]
@@ -104,8 +109,12 @@ resource "vault_kubernetes_auth_backend_role" "default" {
   audience                         = "vault"
 }
 
-# jwt auth config
+# jwt auth config (kind/EKS only — the default oidc_discovery_url points at
+# the kind cluster's private in-cluster address, and Vault validates OIDC
+# discovery reachability when writing this backend's config, so this would
+# fail to even apply under HVD, not just fail at login time)
 resource "vault_jwt_auth_backend" "dev" {
+  count                 = var.use_hvd ? 0 : 1
   namespace             = local.namespace
   path                  = "jwt"
   oidc_discovery_url    = var.vault_oidc_discovery_url
@@ -113,7 +122,8 @@ resource "vault_jwt_auth_backend" "dev" {
 }
 
 resource "vault_jwt_auth_backend_role" "dev" {
-  namespace       = vault_jwt_auth_backend.dev.namespace
+  count           = var.use_hvd ? 0 : 1
+  namespace       = vault_jwt_auth_backend.dev[0].namespace
   backend         = "jwt"
   role_name       = var.auth_role
   role_type       = "jwt"

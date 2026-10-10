@@ -59,3 +59,9 @@ variable "metrics_server_enabled" {
   type    = bool
   default = false
 }
+
+variable "use_hvd" {
+  description = "Skip deploying a local Vault into kind when running tests against HCP Vault Dedicated (HVD)."
+  type        = bool
+  default     = false
+}

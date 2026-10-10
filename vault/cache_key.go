@@ -23,9 +23,15 @@ var (
 	errorKeyLengthExceeded = errors.New("cache-key length exceeded")
 	errorDuplicateUID      = errors.New("duplicate UID")
 	errorInvalidUIDLength  = errors.New("invalid UID length")
-	cacheKeyRe             = regexp.MustCompile(fmt.Sprintf(
+	// cacheKeyRe matches on the lower-cased auth method name, since
+	// computeClientCacheKey() always lower-cases the method when building the
+	// key (e.g. "appRole" -> "approle"). Provider methods such as "appRole"
+	// and "servicePrincipal" contain upper-case characters, so the method
+	// names must be lower-cased here too, otherwise Parent()/SameParent()
+	// fail to match keys for those methods.
+	cacheKeyRe = regexp.MustCompile(fmt.Sprintf(
 		`(%s)-[[:xdigit:]]{22}`,
-		strings.Join(credentials.ProviderMethodsSupported, "|")))
+		strings.ToLower(strings.Join(credentials.ProviderMethodsSupported, "|"))))
 	cacheKeyLeftAnchoredRe = regexp.MustCompile(fmt.Sprintf(`^(%s)`, cacheKeyRe))
 	cloneKeyRe             = regexp.MustCompile(fmt.Sprintf(`^(%s)-.+$`, cacheKeyRe))
 )

@@ -50,7 +50,12 @@ output "k8s_config_context" {
   value = var.k8s_config_context
 }
 output "namespace" {
-  value = local.namespace
+  # For HVD: local.namespace is null (needed so the vault provider block
+  # doesn't double-concatenate with the VAULT_NAMESPACE env var — see
+  # locals.tf). But the Go test harness needs the actual namespace string
+  # (e.g. "admin") to set on every VaultAuth/VaultDynamicSecret CR, so the
+  # operator authenticates against the correct namespace rather than root.
+  value = var.vault_namespace != "" ? var.vault_namespace : local.namespace
 }
 
 output "static_rotation_period" {
@@ -79,4 +84,24 @@ output "with_xns" {
 
 output "xns_member_entity_ids" {
   value = local.xns_member_entity_ids
+}
+
+output "ec2_postgres_public_ip" {
+  value = var.use_hvd ? aws_instance.postgres[0].public_ip : ""
+}
+
+output "use_hvd" {
+  value = var.use_hvd
+}
+
+output "approle_mount" {
+  value = var.use_hvd ? vault_auth_backend.approle[0].path : ""
+}
+
+output "approle_role_id" {
+  value = var.use_hvd ? vault_approle_auth_backend_role.dev[0].role_id : ""
+}
+
+output "approle_secret_ref" {
+  value = var.use_hvd ? kubernetes_secret.approle_secret_id[0].metadata[0].name : ""
 }
