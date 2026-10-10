@@ -7,39 +7,42 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ include "vso.chart.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/component: controller-manager
     control-plane: controller-manager
     {{- include "vso.chart.labels" . | nindent 4 }}
-  namespace: {{ .Release.Namespace }}
 spec:
-  {{/* Throw an error if both maxUnavailable and minAvailable are set and non-zero */}}
-  {{- $maxUnavailable := toString .Values.controller.podDisruptionBudget.maxUnavailable | trim }}
-  {{- $minAvailable := toString .Values.controller.podDisruptionBudget.minAvailable | trim }}
-  {{- if and (not (empty $maxUnavailable)) (not (empty $minAvailable)) (ne $maxUnavailable "0") (ne $minAvailable "0") }}
-  {{- fail "You cannot set both maxUnavailable and minAvailable in the PodDisruptionBudget" }}
+  {{- $rawMax := default "" .Values.controller.podDisruptionBudget.maxUnavailable -}}
+  {{- $rawMin := default "" .Values.controller.podDisruptionBudget.minAvailable -}}
+  {{- $max := toString $rawMax | trim -}}
+  {{- $min := toString $rawMin | trim -}}
+
+  {{- /* Presence & zero-ness checks */ -}}
+  {{- $maxProvided := ne $max "" -}}
+  {{- $minProvided := ne $min "" -}}
+  {{- $maxZero := or (eq $max "0") (eq $max "0%") -}}
+  {{- $minZero := or (eq $min "0") (eq $min "0%") -}}
+  {{- $maxNonZero := and $maxProvided (not $maxZero) -}}
+  {{- $minNonZero := and $minProvided (not $minZero) -}}
+
+  {{- /* Hard stop only when both sides are non-zero (K8s forbids both keys at once) */ -}}
+  {{- if and $minNonZero $maxNonZero -}}
+  {{- fail "controller.podDisruptionBudget: you cannot set both maxUnavailable and minAvailable to non-zero values." -}}
   {{- end }}
 
-  {{/* If maxUnavailable is set, use it */}}
-  {{- if not (empty $maxUnavailable) }}
-  maxUnavailable: 
-    {{- if contains "%" $maxUnavailable }}
-    "{{ $maxUnavailable }}"
-    {{- else }}
-    {{ $maxUnavailable }}
-    {{- end }}
+  {{- /* Emit exactly one key */ -}}
+  {{- if $minNonZero }}
+  minAvailable:{{ if contains "%" $min }} "{{ $min }}"{{ else }} {{ $min }}{{ end }}
+  {{- else if $maxNonZero }}
+  maxUnavailable:{{ if contains "%" $max }} "{{ $max }}"{{ else }} {{ $max }}{{ end }}
+  {{- else if and $minProvided (not $maxProvided) }}
+  minAvailable:{{ if contains "%" $min }} "{{ $min }}"{{ else }} {{ $min }}{{ end }}
+  {{- else if and $maxProvided (not $minProvided) }}
+  maxUnavailable:{{ if contains "%" $max }} "{{ $max }}"{{ else }} {{ $max }}{{ end }}
+  {{- else }}
+  minAvailable: 1
   {{- end }}
-
-  {{/* If minAvailable is set, use it */}}
-  {{- if not (empty $minAvailable) }}
-  minAvailable: 
-    {{- if contains "%" $minAvailable }}
-    "{{ $minAvailable }}"
-    {{- else }}
-    {{ $minAvailable }}
-    {{- end }}
-  {{- end }}
-
   selector:
     matchLabels:
       {{- include "vso.chart.selectorLabels" . | nindent 6 }}
