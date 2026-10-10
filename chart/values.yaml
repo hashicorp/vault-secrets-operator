@@ -255,6 +255,18 @@ controller:
       # @type: boolean
       allowDefaultGlobals: true
 
+    # Global HTTP options. In addition to the boolean options
+    # below, these options may be set via the
+    # `VSO_GLOBAL_HTTP_OPTIONS` environment variable as a
+    # comma-separated list. Valid values are: `respect-request-http-method`
+    globalHTTPOptions:
+      # respectRequestHTTPMethod controls HTTP method behavior for dynamic secrets.
+      # When true, spec.requestHTTPMethod takes precedence even when params are provided.
+      # When false (default), params force PUT method for backward compatibility.
+      # Default: false
+      # @type: boolean
+      respectRequestHTTPMethod: false
+
     # Backoff settings for the controller manager. These settings control the backoff behavior
     # when the controller encounters an error while fetching secrets from the SecretSource.
     # For example given the following settings:

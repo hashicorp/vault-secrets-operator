@@ -122,6 +122,13 @@ type GlobalTransformationOptions struct {
 	ExcludeRaw bool
 }
 
+type GlobalHTTPOptions struct {
+	// RespectRequestHTTPMethod controls HTTP method behavior for dynamic secrets.
+	// When true, spec.requestHTTPMethod takes precedence even when params are provided.
+	// When false (default), params force PUT method for backward compatibility.
+	RespectRequestHTTPMethod bool
+}
+
 func NewSecretTransformationOption(ctx context.Context, client ctrlclient.Client, obj ctrlclient.Object, globalOpt *GlobalTransformationOptions) (*SecretTransformationOption, error) {
 	meta, err := common.NewSyncableSecretMetaDataI(obj)
 	if err != nil {
