@@ -1,5 +1,8 @@
 ## Unreleased
 
+BREAKING CHANGES:
+* Remove the `kube-rbac-proxy` sidecar, dropping the dependency on the discontinued `gcr.io/kubebuilder/kube-rbac-proxy` image. `/metrics` is now served by the operator itself over HTTPS on port `8443`, protected in-process by controller-runtime's `filters.WithAuthenticationAndAuthorization`, which performs the same `TokenReview`/`SubjectAccessReview` checks. The `controller.kubeRbacProxy.*` Helm values have been **removed**, and the chart now fails to render if they are still set — including via `helm upgrade --reuse-values` — so update your values before upgrading; use `controller.manager.resources` to tune manager resources. The metrics Service, its port, and the ServiceMonitor are unchanged, so existing Prometheus configuration keeps working, but unlike `kube-rbac-proxy` the filter accepts bearer tokens only and does not support client-certificate (mTLS) authentication ([#1352](https://github.com/hashicorp/vault-secrets-operator/pull/1352))
+
 ## 1.6.0 (September 23rd, 2026)
 
 BREAKING CHANGES:

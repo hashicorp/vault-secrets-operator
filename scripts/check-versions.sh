@@ -15,20 +15,6 @@ case "${VERSION}" in
     ;;
 esac
 
-case "${KUBE_RBAC_PROXY_VERSION}" in
-  "")
-    echo "KUBE_RBAC_PROXY_VERSION variable must be set" >&2
-    exit 1
-    ;;
-esac
-
-case "${OPENSHIFT_KUBE_RBAC_PROXY_VERSION}" in
-  "")
-    echo "OPENSHIFT_KUBE_RBAC_PROXY_VERSION variable must be set" >&2
-    exit 1
-    ;;
-esac
-
 ROOT_DIR="${0%/*}"
 # update PATH to prefer scripts relative to this one e.g. yq
 export PATH="${ROOT_DIR}:${ROOT_DIR}/../bin:${PATH}"
@@ -54,7 +40,7 @@ function checkVersion {
    echo "  * Expect version ${version} in ${filename} query='${query}'"
    actual="$(echo "${doc}" | yq "${query}")"
    # sometimes the value might be for an image+tag
-   # e.g: gcr.io/kubebuilder/kube-rbac-proxy:v0.14.4,
+   # e.g: hashicorp/vault-secrets-operator:1.5.1,
    # in which case we only want the image's version/tag.
    maybe_tag="$(echo "${actual}" | awk -F: '/.+:.+/{print $NF}')"
    [ -n "${maybe_tag}" ] && actual="${maybe_tag}"
@@ -89,13 +75,6 @@ checkVersion "${CHART_ROOT}/Chart.yaml" "${VERSION}" .version .appVersion
 checkVersion "${CHART_ROOT}/values.yaml" "${VERSION}" .controller.manager.image.tag
 checkVersion "${KUSTOMIZE_ROOT}/manager/kustomization.yaml" "${VERSION}" \
   ".images.[] | select(.name == \"controller\") | .newTag"
-
-# check RBAC proxy version/image
-checkVersion "${CHART_ROOT}/values.yaml" "${KUBE_RBAC_PROXY_VERSION}" .controller.kubeRbacProxy.image.tag
-checkVersion "${KUSTOMIZE_ROOT}/default/manager_auth_proxy_patch.yaml" \
-  "${KUBE_RBAC_PROXY_VERSION}"  ".spec.template.spec.containers.[] | select(.name == \"kube-rbac-proxy\") | .image"
-checkVersion "${KUSTOMIZE_ROOT}/default-openshift/manager_ubi_auth_proxy_patch.yaml" \
-  "${OPENSHIFT_KUBE_RBAC_PROXY_VERSION}"  ".spec.template.spec.containers.[] | select(.name == \"kube-rbac-proxy\") | .image"
 
 # check VSO-CSI related image versions
 echo "* Checking VSO-CSI related image versions"

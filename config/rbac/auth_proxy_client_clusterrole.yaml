@@ -1,6 +1,9 @@
 # Copyright IBM Corp. 2024, 2026
 # SPDX-License-Identifier: BUSL-1.1
 
+# This ClusterRole is intended for clients (for example Prometheus) that need
+# to scrape the protected metrics endpoint. Bind it to the scraping
+# ServiceAccount to allow GET on /metrics.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

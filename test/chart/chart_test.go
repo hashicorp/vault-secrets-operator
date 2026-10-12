@@ -40,9 +40,12 @@ var (
 	// set in TestMain
 	client ctrlclient.Client
 	scheme = ctrlruntime.NewScheme()
-	// kubeRBACProxyRepository is set to work around the issue where the image from
-	// GCR is no longer available, it is used to install previous versions of VSO
-	// kubeRBACProxyRepository set in init()
+	// kubeRBACProxyRepository/Version are used only when installing *previously
+	// released* chart versions, which still deploy a kube-rbac-proxy sidecar.
+	// The image originally referenced by those charts (gcr.io/kubebuilder) is no
+	// longer available, so the repository is overridden here to a working mirror.
+	// Current VSO charts no longer deploy kube-rbac-proxy; the metrics endpoint
+	// is protected in-process by controller-runtime.
 	kubeRBACProxyRepository = "quay.io/brancz/kube-rbac-proxy"
 	// kubeRBACProxyVersion set in init()
 	kubeRBACProxyVersion string
@@ -233,6 +236,9 @@ func TestChart_upgradeCRDs(t *testing.T) {
 		"--create-namespace",
 		"--namespace", vsoNamespace,
 		"--version", startChartVersion,
+		// These apply only to the older chart being installed here, which still
+		// deploys the sidecar. Do not pass them to the upgrade below: the current
+		// chart rejects controller.kubeRbacProxy.* with a template error.
 		"--set", fmt.Sprintf("controller.kubeRbacProxy.image.repository=%s", kubeRBACProxyRepository),
 		"--set", fmt.Sprintf("controller.kubeRbacProxy.image.tag=%s", kubeRBACProxyVersion),
 		releaseName,
