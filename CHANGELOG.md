@@ -2,10 +2,12 @@
 
 Build:
 * Build with Go 1.27.2
+* Test with Vault 2.1.2, 1.21.12, 1.20.17, 1.19.23
 * OLM: add the `operatorframework.io/arch.ppc64le` label to the ClusterServiceVersion so VSO is listed in OperatorHub (Software Catalog) on IBM Power (`ppc64le`) OpenShift clusters ([#1362](https://github.com/hashicorp/vault-secrets-operator/pull/1362))
 
 Dependency Updates:
-* Bump go.mod dependencies:
+* Bump `actions/download-artifact` from `v8.0.1` to `v8.0.2` ([#1365](https://github.com/hashicorp/vault-secrets-operator/pull/1365))
+* Bump go.mod dependencies: ([#1365](https://github.com/hashicorp/vault-secrets-operator/pull/1365))
   * Updates cloud.google.com/go/compute/metadata from 0.9.1 to 0.10.0
   * Updates github.com/hashicorp/vault/sdk from 0.25.1 to 0.26.0
   * Updates github.com/onsi/gomega from 1.43.1 to 1.44.0
