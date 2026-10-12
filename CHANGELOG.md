@@ -1,4 +1,22 @@
-## Unreleased
+## 1.6.1 (October 12th, 2026)
+
+Build:
+* Build with Go 1.27.2
+* OLM: add the `operatorframework.io/arch.ppc64le` label to the ClusterServiceVersion so VSO is listed in OperatorHub (Software Catalog) on IBM Power (`ppc64le`) OpenShift clusters ([#1362](https://github.com/hashicorp/vault-secrets-operator/pull/1362))
+
+Dependency Updates:
+* Bump go.mod dependencies:
+  * Updates cloud.google.com/go/compute/metadata from 0.9.1 to 0.10.0
+  * Updates github.com/hashicorp/vault/sdk from 0.25.1 to 0.26.0
+  * Updates github.com/onsi/gomega from 1.43.1 to 1.44.0
+  * Updates github.com/prometheus/client_golang from 1.24.1 to 1.25.0
+  * Updates golang.org/x/crypto from 0.57.0 to 0.58.0
+  * Updates google.golang.org/api from 0.299.0 to 0.301.0
+  * Updates k8s.io/api from 0.37.0 to 0.37.1
+  * Updates k8s.io/apiextensions-apiserver from 0.37.0 to 0.37.1
+  * Updates k8s.io/apimachinery from 0.37.0 to 0.37.1
+  * Updates k8s.io/client-go from 0.37.0 to 0.37.1
+  * Updates sigs.k8s.io/controller-runtime from 0.25.1 to 0.25.2
 
 ## 1.6.0 (September 23rd, 2026)
 
