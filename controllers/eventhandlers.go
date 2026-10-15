@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -204,6 +205,95 @@ func (e *enqueueOnDeletionRequestHandler) Delete(ctx context.Context,
 func (e *enqueueOnDeletionRequestHandler) Generic(ctx context.Context,
 	_ event.GenericEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
+}
+
+var _ handler.EventHandler = (*enqueueOnDataChangeRequestHandler)(nil)
+
+// enqueueOnDataChangeRequestHandler enqueues the owning syncable-secret custom
+// resource for reconciliation when a destination Secret's .Data changes out
+// of band (e.g. edited or reset by something other than VSO). It does not
+// implement any drift-detection logic itself: it only decides *when* to
+// trigger a reconcile sooner than the next poll/requeue, letting the
+// controller's existing secretMAC/HMAC comparison decide, as it already does
+// on every Reconcile, whether the destination Secret actually needs to be
+// repaired.
+//
+// Update events are expected to already be filtered to Secret.Data changes
+// only (see secretDataChangedPredicate) before reaching this handler, so
+// metadata-only updates (labels/annotations/resourceVersion bumps) never
+// enqueue a request. For every remaining event, the owning CR (matched via
+// OwnerReferences against gvk) is fetched so that optIn can decide whether
+// that CR has enabled watch-driven drift detection at all; CRs that haven't
+// (e.g. VaultStaticSecret with hmacSecretData=false, or VaultDynamicSecret
+// with allowStaticCreds=false) are left untouched, preserving their existing
+// poll/requeue-only behavior.
+type enqueueOnDataChangeRequestHandler struct {
+	// gvk of the owning custom resource, matched against the Secret's
+	// OwnerReferences.
+	gvk schema.GroupVersionKind
+	// client used to fetch the owning custom resource named by a matching
+	// OwnerReference, so that optIn can inspect its Spec.
+	client client.Client
+	// newOwner returns a new, empty instance of the owning CR type, to be
+	// populated by client.Get before optIn is called.
+	newOwner func() client.Object
+	// optIn reports whether the just-fetched owner CR has opted in to
+	// watch-driven drift detection.
+	optIn func(owner client.Object) bool
+}
+
+func (e *enqueueOnDataChangeRequestHandler) Create(_ context.Context,
+	_ event.CreateEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+}
+
+func (e *enqueueOnDataChangeRequestHandler) Delete(_ context.Context,
+	_ event.DeleteEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+}
+
+func (e *enqueueOnDataChangeRequestHandler) Generic(_ context.Context,
+	_ event.GenericEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+}
+
+func (e *enqueueOnDataChangeRequestHandler) Update(ctx context.Context,
+	evt event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+	logger := log.FromContext(ctx).WithName("enqueueOnDataChangeRequestHandler").
+		WithValues("ownerGVK", e.gvk)
+
+	newSecret, ok := evt.ObjectNew.(*corev1.Secret)
+	if !ok {
+		return
+	}
+
+	for _, ref := range newSecret.GetOwnerReferences() {
+		if ref.APIVersion != e.gvk.GroupVersion().String() || ref.Kind != e.gvk.Kind {
+			continue
+		}
+
+		key := types.NamespacedName{
+			Namespace: newSecret.GetNamespace(),
+			Name:      ref.Name,
+		}
+
+		owner := e.newOwner()
+		if err := e.client.Get(ctx, key, owner); err != nil {
+			logger.V(consts.LogLevelDebug).Info(
+				"Could not get owner for destination Secret update, skipping",
+				"owner", key, "error", err)
+			continue
+		}
+
+		if e.optIn != nil && !e.optIn(owner) {
+			continue
+		}
+
+		logger.V(consts.LogLevelTrace).Info(
+			"Enqueuing owner for destination Secret data change", "owner", key)
+		q.Add(reconcile.Request{NamespacedName: key})
+	}
 }
 
 // enqueueDelayingSyncEventHandler enqueues objects with a delay to avoid
