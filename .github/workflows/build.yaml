@@ -64,7 +64,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make generate manifests
+          make generate manifests copywrite-headers
           if [ -n "$(git status --porcelain)" ]; then
             echo "Generated manifests are out of date. Please run 'make generate manifests' and commit the changes."
             exit 1
