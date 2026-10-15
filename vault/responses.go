@@ -31,6 +31,25 @@ type defaultResponse struct {
 	secret *api.Secret
 }
 
+// authAsData converts secret.Auth into a map[string]any via JSON roundtrip.
+// Vault endpoints like auth/token/create return data in the "auth" field
+// instead of "data", so this allows those responses to be consumed as
+// standard secret data.
+func (r *defaultResponse) authAsData() map[string]any {
+	if r.secret == nil || r.secret.Auth == nil {
+		return nil
+	}
+	b, err := json.Marshal(r.secret.Auth)
+	if err != nil {
+		return nil
+	}
+	var d map[string]any
+	if err := json.Unmarshal(b, &d); err != nil {
+		return nil
+	}
+	return d
+}
+
 func (r *defaultResponse) WrapInfo() *api.SecretWrapInfo {
 	if r.secret != nil {
 		return r.secret.WrapInfo
@@ -42,6 +61,9 @@ func (r *defaultResponse) SecretK8sData(opt *helpers.SecretTransformationOption)
 	var rawData map[string]interface{}
 	if r.secret != nil {
 		rawData = r.secret.Data
+		if rawData == nil {
+			rawData = r.authAsData()
+		}
 	}
 
 	var wrapData map[string]any
@@ -67,7 +89,11 @@ func (r *defaultResponse) Data() map[string]any {
 		return nil
 	}
 
-	return r.secret.Data
+	if r.secret.Data != nil {
+		return r.secret.Data
+	}
+
+	return r.authAsData()
 }
 
 type kvV1Response struct {
