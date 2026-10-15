@@ -115,6 +115,8 @@ type VaultPKISecretSpec struct {
 	// ExcludeCNFromSans from DNS or Email Subject Alternate Names.
 	// Default: false
 	ExcludeCNFromSans bool `json:"excludeCNFromSans,omitempty"`
+	// +kubebuilder:default=true
+	RemoveRootsFromChain bool `json:"removeRootsFromChain,omitempty"` 
 }
 
 // VaultPKISecretStatus defines the observed state of VaultPKISecret
@@ -167,7 +169,7 @@ func (v *VaultPKISecret) GetIssuerAPIData() map[string]interface{} {
 		"ttl":                     v.Spec.TTL,
 		"not_after":               v.Spec.NotAfter,
 		"exclude_cn_from_sans":    v.Spec.ExcludeCNFromSans,
-		"remove_roots_from_chain": true,
+		"remove_roots_from_chain": v.Spec.RemoveRootsFromChain,
 	}
 
 	if v.Spec.Format != "" {
