@@ -27,16 +27,19 @@ provider "kubernetes" {
   config_path    = var.k8s_config_path
 }
 
+# Skipped when use_hvd=true — HVD is an external cloud service, no in-cluster
+# Vault deployment is needed or wanted.
 resource "kubernetes_namespace" "vault" {
+  count = var.use_hvd ? 0 : 1
   metadata {
     name = var.k8s_namespace
   }
 }
 
 resource "kubernetes_secret" "vault_license" {
-  count = var.vault_enterprise ? 1 : 0
+  count = (!var.use_hvd && var.vault_enterprise) ? 1 : 0
   metadata {
-    namespace = kubernetes_namespace.vault.metadata[0].name
+    namespace = kubernetes_namespace.vault[0].metadata[0].name
     name      = "vault-license"
   }
   data = {
@@ -45,9 +48,10 @@ resource "kubernetes_secret" "vault_license" {
 }
 
 resource "helm_release" "vault" {
+  count            = var.use_hvd ? 0 : 1
   version          = var.vault_chart_version
   name             = "vault"
-  namespace        = kubernetes_namespace.vault.metadata[0].name
+  namespace        = kubernetes_namespace.vault[0].metadata[0].name
   create_namespace = false
   wait             = true
   wait_for_jobs    = true

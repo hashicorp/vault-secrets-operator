@@ -120,9 +120,18 @@ func TestVaultAuthMethods(t *testing.T) {
 		tfOptions.Vars["operator_image_tag"] = operatorImageTag
 	}
 	if entTests {
-		testVaultNamespace = "vault-tenant-" + testID
 		tfOptions.Vars["vault_enterprise"] = true
-		tfOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		if isHVDTest {
+			// HVD: reuse the existing namespace (e.g. "admin") directly,
+			// rather than creating a synthetic child namespace — HVD
+			// namespace creation/deletion is not something this test manages.
+			testVaultNamespace = hvdVaultNamespace
+			tfOptions.Vars["use_hvd"] = true
+			tfOptions.Vars["vault_namespace"] = hvdVaultNamespace
+		} else {
+			testVaultNamespace = "vault-tenant-" + testID
+			tfOptions.Vars["vault_test_namespace"] = testVaultNamespace
+		}
 	}
 	tfOptions = setCommonTFOptions(t, tfOptions)
 
@@ -228,7 +237,7 @@ func TestVaultAuthMethods(t *testing.T) {
 	}
 	auths := []testCase{
 		{
-			shouldRun: alwaysRun,
+			shouldRun: notHVD,
 			canRun:    noRequirements,
 			// Create a non-default VaultAuth CR
 			vaultAuth: &secretsv1beta1.VaultAuth{
@@ -249,7 +258,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			},
 		},
 		{
-			shouldRun: alwaysRun,
+			shouldRun: notHVD,
 			canRun:    noRequirements,
 			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
@@ -269,7 +278,7 @@ func TestVaultAuthMethods(t *testing.T) {
 			},
 		},
 		{
-			shouldRun: alwaysRun,
+			shouldRun: notHVD,
 			canRun:    noRequirements,
 			vaultAuth: &secretsv1beta1.VaultAuth{
 				ObjectMeta: v1.ObjectMeta{
@@ -533,6 +542,17 @@ func TestVaultAuthMethods(t *testing.T) {
 
 func alwaysRun(t *testing.T) (bool, string) {
 	t.Helper()
+	return true, ""
+}
+
+// notHVD skips subtests that require Vault to reach the kind cluster's
+// private API server (Kubernetes auth login, JWT auth's OIDC discovery),
+// which HVD cannot do.
+func notHVD(t *testing.T) (bool, string) {
+	t.Helper()
+	if isHVDTest {
+		return false, "skipping: requires Vault to reach the kind cluster, unsupported on HVD"
+	}
 	return true, ""
 }
 

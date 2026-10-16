@@ -2,7 +2,11 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 locals {
-  namespace           = var.vault_enterprise ? vault_namespace.test[0].path_fq : null
+  namespace = (
+    var.vault_namespace != "" ? null                         # HVD: provider handles via VAULT_NAMESPACE env var
+    : var.vault_enterprise ? vault_namespace.test[0].path_fq # kind ent: child ns
+    : null                                                   # kind community: root
+  )
   name_prefix         = "${var.name_prefix}-${random_string.prefix.result}"
   auth_mount          = "${local.name_prefix}-auth-mount"
   kv_mount            = "${local.name_prefix}-kv"

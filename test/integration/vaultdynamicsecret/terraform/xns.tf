@@ -42,7 +42,7 @@ resource "vault_identity_entity" "xns" {
 resource "vault_identity_entity_alias" "xns" {
   count          = local.xns_sa_count
   namespace      = local.namespace
-  mount_accessor = vault_auth_backend.default.accessor
+  mount_accessor = vault_auth_backend.default[0].accessor
   name           = vault_identity_entity.xns[count.index].name
   canonical_id   = vault_identity_entity.xns[count.index].id
 }
@@ -76,7 +76,7 @@ resource "vault_database_secrets_mount" "xns" {
   postgresql {
     name              = "postgres"
     username          = "postgres"
-    password          = data.kubernetes_secret.postgres.data["postgres-password"]
+    password          = local.pg_password
     connection_url    = "postgresql://{{username}}:{{password}}@${local.postgres_host}/postgres?sslmode=disable"
     verify_connection = false
     allowed_roles = [

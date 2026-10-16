@@ -77,6 +77,11 @@ var (
 	isScaleTest        = os.Getenv("SCALE_TESTS") != ""
 	eksClusterName     = os.Getenv("EKS_CLUSTER_NAME")
 	kindClusterName    = os.Getenv("KIND_CLUSTER_NAME")
+
+	isHVDTest         = os.Getenv("HVD_TESTS") != ""
+	hvdVaultAddr      = os.Getenv("HVD_VAULT_ADDR")
+	hvdVaultToken     = os.Getenv("HVD_VAULT_TOKEN")
+	hvdVaultNamespace = os.Getenv("HVD_VAULT_NAMESPACE")
 	// set in TestMain
 	clusterName       string
 	operatorImageRepo string
@@ -113,7 +118,11 @@ func init() {
 		k8sVaultNamespace = "vault"
 	}
 
-	testVaultAddress = fmt.Sprintf("http://vault.%s.svc.cluster.local:8200", k8sVaultNamespace)
+	if isHVDTest {
+		testVaultAddress = hvdVaultAddr
+	} else {
+		testVaultAddress = fmt.Sprintf("http://vault.%s.svc.cluster.local:8200", k8sVaultNamespace)
+	}
 }
 
 // testVaultAddress is the address in k8s of the vault setup by
@@ -158,8 +167,18 @@ func TestMain(m *testing.M) {
 
 		restConfig = *ctrl.GetConfigOrDie()
 
-		os.Setenv("VAULT_ADDR", vaultAddr)
-		os.Setenv("VAULT_TOKEN", vaultToken)
+		if isHVDTest {
+			os.Setenv("VAULT_ADDR", hvdVaultAddr)
+			os.Setenv("VAULT_TOKEN", hvdVaultToken)
+			// Set VAULT_NAMESPACE for Terraform subprocesses. The VSS provider
+			// block does not set namespace explicitly — it relies solely on this
+			// env var to avoid the vault provider double-namespace concatenation.
+			os.Setenv("VAULT_NAMESPACE", hvdVaultNamespace)
+		} else {
+			os.Setenv("VAULT_ADDR", vaultAddr)
+			os.Setenv("VAULT_TOKEN", vaultToken)
+			os.Unsetenv("VAULT_NAMESPACE")
+		}
 		os.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
 
 	} else {
@@ -199,6 +218,8 @@ func TestMain(m *testing.M) {
 	var providerFile string
 	if isScaleTest {
 		providerFile = "eks.tf"
+	} else if isHVDTest {
+		providerFile = "hvd.tf"
 	} else {
 		providerFile = "kind.tf"
 	}
@@ -259,6 +280,10 @@ func TestMain(m *testing.M) {
 			"install_argo_rollouts": argoRolloutSupported,
 		},
 	})
+	if isHVDTest {
+		tfOptions.Vars["use_hvd"] = true
+		tfOptions.Vars["vault_namespace"] = hvdVaultNamespace
+	}
 
 	b, err := json.Marshal(tfOptions.Vars)
 	if err != nil {
