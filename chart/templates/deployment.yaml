@@ -89,6 +89,10 @@ spec:
         {{- if $gVaultAuthOpts }}
         - --global-vault-auth-options={{ $gVaultAuthOpts }}
         {{- end }}
+        {{- $gHTTPOpts := include "vso.globalHTTPOptions" . -}}
+        {{- if $gHTTPOpts }}
+        - --global-http-options={{ $gHTTPOpts }}
+        {{- end }}
         {{- with include "vso.backoffOnSecretSourceError" . }}
         {{- . -}}
         {{- end }}

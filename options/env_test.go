@@ -34,6 +34,7 @@ func TestParse(t *testing.T) {
 				"VSO_BACKOFF_MULTIPLIER":             "2.5",
 				"VSO_GLOBAL_TRANSFORMATION_OPTIONS":  "gOpt1,gOpt2",
 				"VSO_GLOBAL_VAULT_AUTH_OPTIONS":      "vOpt1,vOpt2",
+				"VSO_GLOBAL_HTTP_OPTIONS":            "gHTTPOpt1,gHTTPOpt2",
 				"VSO_CLIENT_CACHE_NUM_LOCKS":         "10",
 				"VSO_KUBE_CLIENT_QPS":                "100",
 				"VSO_KUBE_CLIENT_BURST":              "1000",
@@ -53,6 +54,7 @@ func TestParse(t *testing.T) {
 				ClientCacheNumLocks:         ptr.To(10),
 				KubeClientQPS:               100,
 				KubeClientBurst:             ptr.To(uint(1000)),
+				GlobalHTTPOptions:           []string{"gHTTPOpt1", "gHTTPOpt2"},
 			},
 		},
 	}
