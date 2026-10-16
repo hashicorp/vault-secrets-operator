@@ -1,3 +1,12 @@
+## 1.6.2 (October 16th, 2026)
+
+Build:
+* Test with Vault 2.2.0, 1.21.12, 1.20.17, 1.19.23
+* Rebuild UBI-based container images with updated Red Hat base images containing backported fixes for PCRE2 vulnerabilities in `pcre2` and `pcre2-syntax`: CVE-2026-86145, CVE-2026-89156, CVE-2026-89157, CVE-2026-89158, CVE-2026-89160, CVE-2026-89161, and CVE-2026-103111 ([RHSA-2026:81522](https://access.redhat.com/errata/RHSA-2026:81522)).
+
+Dependency Updates:
+* Updates github.com/googleapis/enterprise-certificate-proxy from 0.3.22 to 0.3.23
+
 ## 1.6.1 (October 12th, 2026)
 
 Build:
