@@ -167,6 +167,12 @@ func (r *VaultPKISecretReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		horizon, inWindow := computePKIRenewalWindow(ctx, o, 0.05)
 		if !inWindow {
 			logger.Info("Not in renewal window", "horizon", horizon)
+			// Refresh the health gauge without writing status. Outside the
+			// renewal window we requeue for a long horizon and never call
+			// updateStatus, so after a process restart long-lived VaultPKISecret
+			// objects would otherwise have no controller_resource_status series
+			// until the next renew/ForceSync.
+			metrics.SetResourceStatus("vaultpkisecret", o, ptr.Deref(o.Status.Valid, false))
 			return ctrl.Result{
 				RequeueAfter: horizon,
 			}, nil
