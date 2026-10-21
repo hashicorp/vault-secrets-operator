@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -77,6 +78,7 @@ type VaultDynamicSecretReconciler struct {
 	BackOffRegistry             *BackOffRegistry
 	referenceCache              ResourceReferenceCache
 	GlobalTransformationOptions *helpers.GlobalTransformationOptions
+	GlobalHTTPOptions           *helpers.GlobalHTTPOptions
 	// sourceCh is used to trigger a requeue of resource instances from an
 	// external source. Should be set on a source.Channel in SetupWithManager.
 	// This channel should be closed when the controller is stopped.
@@ -495,7 +497,7 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 
 	method := o.Spec.RequestHTTPMethod
 	logger := log.FromContext(ctx).WithName("doVault")
-	if params != nil {
+	if params != nil && !r.shouldRespectRequestHTTPMethod() {
 		if !(method == http.MethodPost || method == http.MethodPut) {
 			logger.V(consts.LogLevelWarning).Info(
 				"Params provided, ignoring specified method",
@@ -512,7 +514,14 @@ func (r *VaultDynamicSecretReconciler) doVault(ctx context.Context, c vault.Clie
 	case http.MethodPut, http.MethodPost:
 		resp, err = c.Write(ctx, vault.NewWriteRequest(path, params, headers))
 	case http.MethodGet:
-		resp, err = c.Read(ctx, vault.NewReadRequest(path, nil, headers))
+		var queryParams url.Values
+		if params != nil {
+			queryParams = url.Values{}
+			for k, v := range params {
+				queryParams.Set(k, fmt.Sprintf("%v", v))
+			}
+		}
+		resp, err = c.Read(ctx, vault.NewReadRequest(path, queryParams, headers))
 	default:
 		return nil, fmt.Errorf("unsupported HTTP method %q for sync", method)
 	}
@@ -1354,6 +1363,13 @@ func (r *VaultDynamicSecretReconciler) unWatchEventsWithLeaseID(
 	}
 
 	r.eventWatcherRegistry.Delete(name)
+}
+
+func (r *VaultDynamicSecretReconciler) shouldRespectRequestHTTPMethod() bool {
+	if r.GlobalHTTPOptions == nil {
+		return false
+	}
+	return r.GlobalHTTPOptions.RespectRequestHTTPMethod
 }
 
 // buildVaultEventKey constructs the subscription key for a VaultDynamicSecret.

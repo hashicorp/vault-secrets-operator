@@ -1009,10 +1009,17 @@ func (m *MockRecordingVaultClient) ID() string {
 func (m *MockRecordingVaultClient) Taint() {}
 
 func (m *MockRecordingVaultClient) Read(_ context.Context, s ReadRequest) (Response, error) {
+	var params map[string]any
+	if values := s.Values(); values != nil {
+		params = make(map[string]any, len(values))
+		for k := range values {
+			params[k] = values.Get(k)
+		}
+	}
 	m.Requests = append(m.Requests, &MockRequest{
 		Method:  http.MethodGet,
 		Path:    s.Path(),
-		Params:  nil,
+		Params:  params,
 		Headers: s.Headers(),
 	})
 

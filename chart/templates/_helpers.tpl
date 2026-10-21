@@ -189,6 +189,20 @@ globalVaultAuthOptions configures the manager's --global-vault-auth-options flag
 {{- end -}}
 
 {{/*
+globalHTTPOptions configures the manager's --global-http-options flag.
+*/}}
+{{- define "vso.globalHTTPOptions" -}}
+{{- $opts := list -}}
+{{- if .Values.controller.manager.globalHTTPOptions.respectRequestHTTPMethod }}
+{{- $opts = mustAppend $opts "respect-request-http-method" -}}
+{{- end -}}
+{{- if $opts -}}
+{{- $opts | join "," -}}
+{{- end -}}
+{{- end -}}
+
+
+{{/*
 backoffOnSecretSourceError provides the backoff options for the manager when a
 secret source error occurs.
 */}}

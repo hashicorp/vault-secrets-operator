@@ -559,12 +559,61 @@ func TestVaultDynamicSecretReconciler_syncSecret(t *testing.T) {
 					"unsupported HTTP method %q for sync", http.MethodOptions), i...)
 			},
 		},
+		{
+			name: "with-method-get-and-params-respect-flag-enabled",
+			fields: fields{
+				Client:        fake.NewClientBuilder().Build(),
+				runtimePodUID: "",
+			},
+			args: args{
+				ctx:     nil,
+				vClient: &vault.MockRecordingVaultClient{},
+				o: &secretsv1beta1.VaultDynamicSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "baz",
+						Namespace: "default",
+					},
+					Spec: secretsv1beta1.VaultDynamicSecretSpec{
+						Mount:             "baz",
+						Path:              "foo",
+						RequestHTTPMethod: http.MethodGet,
+						Params: map[string]string{
+							"qux": "bar",
+						},
+						Destination: secretsv1beta1.Destination{
+							Name:   "baz",
+							Create: true,
+						},
+					},
+					Status: secretsv1beta1.VaultDynamicSecretStatus{},
+				},
+			},
+			want: &secretsv1beta1.VaultSecretLease{
+				LeaseDuration: 0,
+				Renewable:     false,
+			},
+			expectRequests: []*vault.MockRequest{
+				{
+					Method: http.MethodGet,
+					Path:   "baz/foo",
+					Params: map[string]any{
+						"qux": "bar",
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := &VaultDynamicSecretReconciler{
 				Client: tt.fields.Client,
+			}
+			if tt.name == "with-method-get-and-params-respect-flag-enabled" {
+				r.GlobalHTTPOptions = &helpers.GlobalHTTPOptions{
+					RespectRequestHTTPMethod: true,
+				}
 			}
 			got, _, err := r.syncSecret(tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)
 			if !tt.wantErr(t, err, fmt.Sprintf("syncSecret(%v, %v, %v, %v, %v)", tt.args.ctx, tt.args.vClient, tt.args.o, nil, nil)) {
