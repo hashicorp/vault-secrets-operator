@@ -1,6 +1,6 @@
 module github.com/hashicorp/vault-secrets-operator
 
-go 1.27.2
+go 1.27.3
 
 // k8s.io module versions must be kept in sync with each other, but
 // indirect dependencies in the vault-secrets-operator module are
@@ -44,7 +44,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.58.0
-	google.golang.org/api v0.302.0
+	google.golang.org/api v0.304.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.1
 	k8s.io/apiextensions-apiserver v0.37.1
