@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/hashicorp/vault-secrets-operator/api/v1beta1"
@@ -129,6 +130,15 @@ func TestRolloutRestart(t *testing.T) {
 			},
 			wantErr: assert.NoError,
 		},
+		{
+			name: "KafkaConnect",
+			obj:  newKafkaConnect("default", "baz"),
+			target: v1beta1.RolloutRestartTarget{
+				Kind: "KafkaConnect",
+				Name: "baz",
+			},
+			wantErr: assert.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -171,6 +181,12 @@ func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlc
 	case *argorolloutsv1alpha1.Rollout:
 		attr = "argo.rollout.spec.restartAt"
 		restartAtTime = o.Spec.RestartAt.Time
+	case *unstructured.Unstructured:
+		attr = "spec.template.pod.metadata.annotations." + AnnotationRestartedAt
+		annotations, _, err := unstructured.NestedStringMap(o.Object,
+			"spec", "template", "pod", "metadata", "annotations")
+		require.NoError(t, err)
+		restartAt = annotations[AnnotationRestartedAt]
 	default:
 		t.Fatalf("rollout restart object type not supported %v", o)
 	}
@@ -184,4 +200,19 @@ func assertPatchedRolloutRestartObj(t *testing.T, ctx context.Context, obj ctrlc
 	assert.True(t, restartAtTime.After(beforeRolloutRestart),
 		"restartAt should be after beforeRolloutRestart",
 		attr, restartAtTime, "beforeRolloutRestart", beforeRolloutRestart)
+}
+
+// newKafkaConnect returns a minimal Strimzi KafkaConnect resource as an
+// unstructured object, matching how VSO targets it for rollout-restart.
+func newKafkaConnect(namespace, name string) *unstructured.Unstructured {
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(strimziKafkaConnectGVK)
+	u.SetNamespace(namespace)
+	u.SetName(name)
+	// bootstrapServers is a required field on the KafkaConnect spec.
+	if err := unstructured.SetNestedField(u.Object,
+		"my-cluster-kafka-bootstrap:9092", "spec", "bootstrapServers"); err != nil {
+		panic(err)
+	}
+	return u
 }
