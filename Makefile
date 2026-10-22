@@ -137,6 +137,14 @@ VAULT_ENTERPRISE ?= false
 # The vault license.
 _VAULT_LICENSE ?=
 
+# Skip deploying a local Vault into kind and run tests against an external
+# HCP Vault Dedicated (HVD) cluster instead. See HVD_VAULT_* below.
+USE_HVD ?= false
+# HVD connection details. Required when running `make integration-test-hvd`.
+HVD_VAULT_ADDR ?=
+HVD_VAULT_TOKEN ?=
+HVD_VAULT_NAMESPACE ?=
+
 # root directory for all integration tests
 INTEGRATION_TEST_ROOT = ./test/integration
 
@@ -344,6 +352,25 @@ integration-test-both: ## Run integration tests against Vault Enterprise and Vau
 	$(MAKE) integration-test VAULT_ENTERPRISE=true ENT_TESTS=$(VAULT_ENTERPRISE)
 	$(MAKE) integration-test
 
+.PHONY: integration-test-hvd
+integration-test-hvd: set-image ## Run integration tests against HCP Vault Dedicated (HVD) using AppRole auth
+	@test -n "$(HVD_VAULT_ADDR)"      || (echo "HVD_VAULT_ADDR is required, e.g. https://<cluster>.vault.hashicorp.cloud:8200"; exit 1)
+	@test -n "$(HVD_VAULT_TOKEN)"     || (echo "HVD_VAULT_TOKEN is required"; exit 1)
+	@test -n "$(HVD_VAULT_NAMESPACE)" || (echo "HVD_VAULT_NAMESPACE is required, e.g. admin"; exit 1)
+	$(MAKE) setup-vault USE_HVD=true
+	SUPPRESS_TF_OUTPUT=$(SUPPRESS_TF_OUTPUT) SKIP_CLEANUP=$(SKIP_CLEANUP) OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
+	OPERATOR_IMAGE_REPO=$(IMAGE_TAG_BASE) OPERATOR_IMAGE_TAG=$(VERSION) \
+	HVD_TESTS=true ENT_TESTS=true \
+	HVD_VAULT_ADDR=$(HVD_VAULT_ADDR) HVD_VAULT_TOKEN=$(HVD_VAULT_TOKEN) HVD_VAULT_NAMESPACE=$(HVD_VAULT_NAMESPACE) \
+	INTEGRATION_TESTS=true KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) K8S_CLUSTER_CONTEXT=$(K8S_CLUSTER_CONTEXT) CGO_ENABLED=0 \
+	SKIP_AWS_TESTS=$(SKIP_AWS_TESTS) SKIP_GCP_TESTS=$(SKIP_GCP_TESTS) \
+	PARALLEL_INT_TESTS=$(INTEGRATION_TESTS_PARALLEL) \
+	go test github.com/hashicorp/vault-secrets-operator/test/integration/... $(TESTARGS) -timeout=30m
+
+.PHONY: teardown-integration-test-hvd
+teardown-integration-test-hvd: ## Teardown the HVD integration test setup
+	$(MAKE) teardown-integration-test USE_HVD=true
+
 .PHONY: integration-test-chart
 integration-test-chart:
 	IMAGE_TAG_BASE=$(IMAGE_TAG_BASE) \
@@ -399,9 +426,14 @@ endif
 		-var vault_image_tag=$(VAULT_IMAGE_TAG) \
 		-var k8s_namespace=$(K8S_VAULT_NAMESPACE) \
 		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
+		-var use_hvd=$(USE_HVD) \
 		$(EXTRA_VARS) || exit 1 \
 	rm -f $(TF_VAULT_STATE_DIR)/*.tfvars
+ifeq ($(USE_HVD), true)
+	@echo "USE_HVD is set, skipping local Vault patch/wait — Vault runs on HVD, not in kind"
+else
 	K8S_VAULT_NAMESPACE=$(K8S_VAULT_NAMESPACE) $(VAULT_PATCH_ROOT)/patch-vault.sh
+endif
 
 .PHONY: setup-integration-test-ent
 ## Create Vault inside the cluster
@@ -447,6 +479,7 @@ teardown-integration-test: undeploy ## Teardown the integration test setup
 	$(TERRAFORM) -chdir=$(TF_VAULT_STATE_DIR) destroy -auto-approve \
 		-var k8s_config_context=$(K8S_CLUSTER_CONTEXT) \
 		-var vault_enterprise=$(VAULT_ENTERPRISE) \
+		-var use_hvd=$(USE_HVD) \
 		-var vault_license=ignored && \
 	rm -rf $(TF_VAULT_STATE_DIR)
 

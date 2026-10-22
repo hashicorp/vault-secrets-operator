@@ -89,3 +89,15 @@ variable "aws_region" {
   type        = string
   default     = "us-east-2"
 }
+
+variable "vault_namespace" {
+  description = "Vault namespace for HVD. Empty string = root namespace (kind/EKS)."
+  type        = string
+  default     = ""
+}
+
+variable "use_hvd" {
+  description = "Switch auth method from kubernetes to appRole for HVD testing."
+  type        = bool
+  default     = false
+}

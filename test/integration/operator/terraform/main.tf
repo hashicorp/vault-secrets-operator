@@ -29,4 +29,6 @@ module "operator" {
   k8s_vault_connection_address = var.k8s_vault_connection_address
   install_argo_rollouts        = var.install_argo_rollouts
   create_namespace             = var.create_namespace
+  use_hvd                      = var.use_hvd
+  vault_namespace              = var.vault_namespace
 }
