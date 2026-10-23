@@ -254,6 +254,26 @@ func TestSyncSecret(t *testing.T) {
 
 	defaultOpts := []SyncOptions{DefaultSyncOptions()}
 
+	ownerRef := metav1.OwnerReference{
+		APIVersion: defaultOwner.APIVersion,
+		Kind:       defaultOwner.Kind,
+		Name:       defaultOwner.Name,
+		UID:        defaultOwner.UID,
+	}
+	// an OwnerReference added by another controller, e.g. a CAPI ClusterResourceSet.
+	otherOwnerRef := metav1.OwnerReference{
+		APIVersion: "addons.cluster.x-k8s.io/v1beta1",
+		Kind:       "ClusterResourceSet",
+		Name:       "crs",
+		UID:        types.UID("crs-uid"),
+	}
+	otherVDSOwnerRef := metav1.OwnerReference{
+		APIVersion: defaultOwner.APIVersion,
+		Kind:       defaultOwner.Kind,
+		Name:       "qux",
+		UID:        types.UID("qux-uid"),
+	}
+
 	tests := []struct {
 		name   string
 		client ctrlclient.Client
@@ -264,9 +284,11 @@ func TestSyncSecret(t *testing.T) {
 		createDest          bool
 		destLabels          map[string]string
 		destOwnerReferences []metav1.OwnerReference
-		expectSecretsCount  int
-		opts                []SyncOptions
-		wantErr             assert.ErrorAssertionFunc
+		// if set, the destination Secret must have exactly these OwnerReferences
+		expectOwnerReferences []metav1.OwnerReference
+		expectSecretsCount    int
+		opts                  []SyncOptions
+		wantErr               assert.ErrorAssertionFunc
 	}{
 		{
 			name:   "invalid-no-dest",
@@ -456,6 +478,60 @@ func TestSyncSecret(t *testing.T) {
 					"not the owner of the destination Secret foo/baz")
 			},
 		},
+		{
+			name:                  "valid-dest-exists-multiple-owners",
+			client:                testutils.NewFakeClient(),
+			obj:                   ownerWithDest,
+			createDest:            true,
+			destLabels:            maps.Clone(OwnerLabels),
+			destOwnerReferences:   []metav1.OwnerReference{otherOwnerRef, ownerRef},
+			expectOwnerReferences: []metav1.OwnerReference{otherOwnerRef, ownerRef},
+			data: map[string][]byte{
+				"foo": []byte(`bar`),
+			},
+			expectSecretsCount: 1,
+			wantErr:            assert.NoError,
+		},
+		{
+			name:                "invalid-dest-exists-multiple-owners-not-owned",
+			client:              testutils.NewFakeClient(),
+			obj:                 ownerWithDest,
+			createDest:          true,
+			destLabels:          maps.Clone(OwnerLabels),
+			destOwnerReferences: []metav1.OwnerReference{otherOwnerRef, otherVDSOwnerRef},
+			expectSecretsCount:  1,
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return assert.ErrorContains(t, err,
+					"not the owner of the destination Secret foo/baz")
+			},
+		},
+		{
+			name:                  "dest-exists-not-owned-overwrite-true-keeps-other-owners",
+			client:                testutils.NewFakeClient(),
+			obj:                   ownerWithDestOverwrite,
+			createDest:            true,
+			destOwnerReferences:   []metav1.OwnerReference{otherOwnerRef},
+			expectOwnerReferences: []metav1.OwnerReference{otherOwnerRef, ownerRef},
+			data: map[string][]byte{
+				"foo": []byte(`bar`),
+			},
+			expectSecretsCount: 1,
+			wantErr:            assert.NoError,
+		},
+		{
+			name:       "valid-dest-type-change-keeps-other-owners",
+			client:     testutils.NewFakeClient(),
+			obj:        ownerWithCreateAndType,
+			createDest: true,
+			destLabels: maps.Clone(OwnerLabels),
+			destOwnerReferences: []metav1.OwnerReference{
+				otherOwnerRef,
+				ownerRef,
+			},
+			expectOwnerReferences: []metav1.OwnerReference{otherOwnerRef, ownerRef},
+			expectSecretsCount:    1,
+			wantErr:               assert.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -537,6 +613,9 @@ func TestSyncSecret(t *testing.T) {
 					wantType = corev1.SecretTypeOpaque
 				}
 				assert.Equal(t, wantType, destSecret.Type)
+				if tt.expectOwnerReferences != nil {
+					assert.Equal(t, tt.expectOwnerReferences, destSecret.OwnerReferences)
+				}
 			}
 
 			for _, objKey := range orphans {
