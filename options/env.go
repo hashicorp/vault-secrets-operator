@@ -55,6 +55,9 @@ type VSOEnvOptions struct {
 
 	// KubeClientBurst is the VSO_KUBE_CLIENT_BURST environment variable option
 	KubeClientBurst *uint `split_words:"true"`
+
+	// GlobalHTTPOptions is VSO_GLOBAL_HTTP_OPTIONS environment variable option
+	GlobalHTTPOptions []string `split_words:"true"`
 }
 
 // Parse environment variable options, prefixed with "VSO_"
