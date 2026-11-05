@@ -1,3 +1,8 @@
+## Unreleased
+
+Features:
+* VaultStaticSecret: add `spec.data` for aggregating keys from multiple Vault secrets into a single Kubernetes Secret. Each entry maps a destination Secret key to a `SECRET_PATH#KEY[#VERSION]` reference resolved under `spec.mount`. `spec.path` is now optional when `spec.data` is set; when both are set, `spec.data` is overlaid on the secret read from `spec.path`. ([#1047](https://github.com/hashicorp/vault-secrets-operator/issues/1047))
+
 ## 1.6.2 (October 21st, 2026)
 
 Build:

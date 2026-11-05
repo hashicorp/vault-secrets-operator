@@ -25,6 +25,12 @@ type eventWatcherMeta struct {
 	// LastEventType is the resolved event type used when subscribing.
 	// This ensures unwatch can target the same websocket key used for subscribe.
 	LastEventType vault.EventType
+	// LastPaths are the Vault event paths that were subscribed to. A
+	// VaultStaticSecret that aggregates keys from several Vault paths
+	// (.spec.data) holds one subscription per path, and the set of paths
+	// changes when the spec changes, so unwatch must target what was actually
+	// subscribed rather than recomputing it from the current spec.
+	LastPaths []string
 }
 
 // eventWatcherRegistry - registry for keeping track of running event watcher

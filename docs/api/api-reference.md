@@ -1133,7 +1133,9 @@ _Appears in:_
 
 
 
-
+VaultStaticSecretCollectable is a static secret collected into a CSI volume.
+Unlike VaultStaticSecretSpec it has no aggregation support, so Path remains
+required here.
 
 
 
@@ -1143,7 +1145,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
-| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
+| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version<br />May only be omitted on a VaultStaticSecret that sets<br />VaultStaticSecretSpec.Data. |  |  |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 | `transformation` _[Transformation](#transformation)_ | Transformation provides configuration for transforming the secret data before<br />it is stored in the CSI volume. |  |  |
@@ -1164,7 +1166,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
-| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
+| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version<br />May only be omitted on a VaultStaticSecret that sets<br />VaultStaticSecretSpec.Data. |  |  |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
@@ -1207,8 +1209,9 @@ _Appears in:_
 | `rolloutRestartTargets` _[RolloutRestartTarget](#rolloutrestarttarget) array_ | RolloutRestartTargets should be configured whenever the application(s) consuming the Vault secret does<br />not support dynamically reloading a rotated secret.<br />In that case one, or more RolloutRestartTarget(s) can be configured here. The Operator will<br />trigger a "rollout-restart" for each target whenever the Vault secret changes between reconciliation events.<br />All configured targets will be ignored if HMACSecretData is set to false.<br />See RolloutRestartTarget for more details. |  |  |
 | `destination` _[Destination](#destination)_ | Destination provides configuration necessary for syncing the Vault secret to Kubernetes. |  |  |
 | `syncConfig` _[SyncConfig](#syncconfig)_ | SyncConfig configures sync behavior from Vault to VSO |  |  |
+| `data` _object (keys:string, values:string)_ | Data aggregates individual keys from one or more Vault secrets into the<br />destination Kubernetes Secret. Each map entry maps a destination Secret<br />key to a Vault secret reference in the form `SECRET_PATH#KEY[#VERSION]`,<br />where SECRET_PATH is relative to Mount, KEY is a key within that Vault<br />secret, and VERSION is an optional kv-v2 secret version. All referenced<br />paths are read from the Mount configured on this resource.<br />When Path is also set, the secret at Path is read first and the keys<br />resolved from Data are then overlaid on top of it, overwriting any<br />same-named keys.<br />If a referenced path, key, or version cannot be resolved, the sync fails<br />and the reason is recorded in the resource's status.<br />Note: when Data is set, the `_raw` key of the destination Secret holds<br />the aggregated secret data rather than the response of a single Vault<br />read. |  | MinProperties: 1 <br /> |
 | `mount` _string_ | Mount for the secret in Vault |  |  |
-| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version |  |  |
+| `path` _string_ | Path of the secret in Vault, corresponds to the `path` parameter for:<br />kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret<br />kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version<br />May only be omitted on a VaultStaticSecret that sets<br />VaultStaticSecretSpec.Data. |  |  |
 | `version` _integer_ | Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:<br />https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version<br />This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates. |  | Minimum: 0 <br /> |
 | `type` _string_ | Type of the Vault static secret |  | Enum: [kv-v1 kv-v2] <br /> |
 
