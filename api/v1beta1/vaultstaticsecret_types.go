@@ -8,6 +8,7 @@ import (
 )
 
 // VaultStaticSecretSpec defines the desired state of VaultStaticSecret
+// +kubebuilder:validation:XValidation:rule="has(self.path) || (has(self.data) && size(self.data) > 0)",message="one of path or data must be set"
 type VaultStaticSecretSpec struct {
 	// VaultAuthRef to the VaultAuth resource, can be prefixed with a namespace,
 	// eg: `namespaceA/vaultAuthRefB`. If no namespace prefix is provided it will default to the
@@ -39,6 +40,25 @@ type VaultStaticSecretSpec struct {
 	Destination Destination `json:"destination"`
 	// SyncConfig configures sync behavior from Vault to VSO
 	SyncConfig *SyncConfig `json:"syncConfig,omitempty"`
+	// Data aggregates individual keys from one or more Vault secrets into the
+	// destination Kubernetes Secret. Each map entry maps a destination Secret
+	// key to a Vault secret reference in the form `SECRET_PATH#KEY[#VERSION]`,
+	// where SECRET_PATH is relative to Mount, KEY is a key within that Vault
+	// secret, and VERSION is an optional kv-v2 secret version. All referenced
+	// paths are read from the Mount configured on this resource.
+	//
+	// When Path is also set, the secret at Path is read first and the keys
+	// resolved from Data are then overlaid on top of it, overwriting any
+	// same-named keys.
+	//
+	// If a referenced path, key, or version cannot be resolved, the sync fails
+	// and the reason is recorded in the resource's status.
+	//
+	// Note: when Data is set, the `_raw` key of the destination Secret holds
+	// the aggregated secret data rather than the response of a single Vault
+	// read.
+	// +kubebuilder:validation:MinProperties=1
+	Data map[string]string `json:"data,omitempty"`
 
 	VaultStaticSecretCommon `json:",inline"`
 }
@@ -49,7 +69,10 @@ type VaultStaticSecretCommon struct {
 	// Path of the secret in Vault, corresponds to the `path` parameter for:
 	// kv-v1: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
 	// kv-v2: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version
-	Path string `json:"path"`
+	// May only be omitted on a VaultStaticSecret that sets
+	// VaultStaticSecretSpec.Data.
+	// +optional
+	Path string `json:"path,omitempty"`
 	// Version of the secret to fetch. Only valid for type kv-v2. Corresponds to version query parameter:
 	// https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#version
 	// This field should normally be omitted, unless you want to lock the sync to a specific version of the secret and ignore updates.
@@ -60,6 +83,10 @@ type VaultStaticSecretCommon struct {
 	Type string `json:"type"`
 }
 
+// VaultStaticSecretCollectable is a static secret collected into a CSI volume.
+// Unlike VaultStaticSecretSpec it has no aggregation support, so Path remains
+// required here.
+// +kubebuilder:validation:XValidation:rule="has(self.path)",message="path must be set"
 type VaultStaticSecretCollectable struct {
 	VaultStaticSecretCommon `json:",inline"`
 	// Transformation provides configuration for transforming the secret data before

@@ -1655,6 +1655,13 @@ func (in *VaultStaticSecretSpec) DeepCopyInto(out *VaultStaticSecretSpec) {
 		*out = new(SyncConfig)
 		**out = **in
 	}
+	if in.Data != nil {
+		in, out := &in.Data, &out.Data
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	out.VaultStaticSecretCommon = in.VaultStaticSecretCommon
 }
 

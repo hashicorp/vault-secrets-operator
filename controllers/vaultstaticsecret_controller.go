@@ -166,10 +166,12 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if idx, ok := r.pendingVaultIndex.LoadAndDelete(req.NamespacedName); ok {
 		kvHeaders = http.Header{consts.HeaderVaultIndex: []string{idx.(string)}}
 	}
-	kvReq, err := newKVRequest(o.Spec, kvHeaders)
-	if err != nil {
+	// Reject an invalid Vault source configuration before issuing any Vault
+	// request. These are configuration errors that will not resolve on their
+	// own, so they are not subject to the read back-off.
+	if _, err := validateVaultStaticSecretSpec(o.Spec); err != nil {
 		horizon := computeHorizonWithJitter(requeueDurationOnError)
-		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonVaultStaticSecret, err.Error())
+		r.Recorder.Event(o, corev1.EventTypeWarning, consts.ReasonInvalidConfiguration, err.Error())
 		if err := r.updateStatus(ctx, o, false, newSyncCondition(o, metav1.ConditionFalse, "Failed to sync the secret, horizon=%s, err=%s", horizon, err)); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -179,7 +181,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}, nil
 	}
 
-	resp, err := c.Read(ctx, kvReq)
+	vaultData, rawData, err := readVaultStaticSecretData(ctx, c, o, kvHeaders)
 	if err != nil {
 		if vault.IsForbiddenError(err) {
 			c.Taint()
@@ -200,7 +202,7 @@ func (r *VaultStaticSecretReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		r.BackOffRegistry.Delete(req.NamespacedName)
 	}
 
-	data, err := r.SecretDataBuilder.WithVaultData(resp.Data(), resp.Secret().Data, nil, transOption)
+	data, err := r.SecretDataBuilder.WithVaultData(vaultData, rawData, nil, transOption)
 	if err != nil {
 		r.Recorder.Eventf(o, corev1.EventTypeWarning, consts.ReasonSecretDataBuilderError,
 			"Failed to build K8s secret data: %s", err)
@@ -418,37 +420,55 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 		}
 	}
 
-	// Build the vault path for subscription
-	vaultPath := buildVaultEventPath(o)
+	// Build the vault paths for subscription. An aggregated secret
+	// (.spec.data) depends on more than one Vault path, and must be
+	// reconciled when any of them changes.
+	vaultPaths := vaultEventPaths(o)
 
-	// Subscribe to events using the vault client
-	subscriber := &vault.Subscriber{
-		ResourceKey:       name,
-		VaultNS:           o.Spec.Namespace,
-		VaultPath:         vaultPath,
-		ResourceType:      vault.ResourceTypeVaultStaticSecret,
-		ReconcileCh:       r.SourceCh,
-		PendingVaultIndex: &r.pendingVaultIndex,
-		// OnStop callback cleans up registry when WebSocket dies
-		OnStop: onStop,
-		NewObject: func() client.Object {
-			return &secretsv1beta1.VaultStaticSecret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: name.Namespace,
-					Name:      name.Name,
-				},
+	// Record the paths that were actually subscribed to, so that a partial
+	// failure below still unsubscribes cleanly.
+	var subscribed []string
+	for _, vaultPath := range vaultPaths {
+		// Subscribe to events using the vault client
+		subscriber := &vault.Subscriber{
+			ResourceKey:       name,
+			VaultNS:           o.Spec.Namespace,
+			VaultPath:         vaultPath,
+			ResourceType:      vault.ResourceTypeVaultStaticSecret,
+			ReconcileCh:       r.SourceCh,
+			PendingVaultIndex: &r.pendingVaultIndex,
+			// OnStop callback cleans up registry when WebSocket dies
+			OnStop: onStop,
+			NewObject: func() client.Object {
+				return &secretsv1beta1.VaultStaticSecret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: name.Namespace,
+						Name:      name.Name,
+					},
+				}
+			},
+		}
+
+		if err := c.SubscribeToEvents(ctx, vssEventType, subscriber); err != nil {
+			// Register what succeeded so the next unwatch can tear it down,
+			// then surface the failure.
+			if len(subscribed) > 0 {
+				r.eventWatcherRegistry.Register(name, &eventWatcherMeta{
+					LastClientID:   c.ID(),
+					LastGeneration: o.GetGeneration(),
+					LastPaths:      subscribed,
+				})
 			}
-		},
-	}
-
-	if err := c.SubscribeToEvents(ctx, vssEventType, subscriber); err != nil {
-		return fmt.Errorf("failed to subscribe to events: %w", err)
+			return fmt.Errorf("failed to subscribe to events for path %q: %w", vaultPath, err)
+		}
+		subscribed = append(subscribed, vaultPath)
 	}
 
 	// Update registry with new metadata
 	updatedMeta := &eventWatcherMeta{
 		LastClientID:   c.ID(),
 		LastGeneration: o.GetGeneration(),
+		LastPaths:      subscribed,
 	}
 	r.eventWatcherRegistry.Register(name, updatedMeta)
 
@@ -461,33 +481,44 @@ func (r *VaultStaticSecretReconciler) ensureEventWatcher(ctx context.Context, o 
 // unWatchEvents unsubscribes the VSS from events and removes it from the registry
 func (r *VaultStaticSecretReconciler) unWatchEvents(o *secretsv1beta1.VaultStaticSecret, c vault.Client, ctx context.Context) {
 	name := client.ObjectKeyFromObject(o)
-	_, ok := r.eventWatcherRegistry.Get(name)
+	meta, ok := r.eventWatcherRegistry.Get(name)
 	if !ok {
 		return
 	}
 
-	vaultPath := buildVaultEventPath(o)
-	pathKey := vault.SubscriptionKey{
-		VaultNamespace: o.Spec.Namespace,
-		VaultPath:      vaultPath,
+	// Unsubscribe from exactly what was subscribed to. The resource's spec may
+	// have changed since then, so recomputing the paths from o could leak a
+	// subscription. Fall back to the current spec for registry entries written
+	// before LastPaths existed.
+	vaultPaths := meta.LastPaths
+	if len(vaultPaths) == 0 {
+		vaultPaths = vaultEventPaths(o)
 	}
 
-	if err := c.UnsubscribeFromEvents(ctx, vault.EventTypeKV, pathKey, name.String()); err != nil {
-		log.FromContext(ctx).V(consts.LogLevelDebug).Info(
-			"Failed to unsubscribe from events (may already be cleaned up)",
-			"namespace", o.Namespace, "name", o.Name, "error", err)
+	for _, vaultPath := range vaultPaths {
+		pathKey := vault.SubscriptionKey{
+			VaultNamespace: o.Spec.Namespace,
+			VaultPath:      vaultPath,
+		}
+
+		if err := c.UnsubscribeFromEvents(ctx, vault.EventTypeKV, pathKey, name.String()); err != nil {
+			log.FromContext(ctx).V(consts.LogLevelDebug).Info(
+				"Failed to unsubscribe from events (may already be cleaned up)",
+				"namespace", o.Namespace, "name", o.Name, "path", vaultPath, "error", err)
+		}
 	}
 
 	r.eventWatcherRegistry.Delete(name)
 }
 
-// buildVaultEventPath constructs the Vault event path for a VaultStaticSecret.
-// For KV v2, Vault emits events with the API path including /data/.
-func buildVaultEventPath(o *secretsv1beta1.VaultStaticSecret) string {
-	if o.Spec.Type == consts.KVSecretTypeV2 {
-		return strings.Join([]string{o.Spec.Mount, "data", o.Spec.Path}, "/")
+// buildVaultEventPath constructs the Vault event path for a single Vault
+// secret path. For KV v2, Vault emits events with the API path including
+// /data/.
+func buildVaultEventPath(secretType, mount, path string) string {
+	if secretType == consts.KVSecretTypeV2 {
+		return strings.Join([]string{mount, "data", path}, "/")
 	}
-	return strings.Join([]string{o.Spec.Mount, o.Spec.Path}, "/")
+	return strings.Join([]string{mount, path}, "/")
 }
 
 func (r *VaultStaticSecretReconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options) error {
@@ -607,14 +638,18 @@ func (r *VaultStaticSecretReconciler) vaultClientCallback(ctx context.Context, c
 }
 
 func newKVRequest(s secretsv1beta1.VaultStaticSecretSpec, headers http.Header) (vault.ReadRequest, error) {
-	var kvReq vault.ReadRequest
-	switch s.Type {
+	return newKVRequestForPath(s.Type, s.Mount, s.Path, s.Version, headers)
+}
+
+// newKVRequestForPath builds a KV read request for an arbitrary path under
+// mount. version is ignored for kv-v1, which has no versioning.
+func newKVRequestForPath(secretType, mount, path string, version int, headers http.Header) (vault.ReadRequest, error) {
+	switch secretType {
 	case consts.KVSecretTypeV1:
-		kvReq = vault.NewKVReadRequestV1(s.Mount, s.Path, headers)
+		return vault.NewKVReadRequestV1(mount, path, headers), nil
 	case consts.KVSecretTypeV2:
-		kvReq = vault.NewKVReadRequestV2(s.Mount, s.Path, s.Version, headers)
+		return vault.NewKVReadRequestV2(mount, path, version, headers), nil
 	default:
-		return nil, fmt.Errorf("unsupported secret type %q", s.Type)
+		return nil, fmt.Errorf("unsupported secret type %q", secretType)
 	}
-	return kvReq, nil
 }

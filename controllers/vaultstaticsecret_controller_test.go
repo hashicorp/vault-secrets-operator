@@ -443,6 +443,12 @@ type mockVSSClient struct {
 	vault.Client
 	subscribed []vault.EventType
 	seen       []vault.EventType // recorded by UnsubscribeFromEvents
+	// subscribedPaths are the Subscriber.VaultPath values passed to
+	// SubscribeToEvents, in order.
+	subscribedPaths []string
+	// unsubscribedKeys are the SubscriptionKeys passed to
+	// UnsubscribeFromEvents, in order.
+	unsubscribedKeys []vault.SubscriptionKey
 	// webSocketHealthy is returned by IsWebSocketHealthy.
 	webSocketHealthy bool
 	// subscribeErr, when non-nil, is returned by SubscribeToEvents.
@@ -462,15 +468,140 @@ func (m *mockVSSClient) IsWebSocketHealthy(_ vault.EventType) bool {
 
 func (m *mockVSSClient) SubscribeToEvents(_ context.Context, et vault.EventType, sub *vault.Subscriber) error {
 	m.subscribed = append(m.subscribed, et)
+	m.subscribedPaths = append(m.subscribedPaths, sub.VaultPath)
 	if m.onSubscribe != nil {
 		m.onSubscribe(et, sub)
 	}
 	return m.subscribeErr
 }
 
-func (m *mockVSSClient) UnsubscribeFromEvents(_ context.Context, et vault.EventType, _ vault.SubscriptionKey, _ string) error {
+func (m *mockVSSClient) UnsubscribeFromEvents(_ context.Context, et vault.EventType, key vault.SubscriptionKey, _ string) error {
 	m.seen = append(m.seen, et)
+	m.unsubscribedKeys = append(m.unsubscribedKeys, key)
 	return m.unsubscribeErr
+}
+
+// Test_VSS_ensureEventWatcher_AggregatedPaths verifies that a VaultStaticSecret
+// which aggregates keys from several Vault paths subscribes to each distinct
+// path, and records them on the registry entry.
+func Test_VSS_ensureEventWatcher_AggregatedPaths(t *testing.T) {
+	t.Parallel()
+	ch := make(chan event.GenericEvent, 10)
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             ch,
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 1},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			Data: map[string]string{
+				"db-user":     "db1/schema1#db-user",
+				"db-password": "db1/schema1#db-password#2",
+				"token":       "app1#token",
+			},
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV2,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	m := &mockVSSClient{}
+	require.NoError(t, r.ensureEventWatcher(context.Background(), o, m))
+
+	wantPaths := []string{
+		"secret/data/app/config",
+		"secret/data/app1",
+		"secret/data/db1/schema1",
+	}
+	// db1/schema1 is referenced twice but subscribed to once.
+	assert.Equal(t, wantPaths, m.subscribedPaths)
+
+	meta, ok := r.eventWatcherRegistry.Get(key)
+	require.True(t, ok, "registry must have entry after subscribe")
+	assert.Equal(t, wantPaths, meta.LastPaths)
+}
+
+// Test_VSS_unWatchEvents_UsesLastPaths verifies that unwatch tears down exactly
+// the subscriptions that were created, even after the resource's spec changed
+// to reference different Vault paths.
+func Test_VSS_unWatchEvents_UsesLastPaths(t *testing.T) {
+	t.Parallel()
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             make(chan event.GenericEvent, 10),
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 2},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			// The current spec only references one path...
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV2,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+
+	// ...but the live subscriptions were created from an earlier spec.
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{
+		LastClientID:   "test-vss-client",
+		LastGeneration: 1,
+		LastPaths: []string{
+			"secret/data/app/config",
+			"secret/data/gone",
+		},
+	})
+
+	m := &mockVSSClient{}
+	r.unWatchEvents(o, m, context.Background())
+
+	assert.Equal(t, []vault.SubscriptionKey{
+		{VaultPath: "secret/data/app/config"},
+		{VaultPath: "secret/data/gone"},
+	}, m.unsubscribedKeys)
+
+	_, ok := r.eventWatcherRegistry.Get(key)
+	assert.False(t, ok, "registry entry must be removed")
+}
+
+// Test_VSS_unWatchEvents_LegacyEntryWithoutPaths verifies that a registry entry
+// written before LastPaths existed still unsubscribes, by falling back to the
+// paths derived from the current spec.
+func Test_VSS_unWatchEvents_LegacyEntryWithoutPaths(t *testing.T) {
+	t.Parallel()
+	r := &VaultStaticSecretReconciler{
+		eventWatcherRegistry: newEventWatcherRegistry(),
+		SourceCh:             make(chan event.GenericEvent, 10),
+		Recorder:             record.NewFakeRecorder(10),
+	}
+
+	o := &secretsv1beta1.VaultStaticSecret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "app", Generation: 1},
+		Spec: secretsv1beta1.VaultStaticSecretSpec{
+			VaultStaticSecretCommon: secretsv1beta1.VaultStaticSecretCommon{
+				Type:  vsoconsts.KVSecretTypeV1,
+				Mount: "secret",
+				Path:  "app/config",
+			},
+		},
+	}
+	key := client.ObjectKeyFromObject(o)
+	r.eventWatcherRegistry.Register(key, &eventWatcherMeta{LastClientID: "test-vss-client"})
+
+	m := &mockVSSClient{}
+	r.unWatchEvents(o, m, context.Background())
+
+	assert.Equal(t, []vault.SubscriptionKey{
+		{VaultPath: "secret/app/config"},
+	}, m.unsubscribedKeys)
 }
 
 // Test_VSS_ensureEventWatcher_FreshSubscribe verifies that when no registry entry
