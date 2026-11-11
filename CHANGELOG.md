@@ -1,3 +1,8 @@
+## Unreleased
+
+Fix:
+* VaultPKISecret: set `ca.crt` from `issuing_ca` for `kubernetes.io/tls` secrets when Vault also returns `ca_chain`, e.g. for certificates signed by an intermediate CA ([#1375](https://github.com/hashicorp/vault-secrets-operator/pull/1375))
+
 ## 1.6.2 (October 21st, 2026)
 
 Build:
