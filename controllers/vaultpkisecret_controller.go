@@ -525,12 +525,15 @@ func convertToK8sTLSSecretData(data map[string][]byte) map[string][]byte {
 		ret[corev1.TLSPrivateKeyKey] = v
 	}
 
+	if v, ok := data["issuing_ca"]; ok && len(v) > 0 {
+		ret[corev1.ServiceAccountRootCAKey] = v
+	}
+
 	// the ca_chain includes the issuing ca
 	var caData []byte
 	if v, ok := data["ca_chain"]; ok && len(v) > 0 {
 		caData = v
 	} else if v, ok := data["issuing_ca"]; ok && len(v) > 0 {
-		ret[corev1.ServiceAccountRootCAKey] = v
 		caData = v
 	}
 
