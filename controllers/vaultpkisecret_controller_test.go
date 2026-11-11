@@ -234,6 +234,42 @@ func Test_convertToK8sTLSSecretData(t *testing.T) {
 				"ca.crt":      []byte("v_issuing_ca"),
 			},
 		},
+		{
+			// Vault returns both fields when the cert is signed by an intermediate.
+			name: "with-ca-chain-and-issuing-ca",
+			data: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"ca_chain":    []byte("v_ca_chain"),
+				"issuing_ca":  []byte("v_issuing_ca"),
+			},
+			want: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"ca_chain":    []byte("v_ca_chain"),
+				"issuing_ca":  []byte("v_issuing_ca"),
+				"tls.key":     []byte("v_private_key"),
+				"tls.crt":     []byte("v_certificate\nv_ca_chain"),
+				"ca.crt":      []byte("v_issuing_ca"),
+			},
+		},
+		{
+			name: "with-empty-issuing-ca",
+			data: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"ca_chain":    []byte("v_ca_chain"),
+				"issuing_ca":  []byte(""),
+			},
+			want: map[string][]byte{
+				"private_key": []byte("v_private_key"),
+				"certificate": []byte("v_certificate"),
+				"ca_chain":    []byte("v_ca_chain"),
+				"issuing_ca":  []byte(""),
+				"tls.key":     []byte("v_private_key"),
+				"tls.crt":     []byte("v_certificate\nv_ca_chain"),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
